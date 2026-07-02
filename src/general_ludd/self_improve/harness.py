@@ -189,10 +189,21 @@ class SelfImprovementHarness:
         ``low_coverage`` findings against a codebase they cannot reason about.
         Gate them on a Python-project marker; the model-driven gap scan and the
         recurring-failure ingest stay project-neutral and always run.
+
+        Detection requires a GENUINE Python marker: gludd's own ``src/general_ludd``
+        package, or a ``pyproject.toml`` / ``setup.cfg`` / ``setup.py`` at the repo
+        root. A bare Cobertura ``coverage.xml`` is deliberately NOT a Python signal
+        — the Cobertura schema is language-agnostic (JS/Ruby/PHP tooling emits the
+        same XML), so a non-Python target carrying a root ``coverage.xml`` must not
+        be misclassified as python-shaped. ``_check_coverage_gaps`` still reads that
+        ``coverage.xml`` once a real marker has confirmed the repo is Python.
         """
         if os.path.isdir(os.path.join(self.repo_root, "src", "general_ludd")):
             return True
-        return os.path.isfile(os.path.join(self.repo_root, "coverage.xml"))
+        return any(
+            os.path.isfile(os.path.join(self.repo_root, marker))
+            for marker in ("pyproject.toml", "setup.cfg", "setup.py")
+        )
 
     def _check_missing_tests(self, findings: list[dict[str, Any]]) -> None:
         if not self._looks_like_python_project():

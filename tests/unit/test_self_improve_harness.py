@@ -372,6 +372,60 @@ class TestExternalProjectTargeting:
             assert any("untested_module.py" in f.get("file", "") for f in missing)
 
 
+# ── Cobertura coverage.xml is language-agnostic ─────────────────────────────
+# A Cobertura ``coverage.xml`` alone must NOT classify a repo as Python: the
+# schema is emitted by JS/Ruby/PHP tooling too. Python detection requires a
+# genuine marker (src/general_ludd, pyproject.toml, setup.cfg, or setup.py).
+# Once a real marker confirms the repo is Python, coverage.xml is still read.
+
+_LOW_COV_COBERTURA = (
+    '<?xml version="1.0" ?>\n'
+    '<coverage>\n'
+    '  <packages>\n'
+    '    <package name="app">\n'
+    '      <classes>\n'
+    '        <class filename="app/thing.py" line-rate="0.10"/>\n'
+    '      </classes>\n'
+    '    </package>\n'
+    '  </packages>\n'
+    '</coverage>\n'
+)
+
+
+class TestCoverageXmlIsNotAPythonMarker:
+    def test_bare_coverage_xml_is_not_python_shaped(self):
+        # coverage.xml with a low-coverage class, but NO pyproject/setup/
+        # src/general_ludd → not python-shaped → no low_coverage findings.
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "coverage.xml").write_text(_LOW_COV_COBERTURA)
+
+            harness = SelfImprovementHarness(repo_root=tmpdir)
+            assert harness._looks_like_python_project() is False
+            findings = harness.run_gap_analysis()
+            assert not any(
+                f.get("type") == "low_coverage" for f in findings
+            )
+
+    def test_pyproject_plus_coverage_xml_flags_low_coverage(self):
+        # A real Python marker (pyproject.toml) + a coverage.xml listing a
+        # low-coverage file → python-shaped → the low_coverage finding fires.
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "pyproject.toml").write_text(
+                "[project]\nname = 'ext'\n"
+            )
+            (Path(tmpdir) / "coverage.xml").write_text(_LOW_COV_COBERTURA)
+
+            harness = SelfImprovementHarness(repo_root=tmpdir)
+            assert harness._looks_like_python_project() is True
+            findings = harness.run_gap_analysis()
+            low = [f for f in findings if f.get("type") == "low_coverage"]
+            assert any("app/thing.py" in f.get("file", "") for f in low)
+
+
 # ── Model-finding schema normalization ──────────────────────────────────────
 # _GAP_PROMPT asks the model for {title, description, priority, tier} but
 # generate_fix_todos reads {type, severity, message, file}; unnormalized model
