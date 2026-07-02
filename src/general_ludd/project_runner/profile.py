@@ -5,6 +5,7 @@ its checks::
 
     name: my-app
     allowed_exec: [npm, pytest, ruff, terraform, psql, semgrep]
+    env_passthrough: [NODE_ENV, CI]   # extra non-secret vars to forward
     commands:
       test: npm test
       lint: ruff check .
@@ -55,6 +56,13 @@ class ProjectProfile(BaseModel):
     # argv[0] basenames permitted to run. Empty ⇒ nothing runs unless the
     # GLUDD_PROJECT_ALLOW_ANY_EXEC opt-out is set.
     allowed_exec: list[str] = Field(default_factory=list)
+    # Extra environment variable NAMES to forward from gludd's own environment
+    # into target-project commands, on top of the always-present sanitized base
+    # (PATH/HOME/locale/temp — see runner._build_env). This is an allowlist:
+    # gludd's secrets (ZAI_API_KEY, tokens, …) are NEVER inherited unless a name
+    # is listed here. Default is a small set of standard, non-secret build-context
+    # vars so common toolchains behave; keep additions minimal.
+    env_passthrough: list[str] = Field(default_factory=lambda: ["NODE_ENV", "CI"])
 
     @field_validator("commands")
     @classmethod

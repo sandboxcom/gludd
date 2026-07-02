@@ -6,17 +6,32 @@ runs (``execution.engine._run_tests``): a new process group (``start_new_session
 so a hung ``npm``/``terraform`` and all its children are killed on timeout, and
 bounded stdout/stderr tail capture so a chatty build can't blow memory.
 
+Two additional guards vs. a naive runner:
+
+- **Sanitized environment** — the child does NOT inherit gludd's full
+  ``os.environ`` (which holds secrets like ``ZAI_API_KEY``). It gets a minimal
+  base (``PATH``/``HOME``/locale/temp) plus only the names the profile's
+  ``env_passthrough`` allowlist opts in (see :func:`_build_env`).
+- **Bounded capture** — stdout/stderr are drained by reader threads that keep
+  only the last ``_TAIL_CHARS`` of each stream, so a chatty build is bounded in
+  RAM instead of buffering the whole log via ``communicate()``.
+
 No ``shell=True`` — argv is a validated list; the workspace is realpath-contained.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess
+import threading
 import time
+from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import IO
 
 from general_ludd.project_runner.profile import ProjectProfile, ProjectProfileError
 
@@ -24,6 +39,74 @@ from general_ludd.project_runner.profile import ProjectProfile, ProjectProfileEr
 # memory or flood the model context.
 _TAIL_CHARS = 8000
 _DEFAULT_TIMEOUT_S = 900  # terraform/npm builds routinely exceed the 120s test bound
+_READ_CHUNK = 8192  # bytes/chars per pipe read in the bounded reader
+
+# Environment variables always forwarded to a target command so executables
+# resolve and locale/temp behave — but NOT gludd's secrets. Everything beyond
+# this base must be explicitly opted in via ProjectProfile.env_passthrough.
+_BASE_ENV_KEYS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TMPDIR", "TEMP", "TMP",
+)
+# Fallback so executables still resolve even if the parent env somehow has no PATH.
+_FALLBACK_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+
+def _build_env(passthrough: Sequence[str]) -> dict[str, str]:
+    """Minimal, sanitized environment for a target-project subprocess.
+
+    Only the sanitized base (``_BASE_ENV_KEYS``) plus the profile's explicit
+    ``passthrough`` allowlist cross into the child; gludd's own secrets (API
+    keys, tokens) are NOT inherited. ``PATH`` is always present so executables
+    resolve.
+    """
+    parent = os.environ
+    env: dict[str, str] = {}
+    for key in (*_BASE_ENV_KEYS, *passthrough):
+        val = parent.get(key)
+        if val is not None:
+            env[key] = val
+    env.setdefault("PATH", _FALLBACK_PATH)
+    return env
+
+
+class _BoundedReader(threading.Thread):
+    """Drain a text pipe in a daemon thread, keeping only the last ``cap`` chars.
+
+    Reading concurrently on its own thread (one per stream) avoids the classic
+    two-pipe deadlock without buffering the whole log: memory stays bounded to
+    ``cap`` plus one in-flight chunk.
+    """
+
+    def __init__(self, stream: IO[str] | None, cap: int) -> None:
+        super().__init__(daemon=True)
+        self._stream = stream
+        self._cap = cap
+        self._chunks: deque[str] = deque()
+        self._size = 0
+        # Guards _chunks so .text can snapshot safely even if this reader is
+        # still running (e.g. a join() that timed out on an escaped grandchild).
+        self._lock = threading.Lock()
+
+    def run(self) -> None:
+        stream = self._stream
+        if stream is None:
+            return
+        try:
+            for chunk in iter(lambda: stream.read(_READ_CHUNK), ""):
+                if not chunk:
+                    break
+                with self._lock:
+                    self._chunks.append(chunk)
+                    self._size += len(chunk)
+                    while self._size > self._cap and len(self._chunks) > 1:
+                        self._size -= len(self._chunks.popleft())
+        except (ValueError, OSError):  # pipe closed/killed mid-read
+            pass
+
+    @property
+    def text(self) -> str:
+        with self._lock:
+            return "".join(self._chunks)[-self._cap:]
 
 
 @dataclass
@@ -64,6 +147,9 @@ class ProjectCommandRunner:
             raise ProjectProfileError(f"workspace {self._workspace} is not a directory")
         self._profile = profile
         self._default_timeout_s = default_timeout_s
+        # Sanitized, minimal env — built once from the profile's allowlist so the
+        # target's commands never inherit gludd's secrets (ZAI_API_KEY, tokens…).
+        self._env = _build_env(profile.env_passthrough)
 
     @property
     def workspace(self) -> Path:
@@ -80,6 +166,7 @@ class ProjectCommandRunner:
             proc = subprocess.Popen(  # argv is validated + allow-listed, no shell
                 argv,
                 cwd=str(self._workspace),
+                env=self._env,  # sanitized minimal env — no gludd secrets leak in
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -99,16 +186,36 @@ class ProjectCommandRunner:
                 duration_s=time.monotonic() - start, error=f"spawn failed: {exc}",
             )
 
+        # Drain both pipes on their own threads (bounded to _TAIL_CHARS each) so a
+        # chatty build can't buffer its whole log in RAM, and so a killed child
+        # holding a pipe open can't wedge us.
+        out_reader = _BoundedReader(proc.stdout, _TAIL_CHARS)
+        err_reader = _BoundedReader(proc.stderr, _TAIL_CHARS)
+        out_reader.start()
+        err_reader.start()
+
         timed_out = False
         try:
-            out, err = proc.communicate(timeout=timeout)
+            proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
             _kill_group(proc)
-            try:
-                out, err = proc.communicate(timeout=10)
-            except subprocess.TimeoutExpired:
-                out, err = "", ""
+            # escaped grandchild; readers still drain on EOF/join below
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=10)
+        # Readers finish once their pipes hit EOF (on exit or after the kill).
+        out_reader.join(timeout=10)
+        err_reader.join(timeout=10)
+        # Only close a pipe whose reader has finished. If a reader is still
+        # blocked in read() (an escaped grandchild is holding the pipe open),
+        # close() would contend on the same buffer lock and re-hang us — so we
+        # leave it to the daemon reader + eventual process death in that rare
+        # case rather than block the caller.
+        if not out_reader.is_alive():
+            _close(proc.stdout)
+        if not err_reader.is_alive():
+            _close(proc.stderr)
+
         exit_code = proc.returncode
         duration = time.monotonic() - start
         passed = (not timed_out) and exit_code == 0
@@ -117,10 +224,18 @@ class ProjectCommandRunner:
             exit_code=exit_code,
             passed=passed,
             duration_s=duration,
-            stdout_tail=(out or "")[-_TAIL_CHARS:],
-            stderr_tail=(err or "")[-_TAIL_CHARS:],
+            stdout_tail=out_reader.text,
+            stderr_tail=err_reader.text,
             timed_out=timed_out,
         )
+
+
+def _close(stream: IO[str] | None) -> None:
+    """Close a pipe end, ignoring already-closed/errored streams (no FD leak)."""
+    if stream is None:
+        return
+    with contextlib.suppress(ValueError, OSError):
+        stream.close()
 
 
 def _kill_group(proc: subprocess.Popen[str]) -> None:
