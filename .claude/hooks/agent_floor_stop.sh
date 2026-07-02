@@ -29,6 +29,13 @@ if [ -r /tmp/gludd-floor-override ]; then
   _fov="$(cat /tmp/gludd-floor-override 2>/dev/null)"
   case "$_fov" in ''|*[!0-9]*) : ;; *) FLOOR="$_fov" ;; esac
 fi
+# LIVE CEILING OVERRIDE: parallel to the floor override — retune max subagents
+# mid-session without a restart. TARGET clamped so it never exceeds the ceiling.
+if [ -r /tmp/gludd-ceiling-override ]; then
+  _cov="$(cat /tmp/gludd-ceiling-override 2>/dev/null)"
+  case "$_cov" in ''|*[!0-9]*) : ;; *) CEILING="$_cov" ;; esac
+fi
+[ "$TARGET" -gt "$CEILING" ] && TARGET="$CEILING"
 # REFILL: refill just into the band (hysteresis), NOT up to TARGET.
 # Clamp so that REFILL and the display band never invert when FLOOR is env-overridden
 # above CEILING (e.g. CLAUDE_AGENT_FLOOR=999 for testing). The enforcement is correct

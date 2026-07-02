@@ -34,6 +34,17 @@ ci-test:
 test-dir:
 	uv run python -m pytest $(TESTDIR) -n $(NPROC) --dist loadgroup -q -p no:cacheprovider -ra
 
+# TEMP: ff-check for promote-master-ssh safety (remove after use)
+git-ffcheck:
+	@git fetch sandboxcom master 2>/dev/null || true
+	@git merge-base --is-ancestor sandboxcom/master integration/ci-green-fixes && echo FF-ABLE || echo NOT-FF-ABLE
+	@echo "ahead count:"; git rev-list --count sandboxcom/master..integration/ci-green-fixes
+	@echo "--- promote-master-ssh in committed Makefile @6852f6be ---"; git show 6852f6be:Makefile | grep -n "promote-master-ssh" || echo "NOT FOUND in committed Makefile"
+
+# Read-only source search helper (audit use). Q=pattern.
+audit-grep:
+	@grep -rln "$(Q)" src/general_ludd/ 2>/dev/null || echo "no matches"
+
 # List running pytest / xdist worker processes (resource hygiene).
 ps-pytest:
 	@ps -Ao pid,ppid,pcpu,pmem,etime,command | grep -E '[p]ytest|execnet|[x]dist' | grep -v 'grep' || echo "no pytest processes running"
@@ -67,6 +78,10 @@ srcgrep:
 
 mkgrep:
 	@grep -n "$(Q)" Makefile || true
+
+# Grep the active Claude Code hooks (+ opencode plugins) for a term.
+grep-hooks:
+	@grep -rn "$(Q)" .claude/hooks/ .opencode/plugin/ 2>/dev/null || true
 
 testgrep:
 	@grep -rn "$(Q)" tests/ conftest.py --include='*.py' 2>/dev/null | head -60 || true
@@ -358,6 +373,29 @@ promote-master-ssh:
 	git merge --ff-only integration/ci-green-fixes
 	GIT_SSH_COMMAND="ssh -i sandboxcom_github_rsa -o IdentitiesOnly=yes" git push sandboxcom master
 
+# Cancel a queued/in-progress CI run by id. The workflow concurrency group
+# serializes runs on the same ref (cancel-in-progress:false for pushes), so a
+# superseded run holds the slot and the latest run stays 'pending' behind it —
+# cancel the stale run to free the queue.
+ci-cancel:
+	@test -n "$(RUN)" || (echo "Usage: make ci-cancel RUN=<run-id>"; exit 1)
+	gh run cancel $(RUN) --repo sandboxcom/gludd && echo "cancelled run $(RUN)"
+
+# List recent CI runs for the branch (diagnose queue/serialization state).
+ci-runs:
+	gh run list --repo sandboxcom/gludd --branch integration/ci-green-fixes --limit 8
+
+# Remove throwaway scratch files left in the repo root (diff dumps, ad-hoc
+# helper scripts) so the working tree is clean for the RC promote.
+clean-scratch-files:
+	rm -f _git_diff_output.txt _run_git_diff.sh _test.txt _git_diff_stdout.txt _git_diff_stderr.txt && echo "removed scratch files"
+
+# Prune leftover per-worktree .venv dirs (~320MB each) from finished isolated
+# agents to reclaim disk and avoid a disk-full Bash deadlock. Skips the main
+# checkout's venv. Also runs `git worktree prune` to drop dead registrations.
+clean-worktree-venvs:
+	@git worktree list --porcelain | awk '/^worktree /{print $$2}' | while read d; do if [ "$$d" != "$(CURDIR)" ] && [ -d "$$d/.venv" ]; then rm -rf "$$d/.venv" && echo "pruned $$d/.venv"; fi; done; git worktree prune; echo "worktree venvs pruned"
+
 # Same as git-push-branch but invokes the guard via python3 (the script lacks
 # the +x bit, so a bare exec hits permission-denied). Keeps the green-branch
 # immutability guard active.
@@ -633,6 +671,10 @@ test-guardrails:
 # Run hook tests
 test-hooks:
 	bash scripts/test_no_wait_hook.sh
+
+# TEMP: bash -n syntax check on the 5 floor/ceiling hooks (remove after use)
+check-hook-syntax:
+	@for f in .claude/hooks/agent_ceiling_pretool.sh .claude/hooks/agent_floor_stop.sh .claude/hooks/agent_floor_userprompt.sh .claude/hooks/agent_floor_pretool.sh .claude/hooks/agent_floor_posttool.sh; do bash -n "$$f" && echo "OK $$f" || echo "SYNTAX ERROR $$f"; done
 
 # Lint with auto-fix
 lint-fix:

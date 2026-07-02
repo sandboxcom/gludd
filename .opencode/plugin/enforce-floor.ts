@@ -32,9 +32,24 @@ import { execSync } from "node:child_process"
 // route a trivially-correct change through merge ceremony. Holding the floor must
 // never force merge/worktree-cleanup work onto an already-finished task.
 
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
-const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10)
-const CEILING = parseInt(process.env.CLAUDE_AGENT_CEILING || "16", 10)
+// Live overrides (parallel to the shell hooks): a valid integer in
+// /tmp/gludd-floor-override / /tmp/gludd-ceiling-override wins over the env
+// default, so the operator can retune floor/ceiling mid-session without a
+// restart. FAIL-OPEN: unreadable/non-numeric file -> keep the env default.
+function _tunable(overridePath: string, envVar: string, dflt: string): number {
+  let base = parseInt(process.env[envVar] || dflt, 10)
+  try {
+    const raw = fs.readFileSync(overridePath, "utf8").trim()
+    if (/^\d+$/.test(raw)) base = parseInt(raw, 10)
+  } catch { /* no override file -> env/default */ }
+  return base
+}
+const FLOOR = _tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "10")
+const CEILING = _tunable("/tmp/gludd-ceiling-override", "CLAUDE_AGENT_CEILING", "16")
+const TARGET = Math.min(
+  parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10),
+  CEILING,
+)
 
 // BLOCKING mode (2026-06-28 user directive): the floor breach was advisory-only
 // by default, which let the agent serialize work. Per AGENTS.md "Guardrail
@@ -157,6 +172,7 @@ function countActiveAgents(): number | null {
     return null
   }
 }
+const floorTurnState: { accumulatedText: string } = { accumulatedText: "" }
 
 export default (async ({ }) => {
   return {
@@ -225,48 +241,53 @@ export default (async ({ }) => {
       }
     },
 
-    "experimental.chat.response.transform": async (_input: unknown, output: unknown) => {
+    "session.idle": async () => {
+      floorTurnState.accumulatedText = ""
+    },
+
+    "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       try {
-        if (typeof output !== "string") return output
+        if (!output || typeof output.text !== "string") return output
+        floorTurnState.accumulatedText += output.text
         const active = countActiveAgents()
         if (active === null) return output // can't tell -> fail open
 
         if (active < FLOOR) {
-          // Below floor: append a hard, un-ignorable directive (do NOT replace —
-          // the user-facing content still ships, but the next action is forced).
-          return [
-            output,
-            "",
-            "",
-            "⛔ AGENT-FLOOR BREACH (auto-injected guardrail) ⛔",
-            `Only ~${active} agents are actively streaming; floor=${FLOOR}, target=${TARGET}, ceiling=${CEILING}.`,
-            "DELEGATE-FIRST: don't do the work inline — your VERY NEXT action MUST be Agent",
-            `dispatch tool calls to bring the count to ~${TARGET} on DISJOINT work, BEFORE any`,
-            "further integration, gating, or analysis. Dispatch them ASYNC (background) and",
-            "CONTINUE — never block the main thread waiting on a subagent (no blocking",
-            "TaskOutput, no wait-loop). Re-dispatch any agent that died (e.g. 'API Error:",
-            "Overloaded').",
-            "Fill the floor with READ-ONLY proposer agents (no worktree/merge/cleanup tax).",
-            "Use worktree isolation ONLY for genuine concurrent file mutation — never to pad",
-            "the count — and apply provably-correct output directly (no merge ceremony).",
-            "Do not deliberate; dispatch.",
-          ].join("\n")
+          return {
+            text: [
+              output.text,
+              "",
+              "",
+              "⛔ AGENT-FLOOR BREACH (auto-injected guardrail) ⛔",
+              `Only ~${active} agents are actively streaming; floor=${FLOOR}, target=${TARGET}, ceiling=${CEILING}.`,
+              "DELEGATE-FIRST: don't do the work inline — your VERY NEXT action MUST be Agent",
+              `dispatch tool calls to bring the count to ~${TARGET} on DISJOINT work, BEFORE any`,
+              "further integration, gating, or analysis. Dispatch them ASYNC (background) and",
+              "CONTINUE — never block the main thread waiting on a subagent (no blocking",
+              "TaskOutput, no wait-loop). Re-dispatch any agent that died (e.g. 'API Error:",
+              "Overloaded').",
+              "Fill the floor with READ-ONLY proposer agents (no worktree/merge/cleanup tax).",
+              "Use worktree isolation ONLY for genuine concurrent file mutation — never to pad",
+              "the count — and apply provably-correct output directly (no merge ceremony).",
+              "Do not deliberate; dispatch.",
+            ].join("\n"),
+          }
         }
 
         if (active > CEILING) {
-          // Above ceiling: warn so the model STOPS adding agents (disk/overload
-          // pressure — see disk-discipline memory) and lets the wave drain.
-          return [
-            output,
-            "",
-            "",
-            "⚠️ AGENT-CEILING BREACH (auto-injected guardrail) ⚠️",
-            `~${active} agents are streaming; ceiling=${CEILING} (target=${TARGET}).`,
-            "Do NOT dispatch more subagents right now — let the in-flight wave drain back",
-            `toward ~${TARGET} first (over-provisioning risks disk ENOSPC + API overload).`,
-            "Keep working the main thread's own step; the floor guardrail will prompt you",
-            "again only if the count later dips below the floor.",
-          ].join("\n")
+          return {
+            text: [
+              output.text,
+              "",
+              "",
+              "⚠️ AGENT-CEILING BREACH (auto-injected guardrail) ⚠️",
+              `~${active} agents are streaming; ceiling=${CEILING} (target=${TARGET}).`,
+              "Do NOT dispatch more subagents right now — let the in-flight wave drain back",
+              `toward ~${TARGET} first (over-provisioning risks disk ENOSPC + API overload).`,
+              "Keep working the main thread's own step; the floor guardrail will prompt you",
+              "again only if the count later dips below the floor.",
+            ].join("\n"),
+          }
         }
 
         return output // healthy band -> nothing

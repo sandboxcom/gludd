@@ -214,6 +214,71 @@ single-source-of-truth `AuthPosture.allow_no_auth` refactor and the
 must `delenv` it).
 
 ---
+
+## Session 2026-07-01 re-verified findings (post-ship branch)
+
+Prioritized table of CONFIRMED findings re-verified by direct source read this
+session. These land on the POST-SHIP branch (several flip bug-locking tests).
+Line numbers were read against the dirty tree and **MUST be re-pinned at apply time**.
+
+### Top 4 — apply first (highest severity, exact fix mechanism)
+
+- [ ] **(1) XT-3/4 `/api/traces` cross-tenant leak — CRITICAL.**
+  `observability/tracer.py:81-100` (`ExecutionTrace` has no `project_id`),
+  `observability/trace_store.py:53-64` (`recent()`/`snapshot()` filter by
+  `todo_id` only), `daemon/routers/facts.py:138,417,441` (`_traces_facet` +
+  `GET /api/traces` unscoped), `embeddings.py:658` (`_search_traces` unscoped).
+  **Fix:** thread `project_id` end-to-end — add the field to `ExecutionTrace`
+  (+`to_dict()`), tag at build in `event_loop/loop.py`, filter in
+  `RecentTracesBuffer.recent()/snapshot()`, scope `_traces_facet` +
+  `GET /api/traces` by the request's project, and scope `_search_traces`.
+  In-memory, NO migration. Mirrors the shipped XT-1/XT-2 `FeatureRepository.scoped`
+  pattern. Full detail in **RV-1** and **§4**.
+- [ ] **(2) Filestore download → chmod+exec RCE — HIGH.**
+  `filestore/bootstrap.py:296-308` fetches (`follow_redirects=True`), then chmods
+  and executes `resp.content` with no checksum/signature/size check.
+  **Fix:** add a hardcoded `KNOWN_SHA256` map keyed by asset filename (digest over
+  the RAW bytes) + `_verify_download()` that computes sha256 and **rejects any
+  asset not in the map OR whose digest mismatches**, called BEFORE
+  `_store_binary_and_chmod` so unpinned/tampered assets never reach chmod+exec
+  (fail-closed). Follow-ups: `MAX_DOWNLOAD_BYTES` stream cap + bomb guard. Full
+  detail in **RV-2** and **§2**.
+- [ ] **(3) Worker fails auth-OPEN by default — HIGH.**
+  `security/auth.py:64` — `load_auth_posture` sets `require_auth` from the env flag
+  ONLY, so the worker serves `POST /jobs/execute` unauthenticated when no PSK is
+  set (the daemon is fail-closed; the worker is the asymmetry).
+  **Fix:** `require_auth = require_auth_env(source) or (no_psk and not
+  GLUDD_ALLOW_NO_AUTH)`, then flip the bug-locking `test_w5_6_worker_auth.py` to
+  expect **503** (auth-required). New tests must `delenv GLUDD_ALLOW_NO_AUTH`
+  (conftest.py:108-123 sets it suite-wide and masks the bug). Full detail in
+  **RV-3** and **§7**.
+- [ ] **(4) `auto_queue` auto-applies self-improvement by default — HIGH.**
+  `self_improve/gate.py:25` + `event_loop/loop.py:~2659` — `auto_queue` defaults
+  `True`, so self-improvement is applied without opt-in.
+  **Fix:** flip the default to `False` in **both** sites (fail-closed / opt-in);
+  update `test_self_improve_slice.py:103` to expect opt-in behavior.
+
+### Full re-verified findings table
+
+| Severity | File:line | Fix |
+|----------|-----------|-----|
+| HIGH | `controllers/budget.py:82` | `check_per_call` fails OPEN on `NaN` cost → add `math.isfinite` guard so a non-finite cost fails **closed** (reject the call) instead of passing the limit comparison. |
+| HIGH | `security/permissions.py:514` | `_intersect_constraints` **widens** disjoint prefixes (returns a broader set) → return `None` (empty/deny) unless one prefix `startswith` the other; only then keep the more specific. |
+| HIGH | `self_improve/gate.py:25` + `event_loop/loop.py:~2659` | `auto_queue` defaults `True` (auto-applies self-improvement) → flip default to `False` in **both** sites; update `test_self_improve_slice.py:103` to expect opt-in. |
+| HIGH | `models/gateway.py:561` | per-call `kwargs` can override the SSRF-validated `base_url`/`api_key` → refuse override, or re-run URL validation on any overriding value before use. |
+| HIGH | `capability_lattice.py:58` + `self_update/apply.py:51` | leading-slash deny-list **drift** (each matches differently) → normalize via `realpath` + whole-segment match in a shared matcher so both sites deny identically. |
+| HIGH | `execution/tool_loop.py:129` | no role gate before dispatching MCP tool calls → add `check_dispatch(role, mcp)` so tool execution is capability-checked against the caller's role. |
+| HIGH | `reload/worker_broadcast.py:55` (latent) | PSK-Bearer accepted from **any** address → validate `WorkerInfo.address` (https, reject loopback/link-local/metadata/RFC-1918) at register(). |
+| HIGH | `integrity/scanner.py:97` | baseline is **unsigned** + silently rebaselines → HMAC-sign the baseline and **fail closed** on missing/invalid signature (no silent re-accept). |
+| HIGH | `ansible/core_runner.py:239` | isolation **fails open** when podman is on PATH but native executor can't confine → `_isolation_supported` returns `False` so the guard fails closed. |
+| HIGH | `ansible/core_runner.py:626` | `extra_env` bypasses the env allowlist → filter `extra_env` through the allowlist before it reaches the play. |
+| HIGH | `secrets/manager.py:188` | `resolve()` skips `_enforce_permission` → add the permission check to `resolve()` (parity with the other accessors). |
+| MEDIUM | ~26 urllib connectors | follow redirects with **no SSRF re-check** → route through a shared re-validating opener (`security/http.py`, `monday.py` template) that re-applies `is_url_blocked` on every 3xx target. |
+| MEDIUM | `mcp/transport.py:55` | accepts `pkg@2` (partial version) and **skips `uvx`** → require full semver and support the `uvx` runner. |
+| MEDIUM | `git_automation/repo.py:594` (latent) | `merge_branch` bypasses the repo lock → route through a locked `_run_git` (lock + timeout + non-interactive env). |
+| MEDIUM | remediation retry loop | retry-**storm** (no backoff/state) → add a cooldown + explicit state transition so failed remediations don't hot-loop. |
+
+---
 **SECURITY REMEDIATION PACKAGE COMPLETE** — 9 findings have drafted unified-diff
 fixes + test plans (ansible isolation, filestore checksum, budget residual,
 traces scoping, connectors redirect, deny-list drift, worker auth, git merge

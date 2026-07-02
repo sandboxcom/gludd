@@ -1,51 +1,76 @@
-# CI Green Plan — 2026-07-01
+# CI Green Plan — 2026-07-01 (RESOLVED — updated 2026-07-02)
 
-A concrete roadmap to **stable** green CI. This is not a single-fix effort; the suite
-is flaky in an order-dependent way, and the honest expectation is a multi-commit
-campaign against cross-test pollution and environmental fragility.
+Status: **GREEN.** Branch tip `005ddd03`. All 8 `test-shard`s + `gate` + `linux` +
+`macos` PASS on `31da8746` (measured). `molecule` / `container` / `windows` / `termux`
+are `continue-on-error` (non-blocking, informational).
+
+Two blockers were found and fixed, in order: (1) a root-logger level leak that produced
+the caplog empty-records failures, and (2) a latent `coverage`-job plumbing bug that
+only surfaced once the shards started passing. Both are corrected below. The earlier
+"order-dependent propagate-pollution" thesis in this doc was **wrong** and has been
+replaced with the measured root cause.
+
+**Fix-commit chain:** `3c6d8183 → 285c1c39 → 440aedd8 → e8c231e6 → cfff7d8c →
+7be51c28 → 57bcb682 → 31da8746 → 005ddd03`.
+
+**Push constraint (workflow files):** changes to `.github/workflows/build.yml` require
+the **SSH deploy key** — the OAuth HTTPS token lacks the `workflow` scope, so pushing
+build.yml edits over HTTPS is rejected.
 
 ## 1. State
 
-Two recent CI runs tell the whole story:
+The suite is green. The final measured state:
 
-| Run | SHA / branch | Failures | Shard | Nature |
-|-----|--------------|----------|-------|--------|
-| `28496503128` | master `ce22dfe6` | 8 tests | unit-1 + others | 7 × caplog empty-records + 1 × dist-readme |
-| `28538259829` | master + a conftest fix | 24 tests | unit-3 | a **completely disjoint** set |
+| Item | SHA | Result |
+|------|-----|--------|
+| 8 × `test-shard` + `gate` + `linux` + `macos` | `31da8746` | **PASS** (measured) |
+| `coverage` job (combine plumbing) | `005ddd03` | **PASS** (build.yml guard) |
+| `molecule` / `container` / `windows` / `termux` | — | `continue-on-error` (non-blocking) |
 
-The critical observation: **zero overlap** between the two failure sets. The conftest
-fix applied between the runs did *not* regress unit-3; rather, the original 8 failures
-were genuinely fixed (confirmed not recurring), and the flakiness **relocated** to a
-different shard and a different set of tests.
+## 2. Root Causes (measured — corrected)
 
-This is the classic signature of **order-dependent cross-test pollution**: global state
-leaked by one test changes the outcome of an unrelated test, and which tests "fail"
-depends on collection/execution order (which varies by shard, worker assignment, and
-xdist scheduling). Fixing the symptom (the specific failing tests) just moves the
-pollution somewhere else. The durable fix targets the *leaked state*, not the victims.
+Two blockers, resolved in order.
 
-## 2. Root Causes
+### (a) Root-logger LEVEL leak — the actual cause of the caplog-empty failures
 
-Three classes of defect are in play.
+The caplog empty-records failures were **not** caused by leaf `propagate=False` (there
+are **zero** `propagate=False` loggers in the tree). The real leak was a **root-logger
+level** mutation plus a stray global `logging.disable`:
 
-### (a) Cross-test global-state pollution (the dominant class)
+- `tests/unit/test_daemon.py::test_log_level_endpoint_changes_level` drove the **root
+  logger to DEBUG** via the `/admin/log-level` endpoint, then hardcoded it back to
+  `WARNING` **without restoring the original level**. A later caplog-sensitive test
+  (running under a shard/order where it followed this test) then saw records swallowed
+  by the leaked root level.
+- A stray process-global `logging.disable(...)` left set by an earlier test compounded
+  it: caplog captures nothing while a global disable is in effect.
 
-Shared process-global mutable state that one test mutates and does not restore, so a
-later test observes the mutation:
+**Fix (measured):**
+- `test_daemon` now **saves and restores the root-logger level** around the endpoint
+  test (commit `7be51c28`).
+- The conftest resets the global disable with `logging.disable(logging.NOTSET)` on every
+  test.
+- The per-subtree `propagate` / ancestor-level resets in conftest (appendix A1) are
+  **largely defensive** — they backstop future mutation, but were **not** the operative
+  fix, since no leaf disabled propagation.
 
-- **Logging state** — handlers, levels, and `propagate` flags mutated in-place. caplog
-  captures nothing when propagation was disabled by an earlier test. *(Fixed
-  conservatively via an ancestor-only conftest fixture that restores propagate on the
-  relevant logger ancestry.)*
-- **`process.registry._DEFAULT_REGISTRY` singleton** — a module-level registry mutated
-  by tests that register agents/handlers and never reset. *(Reset fixture in progress.)*
-- **`sys.modules[...]` raw assignment with generic names** — tests inject fake modules
-  under generic keys and never pop them, so a later test importing the real name gets
-  the stub (or vice versa).
-- **`sys.path.insert(...)` without teardown** — path entries accumulate; later imports
-  resolve to unexpected locations depending on order.
+### (b) Latent `coverage`-job plumbing bug — the second blocker
 
-### (b) Environmental repo-state fragility
+The CI `coverage` job `needs` `test-shard`, so it **never ran** while the shards were
+red. Once the shards started passing, the `coverage` job ran for the first time and
+**failed** on `coverage combine` over an **empty glob** — a latent plumbing bug that had
+simply been masked by the shards never succeeding.
+
+**Fix (commit `005ddd03`, in `build.yml`):**
+- **Guard the `coverage combine`** step so it tolerates an empty / partial set of
+  coverage artifacts instead of erroring.
+- Each `test-shard` now runs `coverage combine` **before** the `cp` of its artifact, so
+  the aggregation job receives well-formed inputs.
+
+Because build.yml is a workflow file, this fix had to be pushed with the **SSH deploy
+key** (HTTPS OAuth token lacks `workflow` scope).
+
+### (c) Environmental repo-state fragility (pre-existing, backstopped)
 
 Tests whose pass/fail depends on the checkout's *shape* rather than on code under test:
 
@@ -65,11 +90,13 @@ These pass locally and on some CI runs, fail on others, purely by environment.
 
 ## 3. Remediation (ordered)
 
-Ordered so that each step reduces the pollution surface before the next, ending with a
-durable catch-all:
+The two blockers above (2a root-logger level leak, 2b coverage-combine plumbing) are the
+operative fixes that turned CI green. The steps below are the broader defensive
+backstops applied alongside them to keep the suite order-independent:
 
-1. **Logging-state isolation** — *DONE.* Ancestor-only conftest fixture restores logger
-   `propagate`/handler state.
+1. **Logging-state isolation** — *DONE (defensive).* `test_daemon` root-level
+   save/restore (`7be51c28`) + conftest `logging.disable(NOTSET)` reset were the real
+   fix; the ancestor-only conftest fixture is a backstop, not the operative cause.
 2. **Process-registry reset** — *IN PROGRESS.* Autouse fixture snapshots and restores
    `process.registry._DEFAULT_REGISTRY` around each test.
 3. **`sys.modules` / `sys.path` sandbox fixture** — autouse fixture that snapshots both
@@ -102,13 +129,24 @@ Because CI is **~20–30 min/run and itself flaky**, expect several cycles per f
 single green run is not proof; require repeated green (or green across shards) before
 trusting a fix. Re-run to distinguish a real fix from a lucky ordering.
 
-## 5. Honest Note
+## 5. Honest Note (resolved)
 
-This is a **large, multi-commit effort against a flaky suite**. Stable green is not a
-single fix. The two disjoint failure sets prove that patching named failing tests only
-relocates the pollution; only isolating the leaked global state (steps 3 and 6) makes
-the suite order-independent and therefore durably green. Progress should be measured by
-*reduction in cross-shard variance*, not by any one green run.
+The original thesis in this doc — "order-dependent propagate-pollution" — was **wrong**.
+There are zero `propagate=False` loggers in the tree. The measured root cause of the
+caplog-empty failures was a **root-logger level leak** in
+`test_daemon::test_log_level_endpoint_changes_level` (drove root to DEBUG, hardcoded
+back to WARNING without restore) plus a stray global `logging.disable`. The durable fix
+was the `test_daemon` root-level save/restore (`7be51c28`) and the conftest
+`logging.disable(NOTSET)` reset — the per-subtree resets are defensive only.
+
+A **second** blocker surfaced only after the shards went green: the `coverage` job
+(`needs: test-shard`) had never run, so its `coverage combine`-over-empty-glob bug was
+latent. Fixed in `build.yml` (`005ddd03`): guard the combine, and have each shard run
+`coverage combine` before `cp`. Because build.yml is a workflow file, that push needed
+the SSH deploy key (HTTPS OAuth token lacks `workflow` scope).
+
+Final state: green on branch tip `005ddd03`; all 8 shards + gate + linux + macos PASS on
+`31da8746`; molecule/container/windows/termux are `continue-on-error`.
 
 ## Appendix — Remediation Proposals (ready-to-apply)
 
@@ -117,7 +155,15 @@ item lists **status**, the **mechanism** (what to change and how), and the **ben
 tests** it unblocks. Apply top-to-bottom: each earlier item shrinks the pollution
 surface the later ones must backstop.
 
-### A1. Ancestor-only conftest logging fixture — **DONE** (committed)
+### A1. Ancestor-only conftest logging fixture — **DONE, but DEFENSIVE** (committed)
+
+> **Correction:** this fixture was *not* the operative fix for the 7 caplog empty-records
+> failures. The real cause was a **root-logger level leak** in
+> `test_daemon::test_log_level_endpoint_changes_level`, fixed by a root-level
+> save/restore (`7be51c28`); the conftest `logging.disable(logging.NOTSET)` reset handles
+> the stray global disable. The propagate/ancestor resets below are a backstop only —
+> there are zero `propagate=False` loggers in the tree.
+
 
 - **Mechanism:** autouse conftest fixture
   (`_force_propagate_all_general_ludd_loggers`, `tests/conftest.py:125`) that runs as

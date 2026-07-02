@@ -7,6 +7,15 @@
 
 CEILING="${CLAUDE_AGENT_CEILING:-12}"
 TARGET="${CLAUDE_AGENT_TARGET:-10}"
+# LIVE CEILING OVERRIDE: like /tmp/gludd-floor-override, this lets the operator
+# retune the max concurrent subagents mid-session without a restart. A valid
+# integer wins over the env default. TARGET is clamped so it never exceeds the
+# ceiling (an inverted band would produce nonsensical "drain toward N" advice).
+if [ -r /tmp/gludd-ceiling-override ]; then
+  _cov="$(cat /tmp/gludd-ceiling-override 2>/dev/null)"
+  case "$_cov" in ''|*[!0-9]*) : ;; *) CEILING="$_cov" ;; esac
+fi
+[ "$TARGET" -gt "$CEILING" ] && TARGET="$CEILING"
 
 live="$(cd /Users/shawnwilson/gludd 2>/dev/null && \
   FLOOR_PROBE_SECS="${FLOOR_PROBE_SECS:-0.5}" FLOOR_TAIL_SECS="${FLOOR_TAIL_SECS:-12}" \

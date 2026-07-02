@@ -14,6 +14,13 @@ if [ -r /tmp/gludd-floor-override ]; then
   _fov="$(cat /tmp/gludd-floor-override 2>/dev/null)"
   case "$_fov" in ''|*[!0-9]*) : ;; *) FLOOR="$_fov" ;; esac
 fi
+# Live ceiling override (parallel to the floor override): retune max subagents
+# mid-session. TARGET clamped so it never exceeds the ceiling.
+if [ -r /tmp/gludd-ceiling-override ]; then
+  _cov="$(cat /tmp/gludd-ceiling-override 2>/dev/null)"
+  case "$_cov" in ''|*[!0-9]*) : ;; *) CEILING="$_cov" ;; esac
+fi
+[ "$TARGET" -gt "$CEILING" ] && TARGET="$CEILING"
 
 live="$(cd /Users/shawnwilson/gludd 2>/dev/null && \
   FLOOR_PROBE_SECS="${FLOOR_PROBE_SECS:-0.6}" FLOOR_TAIL_SECS="${FLOOR_TAIL_SECS:-12}" \
