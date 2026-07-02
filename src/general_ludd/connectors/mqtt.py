@@ -98,6 +98,10 @@ class MqttSource:
         # query (see query()). The ConnectorRegistry builds sources but never
         # calls connect(), so query() starts the subscriber on first use.
         self._connect_attempted = False
+        # Serializes the lazy-connect guard so two concurrent query() calls (the
+        # observe fan-out is parallel) cannot both start a subscriber. Separate
+        # from _lock so a slow connect() never blocks buffer reads/writes.
+        self._connect_lock = threading.Lock()
 
     # -- capacity ---------------------------------------------------------- #
     @property
@@ -144,11 +148,16 @@ class MqttSource:
         the source degrades gracefully instead of failing the observe fan-out."""
         if self._started or self._connect_attempted:
             return
-        self._connect_attempted = True
-        try:
-            self.connect()
-        except Exception as exc:  # missing dep / unreachable broker → stay empty
-            logger.warning("mqtt lazy connect failed for %s: %s", self.name, exc)
+        with self._connect_lock:
+            # Double-checked: another concurrent query() may have already run
+            # (or attempted) the connect while we waited on the lock.
+            if self._started or self._connect_attempted:
+                return
+            self._connect_attempted = True
+            try:
+                self.connect()
+            except Exception as exc:  # missing dep / unreachable broker → stay empty
+                logger.warning("mqtt lazy connect failed for %s: %s", self.name, exc)
 
     def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Return buffered records (deep-copied), filtered by ``spec``.
@@ -238,8 +247,18 @@ class MqttSource:
 
         client.on_connect = _on_connect
         client.on_message = _on_message
-        client.connect(self._broker_host, self._broker_port)
-        client.loop_start()  # spawns paho's own background network thread
+        try:
+            client.connect(self._broker_host, self._broker_port)
+            client.loop_start()  # spawns paho's own background network thread
+        except Exception:
+            # A partial start (raising connect, or a refused connection after
+            # loop_start) must not leak the paho network thread — tear it down.
+            try:
+                client.loop_stop()
+                client.disconnect()
+            except Exception:  # pragma: no cover - best-effort cleanup
+                pass
+            raise
         self._client = client
         self._started = True
 

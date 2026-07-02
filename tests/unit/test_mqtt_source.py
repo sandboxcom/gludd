@@ -247,3 +247,41 @@ def test_query_lazy_connect_failure_is_graceful(monkeypatch) -> None:
     assert src._connect_attempted is True
     src.query({})  # does not re-attempt (flag guards it)
     assert src._connect_attempted is True
+
+
+def test_connect_partial_failure_tears_down_client(monkeypatch) -> None:
+    # If client.connect() raises, connect() must tear the orphaned client down
+    # (loop_stop/disconnect) so no paho network thread leaks, then re-raise;
+    # _started stays False.
+    holder: list = []
+
+    class _FailingClient(_FakeClient):
+        def __init__(self, *a, **k) -> None:
+            super().__init__(*a, **k)
+            self.cleaned_up = False
+
+        def connect(self, host, port) -> None:
+            raise OSError("connection refused")
+
+        def disconnect(self) -> None:
+            self.cleaned_up = True
+
+    mod = types.ModuleType("paho")
+    client_mod = types.ModuleType("paho.mqtt.client")
+    mqtt_mod = types.ModuleType("paho.mqtt")
+
+    def _Client(*a, **k):
+        c = _FailingClient(*a, **k)
+        holder.append(c)
+        return c
+
+    client_mod.Client = _Client
+    monkeypatch.setitem(sys.modules, "paho", mod)
+    monkeypatch.setitem(sys.modules, "paho.mqtt", mqtt_mod)
+    monkeypatch.setitem(sys.modules, "paho.mqtt.client", client_mod)
+
+    src = _src()
+    with pytest.raises(OSError):
+        src.connect()
+    assert src._started is False
+    assert holder[0].cleaned_up is True, "orphaned client must be torn down"
