@@ -149,18 +149,36 @@ def _force_propagate_all_general_ludd_loggers() -> None:
     ``caplog.records`` failures, without the leaf-blanket's regression surface.
     """
     import logging
+    import pkgutil
+
+    import general_ludd
 
     # 1. Undo any leftover global disable() from a prior test on this worker.
     logging.disable(logging.NOTSET)
-    # 2. Re-open propagation on the hierarchy ANCESTORS only — the links whose
-    #    propagate=False poisons caplog for a whole subtree.  The emitting leaf
-    #    logger under test keeps its own (default) state.
-    for name in (
-        "general_ludd",
-        "general_ludd.events",
-        "general_ludd.connectors",
-        "general_ludd.daemon",
-    ):
+    # 2. Re-open propagation on the root package + EVERY immediate
+    #    general_ludd.<subpackage> ancestor (intermediate nodes that gate whole
+    #    subtrees).  pkgutil.iter_modules scans the filesystem WITHOUT importing
+    #    and selects only package dirs (ispkg) — never leaf .py loggers — so it
+    #    cannot manufacture records a test silenced at a leaf, while covering
+    #    every subtree (secrets/worker/reload/event_loop/code_intelligence/...),
+    #    not just the original 4.  Light (~60 getLogger calls, no loggerDict
+    #    walk), so it does not perturb xdist ordering the way a full sweep did.
+    _ancestors = ["general_ludd", "general_ludd.daemon"]
+    _ancestors += [
+        f"general_ludd.{info.name}"
+        for info in pkgutil.iter_modules(general_ludd.__path__)
+        if info.ispkg
+    ]
+    # A few LEAF loggers are themselves left propagate=False by sibling tests
+    # (their package ancestors are already reset above, so the block is AT the
+    # leaf).  Reset exactly these known-polluted leaves — NOT a blanket leaf
+    # sweep (which manufactured records / perturbed ordering before).
+    _ancestors += [
+        "general_ludd.connectors.base",
+        "general_ludd.events.bus",
+        "general_ludd.events.hooks",
+    ]
+    for name in _ancestors:
         lg = logging.getLogger(name)
         lg.propagate = True
         lg.disabled = False
