@@ -555,7 +555,10 @@ jobs:
         # If a previous run created a release for this tag but failed mid-upload
         # (the alpha.2 "release already_exists" error from action-gh-release),
         # delete it so the create step below succeeds. `|| true` makes this a
-        # no-op when no release exists yet.
+        # no-op when no release exists yet. GH_TOKEN required (same unauthenticated
+        # gh bug as the verify step) — without it the delete silently no-ops.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh release delete ${{ github.ref_name }} --yes || true
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0 (node24)
         with:
@@ -575,6 +578,11 @@ jobs:
         # Fail loudly if the release has fewer than 4 assets (platform tarballs
         # + SBOM + licenses) — catches the "tag exists but no artifacts" failure
         # mode that shipped alpha.2 and alpha.3 as false releases.
+        # GH_TOKEN is REQUIRED: a bare `run:` gh call is unauthenticated and
+        # aborts with exit 4 (gh auth error) BEFORE counting — which false-RED'd
+        # the v0.1.0-alpha.5 release even though 12 assets published fine.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           ASSET_COUNT=$(gh release view ${{ github.ref_name }} --json assets --jq '.assets | length')
           echo "Release ${{ github.ref_name }} has $ASSET_COUNT assets"
