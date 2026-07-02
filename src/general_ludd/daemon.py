@@ -1152,6 +1152,26 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         secrets_mgr=secrets_resolver,
                     )
                     await mcp_client.start_all()
+                    # Expose gludd's own in-process builtin tools (e.g.
+                    # run_project_check) alongside the external MCP servers so
+                    # the agent can run a target project's declared checks. This
+                    # only registers a synthetic "gludd-builtin" server on the
+                    # already-built client; it does not touch external flows.
+                    from general_ludd.mcp.builtins import register_builtins
+
+                    # Isolate builtin registration: a failure here (e.g. an
+                    # external server already advertising the same tool name,
+                    # which the registry rejects as a collision) must NOT
+                    # discard the working external MCP client or leak its
+                    # already-started subprocesses.
+                    try:
+                        register_builtins(mcp_client)
+                    except Exception:
+                        logger.warning(
+                            "builtin MCP tool registration failed; continuing "
+                            "with external MCP servers only",
+                            exc_info=True,
+                        )
                     logger.info("MCPClient started with %d server(s)", len(typed_configs))
                 except Exception as _mcp_exc:
                     logger.error(
