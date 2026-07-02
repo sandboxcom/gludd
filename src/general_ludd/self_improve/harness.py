@@ -178,7 +178,25 @@ class SelfImprovementHarness:
             "tier": tier,
         }
 
+    def _looks_like_python_project(self) -> bool:
+        """True when ``repo_root`` looks like a Python/pytest project.
+
+        The static scanners below (``_check_missing_tests`` / ``_check_coverage_gaps``)
+        are pytest/gludd-specific: they assume a ``src/general_ludd`` package, a
+        ``tests/`` tree and a Cobertura ``coverage.xml``. When the harness targets
+        an EXTERNAL project's checkout (a JS/Go/Rust/etc. repo), those markers are
+        absent, so running the scanners would emit false ``missing_tests`` /
+        ``low_coverage`` findings against a codebase they cannot reason about.
+        Gate them on a Python-project marker; the model-driven gap scan and the
+        recurring-failure ingest stay project-neutral and always run.
+        """
+        if os.path.isdir(os.path.join(self.repo_root, "src", "general_ludd")):
+            return True
+        return os.path.isfile(os.path.join(self.repo_root, "coverage.xml"))
+
     def _check_missing_tests(self, findings: list[dict[str, Any]]) -> None:
+        if not self._looks_like_python_project():
+            return
         src_dir = os.path.join(self.repo_root, "src", "general_ludd")
         tests_dir = os.path.join(self.repo_root, "tests")
         if not os.path.isdir(src_dir) or not os.path.isdir(tests_dir):
@@ -209,6 +227,8 @@ class SelfImprovementHarness:
         pass
 
     def _check_coverage_gaps(self, findings: list[dict[str, Any]]) -> None:
+        if not self._looks_like_python_project():
+            return
         coverage_xml = os.path.join(self.repo_root, "coverage.xml")
         if not os.path.isfile(coverage_xml):
             return

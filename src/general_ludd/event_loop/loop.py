@@ -2609,7 +2609,16 @@ class EventLoop:
         if self._total_ticks % interval != 0:
             return
         try:
-            harness = SelfImprovementHarness(model_gateway=self._model_gateway)
+            # Target the CURRENT tick's project checkout, not gludd's own repo.
+            # Without repo_root the harness defaults to os.getcwd() (= gludd's
+            # source tree), so gap analysis scanned gludd instead of the external
+            # project it is supposed to be improving. _resolve_repo_root maps the
+            # tick's project_id to its materialized workspace repo_dir (or the
+            # operator-configured repo_root fallback).
+            harness = SelfImprovementHarness(
+                repo_root=self._resolve_repo_root(self._tick_project_id),
+                model_gateway=self._model_gateway,
+            )
             # Feedback loop: collect recurring-failure signals from REAL task
             # execution (BlockerDetector.chronic_blockers) FIRST — it is async
             # and must run on the event loop against the tick session, unlike the

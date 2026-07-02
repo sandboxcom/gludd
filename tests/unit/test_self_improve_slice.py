@@ -282,7 +282,12 @@ class TestEventLoopGatewayWiring:
             instance.run_gap_analysis.return_value = []
             await loop._phase_self_improve()
 
-        MockHarness.assert_called_once_with(model_gateway=sentinel_gateway)
+        # The harness now ALSO receives repo_root (resolved from the tick's
+        # project) so gap analysis targets the external project checkout rather
+        # than gludd's own repo; the gateway must still be forwarded.
+        MockHarness.assert_called_once()
+        assert MockHarness.call_args.kwargs["model_gateway"] is sentinel_gateway
+        assert "repo_root" in MockHarness.call_args.kwargs
 
     async def test_no_gateway_passes_none_to_harness(self) -> None:
         from unittest.mock import patch
@@ -300,4 +305,6 @@ class TestEventLoopGatewayWiring:
             instance.run_gap_analysis.return_value = []
             await loop._phase_self_improve()
 
-        MockHarness.assert_called_once_with(model_gateway=None)
+        MockHarness.assert_called_once()
+        assert MockHarness.call_args.kwargs["model_gateway"] is None
+        assert "repo_root" in MockHarness.call_args.kwargs

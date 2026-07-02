@@ -305,6 +305,73 @@ class TestRecurringFailureIngestion:
             assert harness.run_gap_analysis() == []
 
 
+# ── External-project targeting ──────────────────────────────────────────────
+# The harness must be able to analyze an EXTERNAL project's checkout, not just
+# gludd's own repo. Against a non-Python/non-pytest target (no src/general_ludd,
+# no coverage.xml) the pytest-specific static scanners must contribute NOTHING —
+# only the project-neutral model scan + recurring-failure ingest run. Behavior
+# for gludd's own repo (src/general_ludd present) is preserved unchanged.
+
+class TestExternalProjectTargeting:
+    def test_non_python_target_yields_no_static_findings(self):
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # A JS/Go-shaped checkout: source + tests present, but NONE of the
+            # gludd/pytest markers (no src/general_ludd, no coverage.xml).
+            src = Path(tmpdir) / "src"
+            src.mkdir()
+            (src / "index.js").write_text("export const x = 1;\n")
+            (Path(tmpdir) / "package.json").write_text('{"name":"ext"}\n')
+            (Path(tmpdir) / "coverage").mkdir()  # coverage/, not coverage.xml
+
+            harness = SelfImprovementHarness(repo_root=tmpdir)
+            findings = harness.run_gap_analysis()
+
+            # No model gateway + no python markers → the static scanners emit
+            # nothing, so there are no missing_tests / low_coverage findings.
+            assert findings == []
+            assert not any(
+                f.get("type") in ("missing_tests", "low_coverage") for f in findings
+            )
+
+    def test_non_python_target_still_ingests_recurring_failures(self):
+        # Project-neutral signals (recurring real-task failures) must still be
+        # folded in even against a non-python target checkout.
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "go.mod").write_text("module ext\n")
+            records = [
+                {"task_type": "code", "blocker_kind": "permission_escalation",
+                 "incident_count": 4, "recent_todo_ids": ["T1"]},
+            ]
+            harness = SelfImprovementHarness(repo_root=tmpdir)
+            findings = harness.run_gap_analysis(recurring_failures=records)
+            assert not any(
+                f.get("type") in ("missing_tests", "low_coverage") for f in findings
+            )
+            rf = [f for f in findings if f.get("type") == "recurring_failure"]
+            assert len(rf) == 1
+
+    def test_gludd_shaped_target_still_flags_missing_tests(self):
+        # Regression guard: a python/gludd-shaped checkout (src/general_ludd with
+        # an untested module) still produces the missing_tests finding.
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src_dir = Path(tmpdir) / "src" / "general_ludd"
+            src_dir.mkdir(parents=True)
+            (src_dir / "__init__.py").write_text("")
+            (src_dir / "untested_module.py").write_text("class Foo:\n    pass\n")
+            (Path(tmpdir) / "tests" / "unit").mkdir(parents=True)
+
+            harness = SelfImprovementHarness(repo_root=tmpdir)
+            findings = harness.run_gap_analysis()
+            missing = [f for f in findings if f.get("type") == "missing_tests"]
+            assert any("untested_module.py" in f.get("file", "") for f in missing)
+
+
 # ── Model-finding schema normalization ──────────────────────────────────────
 # _GAP_PROMPT asks the model for {title, description, priority, tier} but
 # generate_fix_todos reads {type, severity, message, file}; unnormalized model

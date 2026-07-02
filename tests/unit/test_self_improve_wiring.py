@@ -289,6 +289,32 @@ class TestEventLoopSelfImprovePhase:
             assert loop._tick_metrics["self_improve_gaps"] == 0
 
 
+class TestEventLoopSelfImproveTargetsProjectRepo:
+    """The self-improve phase must analyze the CURRENT tick's project checkout,
+    not gludd's own repo: it must construct SelfImprovementHarness with a
+    repo_root resolved from the tick project_id (via _resolve_repo_root)."""
+
+    @pytest.mark.asyncio
+    async def test_phase_passes_resolved_repo_root_to_harness(self):
+        loop = EventLoop(self_improve_interval=1, daemon_state={})
+        loop._total_ticks = 1
+        loop._tick_project_id = "proj-ext"
+
+        with patch.object(
+            loop, "_resolve_repo_root", return_value="/checkouts/proj-ext"
+        ) as mock_resolve, patch(
+            "general_ludd.event_loop.loop.SelfImprovementHarness"
+        ) as MockHarness:
+            instance = MockHarness.return_value
+            instance.run_gap_analysis.return_value = []
+            await loop._phase_self_improve()
+
+        # repo_root was resolved from the tick project and handed to the harness.
+        mock_resolve.assert_called_once_with("proj-ext")
+        MockHarness.assert_called_once()
+        assert MockHarness.call_args.kwargs["repo_root"] == "/checkouts/proj-ext"
+
+
 class TestEventLoopSelfImproveRecurringFailures:
     """Feedback loop: recurring real-task failures (BlockerDetector.chronic_blockers)
     must be fed into the harness gap analysis so a class of problem gludd keeps
