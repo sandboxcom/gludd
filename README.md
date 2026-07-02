@@ -152,7 +152,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| Observability connector base + normalize + registry (39 connectors) | ✓ 60% | **PASS** *(file-refs only)*: 39 modules + 39 test files exist (added MqttSource — MQTT/Mosquitto pub-sub buffer); `daemon.py` never imports connectors; observe router not registered; `[audit #1]` |
+| Observability connector base + normalize + registry (80+ connectors) | ✓ 60% | **PASS** *(file-refs only)*: 80+ connector Source modules exist (auto-discovered from connectors/*.py; MqttSource — MQTT/Mosquitto pub-sub buffer — added this session); the old '38' count was stale. `daemon.py` never imports connectors; observe router not registered; `[audit #1]` |
 | gludd_metrics + gludd_traces Ansible modules | ~ 100% | **PARTIAL** *(file-refs only)*: 145 passed; molecule 27+28; `[86389be]` |
 | /api/metrics + /api/traces endpoints | ✓ 100% | **PASS** *(file-refs only)*: 4 passed; `[86389be]` |
 | Observability router (`routers/observe.py`) wired into daemon | ✓ 5% | **PASS** *(file-refs only)*: register() exists; never called; 1 daemon.py line needed; `[audit]` |
