@@ -383,6 +383,12 @@ class AuditEventModel(Base):
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     details: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    # Ornith scaffold provenance (migration 014_add_ornith_audit_fields). All
+    # nullable so pre-existing rows remain valid.
+    scaffold_sha256: Mapped[str | None] = mapped_column(String, nullable=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         Index("ix_audit_events_entity", "entity_type", "entity_id"),
