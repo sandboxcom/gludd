@@ -798,6 +798,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_human_todo_subparser(sub)
     human_todo_parser = sub.choices["human-todo"]
 
+    # `gludd self-improve` — human approval gate for self-authored todos.
+    from general_ludd.cli_self_improve import add_self_improve_subparser
+
+    add_self_improve_subparser(sub)
+    self_improve_parser = sub.choices["self-improve"]
+
     # `gludd remediation` — blocked-task detection + remediation.
     from general_ludd.cli_remediation import add_remediation_subparser
 
@@ -830,6 +836,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "connectors": connectors_parser,
         "perm": perm_parser,
         "human-todo": human_todo_parser,
+        "self-improve": self_improve_parser,
         "remediation": remediation_parser,
         "ornith": ornith_parser,
     }

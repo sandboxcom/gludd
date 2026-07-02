@@ -69,14 +69,52 @@ class TestSelfImprovePersistence:
                 f"self-improve todo not persisted; rows={titles}"
             )
             persisted = next(r for r in rows if r.title == "Add tests for x.py")
-            # auto_queue defaults to True so generated todos are claimable by
-            # the event loop (regression: previously landed in APPROVAL_REQUIRED
-            # and were never promoted). Set self_improve.auto_queue: false to
-            # restore the human-gate behavior.
-            assert persisted.status == TodoStatus.QUEUED.value
+            # Security: auto_queue defaults to False, so a self-authored
+            # self-improve todo is parked in APPROVAL_REQUIRED behind a human
+            # review gate rather than QUEUED (immediate execution) — closing the
+            # self-modification approval bypass. A human releases it to QUEUED via
+            # SelfImproveApprovalManager (the /admin/self-improve/approvals routes
+            # or `gludd self-improve approve`). Set self_improve.auto_queue: true
+            # to opt back into immediate QUEUED admission.
+            assert persisted.status == TodoStatus.APPROVAL_REQUIRED.value
 
         # The harness's in-memory enqueue must NOT be the persistence path.
         fake_harness.enqueue_todos.assert_not_called()
+
+    async def test_config_auto_queue_true_yields_queued(self, session_factory, monkeypatch):
+        """Opt-in: self_improve.auto_queue: true restores immediate QUEUED
+        admission (for deployments where self-modification without review is
+        acceptable), instead of the secure APPROVAL_REQUIRED default."""
+        factory = session_factory
+
+        fake_findings = [{"type": "missing_tests", "file": "y.py", "severity": "high",
+                          "message": "y.py has no test file"}]
+        fake_todos = [
+            {"title": "Add tests for y.py", "description": "y.py has no test file",
+             "work_type": "test", "priority": "high"},
+        ]
+
+        import general_ludd.event_loop.loop as loop_mod
+        import general_ludd.self_improve.harness as harness_mod
+
+        fake_harness = MagicMock()
+        fake_harness.run_gap_analysis.return_value = fake_findings
+        fake_harness.generate_fix_todos.return_value = fake_todos
+        monkeypatch.setattr(harness_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
+        monkeypatch.setattr(loop_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
+
+        loop = EventLoop(
+            session=factory,
+            self_improve_interval=1,
+            config={"tick_interval": 1.0, "self_improve": {"auto_queue": True}},
+        )
+        await loop.tick()
+
+        async with factory() as session:
+            repo = TodoRepository(session)
+            rows = await repo.list_all()
+            persisted = next(r for r in rows if r.title == "Add tests for y.py")
+            assert persisted.status == TodoStatus.QUEUED.value
 
     async def test_self_improve_stamps_tick_project_id(self, session_factory, monkeypatch):
         """W3.7/H2: a persisted self-improve todo must carry the tick's project_id

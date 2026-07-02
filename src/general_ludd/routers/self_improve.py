@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from general_ludd.db.repository import TodoRepository
+from general_ludd.self_improve.approval import ApprovalError, SelfImproveApprovalManager
 from general_ludd.self_improve.harness import SelfImprovementHarness
 from general_ludd.self_update.applier import UpdateApplier
 from general_ludd.self_update.safe_writer import AtomicSafeWriter
@@ -146,3 +147,73 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if last is None:
             return {"status": "never_run", "findings_count": 0}
         return {"status": "completed", **last}
+
+    # ------------------------------------------------------------------
+    # Human approval gate for self-authored self-improve todos.
+    #
+    # SelfImproveGate.auto_queue defaults to False, so admitted self-improve
+    # todos are parked in APPROVAL_REQUIRED instead of executing without review
+    # (self-modification approval bypass otherwise). These routes are the WIRED
+    # release path: without them held todos would strand forever.
+    # ------------------------------------------------------------------
+
+    def _todo_view(todo: Any) -> dict[str, Any]:
+        return {
+            "todo_id": getattr(todo, "todo_id", None),
+            "title": getattr(todo, "title", None),
+            "status": getattr(todo, "status", None),
+            "work_type": getattr(todo, "work_type", None),
+            "priority": getattr(todo, "priority", None),
+            "project_id": getattr(todo, "project_id", None),
+            "version": getattr(todo, "version", None),
+            "created_at": str(getattr(todo, "created_at", "")) or None,
+            "created_by": getattr(todo, "created_by", None),
+        }
+
+    @app.get("/admin/self-improve/approvals")
+    async def admin_self_improve_list_approvals() -> dict[str, Any]:
+        """List self-improve todos awaiting a human approve/reject decision."""
+        factory = _get_session_factory(app)
+        if factory is None:
+            return {"pending": [], "count": 0}
+        manager = SelfImproveApprovalManager()
+        async with factory() as session:
+            repo = TodoRepository(session)
+            pending = await manager.list_pending(repo)
+            rows = [_todo_view(t) for t in pending]
+        return {"pending": rows, "count": len(rows)}
+
+    @app.post("/admin/self-improve/approvals/{todo_id}/approve")
+    async def admin_self_improve_approve(todo_id: str) -> dict[str, Any]:
+        """Release a held self-improve todo into the queue (APPROVAL_REQUIRED -> QUEUED)."""
+        factory = _get_session_factory(app)
+        if factory is None:
+            raise HTTPException(status_code=503, detail="No database session factory")
+        manager = SelfImproveApprovalManager()
+        async with factory() as session:
+            repo = TodoRepository(session)
+            try:
+                todo = await manager.approve_by_id(repo, todo_id)
+            except ApprovalError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            await session.commit()
+            return {"approved": True, "todo": _todo_view(todo)}
+
+    @app.post("/admin/self-improve/approvals/{todo_id}/reject")
+    async def admin_self_improve_reject(
+        todo_id: str, payload: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Reject a held self-improve todo (APPROVAL_REQUIRED -> CANCELLED)."""
+        reason = str((payload or {}).get("reason", ""))
+        factory = _get_session_factory(app)
+        if factory is None:
+            raise HTTPException(status_code=503, detail="No database session factory")
+        manager = SelfImproveApprovalManager()
+        async with factory() as session:
+            repo = TodoRepository(session)
+            try:
+                todo = await manager.reject_by_id(repo, todo_id, reason=reason)
+            except ApprovalError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            await session.commit()
+            return {"rejected": True, "todo": _todo_view(todo)}

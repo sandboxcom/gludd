@@ -273,7 +273,13 @@ class TestEventLoopSelfImprovePhase:
                 persisted = [r for r in rows if r.title == "Add tests"]
                 assert len(persisted) == 1
                 assert persisted[0].work_type == "self_improve"
-                assert persisted[0].status == TodoStatus.QUEUED.value
+                # Security: SelfImproveGate.auto_queue defaults to False, so a
+                # self-authored todo is parked in APPROVAL_REQUIRED behind a
+                # human review gate rather than QUEUED (immediate execution) —
+                # closing the self-modification approval bypass. A human releases
+                # it to QUEUED via SelfImproveApprovalManager. Set
+                # self_improve.auto_queue: true to opt back into QUEUED admission.
+                assert persisted[0].status == TodoStatus.APPROVAL_REQUIRED.value
                 # "high" maps to a high integer priority.
                 assert persisted[0].priority >= 10
         finally:
