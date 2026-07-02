@@ -129,6 +129,23 @@ class TestDaemonLifespanWithRealDB:
             status = engine.pool.status()
             assert "Pool size: 0" in status or "Pool closed" in status or "Overflow: -5" in status
 
+    def test_daemon_starts_stall_watchdog(self):
+        """The lifespan wires a shared StallWatchdog so hung in-flight ops are
+        detected and published as StallDetectedEvent for investigation."""
+        from general_ludd.observability.timing import StallWatchdog
+
+        with patch(
+            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+            return_value=MagicMock(),
+        ):
+            app = create_daemon_app(tick_interval=0.01)
+            with TestClient(app):
+                sw = app.state._stall_watchdog
+                assert sw is not None
+                assert isinstance(sw, StallWatchdog)
+            # After teardown the background sweeper thread must be stopped.
+            assert app.state._stall_watchdog._sweeper is None
+
     def test_daemon_with_config_dir(self, tmp_path):
         config_dir = tmp_path / "config"
         config_dir.mkdir()
