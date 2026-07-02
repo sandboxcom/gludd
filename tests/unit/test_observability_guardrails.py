@@ -56,9 +56,15 @@ class TestNoUnseenEvents:
             "gate target must delegate its test phase to scripts/run_gate.sh"
         )
         run_gate_text = RUN_GATE_SH.read_text()
-        assert "pytest tests/" in run_gate_text, (
-            "scripts/run_gate.sh must run the full suite (pytest tests/) — "
-            "the suite must not be truncated or omitted"
+        # The test phase now runs via the RAM-bounded adaptive runner
+        # (scripts/adaptive_test.py tests/), which itself execs
+        # `python -m pytest tests/` (workers sized by available RAM + OOM
+        # retry). The full suite still runs — accept either the direct
+        # `pytest tests/` or the `adaptive_test.py tests/` wrapper.
+        assert "pytest tests/" in run_gate_text or "adaptive_test.py tests/" in run_gate_text, (
+            "scripts/run_gate.sh must run the full suite (pytest tests/ or the "
+            "adaptive_test.py tests/ wrapper) — the suite must not be truncated "
+            "or omitted"
         )
         assert "tee" in run_gate_text, (
             "scripts/run_gate.sh MUST pipe its output through tee so a "

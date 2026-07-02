@@ -1101,13 +1101,18 @@ class TestEnforceFloorConstants:
 
     def test_floor_constant_is_10(self):
         src = ENFORCE_FLOOR.read_text()
+        # 2026-07-01 refactor: FLOOR/CEILING now come from a `_tunable(
+        # overridePath, envVar, dflt)` helper (adds /tmp override reads) instead
+        # of an inline parseInt. The env-var name and the default literal are the
+        # load-bearing parts — accept the _tunable form while still pinning the
+        # default at "10".
         m = re.search(
-            r"const\s+FLOOR\s*=\s*parseInt\s*\(\s*process\.env\.CLAUDE_AGENT_FLOOR\s*\|\|\s*[\"'](\d+)[\"']",
+            r"const\s+FLOOR\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_FLOOR[^)]*[\"'](\d+)[\"']\s*\)",
             src,
         )
         assert m, (
             "FLOOR constant declaration not found — expected "
-            "parseInt(process.env.CLAUDE_AGENT_FLOOR || \"10\", 10)"
+            "_tunable(\"/tmp/gludd-floor-override\", \"CLAUDE_AGENT_FLOOR\", \"10\")"
         )
         assert m.group(1) == "10", (
             f"FLOOR default is {m.group(1)}, expected 10 "
@@ -1116,13 +1121,16 @@ class TestEnforceFloorConstants:
 
     def test_target_constant_is_14(self):
         src = ENFORCE_FLOOR.read_text()
+        # TARGET still uses parseInt(process.env.CLAUDE_AGENT_TARGET || "14"),
+        # now wrapped in Math.min(..., CEILING) so it can never exceed the
+        # ceiling. Accept the Math.min wrapper while still pinning the default.
         m = re.search(
-            r"const\s+TARGET\s*=\s*parseInt\s*\(\s*process\.env\.CLAUDE_AGENT_TARGET\s*\|\|\s*[\"'](\d+)[\"']",
+            r"const\s+TARGET\s*=\s*Math\.min\s*\(\s*parseInt\s*\(\s*process\.env\.CLAUDE_AGENT_TARGET\s*\|\|\s*[\"'](\d+)[\"']",
             src,
         )
         assert m, (
             "TARGET constant declaration not found — expected "
-            "parseInt(process.env.CLAUDE_AGENT_TARGET || \"14\", 10)"
+            "Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || \"14\", 10), CEILING)"
         )
         assert m.group(1) == "14", (
             f"TARGET default is {m.group(1)}, expected 14"
@@ -1130,13 +1138,14 @@ class TestEnforceFloorConstants:
 
     def test_ceiling_constant_is_16(self):
         src = ENFORCE_FLOOR.read_text()
+        # See test_floor_constant_is_10 — CEILING now uses the _tunable helper.
         m = re.search(
-            r"const\s+CEILING\s*=\s*parseInt\s*\(\s*process\.env\.CLAUDE_AGENT_CEILING\s*\|\|\s*[\"'](\d+)[\"']",
+            r"const\s+CEILING\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_CEILING[^)]*[\"'](\d+)[\"']\s*\)",
             src,
         )
         assert m, (
             "CEILING constant declaration not found — expected "
-            "parseInt(process.env.CLAUDE_AGENT_CEILING || \"16\", 10)"
+            "_tunable(\"/tmp/gludd-ceiling-override\", \"CLAUDE_AGENT_CEILING\", \"16\")"
         )
         assert m.group(1) == "16", (
             f"CEILING default is {m.group(1)}, expected 16"
@@ -1773,7 +1782,7 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
         return` which was fail-open and silently disabled enforcement."""
         src = ENFORCE_FLOOR.read_text()
         m = re.search(
-            r'"tool\.execute\.before"(.*?)(?="experimental\.chat\.response\.transform)',
+            r'"tool\.execute\.before"(.*?)(?="experimental\.text\.complete)',
             src,
             re.DOTALL,
         )
@@ -1795,7 +1804,7 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
         wedge the session — worse than the rare over-dispatch."""
         src = ENFORCE_FLOOR.read_text()
         m = re.search(
-            r'"tool\.execute\.before"(.*?)(?="experimental\.chat\.response\.transform)',
+            r'"tool\.execute\.before"(.*?)(?="experimental\.text\.complete)',
             src,
             re.DOTALL,
         )

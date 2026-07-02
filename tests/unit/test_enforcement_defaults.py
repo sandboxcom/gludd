@@ -110,11 +110,25 @@ class TestEnforcementDefaultsOn:
 
     def test_agent_floor_constant_is_10(self) -> None:
         src = FLOOR_PLUGIN.read_text()
+        # 2026-07-01 refactor: the FLOOR default moved from an inline
+        # `parseInt(process.env.CLAUDE_AGENT_FLOOR || "10")` to a
+        # `_tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "10")`
+        # helper (same default, adds a /tmp override read). Accept either the
+        # _tunable form or the legacy parseInt form; the env-var name + "10"
+        # default are the load-bearing parts.
         line = next(
-            (src_line for src_line in src.splitlines() if "CLAUDE_AGENT_FLOOR" in src_line and "parseInt" in src_line),
+            (
+                src_line
+                for src_line in src.splitlines()
+                if "CLAUDE_AGENT_FLOOR" in src_line
+                and ("_tunable" in src_line or "parseInt" in src_line)
+            ),
             None,
         )
-        assert line is not None, "CLAUDE_AGENT_FLOOR parseInt line not found in enforce-floor.ts"
+        assert line is not None, (
+            "CLAUDE_AGENT_FLOOR default line not found in enforce-floor.ts "
+            "(expected _tunable(..., \"CLAUDE_AGENT_FLOOR\", \"10\") or a parseInt form)"
+        )
         assert '"10"' in line, (
             "CLAUDE_AGENT_FLOOR default must be \"10\" (per the 2026-06-22 user mandate "
             "raising the floor from 6 to 10). The floor must not be silently lowered."
