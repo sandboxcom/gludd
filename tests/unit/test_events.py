@@ -18,6 +18,8 @@ from general_ludd.events.types import (
     ReloadFailedEvent,
     ReloadRequestedEvent,
     SkillUpdatedEvent,
+    SlowOperationEvent,
+    StallDetectedEvent,
     TemplateUpdatedEvent,
     WorkerPingEvent,
     WorkerPongEvent,
@@ -526,3 +528,44 @@ class TestEventTypesUnit:
     def test_event_correlation_id_default_is_none(self):
         e = Event(type=EventType.CUSTOM)
         assert e.correlation_id is None
+
+    def test_stall_detected_event(self):
+        stacks = {"MainThread": "traceback..."}
+        e = StallDetectedEvent(
+            operation="gate",
+            elapsed_s=90.0,
+            deadline_s=60.0,
+            thread_stacks=stacks,
+        )
+        assert e.type == EventType.STALL_DETECTED
+        assert e.payload["operation"] == "gate"
+        assert e.payload["elapsed_s"] == 90.0
+        assert e.payload["deadline_s"] == 60.0
+        assert e.payload["thread_stacks"] == stacks
+
+        bus = EventBus()
+        received = []
+        bus.subscribe(EventType.STALL_DETECTED, lambda ev: received.append(ev))
+        bus.publish(e)
+        assert received == [e]
+
+    def test_slow_operation_event(self):
+        e = SlowOperationEvent(
+            operation="db-query",
+            duration_s=3.0,
+            baseline_s=1.0,
+            factor=3.0,
+        )
+        assert e.type == EventType.SLOW_OPERATION
+        assert e.payload["operation"] == "db-query"
+        assert e.payload["duration_s"] == 3.0
+        assert e.payload["baseline_s"] == 1.0
+        assert e.payload["factor"] == 3.0
+        # thread_stacks defaults to None on stall events; absent here entirely
+        assert "thread_stacks" not in e.payload
+
+        bus = EventBus()
+        received = []
+        bus.subscribe(EventType.SLOW_OPERATION, lambda ev: received.append(ev))
+        bus.publish(e)
+        assert received == [e]
