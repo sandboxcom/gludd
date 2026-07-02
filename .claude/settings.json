@@ -9,6 +9,31 @@
     "GLUDD_FLOOR_ENFORCE": "1",
     "GLUDD_FALSE_DONE_ENFORCE": "1"
   },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(make:*)",
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Agent",
+      "ToolSearch",
+      "TaskCreate",
+      "TaskUpdate",
+      "TaskGet",
+      "TaskList",
+      "TaskOutput",
+      "ScheduleWakeup",
+      "SendMessage",
+      "Monitor"
+    ],
+    "deny": [
+      "Workflow",
+      "AskUserQuestion"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
