@@ -820,12 +820,17 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             logger.debug("project section failed: %s", exc)
             project = {}
         metrics_collector = getattr(app.state, "_metrics_collector", None)
+        # The process-wide token tracker lets the advisor refine its static
+        # cheap/quality taxonomy with what gludd has actually observed to be
+        # token-heavy vs light. Read-only + defaults dormant until it has data.
+        from general_ludd.observability.token_cost import default_token_tracker
         try:
             optimization = build_optimization_hints(
                 models=models,
                 routing=routing,
                 budget=budget,
                 metrics_collector=metrics_collector,
+                token_tracker=default_token_tracker(),
             )
         except Exception as exc:  # pragma: no cover - defensive (advisor is pure)
             logger.debug("optimization section failed: %s", exc)
