@@ -16,6 +16,7 @@ import pytest
 
 from general_ludd.secrets.config import OpenBaoConfig
 from general_ludd.secrets.manager import (
+    SecretAlias,
     SecretPermissionDeniedError,
     SecretsManager,
 )
@@ -218,6 +219,58 @@ class TestDefaultSpecs:
         )
         with pytest.raises(SecretPermissionDeniedError):
             mgr.read_secret("secret/data/gludd/build/x")
+
+
+class TestResolveEnforcement:
+    """resolve() (alias reads) must honour the same secret:openbao gate.
+
+    Regression: resolve() historically skipped ``_enforce_permission``, so a
+    SecretsManager scoped by a permission_spec still served alias reads whose
+    underlying path was OUTSIDE the allow-list. An alias read IS a read of
+    ``alias.path`` and must pass the identical ``action="read"`` gate that
+    read_secret/write_secret/delete_secret/list_secrets already enforce.
+    """
+
+    def test_resolve_denied_by_spec_raises_permission_error(self):
+        client = _mock_client(
+            {"secret/data/gludd/shared/llm_keys/x": {"value": "sekret"}}
+        )
+        spec = _build_spec(["secret/data/gludd/build/*"], ["read"])
+        mgr = SecretsManager(
+            client=client,
+            config=OpenBaoConfig(kv_mount="secret"),
+            permission_spec=spec,
+        )
+        mgr.register_alias(
+            SecretAlias(alias="llm", path="secret/data/gludd/shared/llm_keys/x")
+        )
+        with pytest.raises(SecretPermissionDeniedError):
+            mgr.resolve("llm")
+
+    def test_resolve_allowed_by_spec_returns_value(self):
+        client = _mock_client({"secret/data/gludd/build/foo": {"value": "bar"}})
+        spec = _build_spec(["secret/data/gludd/build/*"], ["read"])
+        mgr = SecretsManager(
+            client=client,
+            config=OpenBaoConfig(kv_mount="secret"),
+            permission_spec=spec,
+        )
+        mgr.register_alias(
+            SecretAlias(alias="buildfoo", path="secret/data/gludd/build/foo")
+        )
+        assert mgr.resolve("buildfoo") == "bar"
+
+    def test_resolve_no_spec_returns_value_unchanged(self):
+        client = _mock_client({"secret/data/anywhere/x": {"value": "openval"}})
+        mgr = SecretsManager(
+            client=client,
+            config=OpenBaoConfig(kv_mount="secret"),
+            permission_spec=None,
+        )
+        mgr.register_alias(
+            SecretAlias(alias="anyx", path="secret/data/anywhere/x")
+        )
+        assert mgr.resolve("anyx") == "openval"
 
 
 class TestSTSIntegration:

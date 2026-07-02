@@ -189,6 +189,12 @@ class SecretsManager:
         alias = self._aliases.get(alias_name)
         if alias is None:
             return None
+        # Consistency with read_secret/write_secret/delete_secret/list_secrets:
+        # an alias read is still a read of alias.path, so it MUST pass the same
+        # secret:openbao permission gate. A no-op when no permission_spec is set
+        # (back-compat); when a spec IS set, an alias whose path is outside the
+        # allow-list raises SecretPermissionDeniedError before any backend read.
+        self._enforce_permission(alias.path, action="read")
         if self._client is None:
             logger.warning("No secrets client configured for alias %s", alias_name)
             return None
