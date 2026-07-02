@@ -33,6 +33,7 @@ from general_ludd.models.job_invocation import (
     is_generation_work_type,
 )
 from general_ludd.observability.timing import default_tracker
+from general_ludd.observability.token_cost import default_token_tracker
 from general_ludd.reload.self_improve import SelfImprovementWorkflow
 from general_ludd.rules.engine import Rule, apply_rule_actions, evaluate_rules
 from general_ludd.schemas.benchmark import TaskType
@@ -1669,6 +1670,18 @@ class EventLoop:
             # taking ~30s) is detectable vs its learned per-profile baseline.
             default_tracker().check_then_record(
                 f"model:{resolved_model_profile or 'default'}", _model_call_duration
+            )
+            # Feed per-(work_type, model) token consumption into the shared
+            # token-cost tracker so gludd LEARNS which task KINDS are token-heavy
+            # vs light — the substrate for preferring a cheaper equivalent
+            # pipeline where quality allows. Uses the same ~4-chars/token estimate
+            # the perf repo records below; a later slice upgrades this to the
+            # gateway's real usage_metadata for exact counts.
+            default_token_tracker().record(
+                f"{_safe_str(todo, 'work_type', 'code') or 'code'}:"
+                f"{resolved_model_profile or 'default'}",
+                len(prompt_text or "") // 4,
+                len(model_response or "") // 4,
             )
             # Record deployment health after each model call so the
             # self-healing router learns which deployments are degraded.
