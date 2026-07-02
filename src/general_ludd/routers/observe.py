@@ -45,6 +45,7 @@ lines if hookup is centralized there instead. No edit to ``daemon.py`` /
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import asdict
 from typing import Any
@@ -117,7 +118,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         reg = _get_registry(app)
         if reg is None:
             return {"health": {}, "count": 0}
-        health = reg.health_all()
+        # health_all() probes each connector's health() serially and blocks on
+        # network I/O. Offload to a worker thread so the event loop stays free.
+        health = await asyncio.to_thread(reg.health_all)
         return {"health": health, "count": len(health)}
 
     @app.post("/api/observe/query")
@@ -133,7 +136,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 status_code=404,
                 detail=f"no registered observability source named {req.source!r}",
             )
-        records = reg.query(req.source, req.spec)
+        # query() invokes the connector's synchronous query(spec), which blocks
+        # on network I/O. Offload to a worker thread so the event loop is free.
+        records = await asyncio.to_thread(reg.query, req.source, req.spec)
         return {
             "source": req.source,
             "records": records,
