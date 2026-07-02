@@ -22,7 +22,7 @@ from __future__ import annotations
 import secrets as _py_secrets
 import time
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from general_ludd.security.permissions import (
@@ -122,7 +122,7 @@ class STSRegistry:
 class StsToken:
     """A short-lived, scoped token minted by :class:`StsIssuer`."""
 
-    token_id: str
+    token_id: str = field(repr=False)
     issuer_agent_id: str
     subject_agent_id: str
     spec: PermissionSpec
