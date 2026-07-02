@@ -31,16 +31,28 @@ class SelfImprovementWorkflow:
         # HotReloader instead of the in-memory manager bookkeeping.
         self._code_target: tuple[str, str] | None = None
         self._health_check: Callable[[], bool] | None = None
+        # The base snapshot the candidate was generated against — enables the
+        # anti-clobber 3-way merge in reload_code_module so a concurrent edit to
+        # the live file is never silently reverted.
+        self._base_source_path: str | None = None
 
     def set_code_target(
         self,
         module_name: str,
         candidate_source_path: str,
         health_check: Callable[[], bool] | None = None,
+        base_source_path: str | None = None,
     ) -> None:
-        """Arm a real leaf-module hot-rotation for the next reload_if_needed."""
+        """Arm a real leaf-module hot-rotation for the next reload_if_needed.
+
+        ``base_source_path`` is the pre-generation snapshot of the module; when
+        supplied it activates the anti-clobber 3-way merge so an OVERLAPPING
+        concurrent edit refuses the reload (fail-closed) instead of being
+        clobbered. Without it the candidate is swapped verbatim (unchanged API).
+        """
         self._code_target = (module_name, candidate_source_path)
         self._health_check = health_check
+        self._base_source_path = base_source_path
 
     def create_improvement_todo(self, title: str, description: str) -> dict[str, Any]:
         todo_id = f"SI-{uuid.uuid4().hex[:8]}"
@@ -111,11 +123,25 @@ class SelfImprovementWorkflow:
         # manager-style ReloadResult the callers expect.
         if self._code_target is not None:
             module_name, candidate_path = self._code_target
-            verdict = self._hot_reloader.reload_code_module(
-                module_name=module_name,
-                candidate_source_path=candidate_path,
-                health_check=self._health_check,
-            )
+            try:
+                verdict = self._hot_reloader.reload_code_module(
+                    module_name=module_name,
+                    candidate_source_path=candidate_path,
+                    health_check=self._health_check,
+                    base_source_path=self._base_source_path,
+                )
+            except Exception as exc:
+                # reload_code_module rolls back on all of its KNOWN failure
+                # branches (import error, health fail, merge conflict). This is
+                # the belt-and-suspenders guard so an UNEXPECTED error can never
+                # propagate into the event-loop tick — report failed and leave
+                # the live module as reload_code_module last set it.
+                return ReloadResult(
+                    reload_id=uuid.uuid4().hex[:12],
+                    reload_type=ReloadType.WORKER_CODE,
+                    status="failed",
+                    message=f"reload raised unexpectedly: {exc}",
+                )
             status = "success" if verdict.success else "failed"
             message = verdict.error or f"Hot-rotated {module_name}"
             if not verdict.success and verdict.details.get("rolled_back"):

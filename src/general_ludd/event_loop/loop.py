@@ -2021,16 +2021,27 @@ class EventLoop:
         documented in :mod:`reload.hot_reloader` (``health_check`` returns False
         when ``app.state._degraded`` is set).
 
-        When ``self._daemon_state`` is None, the probe fails OPEN (returns
-        True): the absence of observable state is not itself proof of sickness.
-        The reload's own success/rollback verdict is an INDEPENDENT gate — a
-        probe that says "healthy" does not alone mark a todo complete.
+        When ``self._daemon_state`` is None the health of the reload CANNOT be
+        observed, so the probe FAILS CLOSED (returns False): an unverifiable
+        code reload is rolled back by ``reload_code_module`` rather than kept.
+        This is the recoverability guarantee — "if it can't be shown to work,
+        roll it back." Set ``self_improve.allow_unverified_reload: true`` to opt
+        back into the legacy fail-OPEN behavior (e.g. an embedded EventLoop with
+        no daemon health surface that still wants reloads to land).
         """
         state = self._daemon_state
+        si_cfg = self.config.get("self_improve", {}) if isinstance(self.config, dict) else {}
+        allow_unverified = (
+            bool(si_cfg.get("allow_unverified_reload", False))
+            if isinstance(si_cfg, dict)
+            else False
+        )
 
         def _probe() -> bool:
             if state is None:
-                return True
+                # Cannot verify health → fail CLOSED (roll back) unless the
+                # operator explicitly opted into unverified reloads.
+                return allow_unverified
             # Dict-style access (the EventLoop holds the shared dict) and
             # attribute-style access (a Starlette ``app.state``-like object may
             # be wired in tests) are both acceptable surfaces.
@@ -2092,6 +2103,7 @@ class EventLoop:
         tags = getattr(todo, "tags", None) or []
         module_name: str | None = None
         candidate_path: str | None = None
+        base_path: str | None = None
         for tag in tags:
             if not isinstance(tag, str):
                 continue
@@ -2099,6 +2111,11 @@ class EventLoop:
                 module_name = tag.split(":", 1)[1].strip()
             elif candidate_path is None and tag.startswith("candidate:"):
                 candidate_path = tag.split(":", 1)[1].strip()
+            elif base_path is None and tag.startswith("base:"):
+                # Optional anti-clobber base snapshot the candidate was generated
+                # against; when present, activates the 3-way merge so a concurrent
+                # edit to the live module is refused rather than clobbered.
+                base_path = tag.split(":", 1)[1].strip()
 
         if not module_name or not candidate_path:
             logger.error(
@@ -2116,6 +2133,7 @@ class EventLoop:
             module_name=module_name,
             candidate_source_path=candidate_path,
             health_check=self._make_daemon_health_probe(),
+            base_source_path=base_path,
         )
 
         # Build an ApplyResult that requests the reload. The workflow's

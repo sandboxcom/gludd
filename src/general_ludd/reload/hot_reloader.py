@@ -535,8 +535,19 @@ class HotReloader:
         return result
 
     def _publish(self, event: Any) -> None:
-        if self._event_bus:
+        # Event emission must NEVER crash a reload/rollback. A raising subscriber
+        # would otherwise propagate out of reload_code_module — worst case the
+        # post-swap ReloadCompletedEvent raising AFTER a healthy swap, leaving
+        # live code diverged from a non-success verdict. Swallow + log so the
+        # reload's own success/rollback verdict stays authoritative.
+        if not self._event_bus:
+            return
+        try:
             self._event_bus.publish(event)
+        except Exception as exc:
+            logger.warning(
+                "reload event publish failed (%s): %s", type(event).__name__, exc
+            )
 
     def _fire_hooks(self, event_name: str, payload: dict[str, Any]) -> None:
         if self._hooks:

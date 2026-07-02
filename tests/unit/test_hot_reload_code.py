@@ -205,3 +205,95 @@ def test_workflow_reload_rolls_back_on_degraded(tmp_path: Path) -> None:
     assert mod_path.read_bytes() == original
     reloaded = importlib.import_module(fqmn)
     assert reloaded.value() == 1  # type: ignore[attr-defined]
+
+
+class _RaisingBus:
+    """Event bus whose subscribers always raise — event emission must never
+    crash a reload."""
+
+    def publish(self, event: object) -> None:
+        raise RuntimeError("subscriber boom")
+
+
+def test_publish_failure_does_not_break_successful_reload(tmp_path: Path) -> None:
+    """A raising event subscriber (incl. the post-swap ReloadCompletedEvent)
+    must NOT propagate out of reload_code_module and leave live code diverged
+    from the verdict. The reload still succeeds and the candidate is live."""
+    _mod_path, fqmn, _mod = _install_live_module(
+        tmp_path,
+        "leafpub",
+        """
+        def value():
+            return 1
+        """,
+    )
+    candidate = tmp_path / "candidate_leafpub.py"
+    candidate.write_text("def value():\n    return 5\n")
+
+    reloader = HotReloader(config_dir=str(tmp_path / "config"), event_bus=_RaisingBus())
+    result = reloader.reload_code_module(
+        module_name=fqmn,
+        candidate_source_path=str(candidate),
+        health_check=lambda: True,
+    )
+
+    assert result.success is True
+    assert importlib.import_module(fqmn).value() == 5  # type: ignore[attr-defined]
+
+
+def test_reload_if_needed_survives_unexpected_reloader_error(tmp_path: Path) -> None:
+    """An UNEXPECTED exception from reload_code_module must be caught by
+    reload_if_needed and reported as failed — never propagated into the tick."""
+    from general_ludd.reload.self_improve import ApplyResult, SelfImprovementWorkflow
+
+    class _BoomReloader:
+        def reload_code_module(self, **kwargs: object) -> object:
+            raise RuntimeError("unexpected internal error")
+
+    wf = SelfImprovementWorkflow(config_dir=str(tmp_path / "config"))
+    wf._hot_reloader = _BoomReloader()  # type: ignore[assignment]
+    wf.set_code_target("some.module", str(tmp_path / "c.py"), health_check=lambda: True)
+    ar = ApplyResult(todo_id="SI-z", applied=True, reload_needed=True, validation_passed=True)
+
+    result = wf.reload_if_needed(ar)
+
+    assert result.status == "failed"
+    assert "unexpected" in result.message.lower()
+
+
+def test_set_code_target_threads_base_source_path(tmp_path: Path) -> None:
+    """The anti-clobber base snapshot armed via set_code_target must reach
+    reload_code_module so the 3-way merge can protect a concurrent edit."""
+    from general_ludd.reload.self_improve import ApplyResult, SelfImprovementWorkflow
+
+    captured: dict[str, object] = {}
+
+    class _Verdict:
+        def __init__(self) -> None:
+            self.success = True
+            self.error = None
+            self.details: dict[str, object] = {}
+
+    class _SpyReloader:
+        def reload_code_module(
+            self,
+            *,
+            module_name: str,
+            candidate_source_path: str,
+            health_check: object = None,
+            base_source_path: object = None,
+        ) -> object:
+            captured["base"] = base_source_path
+            return _Verdict()
+
+    wf = SelfImprovementWorkflow(config_dir=str(tmp_path / "config"))
+    wf._hot_reloader = _SpyReloader()  # type: ignore[assignment]
+    wf.set_code_target(
+        "m", "/tmp/cand.py", health_check=lambda: True, base_source_path="/tmp/base.py"
+    )
+    ar = ApplyResult(todo_id="SI-b", applied=True, reload_needed=True, validation_passed=True)
+
+    result = wf.reload_if_needed(ar)
+
+    assert result.status == "success"
+    assert captured["base"] == "/tmp/base.py"

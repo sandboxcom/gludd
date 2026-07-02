@@ -96,11 +96,13 @@ class _FakeWorkflow:
         module_name: str,
         candidate_source_path: str,
         health_check: Any | None = None,
+        base_source_path: str | None = None,
     ) -> None:
         self.set_code_target_calls.append({
             "module_name": module_name,
             "candidate_source_path": candidate_source_path,
             "health_check": health_check,
+            "base_source_path": base_source_path,
         })
 
     def reload_if_needed(self, apply_result: Any) -> Any:
@@ -339,11 +341,20 @@ class TestHealthProbe:
         probe = loop._make_daemon_health_probe()
         assert probe() is False
 
-    def test_probe_returns_true_when_daemon_state_none(self) -> None:
+    def test_probe_fails_closed_when_daemon_state_none(self) -> None:
         loop = _make_loop(daemon_state={})
         loop._daemon_state = None
-        # No daemon state to observe — assume healthy (fail-OPEN on observability;
-        # fail-CLOSED on the actual reload verdict, which is independent).
+        # No daemon state to observe → health is UNVERIFIABLE, so the probe now
+        # fails CLOSED (returns False) which makes reload_code_module roll the
+        # candidate back. "If it can't be shown to work, roll it back."
+        probe = loop._make_daemon_health_probe()
+        assert probe() is False
+
+    def test_probe_fail_open_opt_in_when_unverified_allowed(self) -> None:
+        loop = _make_loop(daemon_state={})
+        loop._daemon_state = None
+        # Explicit opt-in restores the legacy fail-OPEN behavior.
+        loop.config = {"self_improve": {"allow_unverified_reload": True}}
         probe = loop._make_daemon_health_probe()
         assert probe() is True
 
