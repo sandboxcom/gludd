@@ -47,6 +47,7 @@ class AdaptiveRouter:
         edge_decay: float = 0.5,
         external_penalty: float = 0.5,
         min_borrow_weight: float = 0.05,
+        adequacy_margin: float = 0.02,
     ) -> None:
         self._repo = benchmark_repo
         self._min_samples = min_samples
@@ -67,6 +68,15 @@ class AdaptiveRouter:
         self._edge_decay = edge_decay
         self._external_penalty = external_penalty
         self._min_borrow_weight = min_borrow_weight
+        # Adequacy-band tie-break width, measured in QUALITY space. Among
+        # candidates whose effective quality is within this margin of the best
+        # quality (i.e. quality-EQUIVALENT), the cheapest wins — "prefer the
+        # cheapest quality-EQUIVALENT candidate". Kept NARROW so a
+        # materially-better candidate always wins on quality; see
+        # _select_cheapest_equivalent for why the band is quality- not
+        # rank-based. A margin of 0.0 DISABLES the tie-break, reproducing
+        # pre-feature behaviour exactly.
+        self._adequacy_margin = adequacy_margin
         self._cache: dict[str, RoutingDecision] = {}
         self._cache_time: datetime | None = None
         self._cache_ttl_seconds: float = 300.0
@@ -275,10 +285,10 @@ class AdaptiveRouter:
             return None
         max_cost = max((c.avg_cost_usd for c, _, _ in weighted), default=0.0)
         ranked = [
-            (self._cost_adjusted_rank(c, q, max_cost), c, reason)
+            (self._cost_adjusted_rank(c, q, max_cost), q, c, reason)
             for c, q, reason in weighted
         ]
-        _best_rank, best_cand, best_reason = max(ranked, key=lambda t: t[0])
+        best_cand, best_reason = self._select_cheapest_equivalent(ranked)
         self._last_borrow_reason = best_reason
         return best_cand
 
@@ -572,12 +582,67 @@ class AdaptiveRouter:
             return None
         max_cost = max((c.avg_cost_usd for c, _, _ in weighted), default=0.0)
         ranked = [
-            (self._cost_adjusted_rank(c, q, max_cost), c, reason)
+            (self._cost_adjusted_rank(c, q, max_cost), q, c, reason)
             for c, q, reason in weighted
         ]
-        _best_rank, best_cand, best_reason = max(ranked, key=lambda t: t[0])
+        best_cand, best_reason = self._select_cheapest_equivalent(ranked)
         self._last_borrow_reason = best_reason
         return best_cand
+
+    def _select_cheapest_equivalent(
+        self,
+        ranked: list[tuple[float, float, RoutingCandidate, str | None]],
+    ) -> tuple[RoutingCandidate, str | None]:
+        """Pick the winner from ``ranked`` ``(rank, quality, candidate, reason)``.
+
+        Baseline (and the ``adequacy_margin == 0`` case): the single highest
+        cost-adjusted ``rank`` wins — EXACTLY today's ``max(ranked, key=...)``
+        behaviour, including its reason.
+
+        Tie-break — "prefer the cheapest quality-EQUIVALENT candidate": among
+        the candidates whose *effective quality* is within a NARROW
+        ``adequacy_margin`` of ``Q*`` (the highest effective quality in the
+        field) AND that are STRICTLY cheaper than the top-ranked winner, pick
+        the one with the LOWEST ``avg_cost_usd``.
+
+        Equivalence is judged in QUALITY space, NOT rank space. The
+        cost-adjusted rank already discounts for cost, so a rank-space band
+        would double-count cost and could admit a much-lower-quality candidate
+        that merely looks close because it is cheap. Bounding the *quality* gap
+        to ``adequacy_margin`` guarantees the tie-break can only ever move the
+        pick between candidates that are genuinely near-best on quality — so
+        material quality is never traded away — while still capturing the cost
+        saving. ``quality`` here is the same quantization- and borrow-weighted
+        value used to rank, so a discounted borrowed candidate cannot spuriously
+        enter the band.
+
+        The reason becomes ``"cheaper_equivalent"`` only when a strictly cheaper
+        equivalent actually displaces the top-ranked winner. If the top-ranked
+        candidate is already the cheapest of its quality band (or is the sole
+        candidate, or the margin is disabled), the winner and its reason are
+        unchanged.
+        """
+        _best_rank, _best_quality, best_cand, best_reason = max(
+            ranked, key=lambda t: t[0]
+        )
+        if self._adequacy_margin <= 0.0 or len(ranked) < 2:
+            return best_cand, best_reason
+        q_star = max(quality for _r, quality, _c, _reason in ranked)
+        best_cost = best_cand.avg_cost_usd
+        # Candidates of comparable QUALITY (within the narrow band of Q*) AND
+        # strictly cheaper than the top-ranked winner. Non-finite costs never
+        # qualify (fail closed — never flip toward a cost we cannot prove lower).
+        cheaper_equiv = [
+            cand
+            for _rank, quality, cand, _reason in ranked
+            if q_star - quality <= self._adequacy_margin
+            and math.isfinite(cand.avg_cost_usd)
+            and cand.avg_cost_usd < best_cost
+        ]
+        if not cheaper_equiv:
+            return best_cand, best_reason
+        cheapest_cand = min(cheaper_equiv, key=lambda c: c.avg_cost_usd)
+        return cheapest_cand, "cheaper_equivalent"
 
     @staticmethod
     def _cost_adjusted_rank(
