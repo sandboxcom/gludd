@@ -247,6 +247,21 @@ class ConnectorRegistry:
             out[name] = result
         return out
 
+    # -- teardown ---------------------------------------------------------- #
+    def close(self) -> None:
+        """Best-effort teardown: call ``disconnect()``/``close()`` on any source
+        that exposes one (e.g. a buffered source running a background thread such
+        as ``MqttSource``), so rebuilding the registry on reload doesn't leak
+        threads/connections. Never raises.
+        """
+        for name, source in self._sources.items():
+            closer = getattr(source, "disconnect", None) or getattr(source, "close", None)
+            if callable(closer):
+                try:
+                    closer()
+                except Exception:  # teardown must never abort the sweep
+                    logger.warning("close failed for source %s", name, exc_info=True)
+
     # -- query ------------------------------------------------------------- #
     def query(self, name: str, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Run ``query(spec)`` on the OPERATOR-REGISTERED source ``name``.

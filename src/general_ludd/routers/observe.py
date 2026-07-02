@@ -212,6 +212,11 @@ def wire_observability(
 
     Returns the built registry (also stored on ``app.state``).
     """
+    # Tear down a previous registry's sources (e.g. an MqttSource subscriber
+    # thread) before replacing it, so a reload doesn't leak background resources.
+    _old = getattr(app.state, "_connector_registry", None)
+    if _old is not None and hasattr(_old, "close"):
+        _old.close()
     registry = ConnectorRegistry.from_config(config, factories=factories)
     app.state._connector_registry = registry
     register(app, daemon_state)

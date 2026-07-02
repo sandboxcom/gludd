@@ -64,6 +64,34 @@ def _reg(*configs: dict[str, Any]) -> ConnectorRegistry:
     return ConnectorRegistry.from_config(list(configs), factories=factories)
 
 
+class _ClosableSource(_FakeSource):
+    """A source with a background resource to tear down (like MqttSource)."""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        super().__init__(config)
+        self.disconnected = False
+
+    def disconnect(self) -> None:
+        self.disconnected = True
+
+
+class TestClose:
+    def test_close_calls_disconnect_on_each_source(self) -> None:
+        reg = ConnectorRegistry.from_config(
+            [{"name": "mqtt-ish", "kind": "logs", "factory": "closable"}],
+            factories={"closable": _ClosableSource},
+        )
+        src = reg.get("mqtt-ish")
+        assert src is not None
+        reg.close()
+        assert src.disconnected is True
+
+    def test_close_skips_sources_without_teardown_and_never_raises(self) -> None:
+        # _FakeSource has no disconnect/close → close() is a graceful no-op.
+        reg = _reg({"name": "plain", "kind": "logs", "factory": "fake"})
+        reg.close()  # must not raise
+
+
 # --------------------------------------------------------------------------- #
 # build from config
 # --------------------------------------------------------------------------- #
