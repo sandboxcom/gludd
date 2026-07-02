@@ -26,6 +26,7 @@ from __future__ import annotations
 import contextlib
 import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 __all__ = ["AtomicSafeWriter"]
@@ -56,7 +57,12 @@ class AtomicSafeWriter:
         """The resolved root every target must live beneath."""
         return self._workspace_root
 
-    def write(self, path: str, content: str) -> str:
+    def write(
+        self,
+        path: str,
+        content: str,
+        validate: Callable[[str], bool] | None = None,
+    ) -> str:
         """Atomically write ``content`` to ``path``, returning the resolved path.
 
         Parameters
@@ -66,6 +72,15 @@ class AtomicSafeWriter:
             target file. Must resolve *beneath* ``workspace_root``.
         content:
             Text content to write. Encoded as UTF-8.
+        validate:
+            Optional post-write validation hook. If provided, it is called with
+            the resolved target path *after* the atomic swap. If it returns a
+            falsy value OR raises, the write is **rolled back** — the file is
+            restored to its exact prior bytes (or removed if it did not exist
+            before) and a :class:`RuntimeError` is raised. This adds
+            recoverability: a config change that breaks validation never leaves a
+            broken file on disk. When ``validate`` is ``None`` (the default) the
+            behaviour is unchanged, so existing callers are unaffected.
 
         Returns
         -------
@@ -79,8 +94,16 @@ class AtomicSafeWriter:
             absolute escape, or symlink escape).
         OSError
             On any underlying filesystem error during the temp write/replace.
+        RuntimeError
+            If ``validate`` is provided and rejects (returns falsy) or raises;
+            the on-disk file is rolled back to its prior state before raising.
         """
         target = self._confine(path)
+
+        # Capture the prior bytes BEFORE the swap so we can roll back to the
+        # exact previous content. ``None`` means the file did not exist (a fresh
+        # create), in which case a rollback removes the newly-created file.
+        original: bytes | None = target.read_bytes() if target.exists() else None
 
         # Same-directory temp so os.replace is an atomic rename on POSIX.
         # Prefix with the target name + "." so debugging a stale temp is easy.
@@ -100,7 +123,52 @@ class AtomicSafeWriter:
             with contextlib.suppress(OSError):
                 os.unlink(tmp_name)
             raise
+
+        if validate is not None:
+            try:
+                accepted = bool(validate(str(target)))
+            except Exception as exc:
+                # A raising validator is treated as a rejection — roll back and
+                # surface the original failure as the cause.
+                self._restore(target, original)
+                raise RuntimeError(
+                    "post-write validation failed, rolled back"
+                ) from exc
+            if not accepted:
+                self._restore(target, original)
+                raise RuntimeError("post-write validation failed, rolled back")
+
         return str(target)
+
+    def _restore(self, target: Path, original: bytes | None) -> None:
+        """Roll ``target`` back to its prior state after a failed validation.
+
+        * If the file existed before (``original`` is bytes), atomically swap the
+          original bytes back into place (same temp-file + ``os.replace`` dance
+          used by :meth:`write`, so the restore is itself crash-safe).
+        * If the file did NOT exist before (``original`` is ``None``), the write
+          created it — remove it so no partial/broken new file is left behind.
+        """
+        if original is None:
+            with contextlib.suppress(OSError):
+                target.unlink()
+            return
+
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(target.parent),
+            prefix=f".{target.name}.restore.",
+            suffix=".tmp",
+        )
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(original)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_name, target)
+        except Exception:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_name)
+            raise
 
     def _confine(self, path: str) -> Path:
         """Resolve ``path`` against the workspace root and verify confinement.

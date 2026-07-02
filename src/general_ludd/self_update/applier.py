@@ -224,6 +224,31 @@ def _resolve_confined(
     return None, resolved_paths
 
 
+def _restore_snapshots(snapshots: list[tuple[Path, bytes | None]]) -> None:
+    """Roll every target back to the bytes captured before the write.
+
+    Used when a post-write validation fails so a broken config is never left on
+    disk. For each ``(resolved, prior)`` pair:
+
+    * ``prior is None`` -> the file did not exist before the write, so remove the
+      newly-created file (best-effort).
+    * ``prior`` is bytes -> restore that exact prior content.
+
+    Restore is best-effort per target (an :class:`OSError` on one path does not
+    abort the rest) — the goal is maximal recovery, never a second failure.
+    """
+    for resolved, prior in snapshots:
+        try:
+            if prior is None:
+                if resolved.exists():
+                    resolved.unlink()
+            else:
+                resolved.write_bytes(prior)
+        except OSError:
+            # Best-effort: continue restoring the remaining snapshots.
+            continue
+
+
 class UpdateApplier:
     """Apply an update plan through an injected writer and capability checker."""
 
@@ -306,6 +331,17 @@ class UpdateApplier:
                     evidence=f"invalid yaml: {exc}",
                 )
 
+            # Snapshot each resolved target's PRIOR bytes before writing so a
+            # post-write validation failure can be rolled back — a broken config
+            # is never left on disk. ``None`` marks a file that did not exist.
+            snapshots: list[tuple[Path, bytes | None]] = []
+            for resolved in resolved_paths:
+                try:
+                    prior = resolved.read_bytes() if resolved.exists() else None
+                except OSError:
+                    prior = None
+                snapshots.append((resolved, prior))
+
             try:
                 # TOCTOU fix (applier-C): write the RESOLVED paths computed by
                 # the confinement gate, NOT the raw target strings. A symlink
@@ -314,10 +350,31 @@ class UpdateApplier:
                 for resolved in resolved_paths:
                     self._writer.write(str(resolved), change_content)
             except Exception as exc:  # write failure fails closed
+                # Roll back anything already swapped before failing closed.
+                _restore_snapshots(snapshots)
                 return ApplyResult(
                     status="denied",
                     target_paths=target_paths,
                     evidence=f"write failed: {exc}",
+                )
+
+            # Post-write validation (recoverability): re-read the on-disk result
+            # and confirm it still parses as YAML. If a target materialised on
+            # disk but no longer parses (or cannot be read), restore EVERY
+            # snapshot and deny — the config is rolled back to its prior state.
+            # A writer that does not materialise a file leaves nothing on disk to
+            # validate, so its absence is not treated as a failure.
+            try:
+                for resolved in resolved_paths:
+                    if not resolved.exists():
+                        continue
+                    yaml.safe_load(resolved.read_text(encoding="utf-8"))
+            except Exception as exc:
+                _restore_snapshots(snapshots)
+                return ApplyResult(
+                    status="denied",
+                    target_paths=target_paths,
+                    evidence=f"post-write validation failed, rolled back: {exc}",
                 )
 
             return ApplyResult(

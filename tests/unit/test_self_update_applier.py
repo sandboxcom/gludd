@@ -280,6 +280,57 @@ def test_unknown_kind_fails_closed_to_denied() -> None:
     assert writer.writes == []
 
 
+def test_config_write_rolls_back_on_post_write_validation_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A config whose ON-DISK result is invalid post-write is rolled back.
+
+    The pre-write YAML validation passes (``change_content`` is valid), but the
+    writer materialises invalid YAML on disk. The applier's post-write re-read
+    must catch this, restore the prior content, and return ``denied`` — never
+    leaving a broken config on disk.
+    """
+
+    class _CorruptingDiskWriter:
+        """Writes to disk but corrupts the content to fail post-write parsing."""
+
+        def __init__(self) -> None:
+            self.writes: list[tuple[str, str]] = []
+
+        def write(self, path: str, content: str) -> str:
+            self.writes.append((path, content))
+            # Materialise INVALID yaml on disk regardless of the valid content.
+            Path(path).write_text("a: [1, 2\n  b: : : oops\n")
+            return path
+
+    # Resolve relative target paths under tmp_path (not the test-run cwd) so the
+    # protected-path check does not spuriously match a marker in the cwd path.
+    monkeypatch.chdir(tmp_path)
+
+    target = tmp_path / "config" / "setting.yml"
+    target.parent.mkdir(parents=True)
+    target.write_text("good: original\n")
+
+    writer = _CorruptingDiskWriter()
+    applier = UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=tmp_path,
+    )
+    plan = _Plan(
+        kind="config",
+        capability_required="config_self_modify",
+        target_paths=["config/setting.yml"],
+    )
+
+    result = applier.apply(plan, "new: value\n")
+
+    assert result.status == "denied"
+    assert "rolled back" in result.evidence
+    # The prior on-disk content is fully restored — no broken config remains.
+    assert target.read_text() == "good: original\n"
+
+
 def test_writer_failure_fails_closed_to_denied() -> None:
     class _BoomWriter:
         def write(self, path: str, content: str) -> None:

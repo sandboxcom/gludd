@@ -161,6 +161,68 @@ def test_write_cleans_up_temp_file_on_failure(
 
 
 # ---------------------------------------------------------------------------
+# Post-write validation + rollback — a rejected write must never persist
+# ---------------------------------------------------------------------------
+
+
+def test_write_restores_original_on_validate_failure(tmp_path: Path) -> None:
+    # An existing file whose new content fails post-write validation must be
+    # rolled back to its EXACT prior bytes, and write() must raise.
+    target = tmp_path / "config.yml"
+    target.write_text("old: data\n")
+
+    writer = AtomicSafeWriter(tmp_path)
+
+    with pytest.raises(RuntimeError, match="rolled back"):
+        writer.write("config.yml", "new: data\n", validate=lambda _p: False)
+
+    # On-disk bytes are the pre-write content — the broken write was undone.
+    assert target.read_text() == "old: data\n"
+    # No stray temp/restore files left behind.
+    names = [p.name for p in tmp_path.iterdir()]
+    assert names == ["config.yml"]
+
+
+def test_write_removes_new_file_on_validate_failure(tmp_path: Path) -> None:
+    # A newly-created file that fails post-write validation must be removed
+    # entirely (there was no prior content to restore).
+    writer = AtomicSafeWriter(tmp_path)
+
+    with pytest.raises(RuntimeError, match="rolled back"):
+        writer.write("fresh.yml", "k: v\n", validate=lambda _p: False)
+
+    assert not (tmp_path / "fresh.yml").exists()
+    # No stray temp/restore files left behind.
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_write_rolls_back_when_validate_raises(tmp_path: Path) -> None:
+    # A validator that RAISES is treated as a rejection: roll back + RuntimeError.
+    target = tmp_path / "config.yml"
+    target.write_text("old: data\n")
+
+    writer = AtomicSafeWriter(tmp_path)
+
+    def boom(_path: str) -> bool:
+        raise ValueError("validator exploded")
+
+    with pytest.raises(RuntimeError, match="rolled back"):
+        writer.write("config.yml", "new: data\n", validate=boom)
+
+    assert target.read_text() == "old: data\n"
+
+
+def test_write_applies_when_validate_passes(tmp_path: Path) -> None:
+    # A passing validator leaves the new content in place and returns the path.
+    writer = AtomicSafeWriter(tmp_path)
+
+    returned = writer.write("config.yml", "new: data\n", validate=lambda _p: True)
+
+    assert (tmp_path / "config.yml").read_text() == "new: data\n"
+    assert returned == str((tmp_path / "config.yml").resolve())
+
+
+# ---------------------------------------------------------------------------
 # Protocol conformance — must structurally satisfy SafeWriter
 # ---------------------------------------------------------------------------
 
