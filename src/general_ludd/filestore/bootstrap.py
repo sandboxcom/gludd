@@ -154,7 +154,9 @@ class BinaryBootstrapper:
             # OS. The OpenTofu-style lowercase-os + amd64 + .zip name (below) 404s on
             # every platform — verified against the v2.2.0 release asset list.
             bao_arch = {"amd64": "x86_64", "arm64": "arm64"}.get(info["arch"], info["arch"])
-            filename = f"bao_{OPENBAO_VERSION}_{os_name.capitalize()}_{bao_arch}.tar.gz"
+            # OpenBao ships Linux/Darwin as .tar.gz but Windows as .zip.
+            bao_ext = ".zip" if os_name == "windows" else ".tar.gz"
+            filename = f"bao_{OPENBAO_VERSION}_{os_name.capitalize()}_{bao_arch}{bao_ext}"
             return f"{OPENBAO_BASE_URL}/{filename}"
         # OpenTofu: `tofu_<ver>_<os>_amd64.{tar.gz|zip}` — lowercase os, amd64, .zip on
         # darwin/windows. (arm64-native OpenTofu is a separate follow-up; the amd64
@@ -305,10 +307,12 @@ class BinaryBootstrapper:
             async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
                 resp = await client.get(url)
                 if resp.status_code == 200:
-                    # Bound memory before storing: reject an oversized response by
-                    # its declared Content-Length (guarding a malformed header) AND
-                    # its actual body length (chunked/absent header). Pairs with the
-                    # planned digest-pin verification.
+                    # Refuse to STORE + chmod-exec an oversized artifact (by declared
+                    # Content-Length or actual body length). httpx has already
+                    # buffered resp.content, so this bounds what we PERSIST + execute,
+                    # not peak download memory — true memory-bounding (client.stream +
+                    # running cap) is a documented follow-up. Low severity: the
+                    # download URLs are hardcoded, trusted GitHub releases.
                     clen = resp.headers.get("content-length")
                     if (
                         clen is not None
