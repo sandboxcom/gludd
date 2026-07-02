@@ -170,6 +170,7 @@ def make_slm_summarize_fn(
                 profile_id,
                 messages=messages,
                 requested_max_output_tokens=max_output_tokens,
+                work_type="compaction",
             )
             return str(getattr(resp, "content", "") or "")
         except Exception:

@@ -31,7 +31,9 @@ class _StubGateway:
         self.calls: list[tuple] = []
         self._content = content
 
-    def call_model(self, profile_id, *, messages=None, requested_max_output_tokens=None):
+    def call_model(
+        self, profile_id, *, messages=None, requested_max_output_tokens=None, **kwargs
+    ):
         self.calls.append((profile_id, messages, requested_max_output_tokens))
         return _StubResp(self._content)
 
@@ -42,7 +44,9 @@ class _RaisingGateway:
     def __init__(self) -> None:
         self.calls = 0
 
-    def call_model(self, profile_id, *, messages=None, requested_max_output_tokens=None):
+    def call_model(
+        self, profile_id, *, messages=None, requested_max_output_tokens=None, **kwargs
+    ):
         self.calls += 1
         raise RuntimeError("gateway boom")
 

@@ -166,6 +166,7 @@ class LangGraphGateway:
             result = await self._call_model(
                 profile_id=model,
                 messages=state["messages"],
+                work_type=state.get("task_context", {}).get("work_type") or "feature",
             )
             state["generated_output"] = result.content if hasattr(result, "content") else str(result)
         except Exception as exc:
@@ -201,7 +202,11 @@ class LangGraphGateway:
         if self._call_model is None:
             return {"content": "", "model": profile_id, "warnings": ["no call_model_fn"]}
         try:
-            result = await self._call_model(profile_id=profile_id, messages=messages)
+            result = await self._call_model(
+                profile_id=profile_id,
+                messages=messages,
+                work_type=task_context.get("work_type") or "feature",
+            )
             content = result.content if hasattr(result, "content") else str(result)
             return {
                 "content": content,

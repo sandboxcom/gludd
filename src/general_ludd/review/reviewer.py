@@ -147,6 +147,7 @@ class ReturnReviewer:
             response = self._gateway.call_model(
                 self._model_profile_id,
                 messages=[{"role": "user", "content": prompt}],
+                work_type="review",
             )
             return response.content, None
         except Exception as exc:

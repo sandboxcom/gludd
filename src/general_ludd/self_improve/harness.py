@@ -68,6 +68,7 @@ class SelfImprovementHarness:
             response = gw.call_model(
                 self._model_profile_id,
                 [{"role": "user", "content": prompt}],
+                work_type="gap_analysis",
             )
         else:
             # Adapter / test-fake path.

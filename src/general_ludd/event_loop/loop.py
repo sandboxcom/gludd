@@ -33,7 +33,6 @@ from general_ludd.models.job_invocation import (
     is_generation_work_type,
 )
 from general_ludd.observability.timing import default_tracker
-from general_ludd.observability.token_cost import default_token_tracker
 from general_ludd.reload.self_improve import SelfImprovementWorkflow
 from general_ludd.rules.engine import Rule, apply_rule_actions, evaluate_rules
 from general_ludd.schemas.benchmark import TaskType
@@ -1667,26 +1666,20 @@ class EventLoop:
             _model_call_duration = time.monotonic() - _model_call_start
             # Feed the model-call duration into the shared clock-time tracker so an
             # anomalously-slow model call (e.g. a call that usually takes ~2s now
-            # taking ~30s) is detectable vs its learned per-profile baseline.
-            default_tracker().check_then_record(
-                f"model:{resolved_model_profile or 'default'}", _model_call_duration
-            )
-            # Feed per-(work_type, model) token consumption into the shared
-            # token-cost tracker so gludd LEARNS which task KINDS are token-heavy
-            # vs light — the substrate for preferring a cheaper equivalent
-            # pipeline where quality allows. Uses the same ~4-chars/token estimate
-            # the perf repo records below; a later slice upgrades this to the
-            # gateway's real usage_metadata for exact counts.
-            # Only record when a model call ACTUALLY happened: non-generation
-            # todos leave model_response None, and recording that phantom sample
-            # (output=0) would pollute the learned per-work_type baseline. Key on
-            # the BARE work_type so the sole consumer, environment_advisor's
-            # classify(work_type), can resolve what was recorded.
+            # taking ~30s) is detectable vs its learned per-profile baseline. Only
+            # record when a model call ACTUALLY happened: non-generation todos leave
+            # model_response None, and recording that phantom ~0s sample would drag
+            # the per-profile latency baseline toward zero, causing false
+            # is_anomalous "slow" warnings and artificially short StallWatchdog
+            # deadlines.
+            # Token capture was RETIRED from this path: it only covered the daemon
+            # generation branch and missed the worker / ToolCallLoop / reviewer /
+            # SLM / langgraph paths. It now lives at the gateway billing chokepoint
+            # (ModelGateway._invoke_and_bill) with real usage_metadata counts, for
+            # complete coverage across every call path.
             if model_response is not None:
-                default_token_tracker().record(
-                    _safe_str(todo, "work_type", "code") or "code",
-                    len(prompt_text or "") // 4,
-                    len(model_response or "") // 4,
+                default_tracker().check_then_record(
+                    f"model:{resolved_model_profile or 'default'}", _model_call_duration
                 )
             # Record deployment health after each model call so the
             # self-healing router learns which deployments are degraded.

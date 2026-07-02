@@ -10,7 +10,9 @@ from general_ludd.models.langgraph_gateway import GraphState, LangGraphGateway
 
 
 def _make_mock_call_model_fn(response_content: str = "generated output"):
-    async def fn(profile_id: str, messages: list) -> MagicMock:
+    # **kwargs tolerates the work_type= the LangGraphGateway now threads through
+    # to call_model_fn for gateway-side token-cost capture.
+    async def fn(profile_id: str, messages: list, **kwargs) -> MagicMock:
         return MagicMock(content=response_content)
 
     return AsyncMock(side_effect=fn)
@@ -72,7 +74,7 @@ class TestLangGraphGateway:
     async def test_graph_retries_on_low_quality(self):
         call_count = 0
 
-        async def mock_fn(profile_id: str, messages: list) -> MagicMock:
+        async def mock_fn(profile_id: str, messages: list, **kwargs) -> MagicMock:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -106,7 +108,7 @@ class TestLangGraphGateway:
     async def test_max_retries_returns_best(self):
         call_count = 0
 
-        async def mock_fn(profile_id: str, messages: list) -> MagicMock:
+        async def mock_fn(profile_id: str, messages: list, **kwargs) -> MagicMock:
             nonlocal call_count
             call_count += 1
             return MagicMock(content=f"attempt {call_count}")

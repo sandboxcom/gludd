@@ -109,7 +109,7 @@ class _FakeGateway:
         self._error = error
         self.calls = []
 
-    def call_model(self, profile_id, *, messages, requested_max_output_tokens):
+    def call_model(self, profile_id, *, messages, requested_max_output_tokens, **kwargs):
         self.calls.append(
             {
                 "profile_id": profile_id,

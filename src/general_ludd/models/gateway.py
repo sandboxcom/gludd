@@ -21,6 +21,7 @@ from general_ludd.models.timeout_detector import (
     TimeoutClassifier,
     TimeoutRetryPolicy,
 )
+from general_ludd.observability.token_cost import default_token_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -535,6 +536,18 @@ class ModelGateway:
         # Tools are bound to the *invocation* via chat_model.bind_tools() below.
         tools = kwargs.pop("tools", None)
 
+        # Pop `work_type` BEFORE updating init_kwargs so it is never forwarded to
+        # the LangChain provider constructor (which would raise TypeError). It is
+        # the BARE task-kind string environment_advisor.classify() consumes, and
+        # is used below to record real per-work_type token consumption at this
+        # billing chokepoint — the single path EVERY model call flows through.
+        # Coerce to a non-empty str: a caller may pass work_type=None explicitly
+        # (e.g. the admin endpoint whose body lacks the field), and the `"unknown"`
+        # default does NOT fire when the key is present-with-None — recording a
+        # `None` key would create a dead bucket classify() can never resolve.
+        _work_type = kwargs.pop("work_type", "unknown")
+        work_type = str(_work_type) if _work_type else "unknown"
+
         init_kwargs: dict[str, Any] = {"model": profile.model_name}
         if api_key:
             init_kwargs["api_key"] = api_key
@@ -671,6 +684,15 @@ class ModelGateway:
                 cost_per_input_token=profile.cost_per_input_token,
                 cost_per_output_token=profile.cost_per_output_token,
             )
+
+        # Record real per-work_type token consumption at the billing chokepoint so
+        # gludd LEARNS which task KINDS are token-heavy vs light across EVERY call
+        # path (daemon generation, worker, ToolCallLoop, reviewer, SLM, langgraph)
+        # — not just the daemon generation branch the old event_loop capture saw.
+        # Cache hits return before _invoke_and_bill and empty-200s raise before the
+        # record above, so both correctly record nothing. Key on the BARE work_type
+        # so environment_advisor.classify(work_type) can resolve what was recorded.
+        default_token_tracker().record(work_type, input_tokens, output_tokens)
 
         response = ModelResponse(
             content=str(content),

@@ -703,8 +703,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
         _gateway = gateway
 
-        async def _call_model_fn(profile_id: str, messages: list[Any]) -> Any:
-            return await asyncio.to_thread(_gateway.call_model, profile_id, messages)
+        async def _call_model_fn(
+            profile_id: str, messages: list[Any], **kwargs: Any
+        ) -> Any:
+            # Forward extra kwargs (e.g. work_type, used for token-cost capture at
+            # the gateway billing chokepoint) through to call_model so the
+            # LangGraphGateway generation path is metered like every other path.
+            return await asyncio.to_thread(
+                _gateway.call_model, profile_id, messages, **kwargs
+            )
 
         gw = LangGraphGateway(
             call_model_fn=_call_model_fn,

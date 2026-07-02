@@ -196,7 +196,8 @@ class ToolCallLoop:
         if user_prompt:
             messages.append({"role": "user", "content": user_prompt})
         return await asyncio.to_thread(
-            self._gateway.call_model, profile_id, messages=messages
+            self._gateway.call_model, profile_id, messages=messages,
+            work_type=job.work_type,
         )
 
     async def _call_with_tools(
@@ -209,4 +210,5 @@ class ToolCallLoop:
             profile_id,
             messages=messages,
             tools=tool_schemas,
+            work_type=job.work_type,
         )

@@ -299,7 +299,9 @@ class ExecutionEngine:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ]
-            response = self._model_gateway.call_model(profile_id, messages=messages)
+            response = self._model_gateway.call_model(
+                profile_id, messages=messages, work_type=job.work_type or "code"
+            )
             model_output = getattr(response, "content", "") or str(response)
             self._record_metrics(job, success=True, tokens=len(model_output) // 4)
         except Exception as exc:
@@ -430,7 +432,9 @@ class ExecutionEngine:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ]
-            response = self._model_gateway.call_model(profile_id, messages=messages)
+            response = self._model_gateway.call_model(
+                profile_id, messages=messages, work_type=job.work_type or "code"
+            )
             model_output = getattr(response, "content", "") or str(response)
             self._record_metrics(job, success=True, tokens=len(model_output) // 4)
         except Exception as exc:

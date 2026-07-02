@@ -131,7 +131,9 @@ def invoke_model_for_generation(
         if m["content"].strip()
     ]
     try:
-        response = gateway.call_model(profile_id, messages=messages)
+        response = gateway.call_model(
+            profile_id, messages=messages, work_type=work_type or "unknown"
+        )
         content = response.content
         tool_calls = getattr(response, "tool_calls", None)
     except Exception as exc:

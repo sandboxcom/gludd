@@ -73,7 +73,9 @@ class _FakeModelGateway:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def call_model(self, profile_id: str, *, messages: list[dict[str, str]]) -> Any:
+    def call_model(
+        self, profile_id: str, *, messages: list[dict[str, str]], **kwargs: Any
+    ) -> Any:
         self.calls.append({"profile_id": profile_id, "messages": messages})
         return _FakeGatewayResponse()
 
