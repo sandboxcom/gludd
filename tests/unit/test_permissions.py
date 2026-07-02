@@ -309,6 +309,161 @@ class TestSubset:
         assert PermissionSpecParser.is_subset(subject, issuer) is True
 
 
+class TestIntersectFilePrefix:
+    """``intersection`` of two ``file:`` path_prefix scopes is containment-aware.
+
+    Regression guard for a privilege-widening bug where the intersection picked
+    the LONGER path_prefix with no containment check, handing a subagent file
+    access to a scope the human spec never granted. The true intersection of two
+    disjoint path scopes is EMPTY (the capability must be dropped).
+    """
+
+    @staticmethod
+    def _spec(caps: list[Capability], agent_type: str = "x") -> PermissionSpec:
+        return PermissionSpec(
+            version=1,
+            agent_type=agent_type,
+            parent_agent_id=None,
+            capabilities=caps,
+            denied=[],
+            max_sts_ttl_seconds=3600,
+            max_subagent_permissions="same_or_fewer",
+        )
+
+    def _file_cap(self, prefix: str) -> Capability:
+        return Capability(
+            resource="file:repo",
+            actions=["read"],
+            constraints={"path_prefix": prefix},
+        )
+
+    def _intersect_file(self, ap: str, bp: str) -> list[Capability]:
+        a = self._spec([self._file_cap(ap)])
+        b = self._spec([self._file_cap(bp)])
+        return PermissionSpecParser.intersection(a, b).capabilities
+
+    def test_disjoint_prefixes_drop_capability(self) -> None:
+        # /a/b/c and /x/y share no filesystem scope -> empty intersection.
+        caps = self._intersect_file("/a/b/c", "/x/y")
+        assert caps == []
+
+    def test_nested_prefixes_yield_the_narrower(self) -> None:
+        # /a/b contains /a/b/c -> intersection is the narrower /a/b/c.
+        caps = self._intersect_file("/a/b", "/a/b/c")
+        assert len(caps) == 1
+        assert caps[0].constraints == {"path_prefix": "/a/b/c"}
+
+    def test_nested_prefixes_order_independent(self) -> None:
+        # Argument order must not change the result.
+        caps = self._intersect_file("/a/b/c", "/a/b")
+        assert len(caps) == 1
+        assert caps[0].constraints == {"path_prefix": "/a/b/c"}
+
+    def test_identical_prefixes_yield_that_prefix(self) -> None:
+        caps = self._intersect_file("/a/b/", "/a/b/")
+        assert len(caps) == 1
+        assert caps[0].constraints == {"path_prefix": "/a/b/"}
+
+    def test_shared_fragment_is_not_false_nesting(self) -> None:
+        # /a/bc is NOT under /a/b (segment-aware, not bare startswith) -> drop.
+        caps = self._intersect_file("/a/bc", "/a/b")
+        assert caps == []
+
+    def test_root_scope_contains_any_and_yields_narrower(self) -> None:
+        # "/" is the whole filesystem; its intersection with /x/y is /x/y.
+        caps = self._intersect_file("/", "/x/y")
+        assert len(caps) == 1
+        assert caps[0].constraints == {"path_prefix": "/x/y"}
+
+
+class TestIntersectNetSecretRegression:
+    """net:/secret: intersection is set-intersection and stays unchanged."""
+
+    @staticmethod
+    def _spec(caps: list[Capability]) -> PermissionSpec:
+        return PermissionSpec(
+            version=1,
+            agent_type="x",
+            parent_agent_id=None,
+            capabilities=caps,
+            denied=[],
+            max_sts_ttl_seconds=3600,
+            max_subagent_permissions="same_or_fewer",
+        )
+
+    def test_net_hosts_are_set_intersected(self) -> None:
+        a = self._spec(
+            [
+                Capability(
+                    resource="net:egress:llm_api",
+                    actions=["connect"],
+                    constraints={
+                        "allowed_hosts": ["api.anthropic.com", "api.openai.com"]
+                    },
+                )
+            ]
+        )
+        b = self._spec(
+            [
+                Capability(
+                    resource="net:egress:llm_api",
+                    actions=["connect"],
+                    constraints={
+                        "allowed_hosts": ["api.anthropic.com", "example.com"]
+                    },
+                )
+            ]
+        )
+        caps = PermissionSpecParser.intersection(a, b).capabilities
+        assert len(caps) == 1
+        assert caps[0].constraints == {"allowed_hosts": ["api.anthropic.com"]}
+
+    def test_net_disjoint_hosts_drop_capability(self) -> None:
+        a = self._spec(
+            [
+                Capability(
+                    resource="net:egress:llm_api",
+                    actions=["connect"],
+                    constraints={"allowed_hosts": ["api.anthropic.com"]},
+                )
+            ]
+        )
+        b = self._spec(
+            [
+                Capability(
+                    resource="net:egress:llm_api",
+                    actions=["connect"],
+                    constraints={"allowed_hosts": ["example.com"]},
+                )
+            ]
+        )
+        caps = PermissionSpecParser.intersection(a, b).capabilities
+        assert caps == []
+
+    def test_secret_openbao_paths_are_set_intersected(self) -> None:
+        a = self._spec(
+            [
+                Capability(
+                    resource="secret:openbao",
+                    actions=["read"],
+                    constraints={"openbao_paths": ["kv/a", "kv/b"]},
+                )
+            ]
+        )
+        b = self._spec(
+            [
+                Capability(
+                    resource="secret:openbao",
+                    actions=["read"],
+                    constraints={"openbao_paths": ["kv/b", "kv/c"]},
+                )
+            ]
+        )
+        caps = PermissionSpecParser.intersection(a, b).capabilities
+        assert len(caps) == 1
+        assert caps[0].constraints == {"openbao_paths": ["kv/b"]}
+
+
 def test_ttl_capped_at_issuer_max() -> None:
     """The issuer's ``max_sts_ttl_seconds`` caps what an STS token may be minted for.
 

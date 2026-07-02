@@ -436,7 +436,9 @@ class PermissionSpecParser:
         For each overlapping capability:
 
         * ``actions`` = set intersection.
-        * ``path_prefix`` (file:) = the LONGER (narrower) prefix.
+        * ``path_prefix`` (file:) = the NARROWER (more specific) prefix when
+          one scope truly contains the other; disjoint scopes drop the
+          capability (no shared file access).
         * ``allowed_hosts`` / ``allowed_ports`` (net:) = set intersection.
         * ``openbao_paths`` (secret:openbao) = set intersection.
 
@@ -516,11 +518,24 @@ class PermissionSpecParser:
             bp = b.get("path_prefix")
             if not isinstance(ap, str) or not isinstance(bp, str):
                 return None
-            # Longer prefix = narrower scope.
-            chosen = ap if len(ap) >= len(bp) else bp
-            if not chosen:
+            if not ap or not bp:
                 return None
-            return {"path_prefix": chosen}
+            # Containment-aware intersection: the narrower (more specific)
+            # scope wins ONLY when one prefix truly contains the other. Compare
+            # on path SEGMENTS (not bare string startswith) so "/a/bc" is not
+            # treated as nested under "/a/b". Disjoint scopes have an EMPTY
+            # intersection and drop the capability (return None) — never widen
+            # to whichever prefix happens to be longer.
+            a_segs = [s for s in ap.split("/") if s]
+            b_segs = [s for s in bp.split("/") if s]
+            if a_segs[: len(b_segs)] == b_segs:
+                # ``bp`` is a path-prefix of (or equal to) ``ap`` -> ``ap`` is
+                # the narrower/equal scope.
+                return {"path_prefix": ap}
+            if b_segs[: len(a_segs)] == a_segs:
+                # ``ap`` is a path-prefix of ``bp`` -> ``bp`` is narrower.
+                return {"path_prefix": bp}
+            return None
         if family == "net:":
             out: dict[str, Any] = {}
             for key in ("allowed_hosts", "allowed_ports"):
