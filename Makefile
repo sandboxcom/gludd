@@ -1,10 +1,25 @@
 .PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo
 
+# --- TEMP release-verification targets (alpha.5) ---
+tag-run:
+	gh run list --repo sandboxcom/gludd --workflow "Build and Release" --limit 6
+
+run-view:
+	gh run view $(ID) --repo sandboxcom/gludd
+
+rel-view:
+	gh release view v0.1.0-alpha.5 --repo sandboxcom/gludd
+# --- end TEMP ---
+
 VERSION := $(shell grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2)
 
 # Print the current version
 version:
 	@echo $(VERSION)
+
+# Restore the uncommitted tooling stashed by promote-master-ssh.
+git-stash-pop:
+	git stash pop
 
 # Memory-safe test runners (full 8-worker suite OOMs; use fewer workers or shard by dir)
 # TESTDIR defaults to a directory; NPROC caps xdist workers to bound memory.
