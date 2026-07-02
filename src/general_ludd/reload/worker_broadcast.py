@@ -8,7 +8,25 @@ from typing import Any
 
 import httpx
 
+from general_ludd.security import is_safe_fetch_url
+
 logger = logging.getLogger(__name__)
+
+
+def _is_safe_worker_address(address: str) -> bool:
+    """SSRF guard for a worker address BEFORE the daemon PSK is ever sent to it.
+
+    Delegates to the canonical :func:`general_ludd.security.is_safe_fetch_url`
+    (https-only + literal-host deny) — the SAME guard the webhook-registration
+    endpoint uses — so the policy can never drift. Returns ``True`` only when the
+    address uses ``https`` and does not target a loopback / link-local /
+    RFC-1918 / cloud-metadata (``169.254.169.254``, ``::1``, ``127.0.0.0/8`` …)
+    host. A worker registered with a plain-http or metadata/loopback address
+    would otherwise receive the ``Authorization: Bearer <GLUDD_PSK>`` header in
+    cleartext or exfiltrate it to an attacker/SSRF target. Performs NO DNS
+    resolution and NO network I/O, so it is safe on the broadcast hot path.
+    """
+    return is_safe_fetch_url(address)
 
 
 @dataclass
@@ -32,6 +50,21 @@ class WorkerBroadcaster:
         self._stale_threshold = stale_threshold_seconds
 
     def register(self, worker: WorkerInfo) -> None:
+        # SSRF / PSK-leak guard: never register a worker whose address is not a
+        # safe https target. Sending the daemon PSK (broadcast_reload /
+        # broadcast_model_update attach `Authorization: Bearer <GLUDD_PSK>`) to a
+        # plain-http, loopback, link-local, or cloud-metadata address would leak
+        # the credential in cleartext or to an attacker. Fail closed: refuse to
+        # store the worker and warn, rather than crash the caller.
+        if not _is_safe_worker_address(worker.address):
+            logger.warning(
+                "Refusing to register worker %s: address %r is not a safe https "
+                "target (must be https and not loopback/link-local/RFC-1918/"
+                "cloud-metadata) — the daemon PSK is never sent to it",
+                worker.worker_id,
+                worker.address,
+            )
+            return
         self._workers[worker.worker_id] = worker
 
     def unregister(self, worker_id: str) -> None:
@@ -65,6 +98,20 @@ class WorkerBroadcaster:
         scope_value = scope.value if hasattr(scope, "value") else str(scope)
         headers = self._auth_headers()
         for w in self._workers.values():
+            # Defense in depth: re-validate the address at send time so the PSK
+            # Bearer header is NEVER POSTed to a plain-http / loopback / link-local
+            # / cloud-metadata target, even if one slipped into the registry.
+            if not _is_safe_worker_address(w.address):
+                logger.warning(
+                    "Skipping reload broadcast to %s: address %r is not a safe "
+                    "https target — not sending the daemon PSK to it",
+                    w.worker_id,
+                    w.address,
+                )
+                results.append(
+                    BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address")
+                )
+                continue
             try:
                 resp = httpx.post(
                     f"{w.address}/admin/reload",
@@ -95,6 +142,20 @@ class WorkerBroadcaster:
         results = []
         headers = self._auth_headers()
         for w in self._workers.values():
+            # Defense in depth: re-validate the address at send time so the PSK
+            # Bearer header is NEVER POSTed to a plain-http / loopback / link-local
+            # / cloud-metadata target, even if one slipped into the registry.
+            if not _is_safe_worker_address(w.address):
+                logger.warning(
+                    "Skipping model-update broadcast to %s: address %r is not a "
+                    "safe https target — not sending the daemon PSK to it",
+                    w.worker_id,
+                    w.address,
+                )
+                results.append(
+                    BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address")
+                )
+                continue
             try:
                 resp = httpx.post(
                     f"{w.address}/admin/models/sync",

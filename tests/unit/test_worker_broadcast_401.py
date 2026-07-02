@@ -12,7 +12,7 @@ def _make_broadcaster(*statuses: int) -> tuple[WorkerBroadcaster, list[WorkerInf
     broadcaster = WorkerBroadcaster()
     workers: list[WorkerInfo] = []
     for i, _status in enumerate(statuses):
-        w = WorkerInfo(worker_id=f"w{i}", address=f"http://worker{i}:8000")
+        w = WorkerInfo(worker_id=f"w{i}", address=f"https://worker{i}.internal:8000")
         broadcaster.register(w)
         workers.append(w)
     return broadcaster, workers
