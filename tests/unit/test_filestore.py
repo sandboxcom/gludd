@@ -344,6 +344,7 @@ class TestBinaryBootstrapper:
 
     def test_download_uses_bundled(self):
         import asyncio
+        import hashlib
 
         from general_ludd.filestore.bootstrap import BinaryBootstrapper
         from general_ludd.filestore.store import FileStore
@@ -356,7 +357,13 @@ class TestBinaryBootstrapper:
             store_dir = Path(tmp) / "store"
             store_dir.mkdir()
             store = FileStore(root_path=str(store_dir))
-            boot = BinaryBootstrapper(store=store, bundled_binaries_dir=str(bundled))
+            # A matching pinned checksum is now required to store + execute a
+            # bundled binary (integrity gate); supply it for the happy path.
+            boot = BinaryBootstrapper(
+                store=store,
+                bundled_binaries_dir=str(bundled),
+                known_sha256={"openbao": hashlib.sha256(b"bundled-bao").hexdigest()},
+            )
             result = asyncio.run(boot.download("openbao"))
             assert result is True
             assert store.exists("binaries/openbao")
@@ -409,6 +416,214 @@ class TestBinaryBootstrapper:
                 results = asyncio.run(boot.download_all())
             assert results["openbao"] is True
             assert results["opentofu"] is False
+
+
+class TestBinaryChecksumVerification:
+    """Integrity gate (RCE fix): downloaded/bundled binaries must match a pinned
+    SHA-256 before they are stored + made executable. Missing pin or mismatch
+    fails closed — nothing is stored and nothing is chmod-exec'd."""
+
+    @staticmethod
+    def _mock_http_client(content: bytes, headers: dict | None = None):
+        from unittest.mock import AsyncMock, MagicMock
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.headers = headers if headers is not None else {}
+        resp.content = content
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=resp)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        return client
+
+    def test_matching_checksum_is_stored(self):
+        """Bytes whose sha256 == the pinned value are stored (download True)."""
+        import asyncio
+        import hashlib
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        payload = b"\x7fELF-legit-openbao-binary"
+        digest = hashlib.sha256(payload).hexdigest()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store, known_sha256={"openbao": digest})
+            client = self._mock_http_client(payload)
+            with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+                 patch.object(boot, "get_download_url", return_value="https://example.com/bao"), \
+                 patch("httpx.AsyncClient", return_value=client):
+                result = asyncio.run(boot.download("openbao"))
+
+            assert result is True
+            assert store.exists("binaries/openbao")
+
+    def test_mismatched_checksum_is_refused_and_not_stored(self):
+        """Bytes whose sha256 != pinned → download False, nothing stored/chmod'd."""
+        import asyncio
+        import hashlib
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        # Pin the digest of the *legit* artifact, then deliver a different one
+        # (as a hijacked redirect / MITM would).
+        pinned = hashlib.sha256(b"the-legit-binary").hexdigest()
+        malicious = b"#!/bin/sh\nrm -rf / # attacker payload"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store, known_sha256={"openbao": pinned})
+            client = self._mock_http_client(malicious)
+            with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+                 patch.object(boot, "get_download_url", return_value="https://evil.example/bao"), \
+                 patch.object(boot, "_store_binary_and_chmod") as mock_store_chmod, \
+                 patch("httpx.AsyncClient", return_value=client):
+                result = asyncio.run(boot.download("openbao"))
+
+            assert result is False
+            # The store+chmod step must never run on a checksum mismatch.
+            mock_store_chmod.assert_not_called()
+            assert not store.exists("binaries/openbao")
+
+    def test_missing_pin_is_refused_fail_closed(self):
+        """No pin configured → refuse (fail-closed): nothing stored/chmod'd."""
+        import asyncio
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            # No known_sha256 and no env var → the pin map is empty.
+            boot = BinaryBootstrapper(store=store)
+            assert boot.KNOWN_SHA256 == {}
+            client = self._mock_http_client(b"unpinned-bytes")
+            with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+                 patch.object(boot, "get_download_url", return_value="https://example.com/bao"), \
+                 patch.object(boot, "_store_binary_and_chmod") as mock_store_chmod, \
+                 patch("httpx.AsyncClient", return_value=client):
+                result = asyncio.run(boot.download("openbao"))
+
+            assert result is False
+            mock_store_chmod.assert_not_called()
+            assert not store.exists("binaries/openbao")
+
+    def test_bundled_mismatch_is_refused(self):
+        """A bundled binary whose bytes don't match the pin is refused (no fall
+        through to an unverified download)."""
+        import asyncio
+        import hashlib
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundled = Path(tmp) / "bundled"
+            bundled.mkdir()
+            (bundled / "openbao").write_bytes(b"tampered-bundled-bytes")
+            store_dir = Path(tmp) / "store"
+            store_dir.mkdir()
+            store = FileStore(root_path=str(store_dir))
+            boot = BinaryBootstrapper(
+                store=store,
+                bundled_binaries_dir=str(bundled),
+                known_sha256={"openbao": hashlib.sha256(b"the-expected-bytes").hexdigest()},
+            )
+            with patch.object(boot, "_store_binary_and_chmod") as mock_store_chmod:
+                result = asyncio.run(boot.download("openbao"))
+
+            assert result is False
+            mock_store_chmod.assert_not_called()
+            assert not store.exists("binaries/openbao")
+
+    def test_verified_tarball_is_extracted_and_executable(self):
+        """A tarball whose sha256 matches the pin is verified, then its member is
+        extracted, stored, and made executable (X_OK)."""
+        import asyncio
+        import hashlib
+        import io as _io
+        import os as _os
+        import tarfile as _tf
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        member = b"\x7fELF fake osqueryi"
+        buf = _io.BytesIO()
+        with _tf.open(fileobj=buf, mode="w:gz") as archive:
+            info = _tf.TarInfo(name="osquery-5.10.2.linux_x86_64/bin/osqueryi")
+            info.size = len(member)
+            archive.addfile(info, _io.BytesIO(member))
+        tar_bytes = buf.getvalue()
+        digest = hashlib.sha256(tar_bytes).hexdigest()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store, known_sha256={"osquery": digest})
+            client = self._mock_http_client(tar_bytes)
+            with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+                 patch.object(boot, "get_download_url", return_value="https://example.com/osq.tar.gz"), \
+                 patch("httpx.AsyncClient", return_value=client):
+                result = asyncio.run(boot.download("osquery"))
+
+            assert result is True
+            stored_path = boot.get_binary_path("osquery")
+            assert stored_path is not None
+            assert _os.path.isfile(stored_path)
+            assert _os.access(stored_path, _os.X_OK)
+
+    def test_pins_populated_from_env_var(self):
+        """Operators supply pins via the GLUDD_BINARY_SHA256 JSON env var."""
+        import json
+        import os as _os
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import _SHA256_ENV_VAR, BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            with patch.dict(_os.environ, {_SHA256_ENV_VAR: json.dumps({"openbao": "abc123"})}):
+                boot = BinaryBootstrapper(store=store)
+            assert boot.KNOWN_SHA256.get("openbao") == "abc123"
+
+    def test_explicit_pin_overrides_env_var(self):
+        """The known_sha256 constructor arg takes precedence over the env var."""
+        import json
+        import os as _os
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import _SHA256_ENV_VAR, BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            with patch.dict(_os.environ, {_SHA256_ENV_VAR: json.dumps({"openbao": "from-env"})}):
+                boot = BinaryBootstrapper(store=store, known_sha256={"openbao": "from-arg"})
+            assert boot.KNOWN_SHA256["openbao"] == "from-arg"
+
+    def test_malformed_env_var_ignored_still_fail_closed(self):
+        """A malformed env var is ignored (not a crash) and leaves the map empty
+        so verification still fails closed."""
+        import os as _os
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import _SHA256_ENV_VAR, BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            with patch.dict(_os.environ, {_SHA256_ENV_VAR: "{not valid json"}):
+                boot = BinaryBootstrapper(store=store)
+            assert boot.KNOWN_SHA256 == {}
 
 
 class TestFilestoreCLI:

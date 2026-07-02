@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -292,6 +293,8 @@ class TestGetDownloadUrl:
 class TestDownload:
     @pytest.mark.asyncio
     async def test_bundled_binary_used(self, bootstrapper, mock_store):
+        # A matching pinned checksum is required to store a bundled binary.
+        bootstrapper.KNOWN_SHA256["openbao"] = hashlib.sha256(b"\x00\x01").hexdigest()
         with patch.object(bootstrapper, "get_bundled_binary_path", return_value="/bundled/openbao"), \
              patch("general_ludd.filestore.bootstrap.Path.read_bytes", return_value=b"\x00\x01"):
             result = await bootstrapper.download("openbao")
@@ -300,6 +303,9 @@ class TestDownload:
 
     @pytest.mark.asyncio
     async def test_bundled_read_fails_falls_back(self, bootstrapper, mock_store):
+        # Read failure falls back to the HTTP download, whose bytes must match
+        # the pinned checksum to be stored.
+        bootstrapper.KNOWN_SHA256["openbao"] = hashlib.sha256(b"\x02\x03").hexdigest()
         with patch.object(bootstrapper, "get_bundled_binary_path", return_value="/bundled/openbao"), \
              patch("general_ludd.filestore.bootstrap.Path.read_bytes", side_effect=OSError("fail")), \
              patch("httpx.AsyncClient") as MockClient:
@@ -316,6 +322,8 @@ class TestDownload:
 
     @pytest.mark.asyncio
     async def test_http_download_success(self, bootstrapper, mock_store):
+        # The downloaded bytes must match the pinned checksum to be stored.
+        bootstrapper.KNOWN_SHA256["openbao"] = hashlib.sha256(b"\x04\x05").hexdigest()
         with patch.object(bootstrapper, "get_bundled_binary_path", return_value=None), \
              patch("httpx.AsyncClient") as MockClient:
             mock_resp = MagicMock()
@@ -473,10 +481,15 @@ async def test_osquery_binary_is_executable_after_download(tmp_path):
     from general_ludd.filestore.bootstrap import BinaryBootstrapper
     from general_ludd.filestore.store import FileStore
 
-    store = FileStore(root_path=str(tmp_path))
-    boot = BinaryBootstrapper(store=store)
-
     tar_bytes = _make_osquery_tarball("osquery-5.10.2.linux_x86_64/bin/osqueryi")
+
+    store = FileStore(root_path=str(tmp_path))
+    # Pin the received (tarball) bytes so the integrity gate admits them; the
+    # executable member is then extracted + chmod'd.
+    boot = BinaryBootstrapper(
+        store=store,
+        known_sha256={"osquery": hashlib.sha256(tar_bytes).hexdigest()},
+    )
 
     mock_resp = MagicMock()
     mock_resp.status_code = 200

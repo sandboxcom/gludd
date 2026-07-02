@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import io
+import json
 import logging
 import os
 import platform
@@ -20,6 +23,26 @@ logger = logging.getLogger(__name__)
 # so a huge or malicious response could exhaust memory. 512 MiB comfortably
 # covers the largest pinned binary (openbao/osquery are tens of MB).
 _MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
+
+# Pinned SHA-256 checksums of the *received artifact* — the raw downloaded bytes
+# and the read bundled bytes (the ``.tar.gz`` for tarball-packaged binaries and
+# the bare executable otherwise) — keyed by the same binary name as
+# KNOWN_VERSIONS.
+#
+# This map is INTENTIONALLY EMPTY by default: the genuine upstream release
+# digests are operator/config supplied (see BinaryBootstrapper._resolve_pins —
+# the GLUDD_BINARY_SHA256 env var or the ``known_sha256`` constructor arg),
+# because they are not vendored in-tree and must be pinned by whoever operates
+# the deployment. A binary with NO pin is REFUSED (fail-closed): it is never
+# stored nor made executable. This closes an RCE where a hijacked/MITM GitHub
+# redirect (download() uses follow_redirects=True) could deliver arbitrary
+# bytes that were then chmod +x'd and executed with no integrity check.
+KNOWN_SHA256: dict[str, str] = {}
+
+# Environment variable carrying operator-supplied pins as a JSON object mapping
+# ``{"<binary-name>": "<hex-sha256>"}``. It is merged over the module default
+# and then overridden by any explicit ``known_sha256`` constructor argument.
+_SHA256_ENV_VAR = "GLUDD_BINARY_SHA256"
 
 OPENBAO_VERSION = "2.2.0"
 OPENTOFU_VERSION = "1.9.0"
@@ -45,17 +68,76 @@ class BinaryBootstrapper:
     """Downloads and manages platform-specific binaries. Bundled binaries take priority over downloads."""
 
     KNOWN_VERSIONS: dict[str, str]
+    KNOWN_SHA256: dict[str, str]
 
-    def __init__(self, store: Any = None, bundled_binaries_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        store: Any = None,
+        bundled_binaries_dir: str | None = None,
+        known_sha256: dict[str, str] | None = None,
+    ) -> None:
         self.KNOWN_VERSIONS = {
             "openbao": OPENBAO_VERSION,
             "opentofu": OPENTOFU_VERSION,
             "osquery": OSQUERY_VERSION,
             "codebase-memory-mcp": CODEBASE_MEMORY_VERSION,
         }
+        # Pinned checksums for integrity verification (fail-closed if unpinned).
+        self.KNOWN_SHA256 = self._resolve_pins(known_sha256)
         self._store = store or FileStore()
         self._store.makedirs("binaries")
         self._bundled_dir = bundled_binaries_dir
+
+    @staticmethod
+    def _resolve_pins(explicit: dict[str, str] | None) -> dict[str, str]:
+        """Assemble the effective SHA-256 pin map.
+
+        Precedence (lowest → highest): the module-level ``KNOWN_SHA256`` default,
+        then the ``GLUDD_BINARY_SHA256`` env var (a JSON object), then any
+        ``explicit`` constructor argument. All keys/values are coerced to
+        strings; a malformed env var is ignored (logged) — it never silently
+        disables verification, because an absent pin still fails closed.
+        """
+        pins: dict[str, str] = {str(k): str(v) for k, v in KNOWN_SHA256.items()}
+        env_raw = os.environ.get(_SHA256_ENV_VAR)
+        if env_raw:
+            try:
+                loaded = json.loads(env_raw)
+            except (ValueError, TypeError) as exc:
+                logger.warning("Ignoring malformed %s (not valid JSON): %s", _SHA256_ENV_VAR, exc)
+            else:
+                if isinstance(loaded, dict):
+                    pins.update({str(k): str(v) for k, v in loaded.items()})
+                else:
+                    logger.warning("Ignoring %s: expected a JSON object", _SHA256_ENV_VAR)
+        if explicit:
+            pins.update({str(k): str(v) for k, v in explicit.items()})
+        return pins
+
+    def _verify_digest(self, name: str, data: bytes) -> bool:
+        """Return True only if *data*'s SHA-256 matches the pinned checksum for
+        *name*. Fail-closed: a missing pin OR a mismatch returns False and logs
+        an error. The caller MUST NOT store or chmod-exec unverified bytes."""
+        pinned = self.KNOWN_SHA256.get(name)
+        if not pinned:
+            logger.error(
+                "Refusing binary %s: no pinned sha256 checksum configured "
+                "(fail-closed). Set %s or pass known_sha256=. Not stored/executed.",
+                name,
+                _SHA256_ENV_VAR,
+            )
+            return False
+        actual = hashlib.sha256(data).hexdigest()
+        if not hmac.compare_digest(actual.lower(), str(pinned).strip().lower()):
+            logger.error(
+                "Refusing binary %s: sha256 mismatch (expected %s, got %s). "
+                "Possible MITM/hijacked-redirect or tampered artifact; not stored/executed.",
+                name,
+                pinned,
+                actual,
+            )
+            return False
+        return True
 
     def detect_binary(self, name: str) -> bool:
         return shutil.which(name) is not None
@@ -293,11 +375,17 @@ class BinaryBootstrapper:
         if bundled:
             try:
                 data = Path(bundled).read_bytes()
+            except Exception as exc:
+                logger.warning("Bundled binary %s read failed: %s", name, exc)
+            else:
+                # Verify the bundled bytes against the pinned checksum BEFORE
+                # storing/chmod-exec. A missing pin or mismatch fails closed:
+                # refuse rather than fall through to an unverified download.
+                if not self._verify_digest(name, data):
+                    return False
                 self._store_binary_and_chmod(name, data)
                 logger.info("Used bundled binary %s from %s", name, bundled)
                 return True
-            except Exception as exc:
-                logger.warning("Bundled binary %s read failed: %s", name, exc)
 
         url = self.get_download_url(name)
         if url is None:
@@ -324,6 +412,13 @@ class BinaryBootstrapper:
                             name,
                             _MAX_DOWNLOAD_BYTES,
                         )
+                        return False
+                    # Integrity gate: verify the RECEIVED bytes against the
+                    # pinned sha256 BEFORE storing + chmod-exec. follow_redirects
+                    # is on, so a hijacked/MITM redirect could deliver arbitrary
+                    # bytes; a missing pin or a mismatch fails closed (nothing is
+                    # stored or made executable). This is the RCE guard.
+                    if not self._verify_digest(name, resp.content):
                         return False
                     self._store_binary_and_chmod(name, resp.content)
                     logger.info("Downloaded %s v%s from %s", name, self.KNOWN_VERSIONS.get(name, "?"), url)
