@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from general_ludd.execution.engine import ExecutionEngine
-from general_ludd.execution.tool_loop import ToolCallLoop
+from general_ludd.execution.tool_loop import ToolCallLoop, ToolLoopExhausted
 from general_ludd.git_automation.repo import (
     _GIT_TIMEOUT_SECONDS,
     GitAutomation,
@@ -171,6 +171,46 @@ class TestFix2ToolTimeout:
         messages = second_call_kwargs["messages"]
         tool_msgs = [m for m in messages if m.get("role") == "tool"]
         assert any("timed out" in m["content"] for m in tool_msgs)
+
+
+# --------------------------------------------------------------------------- #
+# D1 — max-iteration exhaustion raises instead of returning trailing garbage
+# --------------------------------------------------------------------------- #
+class TestToolLoopMaxIterationExhaustion:
+    @pytest.mark.asyncio
+    async def test_exhaustion_raises_tool_loop_exhausted_not_garbage(self):
+        """If the model keeps requesting tools past the iteration cap, the loop
+        must RAISE ToolLoopExhausted rather than silently returning the last
+        (empty / raw-repr) content."""
+        registry = MCPToolRegistry()
+        registry.register_tool("fs", MCPTool(name="read_file", server_id="fs"))
+
+        mcp_client = MagicMock()
+        mcp_client.list_tools = AsyncMock(
+            return_value=[MCPTool(name="read_file", server_id="fs")]
+        )
+        mcp_client.call_tool = AsyncMock(return_value={"ok": True})
+
+        gateway = MagicMock()
+        # The model NEVER stops requesting a tool -> the loop always sees
+        # tool_calls and can never reach a final-content return.
+        gateway.call_model = MagicMock(
+            return_value=_Resp(tool_calls=[_tc("read_file", {"path": "x"})])
+        )
+
+        loop = ToolCallLoop(
+            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            max_iterations=3,
+        )
+        job = MagicMock()
+        job.job_id = "JOB-EXHAUST"
+
+        with pytest.raises(ToolLoopExhausted):
+            await asyncio.wait_for(
+                loop.run_with_tools(job, "sys", "user"), timeout=5
+            )
+        # The cap must have been honoured exactly (no infinite loop).
+        assert gateway.call_model.call_count == 3
 
 
 # --------------------------------------------------------------------------- #
