@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any, cast
@@ -95,7 +96,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             prompt_registry=getattr(app.state, "_prompt_registry", None),
         )
         scope = ReloadScope(req.scope)
-        result = reloader.reload(scope)
+        # reloader.reload is a sync op that (deep inside) does serial blocking
+        # httpx.post per worker via the broadcaster — offload it so the whole
+        # reload doesn't freeze the event loop.
+        result = await asyncio.to_thread(reloader.reload, scope)
         return {"success": result.success, "scope": result.scope, "details": result.details, "error": result.error}
 
     @app.post("/admin/config/reload")
@@ -228,7 +232,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/workers/ping")
     async def admin_workers_ping() -> dict[str, Any]:
         subsys = _get_or_create_subsystems(app)
-        results = subsys["broadcaster"].ping_all()
+        # ping_all does serial blocking httpx.get per worker — offload it.
+        results = await asyncio.to_thread(subsys["broadcaster"].ping_all)
         return {"workers": results}
 
     @app.get("/admin/workers")
