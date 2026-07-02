@@ -1,0 +1,61 @@
+# Example project.yml — drop this at the ROOT of a target repo so gludd can run
+# and interpret THAT project's own toolchain (via project_runner/). Copy + edit
+# for your app. See docs/design/PROJECT_RUNNER.md.
+#
+# This example matches a polyglot Python/React/PostgreSQL/Terraform app with
+# lints, tests, and SAST — the class of project gludd is being extended to work.
+
+name: my-polyglot-app
+
+# argv[0] basenames gludd is permitted to execute in this repo. FAIL-CLOSED:
+# a command whose executable is not listed here is refused. Keep this tight —
+# it is the security boundary for what gludd may run in your tree. (Operators of
+# a fully-trusted target may instead set GLUDD_PROJECT_ALLOW_ANY_EXEC=1.)
+allowed_exec:
+  - make
+  - npm
+  - pnpm
+  - pytest
+  - ruff
+  - mypy
+  - eslint
+  - tsc
+  - terraform
+  - alembic
+  - semgrep
+  - bandit
+
+# Environment variables from gludd's own process that MAY pass through to target
+# commands. Everything else (gludd's ZAI_API_KEY / secrets) is stripped — target
+# commands get only a sanitized base (PATH/HOME/LANG) plus these. Add only what
+# the project genuinely needs (e.g. NODE_ENV, a non-secret DATABASE_URL for a
+# throwaway test DB). Leave empty for maximum isolation.
+env_passthrough:
+  - NODE_ENV
+  - CI
+
+# Logical check name -> the EXACT command that project runs. gludd invokes these
+# via `run_project_check(check_name)`. Commands are shlex-parsed (no shell,
+# no metacharacters / chaining / redirection). Use a wrapper script or a make
+# target if you need shell composition.
+commands:
+  # --- Python backend ---
+  lint-py:      ruff check .
+  typecheck-py: mypy src
+  test-py:      pytest -q
+
+  # --- React / TypeScript frontend ---
+  lint-web:      eslint .
+  typecheck-web: tsc --noEmit
+  test-web:      npm test
+  build-web:     npm run build
+
+  # --- Database (PostgreSQL) ---
+  migrate: alembic upgrade head
+
+  # --- Infrastructure (Terraform) ---
+  tf-validate: terraform validate
+
+  # --- Security (SAST) ---
+  sast-py:  bandit -r src
+  sast-all: semgrep --config auto --error .
