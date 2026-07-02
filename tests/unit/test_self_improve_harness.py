@@ -237,3 +237,120 @@ class TestSelfImprovementHarness:
         assert "foo.py" in todos[0]["title"]
         assert "test" in todos[0]["title"].lower()
         assert todos[0]["description"]
+
+
+# ── Real-task-failure ingestion (feedback loop) ─────────────────────────────
+# gludd must turn a shortcoming discovered while doing REAL work (a recurring
+# blocker detected by BlockerDetector.chronic_blockers) into a self-improvement
+# proposal — not just re-scan its own source for missing test files.
+
+class TestRecurringFailureIngestion:
+    def _harness(self):
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        # A repo_root with no src/tests → static scan yields nothing, so the
+        # only findings come from the injected recurring-failure records.
+        return SelfImprovementHarness(repo_root="/tmp/gludd-nonexistent-xyz")
+
+    def test_recurring_failures_become_findings(self):
+        records = [
+            {"task_type": "code", "blocker_kind": "permission_escalation",
+             "incident_count": 7, "recent_todo_ids": ["TODO-1", "TODO-2"]},
+        ]
+        findings = self._harness().run_gap_analysis(recurring_failures=records)
+        rf = [f for f in findings if f.get("type") == "recurring_failure"]
+        assert len(rf) == 1
+        assert rf[0]["blocker_kind"] == "permission_escalation"
+        assert rf[0]["incident_count"] == 7
+        assert "code" in rf[0]["message"]
+
+    def test_recurring_failure_produces_actionable_todo(self):
+        records = [
+            {"task_type": "test", "blocker_kind": "resource_contention",
+             "incident_count": 5, "recent_todo_ids": ["TODO-9"]},
+        ]
+        harness = self._harness()
+        findings = harness.run_gap_analysis(recurring_failures=records)
+        todos = harness.generate_fix_todos(findings)
+        rf_todos = [t for t in todos if t.get("gap_type") == "recurring_failure"]
+        assert len(rf_todos) == 1
+        assert "recurring" in rf_todos[0]["title"].lower()
+        assert rf_todos[0]["description"]
+        assert rf_todos[0]["blocker_kind"] == "resource_contention"
+        assert rf_todos[0]["recent_todo_ids"] == ["TODO-9"]
+
+    def test_accepts_object_shaped_records(self):
+        # BlockerDetector returns ChronicBlocker dataclass instances (attribute
+        # access), so the harness must accept objects, not only dicts.
+        from types import SimpleNamespace
+
+        rec = SimpleNamespace(
+            task_type="analysis", blocker_kind="human_input",
+            incident_count=6, recent_todo_ids=["TODO-3"],
+        )
+        findings = self._harness().run_gap_analysis(recurring_failures=[rec])
+        rf = [f for f in findings if f.get("type") == "recurring_failure"]
+        assert len(rf) == 1
+        assert rf[0]["blocker_kind"] == "human_input"
+
+    def test_no_recurring_failures_preserves_static_behavior(self):
+        # No records + empty repo → zero findings (regression guard for the
+        # existing static path).
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "src" / "general_ludd").mkdir(parents=True)
+            (Path(tmpdir) / "tests" / "unit").mkdir(parents=True)
+            from general_ludd.self_improve.harness import SelfImprovementHarness
+
+            harness = SelfImprovementHarness(repo_root=tmpdir)
+            assert harness.run_gap_analysis() == []
+
+
+# ── Model-finding schema normalization ──────────────────────────────────────
+# _GAP_PROMPT asks the model for {title, description, priority, tier} but
+# generate_fix_todos reads {type, severity, message, file}; unnormalized model
+# findings degrade to "Fix: unknown gap" with empty descriptions.
+
+class TestModelFindingNormalization:
+    def _gateway(self, findings_json: str):
+        gw = MagicMock()
+        resp = MagicMock()
+        resp.content = findings_json
+        gw.call_model.return_value = resp
+        return gw
+
+    def test_model_findings_produce_real_todos(self):
+        import json
+
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        payload = json.dumps([
+            {"title": "Add retry to gateway", "description": "gateway lacks retry",
+             "priority": "high", "tier": "code"},
+            {"title": "Cover parser", "description": "parser has no tests",
+             "priority": "medium", "tier": "test"},
+        ])
+        harness = SelfImprovementHarness(
+            repo_root="/tmp/gludd-nonexistent-xyz",
+            model_gateway=self._gateway(payload),
+        )
+        findings = harness.run_gap_analysis()
+        todos = harness.generate_fix_todos(findings)
+        assert len(todos) == 2
+        assert all("unknown gap" not in t["title"].lower() for t in todos)
+        assert all(t["description"] for t in todos)
+
+    def test_model_test_tier_maps_to_test_work_type(self):
+        import json
+
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        payload = json.dumps([
+            {"title": "Cover parser", "description": "parser has no tests",
+             "priority": "medium", "tier": "test"},
+        ])
+        harness = SelfImprovementHarness(
+            repo_root="/tmp/gludd-nonexistent-xyz",
+            model_gateway=self._gateway(payload),
+        )
+        todos = harness.generate_fix_todos(harness.run_gap_analysis())
+        assert todos[0]["work_type"] == "test"

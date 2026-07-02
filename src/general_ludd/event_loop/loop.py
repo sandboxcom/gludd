@@ -2574,11 +2574,18 @@ class EventLoop:
             return
         try:
             harness = SelfImprovementHarness(model_gateway=self._model_gateway)
+            # Feedback loop: collect recurring-failure signals from REAL task
+            # execution (BlockerDetector.chronic_blockers) FIRST — it is async
+            # and must run on the event loop against the tick session, unlike the
+            # thread-offloaded gap scan below. The records are then folded into
+            # gap analysis so a shortcoming gludd hit while working is turned into
+            # a self-improvement proposal (not just a static code-hygiene scan).
+            recurring = await self._collect_recurring_failures()
             # AB-6: run_gap_analysis blocks on an HTTP model call / filesystem
             # walk; offload it so the self-improve phase does not stall the async
             # event loop. The harness is freshly constructed per tick and the
             # gateway is threading.Lock-guarded, so the worker thread is safe.
-            findings = await asyncio.to_thread(harness.run_gap_analysis)
+            findings = await asyncio.to_thread(harness.run_gap_analysis, recurring)
             if not findings:
                 self._tick_metrics["self_improve_gaps"] = 0
                 return
@@ -2603,6 +2610,59 @@ class EventLoop:
             # invisible in the logs.
             logger.warning("Self-improve phase failed: %s", exc, exc_info=True)
             self._tick_metrics["self_improve_gaps"] = 0
+
+    async def _collect_recurring_failures(self) -> list[Any]:
+        """Collect recurring-failure records from REAL task execution.
+
+        Mines chronic ``(task_type, blocker_kind)`` buckets from the
+        ``BlockerDetector`` (which reads the ``todo_events`` audit trail for
+        repeated ``BLOCKED_ON_HUMAN`` incidents) and hands them to
+        ``SelfImprovementHarness.run_gap_analysis`` so a class of problem gludd
+        keeps hitting during real work becomes a self-improvement proposal —
+        rather than the harness only re-scanning its own source for missing
+        tests. Runs on the event loop (``chronic_blockers`` is async and uses
+        the tick session). Best-effort: any failure returns ``[]`` so the
+        self-improve phase still runs its static/model scan. Disable via
+        ``self_improve.ingest_recurring_failures: false``.
+        """
+        if self._todo_repo is None or self._active_session is None:
+            return []
+        si_cfg = self.config.get("self_improve", {}) if isinstance(self.config, dict) else {}
+        if not isinstance(si_cfg, dict):
+            si_cfg = {}
+        if not si_cfg.get("ingest_recurring_failures", True):
+            return []
+        try:
+            from general_ludd.remediation.blocker_detector import (
+                BlockerDetector,
+                RemediationConfig,
+            )
+            rc_kwargs: dict[str, Any] = {}
+            if "chronic_lookback_days" in si_cfg:
+                rc_kwargs["chronic_lookback_days"] = int(si_cfg["chronic_lookback_days"])
+            if "min_chronic_incidents" in si_cfg:
+                rc_kwargs["min_chronic_incidents"] = int(si_cfg["min_chronic_incidents"])
+            config = RemediationConfig(**rc_kwargs) if rc_kwargs else RemediationConfig()
+            detector = BlockerDetector(
+                todo_repo=self._todo_repo,
+                session=self._active_session,
+                config=config,
+            )
+            records = await detector.chronic_blockers()
+            if records:
+                logger.info(
+                    "Self-improve: ingested %d recurring-failure signal(s) from real work",
+                    len(records),
+                )
+            return list(records)
+        except Exception as exc:
+            logger.warning(
+                "Self-improve: recurring-failure ingest failed (%s); "
+                "continuing with static/model gap scan",
+                exc,
+                exc_info=True,
+            )
+            return []
 
     # Maximum entries kept in the per-instance idempotency ledgers.
     # Beyond this cap, the oldest entry is evicted (FIFO) so the ledgers never

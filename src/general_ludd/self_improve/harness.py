@@ -20,6 +20,14 @@ def _strip_json_fences(text: str) -> str:
     return text
 
 
+def _rec_get(rec: Any, key: str, default: Any) -> Any:
+    """Read *key* from a recurring-failure record that may be a dict OR an
+    object (e.g. a ``ChronicBlocker`` dataclass returned by BlockerDetector)."""
+    if isinstance(rec, dict):
+        return rec.get(key, default)
+    return getattr(rec, key, default)
+
+
 class SelfImprovementHarness:
     # Profile used for the model-driven gap-analysis call against the real
     # ModelGateway.call_model(profile_id, messages) interface. Overridable per
@@ -66,31 +74,106 @@ class SelfImprovementHarness:
             response = gw.complete(prompt)
         return str(response.content)
 
-    def run_gap_analysis(self) -> list[dict[str, Any]]:
+    def run_gap_analysis(
+        self, recurring_failures: list[Any] | None = None
+    ) -> list[dict[str, Any]]:
+        """Analyse for self-improvement gaps.
+
+        Sources:
+          1. A model-driven codebase gap scan (when a gateway is wired), else a
+             static scan (missing tests, low coverage).
+          2. ``recurring_failures`` — records of shortcomings gludd hit while
+             doing REAL work (e.g. ``BlockerDetector.chronic_blockers()``).
+             These are ALWAYS folded in, regardless of the model/static branch,
+             because they reflect what actually broke — not a static scan. The
+             records are injected (dict or ``ChronicBlocker`` object) so the
+             harness stays decoupled from the DB and unit-testable.
+        """
+        findings: list[dict[str, Any]] = []
+        used_model = False
         if self._model_gateway is not None:
             try:
                 import json
                 content = self._invoke_gateway(self._GAP_PROMPT)
                 parsed = json.loads(_strip_json_fences(content))
                 if isinstance(parsed, list):
-                    return parsed
-                logger.warning(
-                    "model gateway returned non-list JSON; falling back to static analysis"
-                )
+                    # Return raw model findings unchanged (callers/tests rely on
+                    # the model's shape); normalization happens in
+                    # generate_fix_todos so both schemas produce valid todos.
+                    findings = parsed
+                    used_model = True
+                else:
+                    logger.warning(
+                        "model gateway returned non-list JSON; falling back to static analysis"
+                    )
             except Exception as exc:
                 logger.warning(
                     "model gateway gap-analysis failed (%s); falling back to static analysis",
                     exc,
                 )
 
-        # Static fallback (or when model_gateway is None)
-        findings: list[dict[str, Any]] = []
+        if not used_model:
+            # Static fallback (or when model_gateway is None)
+            self._check_missing_tests(findings)
+            self._check_completion_audit(findings)
+            self._check_coverage_gaps(findings)
 
-        self._check_missing_tests(findings)
-        self._check_completion_audit(findings)
-        self._check_coverage_gaps(findings)
+        # Real-execution signal — folded in for BOTH branches.
+        self._check_recurring_failures(findings, recurring_failures)
 
         return findings
+
+    def _check_recurring_failures(
+        self, findings: list[dict[str, Any]], records: list[Any] | None
+    ) -> None:
+        """Turn recurring-failure records from real task execution into findings.
+
+        Each record (a ``ChronicBlocker`` from ``BlockerDetector.chronic_blockers``
+        or an equivalent dict) becomes a ``recurring_failure`` finding: gludd
+        repeatedly failed this class of work, so it needs to improve itself.
+        """
+        if not records:
+            return
+        for rec in records:
+            task_type = _rec_get(rec, "task_type", "") or ""
+            blocker_kind = _rec_get(rec, "blocker_kind", "unknown") or "unknown"
+            incident_count = _rec_get(rec, "incident_count", 0) or 0
+            recent = _rec_get(rec, "recent_todo_ids", []) or []
+            findings.append({
+                "type": "recurring_failure",
+                "severity": "high",
+                "task_type": task_type,
+                "blocker_kind": blocker_kind,
+                "incident_count": incident_count,
+                "recent_todo_ids": list(recent),
+                "message": (
+                    f"Recurring '{blocker_kind}' blocker in '{task_type}' work "
+                    f"({incident_count} incidents) — gludd repeatedly failed this "
+                    f"class of task; self-improvement needed."
+                ),
+            })
+
+    def _normalize_finding(self, finding: dict[str, Any]) -> dict[str, Any]:
+        """Normalize a model-shaped finding to the internal finding schema.
+
+        The model gap prompt emits ``{title, description, priority, tier}`` while
+        the static scanners and recurring-failure ingest emit
+        ``{type, severity, message, file, ...}``. Without this, model findings
+        degraded to a ``"Fix: unknown gap"`` title with an empty description.
+        Internal-shaped findings pass through unchanged.
+        """
+        if "type" in finding or "message" in finding:
+            return finding
+        tier = str(finding.get("tier", "code")).lower()
+        tier_to_type = {"test": "missing_tests", "config": "config_gap"}
+        return {
+            "type": tier_to_type.get(tier, "code_gap"),
+            "severity": str(finding.get("priority", "medium")).lower(),
+            "message": finding.get("description") or finding.get("title") or "",
+            "file": finding.get("file", ""),
+            "title": finding.get("title", ""),
+            "tier": tier,
+        }
 
     def _check_missing_tests(self, findings: list[dict[str, Any]]) -> None:
         src_dir = os.path.join(self.repo_root, "src", "general_ludd")
@@ -160,7 +243,8 @@ class SelfImprovementHarness:
 
     def generate_fix_todos(self, findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         todos: list[dict[str, Any]] = []
-        for finding in findings:
+        for raw in findings:
+            finding = self._normalize_finding(raw)
             ftype = finding.get("type", "")
             title = self._build_title(finding)
             description = finding.get("message", "")
@@ -170,7 +254,7 @@ class SelfImprovementHarness:
                 work_type = "test"
                 priority = "medium"
 
-            todos.append({
+            todo: dict[str, Any] = {
                 "title": title,
                 "description": description,
                 "work_type": work_type,
@@ -178,7 +262,15 @@ class SelfImprovementHarness:
                 "source": "self_improve_harness",
                 "gap_type": ftype,
                 "source_file": finding.get("file", ""),
-            })
+            }
+            if ftype == "recurring_failure":
+                # Carry the real-failure context so the worker knows exactly
+                # which class of task gludd keeps failing.
+                todo["task_type"] = finding.get("task_type", "")
+                todo["blocker_kind"] = finding.get("blocker_kind", "")
+                todo["incident_count"] = finding.get("incident_count", 0)
+                todo["recent_todo_ids"] = finding.get("recent_todo_ids", [])
+            todos.append(todo)
         return todos
 
     def _build_title(self, finding: dict[str, Any]) -> str:
@@ -192,6 +284,10 @@ class SelfImprovementHarness:
         if ftype == "low_coverage":
             cov = finding.get("coverage_pct", 0)
             return f"Improve {f} coverage from {cov}% to 85%"
+        if ftype == "recurring_failure":
+            tt = finding.get("task_type") or "unknown"
+            bk = finding.get("blocker_kind") or "unknown"
+            return f"Investigate recurring {bk} failures in {tt} tasks"
         return f"Fix: {finding.get('message', 'unknown gap')}"
 
     def enqueue_todos(self, todos: list[dict[str, Any]]) -> int:

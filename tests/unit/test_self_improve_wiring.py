@@ -287,3 +287,86 @@ class TestEventLoopSelfImprovePhase:
         with patch.object(SelfImprovementHarness, "run_gap_analysis", return_value=[]):
             await loop._phase_self_improve()
             assert loop._tick_metrics["self_improve_gaps"] == 0
+
+
+class TestEventLoopSelfImproveRecurringFailures:
+    """Feedback loop: recurring real-task failures (BlockerDetector.chronic_blockers)
+    must be fed into the harness gap analysis so a class of problem gludd keeps
+    hitting during real work becomes a self-improvement proposal."""
+
+    @pytest.mark.asyncio
+    async def test_recurring_failures_reach_harness_when_enabled(self):
+        from datetime import UTC, datetime
+        from unittest.mock import AsyncMock
+
+        from general_ludd.remediation.blocker_detector import (
+            BlockerDetector,
+            ChronicBlocker,
+        )
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        loop = EventLoop(
+            self_improve_interval=1,
+            daemon_state={},
+            config={"self_improve": {"ingest_recurring_failures": True}},
+        )
+        loop._total_ticks = 1
+        # _collect_recurring_failures requires a live tick session + repo
+        # (normally set inside tick()); inject sentinels — the real detector is
+        # patched so neither object is actually used.
+        loop._active_session = object()
+        loop._todo_repo = object()
+
+        cb = ChronicBlocker(
+            task_type="code",
+            blocker_kind="permission_escalation",
+            incident_count=7,
+            first_seen=datetime.now(UTC),
+            last_seen=datetime.now(UTC),
+            recent_todo_ids=["T1"],
+        )
+        captured: list = []
+
+        def _capture(recurring_failures=None):
+            captured.append(recurring_failures)
+            return []
+
+        with patch.object(
+            BlockerDetector,
+            "chronic_blockers",
+            new_callable=AsyncMock,
+            return_value=[cb],
+        ), patch.object(
+            SelfImprovementHarness, "run_gap_analysis", side_effect=_capture
+        ):
+            await loop._phase_self_improve()
+
+        # The detector's chronic-failure records reached run_gap_analysis.
+        assert captured == [[cb]]
+
+    @pytest.mark.asyncio
+    async def test_ingest_disabled_does_not_query_detector(self):
+        from unittest.mock import AsyncMock
+
+        from general_ludd.remediation.blocker_detector import BlockerDetector
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        loop = EventLoop(
+            self_improve_interval=1,
+            daemon_state={},
+            config={"self_improve": {"ingest_recurring_failures": False}},
+        )
+        loop._total_ticks = 1
+        loop._active_session = object()
+        loop._todo_repo = object()
+
+        cb_mock = AsyncMock(return_value=[])
+        with patch.object(
+            BlockerDetector, "chronic_blockers", cb_mock
+        ), patch.object(
+            SelfImprovementHarness, "run_gap_analysis", return_value=[]
+        ):
+            await loop._phase_self_improve()
+
+        # Feature-gated off → the detector is never constructed/queried.
+        cb_mock.assert_not_called()
