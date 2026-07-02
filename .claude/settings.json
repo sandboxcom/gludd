@@ -108,6 +108,15 @@
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/no_blocking_questions_pretool.sh"
           }
         ]
+      },
+      {
+        "matcher": "Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/no_blocking_prompt_pretool.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [

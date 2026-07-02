@@ -40,6 +40,16 @@ git-merge-branch:
 	@test -n "$(BRANCH)" || (echo "Usage: make git-merge-branch BRANCH=<branch>"; exit 1)
 	git merge --no-ff --no-edit $(BRANCH)
 
+# Verify the blocking-prompt gates deny (never allow) their tools + are syntactically
+# valid. Codifies the no-block guarantee so a future edit that breaks a gate is caught.
+test-blocking-gates:
+	@bash -n .claude/hooks/no_blocking_questions_pretool.sh && echo "OK syntax no_blocking_questions"
+	@bash -n .claude/hooks/no_blocking_prompt_pretool.sh && echo "OK syntax no_blocking_prompt"
+	@printf '{"tool_name":"AskUserQuestion"}' | bash .claude/hooks/no_blocking_questions_pretool.sh | grep -q '"deny"' && echo "OK deny AskUserQuestion" || (echo "FAIL AskUserQuestion not denied"; exit 1)
+	@printf '{"tool_name":"Workflow"}' | bash .claude/hooks/no_blocking_prompt_pretool.sh | grep -q '"deny"' && echo "OK deny Workflow" || (echo "FAIL Workflow not denied"; exit 1)
+	@printf '{"tool_name":"Workflow"}' | bash .claude/hooks/no_blocking_prompt_pretool.sh | grep -q 'permissionDecision' && echo "OK valid PreToolUse decision shape" || (echo "FAIL bad decision shape"; exit 1)
+	@echo "=== blocking-gates: PASS ==="
+
 # Memory-safe test runners (full 8-worker suite OOMs; use fewer workers or shard by dir)
 # TESTDIR defaults to a directory; NPROC caps xdist workers to bound memory.
 NPROC ?= 3
