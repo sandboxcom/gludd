@@ -116,6 +116,10 @@ class DurationTracker:
         base = self.baseline(key)
         if base is None:
             return DurationVerdict(key, seconds, None, False, "learning (insufficient samples)")
+        if base <= 0:
+            # Degenerate baseline (a window of ~0s durations): a ratio is
+            # meaningless and would divide by zero below — treat as not anomalous.
+            return DurationVerdict(key, seconds, base, False, "baseline not positive")
         threshold = base * self._slow_factor
         if seconds > threshold and (seconds - base) >= self._abs_floor_s:
             return DurationVerdict(

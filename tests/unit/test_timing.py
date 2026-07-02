@@ -42,6 +42,17 @@ def test_abs_floor_suppresses_tiny_slowdowns() -> None:
     assert t.is_anomalous("fast", 0.005).anomalous is False
 
 
+def test_zero_baseline_does_not_divide_by_zero() -> None:
+    # A window of all-zero durations yields baseline 0.0; is_anomalous must not
+    # raise ZeroDivisionError — it treats a non-positive baseline as not-anomalous.
+    t = DurationTracker(min_samples=1, abs_floor_s=0.0)
+    for _ in range(3):
+        t.record("z", 0.0)
+    v = t.is_anomalous("z", 5.0)
+    assert v.anomalous is False
+    assert v.baseline == 0.0
+
+
 def test_record_ignores_non_finite_and_negative() -> None:
     t = DurationTracker(min_samples=1)
     t.record("op", -1.0)

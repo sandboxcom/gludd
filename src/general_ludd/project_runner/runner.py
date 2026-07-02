@@ -303,9 +303,16 @@ class ProjectCommandRunner:
         # NOT change `passed` (still exit-code driven); the stdout tail may
         # truncate large JSON → parse_findings returns [] gracefully.
         findings = parse_findings(os.path.basename(argv[0]), stdout_tail)
-        # Record this check's duration + flag if it ran anomalously slow vs its
-        # learned baseline (clock-time anomaly detection — observability/timing).
-        verdict = self._tracker.check_then_record(check, duration)
+        # Record this check's duration + flag anomalous slowness — but ONLY for a
+        # CLEAN completion. A timed-out or OOM-killed check's duration is not a
+        # valid timing signal (it is ~the timeout / a partial run) and would
+        # inflate the learned baseline, masking future real slowdowns.
+        anomalous = False
+        baseline_s: float | None = None
+        if not timed_out and not oom_killed:
+            verdict = self._tracker.check_then_record(check, duration)
+            anomalous = verdict.anomalous
+            baseline_s = verdict.baseline
         return CheckResult(
             name=check,
             exit_code=exit_code,
@@ -316,8 +323,8 @@ class ProjectCommandRunner:
             timed_out=timed_out,
             oom_killed=oom_killed,
             findings=findings,
-            anomalous_duration=verdict.anomalous,
-            baseline_s=verdict.baseline,
+            anomalous_duration=anomalous,
+            baseline_s=baseline_s,
         )
 
 

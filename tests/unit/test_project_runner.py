@@ -88,6 +88,20 @@ def test_runner_first_run_is_not_anomalous(tmp_path):
     assert res.baseline_s is None
 
 
+def test_runner_skips_recording_timed_out_check(tmp_path):
+    """A timed-out check's (long) duration must NOT pollute the baseline — it is
+    the timeout, not a valid timing signal."""
+    from general_ludd.observability.timing import DurationTracker
+
+    prof = ProjectProfile(commands={"slow": "sleep 3"}, allowed_exec=["sleep"])
+    tracker = DurationTracker(min_samples=1)
+    res = ProjectCommandRunner(tmp_path, prof, tracker=tracker).run("slow", timeout_s=1)
+    assert res.timed_out is True
+    assert tracker.baseline("slow") is None  # nothing recorded
+    assert res.anomalous_duration is False
+    assert res.baseline_s is None
+
+
 # --- ProjectProfile schema + safety -----------------------------------------
 
 def test_resolve_argv_valid():
