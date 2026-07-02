@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
+from general_ludd.observability.timing import DurationTracker, default_tracker
 from general_ludd.project_runner.findings import parse_findings
 from general_ludd.project_runner.profile import ProjectProfile, ProjectProfileError
 from general_ludd.system.rlimit import apply_limits
@@ -159,6 +160,11 @@ class CheckResult:
     oom_killed: bool = False
     error: str | None = None
     findings: list[str] = field(default_factory=list)
+    # Set when the check ran anomalously slow vs its learned baseline (clock-time
+    # anomaly detection — see observability/timing.py). ``baseline_s`` is the
+    # median historical duration this run was compared to (None while learning).
+    anomalous_duration: bool = False
+    baseline_s: float | None = None
 
     def summary(self) -> str:
         if self.error:
@@ -168,7 +174,13 @@ class CheckResult:
         if self.oom_killed:
             return f"{self.name}: OOM-KILLED (exit {self.exit_code}, {self.duration_s:.1f}s)"
         state = "PASS" if self.passed else "FAIL"
-        return f"{self.name}: {state} (exit {self.exit_code}, {self.duration_s:.1f}s)"
+        slow = ""
+        if self.anomalous_duration and self.baseline_s:
+            slow = (
+                f" [SLOW: {self.duration_s / self.baseline_s:.1f}x baseline "
+                f"{self.baseline_s:.1f}s]"
+            )
+        return f"{self.name}: {state} (exit {self.exit_code}, {self.duration_s:.1f}s){slow}"
 
 
 class ProjectCommandRunner:
@@ -181,12 +193,17 @@ class ProjectCommandRunner:
         *,
         default_timeout_s: int = _DEFAULT_TIMEOUT_S,
         memory_limit_mb: int | None = None,
+        tracker: DurationTracker | None = None,
     ) -> None:
         self._workspace = Path(workspace).resolve()
         if not self._workspace.is_dir():
             raise ProjectProfileError(f"workspace {self._workspace} is not a directory")
         self._profile = profile
         self._default_timeout_s = default_timeout_s
+        # Duration/anomaly tracker: records each check's run time and flags a
+        # check running anomalously slow vs its learned baseline. Defaults to the
+        # process-wide shared tracker so baselines accumulate across runs.
+        self._tracker = tracker or default_tracker()
         # Optional RLIMIT_AS cap (MiB) applied in the child before exec so a
         # heavy target test suite is bounded + OOM-killed inside its own process
         # rather than taking down gludd's host. POSIX-only (no-op elsewhere).
@@ -286,6 +303,9 @@ class ProjectCommandRunner:
         # NOT change `passed` (still exit-code driven); the stdout tail may
         # truncate large JSON → parse_findings returns [] gracefully.
         findings = parse_findings(os.path.basename(argv[0]), stdout_tail)
+        # Record this check's duration + flag if it ran anomalously slow vs its
+        # learned baseline (clock-time anomaly detection — observability/timing).
+        verdict = self._tracker.check_then_record(check, duration)
         return CheckResult(
             name=check,
             exit_code=exit_code,
@@ -296,6 +316,8 @@ class ProjectCommandRunner:
             timed_out=timed_out,
             oom_killed=oom_killed,
             findings=findings,
+            anomalous_duration=verdict.anomalous,
+            baseline_s=verdict.baseline,
         )
 
 

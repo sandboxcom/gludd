@@ -60,6 +60,34 @@ def test_build_env_refuses_secret_shaped_passthrough(monkeypatch):
     assert env.get("DATABASE_URL") == "postgres://x"
 
 
+def test_runner_flags_anomalously_slow_check(tmp_path):
+    """A check running far slower than its learned baseline is flagged on the
+    CheckResult (clock-time anomaly detection)."""
+    from general_ludd.observability.timing import DurationTracker
+
+    prof = ProjectProfile(commands={"quick": "sleep 0.2"}, allowed_exec=["sleep"])
+    tracker = DurationTracker(min_samples=1, slow_factor=2.0, abs_floor_s=0.0)
+    for _ in range(3):
+        tracker.record("quick", 0.001)  # seed a ~1ms baseline
+    res = ProjectCommandRunner(tmp_path, prof, tracker=tracker).run("quick")
+    assert res.passed is True
+    assert res.anomalous_duration is True
+    assert res.baseline_s == 0.001
+    assert "SLOW" in res.summary()
+
+
+def test_runner_first_run_is_not_anomalous(tmp_path):
+    """With no baseline yet the runner records but does not flag (learning)."""
+    from general_ludd.observability.timing import DurationTracker
+
+    prof = ProjectProfile(commands={"quick": "true"}, allowed_exec=["true"])
+    tracker = DurationTracker(min_samples=3)  # fresh — no baseline
+    res = ProjectCommandRunner(tmp_path, prof, tracker=tracker).run("quick")
+    assert res.passed is True
+    assert res.anomalous_duration is False
+    assert res.baseline_s is None
+
+
 # --- ProjectProfile schema + safety -----------------------------------------
 
 def test_resolve_argv_valid():

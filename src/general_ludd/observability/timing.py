@@ -127,6 +127,13 @@ class DurationTracker:
             )
         return DurationVerdict(key, seconds, base, False, "within baseline")
 
+    def check_then_record(self, key: str, seconds: float) -> DurationVerdict:
+        """Judge ``seconds`` against the CURRENT baseline (which excludes this
+        sample), then record it. The natural one-call for a just-finished op."""
+        verdict = self.is_anomalous(key, seconds)
+        self.record(key, seconds)
+        return verdict
+
     @contextmanager
     def track(
         self, key: str, *, on_anomaly: Callable[[DurationVerdict], None] | None = None
@@ -304,3 +311,23 @@ class StallWatchdog:
             yield
         finally:
             self.finish(op_id)
+
+
+# --- process-wide shared tracker -------------------------------------------- #
+_default_tracker: DurationTracker | None = None
+_default_tracker_lock = threading.Lock()
+
+
+def default_tracker() -> DurationTracker:
+    """Return the process-wide shared :class:`DurationTracker` (lazily created).
+
+    Lets independent call sites (project-runner checks, model calls, task
+    dispatch) accumulate baselines into ONE tracker so an operation's history is
+    shared across the process.
+    """
+    global _default_tracker
+    if _default_tracker is None:
+        with _default_tracker_lock:
+            if _default_tracker is None:
+                _default_tracker = DurationTracker()
+    return _default_tracker
