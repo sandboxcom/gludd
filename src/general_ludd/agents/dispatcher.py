@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Callable, Coroutine
@@ -10,6 +11,11 @@ from dataclasses import dataclass, field
 
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentTask
+from general_ludd.observability.timing import (
+    DurationTracker,
+    StallWatchdog,
+    default_tracker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +45,22 @@ class AgentDispatcher:
         self,
         registry: AgentRegistry,
         executor: ExecutorFn | None = None,
+        *,
+        tracker: DurationTracker | None = None,
+        watchdog: StallWatchdog | None = None,
     ) -> None:
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._active_count = 0
         self._lock = asyncio.Lock()
+        # Per-task duration-anomaly + hung-task detection. The tracker learns a
+        # per-agent baseline from completed/failed runs; the (optional) watchdog
+        # registers each in-flight task so the daemon's stall sweeper can flag a
+        # task that hangs past its expected time. Defaults to the process-wide
+        # shared tracker so histories accumulate across call sites.
+        self._tracker = tracker or default_tracker()
+        self._watchdog = watchdog
 
     @property
     def active_count(self) -> int:
@@ -96,8 +112,20 @@ class AgentDispatcher:
             async with self._lock:
                 self._active_count += 1
             try:
-                output = await self._executor(task)
+                # Watch the in-flight task so the StallWatchdog's sweeper can flag
+                # it if it hangs past its expected time; nullcontext when no
+                # watchdog is injected. watch() auto-finishes on block exit.
+                _watch = (
+                    self._watchdog.watch(task.task_id, task.agent_name)
+                    if self._watchdog is not None
+                    else contextlib.nullcontext()
+                )
+                with _watch:
+                    output = await self._executor(task)
                 duration = time.monotonic() - start
+                # Record the completed duration so the per-agent baseline learns
+                # (and an anomalously-slow run is judged against the prior window).
+                self._tracker.check_then_record(task.agent_name, duration)
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
@@ -116,6 +144,10 @@ class AgentDispatcher:
                 raise
             except Exception as exc:
                 duration = time.monotonic() - start
+                # A normal failure still consumed wall-clock time, so learn its
+                # duration too (only genuine cancellation/timeout, handled by the
+                # CancelledError branch above which re-raises, is excluded).
+                self._tracker.check_then_record(task.agent_name, duration)
                 logger.exception("Task %s failed", task.task_id)
                 return AgentTaskResult(
                     task_id=task.task_id,

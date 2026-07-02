@@ -17,6 +17,7 @@ from general_ludd.agents.behavior import BehaviorRenderer, default_subagent_beha
 from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
+from general_ludd.observability.timing import DurationTracker, StallWatchdog
 
 
 def _make_registry() -> AgentRegistry:
@@ -343,3 +344,112 @@ class TestPromptTemplateParsedOnce:
         body = original(behavior)
         assert p1.endswith(body) and p2.endswith(body)
         assert p1 != p2  # headers differ
+
+
+class TestDispatchDurationTracking:
+    """Per-task duration-anomaly + hung-task detection wiring.
+
+    The dispatcher must record every completed/failed task's duration into its
+    injected DurationTracker (so a per-agent baseline is learned and an
+    anomalously-slow run can be flagged) AND register each in-flight task with an
+    injected StallWatchdog (so a hung task is detected by the daemon sweeper)."""
+
+    def test_completed_task_duration_recorded_into_injected_tracker(self) -> None:
+        """After enough completed runs, the injected tracker has a non-None
+        per-agent baseline — proving each run's duration was recorded."""
+        registry = _make_registry()
+        registry.register(_subagent_config("worker"))
+        # min_samples defaults to 5; run that many so a baseline forms.
+        tracker = DurationTracker(min_samples=5)
+        dispatcher = AgentDispatcher(
+            registry, executor=_async_executor, tracker=tracker
+        )
+
+        assert tracker.baseline("worker") is None  # nothing learned yet
+
+        for i in range(5):
+            task = AgentTask(
+                task_id=f"dur-{i}",
+                agent_name="worker",
+                description="do work",
+                prompt="run it",
+            )
+            result = _run(dispatcher.dispatch_one(task))
+            assert result.status == "completed"
+
+        assert tracker.baseline("worker") is not None, (
+            "tracker learned no baseline — completed-task durations were not recorded"
+        )
+
+    def test_failed_task_duration_also_recorded(self) -> None:
+        """A normally-failing task still consumed wall-clock time, so its duration
+        must be learned too (the CancelledError path is the only exclusion)."""
+        registry = _make_registry()
+        registry.register(_subagent_config("worker"))
+        tracker = DurationTracker(min_samples=3)
+        dispatcher = AgentDispatcher(
+            registry, executor=_raising_executor, tracker=tracker
+        )
+
+        for i in range(3):
+            task = AgentTask(
+                task_id=f"fail-{i}",
+                agent_name="worker",
+                description="do work",
+                prompt="run it",
+            )
+            result = _run(dispatcher.dispatch_one(task))
+            assert result.status == "failed"
+
+        assert tracker.baseline("worker") is not None, (
+            "failed-task durations were not recorded into the tracker"
+        )
+
+    def test_inflight_task_registered_and_finished_with_watchdog(self) -> None:
+        """An injected StallWatchdog must have the task registered WHILE it runs
+        (watch() entered) and cleared once it finishes (watch() exited)."""
+        registry = _make_registry()
+        registry.register(_subagent_config("worker"))
+        watchdog = StallWatchdog()
+        seen: dict[str, bool] = {}
+
+        async def _observing_executor(task: AgentTask) -> str:
+            # While the executor runs, the op must be registered in-flight.
+            seen["inflight_during_run"] = task.task_id in watchdog._inflight
+            return "ok"
+
+        dispatcher = AgentDispatcher(
+            registry, executor=_observing_executor, watchdog=watchdog
+        )
+        task = AgentTask(
+            task_id="watch-1",
+            agent_name="worker",
+            description="do work",
+            prompt="run it",
+        )
+        result = _run(dispatcher.dispatch_one(task))
+
+        assert result.status == "completed"
+        assert seen.get("inflight_during_run") is True, (
+            "task was not registered with the watchdog while running"
+        )
+        # watch() auto-finishes on exit, so the op must no longer be watched.
+        assert "watch-1" not in watchdog._inflight, (
+            "task was not un-registered from the watchdog after finishing"
+        )
+
+    def test_no_watchdog_is_safe_nullcontext(self) -> None:
+        """With no watchdog injected, dispatch still works (nullcontext path)."""
+        registry = _make_registry()
+        registry.register(_subagent_config("worker"))
+        dispatcher = AgentDispatcher(registry, executor=_async_executor)
+        assert dispatcher._watchdog is None
+
+        task = AgentTask(
+            task_id="no-wd",
+            agent_name="worker",
+            description="do work",
+            prompt="run it",
+        )
+        result = _run(dispatcher.dispatch_one(task))
+        assert result.status == "completed"

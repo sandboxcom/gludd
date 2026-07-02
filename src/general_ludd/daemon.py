@@ -1518,6 +1518,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state._stall_watchdog.start_sweeper()
 
+        # Wire the shared watchdog into the agent dispatcher so in-flight agent
+        # tasks are registered with the stall sweeper (and hung tasks are flagged
+        # + published as StallDetectedEvent). The dispatcher is constructed above
+        # BEFORE the watchdog exists, so the watchdog is injected here now that
+        # both are live. The dispatcher already records per-task durations into
+        # default_tracker() — the SAME tracker this watchdog uses for deadlines —
+        # so learned baselines drive the stall deadlines.
+        _agent_dispatcher = getattr(app.state, "_agent_dispatcher", None)
+        if _agent_dispatcher is not None:
+            _agent_dispatcher._watchdog = app.state._stall_watchdog
+
         otel_bridge: OTelBridge | None = None
         if uc is not None and hasattr(uc, "observability"):
             obs_cfg = uc.observability
