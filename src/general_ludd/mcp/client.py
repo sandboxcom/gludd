@@ -1,11 +1,52 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
 
 from general_ludd.mcp.config import MCPServerConfig
 from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
 from general_ludd.mcp.transport import MCPStdioClient, MCPTransportError
+
+
+class _MCPTransport(Protocol):
+    """Structural interface every transport (real stdio or synthetic builtin)
+    must expose so :class:`MCPClient` can drive it uniformly.
+
+    ``MCPStdioClient`` already satisfies this (its ``call_tool``/``stop`` match).
+    """
+
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]: ...
+
+    async def stop(self) -> None: ...
+
+
+# Handler signature for an in-process builtin server: given the tool name and
+# its arguments, return the tool result as a JSON-serialisable dict.
+BuiltinHandler = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
+
+
+class _BuiltinTransport:
+    """Synthetic in-process transport backing a "builtin" MCP server.
+
+    It exposes the same async ``call_tool(tool_name, arguments) -> dict``
+    interface as :class:`MCPStdioClient` but forwards to a Python coroutine
+    handler instead of a subprocess. ``start``/``stop`` are no-ops so the
+    builtin plays nicely with ``start_all``/``stop_all`` without leaking any
+    process.
+    """
+
+    def __init__(self, handler: BuiltinHandler) -> None:
+        self._handler = handler
+
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return await self._handler(tool_name, arguments)
 
 
 class MCPClient:
@@ -20,7 +61,7 @@ class MCPClient:
         self._configs = configs
         self._registry = registry
         self._secrets_mgr = secrets_mgr
-        self._transports: dict[str, MCPStdioClient] = {}
+        self._transports: dict[str, _MCPTransport] = {}
 
     async def start_all(self) -> None:
         for server_id, config in self._configs.items():
@@ -42,6 +83,27 @@ class MCPClient:
                 for tool in tools:
                     self._registry.register_tool(server_id, tool)
                 self._transports[server_id] = transport
+
+    def register_builtin(
+        self,
+        server_id: str,
+        tools: list[MCPTool],
+        handler: BuiltinHandler,
+    ) -> None:
+        """Register an in-process "builtin" server whose tools are backed by a
+        Python coroutine ``handler`` instead of a subprocess.
+
+        Each tool is registered in the shared registry (so it appears in
+        ``list_tools`` and passes the ToolCallLoop capability gate) and a
+        synthetic transport is inserted into ``self._transports`` under
+        ``server_id`` so ``call_tool(server_id, name, args)`` dispatches to
+        ``handler(name, args)``. Idempotent-safe: re-registering the same
+        server replaces its transport; the registry rejects cross-server name
+        collisions as usual.
+        """
+        for tool in tools:
+            self._registry.register_tool(server_id, tool)
+        self._transports[server_id] = _BuiltinTransport(handler)
 
     async def stop_all(self) -> None:
         for transport in self._transports.values():
