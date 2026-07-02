@@ -63,6 +63,17 @@ PROTECTED_PATH_SUBSTRINGS: tuple[str, ...] = (
     "/security/capability_lattice",
 )
 
+#: Bare path SEGMENTS that mark a protected harness control-surface directory
+#: regardless of a leading slash.  The ``/.claude/`` / ``/.opencode/`` substrings
+#: above only match when a slash precedes the directory, so a workspace-RELATIVE
+#: target like ``.claude/hooks/evil.py`` (no leading slash, ``.claude`` at
+#: position 0) would EVADE them.  Matching ``.claude`` / ``.opencode`` as a whole
+#: path segment (path split on ``/``) at ANY position closes that drift against
+#: the sibling ``self_update/applier.py`` deny-list — which already catches the
+#: relative form.  This only ADDS the relative case; it never loosens the
+#: existing absolute-path coverage.
+PROTECTED_PATH_SEGMENTS: frozenset[str] = frozenset({".opencode", ".claude"})
+
 
 class CapabilityError(Exception):
     """Raised (fail-closed) when a role lacks a requested capability."""
@@ -205,10 +216,18 @@ def is_protected_path(path: str) -> bool:
     """True if ``path`` is a guardrail/policy/permission file (never swappable).
 
     Matches on the leaf stem (``foo.py`` -> ``foo``) against
-    :data:`PROTECTED_FILE_STEMS`, or on any of :data:`PROTECTED_PATH_SUBSTRINGS`
-    appearing in the normalised path.  Case-insensitive.
+    :data:`PROTECTED_FILE_STEMS`, on any :data:`PROTECTED_PATH_SEGMENTS`
+    (``.claude`` / ``.opencode``) appearing as a whole path segment regardless of
+    a leading slash — so a workspace-RELATIVE ``.claude/hooks/x.py`` is caught,
+    not just an absolute ``/ws/.claude/hooks/x.py`` — or on any of
+    :data:`PROTECTED_PATH_SUBSTRINGS` appearing in the normalised path.
+    Case-insensitive.
     """
     norm = _normalise(path).lower()
+    # Segment match FIRST so the workspace-RELATIVE ``.claude``/``.opencode``
+    # form (no leading slash) is caught as well as the absolute ``/.claude/``.
+    if PROTECTED_PATH_SEGMENTS.intersection(norm.split("/")):
+        return True
     for sub in PROTECTED_PATH_SUBSTRINGS:
         if sub in norm:
             return True

@@ -55,6 +55,15 @@ _HARD_DENY_SUBSTRINGS: tuple[str, ...] = (
     "settings.local.json",
 )
 
+#: Bare path SEGMENTS hard-denied regardless of a leading slash.  The
+#: ``/.claude/`` / ``/.opencode/`` substrings above only match when a slash
+#: precedes the directory, so a workspace-RELATIVE target like
+#: ``.opencode/plugin/evil.ts`` (``.opencode`` at position 0) would EVADE them.
+#: Matching them as whole path segments at ANY position closes that drift with
+#: the capability lattice + ``self_update/applier.py``.  Additive only — never
+#: loosens the existing absolute-path coverage.
+_HARD_DENY_SEGMENTS: tuple[str, ...] = (".opencode", ".claude")
+
 
 class ApplyOutcome:
     """Terminal outcomes of an apply attempt."""
@@ -122,6 +131,11 @@ class ApplyResult:
 
 def _is_hard_denied(path: str) -> bool:
     norm = (path or "").replace("\\", "/").lower()
+    # Segment match FIRST so a workspace-RELATIVE ``.claude``/``.opencode``
+    # target (no leading slash) is hard-denied as well as the absolute form.
+    segments = norm.split("/")
+    if any(seg in segments for seg in _HARD_DENY_SEGMENTS):
+        return True
     _sj = _HARD_DENY_SUBSTRINGS[2]
     if norm.endswith(chr(47)+_sj) or norm == _sj:
         return True

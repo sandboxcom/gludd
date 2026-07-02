@@ -17,7 +17,7 @@ ladder's gating logic is exercised in isolation.
 
 from __future__ import annotations
 
-from general_ludd.self_update.apply import ApplyOutcome, apply_plan
+from general_ludd.self_update.apply import ApplyOutcome, _is_hard_denied, apply_plan
 from general_ludd.self_update.model import (
     ApplyTier,
     ChangeKind,
@@ -195,3 +195,77 @@ def test_su_b_non_requires_approval_config_still_auto_applies() -> None:
     result = apply_plan(plan, request, approval_secret="")
 
     assert result.outcome == ApplyOutcome.APPLIED
+
+
+# --- SU-hard-deny: relative-path deny-list drift ------------------------------
+# The ``/.claude/`` / ``/.opencode/`` substrings only match when a slash precedes
+# the directory. A workspace-RELATIVE target like ``.claude/hooks/evil.py`` (the
+# directory at position 0, no leading slash) used to EVADE the hard-deny check,
+# so a self-update could rewrite a harness control-surface file. These tests pin
+# that segment matching now catches the relative form without loosening anything.
+
+
+def test_hard_denied_relative_claude_segment() -> None:
+    """A workspace-RELATIVE ``.claude/...`` target is hard-denied (was an evasion)."""
+    assert _is_hard_denied(".claude/hooks/evil.py") is True
+
+
+def test_hard_denied_relative_opencode_segment() -> None:
+    """A workspace-RELATIVE ``.opencode/...`` target is hard-denied (was an evasion)."""
+    assert _is_hard_denied(".opencode/plugin/evil.ts") is True
+
+
+def test_hard_denied_absolute_claude_still_denied() -> None:
+    """Regression: the absolute ``/ws/.claude/...`` form stays hard-denied."""
+    assert _is_hard_denied("/ws/repo/.claude/hooks/evil.py") is True
+
+
+def test_hard_denied_absolute_opencode_still_denied() -> None:
+    """Regression: the absolute ``/ws/.opencode/...`` form stays hard-denied."""
+    assert _is_hard_denied("/ws/repo/.opencode/plugin/evil.ts") is True
+
+
+def test_hard_denied_backslash_relative_claude_segment() -> None:
+    """A Windows-style backslash RELATIVE ``.claude\\...`` target is hard-denied."""
+    assert _is_hard_denied(".claude\\hooks\\evil.py") is True
+
+
+def test_hard_denied_settings_json_still_denied() -> None:
+    """Regression: settings.json / settings.local.json handling is intact."""
+    assert _is_hard_denied("config/settings.json") is True
+    assert _is_hard_denied("settings.json") is True
+    assert _is_hard_denied(".vscode/settings.local.json") is True
+
+
+def test_hard_denied_normal_src_path_not_denied() -> None:
+    """No false positive: a normal source path (``.claude`` not a segment) passes."""
+    assert _is_hard_denied("src/general_ludd/foo.py") is False
+    # A basename that merely CONTAINS the token but is not the segment ``.claude``.
+    assert _is_hard_denied("src/general_ludd/claude_client.py") is False
+    assert _is_hard_denied("src/general_ludd/myclaude/foo.py") is False
+
+
+def test_apply_plan_refuses_relative_claude_config_plan() -> None:
+    """End-to-end: a CONFIG plan targeting a RELATIVE ``.claude`` path is REFUSED.
+
+    This is the concrete evasion: such a plan would otherwise fall through to the
+    CONFIG auto-apply branch and rewrite a harness control-surface file. The
+    hard-deny segment match now short-circuits it to REFUSED (no approval token
+    can rescue a hard-deny path).
+    """
+    plan = SelfUpdatePlan(
+        subsystem=Subsystem.SPEND,
+        change_kind=ChangeKind.VALUE_EDIT,
+        target_files=(".claude/hooks/evil.py",),
+        apply_tier=ApplyTier.CONFIG,
+        requires_approval=False,
+        rationale="smuggle a relative-path guard edit",
+        confidence=0.9,
+    )
+    request = SelfUpdateRequest(raw_text="edit hook", approval_token=None)
+
+    result = apply_plan(plan, request, approval_secret="")
+
+    assert result.outcome == ApplyOutcome.REFUSED
+    assert result.landed_files == ()
+    assert "hard-deny" in result.audit.reason

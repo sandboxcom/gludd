@@ -29,6 +29,11 @@ from pathlib import Path
 import pytest
 
 from general_ludd.reload.hot_reloader import HotReloader
+from general_ludd.security.capability_lattice import (
+    ProtectedPathError,
+    check_self_modification,
+    is_protected_path,
+)
 
 
 def _install_live_module(
@@ -212,6 +217,48 @@ class TestProtectedPathDenyList:
         )
         assert result.success is True
         assert b"VALUE = 2" in mod_path.read_bytes()
+
+
+# ---------------------------------------------------------------------------
+# (b2) is_protected_path matches .claude/.opencode as a SEGMENT (relative-path
+#      deny-list drift): a workspace-RELATIVE target with the protected dir at
+#      position 0 (no leading slash) used to EVADE the ``/.claude/`` substring.
+# ---------------------------------------------------------------------------
+
+class TestProtectedPathSegmentMatch:
+    def test_relative_claude_segment_is_protected(self) -> None:
+        # Was an EVASION: ".claude/..." has no leading slash, so the
+        # ``/.claude/`` substring missed it.
+        assert is_protected_path(".claude/hooks/evil.py") is True
+
+    def test_relative_opencode_segment_is_protected(self) -> None:
+        assert is_protected_path(".opencode/plugin/evil.ts") is True
+
+    def test_absolute_claude_still_protected(self) -> None:
+        # Regression: the absolute form must stay protected.
+        assert is_protected_path("/ws/repo/.claude/hooks/evil.py") is True
+
+    def test_absolute_opencode_still_protected(self) -> None:
+        assert is_protected_path("/ws/repo/.opencode/plugin/evil.ts") is True
+
+    def test_backslash_relative_claude_segment_is_protected(self) -> None:
+        # Windows-style separators are normalised to "/" before the split.
+        assert is_protected_path(".claude\\hooks\\evil.py") is True
+
+    def test_normal_src_path_is_not_protected(self) -> None:
+        # No false positive: ".claude" is NOT a path segment here.
+        assert is_protected_path("src/general_ludd/foo.py") is False
+        assert is_protected_path("src/general_ludd/claude_client.py") is False
+        assert is_protected_path("src/general_ludd/myclaude/foo.py") is False
+
+    def test_check_self_modification_refuses_relative_claude(self) -> None:
+        # The fail-closed variant raises for the relative form too.
+        with pytest.raises(ProtectedPathError):
+            check_self_modification(".claude/hooks/evil.py", role="self_improve_agent")
+
+    def test_check_self_modification_allows_ordinary_relative_path(self) -> None:
+        # A non-protected, non-collections relative path passes (no false positive).
+        check_self_modification("src/general_ludd/foo.py", role="coder")
 
 
 # ---------------------------------------------------------------------------
