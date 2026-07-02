@@ -83,7 +83,25 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             # so the endpoint can't be used to hash/exfiltrate arbitrary files.
             paths = _confine_scan_paths(app, paths)
         scanner = FileIntegrityScanner()
-        result = scanner.scan(paths, exclude_patterns=[r"\.pyc$", r"__pycache__", r"\.git/", r"\.db$"])
+        exclude_patterns = [r"\.pyc$", r"__pycache__", r"\.git/", r"\.db$"]
+
+        # Safety: if self-improve is enabled but a config OVERLAY (project
+        # .gludd/ or user ~/.config/gludd) falls outside the scan scope,
+        # agent-authored changes land there untracked — warn the operator.
+        # Self-improve state comes from the loaded startup config on app.state.
+        from general_ludd.integrity.overlay_guard import (
+            resolve_self_improve_enabled,
+            warn_if_overlay_unmonitored,
+        )
+
+        startup_config = getattr(app.state, "_startup_config", {}) or {}
+        _uc = startup_config.get("user_config")
+        _si_cfg = getattr(_uc, "self_improve", None)
+        warn_if_overlay_unmonitored(
+            paths, exclude_patterns, resolve_self_improve_enabled(_si_cfg)
+        )
+
+        result = scanner.scan(paths, exclude_patterns=exclude_patterns)
         _integrity_changes[:] = result["changes"]
         return result
 

@@ -3321,8 +3321,35 @@ def _scan_local_integrity(info: dict[str, Any]) -> dict[str, Any]:
         os.path.expanduser("~/.local/share/general-ludd"),
     ]
     paths = [p for p in paths if p and os.path.isdir(p)]
+    exclude_patterns = [r"\.pyc$", r"__pycache__", r"\.git/", r"\.db$"]
+
+    # Safety: if self-improve is enabled but a config OVERLAY (project .gludd/
+    # or user ~/.config/gludd) is outside FIM's scope, agent-authored changes
+    # land there untracked — warn the operator. Reads self-improve from the
+    # user config file in the resolved config dir (interval>0 == enabled;
+    # absent config defaults to ON, matching the daemon).
+    from pathlib import Path as _Path
+
+    from general_ludd.config.user_config import UserConfig
+    from general_ludd.integrity.overlay_guard import (
+        resolve_self_improve_enabled,
+        warn_if_overlay_unmonitored,
+    )
+
+    si_cfg: dict[str, Any] = {}
+    cdir = info.get("config_dir", "")
+    if cdir:
+        try:
+            uc = UserConfig.from_yaml(_Path(cdir) / "general-ludd.yml")
+            si_cfg = uc.self_improve or {}
+        except Exception:
+            si_cfg = {}
+    warn_if_overlay_unmonitored(
+        paths, exclude_patterns, resolve_self_improve_enabled(si_cfg)
+    )
+
     scanner = FileIntegrityScanner()
-    return scanner.scan(paths, exclude_patterns=[r"\.pyc$", r"__pycache__", r"\.git/", r"\.db$"])
+    return scanner.scan(paths, exclude_patterns=exclude_patterns)
 
 
 def _cmd_integrity_report(args: argparse.Namespace) -> None:
