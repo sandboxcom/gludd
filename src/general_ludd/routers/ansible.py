@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -11,12 +12,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/ansible/search")
     async def admin_ansible_search(query: str = "", type: str = "role") -> dict[str, Any]:
-        results = search_galaxy(query, type)
+        # search_galaxy shells out to ansible-galaxy via a blocking
+        # subprocess.run (60s timeout); offload it so the async handler does
+        # not freeze the event loop while the subprocess runs.
+        results = await asyncio.to_thread(search_galaxy, query, type)
         return {"query": query, "type": type, "results": results}
 
     @app.post("/admin/ansible/install")
     async def admin_ansible_install(req: dict[str, Any]) -> dict[str, Any]:
-        result = install_galaxy(req.get("name", ""), req.get("type", "role"))
+        # install_galaxy shells out to ansible-galaxy via a blocking
+        # subprocess.run (300s timeout); offload it so the async handler does
+        # not freeze the event loop while the install runs.
+        result = await asyncio.to_thread(
+            install_galaxy, req.get("name", ""), req.get("type", "role")
+        )
         return result
 
     @app.get("/admin/ansible/builtins")

@@ -8,6 +8,7 @@ Surfaces three read/check capabilities over the daemon API:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from typing import Any
@@ -30,9 +31,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
 
         gi = GitIntelligence(repo_path=repo_root)
+        # hot_files/recent_commits each shell out to git via a blocking
+        # subprocess.run (30s timeout); offload them so the async handler does
+        # not freeze the event loop while git runs.
         return {
-            "hot_files": gi.hot_files(limit=limit),
-            "recent_commits": gi.recent_commits(limit=min(limit, 20)),
+            "hot_files": await asyncio.to_thread(gi.hot_files, limit),
+            "recent_commits": await asyncio.to_thread(
+                gi.recent_commits, min(limit, 20)
+            ),
         }
 
     @app.get("/admin/deps/outdated")
