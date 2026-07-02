@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -123,9 +124,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             description=str(payload.get("description", "")),
         )
         worktree_path = str(payload.get("worktree_path", ""))
-        validation = workflow.validate_improvement(worktree_path)
-        apply_result = workflow.apply_improvement(todo["todo_id"], validation)
-        reload_result = workflow.reload_if_needed(apply_result)
+        # These are blocking sync ops (validate runs the worktree TEST SUITE via
+        # subprocess; reload broadcasts to workers) — offload so the code-tier
+        # self-improve apply doesn't freeze the event loop for the full run.
+        validation = await asyncio.to_thread(workflow.validate_improvement, worktree_path)
+        apply_result = await asyncio.to_thread(
+            workflow.apply_improvement, todo["todo_id"], validation
+        )
+        reload_result = await asyncio.to_thread(workflow.reload_if_needed, apply_result)
         return {
             "todo_id": todo["todo_id"],
             "validation_passed": validation.success,
