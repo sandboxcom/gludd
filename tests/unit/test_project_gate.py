@@ -126,5 +126,25 @@ def test_missing_project_yml_fails_closed(tmp_path: Path) -> None:
     assert report["missing"] == ["test"]
 
 
+def test_gate_fails_when_required_check_not_in_run_set(tmp_path: Path) -> None:
+    # SECURITY (fail-open regression guard): 'test' is REQUIRED but is NOT in the
+    # run set (only 'lint' is run, and it passes). A required check that never
+    # executes must FAIL the gate closed — it must not silently pass just because
+    # it was omitted from `checks`.
+    _passing_project(tmp_path)  # declares both lint + test as "true"
+    report = run_project_gate(tmp_path, checks=("lint",), required=("test",))
+    assert report["passed"] is False
+    assert report["overall"] == "FAIL"
+    assert "test" in report["missing"]
+    missing_check = next(c for c in report["checks"] if c["name"] == "test")
+    assert missing_check["declared"] is False
+    assert missing_check["required"] is True
+    assert missing_check["passed"] is False
+    # 'lint' really ran and passed, but a passing advisory cannot rescue a
+    # required-but-unrun check.
+    lint = next(c for c in report["checks"] if c["name"] == "lint")
+    assert lint["passed"] is True
+
+
 def test_default_checks_constant() -> None:
     assert DEFAULT_CHECKS == ("lint", "test")
