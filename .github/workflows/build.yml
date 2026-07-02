@@ -123,7 +123,11 @@ jobs:
   test-shard:
     needs: [version, gate]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # unit-3 (test_[n-z]* + secrets/) is the fattest shard and runs ~18m — right
+    # at the old 20m limit, so a slightly slower runner CANCELS it (a timeout, not
+    # a test failure). 30m gives headroom. Durable follow-up: rebalance the n-z
+    # range into a 4th unit-shard (e.g. n-r / s-z) so no single shard nears 20m.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

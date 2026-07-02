@@ -13,7 +13,10 @@ class TestCrossPlatformUrls:
         with patch.object(boot, "get_platform_info", return_value={"os": "linux", "arch": "amd64"}):
             url = boot.get_download_url("openbao")
             assert url is not None
-            assert "linux" in url
+            # OpenBao release archives use a CAPITALIZED OS + x86_64 arch
+            # (`bao_<ver>_Linux_x86_64.tar.gz`). The old lowercase-linux + amd64
+            # name 404'd on every platform — assert the corrected naming here.
+            assert "Linux_x86_64" in url
             assert "bao_" in url
             assert ".tar.gz" in url
 

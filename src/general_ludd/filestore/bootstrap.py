@@ -143,17 +143,20 @@ class BinaryBootstrapper:
         if name == "codebase-memory-mcp":
             return self._codebase_memory_download_url(os_name, info["arch"])
 
-        ext = ".zip" if os_name in ("darwin", "windows") else ".tar.gz"
         if name == "openbao":
-            version = OPENBAO_VERSION
-            base = OPENBAO_BASE_URL
-            release_name = "bao"
-        else:
-            version = OPENTOFU_VERSION
-            base = OPENTOFU_BASE_URL
-            release_name = "tofu"
-        filename = f"{release_name}_{version}_{os_name}_amd64{ext}"
-        return f"{base}/{filename}"
+            # OpenBao release archives are `bao_<ver>_<Os>_<arch>.tar.gz`: CAPITALIZED
+            # OS (Linux/Darwin), x86_64/arm64 arch (NOT amd64), and .tar.gz on EVERY
+            # OS. The OpenTofu-style lowercase-os + amd64 + .zip name (below) 404s on
+            # every platform — verified against the v2.2.0 release asset list.
+            bao_arch = {"amd64": "x86_64", "arm64": "arm64"}.get(info["arch"], info["arch"])
+            filename = f"bao_{OPENBAO_VERSION}_{os_name.capitalize()}_{bao_arch}.tar.gz"
+            return f"{OPENBAO_BASE_URL}/{filename}"
+        # OpenTofu: `tofu_<ver>_<os>_amd64.{tar.gz|zip}` — lowercase os, amd64, .zip on
+        # darwin/windows. (arm64-native OpenTofu is a separate follow-up; the amd64
+        # build runs under emulation on arm64 macOS.)
+        ext = ".zip" if os_name in ("darwin", "windows") else ".tar.gz"
+        filename = f"tofu_{OPENTOFU_VERSION}_{os_name}_amd64{ext}"
+        return f"{OPENTOFU_BASE_URL}/{filename}"
 
     @staticmethod
     def _osquery_download_url(os_name: str, arch: str) -> str | None:
