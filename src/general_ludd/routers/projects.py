@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any, cast
@@ -65,7 +66,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             # W3.11 (H13): materialize the workspace from repo_url so a dispatched
             # job has real code to edit. Persist with repo_url so a restart keeps it.
             if req.repo_url:
-                materialize_project_workspace(
+                # materialize_project_workspace runs a blocking git clone
+                # (GitAutomation.clone). Offload to a worker thread so the
+                # event loop is not frozen for the duration of the clone.
+                await asyncio.to_thread(
+                    materialize_project_workspace,
                     repo_url=req.repo_url,
                     workspace_path=req.workspace_path or project.project_id,
                 )

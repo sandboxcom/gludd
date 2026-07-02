@@ -15,6 +15,7 @@ Data sources are wired up from live daemon state:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import subprocess
 from dataclasses import asdict
@@ -239,7 +240,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def api_accounting_all() -> list[dict[str, Any]]:
         """Return accounting snapshots for all active projects."""
         accountant = await _build_accountant(app)
-        results = accountant.account_all()
+        # account_all() invokes the loc_provider, which runs a blocking
+        # `git diff --numstat` subprocess per project. Offload to a worker
+        # thread so the event loop is not frozen for the duration.
+        results = await asyncio.to_thread(accountant.account_all)
         return [_accounting_to_dict(r) for r in results]
 
     @app.get("/api/accounting/{project_id}")
@@ -247,7 +251,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         """Return an accounting snapshot for a single project."""
         accountant = await _build_accountant(app)
         try:
-            result = accountant.account_for(project_id)
+            # account_for() invokes the loc_provider, which runs a blocking
+            # `git diff --numstat` subprocess. Offload to a worker thread.
+            result = await asyncio.to_thread(accountant.account_for, project_id)
         except Exception as exc:
             logger.warning("Accounting failed for %s: %s", project_id, exc)
             raise HTTPException(status_code=404, detail=f"Project not found: {project_id}") from exc

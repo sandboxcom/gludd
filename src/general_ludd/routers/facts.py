@@ -415,7 +415,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "messages": messages,
             "metrics": await _metrics_facet(app, project_id=project_id),
             "traces": _traces_facet(app),
-            "codebase": _codebase_facet(app, recent_failures=history or None),
+            "codebase": await asyncio.to_thread(
+                _codebase_facet, app, recent_failures=history or None
+            ),
             "features": await _features_facet(app, project_id=project_id),
             "dispatch": dispatch,
             "spend": _spend_facet(app),
