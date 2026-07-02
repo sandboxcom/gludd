@@ -23,7 +23,7 @@ from __future__ import annotations
 import hmac
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from general_ludd.security.ssrf import host_is_blocked
 from general_ludd.security.ssrf import is_url_blocked as _is_url_blocked
@@ -43,7 +43,7 @@ class AuthPosture:
                       (e.g. "worker", "daemon") — used only for logging.
     """
 
-    psk: str
+    psk: str = field(repr=False)
     require_auth: bool
     no_auth: bool
     surface: str

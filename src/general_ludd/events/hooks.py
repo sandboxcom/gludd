@@ -82,7 +82,7 @@ def _redact_payload(payload: dict[str, Any], _depth: int = 0) -> dict[str, Any]:
 @dataclass
 class WebhookConfig:
     url: str
-    headers: dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict, repr=False)
     retry_count: int = 1
     timeout_seconds: int = 10
 
