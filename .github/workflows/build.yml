@@ -169,6 +169,11 @@ jobs:
             --cov-fail-under=0 \
             -n auto --dist loadgroup -v \
             || { RC=$?; [ $RC -eq 5 ] && exit 0 || exit $RC; }
+          # pytest-cov under xdist can leave parallel-named .coverage.<host>.<pid>
+          # data files instead of a single combined .coverage; merge them first
+          # so the cp below reliably finds a data file to hand to the coverage
+          # job (best-effort — a no-op if a plain .coverage already exists).
+          uv run coverage combine 2>/dev/null || true
           # Stash the data file under a shard-unique name so the coverage job
           # can combine them without filename collisions.
           cp .coverage ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}" || true
@@ -218,9 +223,19 @@ jobs:
           mkdir -p .coverage-shards
           find coverage-data -name '.coverage.*' -exec cp {} .coverage-shards/ \;
           ls -la .coverage-shards/
-          uv run coverage combine --keep .coverage-shards/.coverage.*
-          uv run coverage xml
-          uv run coverage report --skip-covered
+          # Guard the combine: coverage-reporting is NON-GATING (no fail_under
+          # here; the shards run --cov-fail-under=0). This job first ran only
+          # after the test-shards started passing, exposing a latent bug where
+          # an empty shard-data glob made `coverage combine` exit 1 and sink the
+          # whole (otherwise-green) run. If no shard data is present, skip
+          # gracefully rather than fail — the tests themselves already passed.
+          if ls .coverage-shards/.coverage.* >/dev/null 2>&1; then
+            uv run coverage combine --keep .coverage-shards/.coverage.*
+            uv run coverage xml
+            uv run coverage report --skip-covered
+          else
+            echo "No shard coverage data found — skipping combine (reporting-only, non-gating; shards passed)."
+          fi
       - name: Upload merged coverage report
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
