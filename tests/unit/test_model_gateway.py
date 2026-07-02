@@ -8,7 +8,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from general_ludd.models.gateway import ModelGateway, ModelProfile, ModelResponse
+from general_ludd.models.gateway import (
+    ModelGateway,
+    ModelProfile,
+    ModelResponse,
+    SSRFRejectionError,
+)
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.router import ModelRouter
 from general_ludd.secrets.manager import SecretAlias, SecretsManager
@@ -130,6 +135,138 @@ class TestModelGatewayCallModelWithStub:
         ):
             gw.call_model("gpt4", [{"role": "user", "content": "hi"}])
         mock_install.assert_called_once_with("openai")
+
+
+def _capture_provider(recorder: dict):
+    """Provider class stand-in that records the ctor kwargs into ``recorder``.
+
+    Lets a test assert exactly what ``_invoke_and_bill`` forwards to
+    ``provider_cls(**init_kwargs)`` (e.g. that a caller base_url/api_key never
+    reaches the constructor, or that a validated one does).
+    """
+
+    def factory(**kwargs):
+        recorder.clear()
+        recorder.update(kwargs)
+        instance = MagicMock()
+        instance.invoke.return_value = MagicMock(
+            content="ok",
+            usage_metadata={"input_tokens": 1, "output_tokens": 1},
+            tool_calls=[],
+        )
+        instance.bind_tools.return_value = instance
+        return instance
+
+    return factory
+
+
+class TestCallerBaseUrlSSRFGuard:
+    """Defense-in-depth: a caller-supplied base_url/api_key in **kwargs must not
+    bypass the alias path's is_safe_fetch_url egress guard (it used to, because
+    ``init_kwargs.update(kwargs)`` ran AFTER the validated alias base_url was set).
+    """
+
+    def _make_gateway(self):
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+
+        fake_secret_client = MagicMock()
+        fake_secret_client.secrets.kv.v2.read_secret_version.return_value = {
+            "data": {"data": {"value": "sk-alias-key"}}
+        }
+        secrets = SecretsManager(
+            client=fake_secret_client,
+            aliases={"openai_key": SecretAlias("openai_key", "keys/openai", "secret")},
+        )
+        profile = ModelProfile(
+            model_profile_id="gpt4",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4",
+            credential_alias="openai_key",
+            run_budget_usd=100.0,
+        )
+        gw = ModelGateway(
+            profiles=[profile],
+            provider_registry=reg,
+            secrets_manager=secrets,
+        )
+        return gw, reg
+
+    def test_caller_base_url_metadata_ip_is_rejected(self):
+        """The exact SSRF pivot the guard exists for: caller passes a link-local
+        metadata URL in kwargs. Before the fix this reached the provider ctor
+        un-validated; now it raises the same SSRFRejectionError the alias raises."""
+        gw, reg = self._make_gateway()
+        captured: dict = {}
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
+            pytest.raises(SSRFRejectionError, match="base_url"),
+        ):
+            gw.call_model(
+                "gpt4",
+                [{"role": "user", "content": "hi"}],
+                base_url="http://169.254.169.254/latest/meta-data/",
+            )
+        # The unsafe base_url never reached the provider constructor.
+        assert captured == {}
+
+    def test_caller_base_url_safe_https_is_validated_and_used(self):
+        """A caller base_url that passes is_safe_fetch_url (https + public host)
+        is accepted and overrides into the provider ctor."""
+        gw, reg = self._make_gateway()
+        captured: dict = {}
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
+        ):
+            resp = gw.call_model(
+                "gpt4",
+                [{"role": "user", "content": "hi"}],
+                base_url="https://api.example.com",
+            )
+        assert isinstance(resp, ModelResponse)
+        assert captured["base_url"] == "https://api.example.com"
+
+    def test_caller_api_key_is_ignored_alias_credential_wins(self):
+        """A caller-injected api_key must never override the validated secrets
+        alias credential; it is dropped and the alias key reaches the ctor."""
+        gw, reg = self._make_gateway()
+        captured: dict = {}
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
+        ):
+            gw.call_model(
+                "gpt4",
+                [{"role": "user", "content": "hi"}],
+                api_key="caller-injected-evil-key",
+            )
+        assert captured["api_key"] == "sk-alias-key"
+
+    def test_normal_kwargs_still_work_regression(self):
+        """tools + work_type are still popped/handled correctly and never leak to
+        the provider constructor (the fix must not disturb existing kwargs)."""
+        gw, reg = self._make_gateway()
+        captured: dict = {}
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
+        ):
+            resp = gw.call_model(
+                "gpt4",
+                [{"role": "user", "content": "hi"}],
+                tools=[{"name": "read_file", "description": "", "input_schema": {}}],
+                work_type="coding",
+            )
+        assert isinstance(resp, ModelResponse)
+        assert resp.content == "ok"
+        assert "tools" not in captured
+        assert "work_type" not in captured
+        assert "base_url" not in captured
 
 
 class _AIMessageLike:

@@ -571,6 +571,35 @@ class ModelGateway:
         if extra_body:
             kwargs["extra_body"] = extra_body
 
+        # Defense-in-depth (SSRF): `init_kwargs.update(kwargs)` below would let a
+        # caller-supplied `base_url`/`api_key` in **kwargs silently OVERRIDE the
+        # alias-resolved, SSRF-validated values set above — and a caller-supplied
+        # base_url would reach the provider constructor WITHOUT ever passing
+        # through the is_safe_fetch_url egress guard the alias path enforces. No
+        # current caller forwards these (tools/work_type/extra_body/guided_* are
+        # popped earlier), but pop them here so an untrusted base_url can never
+        # bypass the guard. A caller base_url is re-validated with the SAME guard:
+        # safe → allowed to override; unsafe → the SAME SSRFRejectionError the
+        # alias path raises. A caller api_key is ignored outright — the credential
+        # MUST come from the configured secrets alias, never a caller override.
+        caller_base_url = kwargs.pop("base_url", None)
+        caller_api_key = kwargs.pop("api_key", None)
+        if caller_base_url is not None:
+            from general_ludd.security.auth import is_safe_fetch_url
+
+            if not is_safe_fetch_url(caller_base_url):
+                raise SSRFRejectionError(
+                    f"SSRF guard: refusing blocked caller-supplied base_url "
+                    f"{caller_base_url!r} for profile '{profile_id}'"
+                )
+            init_kwargs["base_url"] = caller_base_url
+        if caller_api_key is not None:
+            logger.warning(
+                "Ignoring caller-supplied api_key in kwargs for profile=%s "
+                "(credentials come from the configured secrets alias only)",
+                profile_id,
+            )
+
         init_kwargs.update(kwargs)
 
         chat_model = provider_cls(**init_kwargs)
