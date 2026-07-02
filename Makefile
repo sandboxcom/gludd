@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold ci-test test-safe test-dir test-adaptive submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo
 
 # --- TEMP release-verification targets (alpha.5) ---
 tag-run:
@@ -56,9 +56,19 @@ NPROC ?= 3
 test-safe:
 	uv run python -m pytest tests/ -n $(NPROC) --dist loadgroup -q -p no:cacheprovider -ra
 
-# CI-faithful runner: reproduces build.yml test-shard env so CI-only skip guards match.
+# CI-faithful runner: reproduces build.yml test-shard env so CI-only skip guards
+# match. Routed through the adaptive runner so xdist workers are RAM-bounded and an
+# OOM-shaped exit (137 / crashed worker) auto-retries at a halved worker count.
+# NPROC (default 3) is forwarded as an explicit override so it stays bounded; pass
+# NPROC=1 for a single-worker run. build.yml CI shards are NOT affected (they call
+# pytest directly on their own controlled runner).
 ci-test:
-	CI=true GLUDD_PSK="" GLUDD_XDIST=auto uv run python -m pytest $(TESTPATHS) -n $(NPROC) --dist loadgroup -q -p no:cacheprovider -ra
+	CI=true GLUDD_PSK="" GLUDD_XDIST=auto NPROC=$(NPROC) uv run python scripts/adaptive_test.py $(TESTPATHS) -q -p no:cacheprovider -ra
+
+# Memory-adaptive runner: size xdist workers by AVAILABLE RAM (PER_WORKER_GB env,
+# default 1.5) + OOM-detect/retry. NPROC / GLUDD_XDIST env (positive int) override.
+test-adaptive:
+	uv run python scripts/adaptive_test.py $(TESTPATHS) -q -p no:cacheprovider -ra
 
 test-dir:
 	uv run python -m pytest $(TESTDIR) -n $(NPROC) --dist loadgroup -q -p no:cacheprovider -ra
@@ -176,9 +186,11 @@ typecheck:
 collect-check:
 	uv run python -m pytest --collect-only -q 2>&1 | grep -E "ERROR|error" || true
 
-# Run tests
+# Run tests. Routed through the adaptive runner (was `-n auto`, which spawned one
+# ~1.2-1.5GB worker PER CORE and OOM-killed the run): xdist workers are now sized by
+# AVAILABLE RAM with OOM-detect/retry. Override with NPROC=<n> / PER_WORKER_GB=<gb>.
 test:
-	uv run python -m pytest tests/ -n auto --dist loadgroup -q
+	uv run python scripts/adaptive_test.py tests/ -q
 
 # Smoke test (daemon health check)
 smoke:
@@ -679,9 +691,10 @@ test-count:
 test-failures:
 	uv run python -m pytest -q 2>&1 | grep -E "FAILED|ERROR" || echo "No failures"
 
-# Run tests then commit if green
+# Run tests then commit if green. Routed through the adaptive (RAM-bounded,
+# OOM-retry) runner so a local commit gate cannot be OOM-killed by `-n auto`.
 test-and-commit:
-	uv run python -m pytest tests/ -n auto --dist loadgroup -q
+	uv run python scripts/adaptive_test.py tests/ -q
 	@if [ -n "$(MSG)" ]; then git commit -m "$(MSG)"; else echo "MSG= required"; exit 1; fi
 
 ship-commit:
