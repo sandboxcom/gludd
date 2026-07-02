@@ -288,7 +288,13 @@ def create_app(
         gw = application.state.gateway
         if gw is not None and is_generation_work_type(job.work_type):
             try:
-                model_response, model_tool_calls = _invoke_gateway_for_job(gw, job)
+                # Offload the blocking gateway.call_model round-trip so it does
+                # NOT stall the worker event loop for the full model latency
+                # (every other blocking op in this handler already uses
+                # to_thread; this model call was the lone miss).
+                model_response, model_tool_calls = await asyncio.to_thread(
+                    _invoke_gateway_for_job, gw, job
+                )
                 _model_call_success = model_response is not None
             except Exception as _exc:
                 model_response = None
