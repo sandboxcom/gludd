@@ -154,3 +154,70 @@ def test_runner_rejects_bad_workspace(tmp_path):
     prof = ProjectProfile(commands={"test": "true"}, allowed_exec=["true"])
     with pytest.raises(ProjectProfileError):
         ProjectCommandRunner(tmp_path / "does_not_exist", prof)
+
+
+# --- Sanitized subprocess environment ---------------------------------------
+# The child gets a minimal base (PATH/HOME/locale/temp) plus only names opted in
+# via env_passthrough — gludd's own secrets must NOT leak into target commands.
+# `printenv NAME` prints the value and exits 0 when set, exits non-zero when not.
+
+def test_env_default_passthrough_is_minimal_and_safe():
+    prof = ProjectProfile(commands={"test": "true"}, allowed_exec=["true"])
+    assert prof.env_passthrough == ["NODE_ENV", "CI"]
+
+
+def test_target_command_does_not_see_gludd_secret(tmp_path, monkeypatch):
+    monkeypatch.setenv("ZAI_API_KEY", "super-secret-should-not-leak")
+    prof = ProjectProfile(
+        commands={"leak": "printenv ZAI_API_KEY"}, allowed_exec=["printenv"]
+    )
+    res = ProjectCommandRunner(tmp_path, prof).run("leak")
+    # printenv exits non-zero because the var is absent from the child's env.
+    assert res.exit_code != 0
+    assert "super-secret-should-not-leak" not in res.stdout_tail
+
+
+def test_target_command_sees_path(tmp_path):
+    prof = ProjectProfile(commands={"p": "printenv PATH"}, allowed_exec=["printenv"])
+    res = ProjectCommandRunner(tmp_path, prof).run("p")
+    assert res.passed
+    assert res.stdout_tail.strip()  # PATH is always present so executables resolve
+
+
+def test_target_command_sees_allowlisted_passthrough(tmp_path, monkeypatch):
+    monkeypatch.setenv("MY_BUILD_FLAG", "on-1234")
+    prof = ProjectProfile(
+        commands={"e": "printenv MY_BUILD_FLAG"},
+        allowed_exec=["printenv"],
+        env_passthrough=["MY_BUILD_FLAG"],
+    )
+    res = ProjectCommandRunner(tmp_path, prof).run("e")
+    assert res.passed
+    assert "on-1234" in res.stdout_tail
+
+
+def test_unlisted_env_var_not_passed_through(tmp_path, monkeypatch):
+    # A var present in gludd's env but NOT in env_passthrough must not appear.
+    monkeypatch.setenv("SOME_UNLISTED_VAR", "nope")
+    prof = ProjectProfile(
+        commands={"e": "printenv SOME_UNLISTED_VAR"}, allowed_exec=["printenv"]
+    )
+    res = ProjectCommandRunner(tmp_path, prof).run("e")
+    assert res.exit_code != 0
+    assert "nope" not in res.stdout_tail
+
+
+def test_output_capture_is_bounded_to_tail(tmp_path):
+    # A chatty command must not blow the tail bound: yes floods stdout; head caps
+    # the pipe so `yes` exits on SIGPIPE. We only need the captured tail bounded.
+    from general_ludd.project_runner.runner import _TAIL_CHARS
+
+    prof = ProjectProfile(
+        commands={"chatty": "seq 1 100000"}, allowed_exec=["seq"]
+    )
+    res = ProjectCommandRunner(tmp_path, prof).run("chatty")
+    assert res.passed
+    assert len(res.stdout_tail) <= _TAIL_CHARS
+    # It kept the TAIL: the last line (100000) survives, early lines are dropped.
+    assert "100000" in res.stdout_tail
+    assert "\n1\n" not in res.stdout_tail
