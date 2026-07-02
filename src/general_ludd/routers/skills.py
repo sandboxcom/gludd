@@ -93,7 +93,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
         target = os.path.join(config_dir, "skills")
         fetcher = RemoteSkillFetcher()
-        path = fetcher.install(url, target)
+        # RemoteSkillFetcher.install performs a blocking sync httpx.get (15s
+        # timeout) plus disk write; offload it so the async handler does not
+        # freeze the event loop during the network fetch.
+        path = await asyncio.to_thread(fetcher.install, url, target)
         if path is None:
             raise HTTPException(status_code=404, detail=f"Failed to fetch skill from {url}")
         return {"installed": str(path), "url": url}
@@ -112,7 +115,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             # unhandled IndexError 500.
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         src.branch = branch
-        skill = src.download_skill(skill_path)
+        # download_skill performs blocking sync httpx.get calls (15s timeout
+        # each); offload it so the async handler does not freeze the event loop
+        # during the network fetch.
+        skill = await asyncio.to_thread(src.download_skill, skill_path)
         if skill is None:
             raise HTTPException(status_code=404, detail=f"Failed to fetch skill from {repo}/{skill_path}")
         config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
