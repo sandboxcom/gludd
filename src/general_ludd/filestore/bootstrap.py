@@ -16,6 +16,11 @@ from general_ludd.filestore.store import FileStore
 
 logger = logging.getLogger(__name__)
 
+# Hard ceiling on a downloaded artifact: `resp.content` buffers the whole body,
+# so a huge or malicious response could exhaust memory. 512 MiB comfortably
+# covers the largest pinned binary (openbao/osquery are tens of MB).
+_MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
+
 OPENBAO_VERSION = "2.2.0"
 OPENTOFU_VERSION = "1.9.0"
 # osquery 5.10.2 is the last release published as a plain GitHub release tarball
@@ -300,6 +305,22 @@ class BinaryBootstrapper:
             async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
                 resp = await client.get(url)
                 if resp.status_code == 200:
+                    # Bound memory before storing: reject an oversized response by
+                    # its declared Content-Length (guarding a malformed header) AND
+                    # its actual body length (chunked/absent header). Pairs with the
+                    # planned digest-pin verification.
+                    clen = resp.headers.get("content-length")
+                    if (
+                        clen is not None
+                        and clen.isdigit()
+                        and int(clen) > _MAX_DOWNLOAD_BYTES
+                    ) or len(resp.content) > _MAX_DOWNLOAD_BYTES:
+                        logger.warning(
+                            "%s download rejected: exceeds %d bytes",
+                            name,
+                            _MAX_DOWNLOAD_BYTES,
+                        )
+                        return False
                     self._store_binary_and_chmod(name, resp.content)
                     logger.info("Downloaded %s v%s from %s", name, self.KNOWN_VERSIONS.get(name, "?"), url)
                     return True

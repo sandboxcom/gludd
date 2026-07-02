@@ -499,3 +499,38 @@ async def test_osquery_binary_is_executable_after_download(tmp_path):
         f"osquery binary at {stored_path!r} is NOT executable after download — "
         "chmod step missing"
     )
+
+
+@pytest.mark.asyncio
+async def test_download_rejects_oversized_response(tmp_path):
+    """download() must refuse a response over the 512 MiB cap (bounds memory)
+    by its declared Content-Length, and store nothing."""
+    import os as _os
+
+    from general_ludd.filestore.bootstrap import (
+        _MAX_DOWNLOAD_BYTES,
+        BinaryBootstrapper,
+    )
+    from general_ludd.filestore.store import FileStore
+
+    store = FileStore(root_path=str(tmp_path))
+    boot = BinaryBootstrapper(store=store)
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    # Declared size over the cap → rejected before storing.
+    mock_resp.headers = {"content-length": str(_MAX_DOWNLOAD_BYTES + 1)}
+    mock_resp.content = b"small-body"
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+         patch.object(boot, "get_download_url", return_value="https://example.com/x.tar.gz"), \
+         patch("httpx.AsyncClient", return_value=mock_client):
+        result = await boot.download("osquery")
+
+    assert result is False, "oversized download must be rejected"
+    stored = boot.get_binary_path("osquery")
+    assert stored is None or not _os.path.isfile(stored), "nothing stored on rejection"
