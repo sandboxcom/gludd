@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 from pathlib import Path
 
@@ -394,3 +395,154 @@ class TestSignatureIncludesFileHash:
         monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
         r2 = sign_change_openbao("/p", "s", "r", old_hash="a", new_hash="CHANGED")
         assert r1["signature"] != r2["signature"]
+
+
+class TestHashStoreSigned:
+    """Regression: the baseline hash store must be HMAC-signed and fail CLOSED.
+
+    Before this fix, ``_save_hashes`` wrote ``json.dumps(hashes)`` with NO
+    signature, so an attacker who edited a monitored file could also edit its
+    stored hash and the next ``scan()`` reported "no change".  And
+    ``_load_hashes`` swallowed ANY parse error and returned ``{}``, so a
+    corrupt/truncated (tampered) store SILENTLY REBASELINED instead of failing
+    closed.  The store is now protected by a sidecar HMAC (``integrity_db.mac``)
+    keyed with GL_INTEGRITY_KEY.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _set_key(self, monkeypatch):
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "store-signing-key-fixed")
+        import general_ludd.integrity.scanner as _m
+        monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+
+    def _scanner(self, tmp):
+        from general_ludd.integrity.scanner import FileIntegrityScanner
+
+        store = Path(tmp) / "store"
+        store.mkdir()
+        return FileIntegrityScanner(store_dir=str(store)), store
+
+    def test_save_then_load_round_trips_with_valid_mac(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            hashes = {"/a": "hash-a", "/b": "hash-b"}
+            scanner._save_hashes(hashes)
+            # A sidecar MAC file must have been written.
+            assert (store / "integrity_db.mac").exists()
+            assert scanner._load_hashes() == hashes
+
+    def test_missing_store_returns_empty_first_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, _store = self._scanner(tmp)
+            # No store on disk yet → legitimate empty baseline, no raise.
+            assert scanner._load_hashes() == {}
+
+    def test_tampered_store_hash_fails_closed(self):
+        """Attacker edits a stored hash but cannot re-sign → load raises."""
+        from general_ludd.integrity.scanner import IntegrityStoreError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            scanner._save_hashes({"/etc/passwd": "good-hash"})
+            db = store / "integrity_db.json"
+            data = json.loads(db.read_text())
+            data["/etc/passwd"] = "attacker-planted-hash"
+            db.write_text(json.dumps(data, indent=2))
+            # MUST NOT silently return {} and rebaseline.
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+    def test_tampered_mac_fails_closed(self):
+        from general_ludd.integrity.scanner import IntegrityStoreError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            scanner._save_hashes({"/a": "h"})
+            mac = store / "integrity_db.mac"
+            mac.write_text("deadbeef" * 8)  # wrong signature
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+    def test_deleted_mac_fails_closed_downgrade(self):
+        """Absent signature with a key configured = downgrade attack → raise."""
+        from general_ludd.integrity.scanner import IntegrityStoreError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            scanner._save_hashes({"/a": "h"})
+            (store / "integrity_db.mac").unlink()
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+    def test_truncated_store_fails_closed_not_rebaseline(self):
+        """Corrupt/truncated store must raise, NOT return {} and rebaseline."""
+        from general_ludd.integrity.scanner import IntegrityStoreError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            scanner._save_hashes({"/a": "h"})
+            (store / "integrity_db.json").write_text('{"a": "b"')  # truncated JSON
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+    def test_scan_tamper_of_store_is_detected_end_to_end(self):
+        """Attacker edits a watched file AND its stored hash → next scan raises."""
+        from general_ludd.integrity.scanner import (
+            FileIntegrityScanner,
+            IntegrityStoreError,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "store"
+            store.mkdir()
+            watch = Path(tmp) / "watch"
+            watch.mkdir()
+            target = watch / "f.txt"
+            target.write_text("original")
+            scanner = FileIntegrityScanner(store_dir=str(store))
+            scanner.scan([str(watch)], exclude_patterns=[])
+
+            # Attacker modifies the file and forges the stored hash to match,
+            # but lacks GL_INTEGRITY_KEY so the sidecar MAC is now stale.
+            target.write_text("malicious")
+            new_hash = hashlib.sha256(b"malicious").hexdigest()
+            db = store / "integrity_db.json"
+            data = json.loads(db.read_text())
+            data[str(target)] = new_hash
+            db.write_text(json.dumps(data, indent=2))
+
+            with pytest.raises(IntegrityStoreError):
+                scanner.scan([str(watch)], exclude_patterns=[])
+
+
+class TestHashStoreNoKey:
+    """Without GL_INTEGRITY_KEY the store behaves like the ChangeRecord path:
+    it does not crash normal operation (no integrity guarantee is possible)."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_key(self, monkeypatch):
+        monkeypatch.delenv("GL_INTEGRITY_KEY", raising=False)
+        import general_ludd.integrity.scanner as _m
+        monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+
+    def test_round_trips_without_key_and_writes_no_sidecar(self):
+        from general_ludd.integrity.scanner import FileIntegrityScanner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "store"
+            store.mkdir()
+            scanner = FileIntegrityScanner(store_dir=str(store))
+            scanner._save_hashes({"/a": "h"})
+            # No key → cannot sign, so no sidecar is written.
+            assert not (store / "integrity_db.mac").exists()
+            # Normal operation continues: load returns the hashes best-effort.
+            assert scanner._load_hashes() == {"/a": "h"}
+
+    def test_missing_store_without_key_returns_empty(self):
+        from general_ludd.integrity.scanner import FileIntegrityScanner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "store"
+            store.mkdir()
+            scanner = FileIntegrityScanner(store_dir=str(store))
+            assert scanner._load_hashes() == {}

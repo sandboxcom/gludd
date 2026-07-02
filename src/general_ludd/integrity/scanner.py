@@ -48,6 +48,21 @@ class IntegrityKeyError(RuntimeError):
     """
 
 
+class IntegrityStoreError(RuntimeError):
+    """Raised when the baseline hash store fails integrity verification.
+
+    Fail-closed: the on-disk hash store (``integrity_db.json``) is protected by
+    a sidecar HMAC-SHA256 signature (``integrity_db.mac``) keyed with the same
+    ``GL_INTEGRITY_KEY`` that signs ChangeRecord approvals.  If a key is
+    configured and the store is unparseable, or its signature is missing or
+    does not match, that means the store was truncated, corrupted, or tampered
+    with — e.g. an attacker who edited a monitored file also rewrote its stored
+    hash to hide the change.  We RAISE rather than silently returning an empty
+    baseline, because an empty baseline would rebaseline the tampered files and
+    permanently mask the intrusion (every file would look "new", then trusted).
+    """
+
+
 def _get_integrity_key() -> str:
     global _INTEGRITY_KEY
     if _INTEGRITY_KEY is not None:
@@ -86,6 +101,10 @@ class FileIntegrityScanner:
             base = Path(home) / ".local" / "share" / "general-ludd" / "integrity"
             base.mkdir(parents=True, exist_ok=True)
             self._store = base / "integrity_db.json"
+        # Sidecar HMAC signature over the serialized store bytes.  Kept in a
+        # separate file so the store itself stays a plain ``{path: hash}`` JSON
+        # object (backward compatible) while the MAC provides tamper detection.
+        self._mac_path = self._store.with_suffix(".mac")
 
     def _hash_file(self, path: str) -> str:
         try:
@@ -94,18 +113,86 @@ class FileIntegrityScanner:
         except Exception:
             return ""
 
+    @staticmethod
+    def _store_mac(serialized: str, key: str) -> str:
+        """HMAC-SHA256 over the exact serialized store bytes."""
+        return hmac.new(key.encode(), serialized.encode(), hashlib.sha256).hexdigest()
+
+    def _parse_store(self, raw: str) -> dict[str, str]:
+        """Parse the store JSON, failing CLOSED on corruption.
+
+        A store this class wrote is always a valid JSON object, so an
+        unparseable or wrong-shaped store means truncation/corruption/tampering.
+        We raise instead of the old ``except Exception: return {}`` which
+        silently REBASELINED a tampered store.
+        """
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise IntegrityStoreError(
+                f"integrity hash store is unparseable ({self._store}); refusing "
+                "to silently rebaseline a corrupt or truncated store"
+            ) from exc
+        if not isinstance(data, dict):
+            raise IntegrityStoreError(
+                f"integrity hash store has an unexpected shape ({self._store}); "
+                "expected a JSON object of path->hash"
+            )
+        return {str(k): str(v) for k, v in data.items()}
+
     def _load_hashes(self) -> dict[str, str]:
-        if self._store.exists():
-            try:
-                data: dict[str, str] = json.loads(self._store.read_text())
-                return data
-            except Exception:
-                pass
-        return {}
+        # (a) Store MISSING → legitimate empty baseline (first run).
+        if not self._store.exists():
+            return {}
+
+        raw = self._store.read_text()
+        # (c-i) UNPARSEABLE store → fail closed regardless of key: a store we
+        # wrote is always valid JSON, so this is corruption/tampering.
+        hashes = self._parse_store(raw)
+
+        try:
+            key = _get_integrity_key()
+        except IntegrityKeyError:
+            # No key configured → we cannot verify authenticity.  Mirror the
+            # ChangeRecord verify path (which returns "cannot verify" rather
+            # than raising) so normal operation is not crashed for an operator
+            # who never provisioned a key.  There is no integrity guarantee in
+            # this mode — that is exactly why GL_INTEGRITY_KEY must be set.
+            return hashes
+
+        # Key configured → verification is MANDATORY.
+        expected = self._store_mac(raw, key)
+        stored_mac = ""
+        if self._mac_path.exists():
+            stored_mac = self._mac_path.read_text().strip()
+        # (c-ii) BAD or ABSENT MAC → fail closed.  An absent MAC with a key
+        # configured is a downgrade attack (attacker deletes the signature and
+        # rewrites the store); a bad MAC means the store or signature was
+        # edited out of band.  Constant-time compare (see verify_signature).
+        if not stored_mac or not hmac.compare_digest(stored_mac, expected):
+            raise IntegrityStoreError(
+                "integrity hash store failed HMAC verification "
+                f"(missing or tampered signature: {self._mac_path}). Refusing "
+                "to rebaseline — the store or its signature was modified out of "
+                "band, or GL_INTEGRITY_KEY changed."
+            )
+        # (b) Present + VALID MAC → trusted baseline.
+        return hashes
 
     def _save_hashes(self, hashes: dict[str, str]) -> None:
         self._store.parent.mkdir(parents=True, exist_ok=True)
-        self._store.write_text(json.dumps(hashes, indent=2))
+        serialized = json.dumps(hashes, indent=2)
+        self._store.write_text(serialized)
+        try:
+            key = _get_integrity_key()
+        except IntegrityKeyError:
+            # No key: cannot sign.  Do not mint an ephemeral key (that would
+            # make cross-process verification always fail).  Drop any stale
+            # sidecar so a later key-configured load fails closed instead of
+            # trusting an outdated signature.
+            self._mac_path.unlink(missing_ok=True)
+            return
+        self._mac_path.write_text(self._store_mac(serialized, key))
 
     def _is_vc_controlled(self, path: str) -> bool:
         current = Path(path).resolve()
