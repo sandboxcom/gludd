@@ -24,6 +24,7 @@ allowed_exec:
   - alembic
   - semgrep
   - bandit
+  - trivy
 
 # Environment variables from gludd's own process that MAY pass through to target
 # commands. Everything else (gludd's ZAI_API_KEY / secrets) is stripped — target
@@ -57,5 +58,16 @@ commands:
   tf-validate: terraform validate
 
   # --- Security (SAST) ---
-  sast-py:  bandit -r src
-  sast-all: semgrep --config auto --error .
+  # Emit JSON so gludd's findings parser (project_runner/findings.py) extracts
+  # structured, severity-tagged findings from the output tail. Without the JSON
+  # flags the run still passes/fails on exit code, but no structured findings are
+  # surfaced. `passed` stays exit-code-driven regardless.
+  sast-py:   bandit -r src -f json
+  sast-all:  semgrep --config auto --json .
+  # Dependency + container/image vulnerability scan (Trivy, JSON output):
+  sast-deps: trivy fs --format json .
+  # --- Security (DAST) ---
+  # DAST tools (OWASP ZAP, nikto) drive a RUNNING app, so they need the target
+  # server up and a URL — run them via a wrapper script or make target that
+  # boots the app first, then point a command here at that wrapper, e.g.:
+  #   dast: ./scripts/zap-scan.sh   (wrapper runs `zap-baseline.py -t $URL -J out.json`)
