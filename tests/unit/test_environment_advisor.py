@@ -58,6 +58,68 @@ def test_role_routing_overrides_default_for_quality_work() -> None:
     assert out["recommended_profile_for"]["review"] == "reviewer-pro"
 
 
+# ── Learned token-cost classification refines the static taxonomy ───────────
+
+
+def test_learned_light_flips_quality_worktype_to_weak() -> None:
+    from general_ludd.observability.token_cost import TokenCostTracker
+
+    t = TokenCostTracker(min_samples=3)
+    for _ in range(3):
+        t.record("review", 60, 40)            # total 100   -> light
+        t.record("architecture", 6000, 4000)  # total 10000 -> heavy
+        t.record("design", 600, 400)          # total 1000  -> moderate
+    rec = build_optimization_hints(
+        routing={"default_profile": "flagship", "weak_model_profile": "weak"},
+        token_tracker=t,
+    )["recommended_profile_for"]
+    assert rec["review"] == "weak"            # quality type observed light -> cheap
+    assert rec["architecture"] == "flagship"  # heavy stays quality
+    assert rec["design"] == "flagship"        # moderate -> static (quality)
+
+
+def test_learned_heavy_flips_cheap_worktype_to_quality() -> None:
+    from general_ludd.observability.token_cost import TokenCostTracker
+
+    t = TokenCostTracker(min_samples=3)
+    for _ in range(3):
+        t.record("summarize", 6000, 4000)  # heavy
+        t.record("classify", 60, 40)       # light
+        t.record("extract", 600, 400)      # moderate
+    rec = build_optimization_hints(
+        routing={"default_profile": "flagship", "weak_model_profile": "weak"},
+        token_tracker=t,
+    )["recommended_profile_for"]
+    assert rec["summarize"] == "flagship"  # cheap type observed heavy -> quality
+    assert rec["classify"] == "weak"       # light stays cheap
+
+
+def test_empty_tracker_preserves_static_mapping() -> None:
+    from general_ludd.observability.token_cost import TokenCostTracker
+
+    routing = {"default_profile": "flagship", "weak_model_profile": "weak"}
+    with_empty = build_optimization_hints(
+        routing=routing, token_tracker=TokenCostTracker()
+    )["recommended_profile_for"]
+    no_tracker = build_optimization_hints(routing=routing)["recommended_profile_for"]
+    assert with_empty == no_tracker
+    assert with_empty["mechanical"] == "weak"
+    assert with_empty["architecture"] == "flagship"
+
+
+def test_learned_classification_defensive_on_raising_tracker() -> None:
+    class _Boom:
+        def classify(self, *a: object, **k: object) -> str:
+            raise RuntimeError("boom")
+
+    rec = build_optimization_hints(
+        routing={"default_profile": "flagship", "weak_model_profile": "weak"},
+        token_tracker=_Boom(),
+    )["recommended_profile_for"]
+    assert rec["mechanical"] == "weak"
+    assert rec["architecture"] == "flagship"
+
+
 def test_metered_model_with_fallback_yields_hint() -> None:
     out = build_optimization_hints(
         models=[

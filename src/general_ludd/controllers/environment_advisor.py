@@ -285,6 +285,7 @@ def build_optimization_hints(
     routing: dict[str, Any] | None = None,
     budget: dict[str, Any] | None = None,
     metrics_collector: Any | None = None,
+    token_tracker: Any | None = None,
 ) -> dict[str, Any]:
     """Return ``{"hints": [...], "recommended_profile_for": {...}}``.
 
@@ -293,11 +294,20 @@ def build_optimization_hints(
     ``model_flaky``); ``recommended_profile_for`` maps known work-types to a
     concrete profile_id drawn from the routing config.
 
-    ``metrics_collector`` is the ONLY non-pure input: an optional, duck-typed
+    ``metrics_collector`` is a non-pure input: an optional, duck-typed
     MetricsCollector (``is_flaky`` / ``get_recent_failures``) the caller may
     hand in so the advisor can flag flaky models. It is read defensively and
     never mutated; ``None`` (or any failure reading it) simply omits the
-    flakiness hints. The rest of the function stays pure.
+    flakiness hints.
+
+    ``token_tracker`` is a second optional, duck-typed, read-only dependency: a
+    :class:`~general_ludd.observability.token_cost.TokenCostTracker` whose
+    ``classify(work_type)`` refines the static cheap/quality taxonomy with what
+    gludd has actually OBSERVED — a normally-"quality" work-type seen token-light
+    flips to the weak profile, a normally-"cheap" one seen token-heavy flips to
+    the default/role profile. ``None`` (or a tracker with too few samples, which
+    classifies ``"unknown"``/``"moderate"``) falls back to the static mapping, so
+    an unset/empty tracker is byte-identical to the previous behavior.
     """
     models = models or []
     routing = routing or {}
@@ -372,17 +382,42 @@ def build_optimization_hints(
             }
         )
 
-    # 2) Work-type -> profile recommendations from routing.
-    #    Cheap/mechanical work -> weak profile; high-quality work -> default
-    #    (or a role-specific profile when routing names one).
-    if weak_profile:
-        for work_type in _CHEAP_WORK_TYPES:
-            recommended[work_type] = weak_profile
+    # 2) Work-type -> profile recommendations from routing, refined by the
+    #    LEARNED token-cost classification when the tracker has enough samples.
+    #    Cheap/mechanical work -> weak profile; high-quality work -> default (or
+    #    a role-specific profile). A tracker that has OBSERVED a work-type as
+    #    token-light/heavy overrides the static taxonomy for that work-type;
+    #    "moderate"/"unknown" (incl. an empty/absent tracker) keeps the static call.
     quality_target = default_profile
-    for work_type in _QUALITY_WORK_TYPES:
-        # Prefer an explicit role mapping for this work-type when present.
+
+    def _resolve(work_type: str, static_kind: str) -> str | None:
+        learned = "unknown"
+        if token_tracker is not None:
+            try:
+                learned = token_tracker.classify(work_type)
+            except Exception:
+                # A misbehaving tracker must never break the advisory — fall
+                # back to the static taxonomy.
+                learned = "unknown"
+        if learned == "light":
+            kind = "cheap"
+        elif learned == "heavy":
+            kind = "quality"
+        else:
+            kind = static_kind
+        if kind == "cheap":
+            # weak_profile may be None; the caller's `if target` then drops it,
+            # reproducing the previous `if weak_profile:` guard exactly.
+            return weak_profile
         role_target = role_routing.get(work_type)
-        target = role_target or quality_target
+        return role_target or quality_target
+
+    for work_type in _CHEAP_WORK_TYPES:
+        target = _resolve(work_type, "cheap")
+        if target:
+            recommended[work_type] = target
+    for work_type in _QUALITY_WORK_TYPES:
+        target = _resolve(work_type, "quality")
         if target:
             recommended[work_type] = target
 
