@@ -61,6 +61,95 @@ class TestStampHead:
                 stamp_head(cfg)
 
 
+def _load_migration_by_filename(filename: str):
+    """Load an alembic/versions/<filename> module via importlib.
+
+    Version filenames start with a digit so they are not importable as normal
+    modules.
+    """
+    import importlib.util
+    import pathlib
+
+    src = pathlib.Path(__file__).parent.parent.parent / "alembic" / "versions" / filename
+    spec = importlib.util.spec_from_file_location(f"migration_{src.stem}", src)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+class TestMigrationChainSingleHead:
+    """Regression: the migration graph must have exactly one head and a linear
+    walkable chain.
+
+    Two files previously both declared ``revision = "014"`` (ornith audit fields
+    and ornith training pairs), creating a duplicate revision id / ambiguous
+    multi-head graph that broke ``alembic upgrade head``. The training-pairs
+    migration was linearized to ``014a`` (013 -> 014 -> 014a -> 015 -> 016).
+    ``ScriptDirectory.from_config`` itself raises on a duplicate revision id, so
+    merely loading the graph is part of the guard.
+    """
+
+    def _script_dir(self):
+        from alembic.script import ScriptDirectory
+
+        return ScriptDirectory.from_config(get_alembic_config())
+
+    def test_single_head(self):
+        script = self._script_dir()
+        heads = script.get_heads()
+        assert heads == ["016"], f"expected single head '016', got {heads}"
+
+    def test_ornith_014_migrations_are_distinct(self):
+        script = self._script_dir()
+        rev_ids = {r.revision for r in script.walk_revisions()}
+        assert "014" in rev_ids
+        assert "014a" in rev_ids
+        assert "015" in rev_ids
+        assert "016" in rev_ids
+
+    def test_chain_is_linear(self):
+        script = self._script_dir()
+        # Every revision must have at most one child: no branch points.
+        for rev in script.walk_revisions():
+            assert len(rev.nextrev) <= 1, (
+                f"revision {rev.revision} has multiple children {rev.nextrev}; "
+                "the migration chain must stay linear"
+            )
+
+    def test_015_links_to_014a(self):
+        mod = _load_migration_by_filename("015_add_model_performance_tables.py")
+        assert mod.revision == "015"
+        assert mod.down_revision == "014a"
+
+
+class TestMigration016EscalationRemediation:
+    """016 adds the ``permission_escalation_request`` and ``remediation_actions``
+    tables that were declared in the ORM but had no migration.
+    """
+
+    def test_revision_links_to_015(self):
+        mod = _load_migration_by_filename("016_add_escalation_and_remediation.py")
+        assert mod.revision == "016"
+        assert mod.down_revision == "015"
+
+    def test_upgrade_creates_both_tables(self):
+        mod = _load_migration_by_filename("016_add_escalation_and_remediation.py")
+        with patch.object(mod, "op") as mock_op:
+            mod.upgrade()
+        created = [c.args[0] for c in mock_op.create_table.call_args_list]
+        assert "permission_escalation_request" in created
+        assert "remediation_actions" in created
+
+    def test_downgrade_drops_both_tables(self):
+        mod = _load_migration_by_filename("016_add_escalation_and_remediation.py")
+        with patch.object(mod, "op") as mock_op:
+            mod.downgrade()
+        dropped = [c.args[0] for c in mock_op.drop_table.call_args_list]
+        assert "permission_escalation_request" in dropped
+        assert "remediation_actions" in dropped
+
+
 def _load_migration_001():
     """Load alembic/versions/001_initial_schema.py via importlib (filename starts with digit)."""
     import importlib.util

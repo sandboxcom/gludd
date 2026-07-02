@@ -7,8 +7,8 @@ the scaffold Ornith produced (playbook/module/plugin/rego/patch) plus
 the eventual outcome of applying it (gate green/red, review rejection,
 revert). Outcome is set later by the ``OutcomeObserver``.
 
-Revision ID: 014
-Revises: 013
+Revision ID: 014a
+Revises: 014
 """
 
 from collections.abc import Sequence
@@ -16,8 +16,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "014"
-down_revision: str | None = "013"
+revision: str = "014a"
+down_revision: str | None = "014"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

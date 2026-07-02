@@ -4,7 +4,7 @@ Tracks per-call model usage (``model_call_logs``) and pre-aggregated
 rolling performance stats per model profile (``model_performance``).
 
 Revision ID: 015
-Revises: 014
+Revises: 014a
 """
 
 from collections.abc import Sequence
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "015"
-down_revision: str | None = "014"
+down_revision: str | None = "014a"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
