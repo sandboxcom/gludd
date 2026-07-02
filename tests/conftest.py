@@ -192,6 +192,12 @@ def _force_propagate_all_general_ludd_loggers() -> None:
         "general_ludd.event_loop.loop",
         "general_ludd.code_intelligence",
         "general_ludd.code_intelligence.rg_search",
+        # Remaining present-asserting caplog leaves found by full enumeration
+        # (latent — same shape as the confirmed failures; covered pre-emptively
+        # so this is the COMPLETE set of general_ludd caplog capture points).
+        "general_ludd.models",
+        "general_ludd.models.model_registry",
+        "general_ludd.secrets.migration",
     ]
     for name in _ancestors:
         lg = logging.getLogger(name)
