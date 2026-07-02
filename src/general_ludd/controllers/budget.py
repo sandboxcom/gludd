@@ -80,6 +80,15 @@ class RunBudgetGuard:
         }
 
     def check_per_call(self, estimated_cost: float) -> dict[str, bool | str | float]:
+        # Fail CLOSED: a non-finite estimated_cost (NaN/Inf) cannot be compared
+        # meaningfully against the cap — `NaN > cap` is False, which would let a
+        # poisoned cost slip through the gate. Treat any non-finite cost as a denial.
+        if not math.isfinite(estimated_cost):
+            return {
+                "allowed": False,
+                "reason": f"per-call budget check failed closed: non-finite estimated cost ({estimated_cost!r})",
+                "estimated_cost": estimated_cost,
+            }
         if estimated_cost > self._per_call_budget_usd:
             return {
                 "allowed": False,

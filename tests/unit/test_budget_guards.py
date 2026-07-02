@@ -60,6 +60,42 @@ def test_check_run_budget_fail_closed_on_nan_total() -> None:
 
 
 # ---------------------------------------------------------------------------
+# RunBudgetGuard.check_per_call fail-closed on non-finite estimated cost
+# ---------------------------------------------------------------------------
+
+
+def test_check_per_call_denies_nan() -> None:
+    """check_per_call must fail CLOSED on a NaN cost — `NaN > cap` is False, so
+    without the isfinite guard a poisoned cost would slip through the gate."""
+    guard = RunBudgetGuard(per_call_budget_usd=1.0)
+    result = guard.check_per_call(float("nan"))
+    assert result["allowed"] is False
+    assert "non-finite" in result["reason"]
+
+
+def test_check_per_call_denies_inf() -> None:
+    """check_per_call must fail CLOSED on +inf."""
+    guard = RunBudgetGuard(per_call_budget_usd=1.0)
+    result = guard.check_per_call(float("inf"))
+    assert result["allowed"] is False
+    assert "non-finite" in result["reason"]
+
+
+def test_check_per_call_allows_finite_under_budget() -> None:
+    """Regression: a normal finite under-budget cost is still allowed."""
+    guard = RunBudgetGuard(per_call_budget_usd=1.0)
+    result = guard.check_per_call(0.5)
+    assert result["allowed"] is True
+
+
+def test_check_all_limits_inherits_per_call_nan_denial() -> None:
+    """check_all_limits delegates to check_per_call, so a NaN cost is denied."""
+    guard = RunBudgetGuard(per_call_budget_usd=1.0)
+    result = guard.check_all_limits(float("nan"))
+    assert result["allowed"] is False
+
+
+# ---------------------------------------------------------------------------
 # Fix B: BudgetManager.check_todo_budget atomicity (TOCTOU)
 # ---------------------------------------------------------------------------
 
