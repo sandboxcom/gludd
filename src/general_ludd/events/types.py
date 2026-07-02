@@ -21,6 +21,8 @@ class EventType(_enum.StrEnum):
     WORKER_PING = "worker_ping"
     WORKER_PONG = "worker_pong"
     HOOK_TRIGGERED = "hook_triggered"
+    STALL_DETECTED = "stall_detected"
+    SLOW_OPERATION = "slow_operation"
     CUSTOM = "custom"
 
 
@@ -56,6 +58,58 @@ class ConfigReloadedEvent(Event):
 class TemplateUpdatedEvent(Event):
     def __init__(self, templates: list[str], **kwargs: Any) -> None:
         super().__init__(type=EventType.TEMPLATE_UPDATED, payload={"templates": templates}, **kwargs)
+
+
+@dataclass
+class StallDetectedEvent(Event):
+    """An in-flight operation has run past its deadline (see StallWatchdog).
+
+    ``thread_stacks`` is a snapshot of every thread's stack at detection time —
+    the 'investigate why it hung' evidence a subscriber can log or attach.
+    """
+
+    def __init__(
+        self,
+        operation: str,
+        elapsed_s: float,
+        deadline_s: float,
+        thread_stacks: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            type=EventType.STALL_DETECTED,
+            payload={
+                "operation": operation,
+                "elapsed_s": elapsed_s,
+                "deadline_s": deadline_s,
+                "thread_stacks": thread_stacks,
+            },
+            **kwargs,
+        )
+
+
+@dataclass
+class SlowOperationEvent(Event):
+    """An operation completed but ran anomalously slow vs its learned baseline."""
+
+    def __init__(
+        self,
+        operation: str,
+        duration_s: float,
+        baseline_s: float,
+        factor: float,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            type=EventType.SLOW_OPERATION,
+            payload={
+                "operation": operation,
+                "duration_s": duration_s,
+                "baseline_s": baseline_s,
+                "factor": factor,
+            },
+            **kwargs,
+        )
 
 
 @dataclass
