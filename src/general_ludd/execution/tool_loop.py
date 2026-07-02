@@ -21,6 +21,16 @@ MAX_TOOL_ITERATIONS = 10
 PER_TOOL_TIMEOUT_SECONDS = 30
 
 
+class ToolLoopExhausted(RuntimeError):
+    """Raised when the model-tool loop hits its max-iteration budget.
+
+    The model was still requesting tool calls when the loop ran out of
+    iterations, so there is no trustworthy final assistant answer to return.
+    Callers must treat this as a failed run rather than acting on the trailing
+    (usually empty / raw-repr) content that the old code silently returned.
+    """
+
+
 class ToolCallLoop:
     def __init__(
         self,
@@ -170,7 +180,11 @@ class ToolCallLoop:
             "Tool call loop reached max iterations (%d) for job %s",
             self._max_iterations, job.job_id,
         )
-        return content
+        raise ToolLoopExhausted(
+            f"Tool call loop reached max iterations ({self._max_iterations}) "
+            f"for job {job.job_id} while the model was still requesting tools; "
+            f"no final assistant answer was produced"
+        )
 
     async def _call_model(
         self, job: JobSpec, system_prompt: str, user_prompt: str,
@@ -181,14 +195,17 @@ class ToolCallLoop:
             messages.append({"role": "system", "content": system_prompt})
         if user_prompt:
             messages.append({"role": "user", "content": user_prompt})
-        return self._gateway.call_model(profile_id, messages=messages)
+        return await asyncio.to_thread(
+            self._gateway.call_model, profile_id, messages=messages
+        )
 
     async def _call_with_tools(
         self, job: JobSpec, messages: list[dict[str, Any]],
         tool_schemas: list[dict[str, Any]],
     ) -> Any:
         profile_id = job.model_profile or "default"
-        return self._gateway.call_model(
+        return await asyncio.to_thread(
+            self._gateway.call_model,
             profile_id,
             messages=messages,
             tools=tool_schemas,
