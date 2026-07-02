@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -147,3 +148,48 @@ class TestSlurmJobsListEndpoint:
         resp = client.get("/admin/slurm/jobs")
         assert resp.status_code == 200
         assert "jobs" in resp.json()
+
+
+class TestSlurmEventLoopOffload:
+    """The async handlers must offload the blocking adapter calls to a worker
+    thread (``asyncio.to_thread``) so a hung ``slurmctld`` cannot freeze the
+    FastAPI event loop. We assert the synchronous ``subprocess.run`` runs on a
+    thread OTHER than the event loop's main thread.
+    """
+
+    def test_status_runs_off_the_event_loop_thread(self):
+        client = TestClient(_make_test_app())
+        main_thread = threading.main_thread()
+        seen: dict[str, object] = {}
+
+        def _record(*args, **kwargs):
+            seen["thread"] = threading.current_thread()
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        with patch("general_ludd.infra.slurm.subprocess.run", side_effect=_record):
+            resp = client.get("/admin/slurm/status")
+
+        assert resp.status_code == 200
+        # to_thread ran the blocking call off the loop's main thread
+        assert seen["thread"] is not main_thread
+
+    def test_submit_runs_off_the_event_loop_thread(self):
+        client = TestClient(_make_test_app())
+        main_thread = threading.main_thread()
+        seen: dict[str, object] = {}
+
+        def _record(*args, **kwargs):
+            seen["thread"] = threading.current_thread()
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = "Submitted batch job 7\n"
+            return result
+
+        with patch("general_ludd.infra.slurm.subprocess.run", side_effect=_record):
+            resp = client.post("/admin/slurm/submit", json={"command": "echo hi"})
+
+        assert resp.status_code == 200
+        assert resp.json()["job_id"] == "7"
+        assert seen["thread"] is not main_thread

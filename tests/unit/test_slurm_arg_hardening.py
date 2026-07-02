@@ -19,11 +19,12 @@ end-of-options separator before positional args.
 
 from __future__ import annotations
 
+import subprocess
 from unittest import mock
 
 import pytest
 
-from general_ludd.infra.slurm import SlurmAdapter
+from general_ludd.infra.slurm import SlurmAdapter, SlurmConnectionError
 
 
 @pytest.fixture
@@ -208,3 +209,91 @@ def test_submit_normal_builds_list_argv_and_script(adapter: SlurmAdapter) -> Non
     assert "#SBATCH --time=01:00:00" in script
     # a single job-name directive — no injected duplicate
     assert script.count("#SBATCH --job-name") == 1
+
+
+# --------------------------------------------------------------------------- #
+# no-timeout hang guard (#HIGH): every local subprocess.run must pass a
+# ``timeout=`` and a hung slurm binary must surface as a graceful error, never
+# an infinite block. A hung ``slurmctld`` used to freeze these calls forever.
+# --------------------------------------------------------------------------- #
+def _timeout_exc(cmd: str) -> subprocess.TimeoutExpired:
+    return subprocess.TimeoutExpired(cmd=[cmd], timeout=60)
+
+
+def test_submit_passes_timeout_kwarg(adapter: SlurmAdapter) -> None:
+    with mock.patch("general_ludd.infra.slurm.subprocess.run") as run:
+        run.return_value = _ok_run(stdout="Submitted batch job 4242\n")
+        adapter.submit("echo hi")
+    assert run.call_args.kwargs.get("timeout") == 60
+
+
+def test_status_passes_timeout_kwarg(adapter: SlurmAdapter) -> None:
+    with mock.patch("general_ludd.infra.slurm.subprocess.run") as run:
+        run.return_value = _ok_run(stdout="1234|COMPLETED|0\n")
+        adapter.status("1234")
+    assert run.call_args.kwargs.get("timeout") == 60
+
+
+def test_cancel_passes_timeout_kwarg(adapter: SlurmAdapter) -> None:
+    with mock.patch("general_ludd.infra.slurm.subprocess.run") as run:
+        run.return_value = _ok_run()
+        adapter.cancel("1234")
+    assert run.call_args.kwargs.get("timeout") == 60
+
+
+def test_available_passes_short_timeout_kwarg(adapter: SlurmAdapter) -> None:
+    with mock.patch("general_ludd.infra.slurm.subprocess.run") as run:
+        run.return_value = _ok_run()
+        adapter.available()
+    assert run.call_args.kwargs.get("timeout") == 5
+
+
+def test_list_jobs_passes_timeout_kwarg(adapter: SlurmAdapter) -> None:
+    with mock.patch("general_ludd.infra.slurm.subprocess.run") as run:
+        run.return_value = _ok_run(stdout="")
+        adapter.list_jobs()
+    assert run.call_args.kwargs.get("timeout") == 30
+
+
+def test_submit_timeout_raises_connection_error(adapter: SlurmAdapter) -> None:
+    with mock.patch(
+        "general_ludd.infra.slurm.subprocess.run",
+        side_effect=_timeout_exc("sbatch"),
+    ), pytest.raises(SlurmConnectionError):
+        adapter.submit("echo hi")
+
+
+def test_status_timeout_raises_connection_error(adapter: SlurmAdapter) -> None:
+    with mock.patch(
+        "general_ludd.infra.slurm.subprocess.run",
+        side_effect=_timeout_exc("sacct"),
+    ), pytest.raises(SlurmConnectionError):
+        adapter.status("1234")
+
+
+def test_cancel_timeout_raises_connection_error(adapter: SlurmAdapter) -> None:
+    with mock.patch(
+        "general_ludd.infra.slurm.subprocess.run",
+        side_effect=_timeout_exc("scancel"),
+    ), pytest.raises(SlurmConnectionError):
+        adapter.cancel("1234")
+
+
+def test_available_timeout_degrades_to_false(adapter: SlurmAdapter) -> None:
+    # available() already degrades to False on FileNotFoundError; a timed-out
+    # ``sbatch --version`` degrades the same way instead of hanging/raising.
+    with mock.patch(
+        "general_ludd.infra.slurm.subprocess.run",
+        side_effect=_timeout_exc("sbatch"),
+    ):
+        assert adapter.available() is False
+
+
+def test_list_jobs_timeout_degrades_to_empty(adapter: SlurmAdapter) -> None:
+    # list_jobs() already degrades to [] on FileNotFoundError; a timed-out
+    # ``squeue`` degrades the same way instead of hanging/raising.
+    with mock.patch(
+        "general_ludd.infra.slurm.subprocess.run",
+        side_effect=_timeout_exc("squeue"),
+    ):
+        assert adapter.list_jobs() == []
