@@ -338,12 +338,13 @@ sections:
     features:
       - id: obs-connector-base
         title: "Observability connector base + normalize + registry (80+ connectors)"
-        pct: 60
+        pct: 80
         evidence_refs:
           - "file:src/general_ludd/connectors/registry.py::ConnectorRegistry"
-          - "file:src/general_ludd/routers/observe.py::router"
+          - "file:src/general_ludd/routers/observe.py::wire_observability"
+          - "file:src/general_ludd/daemon.py::create_daemon_app"
           - "file:src/general_ludd/connectors/mqtt.py::MqttSource"
-        notes: "80+ connector Source modules exist (auto-discovered from connectors/*.py; MqttSource — MQTT/Mosquitto pub-sub buffer — added this session); the old '38' count was stale. `daemon.py` never imports connectors; observe router not registered; `[audit #1]`"
+        notes: "80+ connector Source modules exist (auto-discovered from connectors/*.py; MqttSource — MQTT/Mosquitto pub-sub buffer — added this session). daemon.py wires the observe router (create_daemon_app → wire_observability); `GET/POST /api/observe/*` are reachable (PSK-gated). The old '38 count / daemon-never-imports / not-registered' audit notes are STALE — the integration pass landed. `[audit #1 resolved]`"
 
       - id: gludd-metrics-traces-modules
         title: "gludd_metrics + gludd_traces Ansible modules"
