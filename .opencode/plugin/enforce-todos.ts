@@ -383,151 +383,150 @@ function extractCommitMessage(makeCmd: string): string {
 // ============================================================================
 // PLUGIN
 // ============================================================================
+// (response.transform migrated to text.complete below, 2026-07-01)
+
+const todoTurnState: { accumulatedText: string } = {
+  accumulatedText: "",
+}
+
+function classifyAndBlock(text: string): string | null {
+  const directives: string[] = []
+
+  // --- Original todowrite-state check (preserved) -------------------
+  const pending = readPendingTodos()
+  const isSummary = responseLooksLikeSummary(text)
+  if (pending.length > 0 && isSummary) {
+    directives.push([
+      "",
+      "",
+      "⛔ NOTHING-DROPPED GUARDRAIL: you have " + pending.length + " pending",
+      "todowrite items but this response is a text summary with no tool call.",
+      "Work is being dropped. RESUME WORK NOW — make a tool call that advances",
+      "the next pending item, OR explicitly mark items completed/cancelled in",
+      "todowrite with the reason.",
+      "",
+      "Pending items:",
+      ...pending.slice(0, 8).map((it, i) =>
+        "  " + (i + 1) + ". " + (it?.content ?? "(no content)") +
+        " [" + (it?.status ?? "?") + "]",
+      ),
+      pending.length > 8 ? "  ... (+" + (pending.length - 8) + " more)" : "",
+    ].join("\n"))
+  }
+
+  // --- Gap 1 + 2 + 3: working-tree deliverable detection ------------
+  const status = probeWorkingTree()
+
+  if (
+    isSummary &&
+    status.untrackedDeliverables.length >= UNTRACKED_DELIVERABLE_THRESHOLD &&
+    freqCapAllows("untracked-deliverables")
+  ) {
+    recordFire("untracked-deliverables")
+    directives.push([
+      "",
+      "",
+      "⛔ UNTRACKED-DELIVERABLES GUARDRAIL: " + status.untrackedDeliverables.length,
+      "untracked deliverable files have accumulated (tests/, src/, docs/,",
+      "collections/, etc.). These were produced by subagents but never",
+      "committed. Recover them NOW — review `make git-status`, run `make",
+      "collect-check` on each, then commit. The pattern of 'produce ->",
+      "summarise -> drop' is the bug this guardrail exists to prevent.",
+      "",
+      "Untracked deliverables (first 8):",
+      ...status.untrackedDeliverables.slice(0, 8).map((p, i) => "  " + (i + 1) + ". " + p),
+      status.untrackedDeliverables.length > 8
+        ? "  ... (+" + (status.untrackedDeliverables.length - 8) + " more)"
+        : "",
+    ].join("\n"))
+  }
+
+  const mentionsDispatch = responseMentionsDispatchResults(text)
+  const sweepUntracked = status.untrackedDeliverables
+  if (
+    mentionsDispatch &&
+    sweepUntracked.length >= 2 &&
+    freqCapAllows("post-wave-sweep")
+  ) {
+    recordFire("post-wave-sweep")
+    resetOtherDirectiveCaps("post-wave-sweep")
+    // REPLACE severity — return the directive as the full replacement text
+    return [
+      "⛔ NOTHING-DROPPED GUARDRAIL — POST-WAVE SWEEP REQUIRED",
+      "",
+      "Your response mentions parallel subagent results, but:",
+      "- " + sweepUntracked.length + " untracked deliverable file(s) have accumulated.",
+      "- The summary above is being REPLACED by this directive.",
+      "",
+      "The 'dispatch N agents → get N results → write summary' pattern is the bug.",
+      "The summary itself is NOT the deliverable.",
+      "",
+      "Recover NOW:",
+      "1. Run `make git-status` to see what's untracked.",
+      "2. Run `make collect-check` on each untracked deliverable to verify it's complete.",
+      "3. Commit each coherent group via `make commit-ci-gate MSG='...'`.",
+      "4. After all deliverables are committed, resume new work.",
+      "",
+      "Untracked deliverables (" + sweepUntracked.length + "):",
+      ...sweepUntracked.slice(0, 10).map((p, i) => "  " + (i + 1) + ". " + p),
+      sweepUntracked.length > 10
+        ? "  ... (+" + (sweepUntracked.length - 10) + " more)"
+        : "",
+    ].join("\n")
+  }
+
+  if (
+    mentionsDispatch &&
+    sweepUntracked.length === 1 &&
+    freqCapAllows("post-wave-sweep")
+  ) {
+    recordFire("post-wave-sweep")
+    directives.push([
+      "",
+      "",
+      "⛔ POST-WAVE COMMIT SWEEP: you dispatched parallel tasks and got",
+      "results. 1 deliverable file remains uncommitted. Before any other",
+      "work, commit it. Recovery is the deliverable now — not new work.",
+      "",
+      "Uncommitted deliverable:",
+      "  1. " + sweepUntracked[0],
+    ].join("\n"))
+  }
+
+  const orphans = findOrphanedTests(status)
+  if (orphans.length > 0 && freqCapAllows("orphaned-test")) {
+    recordFire("orphaned-test")
+    directives.push([
+      "",
+      "",
+      "⛔ ORPHANED-TEST GUARDRAIL: " + orphans.length + " test file(s) are",
+      "untracked while their corresponding source files are committed.",
+      "The tests were dropped. Commit them now.",
+      "",
+      "Orphaned tests:",
+      ...orphans.slice(0, 8).map((p, i) => "  " + (i + 1) + ". " + p),
+    ].join("\n"))
+  }
+
+  if (directives.length === 0) return null
+  return text + "\n" + directives.join("\n")
+}
+
 export default (async () => {
   return {
-    "experimental.chat.response.transform": async (_input: unknown, output: unknown) => {
+    "session.idle": async () => {
+      todoTurnState.accumulatedText = ""
+    },
+
+    "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       try {
-        if (typeof output !== "string") return output
-
-        const directives: string[] = []
-
-        // --- Original todowrite-state check (preserved) -------------------
-        const pending = readPendingTodos()
-        const isSummary = responseLooksLikeSummary(output)
-        if (pending.length > 0 && isSummary) {
-          directives.push([
-            "",
-            "",
-            "⛔ NOTHING-DROPPED GUARDRAIL: you have " + pending.length + " pending",
-            "todowrite items but this response is a text summary with no tool call.",
-            "Work is being dropped. RESUME WORK NOW — make a tool call that advances",
-            "the next pending item, OR explicitly mark items completed/cancelled in",
-            "todowrite with the reason.",
-            "",
-            "Pending items:",
-            ...pending.slice(0, 8).map((it, i) =>
-              "  " + (i + 1) + ". " + (it?.content ?? "(no content)") +
-              " [" + (it?.status ?? "?") + "]",
-            ),
-            pending.length > 8 ? "  ... (+" + (pending.length - 8) + " more)" : "",
-          ].join("\n"))
+        if (typeof output?.text !== "string") return output
+        todoTurnState.accumulatedText += output.text
+        const result = classifyAndBlock(todoTurnState.accumulatedText)
+        if (result !== null) {
+          output.text = result
         }
-
-        // --- Gap 1 + 2 + 3: working-tree deliverable detection ------------
-        // Run the working-tree probe REGARDLESS of todowrite state. Many
-        // subagent deliverables never enter todowrite; checking only the
-        // todo list missed them (the 2026-06-29 audit found 14 such files).
-        const status = probeWorkingTree()
-
-        // Gap 1: untracked-deliverable accumulation. Fires when >=3 deliverable
-        // files accumulate alongside a summary-style response. The summary
-        // gate is required so we don't fire while the agent is mid-work.
-        if (
-          isSummary &&
-          status.untrackedDeliverables.length >= UNTRACKED_DELIVERABLE_THRESHOLD &&
-          freqCapAllows("untracked-deliverables")
-        ) {
-          recordFire("untracked-deliverables")
-          directives.push([
-            "",
-            "",
-            "⛔ UNTRACKED-DELIVERABLES GUARDRAIL: " + status.untrackedDeliverables.length,
-            "untracked deliverable files have accumulated (tests/, src/, docs/,",
-            "collections/, etc.). These were produced by subagents but never",
-            "committed. Recover them NOW — review `make git-status`, run `make",
-            "collect-check` on each, then commit. The pattern of 'produce ->",
-            "summarise -> drop' is the bug this guardrail exists to prevent.",
-            "",
-            "Untracked deliverables (first 8):",
-            ...status.untrackedDeliverables.slice(0, 8).map((p, i) => "  " + (i + 1) + ". " + p),
-            status.untrackedDeliverables.length > 8
-              ? "  ... (+" + (status.untrackedDeliverables.length - 8) + " more)"
-              : "",
-          ].join("\n"))
-        }
-
-        // Gap 2: post-wave commit sweep. Fires when the response references
-        // dispatch results AND uncommitted deliverables exist, regardless of
-        // summary heuristic — this is the 'wave produced files -> agent read
-        // results -> about to summarise -> never commits' pattern.
-        //
-        // REPLACE severity (2026-06-29 audit, Gap #2): when >=2 untracked
-        // deliverables accompany dispatch-result mentions, the dropping
-        // summary is REPLACED by the directive alone — APPEND let the user
-        // see the dropped summary as if it were the deliverable. With only
-        // 1 untracked deliverable we still APPEND (less severe, possibly
-        // innocuous).
-        const mentionsDispatch = responseMentionsDispatchResults(output)
-        const sweepUntracked = status.untrackedDeliverables
-        if (
-          mentionsDispatch &&
-          sweepUntracked.length >= 2 &&
-          freqCapAllows("post-wave-sweep")
-        ) {
-          recordFire("post-wave-sweep")
-          resetOtherDirectiveCaps("post-wave-sweep")
-          return [
-            "⛔ NOTHING-DROPPED GUARDRAIL — POST-WAVE SWEEP REQUIRED",
-            "",
-            "Your response mentions parallel subagent results, but:",
-            "- " + sweepUntracked.length + " untracked deliverable file(s) have accumulated.",
-            "- The summary above is being REPLACED by this directive.",
-            "",
-            "The 'dispatch N agents → get N results → write summary' pattern is the bug.",
-            "The summary itself is NOT the deliverable.",
-            "",
-            "Recover NOW:",
-            "1. Run `make git-status` to see what's untracked.",
-            "2. Run `make collect-check` on each untracked deliverable to verify it's complete.",
-            "3. Commit each coherent group via `make commit-ci-gate MSG='...'`.",
-            "4. After all deliverables are committed, resume new work.",
-            "",
-            "Untracked deliverables (" + sweepUntracked.length + "):",
-            ...sweepUntracked.slice(0, 10).map((p, i) => "  " + (i + 1) + ". " + p),
-            sweepUntracked.length > 10
-              ? "  ... (+" + (sweepUntracked.length - 10) + " more)"
-              : "",
-          ].join("\n")
-        }
-
-        if (
-          mentionsDispatch &&
-          sweepUntracked.length === 1 &&
-          freqCapAllows("post-wave-sweep")
-        ) {
-          recordFire("post-wave-sweep")
-          directives.push([
-            "",
-            "",
-            "⛔ POST-WAVE COMMIT SWEEP: you dispatched parallel tasks and got",
-            "results. 1 deliverable file remains uncommitted. Before any other",
-            "work, commit it. Recovery is the deliverable now — not new work.",
-            "",
-            "Uncommitted deliverable:",
-            "  1. " + sweepUntracked[0],
-          ].join("\n"))
-        }
-
-        // Gap 3: orphaned-test detection. Fires whenever a test file is
-        // untracked while its corresponding source IS committed — regardless
-        // of summary heuristic, because this asymmetry is always a drop.
-        const orphans = findOrphanedTests(status)
-        if (orphans.length > 0 && freqCapAllows("orphaned-test")) {
-          recordFire("orphaned-test")
-          directives.push([
-            "",
-            "",
-            "⛔ ORPHANED-TEST GUARDRAIL: " + orphans.length + " test file(s) are",
-            "untracked while their corresponding source files are committed.",
-            "The tests were dropped. Commit them now.",
-            "",
-            "Orphaned tests:",
-            ...orphans.slice(0, 8).map((p, i) => "  " + (i + 1) + ". " + p),
-          ].join("\n"))
-        }
-
-        if (directives.length === 0) return output
-        return output + "\n" + directives.join("\n")
+        return output
       } catch {
         return output
       }
