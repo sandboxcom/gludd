@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
+from general_ludd.project_runner.findings import parse_findings
 from general_ludd.project_runner.profile import ProjectProfile, ProjectProfileError
 from general_ludd.system.rlimit import apply_limits
 
@@ -245,15 +246,22 @@ class ProjectCommandRunner:
         # from a plain non-zero failure so callers can retry/degrade.
         oom_killed = (not timed_out) and exit_code in (-9, 137)
         passed = (not timed_out) and not oom_killed and exit_code == 0
+        stdout_tail = out_reader.text
+        # Additive: for known SAST tools (semgrep/bandit) parse structured
+        # findings from their JSON output for severity-aware reporting. This does
+        # NOT change `passed` (still exit-code driven); the stdout tail may
+        # truncate large JSON → parse_findings returns [] gracefully.
+        findings = parse_findings(os.path.basename(argv[0]), stdout_tail)
         return CheckResult(
             name=check,
             exit_code=exit_code,
             passed=passed,
             duration_s=duration,
-            stdout_tail=out_reader.text,
+            stdout_tail=stdout_tail,
             stderr_tail=err_reader.text,
             timed_out=timed_out,
             oom_killed=oom_killed,
+            findings=findings,
         )
 
 
