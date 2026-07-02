@@ -177,6 +177,21 @@ def _force_propagate_all_general_ludd_loggers() -> None:
         "general_ludd.connectors.base",
         "general_ludd.events.bus",
         "general_ludd.events.hooks",
+        # Explicit packages + leaves for the caplog tests the pkgutil scan did
+        # not cover in CI (run 28557097700 showed these 5 subtrees still empty-
+        # caplog): resetting the LEAF is what empirically clears them, and the
+        # package is a belt-and-suspenders fallback in case iter_modules under-
+        # reports on the CI-installed general_ludd package.
+        "general_ludd.secrets",
+        "general_ludd.secrets.manager",
+        "general_ludd.worker",
+        "general_ludd.worker.app",
+        "general_ludd.reload",
+        "general_ludd.reload.worker_broadcast",
+        "general_ludd.event_loop",
+        "general_ludd.event_loop.loop",
+        "general_ludd.code_intelligence",
+        "general_ludd.code_intelligence.rg_search",
     ]
     for name in _ancestors:
         lg = logging.getLogger(name)
