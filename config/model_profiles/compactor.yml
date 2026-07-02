@@ -1,0 +1,24 @@
+model_profile_id: compactor
+role_names:
+  - compactor
+provider: openai
+provider_package: langchain_openai
+provider_class_hint: ChatOpenAI
+model_name: llama-3.2-3b-instruct
+credential_alias: LOCAL_SLM_API_KEY
+api_base_alias: LOCAL_SLM_BASE_URL
+context_window: 8192
+max_input_tokens: 7168
+max_output_tokens: 512
+cost_per_input_token: 0.0
+cost_per_output_token: 0.0
+api_metered: false
+run_budget_usd: 0.0
+enabled: true
+resource_profile: ai_light
+roles:
+  - compactor
+latency_class: fast
+quality_class: low
+fallback_profiles: []
+probe_enabled: false

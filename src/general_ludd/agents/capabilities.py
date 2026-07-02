@@ -29,12 +29,33 @@ class AgentCapabilities:
         primary_profile: str = "default",
         fallback_profiles: list[str] | None = None,
         agent_registry: AgentRegistry | None = None,
+        model_gateway: Any = None,
+        use_slm_compaction: bool = False,
     ) -> None:
         self.compactor = ContextCompactor(
             max_tokens=max_tokens,
             compaction_threshold=compaction_threshold,
             preserve_recent_count=preserve_recent_count,
         )
+        self._preserve_recent_count = preserve_recent_count
+        # OPT-IN local-SLM compaction. Default OFF and gateway=None → the plain
+        # ContextCompactor path is used, so no existing call site changes
+        # behavior. When a gateway is supplied AND the flag is on, prepare_messages
+        # routes the older middle of the conversation through a small local model
+        # (the ``compactor`` profile) which fails SOFT to extractive truncation if
+        # the profile is missing or the gateway errors — compaction never crashes
+        # the context path.
+        self._slm_compactor: Any = None
+        if model_gateway is not None and use_slm_compaction:
+            from general_ludd.compaction.slm import (
+                SLMCompactor,
+                make_slm_summarize_fn,
+            )
+
+            self._slm_compactor = SLMCompactor(
+                summarize_fn=make_slm_summarize_fn(model_gateway, "compactor"),
+                preserve_recent=preserve_recent_count,
+            )
         self.token_window = TokenWindowManager(default_budget=max_tokens)
         self._registry = agent_registry or AgentRegistry()
         self.tool_adapter = AgentToolAdapter(self._registry)
@@ -73,6 +94,21 @@ class AgentCapabilities:
                     is_system=turn.get("role") == "system",
                 )
             )
+        # Opt-in SLM path: only engage once the plain ContextCompactor's own
+        # threshold is crossed, so short conversations behave identically to the
+        # default path. The SLMCompactor summarizes the old middle via the local
+        # ``compactor`` model and fails soft to extractive truncation.
+        if self._slm_compactor is not None and self.compactor.needs_compaction(msgs):
+            from general_ludd.compaction.base import CompactionRequest
+
+            result = self._slm_compactor.compact(
+                CompactionRequest(
+                    messages=msgs,
+                    goal="",
+                    preserve_recent=self._preserve_recent_count,
+                )
+            )
+            return [{"role": m.role, "content": m.content} for m in result.messages]
         compacted = self.compactor.compact(msgs)
         return [{"role": m.role, "content": m.content} for m in compacted]
 
