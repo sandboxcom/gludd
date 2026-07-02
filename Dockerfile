@@ -37,9 +37,14 @@ RUN apt-get update \
 WORKDIR /app
 
 # 1) Resolve and install ONLY third-party dependencies first (cached layer).
+# --frozen (not --locked): CI and stage-2 below inject a timestamp build version
+# into pyproject.toml, which no longer matches uv.lock's pinned project version.
+# --locked would reject that mismatch (exit 1); --frozen installs straight from
+# the lockfile without re-validating it against pyproject.toml. Third-party deps
+# are unchanged, so the resolved dependency set is identical.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project
+    uv sync --frozen --no-dev --no-install-project
 
 # 2) Copy the source + packaging metadata the wheel build needs, inject the
 #    build version (parity with .github/workflows/build.yml), then install the
@@ -50,7 +55,7 @@ COPY README.md LICENSE THIRD_PARTY_LICENSES.md ./
 RUN sed -i "s/^__version__ = \".*\"/__version__ = \"${VERSION}\"/" src/general_ludd/__init__.py \
  && sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev
+    uv sync --frozen --no-dev
 
 ############################
 # Stage 2 — runtime        #

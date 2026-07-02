@@ -221,8 +221,14 @@ jobs:
         # debugging the merged data file is possible from the artifact.
         run: |
           mkdir -p .coverage-shards
-          find coverage-data -name '.coverage.*' -exec cp {} .coverage-shards/ \;
-          ls -la .coverage-shards/
+          # download-artifact only creates coverage-data/ when at least one
+          # coverage-* artifact matched; if every shard produced no data file
+          # the dir is absent and an unguarded `find` exits 1 under `bash -e`,
+          # sinking the otherwise-green run BEFORE the skip-guard below. Guard it.
+          if [ -d coverage-data ]; then
+            find coverage-data -name '.coverage.*' -exec cp {} .coverage-shards/ \;
+          fi
+          ls -la .coverage-shards/ || true
           # Guard the combine: coverage-reporting is NON-GATING (no fail_under
           # here; the shards run --cov-fail-under=0). This job first ran only
           # after the test-shards started passing, exposing a latent bug where
