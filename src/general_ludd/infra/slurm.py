@@ -448,9 +448,14 @@ class SlurmAdapter:
                 input=script.encode(),
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
         except FileNotFoundError as exc:
             raise SlurmNotInstalledError("sbatch not found on PATH") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SlurmConnectionError(
+                f"sbatch timed out after {exc.timeout}s"
+            ) from exc
 
         if result.returncode != 0:
             raise RuntimeError(
@@ -477,9 +482,14 @@ class SlurmAdapter:
                 args,
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
         except FileNotFoundError as exc:
             raise SlurmNotInstalledError("sacct not found on PATH") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SlurmConnectionError(
+                f"sacct timed out after {exc.timeout}s"
+            ) from exc
 
         if not result.stdout.strip():
             return SlurmJobInfo(job_id=job_id, state=SlurmJobState.UNKNOWN)
@@ -493,9 +503,14 @@ class SlurmAdapter:
                 ["scancel", "--", job_id],
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
         except FileNotFoundError as exc:
             raise SlurmNotInstalledError("scancel not found on PATH") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SlurmConnectionError(
+                f"scancel timed out after {exc.timeout}s"
+            ) from exc
 
         if result.returncode != 0:
             raise RuntimeError(
@@ -508,9 +523,10 @@ class SlurmAdapter:
                 ["sbatch", "--version"],
                 capture_output=True,
                 text=True,
+                timeout=5,
             )
             return result.returncode == 0
-        except FileNotFoundError:
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
 
     def _local_list_jobs(self) -> list[SlurmJobInfo]:
@@ -519,8 +535,9 @@ class SlurmAdapter:
                 ["squeue", "--me", "--format=%i|%T", "--noheader"],
                 capture_output=True,
                 text=True,
+                timeout=30,
             )
-        except FileNotFoundError:
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             return []
         if result.returncode != 0:
             return []
