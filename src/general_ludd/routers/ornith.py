@@ -26,6 +26,7 @@ every ``/admin/*`` path).
 
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import logging
 import os
@@ -191,10 +192,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             path = await repo.export_dataset(
                 since=since, project_id=project_id, out_path=out_path
             )
-        row_count = 0
-        with Path(path).open("r", encoding="utf-8") as fh:
-            for _ in fh:
-                row_count += 1
+        # Count rows OFF the event loop — a large export file would otherwise
+        # block the loop for the full read.
+        def _count_rows() -> int:
+            n = 0
+            with Path(path).open("r", encoding="utf-8") as fh:
+                for _ in fh:
+                    n += 1
+            return n
+
+        row_count = await asyncio.to_thread(_count_rows)
         return {
             "path": str(path),
             "row_count": row_count,
