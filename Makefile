@@ -9,6 +9,20 @@ run-view:
 
 rel-view:
 	gh release view v0.1.0-alpha.5 --repo sandboxcom/gludd
+
+# Block until the tagged release run concludes, then dump run + release asset state.
+rel-wait:
+	@echo "polling run 28566183595 until completed..."
+	@while true; do \
+		st=$$(gh run view 28566183595 --repo sandboxcom/gludd --json status --jq '.status' 2>/dev/null); \
+		echo "status=$$st $$(date +%H:%M:%S)"; \
+		if [ "$$st" = "completed" ]; then break; fi; \
+		sleep 90; \
+	done
+	@echo "===== RUN VIEW ====="; \
+	gh run view 28566183595 --repo sandboxcom/gludd
+	@echo "===== RELEASE VIEW ====="; \
+	gh release view v0.1.0-alpha.5 --repo sandboxcom/gludd --json name,url,assets,isDraft,createdAt --jq '{name,url,isDraft,createdAt,assetCount:(.assets|length),assets:[.assets[]|{name,size}]}' 2>/dev/null || gh release view v0.1.0-alpha.5 --repo sandboxcom/gludd
 # --- end TEMP ---
 
 VERSION := $(shell grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2)
@@ -20,6 +34,11 @@ version:
 # Restore the uncommitted tooling stashed by promote-master-ssh.
 git-stash-pop:
 	git stash pop
+
+# Merge a (worktree) branch into the current branch, no-ff, no editor.
+git-merge-branch:
+	@test -n "$(BRANCH)" || (echo "Usage: make git-merge-branch BRANCH=<branch>"; exit 1)
+	git merge --no-ff --no-edit $(BRANCH)
 
 # Memory-safe test runners (full 8-worker suite OOMs; use fewer workers or shard by dir)
 # TESTDIR defaults to a directory; NPROC caps xdist workers to bound memory.
