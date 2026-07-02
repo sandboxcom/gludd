@@ -1543,6 +1543,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:
         logger.error("Daemon startup failed: %s", exc)
         app.state._degraded = str(exc)
+        # Also record on the shared daemon_state dict. The EventLoop's code-reload
+        # health probe (_make_daemon_health_probe) reads daemon_state["_degraded"]
+        # to decide whether to roll a hot-reload back; previously the flag lived
+        # ONLY as an app.state attribute the probe never read, so the reload
+        # health gate silently always passed and a bad reload could stick.
+        daemon_state["_degraded"] = str(exc)
 
     # Phase 1 minimal hook: optionally launch the Ornith MCP server subprocess.
     app.state._ornith_mcp_proc = None
