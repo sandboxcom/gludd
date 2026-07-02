@@ -85,6 +85,11 @@ class ExecutionTrace:
     todo_id: str
     work_type: str
     started_at: datetime
+    # Tenant boundary (XT trace-leak fix): the project this trace belongs to.
+    # None for legacy/unscoped traces — a project-scoped snapshot() query
+    # EXCLUDES None-project traces so a scoped caller can never see another
+    # tenant's (or an unattributed) trace.
+    project_id: str | None = None
     spans: list[ExecutionSpan] = field(default_factory=list)
 
     def __init__(
@@ -92,10 +97,12 @@ class ExecutionTrace:
         todo_id: str = "",
         work_type: str = "code",
         trace_id: str | None = None,
+        project_id: str | None = None,
     ) -> None:
         self.trace_id = trace_id or f"trace-{uuid.uuid4().hex[:12]}"
         self.todo_id = todo_id
         self.work_type = work_type
+        self.project_id = project_id
         self.started_at = datetime.now(UTC)
         self.spans = []
 
@@ -134,6 +141,7 @@ class ExecutionTrace:
             "trace_id": self.trace_id,
             "todo_id": self.todo_id,
             "work_type": self.work_type,
+            "project_id": self.project_id,
             "started_at": self.started_at.isoformat(),
             "total_cost_usd": self.total_cost_usd,
             "total_tokens": self.total_tokens,

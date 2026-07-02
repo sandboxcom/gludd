@@ -139,18 +139,27 @@ def _traces_facet(
     app: FastAPI,
     limit: int = _DEFAULT_TRACE_LIMIT,
     todo_id: str | None = None,
+    project_id: str | None = None,
 ) -> dict[str, Any]:
     """Recent execution traces + by-phase aggregate + otel exporter status.
 
     Sourced ONLY from the in-process RecentTracesBuffer (genuinely-captured
     telemetry). The otel exporter status is reported honestly: "available" when
     an OTLP collector bridge is active, otherwise "disabled".
+
+    ``project_id`` scopes the traces to the caller's tenant (XT trace-leak fix):
+    when supplied, only that project's traces are returned and legacy
+    None-project traces are excluded, so trace names / phases / costs / tokens
+    of other tenants never leak. ``None`` = unscoped/global caller.
     """
     buffer = getattr(app.state, "_recent_traces", None)
     facet: dict[str, Any]
     if buffer is not None and hasattr(buffer, "snapshot"):
         facet = buffer.snapshot(
-            limit=limit, max_spans=_DEFAULT_SPAN_CAP, todo_id=todo_id
+            limit=limit,
+            max_spans=_DEFAULT_SPAN_CAP,
+            todo_id=todo_id,
+            project_id=project_id,
         )
     else:
         facet = {"count": 0, "total_recorded": 0, "recent": [], "by_phase": {}}
@@ -168,6 +177,7 @@ def _traces_facet(
 def _codebase_facet(
     app: FastAPI,
     recent_failures: dict[str, Any] | None = None,
+    project_id: str | None = None,
 ) -> dict[str, Any]:
     """Best-effort codebase self-knowledge for the self-improvement pipeline.
 
@@ -188,6 +198,9 @@ def _codebase_facet(
             repo_root=str(repo_root),
             traces_buffer=buffer,
             recent_failures=recent_failures,
+            # Scope the perf_cost trace aggregate to the caller's tenant so the
+            # codebase facet cannot re-leak cross-tenant trace cost/tokens.
+            project_id=project_id,
         )
         return introspector.snapshot()
     except Exception as exc:  # pragma: no cover - defensive, fail soft
@@ -414,9 +427,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "history": history,
             "messages": messages,
             "metrics": await _metrics_facet(app, project_id=project_id),
-            "traces": _traces_facet(app),
+            "traces": _traces_facet(app, project_id=project_id),
             "codebase": await asyncio.to_thread(
-                _codebase_facet, app, recent_failures=history or None
+                _codebase_facet,
+                app,
+                recent_failures=history or None,
+                project_id=project_id,
             ),
             "features": await _features_facet(app, project_id=project_id),
             "dispatch": dispatch,
@@ -444,10 +460,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def api_traces(
         todo_id: str | None = None,
         limit: int = _DEFAULT_TRACE_LIMIT,
+        project_id: str | None = None,
     ) -> dict[str, Any]:
         """Focused read-only traces snapshot (gludd_traces module).
 
-        Optional filters: ``todo_id`` and ``limit`` (max recent traces).
+        Optional filters: ``todo_id``, ``project_id`` (tenant scope — only that
+        project's traces, excluding legacy None-project traces), and ``limit``
+        (max recent traces). ``project_id`` unset = unscoped/global caller.
         """
         bounded = max(1, min(limit, _DEFAULT_TRACE_LIMIT * 5))
-        return _traces_facet(app, limit=bounded, todo_id=todo_id)
+        return _traces_facet(
+            app, limit=bounded, todo_id=todo_id, project_id=project_id
+        )

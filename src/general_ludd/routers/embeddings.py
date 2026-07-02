@@ -229,8 +229,8 @@ class EmbeddingSearchRequest(BaseModel):
     project_id: str | None = Field(
         None,
         description=(
-            "When set, restrict the 'events' corpus to audit events for this "
-            "project only (cross-tenant isolation). None searches all events "
+            "When set, restrict the 'events' and 'traces' corpora to this "
+            "project only (cross-tenant isolation). None searches all rows "
             "(back-compat); other corpora are unaffected."
         ),
     )
@@ -659,7 +659,12 @@ def _search_traces(
     traces: list[dict[str, Any]] = []
     if buffer is not None and hasattr(buffer, "snapshot"):
         try:
-            snap = buffer.snapshot()
+            # Tenant isolation (XT trace-leak fix): scope the trace corpus to the
+            # caller's project so this route cannot leak other tenants' trace
+            # ids / todo_ids / costs (the same buffer /api/traces now scopes).
+            # None = unscoped/global caller (back-compat); a scoped project also
+            # excludes legacy None-project traces.
+            snap = buffer.snapshot(project_id=req.project_id)
             recent = snap.get("recent", []) if isinstance(snap, dict) else []
             if isinstance(recent, list):
                 traces = [t for t in recent if isinstance(t, dict)]

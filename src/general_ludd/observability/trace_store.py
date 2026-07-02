@@ -54,11 +54,22 @@ class RecentTracesBuffer:
         self,
         limit: int | None = None,
         todo_id: str | None = None,
+        project_id: str | None = None,
     ) -> list[ExecutionTrace]:
-        """Most-recent-first traces, optionally filtered by ``todo_id``."""
+        """Most-recent-first traces, optionally filtered by ``todo_id``.
+
+        When ``project_id`` is supplied the result is scoped to that tenant:
+        only traces whose ``project_id`` equals it are returned. Legacy
+        traces carrying no ``project_id`` (``None``) are EXCLUDED from a scoped
+        query so an unattributed trace can never leak to a scoped caller. When
+        ``project_id`` is ``None`` (unscoped/global caller) no project filter is
+        applied and every retained trace is returned (existing behaviour).
+        """
         items = list(reversed(self._traces))
         if todo_id is not None:
             items = [t for t in items if t.todo_id == todo_id]
+        if project_id is not None:
+            items = [t for t in items if t.project_id == project_id]
         if limit is not None:
             items = items[:limit]
         return items
@@ -88,14 +99,20 @@ class RecentTracesBuffer:
         limit: int = DEFAULT_RECENT_LIMIT,
         max_spans: int = DEFAULT_MAX_SPANS,
         todo_id: str | None = None,
+        project_id: str | None = None,
     ) -> dict[str, Any]:
         """Bounded JSON-safe view: recent traces + by-phase aggregate.
 
         Trace count is capped to ``limit`` and each trace's span list to
         ``max_spans`` so the payload stays usable inside playbooks. The phase
         aggregate is computed over the (possibly filtered) recent window.
+
+        ``project_id`` scopes the snapshot to a single tenant (see
+        :meth:`recent`): a scoped query returns only that project's traces and
+        excludes legacy None-project traces, so the by-phase aggregate (costs /
+        tokens) is likewise tenant-isolated. ``None`` = unscoped/global.
         """
-        traces = self.recent(limit=limit, todo_id=todo_id)
+        traces = self.recent(limit=limit, todo_id=todo_id, project_id=project_id)
         recent: list[dict[str, Any]] = []
         for trace in traces:
             row = trace.to_dict()

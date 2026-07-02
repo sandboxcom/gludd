@@ -53,10 +53,15 @@ class CodebaseIntrospector:
         repo_root: str,
         traces_buffer: Any = None,
         recent_failures: dict[str, Any] | None = None,
+        project_id: str | None = None,
     ) -> None:
         self.repo_root = repo_root
         self._traces_buffer = traces_buffer
         self._recent_failures = recent_failures
+        # Tenant boundary (XT trace-leak fix): scope the perf_cost by-phase
+        # aggregate to the caller's project so /api/facts?project_id=A cannot
+        # surface cross-tenant trace cost/token totals. None = unscoped/global.
+        self._project_id = project_id
 
     def snapshot(self) -> dict[str, Any]:
         # Compute harness findings once (the gap analysis walks the whole src
@@ -206,7 +211,7 @@ class CodebaseIntrospector:
         if buffer is None or not hasattr(buffer, "snapshot"):
             return None
         try:
-            snap = buffer.snapshot()
+            snap = buffer.snapshot(project_id=self._project_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("perf_cost unavailable: %s", exc)
             return None
