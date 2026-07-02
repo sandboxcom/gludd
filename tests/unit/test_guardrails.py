@@ -276,8 +276,25 @@ class TestCommitAfterGreenGuardrail:
         tac_start = content.index("\ntest-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
-        assert "pytest" in tac_section
+        # test-and-commit now routes its test phase through the RAM-bounded
+        # adaptive runner (scripts/adaptive_test.py tests/) instead of a bare
+        # `pytest` invocation. The suite still runs first — adaptive_test.py
+        # execs `python -m pytest tests/` — it is just OOM-guarded. Accept
+        # either form so the "runs tests first" invariant stays pinned.
+        assert "pytest" in tac_section or "adaptive_test.py" in tac_section, (
+            "test-and-commit must run the test suite (pytest or the adaptive "
+            "runner scripts/adaptive_test.py) before committing"
+        )
         assert "git commit" in tac_section
+        # The test phase must precede the commit (tests-first ordering).
+        run_idx = (
+            tac_section.index("adaptive_test.py")
+            if "adaptive_test.py" in tac_section
+            else tac_section.index("pytest")
+        )
+        assert run_idx < tac_section.index("git commit"), (
+            "tests must run BEFORE git commit in the test-and-commit target"
+        )
 
     def test_makefile_test_and_commit_rejects_if_tests_fail(self):
         content = MAKEFILE.read_text()

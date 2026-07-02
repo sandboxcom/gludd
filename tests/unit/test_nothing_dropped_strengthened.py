@@ -329,14 +329,34 @@ class TestPostWaveSweepReplacesNotAppends:
 
     def test_pending_todos_directive_still_appends(self):
         """Only post-wave-sweep replaces. The pending-todos directive (the
-        todowrite-state case) must still APPEND — it is less severe."""
+        todowrite-state case) must still APPEND — it is less severe.
+
+        2026-07-01 migration: response.transform → experimental.text.complete.
+        The append/replace logic moved into classifyAndBlock(): the
+        pending-todos branch push()es onto the `directives` array, and the
+        function returns `text + "\\n" + directives.join("\\n")` (APPEND —
+        the summary is preserved). Only the post-wave-sweep branch `return`s
+        the directive alone (REPLACE). This test exercises the new entrypoint
+        while asserting the SAME behavior.
+        """
         s = _src()
-        # The append return path must still exist.
+        # The classifyAndBlock append return path must still exist — the
+        # summary text is preserved and directives are appended, NOT replaced.
         assert re.search(
-            r"return\s+output\s*\+\s*[\"']\\n[\"']\s*\+\s*directives", s,
+            r"return\s+text\s*\+\s*[\"']\\n[\"']\s*\+\s*directives", s,
         ), (
-            "Pending-todos and orphaned-test directives must still APPEND to "
-            "the response (only post-wave-sweep replaces)."
+            "classifyAndBlock must still APPEND pending-todos/orphaned-test "
+            "directives via `return text + \"\\n\" + directives.join(...)` "
+            "(only post-wave-sweep replaces)."
+        )
+        # The pending-todos branch must push() onto the directives array
+        # (append path), NOT early-return the directive alone (replace path).
+        assert re.search(
+            r"pending\.length\s*>\s*0\s*&&\s*isSummary\s*\)\s*\{\s*directives\.push",
+            s,
+        ), (
+            "The pending-todos branch (pending.length > 0 && isSummary) must "
+            "directives.push(...) — appending, not replacing the response."
         )
 
 
