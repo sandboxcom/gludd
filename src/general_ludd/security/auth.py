@@ -61,8 +61,18 @@ def load_auth_posture(
     """
     source = env if env is not None else os.environ
     psk = (source.get("GLUDD_PSK", "") or "").strip()
-    require_auth = require_auth_env(source)
     no_auth = not psk
+    # Default-secure: when NO PSK is configured, REQUIRE auth (fail-closed) unless
+    # the operator explicitly opts into no-auth via GLUDD_ALLOW_NO_AUTH (parallel to
+    # the daemon and the test conftest). Without this the worker served
+    # unauthenticated by default (fail-open) whenever no PSK + no GLUDD_REQUIRE_AUTH.
+    _allow_no_auth = source.get("GLUDD_ALLOW_NO_AUTH", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    require_auth = require_auth_env(source) or (no_auth and not _allow_no_auth)
     if no_auth and require_auth:
         import logging
 
