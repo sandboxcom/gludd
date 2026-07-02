@@ -107,6 +107,44 @@ def test_empty_tracker_preserves_static_mapping() -> None:
     assert with_empty["architecture"] == "flagship"
 
 
+def test_learned_covers_real_observed_worktype_via_heaviest() -> None:
+    # A real work_type ("code") that is in NEITHER static list gets a learned
+    # recommendation from the new heaviest() pass: observed token-light -> weak.
+    from general_ludd.observability.token_cost import TokenCostTracker
+
+    t = TokenCostTracker(min_samples=3)
+    for _ in range(3):
+        t.record("code", 60, 40)          # total 100   -> light
+        t.record("bug_fix", 6000, 4000)   # total 10000 -> heavy
+        t.record("refactor", 600, 400)    # total 1000  -> moderate
+    rec = build_optimization_hints(
+        routing={"default_profile": "flagship", "weak_model_profile": "weak"},
+        token_tracker=t,
+    )["recommended_profile_for"]
+    assert rec["code"] == "weak"          # observed light -> weak profile
+    assert rec["bug_fix"] == "flagship"   # observed heavy -> quality profile
+
+
+def test_learned_heavy_observed_worktype_uses_role_routing() -> None:
+    # A heavy observed work-type with a role route uses the role profile.
+    from general_ludd.observability.token_cost import TokenCostTracker
+
+    t = TokenCostTracker(min_samples=3)
+    for _ in range(3):
+        t.record("code", 60, 40)          # light
+        t.record("bug_fix", 6000, 4000)   # heavy
+        t.record("refactor", 600, 400)    # moderate
+    rec = build_optimization_hints(
+        routing={
+            "default_profile": "flagship",
+            "weak_model_profile": "weak",
+            "roles": {"bug_fix": "fixer-pro"},
+        },
+        token_tracker=t,
+    )["recommended_profile_for"]
+    assert rec["bug_fix"] == "fixer-pro"  # heavy + role route -> role profile
+
+
 def test_learned_classification_defensive_on_raising_tracker() -> None:
     class _Boom:
         def classify(self, *a: object, **k: object) -> str:

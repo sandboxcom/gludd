@@ -354,3 +354,33 @@ class TestModelFindingNormalization:
         )
         todos = harness.generate_fix_todos(harness.run_gap_analysis())
         assert todos[0]["work_type"] == "test"
+
+    def test_non_dict_model_findings_are_filtered_out(self):
+        # A model may emit a JSON array containing non-object elements (str/int/
+        # null). Those must NOT crash generate_fix_todos/_normalize_finding; only
+        # the valid dict finding survives to become a todo.
+        import json
+
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        payload = json.dumps([
+            "junk",
+            42,
+            None,
+            ["nested", "list"],
+            {"title": "t", "description": "d", "priority": "high", "tier": "code"},
+        ])
+        harness = SelfImprovementHarness(
+            repo_root="/tmp/gludd-nonexistent-xyz",
+            model_gateway=self._gateway(payload),
+        )
+        findings = harness.run_gap_analysis()
+        # Only the dict finding survived the filter.
+        assert findings == [
+            {"title": "t", "description": "d", "priority": "high", "tier": "code"}
+        ]
+        todos = harness.generate_fix_todos(findings)
+        assert len(todos) == 1
+        assert todos[0]["work_type"] == "code"
+        assert todos[0]["description"] == "d"
+        assert "unknown gap" not in todos[0]["title"].lower()

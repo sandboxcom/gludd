@@ -421,6 +421,35 @@ def build_optimization_hints(
         if target:
             recommended[work_type] = target
 
+    # 2c) Learned coverage of REAL observed work-types: the two static lists
+    #     above only cover a fixed taxonomy, but the tracker also OBSERVES
+    #     concrete work-types the daemon actually ran (e.g. "code", "bug_fix")
+    #     that appear in neither list. For each such observed key not already
+    #     recommended, apply its learned classification directly — a light key
+    #     -> weak profile, a heavy key -> role/quality profile. "moderate" and
+    #     "unknown" keys are skipped, so an empty/absent tracker (heaviest()==[])
+    #     leaves the static mapping byte-identical.
+    if token_tracker is not None:
+        try:
+            observed = token_tracker.heaviest()
+        except Exception:
+            observed = []
+        for weight_obj in observed:
+            key = getattr(weight_obj, "key", None)
+            if not key or key in recommended:
+                continue
+            try:
+                learned = token_tracker.classify(key)
+            except Exception:
+                continue
+            if learned == "light":
+                if weak_profile:
+                    recommended[key] = weak_profile
+            elif learned == "heavy":
+                target = role_routing.get(key) or quality_target
+                if target:
+                    recommended[key] = target
+
     # 3) Metered-model fallback: if any enabled, api_metered profile has a
     #    cheaper fallback available, recommend preferring the fallback for
     #    low-stakes work.

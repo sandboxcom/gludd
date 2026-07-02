@@ -1677,12 +1677,17 @@ class EventLoop:
             # pipeline where quality allows. Uses the same ~4-chars/token estimate
             # the perf repo records below; a later slice upgrades this to the
             # gateway's real usage_metadata for exact counts.
-            default_token_tracker().record(
-                f"{_safe_str(todo, 'work_type', 'code') or 'code'}:"
-                f"{resolved_model_profile or 'default'}",
-                len(prompt_text or "") // 4,
-                len(model_response or "") // 4,
-            )
+            # Only record when a model call ACTUALLY happened: non-generation
+            # todos leave model_response None, and recording that phantom sample
+            # (output=0) would pollute the learned per-work_type baseline. Key on
+            # the BARE work_type so the sole consumer, environment_advisor's
+            # classify(work_type), can resolve what was recorded.
+            if model_response is not None:
+                default_token_tracker().record(
+                    _safe_str(todo, "work_type", "code") or "code",
+                    len(prompt_text or "") // 4,
+                    len(model_response or "") // 4,
+                )
             # Record deployment health after each model call so the
             # self-healing router learns which deployments are degraded.
             if self._deployment_health_router is not None:

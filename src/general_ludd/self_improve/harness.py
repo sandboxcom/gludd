@@ -100,7 +100,10 @@ class SelfImprovementHarness:
                     # Return raw model findings unchanged (callers/tests rely on
                     # the model's shape); normalization happens in
                     # generate_fix_todos so both schemas produce valid todos.
-                    findings = parsed
+                    # Filter to dict items only: a JSON list may contain non-object
+                    # elements (str/int/None) that would crash the downstream
+                    # generate_fix_todos/_normalize_finding .get() calls.
+                    findings = [f for f in parsed if isinstance(f, dict)]
                     used_model = True
                 else:
                     logger.warning(
