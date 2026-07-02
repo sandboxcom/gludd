@@ -37,35 +37,18 @@ import traceback
 from typing import Any
 
 from general_ludd.abtest.workloads import RESULT_SENTINEL as SENTINEL
+from general_ludd.system.rlimit import apply_limits
 
 
 def _apply_limits(mem_limit_mb: int, cpu_seconds: int) -> None:
     """Best-effort POSIX resource limits. No-op where ``resource`` or a given
     limit is unavailable (e.g. Windows), so the runner still works there with
-    only the wall-clock timeout as the backstop."""
-    try:
-        import resource
-    except ImportError:
-        return
+    only the wall-clock timeout as the backstop.
 
-    if mem_limit_mb > 0 and hasattr(resource, "RLIMIT_AS"):
-        nbytes = mem_limit_mb * 1024 * 1024
-        try:
-            _soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-            new_hard = nbytes if hard == resource.RLIM_INFINITY else min(nbytes, hard)
-            resource.setrlimit(resource.RLIMIT_AS, (nbytes, new_hard))
-        except (ValueError, OSError):
-            pass
-
-    if cpu_seconds > 0 and hasattr(resource, "RLIMIT_CPU"):
-        try:
-            _soft, hard = resource.getrlimit(resource.RLIMIT_CPU)
-            new_hard = (
-                cpu_seconds if hard == resource.RLIM_INFINITY else min(cpu_seconds, hard)
-            )
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, new_hard))
-        except (ValueError, OSError):
-            pass
+    Thin wrapper preserved for the A/B child's local naming; the implementation
+    now lives in the shared ``general_ludd.system.rlimit`` module so the same
+    clamped, fail-open logic can back the adaptive test runner too."""
+    apply_limits(mem_limit_mb, cpu_seconds)
 
 
 def _run_workload(workload: dict[str, Any]) -> dict[str, Any]:
