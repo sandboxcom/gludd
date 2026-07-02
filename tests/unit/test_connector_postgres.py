@@ -122,6 +122,40 @@ class TestContract:
         src = PostgresStatsSource(executor=_canned({"pg_stat_replication": rows}))
         assert src.query("replication")[0]["value"] is None
 
+    @pytest.mark.parametrize("poison", [float("nan"), float("inf"), float("-inf")])
+    def test_nonfinite_value_coerces_to_none(self, poison: float) -> None:
+        # A non-finite value from a flaky backend must be coerced to None at the
+        # boundary (normalized_record policy), not passed through uncoerced where
+        # it would poison downstream aggregation/scoring.
+        rows = [{"application_name": "r", "value": poison}]
+        src = PostgresStatsSource(executor=_canned({"pg_stat_replication": rows}))
+        assert src.query("replication")[0]["value"] is None
+
+    def test_ts_is_epoch_float_not_string(self) -> None:
+        # ts must be an epoch float (or None), never an ISO string — a string ts
+        # TypeErrors in the observability find()/_sort_by_ts path (math.isfinite).
+        import math
+
+        rows = [{"state": "active", "value": 1, "datname": "app"}]
+        src = PostgresStatsSource(executor=_canned({"pg_stat_activity": rows}))
+        ts = src.query("activity")[0]["ts"]
+        assert isinstance(ts, float)
+        assert math.isfinite(ts)
+
+    def test_records_route_through_find_without_typeerror(self) -> None:
+        # End-to-end guard: routing records through the observability facade's
+        # find()/sort must not TypeError on the ts type.
+        from general_ludd.connectors.base import Observability, SourceRegistry
+
+        rows = [{"state": "active", "value": 1, "datname": "app"}]
+        src = PostgresStatsSource(executor=_canned({"pg_stat_activity": rows}))
+        reg = SourceRegistry()
+        reg.register(src)  # type: ignore[arg-type]
+        obs = Observability(reg)
+        results = obs.find({}, kinds=["metrics"])
+        assert results
+        assert all(isinstance(r["ts"], float) for r in results)
+
 
 class TestHealth:
     def test_health_ok_with_injected_executor(self) -> None:

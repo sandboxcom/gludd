@@ -21,6 +21,8 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from general_ludd.connectors.base import normalized_record
+
 logger = logging.getLogger(__name__)
 
 # A query-executor takes a SQL string and returns rows as a sequence of
@@ -29,8 +31,9 @@ Row = Mapping[str, Any]
 Executor = Callable[[str], Sequence[Row]]
 
 
-def _utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+def _utc_now_epoch() -> float:
+    """Current UTC time as epoch seconds (float), matching the NormalizedRecord ts contract."""
+    return datetime.now(UTC).timestamp()
 
 
 def _to_float(value: Any) -> float | None:
@@ -169,16 +172,22 @@ class PostgresStatsSource:
         status: str = "ok",
     ) -> dict[str, Any]:
         clean_labels = {k: str(v) for k, v in labels.items() if v is not None}
-        return {
-            "ts": _utc_now_iso(),
-            "source": self.name,
-            "kind": self.KIND,
-            "level_or_status": status,
-            "message": message,
-            "value": value,
-            "labels": clean_labels,
-            "raw": dict(raw),
-        }
+        # Route through normalized_record so a non-finite (NaN / +Inf / -Inf)
+        # ``value`` is coerced to None per the boundary numeric policy, and ``ts``
+        # is an epoch float (not an ISO string) consistent with _sort_by_ts /
+        # associate() — an ISO-string ts would TypeError in the find/sort path.
+        return dict(
+            normalized_record(
+                source=self.name,
+                kind=self.KIND,
+                message=message,
+                ts=_utc_now_epoch(),
+                level_or_status=status,
+                value=value,
+                labels=clean_labels,
+                raw=dict(raw),
+            )
+        )
 
     def _normalize_activity(self, rows: Sequence[Row]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []

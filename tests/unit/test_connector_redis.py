@@ -111,6 +111,37 @@ class TestContract:
         for rec in records:
             assert set(rec) == _record_keys()
 
+    @pytest.mark.parametrize("poison", [float("nan"), float("inf"), float("-inf")])
+    def test_nonfinite_value_coerces_to_none(self, poison: float) -> None:
+        # A non-finite metric value from a flaky backend must be coerced to None
+        # at the boundary (normalized_record policy), not passed through.
+        slowlog = [{"id": 1, "duration": poison, "command": "GET foo"}]
+        src = RedisStatsSource(executor=_canned(slowlog=slowlog))
+        assert src.query("slowlog")[0]["value"] is None
+
+    def test_ts_is_epoch_float_not_string(self) -> None:
+        # ts must be an epoch float (or None), never an ISO string — a string ts
+        # TypeErrors in the observability find()/_sort_by_ts path (math.isfinite).
+        import math
+
+        src = RedisStatsSource(executor=_canned(info={"used_memory": 1}))
+        ts = src.query("info")[0]["ts"]
+        assert isinstance(ts, float)
+        assert math.isfinite(ts)
+
+    def test_records_route_through_find_without_typeerror(self) -> None:
+        # End-to-end guard: routing records through the observability facade's
+        # find()/sort must not TypeError on the ts type.
+        from general_ludd.connectors.base import Observability, SourceRegistry
+
+        src = RedisStatsSource(executor=_canned(info={"used_memory": 1}))
+        reg = SourceRegistry()
+        reg.register(src)  # type: ignore[arg-type]
+        obs = Observability(reg)
+        results = obs.find({}, kinds=["metrics"])
+        assert results
+        assert all(isinstance(r["ts"], float) for r in results)
+
     def test_default_spec_is_info(self) -> None:
         src = RedisStatsSource(executor=_canned(info={"used_memory": 1}))
         assert src.query()
