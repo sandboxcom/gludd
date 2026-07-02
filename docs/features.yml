@@ -337,12 +337,13 @@ sections:
   - title: "Connectors / Observability"
     features:
       - id: obs-connector-base
-        title: "Observability connector base + normalize + registry (38 connectors)"
+        title: "Observability connector base + normalize + registry (39 connectors)"
         pct: 60
         evidence_refs:
           - "file:src/general_ludd/connectors/registry.py::ConnectorRegistry"
           - "file:src/general_ludd/routers/observe.py::router"
-        notes: "38 modules + 38 test files exist; `daemon.py` never imports connectors; observe router not registered; `[audit #1]`"
+          - "file:src/general_ludd/connectors/mqtt.py::MqttSource"
+        notes: "39 modules + 39 test files exist (added MqttSource — MQTT/Mosquitto pub-sub buffer); `daemon.py` never imports connectors; observe router not registered; `[audit #1]`"
 
       - id: gludd-metrics-traces-modules
         title: "gludd_metrics + gludd_traces Ansible modules"

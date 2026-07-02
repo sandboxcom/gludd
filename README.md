@@ -152,7 +152,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| Observability connector base + normalize + registry (38 connectors) | ✓ 60% | **PASS** *(file-refs only)*: 38 modules + 38 test files exist; `daemon.py` never imports connectors; observe router not registered; `[audit #1]` |
+| Observability connector base + normalize + registry (39 connectors) | ✓ 60% | **PASS** *(file-refs only)*: 39 modules + 39 test files exist (added MqttSource — MQTT/Mosquitto pub-sub buffer); `daemon.py` never imports connectors; observe router not registered; `[audit #1]` |
 | gludd_metrics + gludd_traces Ansible modules | ~ 100% | **PARTIAL** *(file-refs only)*: 145 passed; molecule 27+28; `[86389be]` |
 | /api/metrics + /api/traces endpoints | ✓ 100% | **PASS** *(file-refs only)*: 4 passed; `[86389be]` |
 | Observability router (`routers/observe.py`) wired into daemon | ✓ 5% | **PASS** *(file-refs only)*: register() exists; never called; 1 daemon.py line needed; `[audit]` |
@@ -284,7 +284,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Watchdog FileWatcher in integrity scanner (W4.3) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed + 3 xpassed; `[15db868]` |
 | deptry installed; langchain/langgraph deferred (W4.5) | ✗ 100% | **PENDING** *(file-refs only)*: `[15db868]` |
 | README claims measured / no hardcoded numbers (W5.5) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed; `[526104b]` |
-| `make release-cut` target exists and runs (enforcement of this table) | ~ 100% | **PARTIAL** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
+| `make release-cut` target exists and runs (enforcement of this table) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
 
 ### Security Findings Backlog (NEW_FINDINGS_2026-06-16.md)
 
