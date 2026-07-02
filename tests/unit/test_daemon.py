@@ -51,15 +51,23 @@ class TestDaemonApp:
 
     @pytest.mark.asyncio
     async def test_log_level_endpoint_changes_level(self, transport):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/admin/log-level", json={"level": "debug"})
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["status"] == "ok"
-            assert data["level"] == "debug"
-            root = logging.getLogger()
-            assert root.level == logging.DEBUG
-            logging.getLogger().setLevel(logging.WARNING)
+        root = logging.getLogger()
+        original_level = root.level
+        try:
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/admin/log-level", json={"level": "debug"})
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["status"] == "ok"
+                assert data["level"] == "debug"
+                assert root.level == logging.DEBUG
+        finally:
+            # Restore the PRE-TEST root level.  /admin/log-level mutates the
+            # process-global root logger; the old hardcoded setLevel(WARNING)
+            # left root at WARNING, suppressing INFO/DEBUG records for later
+            # caplog tests on the same xdist worker (systemic caplog-empty
+            # pollution — the prime polluter behind the flaky caplog failures).
+            root.setLevel(original_level)
 
     @pytest.mark.asyncio
     async def test_log_level_rejects_invalid_level(self, transport):
