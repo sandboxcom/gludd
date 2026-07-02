@@ -42,6 +42,7 @@ from general_ludd.db.session import (
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.events.bus import EventBus
 from general_ludd.events.hooks import HookSystem
+from general_ludd.events.types import StallDetectedEvent
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore as _FS
 from general_ludd.infra.utilization import UtilizationTracker
@@ -58,6 +59,7 @@ from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.dashboard_data import DashboardDataProvider
 from general_ludd.observability.otel_bridge import OTelBridge
 from general_ludd.observability.recorder import AutoBenchmarkRecorder
+from general_ludd.observability.timing import StallWatchdog, default_tracker
 from general_ludd.projects.manager import seed_from_config
 from general_ludd.projects.workspace import ProjectWorkspace
 from general_ludd.prompts.registry import PromptRegistry
@@ -1503,6 +1505,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         app.state._preflight_task = asyncio.create_task(_init_preflight())
 
+        app.state._stall_watchdog = StallWatchdog(
+            default_tracker(),
+            on_stall=lambda r: subsys["bus"].publish(
+                StallDetectedEvent(
+                    operation=r.key,
+                    elapsed_s=r.elapsed_s,
+                    deadline_s=r.deadline_s,
+                    thread_stacks=r.thread_stacks,
+                )
+            ),
+        )
+        app.state._stall_watchdog.start_sweeper()
+
         otel_bridge: OTelBridge | None = None
         if uc is not None and hasattr(uc, "observability"):
             obs_cfg = uc.observability
@@ -1560,6 +1575,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         preflight_task_ref.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await preflight_task_ref
+    _sw = getattr(app.state, "_stall_watchdog", None)
+    if _sw is not None:
+        with contextlib.suppress(Exception):
+            _sw.stop_sweeper()
     if engine is not None:
         await engine.dispose()
     _embedding_session_ref = getattr(app.state, "_embedding_session", None)
