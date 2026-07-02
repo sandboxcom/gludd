@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold ci-test test-safe test-dir test-adaptive submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold ci-test test-safe test-dir test-adaptive submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo check-run-gate-syntax
 
 # --- TEMP release-verification targets (alpha.5) ---
 tag-run:
@@ -77,6 +77,10 @@ test-adaptive:
 
 test-dir:
 	uv run python -m pytest $(TESTDIR) -n $(NPROC) --dist loadgroup -q -p no:cacheprovider -ra
+
+# Syntax-check the gate runner shell script (bash -n) — no execution.
+check-run-gate-syntax:
+	@bash -n scripts/run_gate.sh && echo "OK syntax scripts/run_gate.sh"
 
 # TEMP: ff-check for promote-master-ssh safety (remove after use)
 git-ffcheck:

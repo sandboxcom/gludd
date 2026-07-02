@@ -147,13 +147,6 @@ BASETEMP=$(mktemp -d "${BASETEMP_PREFIX}-XXXXXX")
 # ---------------------------------------------------------------------------
 PYTEST_CMD=${PYTEST_CMD:-}
 
-# Mirror the Makefile's GLUDD_XDIST / cpu-count logic.
-XDIST_WORKERS=$(python3 -c "
-import os
-v = os.environ.get('GLUDD_XDIST')
-print(v if v else max(1, (os.cpu_count() or 1) // 4))
-" 2>/dev/null || echo "1")
-
 if [ -n "${PYTEST_CMD}" ]; then
     # set -e would abort the subshell on a non-zero eval before echo $? runs;
     # disable it inside the subshell so the exit code is always captured.
@@ -166,10 +159,16 @@ else
     # are also running tests. This COMPOSES with the gate's own flock above
     # (/tmp/gludd-gate.lock serializes whole gates; heavy_sem bounds total heavy
     # concurrency host-wide) — no deadlock, since the gate never re-acquires its
-    # own lock. python3 is already required by this script (XDIST_WORKERS above).
+    # own lock.
+    #
+    # MEMORY-ADAPTIVE WORKERS: run pytest via scripts/adaptive_test.py, which
+    # sizes xdist workers by AVAILABLE RAM (n = min(cpu, avail_gb // ~1.5)) and
+    # HALVES + RETRIES on OOM-shaped exits — instead of a fixed cpu//4 that can
+    # still OOM on low-RAM/high-core boxes. adaptive_test.py appends `-n <n>`
+    # and `--dist loadgroup` itself and forwards unknown args (e.g. --basetemp)
+    # straight through to pytest.
     ( set +e; python3 scripts/heavy_sem.py "${HEAVY_MAX_PAR:-3}" gludd-heavy -- \
-        uv run python -m pytest tests/ \
-        -n "${XDIST_WORKERS}" --dist loadgroup -q \
+        uv run python scripts/adaptive_test.py tests/ -q \
         --basetemp="${BASETEMP}"; \
       echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
 fi
