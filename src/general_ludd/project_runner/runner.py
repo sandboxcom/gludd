@@ -22,7 +22,9 @@ No ``shell=True`` — argv is a validated list; the workspace is realpath-contai
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -52,6 +54,17 @@ _BASE_ENV_KEYS = (
 # Fallback so executables still resolve even if the parent env somehow has no PATH.
 _FALLBACK_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+logger = logging.getLogger(__name__)
+
+# A passthrough var whose NAME matches this is REFUSED (secret-exfil guard) even
+# if a target project.yml lists it in env_passthrough. env_passthrough is
+# untrusted input (it comes from the target repo), so the secret-isolation
+# guarantee must NOT depend on the allowlist alone.
+_SECRET_NAME_RE = re.compile(
+    r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|SESSION|COOKIE|PRIVATE|_AUTH|AUTH_)",
+    re.IGNORECASE,
+)
+
 
 def _build_env(passthrough: Sequence[str]) -> dict[str, str]:
     """Minimal, sanitized environment for a target-project subprocess.
@@ -60,10 +73,31 @@ def _build_env(passthrough: Sequence[str]) -> dict[str, str]:
     ``passthrough`` allowlist cross into the child; gludd's own secrets (API
     keys, tokens) are NOT inherited. ``PATH`` is always present so executables
     resolve.
+
+    Defense-in-depth: ``passthrough`` is UNTRUSTED (it comes from the target
+    repo's ``project.yml``), so a malicious project.yml could list gludd's own
+    secret var names (``ZAI_API_KEY``, ``AWS_SECRET_ACCESS_KEY``…) to exfiltrate
+    them into a command it controls. Any passthrough name that LOOKS like a
+    secret (:data:`_SECRET_NAME_RE`) is hard-refused regardless of the
+    allowlist — the isolation guarantee must not depend on the untrusted input.
     """
     parent = os.environ
     env: dict[str, str] = {}
-    for key in (*_BASE_ENV_KEYS, *passthrough):
+    # The sanitized base is trusted (PATH/HOME/locale/temp) — always forward it.
+    for key in _BASE_ENV_KEYS:
+        val = parent.get(key)
+        if val is not None:
+            env[key] = val
+    # The target's passthrough allowlist is untrusted: forward each name UNLESS
+    # it matches the secret-name denylist.
+    for key in passthrough:
+        if _SECRET_NAME_RE.search(key):
+            logger.warning(
+                "project env_passthrough %r looks like a secret name — refused "
+                "(an untrusted project.yml cannot opt gludd's secrets into a child)",
+                key,
+            )
+            continue
         val = parent.get(key)
         if val is not None:
             env[key] = val

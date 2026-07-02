@@ -26,6 +26,40 @@ def _write_project_yml(root, body: str) -> None:
     (root / "project.yml").write_text(body, encoding="utf-8")
 
 
+def test_build_env_refuses_secret_shaped_passthrough(monkeypatch):
+    """env_passthrough is UNTRUSTED (it comes from the target repo's project.yml).
+    A secret-shaped name must be refused even if explicitly listed, so a malicious
+    project.yml cannot opt gludd's own secrets into a child command's env."""
+    from general_ludd.project_runner.runner import _build_env
+
+    monkeypatch.setenv("ZAI_API_KEY", "sk-secret")  # pragma: allowlist secret
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws")  # pragma: allowlist secret
+    monkeypatch.setenv("GH_TOKEN", "ghtok")  # pragma: allowlist secret
+    monkeypatch.setenv("DB_PASSWORD", "pw")  # pragma: allowlist secret
+    monkeypatch.setenv("NODE_ENV", "test")
+    monkeypatch.setenv("DATABASE_URL", "postgres://x")
+
+    env = _build_env(
+        [
+            "ZAI_API_KEY",
+            "AWS_SECRET_ACCESS_KEY",
+            "GH_TOKEN",
+            "DB_PASSWORD",
+            "NODE_ENV",
+            "DATABASE_URL",
+        ]
+    )
+
+    # Secret-shaped names are refused regardless of the untrusted allowlist.
+    assert "ZAI_API_KEY" not in env
+    assert "AWS_SECRET_ACCESS_KEY" not in env
+    assert "GH_TOKEN" not in env
+    assert "DB_PASSWORD" not in env
+    # Non-secret names are still forwarded.
+    assert env.get("NODE_ENV") == "test"
+    assert env.get("DATABASE_URL") == "postgres://x"
+
+
 # --- ProjectProfile schema + safety -----------------------------------------
 
 def test_resolve_argv_valid():
