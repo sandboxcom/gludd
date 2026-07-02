@@ -68,7 +68,7 @@ class SandboxHandle:
     """
 
     backend: str
-    token: str
+    token: str = field(repr=False)
     applied: bool = True
     extra: dict[str, Any] = field(default_factory=dict)
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.daemon import _get_or_create_extended_subsystems, _get_or_create_subsystems
@@ -30,7 +30,7 @@ class ReloadRequest(BaseModel):
 class RegisterHookRequest(BaseModel):
     event_name: str
     url: str
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = Field(default=None, repr=False)
     retry_count: int = 1
     timeout_seconds: int = 10
 

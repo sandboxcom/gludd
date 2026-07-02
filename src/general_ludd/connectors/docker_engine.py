@@ -26,7 +26,7 @@ import ipaddress
 import json
 import socket
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -39,7 +39,7 @@ class Response:
     """Minimal HTTP response container returned by a transport."""
 
     status: int
-    headers: dict[str, str]
+    headers: dict[str, str] = field(repr=False)
     body: bytes
 
 

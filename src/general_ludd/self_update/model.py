@@ -95,7 +95,7 @@ class SelfUpdateRequest:
 
     raw_text: str
     requested_by: str = "user"
-    approval_token: str | None = None
+    approval_token: str | None = field(default=None, repr=False)
 
     @property
     def normalised(self) -> str:
