@@ -32,6 +32,7 @@ from general_ludd.models.job_invocation import (
     invoke_model_for_generation,
     is_generation_work_type,
 )
+from general_ludd.observability.timing import default_tracker
 from general_ludd.reload.self_improve import SelfImprovementWorkflow
 from general_ludd.rules.engine import Rule, apply_rule_actions, evaluate_rules
 from general_ludd.schemas.benchmark import TaskType
@@ -1663,6 +1664,12 @@ class EventLoop:
                 model_response = None
                 model_tool_calls = None
             _model_call_duration = time.monotonic() - _model_call_start
+            # Feed the model-call duration into the shared clock-time tracker so an
+            # anomalously-slow model call (e.g. a call that usually takes ~2s now
+            # taking ~30s) is detectable vs its learned per-profile baseline.
+            default_tracker().check_then_record(
+                f"model:{resolved_model_profile or 'default'}", _model_call_duration
+            )
             # Record deployment health after each model call so the
             # self-healing router learns which deployments are degraded.
             if self._deployment_health_router is not None:

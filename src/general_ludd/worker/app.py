@@ -19,6 +19,7 @@ from general_ludd.models.job_invocation import (
     invoke_model_for_generation,
     is_generation_work_type,
 )
+from general_ludd.observability.timing import default_tracker
 from general_ludd.schemas.job import JobSpec
 
 __all__ = [
@@ -305,6 +306,12 @@ def create_app(
                     job.job_id, _exc,
                 )
         _model_call_duration_ms = (time.monotonic() - _model_call_start) * 1000
+        # Feed the model-call duration (converted to seconds) into the shared
+        # clock-time tracker so an anomalously-slow model call vs its learned
+        # per-profile baseline is detectable.
+        default_tracker().check_then_record(
+            f"model:{job.model_profile or 'default'}", _model_call_duration_ms / 1000.0
+        )
         # Record the model call in the performance repository if wired.
         _model_perf_repo = getattr(application.state, "model_perf_repo", None)
         if _model_perf_repo is not None and is_generation_work_type(job.work_type):
