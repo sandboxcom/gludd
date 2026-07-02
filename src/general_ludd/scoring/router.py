@@ -422,6 +422,72 @@ class AdaptiveRouter:
                 frontier.append((neighbor_id, relation_type, dist))
         return result
 
+    async def inherited_knowledge(self) -> dict[str, Any]:
+        """Cross-project knowledge this router's project can borrow.
+
+        Returns ``{}`` (nothing inherited) whenever borrowing is OFF (the
+        default), there is no ``project_id`` / ``relationship_repo``, or the
+        project has no resolved neighbors — so an unconfigured or global router
+        reports exactly what it did before phase 3 (empty). When borrowing is
+        ON and the project has declared neighbors, returns::
+
+            {"enabled": True,
+             "sources": {neighbor_id: {"relation_type", "edge_distance",
+                                        "controlled", "weight",
+                                        "borrowed_candidates": [...]}}}
+
+        ``borrowed_candidates`` are the neighbor's historical benchmark
+        aggregates (model_profile_id / task_type / composite_score /
+        sample_count) — the SAME rows ``route()`` borrows from — so this is a
+        faithful, read-only view of what the router actually inherits, driven
+        by the real ``ProjectRelationshipRepository`` graph. Fails soft: a
+        benchmark-repo error for one neighbor simply yields no candidates for
+        that neighbor rather than raising.
+        """
+        if (
+            not self._enable_cross_project_borrowing
+            or self._project_id is None
+            or self._relationship_repo is None
+        ):
+            return {}
+        rel_map = await self._build_relationship_map()
+        if not rel_map:
+            return {}
+        sources: dict[str, Any] = {}
+        for neighbor_id, (rel, dist, controlled) in rel_map.items():
+            weight = self._composite_similarity_weight(1.0, neighbor_id, rel_map)
+            if weight <= 0.0:
+                continue
+            candidates: list[dict[str, Any]] = []
+            if self._repo is not None:
+                try:
+                    aggs = await self._aggregate_scores(None, neighbor_id)
+                except Exception:  # a repo failure must never break the facet
+                    log.debug(
+                        "inherited_knowledge: aggregate lookup failed for %s",
+                        neighbor_id,
+                    )
+                    aggs = []
+                for agg in aggs:
+                    candidates.append(
+                        {
+                            "model_profile_id": agg.get("model_profile_id"),
+                            "task_type": agg.get("task_type"),
+                            "composite_score": float(agg.get("composite_score", 0.0)),
+                            "sample_count": int(agg.get("sample_count", 0)),
+                        }
+                    )
+            sources[neighbor_id] = {
+                "relation_type": rel,
+                "edge_distance": dist,
+                "controlled": controlled,
+                "weight": weight,
+                "borrowed_candidates": candidates,
+            }
+        if not sources:
+            return {}
+        return {"enabled": True, "sources": sources}
+
     async def _get_best_with_embeddings(
         self,
         task_type: TaskType,
