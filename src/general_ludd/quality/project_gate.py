@@ -166,6 +166,32 @@ def run_project_gate(
         if is_required and not result.passed:
             gate_passed = False
 
+    # Fail-CLOSED for required checks that were never in the run set. The loop
+    # above only iterates ``requested`` (the checks actually run), so a name in
+    # ``required`` but absent from ``checks`` would otherwise never execute,
+    # never land in ``missing``, and never flip ``gate_passed`` — the gate would
+    # PASS even though a REQUIRED check never ran. Treat any such required check
+    # as missing/failed so a caller cannot silently drop a required check by
+    # omitting it from the run set.
+    run_set = set(requested)
+    for check in sorted(required_set - run_set):
+        missing.append(check)
+        check_reports.append({
+            "name": check,
+            "declared": False,
+            "required": True,
+            "passed": False,
+            "exit_code": None,
+            "duration_s": 0.0,
+            "timed_out": False,
+            "error": (
+                f"required check '{check}' was not in the run set "
+                f"{sorted(run_set)} — it never executed (fail-closed)"
+            ),
+            "summary": f"{check}: MISSING (required but not in the run set)",
+        })
+        gate_passed = False
+
     passed_count = sum(1 for c in check_reports if c["passed"])
     failed_count = len(check_reports) - passed_count
 

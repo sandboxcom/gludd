@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +76,41 @@ class BuiltinToolHandler:
             return await self._run_project_check(arguments)
         return {"error": f"unknown builtin tool: {tool_name!r}"}
 
+    def _jail_root(self) -> Path:
+        """Resolved base directory a model-supplied workspace must stay within.
+
+        Precedence: the ``GLUDD_PROJECT_ROOT`` env override, else the daemon's
+        configured ``default_workspace``, else the process cwd. This is the
+        containment boundary for :meth:`_contain_workspace`.
+        """
+        env_root = os.environ.get("GLUDD_PROJECT_ROOT")
+        base_raw: str | Path
+        if env_root and env_root.strip():
+            base_raw = env_root.strip()
+        elif self._default_workspace is not None:
+            base_raw = self._default_workspace
+        else:
+            base_raw = Path.cwd()
+        return Path(base_raw).resolve()
+
+    def _contain_workspace(self, candidate: str) -> Path | None:
+        """Confine a MODEL-SUPPLIED workspace to the jail root (fail-closed).
+
+        ``candidate`` is untrusted (the model can pass any string), so its
+        realpath must resolve to the jail root or a descendant of it. A relative
+        path is resolved *against the jail root*, not the process cwd. Returns
+        the resolved path when contained, or ``None`` when it escapes the base
+        (the caller then refuses the call with a data error).
+        """
+        base = self._jail_root()
+        path = Path(candidate)
+        if not path.is_absolute():
+            path = base / path
+        resolved = path.resolve()
+        if resolved == base or resolved.is_relative_to(base):
+            return resolved
+        return None
+
     async def _run_project_check(self, arguments: dict[str, Any]) -> dict[str, Any]:
         check_name = arguments.get("check_name")
         if not isinstance(check_name, str) or not check_name.strip():
@@ -84,7 +120,22 @@ class BuiltinToolHandler:
         workspace_arg = arguments.get("workspace")
         workspace: str | Path
         if isinstance(workspace_arg, str) and workspace_arg.strip():
-            workspace = workspace_arg.strip()
+            # The workspace is MODEL-SUPPLIED and thus untrusted: contain it to
+            # the jail root so the model cannot point run_project_check at an
+            # arbitrary host directory (``/``, another repo) that merely happens
+            # to hold a project.yml. Fail CLOSED with a data error result, never
+            # an exception that would abort the tool loop.
+            contained = self._contain_workspace(workspace_arg.strip())
+            if contained is None:
+                return {
+                    "error": (
+                        "workspace escapes the allowed project root — refused. "
+                        "run_project_check may only run inside the configured "
+                        "jail root (GLUDD_PROJECT_ROOT / the agent workspace)."
+                    ),
+                    "check": check_name,
+                }
+            workspace = contained
         elif self._default_workspace is not None:
             workspace = self._default_workspace
         else:

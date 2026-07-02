@@ -101,7 +101,9 @@ class TestRunProjectCheckDispatch:
     async def test_dispatch_returns_passed_check_result(self, tmp_path: Path) -> None:
         _write_true_project(tmp_path)
         client = _make_client()
-        register_builtins(client)
+        # tmp_path is the jail root here (the agent workspace), so a model-supplied
+        # workspace equal to it is contained and allowed.
+        register_builtins(client, default_workspace=str(tmp_path))
 
         result = await client.call_tool(
             BUILTIN_SERVER_ID,
@@ -162,3 +164,37 @@ class TestRunProjectCheckDispatch:
         )
         assert "error" in result
         assert result["check"] == "nonexistent"
+
+    @pytest.mark.asyncio
+    async def test_workspace_escaping_jail_is_refused(self, tmp_path: Path) -> None:
+        # SECURITY (path-escape guard): the jail root is `jail` (the agent
+        # workspace). A model-supplied workspace pointing OUTSIDE it — even a
+        # sibling dir with its own valid project.yml — must be refused fail-closed
+        # and never executed. The in-jail workspace stays allowed.
+        jail = tmp_path / "workspace"
+        jail.mkdir()
+        _write_true_project(jail)
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        _write_true_project(outside)  # a real project.yml on a forbidden path
+
+        client = _make_client()
+        register_builtins(client, default_workspace=str(jail))
+
+        refused = await client.call_tool(
+            BUILTIN_SERVER_ID,
+            "run_project_check",
+            {"check_name": "test", "workspace": str(outside)},
+        )
+        assert "error" in refused
+        assert "escape" in refused["error"].lower()
+        assert refused["check"] == "test"
+        # 'passed' must NOT be present — the forbidden project.yml never ran.
+        assert "passed" not in refused
+
+        allowed = await client.call_tool(
+            BUILTIN_SERVER_ID,
+            "run_project_check",
+            {"check_name": "test", "workspace": str(jail)},
+        )
+        assert allowed["passed"] is True
