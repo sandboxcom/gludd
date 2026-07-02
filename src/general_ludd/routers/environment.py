@@ -132,8 +132,9 @@ class EnvironmentBrief(BaseModel):
     system: dict[str, Any] = {}
     optimization: dict[str, Any] = {}
     # Project-topology facet: declared relationships (parent/child/sibling/
-    # external) + interface contracts. inherited_knowledge stays {} until the
-    # router cross-project borrowing phase lands. Fails soft to {}.
+    # external) + interface contracts. inherited_knowledge is populated from the
+    # cross-project router borrowing phase when the flag is on; {} by default.
+    # Fails soft to {}.
     project: dict[str, Any] = {}
 
 
@@ -567,6 +568,79 @@ def _parse_interface(edge: Any) -> dict[str, Any]:
     return interface
 
 
+def _borrowing_config(app: FastAPI) -> tuple[bool, float, float, float]:
+    """Read the cross-project borrowing tunables from the startup UserConfig.
+
+    Mirrors the daemon's router-construction read
+    (``_startup_config["user_config"].relationship_routing``) so the facet honours
+    the SAME opt-in flag + decay knobs. Returns
+    ``(enabled, edge_decay, external_penalty, min_borrow_weight)`` with the phase-3
+    defaults (borrowing OFF) whenever no ``relationship_routing`` block is present —
+    so an unconfigured daemon reports nothing inherited, exactly as before.
+    """
+    enabled = False
+    edge_decay = 0.5
+    external_penalty = 0.5
+    min_borrow_weight = 0.05
+    startup_cfg = getattr(app.state, "_startup_config", {}) or {}
+    user_cfg = startup_cfg.get("user_config") if isinstance(startup_cfg, dict) else None
+    rr_cfg = getattr(user_cfg, "relationship_routing", None) if user_cfg else None
+    if rr_cfg is not None:
+        enabled = bool(getattr(rr_cfg, "enable_cross_project_borrowing", False))
+        edge_decay = float(getattr(rr_cfg, "edge_decay", 0.5))
+        external_penalty = float(getattr(rr_cfg, "external_penalty", 0.5))
+        min_borrow_weight = float(getattr(rr_cfg, "min_borrow_weight", 0.05))
+    return enabled, edge_decay, external_penalty, min_borrow_weight
+
+
+async def _inherited_knowledge_facet(
+    app: FastAPI, pid: str, rel_repo: Any, factory: Any
+) -> dict[str, Any]:
+    """Cross-project knowledge *pid* borrows, or ``{}`` when borrowing is OFF.
+
+    Builds a PROJECT-SCOPED ``AdaptiveRouter`` (``project_id=pid`` +
+    ``relationship_repo=rel_repo`` + the config borrow knobs) and asks it for the
+    knowledge it would inherit through the declared project graph. Returns ``{}``
+    (backward compatible) whenever the flag is off — the router itself also short-
+    circuits to ``{}`` then. Reuses the live daemon router's benchmark repo when
+    present so the borrowed candidates reflect real history; falls back to a fresh
+    session-factory-backed ``BenchmarkRepository``. Fully guarded — a failure here
+    degrades to ``{}`` and never 500s the endpoint.
+    """
+    enabled, edge_decay, external_penalty, min_borrow_weight = _borrowing_config(app)
+    if not enabled:
+        return {}
+    # Reuse the daemon's already-wired benchmark repo (same history the live
+    # router borrows from); fall back to a fresh session-factory repo.
+    benchmark_repo = getattr(
+        getattr(app.state, "_adaptive_router", None), "_repo", None
+    )
+    if benchmark_repo is None:
+        try:
+            from general_ludd.db.repository import BenchmarkRepository
+
+            benchmark_repo = BenchmarkRepository(session_factory=factory)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("inherited_knowledge: benchmark repo unavailable: %s", exc)
+            benchmark_repo = None
+    try:
+        from general_ludd.scoring.router import AdaptiveRouter
+
+        router = AdaptiveRouter(
+            benchmark_repo=benchmark_repo,
+            project_id=pid,
+            relationship_repo=rel_repo,
+            enable_cross_project_borrowing=True,
+            edge_decay=edge_decay,
+            external_penalty=external_penalty,
+            min_borrow_weight=min_borrow_weight,
+        )
+        return await router.inherited_knowledge()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("inherited_knowledge facet unavailable: %s", exc)
+        return {}
+
+
 async def _project_facet(
     app: FastAPI, project_id: str | None, rel_repo_factory: Any = None
 ) -> dict[str, Any]:
@@ -575,7 +649,9 @@ async def _project_facet(
     ``relationships`` lists every declared edge (parent/child/sibling/external)
     via the REAL ``ProjectRelationshipRepository.list_for_project`` (NOT the
     design's hypothetical ``list_edges``/``graph_from``). ``inherited_knowledge``
-    is intentionally empty — cross-project router borrowing is a later phase.
+    is populated from a project-scoped ``AdaptiveRouter`` ONLY when cross-project
+    borrowing is enabled in config (``relationship_routing.enable_cross_project_
+    borrowing``); it stays ``{}`` by default (borrowing OFF) — backward compatible.
 
     Fails soft to ``{}`` whenever the scope can't be resolved, no session factory
     is wired, or any query raises — the endpoint never 500s on this facet.
@@ -600,6 +676,13 @@ async def _project_facet(
                 else ProjectRelationshipRepository(session)
             )
             edges = await rel_repo.list_for_project(pid)
+            # Cross-project knowledge inheritance (phase 3): populated from a
+            # project-scoped router ONLY when the borrowing flag is on; ``{}``
+            # otherwise (default) — computed while the session is still open so
+            # the relationship-graph BFS can query the repo.
+            inherited_knowledge = await _inherited_knowledge_facet(
+                app, pid, rel_repo, factory
+            )
         relationships: list[dict[str, Any]] = []
         for edge in edges or []:
             relationships.append(
@@ -617,8 +700,7 @@ async def _project_facet(
         return {
             "project_id": pid,
             "relationships": relationships,
-            # Cross-project knowledge inheritance is a later phase; empty for now.
-            "inherited_knowledge": {},
+            "inherited_knowledge": inherited_knowledge,
         }
     except Exception as exc:  # pragma: no cover - defensive (never 500 the route)
         logger.debug("project facet unavailable: %s", exc)
