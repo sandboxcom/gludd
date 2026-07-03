@@ -315,9 +315,12 @@ gate-fast:
 	@echo "=== GATE PHASE: lint PASS ==="
 	@$(MAKE) typecheck || (echo "=== GATE-FAST: FAILED ===" && exit 1)
 	@echo "=== GATE PHASE: typecheck PASS ==="
-	@uv run python -m pytest --collect-only -q 2>&1 | (grep -E "ERROR|error" || true) | (! grep -c "ERROR") || \
-		(echo "=== GATE PHASE: collect FAILED ===" && \
-		 echo "  Collection errors found. Fix them with: make collect-detail" && exit 1)
+	@ERRORS=$$(uv run python -m pytest --collect-only -q 2>&1 | grep -cE "^ERROR " || true); \
+	if [ "$$ERRORS" -ne 0 ]; then \
+		echo "=== GATE PHASE: collect FAILED ==="; \
+		echo "  Collection errors found. Fix them with: make collect-detail"; \
+		exit 1; \
+	fi
 	@echo "=== GATE PHASE: collect PASS ==="
 	@echo "=== GATE-FAST: PASSED ==="
 
