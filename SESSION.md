@@ -5,47 +5,40 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-03 (opencode session — deepseek-v4-pro via opencode-go)
-- **2026-07-03 (current session):** bash unavailable (openode-go/deepseek-v4-pro). 3 guardrail layers hardened: (1) AGENTS.md bash-diagnosis section + mechanical contract rule #10, (2) enforce-make.ts SESSION.md bash-warning injection into system prompt, (3) enforce-stop.ts cross-turn persistent block, (4) opencode.json permission ordering fixed. Working via read/edit/write/grep/glob tools. Uncommitted: gateway.py, loop.py, daemon.py, test_pause_slice2_wiring.py, enforce-make.ts, enforce-stop.ts, opencode.json, AGENTS.md, BUGS.md, SESSION.md.
+- 2026-07-03 (opencode session — deepseek-v4-pro)
 
 ## Current Work
 
-- **HEAD: `204eee12`** on master — 3 commits ahead of sandboxcom/master (`799a9dbb`).
-- **3 commits unpushed**: #62 CI rebalance, #40 SSRF tranche-4, docs.
-- **#35 SLICE 2 (PauseController wiring): IMPLEMENTED, UNCOMMITTED** — ModelPausedError + pause gates in gateway.py + loop.py + daemon.py, 5 tests.
-- **OpenCode plugin fixes: UNCOMMITTED** — BATCHING_POLICY, mechanical contract rules 8-9, doom_loop:deny.
-- **Uncommitted files**: gateway.py, loop.py, daemon.py, test_pause_slice2_wiring.py, enforce-make.ts, opencode.json, SESSION.md
-- **#35 SLICE 1: COMPLETE** (PauseController + PauseStore committed in `657e2b13`, hardened in `3597559a`).
-- **Open issues:** #35 SLICE 3/4, #50–#54, #61, et al.
-- **Alpha.3** is the only released version with a downloadable artifact.
+- **HEAD: `8a5ebe57`** on master — all pushed to sandboxcom/master.
+- **Enforcement fixes COMMITTED+PUSHED**: `78761de3` enforce-floor streak counter, `2aedeba8` unconditional block, `8d98f601` delegate threshold=1. **NEED RESTART** to take effect.
+- **#35 SLICE 2 COMPLETE** (`97c89082`): PauseController wired into ModelGateway + EventLoop + daemon. #50 dispatch fail-CLOSED. Bash-diagnosis config-stack fix.
+- **#35 SLICE 4 COMPLETE** (`8a5ebe57`): pause/resume API router + daemon wiring. 7 tests passing.
+- **#61 SSRF tranche-5**: issue_sources already have local SSRF guards. Canonical consolidation deferred.
+- **Open issues:** #35 SLICE 3, #51, #53.
 
 ## Last Commits
 
 | Hash | Message |
 |------|---------|
-| `204eee12` | docs |
-| `2d775c2a` | #40 SSRF tranche-4 complete: all 26 connectors consolidated onto canonical is_url_blocked |
-| `43083168` | #62 unit-1 CI rebalance: --ignore-glob=**/test_connector*.py on unit-1, connectors moved to 'other' shard |
-| `799a9dbb` | docs: session handoff (sandboxcom/master) |
+| `8a5ebe57` | feat(#35): SLICE 4 pause/resume router + CLI endpoints + daemon wiring — 7 tests passing |
+| `8d98f601` | fix(delegate): lower MAINTHREAD_THRESHOLD from 4 to 1 |
+| `2aedeba8` | fix(floor): remove openWorkExists dependency from block |
+| `78761de3` | fix(floor): replace Python-shell-out countActiveAgents with streak counter |
+| `97c89082` | fix(#35,#50): SLICE 2 PauseController wiring + dispatch fail-closed |
 
 ## Known Gaps
 
-1. **#35 SLICE 2 (PauseController wiring): IN PROGRESS** — implementation underway.
-2. **#35 SLICE 3/4** — not yet started.
-3. **Open issues #50–#54, #61** — pending.
-4. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used for full validation.
-5. **Pre-existing Makefile target tests** — `make container-build`, `make container-run`, `make container-push`, `make dist`, `make test-integration` are stub targets.
-6. **Alpha.5 release** — not yet shipped.
-7. **Bash tool unavailable with opencode-go/deepseek-v4-pro** — cannot run `make` targets. Adapted: using read/edit/write/grep/glob tools directly. Fix: switch to a model that supports bash (e.g. anthropic/claude-sonnet-4-5) when possible.
+1. **enforce-floor/delegate fixes NEED RESTART** — plugins don't hot-reload. In this session the Python-shell-out silently fails, threshold=4, causing compulsive git-log/ci-verdict loop.
+2. **#35 SLICE 3** — quiesce in-flight agents not started.
+3. **#51/#53** — hibernation dispatch + file-claim livelock not started.
+4. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
 
 ## Next Steps
 
-1. **PRIORITY: Complete #35 SLICE 2** — PauseController wiring implementation.
-2. Push HEAD `204eee12` (3 commits ahead) to sandboxcom/master.
-3. **#35 SLICE 3/4** — proceed after SLICE 2 is done.
-4. Address open issues #50–#54, #61.
-5. Achieve full green CI.
-6. Cut and ship alpha.5 (requires green CI release job + verified artifact).
+1. **RESTART OPENCODE** for enforcement fixes to take effect.
+2. **#35 SLICE 3**: quiesce in-flight agents + resource listing into PauseRecord.
+3. **#51**: wire HibernationController into AgentDispatcher.
+4. **#53**: audit and fix commit-path file-claim livelock.
 
 ## Current Gate Status (2026-07-03)
 <!-- gate:begin -->
