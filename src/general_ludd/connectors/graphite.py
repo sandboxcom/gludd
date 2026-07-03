@@ -12,12 +12,12 @@ labels, raw.
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors.normalize import sanitize_metric_value
+from general_ludd.security.ssrf import is_url_blocked
 
 
 @runtime_checkable
@@ -44,29 +44,23 @@ class ConnectorConfigError(ValueError):
     """Invalid config or a blocked base_url host."""
 
 
-_METADATA_IP = ipaddress.ip_address("169.254.169.254")
-
-
 def _assert_public_base_url(base_url: str) -> None:
+    """Reject a ``base_url`` whose *literal* host is internal.
+
+    The private/loopback/metadata decision is delegated to the canonical
+    :func:`general_ludd.security.ssrf.is_url_blocked` (no DNS) so this connector
+    can never drift from the single source of truth. An always-on scheme and
+    present-host check is kept for a precise error message.
+    """
     parts = urlsplit(base_url)
     if parts.scheme not in ("http", "https"):
         raise ConnectorConfigError(f"unsupported scheme: {parts.scheme!r}")
-    host = parts.hostname
-    if not host:
+    if not parts.hostname:
         raise ConnectorConfigError("base_url has no host")
-    lowered = host.lower()
-    if lowered == "localhost" or lowered.endswith(".localhost"):
-        raise ConnectorConfigError("base_url host is loopback (localhost)")
-    if lowered in ("metadata.google.internal", "metadata"):
-        raise ConnectorConfigError("base_url host is the cloud metadata hostname")
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return
-    if ip == _METADATA_IP:
-        raise ConnectorConfigError("base_url host is the cloud metadata address")
-    if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_unspecified:
-        raise ConnectorConfigError(f"base_url host is an internal address: {ip}")
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
+        raise ConnectorConfigError(
+            f"base_url host is internal/loopback/metadata and is blocked: {base_url!r}"
+        )
 
 
 class GraphiteSource:

@@ -18,10 +18,11 @@ Security posture:
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 _DEFAULT_API = "https://api.cloudflare.com/client/v4"
 
@@ -52,21 +53,6 @@ class Transport(Protocol):
         ...
 
 
-_PRIVATE_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "ip6-localhost",
-        "ip6-loopback",
-        # Cloud metadata endpoint by DNS name (the 169.254.169.254 IP literal is
-        # caught by the ip_address branch below). Exact-match only so a benign
-        # host like ``metadata.example.com`` is not over-blocked.
-        "metadata.google.internal",
-        "metadata",
-    }
-)
-
-
 def _default_transport(
     method: str,
     url: str,
@@ -87,26 +73,6 @@ def _default_transport(
         follow_redirects=False,
     )
     return resp
-
-
-def _is_private_host(host: str) -> bool:
-    """Return True if ``host`` is a literal private/loopback/link-local target."""
-    bare = host.strip().strip("[]").lower()
-    if not bare:
-        return True
-    if bare in _PRIVATE_HOSTNAMES:
-        return True
-    try:
-        ip = ipaddress.ip_address(bare)
-    except ValueError:
-        return False
-    return bool(
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
 
 
 class CloudflareSource:
@@ -169,13 +135,22 @@ class CloudflareSource:
     # -- internals ---------------------------------------------------------
 
     def _guard_ssrf(self, url: str) -> None:
+        # The private/loopback/metadata decision is delegated to the canonical
+        # general_ludd.security.ssrf.is_url_blocked (no DNS) so this connector
+        # can never drift from the single source of truth. An always-on scheme
+        # and present-host check is kept for a precise error message and so a
+        # malformed base_url is rejected even with allow_private=True.
         parsed = urlsplit(url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(
                 f"cloudflare: unsupported URL scheme: {parsed.scheme!r}"
             )
         host = parsed.hostname or ""
-        if not self.allow_private and _is_private_host(host):
+        if not host:
+            raise ValueError("cloudflare: base_url has no host")
+        if not self.allow_private and is_url_blocked(
+            url, scheme_allowlist=("http", "https")
+        ):
             raise ValueError(
                 f"cloudflare: refusing private/loopback host {host!r} "
                 "(set allow_private=True to override)"

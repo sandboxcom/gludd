@@ -234,6 +234,9 @@ def test_single_page_stops(token: str) -> None:
         "https://localhost/audit_logs",
         "http://10.1.2.3/audit_logs",
         "http://169.254.169.254/latest",
+        # Alibaba cloud-metadata endpoint — coverage gained by delegating to the
+        # canonical is_url_blocked (the old bespoke guard missed this address).
+        "http://100.100.100.200/latest",
         "http://[::1]/audit_logs",
     ],
 )

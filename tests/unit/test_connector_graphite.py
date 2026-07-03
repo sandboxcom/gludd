@@ -141,6 +141,9 @@ def test_nan_inf_datapoint_value_sanitized_to_none() -> None:
         "http://172.31.0.1",
         "http://192.168.100.1",
         "http://169.254.169.254",
+        # Alibaba cloud-metadata endpoint — coverage gained by delegating to the
+        # canonical is_url_blocked (the old bespoke guard missed this address).
+        "http://100.100.100.200/",
         "file:///etc/passwd",
     ],
 )

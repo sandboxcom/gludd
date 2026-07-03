@@ -158,6 +158,35 @@ def test_ssrf_blocks_loopback_literal():
         src.query()
 
 
+@pytest.mark.parametrize(
+    "bad_base",
+    [
+        "http://localhost",
+        "http://foo.localhost",
+        "http://metadata.google.internal",
+        "http://metadata",
+        "http://169.254.169.254",
+        # Alibaba cloud-metadata endpoint — coverage gained by delegating to the
+        # canonical is_url_blocked (the old bespoke _is_blocked_ip missed it).
+        "http://100.100.100.200",
+    ],
+)
+def test_ssrf_blocks_metadata_and_loopback_names_without_dns(bad_base: str) -> None:
+    # A resolver that would WRONGLY allow the target proves the literal/name
+    # decision is made by is_url_blocked BEFORE (and independently of) any DNS
+    # resolution.
+    def _boom_resolver(host: str) -> list[str]:
+        raise AssertionError("resolver must not be consulted for a blocked name")
+
+    src = CiliumHubbleSource(
+        {"base_url": f"{bad_base}:9965", "scrape_flows": False},
+        transport=make_transport(200, HUBBLE_METRICS),
+        resolver=_boom_resolver,
+    )
+    with pytest.raises(SSRFError):
+        src.query()
+
+
 def test_allow_private_permits_in_cluster():
     recorder: list[str] = []
     src = CiliumHubbleSource(

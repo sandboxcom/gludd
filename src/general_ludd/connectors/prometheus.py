@@ -54,17 +54,6 @@ KIND = "metrics"
 
 MAX_RESULT_SIZE = 10_000
 
-# Hostnames that must never be reached, regardless of IP resolution.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "metadata",
-        "metadata.google.internal",
-        "metadata.goog",
-    }
-)
-
 _DEFAULT_TIMEOUT = 10.0
 
 

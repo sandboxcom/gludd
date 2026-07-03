@@ -111,6 +111,9 @@ def test_normalization() -> None:
         "http://192.168.1.1",
         "http://169.254.169.254/latest/meta-data",
         "http://169.254.1.1",
+        # Alibaba cloud-metadata endpoint — coverage gained by delegating to the
+        # canonical is_url_blocked (the old bespoke guard missed this address).
+        "http://100.100.100.200/",
         "ftp://example.com",
     ],
 )

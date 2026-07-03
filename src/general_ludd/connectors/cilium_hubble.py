@@ -33,6 +33,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
+from general_ludd.security.ssrf import is_url_blocked
+
 __all__ = ["CiliumHubbleSource", "SSRFError"]
 
 # A transport is any callable that performs an HTTP GET against an absolute URL
@@ -136,20 +138,32 @@ class CiliumHubbleSource:
         if self.allow_private:
             return url
 
-        # Resolve and check every address the host maps to. A literal IP is
-        # checked directly; a name is resolved so DNS-rebinding to a private
-        # address is still caught at request time.
-        addrs: list[str]
+        # Literal-host / cloud-metadata / private-IP decision is delegated to
+        # the canonical general_ludd.security.ssrf.is_url_blocked (no DNS) so the
+        # loopback-name, ``.localhost``-suffix, cloud-metadata-name and
+        # metadata-IP (169.254.169.254 / 100.100.100.200) coverage can never
+        # drift from the single source of truth.
+        if is_url_blocked(url, scheme_allowlist=("http", "https")):
+            raise SSRFError(
+                f"target {host!r} is blocked by SSRF policy "
+                "(set allow_private to permit in-cluster targets)"
+            )
+
+        # Connector-specific extra the no-DNS canonical guard cannot provide:
+        # for a *named* host, resolve and re-check every address so a DNS name
+        # that points (or rebinds) to a private/blocked IP is still refused at
+        # request time. A literal IP was already fully vetted above.
         try:
-            literal = ipaddress.ip_address(host)
-            addrs = [str(literal)]
+            ipaddress.ip_address(host)
+            return url
         except ValueError:
-            try:
-                addrs = self._resolver(host)
-            except OSError as exc:
-                raise SSRFError(f"cannot resolve host {host!r}: {exc}") from exc
-            if not addrs:
-                raise SSRFError(f"host {host!r} did not resolve") from None
+            pass
+        try:
+            addrs = self._resolver(host)
+        except OSError as exc:
+            raise SSRFError(f"cannot resolve host {host!r}: {exc}") from exc
+        if not addrs:
+            raise SSRFError(f"host {host!r} did not resolve") from None
 
         for addr in addrs:
             try:
