@@ -443,10 +443,10 @@ class TestHashStoreSigned:
 
         with tempfile.TemporaryDirectory() as tmp:
             scanner, store = self._scanner(tmp)
-            scanner._save_hashes({"/etc/passwd": "good-hash"})
+            scanner._save_hashes({"/etc/passwd": "good-hash"})  # pragma: allowlist secret
             db = store / "integrity_db.json"
             data = json.loads(db.read_text())
-            data["/etc/passwd"] = "attacker-planted-hash"
+            data["/etc/passwd"] = "attacker-planted-hash"  # pragma: allowlist secret
             db.write_text(json.dumps(data, indent=2))
             # MUST NOT silently return {} and rebaseline.
             with pytest.raises(IntegrityStoreError):

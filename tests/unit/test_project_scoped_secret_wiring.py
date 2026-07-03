@@ -136,7 +136,7 @@ class TestPerProjectSecretIsolationEngages:
 
         class _PlainResolver:
             def resolve(self, alias_name: str) -> str | None:
-                return {"API_KEY": "plain-key"}.get(alias_name)
+                return {"API_KEY": "plain-key"}.get(alias_name)  # pragma: allowlist secret
 
         gateway = _make_gateway(captured, _PlainResolver())
         assert _call(gateway, captured, "proj-a") == "plain-key"

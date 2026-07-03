@@ -243,9 +243,9 @@ class TestCallerBaseUrlSSRFGuard:
             gw.call_model(
                 "gpt4",
                 [{"role": "user", "content": "hi"}],
-                api_key="caller-injected-evil-key",
+                api_key="caller-injected-evil-key",  # pragma: allowlist secret
             )
-        assert captured["api_key"] == "sk-alias-key"
+        assert captured["api_key"] == "sk-alias-key"  # pragma: allowlist secret
 
     def test_normal_kwargs_still_work_regression(self):
         """tools + work_type are still popped/handled correctly and never leak to
