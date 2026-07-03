@@ -110,8 +110,40 @@ class ImageUpdateCandidate:
     registry: str
 
 
+_ALIAS_PATH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_/.:-]*$")
+_ALIAS_MOUNT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]*$")
+_INVALID_PATH_CHARS_RE = re.compile(r"[;|&$`!@#%^*(){}\[\]<>\\'\"]")
+_INVALID_MOUNT_CHARS_RE = re.compile(r"[;|&$`!@#%^*(){}\[\]<>\\'\":]")
+
+
 class SecretAlias:
     def __init__(self, alias: str, path: str, mount: str = "secret") -> None:
+        if not path:
+            raise ValueError("SecretAlias path must not be empty")
+        if "\x00" in path:
+            raise ValueError(
+                f"SecretAlias path {path!r} contains null byte"
+            )
+        if ".." in path.split("/"):
+            raise ValueError(
+                f"SecretAlias path {path!r} contains '..' traversal segment"
+            )
+        if "~" in path:
+            raise ValueError(
+                f"SecretAlias path {path!r} contains tilde"
+            )
+        if not _ALIAS_PATH_RE.match(path):
+            raise ValueError(
+                f"SecretAlias path {path!r} contains invalid characters"
+            )
+        if "\x00" in mount:
+            raise ValueError(
+                f"SecretAlias mount {mount!r} contains null byte"
+            )
+        if not _ALIAS_MOUNT_RE.match(mount):
+            raise ValueError(
+                f"SecretAlias mount {mount!r} contains invalid characters"
+            )
         self.alias = alias
         self.path = path
         self.mount = mount
@@ -141,6 +173,14 @@ class SecretsManager:
         # spec's ``secret:openbao`` capability and raises
         # SecretPermissionDeniedError when the path is outside the allow-list.
         self._permission_spec = permission_spec
+
+    @staticmethod
+    def _sanitize_error(exc: BaseException) -> str:
+        return type(exc).__name__
+
+    @staticmethod
+    def _redact(message: str) -> str:
+        return re.sub(r"[A-Za-z0-9+/=_-]{20,}", "***REDACTED***", message)
 
     def _enforce_permission(self, path: str, action: str) -> None:
         """Raise SecretPermissionDeniedError unless the spec permits ``action`` on ``path``.
@@ -210,9 +250,9 @@ class SecretsManager:
                 return None
             # Outage / auth / TLS / network failure — fail CLOSED, do not
             # masquerade as a missing secret.
-            logger.error("Failed to resolve secret alias %s: %s", alias_name, type(exc).__name__)
+            logger.error("Failed to resolve secret alias %s: %s", alias_name, self._sanitize_error(exc))
             raise SecretsUnavailableError(
-                f"secrets backend unavailable resolving alias {alias_name!r}: {type(exc).__name__}"
+                f"secrets backend unavailable resolving alias {alias_name!r}: {self._sanitize_error(exc)}"
             ) from exc
         return None
 
@@ -315,7 +355,7 @@ class SecretsManager:
             except Exception as exc:
                 logger.warning(
                     "Failed to destroy old secret_id accessor for role %s: %s",
-                    role_name, type(exc).__name__,
+                    role_name, self._sanitize_error(exc),
                 )
         # Retain only accessors minted by this rotation (i.e. drop the destroyed ones).
         current = self._secret_id_accessors.get(role_name, [])
@@ -383,9 +423,9 @@ class SecretsManager:
         except Exception as exc:
             if _is_genuine_not_found(exc):
                 return None
-            logger.error("Failed to read secret at %s: %s", path, type(exc).__name__)
+            logger.error("Failed to read secret at %s: %s", path, self._sanitize_error(exc))
             raise SecretsUnavailableError(
-                f"secrets backend unavailable reading {path!r}: {type(exc).__name__}"
+                f"secrets backend unavailable reading {path!r}: {self._sanitize_error(exc)}"
             ) from exc
         return None
 
@@ -418,10 +458,10 @@ class SecretsManager:
             if _is_genuine_not_found(exc):
                 return []
             logger.error(
-                "Failed to list secrets at %s: %s", prefix, type(exc).__name__
+                "Failed to list secrets at %s: %s", prefix, self._sanitize_error(exc)
             )
             raise SecretsUnavailableError(
-                f"secrets backend unavailable listing {prefix!r}: {type(exc).__name__}"
+                f"secrets backend unavailable listing {prefix!r}: {self._sanitize_error(exc)}"
             ) from exc
         if not result or "data" not in result:
             return []
