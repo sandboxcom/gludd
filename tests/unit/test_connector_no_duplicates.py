@@ -18,8 +18,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
-
 CONNECTORS_DIR = (
     Path(__file__).resolve().parents[2]
     / "src" / "general_ludd" / "connectors"
@@ -139,7 +137,7 @@ def test_no_duplicate_class_names_across_connector_files() -> None:
     for cls_name, modules in sorted(duplicates.items()):
         msg_lines.append(f"  {cls_name}: defined in {', '.join(modules)}")
     assert not duplicates, (
-        f"Duplicate class names found across connector modules:\n"
+        "Duplicate class names found across connector modules:\n"
         + "\n".join(msg_lines)
         + "\n\nIf this is a legitimate utility class duplicated by convention, "
         + "add it to _UTILITY_ALLOWLIST in this test file. "
@@ -182,5 +180,5 @@ def test_connector_files_are_parseable() -> None:
         except SyntaxError as e:
             failures.append(f"{py_file.name}: {e}")
     assert not failures, (
-        f"Connector files with syntax errors:\n" + "\n".join(failures)
+        "Connector files with syntax errors:\n" + "\n".join(failures)
     )

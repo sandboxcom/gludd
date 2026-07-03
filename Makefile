@@ -447,7 +447,7 @@ commit-bootstrap: _gate-fresh-check
 
 # Non-code meta-commits (version bumps, docs) — documented escape hatch
 repo-commit:
-	git commit -m "$(MSG)"
+	SKIP="$(SKIP)" git commit -m "$(MSG)"
 
 _gate-fresh-check:
 	@[ "$(GLUDD_CI_IS_GATE)" = "1" ] && exit 0; \
