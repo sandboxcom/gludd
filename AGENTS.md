@@ -1,5 +1,17 @@
 # Agentic Harness - Agent Rules
 
+## ⛔ ANTI-LOOP DIRECTIVE (READ FIRST)
+
+**NEVER run `make git-log`, `make ci-verdict`, or `make git-diff` as a standalone single tool call.** These are the compulsive-check pattern. If you find yourself reaching for one, you are in the loop — break it by dispatching via the Task tool.
+
+The enforcement plugins mechanically prevent this:
+- **enforce-floor.ts**: blocks non-dispatch tool calls after 2 consecutive calls (streak counter, no Python dependency)
+- **enforce-delegate.ts**: blocks after 1 non-dispatch call (threshold lowered from 4 → 1)
+- **text.complete nag**: injects "DELEGATE-FIRST" into responses when streak exceeds 2
+- **agent_watchdog.py**: background daemon auto-resets streak every 60s as failsafe
+
+If you are reading this and NOT dispatching subagents, you are violating the contract.
+
 ## Mechanical Contract (READ FIRST — numbered priority)
 
 1. **Only `make <target>`.** Never bare commands, no metacharacters (`|`, `;`, `&&`, `$()`).
