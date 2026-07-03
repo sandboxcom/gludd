@@ -45,9 +45,42 @@ class BroadcastResult:
 
 
 class WorkerBroadcaster:
-    def __init__(self, stale_threshold_seconds: float = 300.0) -> None:
+    def __init__(
+        self,
+        stale_threshold_seconds: float = 300.0,
+        allowlist: set[str] | None = None,
+    ) -> None:
         self._workers: dict[str, WorkerInfo] = {}
         self._stale_threshold = stale_threshold_seconds
+        # Defense-in-depth worker-identity allowlist (task #18). When configured,
+        # the daemon only broadcasts a reload / model-sync — and, critically, the
+        # PSK Bearer header — to workers whose ``worker_id`` OR ``address`` appears
+        # in this set, even if some other address slipped past registration and the
+        # send-time SSRF guard. ``None`` (the default) means "not configured via the
+        # constructor" and defers to the ``GLUDD_WORKER_ALLOWLIST`` env var.
+        self._allowlist: set[str] | None = allowlist
+
+    def _resolve_allowlist(self) -> set[str]:
+        """Resolve the effective worker allowlist.
+
+        Precedence: an explicit constructor ``allowlist`` (when not ``None``) wins;
+        otherwise the ``GLUDD_WORKER_ALLOWLIST`` environment variable is parsed as a
+        comma-separated set of permitted ``worker_id`` and/or ``host:port``
+        addresses (whitespace-trimmed, blanks dropped). An **empty** set means "no
+        allowlist configured" — broadcasts stay unrestricted (see
+        :meth:`broadcast_reload`). Read on each broadcast, mirroring how the PSK
+        itself is read per-call in :meth:`_auth_headers`, so an operator can tighten
+        the allowlist without restarting the daemon.
+        """
+        if self._allowlist is not None:
+            return self._allowlist
+        raw = os.environ.get("GLUDD_WORKER_ALLOWLIST", "")
+        return {entry.strip() for entry in raw.split(",") if entry.strip()}
+
+    @staticmethod
+    def _is_allowlisted(worker: WorkerInfo, allowlist: set[str]) -> bool:
+        """A worker is permitted when either its id or its address is listed."""
+        return worker.worker_id in allowlist or worker.address in allowlist
 
     def register(self, worker: WorkerInfo) -> None:
         # SSRF / PSK-leak guard: never register a worker whose address is not a
@@ -97,7 +130,28 @@ class WorkerBroadcaster:
         results = []
         scope_value = scope.value if hasattr(scope, "value") else str(scope)
         headers = self._auth_headers()
+        allowlist = self._resolve_allowlist()
+        if not allowlist:
+            logger.warning(
+                "No worker allowlist configured (GLUDD_WORKER_ALLOWLIST unset/empty)"
+                ": reload broadcast is UNRESTRICTED — the daemon PSK will be sent to "
+                "every registered safe worker. Set GLUDD_WORKER_ALLOWLIST to restrict."
+            )
         for w in self._workers.values():
+            # Defense in depth (allowlist gate, task #18): only broadcast — and only
+            # send the PSK — to explicitly permitted workers. Checked BEFORE the SSRF
+            # guard so a non-allowlisted target is refused outright.
+            if allowlist and not self._is_allowlisted(w, allowlist):
+                logger.warning(
+                    "Skipping reload broadcast to %s: worker id/address %r is not in "
+                    "the configured worker allowlist — not sending the daemon PSK",
+                    w.worker_id,
+                    w.address,
+                )
+                results.append(
+                    BroadcastResult(worker_id=w.worker_id, success=False, error="not allowlisted")
+                )
+                continue
             # Defense in depth: re-validate the address at send time so the PSK
             # Bearer header is NEVER POSTed to a plain-http / loopback / link-local
             # / cloud-metadata target, even if one slipped into the registry.
@@ -141,7 +195,29 @@ class WorkerBroadcaster:
     ) -> list[BroadcastResult]:
         results = []
         headers = self._auth_headers()
+        allowlist = self._resolve_allowlist()
+        if not allowlist:
+            logger.warning(
+                "No worker allowlist configured (GLUDD_WORKER_ALLOWLIST unset/empty)"
+                ": model-update broadcast is UNRESTRICTED — the daemon PSK will be "
+                "sent to every registered safe worker. Set GLUDD_WORKER_ALLOWLIST to "
+                "restrict."
+            )
         for w in self._workers.values():
+            # Defense in depth (allowlist gate, task #18): only broadcast — and only
+            # send the PSK — to explicitly permitted workers. Checked BEFORE the SSRF
+            # guard so a non-allowlisted target is refused outright.
+            if allowlist and not self._is_allowlisted(w, allowlist):
+                logger.warning(
+                    "Skipping model-update broadcast to %s: worker id/address %r is "
+                    "not in the configured worker allowlist — not sending the PSK",
+                    w.worker_id,
+                    w.address,
+                )
+                results.append(
+                    BroadcastResult(worker_id=w.worker_id, success=False, error="not allowlisted")
+                )
+                continue
             # Defense in depth: re-validate the address at send time so the PSK
             # Bearer header is NEVER POSTed to a plain-http / loopback / link-local
             # / cloud-metadata target, even if one slipped into the registry.

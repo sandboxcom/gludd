@@ -6,6 +6,7 @@ converges. When no PSK is configured (auth disabled) no header is sent.
 """
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock, patch
 
 from general_ludd.reload.worker_broadcast import WorkerBroadcaster, WorkerInfo
@@ -160,3 +161,105 @@ def test_broadcast_model_update_still_posts_to_https_worker_with_psk(monkeypatch
     mock_post.assert_called_once()
     assert mock_post.call_args[1]["headers"]["Authorization"] == "Bearer secret123"
     assert mock_post.call_args[0][0] == f"{_SAFE_HTTPS_ADDR}/admin/models/sync"
+
+
+# ---------------------------------------------------------------------------
+# Worker-identity ALLOWLIST (defense-in-depth, task #18): the daemon only
+# broadcasts a reload / model-sync — and the PSK — to KNOWN/permitted workers,
+# not any address that merely passes the format/SSRF check. Source: an explicit
+# constructor `allowlist` set, else the GLUDD_WORKER_ALLOWLIST env var (comma-
+# separated worker_ids and/or host:port addresses). No-allowlist default:
+# preserve current (unrestricted) behavior but log a warning, matching the PSK's
+# own fail-open-when-unset posture — least-surprising and non-breaking.
+# ---------------------------------------------------------------------------
+
+_LOGGER_NAME = "general_ludd.reload.worker_broadcast"
+
+
+def test_allowlist_configured_permits_listed_worker(monkeypatch) -> None:
+    """A worker IN the configured allowlist is broadcast to, WITH the PSK."""
+    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    b = WorkerBroadcaster(allowlist={"ok"})
+    b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
+    with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        results = b.broadcast_reload("ALL")
+    mock_post.assert_called_once()
+    assert mock_post.call_args[1]["headers"]["Authorization"] == "Bearer secret123"
+    assert results[0].success is True
+
+
+def test_allowlist_configured_skips_unlisted_worker(monkeypatch) -> None:
+    """A worker NOT in the configured allowlist is skipped: no POST, no PSK."""
+    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    # Allowlist a different worker; "ok" (a perfectly safe https target) is absent.
+    b = WorkerBroadcaster(allowlist={"some-other-worker"})
+    b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
+    with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        results = b.broadcast_reload("ALL")
+    mock_post.assert_not_called()
+    assert len(results) == 1
+    assert results[0].success is False
+    assert results[0].error == "not allowlisted"
+
+
+def test_allowlist_matches_by_address_from_env(monkeypatch) -> None:
+    """The allowlist may be sourced from GLUDD_WORKER_ALLOWLIST and match on the
+    worker ADDRESS (not just its id)."""
+    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_WORKER_ALLOWLIST", f"other-id, {_SAFE_HTTPS_ADDR}")
+    b = WorkerBroadcaster()  # no constructor allowlist -> defers to env
+    b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
+    with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        results = b.broadcast_reload("ALL")
+    mock_post.assert_called_once()
+    assert results[0].success is True
+
+
+def test_no_allowlist_preserves_behavior_and_warns(monkeypatch, caplog) -> None:
+    """No allowlist configured (constructor None + env unset): current behavior is
+    preserved (broadcast proceeds WITH the PSK) but a warning is logged so the
+    operator knows broadcasts are unrestricted."""
+    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.delenv("GLUDD_WORKER_ALLOWLIST", raising=False)
+    b = WorkerBroadcaster()
+    b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
+    with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
+            results = b.broadcast_reload("ALL")
+    mock_post.assert_called_once()
+    assert mock_post.call_args[1]["headers"]["Authorization"] == "Bearer secret123"
+    assert results[0].success is True
+    assert any("UNRESTRICTED" in rec.message for rec in caplog.records)
+
+
+def test_allowlist_does_not_bypass_ssrf_guard(monkeypatch) -> None:
+    """The allowlist is IN ADDITION to the SSRF guard, not a replacement: an
+    allowlisted-but-unsafe address is STILL refused and the PSK never sent."""
+    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    # Allowlist the id, then inject a worker with an UNSAFE (metadata) address.
+    b = WorkerBroadcaster(allowlist={"meta"})
+    b._workers["meta"] = WorkerInfo(worker_id="meta", address=_METADATA_ADDR)
+    with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        results = b.broadcast_reload("ALL")
+    mock_post.assert_not_called()
+    assert results[0].success is False
+    assert results[0].error == "unsafe address"
+
+
+def test_allowlist_configured_skips_unlisted_worker_model_update(monkeypatch) -> None:
+    """broadcast_model_update honors the same allowlist gate: an unlisted worker
+    gets no POST and no PSK."""
+    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    b = WorkerBroadcaster(allowlist={"some-other-worker"})
+    b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
+    with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        results = b.broadcast_model_update("add", "gpt-5", {"provider": "openai"})
+    mock_post.assert_not_called()
+    assert results[0].success is False
+    assert results[0].error == "not allowlisted"
