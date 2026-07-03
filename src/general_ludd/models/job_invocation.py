@@ -47,6 +47,7 @@ def invoke_model_for_generation(
     skill_body: str | None,
     budget_guard: Any = None,
     benchmark_recorder: Any = None,
+    project_id: str | None = None,
 ) -> tuple[str | None, list[dict[str, Any]] | None]:
     """Call the model for a generation job.
 
@@ -132,7 +133,13 @@ def invoke_model_for_generation(
     ]
     try:
         response = gateway.call_model(
-            profile_id, messages=messages, work_type=work_type or "unknown"
+            profile_id,
+            messages=messages,
+            work_type=work_type or "unknown",
+            # S-1 (task #25): thread the job's project so the gateway resolves
+            # this job's credential/api-base aliases through the project-scoped
+            # secrets manager (isolation); None → shared base behavior.
+            project_id=project_id,
         )
         content = response.content
         tool_calls = getattr(response, "tool_calls", None)

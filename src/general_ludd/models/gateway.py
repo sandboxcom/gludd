@@ -503,6 +503,43 @@ class ModelGateway:
             profile, profile_id, messages, None, **kwargs
         )
 
+    def _resolver_for_project(self, project_id: str | None) -> Any:
+        """Return the secrets resolver scoped to ``project_id`` when possible.
+
+        S-1 wiring (task #25): the daemon injects a project-aware resolver
+        (``daemon._LazyProjectSecrets``, exposing ``for_project``) as
+        ``self._secrets``. When a job carries a ``project_id`` and that resolver
+        is project-capable, return ``resolver.for_project(project_id)`` — a
+        :class:`ProjectSecretsManager` that resolves ``projects/<id>/<alias>``
+        first and only then falls back to the shared base, so a job can never
+        read another project's scoped secret.
+
+        Falls back to the shared base resolver (the previous, unscoped behavior)
+        when — non-breaking in every case:
+
+        * ``project_id`` is ``None``/empty (a non-project call), or
+        * the injected resolver has no ``for_project`` (e.g. a plain
+          ``EnvSecretsManager`` when projects are inactive), or
+        * ``for_project`` rejects the id (a malformed ``project_id`` containing
+          ``'/'`` or ``'..'`` raises ``ValueError``) — fail back to the base
+          rather than crash the model call.
+        """
+        base = self._secrets
+        if base is None or not project_id:
+            return base
+        for_project = getattr(base, "for_project", None)
+        if not callable(for_project):
+            return base
+        try:
+            return for_project(project_id)
+        except Exception:
+            logger.warning(
+                "project-scoped secrets unavailable for project_id=%r; "
+                "falling back to the shared resolver",
+                project_id,
+            )
+            return base
+
     def _invoke_and_bill(
         self,
         profile: ModelProfile,
@@ -520,9 +557,22 @@ class ModelGateway:
                 f"Provider '{provider_name}' is not installed. A dependency update todo has been created."
             )
 
+        # S-1 (per-project secret isolation, task #25): when this job carries a
+        # project_id and the injected resolver is project-aware (exposes
+        # ``for_project``), resolve THIS job's credential/api-base aliases through
+        # the project-scoped ProjectSecretsManager wrapper — which reads
+        # ``projects/<id>/<alias>`` first and only then falls back to the shared
+        # base — so one project can never read another project's scoped secret.
+        # Pop ``project_id`` HERE (like ``work_type`` below) so it is never
+        # forwarded to the provider constructor via ``init_kwargs.update(kwargs)``.
+        _project_id = kwargs.pop("project_id", None)
+        job_secrets = self._resolver_for_project(
+            str(_project_id) if _project_id else None
+        )
+
         api_key: str | None = None
-        if self._secrets and profile.credential_alias:
-            api_key = self._secrets.resolve(profile.credential_alias)
+        if job_secrets and profile.credential_alias:
+            api_key = job_secrets.resolve(profile.credential_alias)
 
         if registry is not None:
             provider_cls = registry.get_provider_class(provider_name)
@@ -551,8 +601,8 @@ class ModelGateway:
         init_kwargs: dict[str, Any] = {"model": profile.model_name}
         if api_key:
             init_kwargs["api_key"] = api_key
-        if profile.api_base_alias and self._secrets:
-            base_url = self._secrets.resolve(profile.api_base_alias)
+        if profile.api_base_alias and job_secrets:
+            base_url = job_secrets.resolve(profile.api_base_alias)
             if base_url:
                 from general_ludd.security.auth import is_safe_fetch_url
 

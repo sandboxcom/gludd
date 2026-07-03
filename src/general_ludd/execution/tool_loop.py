@@ -215,6 +215,10 @@ class ToolCallLoop:
         return await asyncio.to_thread(
             self._gateway.call_model, profile_id, messages=messages,
             work_type=job.work_type,
+            # S-1 (task #25): scope secret resolution to this job's project so
+            # the tool-loop model call resolves credentials through the project's
+            # ProjectSecretsManager (isolation); None → shared base behavior.
+            project_id=job.project_id,
         )
 
     async def _call_with_tools(
@@ -228,4 +232,7 @@ class ToolCallLoop:
             messages=messages,
             tools=tool_schemas,
             work_type=job.work_type,
+            # S-1 (task #25): scope secret resolution to this job's project (as
+            # above); None → shared base behavior.
+            project_id=job.project_id,
         )

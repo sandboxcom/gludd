@@ -1650,6 +1650,11 @@ class EventLoop:
                         prompt_text=prompt_text,
                         skill_body=skill_body,
                         budget_guard=self._budget_guard,
+                        # S-1 (task #25): scope this job's secret resolution to
+                        # its project so credential/api-base aliases resolve
+                        # through the project's ProjectSecretsManager (isolation),
+                        # not the shared base resolver. None → base behavior.
+                        project_id=project_id_val,
                     )
                     _model_call_success = model_response is not None
                 except Exception as _exc:

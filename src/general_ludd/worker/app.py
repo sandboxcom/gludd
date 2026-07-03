@@ -138,6 +138,9 @@ def _invoke_gateway_for_job(
         model_profile=job.model_profile,
         prompt_text=job.prompt_text,
         skill_body=job.skill_body,
+        # S-1 (task #25): scope secret resolution to the job's project so the
+        # worker path also isolates per-project credentials (None → base).
+        project_id=job.project_id,
     )
 
 
