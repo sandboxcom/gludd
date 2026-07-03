@@ -44,6 +44,7 @@ interface StopStateCache {
   repoPending: boolean
   backlogOpen: number
   backlogItems: string[]
+  hasPendingWork: boolean
 }
 
 const turnState: { accumulatedText: string; blocked: boolean } = {
@@ -611,20 +612,36 @@ export default (async ({ }) => {
         // Warm the CI verdict cache (Deficiency A+B)
         ciIsPendingOrRed()
 
-        const ratchetEntries = ratchetHasEntries()
+        const ratchetCount = ratchetHasEntries()
         const tasksMdUnchecked = tasksMdHasUnchecked()
-        const gateStatusRed = gateStatusIsRed()
-        const repoPending = repoHasPendingWork()
+        const gateRed = gateStatusIsRed()
+        let repoPending = false
+        try {
+          if (fs.existsSync(STATE_FILE)) {
+            const raw = fs.readFileSync(STATE_FILE, "utf8")
+            const cache = JSON.parse(raw)
+            repoPending = cache?.repoPending ?? repoHasPendingWork()
+          } else {
+            repoPending = repoHasPendingWork()
+          }
+        } catch {
+          repoPending = repoHasPendingWork()
+        }
+        const ciRed = gateRed
+        const ciVerdictPendingOrRed = ciIsPendingOrRed()
+        const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed
+
         const backlog = multitaskingBacklogOpen()
 
         const state: StopStateCache = {
           ts: Date.now(),
-          ratchetEntries,
+          ratchetEntries: ratchetCount,
           tasksMdUnchecked,
-          gateStatusRed,
+          gateStatusRed: gateRed,
           repoPending,
           backlogOpen: backlog ? backlog.open.length : 0,
           backlogItems: backlog ? backlog.open : [],
+          hasPendingWork,
         }
 
         fs.writeFileSync(STATE_FILE, JSON.stringify(state), "utf8")
@@ -708,62 +725,38 @@ export default (async ({ }) => {
       try {
         const text = output.text
         if (!text || text.trim().length === 0) return
+        if (text.trim().length < 60) return
 
-        // Short text that is clearly not a completion report — allow.
-        if (text.length < 60) return
+        turnState.accumulatedText += text
 
-        // State checks: any pending work?
-        const ratchet = ratchetHasEntries()
-        const hasUnchecked = tasksMdHasUnchecked()
-        const ciRed = ciIsPendingOrRed()
-        const gateRed = gateStatusIsRed()
-        const repoPending = repoHasPendingWork()
-
-        const anyPendingWork = ratchet > 0 || hasUnchecked || ciRed || gateRed || repoPending
-
-        // If nothing is pending, don't block — the agent might be genuinely
-        // reporting completion of a clean project.
-        if (!anyPendingWork) return
-
-        // Check if the text looks terminal
-        const looksTerminal = responseLooksTerminal(text)
-        const hasNoWait = detectNoWaitPattern(text)
-        const hasConstraint = detectConstraintAsStop(text)
-        const mentionsCiRed = responseMentionsCiRed(text)
-
-        if (looksTerminal || hasNoWait || hasConstraint || mentionsCiRed) {
-          let reason = ""
-          if (ratchet > 0) reason += `ratchet: ${ratchet} entries. `
-          if (hasUnchecked) reason += "TASKS.md: unchecked items. "
-          if (ciRed) reason += "CI: RED/PENDING. "
-          if (gateRed) reason += "gate: RED. "
-          if (repoPending) reason += "repo: unpushed/uncommitted. "
-
-          output.text = [
-            "⛔ TERMINAL RESPONSE BLOCKED — PENDING WORK EXISTS:",
-            reason,
-            "",
-            "You are sending a completion/status summary while the project has",
-            "known-unfinished work. This is the exact premature-stop pattern",
-            "that BUGS.md records 20+ times. DO NOT summarize — CONTINUE WORK.",
-            "",
-            "Resume now: fix the pending ratchet entries, complete the unchecked",
-            "TASKS.md items, get CI green, and push uncommitted work.  Any",
-            "text-only response while work remains will be suppressed.",
-            "The next tool call clears this block.",
-          ].join("\n")
-
-          if (hasNoWait) {
-            output.text += "\n\n" + noWaitBlockResponse()
+        let hasPendingWork = false
+        try {
+          if (fs.existsSync(STATE_FILE)) {
+            const raw = fs.readFileSync(STATE_FILE, "utf8")
+            const cache = JSON.parse(raw)
+            hasPendingWork = cache?.hasPendingWork ?? false
           }
-          if (hasConstraint) {
-            output.text += "\n\n" + constraintBlockResponse()
-          }
+        } catch {
+          // fail open
+        }
 
+        if (hasPendingWork && responseLooksTerminal(turnState.accumulatedText)) {
+          output.text = "⛔ TERMINAL RESPONSE BLOCKED — PENDING WORK EXISTS. Resume work. Text-only responses suppressed until a tool call clears this block."
           turnState.blocked = true
+          return
+        }
+
+        if (hasPendingWork) {
+          const noWait = detectNoWaitPattern(turnState.accumulatedText)
+          const constraint = detectConstraintAsStop(turnState.accumulatedText)
+          if (noWait || constraint || responseMentionsCiRed(turnState.accumulatedText)) {
+            output.text = "⛔ STOP BLOCKED — pending work + deferral/constraint/CI-red detected"
+            turnState.blocked = true
+            return
+          }
         }
       } catch {
-        return // fail open
+        return
       }
     },
   }

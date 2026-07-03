@@ -83,11 +83,8 @@ class TestEnforceStopTextCompleteNotPassthrough:
         body_start = match.end()
         # The handler should contain state checks (ratchetHasEntries, etc.)
         remaining = content[body_start:]
-        assert "ratchetHasEntries" in remaining, (
-            "text.complete handler must contain ratchetHasEntries check, not pass-through"
-        )
-        assert "tasksMdHasUnchecked" in remaining, (
-            "text.complete handler must contain tasksMdHasUnchecked check"
+        assert "hasPendingWork" in remaining, (
+            "text.complete handler must contain hasPendingWork check, not pass-through"
         )
         assert "responseLooksTerminal" in remaining, (
             "text.complete handler must contain responseLooksTerminal check"
