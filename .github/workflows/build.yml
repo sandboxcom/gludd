@@ -138,12 +138,18 @@ jobs:
           # Bash glob expansion inside `run:` handles the wildcard patterns.
           - shard: unit-1
             testpaths: "tests/unit/test_[a-e]*.py"
+            # The ~88 test_connector*.py suites (all start with 'c', so they land
+            # in the a-e range) are moved to the fast 'other' shard below to slim
+            # unit-1 back under ~10-12m. Ignore them HERE so they don't also run
+            # in unit-1. This var is set only on the unit-1 include entry, so it
+            # expands empty (a no-op) on every other shard's shared run: block.
+            ignoreglob: "--ignore-glob=**/test_connector*.py"
           - shard: unit-2
             testpaths: "tests/unit/test_[f-m]*.py"
           - shard: unit-3
             testpaths: "tests/unit/test_[n-z]*.py tests/unit/secrets/"
           - shard: other
-            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py"
+            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
@@ -182,7 +188,7 @@ jobs:
           # GLUDD_XDIST=auto (below) is not a positive int so the runner ignores
           # it and the adaptive computation applies. (Off-CI the load cap stays —
           # the #45 local-OOM fix is unchanged.)
-          uv run python scripts/adaptive_test.py $TESTPATHS \
+          uv run python scripts/adaptive_test.py $TESTPATHS ${{ matrix.ignoreglob }} \
             --cov=general_ludd --cov-report= \
             --cov-fail-under=0 \
             -v \
