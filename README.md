@@ -219,9 +219,9 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | 5 workflow-pipeline roles + molecule scenarios (W13.1) | ✓ 100%(local) | **PASS** *(file-refs only)*: `make molecule-test-all` 33/33; CI-green unverified; `[2a8f97b]` |
 | 7 secure-SDLC roles + molecule scenarios (W14.1) | ✓ 100%(local) | **PASS** *(file-refs only)*: `make molecule-test-all` 40/40; CI-green unverified; `[9629e20]` |
 | 9 agile/sprint roles + molecule scenarios (W15.1) | ✓ 100%(local) | **PASS** *(file-refs only)*: `make molecule-test-all` 49/49; CI-green unverified; `[8b252e1]` |
-| File-overlap coordination router (#31) | ✓ 10% | **PASS** *(file-refs only)*: exists; has `# TODO(integration)`; NOT registered in daemon; `[audit]` |
-| Per-project cost/time/LoC accounting (#28) | ✓ 20% | **PASS** *(file-refs only)*: cost only; time/LoC/role stats missing; `[audit]` |
-| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✓ 85% | **PASS** *(file-refs only)*: branch `mt-6-watchdog` never existed — abandoned; `StallWatchdog` + sweeper wired into daemon + dispatcher; `FileWatcher` in integrity/scanner.py; `[branch abandoned — re-scoped into master]` |
+| File-overlap coordination router (#31) | ✓ 100% | **PASS** *(file-refs only)*: wired into daemon at /api/coordination; `[audit]` |
+| Per-project cost/time/LoC accounting (#28) | ✓ 100% | **PASS** *(file-refs only)*: cost+time+LoC per project; 13 tests; `[e2b21d14]` |
+| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✓ 0% | **PASS** *(file-refs only)*: branch abandoned; re-scoped into master |
 | Gate-safe + predictive floor controller (floor_controller-consolidated branch) | ✓ 55% | **PASS** *(file-refs only)*: branch `floor_controller-consolidated` never existed — abandoned; `scripts/floor_controller.py` (208 lines) + 21 tests; NOT wired into daemon event loop; `[branch abandoned — re-scoped into master]` |
 | self_update wired into daemon | ✓ 90% | **PASS** *(file-refs only)*: wired `feature/alpha4-green-the-gate`; verified 2026-06-25; −10% pending e2e proof |
 | Remediation system: blocker detector, dispatcher, chronic reporter | ✓ 100% | **PASS** *(file-refs only)*: `BlockerDetector` + `RemediationDispatcher` + `ChronicReporter` wired via `/api/remediation`; `[audit]` |

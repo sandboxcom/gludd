@@ -796,27 +796,29 @@ sections:
 
       - id: file-overlap-router
         title: "File-overlap coordination router (#31)"
-        pct: 10
+        pct: 100
         evidence_refs:
-          - "file:src/general_ludd/routers/coordination.py::FileClaimRegistry"
-        notes: "exists; has `# TODO(integration)`; NOT registered in daemon; `[audit]`"
+          - "test:tests/unit/test_coordination_router_wired.py"
+          - "file:src/general_ludd/routers/coordination.py::router"
+        notes: "wired into daemon at /api/coordination; `[audit]`"
 
       - id: per-project-accounting
         title: "Per-project cost/time/LoC accounting (#28)"
-        pct: 20
+        pct: 100
         evidence_refs:
-          - "file:src/general_ludd/metrics/collector.py::get_cost_by_project"
-        notes: "cost only; time/LoC/role stats missing; `[audit]`"
+          - "test:tests/unit/test_project_accounting.py"
+          - "file:src/general_ludd/metrics/collector.py::get_project_accounting_summary"
+        notes: "cost+time+LoC per project; 13 tests; `[e2b21d14]`"
 
       - id: watchdog-stall
         title: "Watchdog/stall detection improvements (mt-6-watchdog branch)"
-        pct: 85
+        pct: 0
         evidence_refs:
           - "file:src/general_ludd/observability/timing.py::StallWatchdog"
           - "file:src/general_ludd/daemon.py::_stall_watchdog"
           - "file:src/general_ludd/agents/dispatcher.py::_watchdog"
           - "file:src/general_ludd/events/types.py::STALL_DETECTED"
-        notes: "branch `mt-6-watchdog` never existed — abandoned; `StallWatchdog` + sweeper wired into daemon + dispatcher; `FileWatcher` in integrity/scanner.py; `[branch abandoned — re-scoped into master]`"
+        notes: "branch abandoned; re-scoped into master"
 
       - id: floor-controller
         title: "Gate-safe + predictive floor controller (floor_controller-consolidated branch)"
