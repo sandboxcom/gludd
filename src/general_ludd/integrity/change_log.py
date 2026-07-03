@@ -76,6 +76,12 @@ class ChangeLogEntry(ChangeRecord):
       lossy UTF-8 decode happens at store time (that is deferred to
       diff-render time), so a binary/non-UTF-8 snapshot is preserved byte-for-
       byte and still hashes to ``old_hash``.
+    * ``new_content`` — an OPTIONAL captured snapshot of the file's NEW content,
+      stored with the exact same lossless base64 construction as
+      ``old_content`` (round-trips ``str``→``str``, ``bytes``→``bytes``, hashes
+      to ``new_hash``).  Capturing both sides lets a later slice render a full
+      unified diff of an agentic change WITHOUT needing the source file for
+      either side.
     * ``committed`` — set when the record has been upstreamed/committed so
       :meth:`ChangeRecordStore.list_records` can filter it out (this supports
       the later overlay-prune step).
@@ -83,6 +89,7 @@ class ChangeLogEntry(ChangeRecord):
 
     id: int = -1
     old_content: str | bytes | None = None
+    new_content: str | bytes | None = None
     committed: bool = False
 
 
@@ -165,6 +172,16 @@ class ChangeRecordStore:
             raw = oc if isinstance(oc, bytes) else oc.encode("utf-8")
             data["old_content"] = base64.b64encode(raw).decode("ascii")
             data["old_content_binary"] = isinstance(oc, bytes)
+        # Mirror the lossless snapshot construction for the NEW content so a
+        # later slice can diff both sides without the source file.
+        nc = entry.new_content
+        if nc is None:
+            data["new_content"] = None
+            data["new_content_binary"] = False
+        else:
+            raw_new = nc if isinstance(nc, bytes) else nc.encode("utf-8")
+            data["new_content"] = base64.b64encode(raw_new).decode("ascii")
+            data["new_content_binary"] = isinstance(nc, bytes)
         return data
 
     @staticmethod
@@ -181,6 +198,15 @@ class ChangeRecordStore:
                 if bool(data.get("old_content_binary", False))
                 else raw.decode("utf-8")
             )
+        nc = data.get("new_content")
+        new_content: str | bytes | None = None
+        if nc is not None:
+            raw_new = base64.b64decode(str(nc))
+            new_content = (
+                raw_new
+                if bool(data.get("new_content_binary", False))
+                else raw_new.decode("utf-8")
+            )
         return ChangeLogEntry(
             file_path=str(data.get("file_path", "")),
             change_type=str(data.get("change_type", "")),
@@ -193,6 +219,7 @@ class ChangeRecordStore:
             signature=data.get("signature"),
             id=int(data.get("id", -1)),
             old_content=old_content,
+            new_content=new_content,
             committed=bool(data.get("committed", False)),
         )
 
@@ -294,11 +321,12 @@ class ChangeRecordStore:
         """Append a change record to the log and return it (with its ``id``).
 
         ``old_hash``/``new_hash`` are computed from ``old_content``/
-        ``new_content`` when provided.  ``old_content`` is captured LOSSLESSLY
-        (raw bytes, base64 on disk) so a diff — textual or binary — can be
-        produced later without the source file; the recovered snapshot always
-        hashes back to ``old_hash``.  ``detected_at`` is stamped with the
-        current time.
+        ``new_content`` when provided.  BOTH ``old_content`` and ``new_content``
+        are captured LOSSLESSLY (raw bytes, base64 on disk) so a full unified
+        diff — textual or binary — can be produced later without the source
+        file; each recovered snapshot always hashes back to its
+        ``old_hash``/``new_hash``.  ``detected_at`` is stamped with the current
+        time.
         """
         # Capture the snapshot RAW (no lossy decode) so binary/non-UTF-8
         # content survives byte-for-byte and hashes to old_hash.
@@ -322,6 +350,7 @@ class ChangeRecordStore:
                 signer=signer,
                 id=next_id,
                 old_content=old_content,
+                new_content=new_content,
             )
             entries.append(entry)
             self._save(entries)

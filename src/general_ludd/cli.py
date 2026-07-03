@@ -822,6 +822,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_deploy_check_subparser(sub)
     deploy_check_parser = sub.choices["deploy-check"]
 
+    # `gludd core-changes` — render agentic change log as core/user diffs.
+    from general_ludd.cli_core_changes import add_core_changes_subparser
+
+    add_core_changes_subparser(sub)
+    core_changes_parser = sub.choices["core-changes"]
+
     subcommand_map = {
         "models": models_parser,
         "mcp": mcp_parser,
@@ -846,6 +852,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "remediation": remediation_parser,
         "ornith": ornith_parser,
         "deploy-check": deploy_check_parser,
+        "core-changes": core_changes_parser,
     }
 
     return parser, subcommand_map
