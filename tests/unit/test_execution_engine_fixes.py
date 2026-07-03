@@ -324,9 +324,11 @@ class TestFix3PathContainment:
         with pytest.raises(ValueError, match="escapes the workspace"):
             engine._write_file("../../../../tmp/escape.txt", "pwned")
 
-    def test_write_file_refuses_absolute_path(self):
+    def test_write_file_refuses_absolute_path(self, tmp_path):
         engine, _ = self._engine()
-        target = os.path.join(tempfile.gettempdir(), "gludd-abs-escape.txt")
+        # Per-test tmp_path (per-worker isolated) keeps the absolute escape
+        # target unique so concurrent xdist workers can't clobber each other.
+        target = os.path.join(str(tmp_path), "gludd-abs-escape.txt")
         with pytest.raises(ValueError, match="escapes the workspace"):
             engine._write_file(target, "pwned")
         assert not os.path.exists(target)

@@ -292,7 +292,14 @@ class _FakeRunnerAdapter:
     test must reach the genuine register→run→unregister path, not a bypass.
     """
 
-    def __init__(self, private_data_dir: str = "/tmp/gludd-test-fake-runner") -> None:
+    def __init__(self, private_data_dir: str | None = None) -> None:
+        # A unique per-instance temp dir (per-worker isolated) so concurrent
+        # xdist workers don't collide on a shared "/tmp/gludd-test-fake-runner"
+        # dispatch_playbooks tree that the collection handler writes into.
+        if private_data_dir is None:
+            import tempfile
+
+            private_data_dir = tempfile.mkdtemp(prefix="gludd-test-fake-runner-")
         self.private_data_dir = private_data_dir
         self.registered: list[tuple[str, str]] = []
         self.unregistered: list[str] = []

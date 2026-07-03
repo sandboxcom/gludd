@@ -26,14 +26,14 @@ class TestProjectWorkspaceWired:
         from general_ludd.projects.workspace import ProjectWorkspace
         assert ProjectWorkspace
 
-    def test_project_workspace_has_playbooks_dir(self):
+    def test_project_workspace_has_playbooks_dir(self, tmp_path):
         from general_ludd.projects.workspace import ProjectWorkspace
-        ws = ProjectWorkspace(project_id="test", workspace_path="/tmp/gludd-test")
+        ws = ProjectWorkspace(project_id="test", workspace_path=str(tmp_path))
         assert hasattr(ws, "playbooks_dir")
 
-    def test_project_workspace_has_templates_dir(self):
+    def test_project_workspace_has_templates_dir(self, tmp_path):
         from general_ludd.projects.workspace import ProjectWorkspace
-        ws = ProjectWorkspace(project_id="test", workspace_path="/tmp/gludd-test")
+        ws = ProjectWorkspace(project_id="test", workspace_path=str(tmp_path))
         assert hasattr(ws, "templates_dir")
 
     def test_event_loop_accepts_project_workspace(self):

@@ -154,7 +154,7 @@ class TestCollectionHandler:
         assert handler is None
 
     @pytest.mark.asyncio
-    async def test_collection_handler_routes_to_run_playbook(self) -> None:
+    async def test_collection_handler_routes_to_run_playbook(self, tmp_path) -> None:
         """A module FQCN dispatches through the runner adapter's run_playbook.
 
         Verifies the handler (a) registers a transient playbook under the
@@ -164,7 +164,7 @@ class TestCollectionHandler:
         from general_ludd.daemon_wiring import make_collection_handler
 
         adapter = MagicMock()
-        adapter.private_data_dir = "/tmp/gludd-test-collection"
+        adapter.private_data_dir = str(tmp_path)
         adapter.run_playbook.return_value = {"status": "successful", "rc": 0}
         handler = make_collection_handler(adapter)
 
@@ -183,12 +183,12 @@ class TestCollectionHandler:
         assert result == {"status": "successful", "rc": 0}
 
     @pytest.mark.asyncio
-    async def test_collection_handler_registers_and_unregisters_transient(self) -> None:
+    async def test_collection_handler_registers_and_unregisters_transient(self, tmp_path) -> None:
         """The transient playbook is registered for the run then unregistered."""
         from general_ludd.daemon_wiring import make_collection_handler
 
         adapter = MagicMock()
-        adapter.private_data_dir = "/tmp/gludd-test-collection"
+        adapter.private_data_dir = str(tmp_path)
         adapter.run_playbook.return_value = {"status": "successful", "rc": 0}
         handler = make_collection_handler(adapter)
 
@@ -208,12 +208,12 @@ class TestCollectionHandler:
         assert registered_name == run_name == unregistered_name
 
     @pytest.mark.asyncio
-    async def test_collection_handler_propagates_runner_failure(self) -> None:
+    async def test_collection_handler_propagates_runner_failure(self, tmp_path) -> None:
         """A failed run still returns the runner's result dict (no exception)."""
         from general_ludd.daemon_wiring import make_collection_handler
 
         adapter = MagicMock()
-        adapter.private_data_dir = "/tmp/gludd-test-collection"
+        adapter.private_data_dir = str(tmp_path)
         adapter.run_playbook.return_value = {
             "status": "failed",
             "rc": 2,

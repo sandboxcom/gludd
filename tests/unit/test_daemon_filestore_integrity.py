@@ -141,13 +141,16 @@ class TestRealDaemonEndpoints:
         assert "count" in data
 
     @patch("general_ludd.integrity.scanner.FileIntegrityScanner.scan")
-    def test_integrity_scan_with_paths(self, mock_scan, client):
-        import tempfile
-
+    def test_integrity_scan_with_paths(self, mock_scan, client, tmp_path):
         mock_scan.return_value = {"scanned": 5, "changes": []}
-        # Use the real system temp root (an allowed scan root); literal "/tmp" is
-        # not the temp dir on macOS and is correctly refused by path confinement.
-        resp = client.post("/admin/integrity/scan", json={"paths": [tempfile.gettempdir()]})
+        # Scan a per-test directory the test itself created under tmp_path (which
+        # lives inside the system temp root, an allowed scan root). Using this
+        # isolated subtree instead of gettempdir() ROOT keeps concurrent xdist
+        # workers from observing each other's popen-gwN basetemp dirs. Literal
+        # "/tmp" is not the temp dir on macOS and is refused by path confinement.
+        scan_dir = tmp_path / "integrity-scan-root"
+        scan_dir.mkdir()
+        resp = client.post("/admin/integrity/scan", json={"paths": [str(scan_dir)]})
         assert resp.status_code == 200
         data = resp.json()
         assert "scanned" in data

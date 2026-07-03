@@ -9,7 +9,7 @@ import pytest
 
 class TestProjectWorkspaceWiredIntoEventLoop:
     @pytest.mark.asyncio
-    async def test_dispatch_uses_workspace_private_data_dir_when_project_matches(self):
+    async def test_dispatch_uses_workspace_private_data_dir_when_project_matches(self, tmp_path):
         from general_ludd.event_loop.loop import EventLoop
         from general_ludd.projects.workspace import ProjectWorkspace
         from general_ludd.schemas.todo import Todo, TodoStatus
@@ -23,7 +23,7 @@ class TestProjectWorkspaceWiredIntoEventLoop:
         runner = MagicMock()
         runner.prepare_job_dirs.return_value = {"root": "/tmp/global-job"}
 
-        ws = ProjectWorkspace(project_id="proj-wired", base_dir="/tmp/gludd-test-ws")
+        ws = ProjectWorkspace(project_id="proj-wired", base_dir=str(tmp_path))
         ws.ensure_dirs()
 
         loop = EventLoop(
@@ -89,7 +89,7 @@ class TestProjectWorkspaceWiredIntoEventLoop:
         assert job_vars["playbook"] == "noop.yml"
 
     @pytest.mark.asyncio
-    async def test_dispatch_uses_global_dir_when_project_mismatch(self):
+    async def test_dispatch_uses_global_dir_when_project_mismatch(self, tmp_path):
         from general_ludd.event_loop.loop import EventLoop
         from general_ludd.projects.workspace import ProjectWorkspace
         from general_ludd.schemas.todo import Todo, TodoStatus
@@ -103,7 +103,7 @@ class TestProjectWorkspaceWiredIntoEventLoop:
         runner = MagicMock()
         runner.prepare_job_dirs.return_value = {"root": "/tmp/global-job"}
 
-        ws = ProjectWorkspace(project_id="proj-a", base_dir="/tmp/gludd-test-ws-a")
+        ws = ProjectWorkspace(project_id="proj-a", base_dir=str(tmp_path))
         ws.ensure_dirs()
 
         loop = EventLoop(
@@ -187,7 +187,7 @@ class TestProjectWorkspaceWiredIntoEventLoop:
         assert result == "noop.yml"
 
     @pytest.mark.asyncio
-    async def test_runner_path_uses_workspace_when_project_matches(self):
+    async def test_runner_path_uses_workspace_when_project_matches(self, tmp_path):
         from general_ludd.event_loop.loop import EventLoop
         from general_ludd.projects.workspace import ProjectWorkspace
         from general_ludd.schemas.todo import Todo, TodoStatus
@@ -201,7 +201,7 @@ class TestProjectWorkspaceWiredIntoEventLoop:
         runner = MagicMock()
         runner.prepare_job_dirs.return_value = {"root": "/tmp/global-job"}
 
-        ws = ProjectWorkspace(project_id="proj-run", base_dir="/tmp/gludd-test-run")
+        ws = ProjectWorkspace(project_id="proj-run", base_dir=str(tmp_path))
         ws.ensure_dirs()
 
         loop = EventLoop(

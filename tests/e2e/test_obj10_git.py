@@ -79,12 +79,14 @@ class TestGitAutonomyE2E:
         )
         assert "agent/TODO-001/" in checkpoint_tag
 
-    def test_worktree_lifecycle(self, git_env):
+    def test_worktree_lifecycle(self, git_env, tmp_path):
         git, repo_dir = git_env
         _write_dummy_file(repo_dir)
         git.commit(message="base")
 
-        wt_path = os.path.join(tempfile.gettempdir(), "gludd-e2e-wt")
+        # Per-test tmp_path (per-worker isolated) so concurrent xdist workers
+        # don't collide on a shared gettempdir()/gludd-e2e-wt path.
+        wt_path = os.path.join(str(tmp_path), "gludd-e2e-wt")
         wt = git.create_worktree(repo_dir, "wt-e2e-branch", wt_path)
         assert wt.success
         assert os.path.isdir(wt.path)
@@ -106,9 +108,11 @@ class TestGitAutonomyE2E:
         assert "TODO-000042" in name
         assert "add-e2e-tests" in name
 
-    def test_local_bare_mirror(self, git_env):
+    def test_local_bare_mirror(self, git_env, tmp_path):
         git, repo_dir = git_env
-        mirror_path = os.path.join(tempfile.gettempdir(), "gludd-e2e-mirror.git")
+        # Per-test tmp_path (per-worker isolated) so concurrent xdist workers
+        # don't collide on a shared gettempdir()/gludd-e2e-mirror.git path.
+        mirror_path = os.path.join(str(tmp_path), "gludd-e2e-mirror.git")
         result = git.create_local_bare_mirror(repo_dir, mirror_path)
         assert result == mirror_path
         assert os.path.isdir(mirror_path)
