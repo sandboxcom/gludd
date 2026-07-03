@@ -77,6 +77,20 @@ from general_ludd.skills.registry import SkillRegistry
 
 logger = ProjectLogAdapter(logging.getLogger(__name__))
 
+
+def _compaction_config_dict(uc: Any) -> dict[str, Any]:
+    """Serialize the ``UserConfig.compaction`` block to a plain dict (#56).
+
+    The EventLoop ``config`` is a ``dict[str, Any]``, so the pydantic block is
+    dumped to plain keys (``{"enabled", "level"}``). Fail-soft to ``{}`` (→
+    compaction OFF at the call site) when ``uc`` or the block is absent.
+    """
+    block = getattr(uc, "compaction", None) if uc else None
+    dump = getattr(block, "model_dump", None)
+    if callable(dump):
+        return dict(dump())
+    return {}
+
 # Back-compat default. ``create_daemon_app()`` builds a FRESH per-app dict
 # (see ``app.state.daemon_state``) so state no longer bleeds between FastAPI
 # instances in the same process. This module-level name is rebound to the most
@@ -1266,6 +1280,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "queues": getattr(uc, "queues", []) if uc else [],
                 "budget": getattr(uc, "budget", {}) if uc else {},
                 "self_improve": getattr(uc, "self_improve", {}) if uc else {},
+                # #56: reachable SLM context-compaction on the generation path.
+                # Serialized to a plain dict so the EventLoop config stays a
+                # dict[str, Any]. Default OFF (compaction.enabled = False).
+                "compaction": _compaction_config_dict(uc),
                 # Daemon-level default repo_root: the process cwd at startup time
                 # is a reasonable single-project fallback so verify_completion can
                 # check commit:/artifact: refs without a resolved per-project

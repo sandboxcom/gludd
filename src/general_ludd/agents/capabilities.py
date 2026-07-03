@@ -10,9 +10,12 @@ pieces individually.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from general_ludd.agents.context import ContextCompactor, ContextMessage
+
+if TYPE_CHECKING:
+    from general_ludd.compaction.aggressive import CompactionLevel
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.token_window import TokenWindowManager
 from general_ludd.agents.tool_adapter import AgentToolAdapter
@@ -31,6 +34,7 @@ class AgentCapabilities:
         agent_registry: AgentRegistry | None = None,
         model_gateway: Any = None,
         use_slm_compaction: bool = False,
+        compaction_level: CompactionLevel | None = None,
     ) -> None:
         self.compactor = ContextCompactor(
             max_tokens=max_tokens,
@@ -38,6 +42,11 @@ class AgentCapabilities:
             preserve_recent_count=preserve_recent_count,
         )
         self._preserve_recent_count = preserve_recent_count
+        self._compaction_threshold = compaction_threshold
+        self._max_tokens = max_tokens
+        # Optional aggression rung (compaction/aggressive.LEVELS). None → the
+        # historical behavior (threshold/preserve_recent from the ctor args).
+        self._compaction_level = compaction_level
         # OPT-IN local-SLM compaction. Default OFF and gateway=None → the plain
         # ContextCompactor path is used, so no existing call site changes
         # behavior. When a gateway is supplied AND the flag is on, prepare_messages
@@ -46,15 +55,24 @@ class AgentCapabilities:
         # the profile is missing or the gateway errors — compaction never crashes
         # the context path.
         self._slm_compactor: Any = None
+        self._slm_summarize_fn: Any = None
         if model_gateway is not None and use_slm_compaction:
             from general_ludd.compaction.slm import (
                 SLMCompactor,
                 make_slm_summarize_fn,
             )
 
+            # Use the level's preserve_recent when an aggression rung is set,
+            # else the ctor default.
+            preserve = (
+                compaction_level.preserve_recent
+                if compaction_level is not None
+                else preserve_recent_count
+            )
+            self._slm_summarize_fn = make_slm_summarize_fn(model_gateway, "compactor")
             self._slm_compactor = SLMCompactor(
-                summarize_fn=make_slm_summarize_fn(model_gateway, "compactor"),
-                preserve_recent=preserve_recent_count,
+                summarize_fn=self._slm_summarize_fn,
+                preserve_recent=preserve,
             )
         self.token_window = TokenWindowManager(default_budget=max_tokens)
         self._registry = agent_registry or AgentRegistry()
@@ -94,21 +112,30 @@ class AgentCapabilities:
                     is_system=turn.get("role") == "system",
                 )
             )
-        # Opt-in SLM path: only engage once the plain ContextCompactor's own
-        # threshold is crossed, so short conversations behave identically to the
-        # default path. The SLMCompactor summarizes the old middle via the local
-        # ``compactor`` model and fails soft to extractive truncation.
-        if self._slm_compactor is not None and self.compactor.needs_compaction(msgs):
-            from general_ludd.compaction.base import CompactionRequest
-
-            result = self._slm_compactor.compact(
-                CompactionRequest(
-                    messages=msgs,
-                    goal="",
-                    preserve_recent=self._preserve_recent_count,
-                )
+        # Opt-in SLM path: route through compaction.aggressive.compact_messages so
+        # the hard fail-soft wrapper (compaction can never raise into this caller)
+        # and the aggression level are shared with the generation-path callers.
+        # compact_messages does its own threshold gating, so short conversations
+        # behave identically to the default path. Behavior is UNCHANGED when
+        # _slm_compactor is None (the plain ContextCompactor path below runs).
+        if self._slm_compactor is not None:
+            from general_ludd.compaction.aggressive import (
+                CompactionLevel,
+                compact_messages,
             )
-            return [{"role": m.role, "content": m.content} for m in result.messages]
+
+            level = self._compaction_level or CompactionLevel(
+                preserve_recent=self._preserve_recent_count,
+                threshold=self._compaction_threshold,
+            )
+            compacted_msgs = compact_messages(
+                msgs,
+                goal="",
+                level=level,
+                summarize_fn=self._slm_summarize_fn,
+                max_tokens=self._max_tokens,
+            )
+            return [{"role": m.role, "content": m.content} for m in compacted_msgs]
         compacted = self.compactor.compact(msgs)
         return [{"role": m.role, "content": m.content} for m in compacted]
 

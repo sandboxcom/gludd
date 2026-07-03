@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from general_ludd.compaction.aggressive import LEVELS
 from general_ludd.models.job_invocation import (
     _GENERATION_WORK_TYPES,
     invoke_model_for_generation,
@@ -429,3 +430,120 @@ class TestUsageMetadataFallback:
         assert kwargs["input_tokens"] >= 0
         assert isinstance(kwargs["output_tokens"], int)
         assert kwargs["output_tokens"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# SLM compaction wiring (task #56) — reachability, forwarding, and the
+# default-OFF regression (identical to today).
+# ---------------------------------------------------------------------------
+
+
+class _CapturingGateway:
+    """A real (non-mock) gateway that records every call_model invocation.
+
+    Lets us assert the EXACT messages the model receives and that the
+    ``compactor`` summarization profile is never invoked on the single-turn
+    generation path.
+    """
+
+    def __init__(self, content: str = "answer") -> None:
+        self.calls: list[tuple[str, Any, dict[str, Any]]] = []
+        self._content = content
+
+    def call_model(self, profile_id: str, *, messages: Any = None, **kwargs: Any) -> Any:
+        self.calls.append((profile_id, messages, kwargs))
+        resp = MagicMock()
+        resp.content = self._content
+        resp.usage_metadata = {"input_tokens": 3, "output_tokens": 2}
+        resp.tool_calls = None
+        return resp
+
+
+class TestSlmCompactionWiring:
+    def test_default_off_builds_caps_without_gateway(self) -> None:
+        """Default (use_slm_compaction unset) → AgentCapabilities gets no gateway
+        and the flag off, so the SLM compactor is never built (regression)."""
+        gw = _fake_gateway(_fake_response(content="ok"))
+        with patch("general_ludd.agents.capabilities.AgentCapabilities") as MockCaps:
+            mock_caps = MagicMock()
+            mock_caps.prepare_messages.return_value = [{"role": "user", "content": "q"}]
+            MockCaps.return_value = mock_caps
+            invoke_model_for_generation(
+                gw,
+                job_id="j-off",
+                work_type="code",
+                model_profile="default",
+                prompt_text="q",
+                skill_body=None,
+            )
+        _args, kwargs = MockCaps.call_args
+        assert kwargs.get("model_gateway") is None
+        assert kwargs.get("use_slm_compaction") is False
+        assert kwargs.get("compaction_level") is None
+
+    def test_slm_on_forwards_gateway_flag_and_level(self) -> None:
+        """use_slm_compaction=True forwards the gateway + flag + level so the
+        SLM compaction path is REACHABLE from this call site."""
+        gw = _fake_gateway(_fake_response(content="ok"))
+        level = LEVELS[1]
+        with patch("general_ludd.agents.capabilities.AgentCapabilities") as MockCaps:
+            mock_caps = MagicMock()
+            mock_caps.prepare_messages.return_value = [{"role": "user", "content": "q"}]
+            MockCaps.return_value = mock_caps
+            invoke_model_for_generation(
+                gw,
+                job_id="j-on",
+                work_type="code",
+                model_profile="default",
+                prompt_text="q",
+                skill_body=None,
+                use_slm_compaction=True,
+                compaction_level=level,
+            )
+        _args, kwargs = MockCaps.call_args
+        assert kwargs.get("model_gateway") is gw
+        assert kwargs.get("use_slm_compaction") is True
+        assert kwargs.get("compaction_level") is level
+
+    def test_default_off_is_a_true_noop_on_messages(self) -> None:
+        """With compaction OFF, the model receives EXACTLY the system+user turns
+        it does today, and the ``compactor`` profile is never called."""
+        gw = _CapturingGateway()
+        result = invoke_model_for_generation(
+            gw,
+            job_id="j-reg",
+            work_type="code",
+            model_profile="default",
+            prompt_text="task prompt",
+            skill_body="sys prompt",
+        )
+        assert result[0] == "answer"
+        assert len(gw.calls) == 1, "no extra summarization call when OFF"
+        profile, messages, _kwargs = gw.calls[0]
+        assert profile == "default"
+        assert messages == [
+            {"role": "system", "content": "sys prompt"},
+            {"role": "user", "content": "task prompt"},
+        ]
+
+    def test_slm_on_is_fail_soft_and_generation_still_fires(self) -> None:
+        """use_slm_compaction=True must never crash the call. On the single-turn
+        generation path there is no old middle to summarize, so the ``compactor``
+        profile is not invoked, and the generation call still receives the user
+        turn and returns content."""
+        gw = _CapturingGateway()
+        result = invoke_model_for_generation(
+            gw,
+            job_id="j-on-behav",
+            work_type="code",
+            model_profile="default",
+            prompt_text="task prompt",
+            skill_body="sys prompt",
+            use_slm_compaction=True,
+            compaction_level=LEVELS[1],
+        )
+        assert result[0] == "answer"
+        assert all(c[0] != "compactor" for c in gw.calls), "no summarizer on single turn"
+        gen = [c for c in gw.calls if c[0] == "default"]
+        assert gen, "generation call must still fire"
+        assert any(m.get("role") == "user" for m in gen[0][1])

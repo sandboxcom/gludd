@@ -57,6 +57,21 @@ class RelationshipRoutingConfig(BaseModel):
     min_borrow_weight: float = 0.05
 
 
+class CompactionConfigBlock(BaseModel):
+    """Config for reachable, tiered SLM context-compaction on the generation path (#56).
+
+    Default OFF: the generation path uses the plain ContextCompactor and behaves
+    EXACTLY as before. Set ``compaction.enabled: true`` (or
+    ``GLUDD_COMPACTION__ENABLED=true``) to route the older middle of each
+    generation prompt through a small local ``compactor`` model (fail-soft).
+    ``level`` indexes the aggression ladder ``compaction.aggressive.LEVELS``
+    (0 = least aggressive); out-of-range values are clamped.
+    """
+
+    enabled: bool = False
+    level: int = 1
+
+
 class _YamlSettingsSource(PydanticBaseSettingsSource):
     """Custom settings source that reads from a YAML file.
 
@@ -124,6 +139,9 @@ class UserConfig(BaseSettings):
     self_update: dict[str, Any] = {"auto_apply_config": True}
     rules: list[Any] = []
     pipeline: PipelineConfigBlock = PipelineConfigBlock()
+    # Reachable SLM context-compaction on the generation path (#56). Default OFF
+    # → generation path unchanged. Enable via ``compaction.enabled: true``.
+    compaction: CompactionConfigBlock = CompactionConfigBlock()
     # Project-hierarchy phase 3: cross-project knowledge borrowing. Optional and
     # default None → borrowing OFF, router unchanged. Set a block (or
     # GLUDD_RELATIONSHIP_ROUTING JSON) to enable + tune it.

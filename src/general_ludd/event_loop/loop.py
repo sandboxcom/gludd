@@ -15,6 +15,7 @@ from typing import Any, ClassVar
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from general_ludd.compaction.aggressive import level_at as _level_at
 from general_ludd.controllers.load_scrape import LoadSnapshot
 from general_ludd.controllers.pid import LoadController
 from general_ludd.db.models import TaskDecisionModel
@@ -1696,6 +1697,21 @@ class EventLoop:
                             _deployment_id,
                         )
                 _call_start = time.monotonic()
+                # #56: opt-in SLM context-compaction on the generation path.
+                # Read the enable flag + aggression level from the EventLoop's
+                # config dict (mirrors the debt_eval read a few frames up); default
+                # OFF so the plain ContextCompactor path is used unless enabled.
+                _compaction_cfg = (
+                    self.config.get("compaction", {})
+                    if isinstance(self.config, dict)
+                    else {}
+                )
+                _use_slm_compaction = bool(_compaction_cfg.get("enabled", False))
+                _compaction_level = (
+                    _level_at(_compaction_cfg.get("level", 1))
+                    if _use_slm_compaction
+                    else None
+                )
                 try:
                     model_response, model_tool_calls = await asyncio.to_thread(
                         invoke_model_for_generation,
@@ -1711,6 +1727,8 @@ class EventLoop:
                         # through the project's ProjectSecretsManager (isolation),
                         # not the shared base resolver. None → base behavior.
                         project_id=project_id_val,
+                        use_slm_compaction=_use_slm_compaction,
+                        compaction_level=_compaction_level,
                     )
                     _model_call_success = model_response is not None
                 except Exception as _exc:

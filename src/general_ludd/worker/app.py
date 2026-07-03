@@ -131,6 +131,11 @@ def _invoke_gateway_for_job(
     model's STRUCTURED tool/function calls (OpenAI-nested shape), or ``None``
     for each when absent.
     """
+    # #56: opt-in SLM context-compaction. Read the enable flag + aggression
+    # level from UserConfig (the same load_user_config() surface this module
+    # uses for model_profiles). Fail-soft to OFF so a config error never breaks
+    # the generation call — the plain ContextCompactor path is used by default.
+    use_slm_compaction, compaction_level = _resolve_compaction_config()
     return invoke_model_for_generation(
         gateway,
         job_id=job.job_id,
@@ -141,7 +146,30 @@ def _invoke_gateway_for_job(
         # S-1 (task #25): scope secret resolution to the job's project so the
         # worker path also isolates per-project credentials (None → base).
         project_id=job.project_id,
+        use_slm_compaction=use_slm_compaction,
+        compaction_level=compaction_level,
     )
+
+
+def _resolve_compaction_config() -> tuple[bool, Any]:
+    """Read (enabled, CompactionLevel|None) from UserConfig, fail-soft to OFF.
+
+    Any load/parse error → ``(False, None)`` so the generation path behaves
+    exactly as before. ``level`` indexes ``compaction.aggressive.LEVELS``.
+    """
+    try:
+        from general_ludd.compaction.aggressive import level_at
+        from general_ludd.config.loader import load_user_config
+
+        uc = load_user_config()
+        block = getattr(uc, "compaction", None)
+        enabled = bool(getattr(block, "enabled", False))
+        if not enabled:
+            return False, None
+        return True, level_at(getattr(block, "level", 1))
+    except Exception:  # pragma: no cover - config is best-effort here
+        logger.warning("compaction config resolve failed; compaction OFF", exc_info=True)
+        return False, None
 
 
 def build_dispatcher_from_config() -> Any:

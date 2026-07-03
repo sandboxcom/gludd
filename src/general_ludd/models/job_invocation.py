@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     import asyncio
     from collections.abc import Coroutine
 
+    from general_ludd.compaction.aggressive import CompactionLevel
     from general_ludd.models.gateway import ModelGateway
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,8 @@ def invoke_model_for_generation(
     budget_guard: Any = None,
     benchmark_recorder: Any = None,
     project_id: str | None = None,
+    use_slm_compaction: bool = False,
+    compaction_level: CompactionLevel | None = None,
 ) -> tuple[str | None, list[dict[str, Any]] | None]:
     """Call the model for a generation job.
 
@@ -124,7 +127,16 @@ def invoke_model_for_generation(
     # turn is the skill body; the user turn is the task prompt.
     from general_ludd.agents.capabilities import AgentCapabilities
 
-    caps = AgentCapabilities(primary_profile=profile_id)
+    # OPT-IN aggressive SLM compaction. Default OFF → model_gateway is not passed,
+    # so AgentCapabilities uses the plain ContextCompactor path and behavior is
+    # identical to today. When enabled, the gateway drives a small local
+    # ``compactor`` model to summarize the old middle of the prompt (fail-soft).
+    caps = AgentCapabilities(
+        primary_profile=profile_id,
+        model_gateway=gateway if use_slm_compaction else None,
+        use_slm_compaction=use_slm_compaction,
+        compaction_level=compaction_level,
+    )
     system_prompt = skill_body or ""
     history = [{"role": "user", "content": prompt_text}]
     messages = [
