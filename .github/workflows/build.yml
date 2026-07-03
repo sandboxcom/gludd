@@ -169,15 +169,19 @@ jobs:
         run: |
           TESTPATHS="${{ matrix.testpaths }}"
           # Route through the adaptive runner (single source of truth for worker
-          # sizing) instead of a raw `-n auto`. On the 2-core / 7 GB ubuntu-latest
-          # runner it bounds workers by BOTH available RAM and load headroom
-          # (2.5*cores - load5) -> -n 2, and appends `--maxprocesses 2 --dist
-          # loadgroup` itself, so a worker crash/respawn loop cannot exceed the
-          # bounded count and OOM the runner. `-n auto` previously spawned one
-          # ~1.2-1.5 GB worker PER CORE. Test SCOPE is unchanged: TESTPATHS and the
-          # coverage flags are forwarded verbatim; an OOM-shaped exit auto-retries
-          # at a halved worker count. GLUDD_XDIST=auto (below) is not a positive
-          # int so the runner ignores it and the adaptive computation applies.
+          # sizing) instead of a raw `-n auto`. On CI (CI=true, below) the runner
+          # sizes by min(cpu_count, available-RAM/PER_WORKER_GB) and BYPASSES the
+          # shared-local-box load cap (2.5*cores - load5): a fresh isolated 2-core
+          # runner has no competing load and is sharded so it won't OOM, so the
+          # load cap only over-throttled it to -n 1 (unit-1 ran 30+ min). It still
+          # appends `--maxprocesses N --dist loadgroup`, so a worker crash/respawn
+          # loop cannot exceed the bounded count and OOM the runner, and an
+          # OOM-shaped exit auto-retries at a halved worker count. `-n auto`
+          # previously spawned one ~1.2-1.5 GB worker PER CORE. Test SCOPE is
+          # unchanged: TESTPATHS and the coverage flags are forwarded verbatim.
+          # GLUDD_XDIST=auto (below) is not a positive int so the runner ignores
+          # it and the adaptive computation applies. (Off-CI the load cap stays —
+          # the #45 local-OOM fix is unchanged.)
           uv run python scripts/adaptive_test.py $TESTPATHS \
             --cov=general_ludd --cov-report= \
             --cov-fail-under=0 \
@@ -194,6 +198,11 @@ jobs:
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
+          # GitHub Actions already sets CI=true for every step; set it explicitly
+          # here so the adaptive runner's CI branch (skip the load cap, size by
+          # RAM + cores) is deterministic and self-documenting even if that
+          # default ever changes. This is what un-throttles the isolated shards.
+          CI: "true"
           # Per-xdist-worker RLIMIT_AS backstop (conftest.py pytest_configure).
           # RLIMIT_AS caps VIRTUAL address space, which for this dependency set
           # (eager tree_sitter C-ext, OpenSSL via cryptography, psycopg binary,

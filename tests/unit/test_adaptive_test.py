@@ -55,6 +55,9 @@ def idle(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_compute_nproc_caps_by_load(monkeypatch: pytest.MonkeyPatch) -> None:
     """A high 5-minute load collapses the worker count toward 1 (load dominates)."""
+    # The load cap only applies OFF-CI; ensure CI is unset so this is deterministic
+    # even when the suite itself is executed on a CI runner (which sets CI=true).
+    monkeypatch.delenv("CI", raising=False)
     cores = 8
     # load5 = 2.4*cores -> by_load = int(2.5*cores - 2.4*cores) = int(0.1*cores) = 0 -> floored to 1.
     _pin_load(monkeypatch, 2.4 * cores)
@@ -65,6 +68,53 @@ def test_compute_nproc_caps_by_load(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_compute_nproc_caps_by_mem(idle: None) -> None:
     """Low available RAM bounds the worker count (mem cap dominates)."""
     # 3 GiB / 1.5 GiB-per-worker = 2, below 8 cores and below the idle load cap.
+    assert at.compute_nproc(avail_gb=3.0, cpu_count=8, gb_per_worker=1.5) == 2
+
+
+# ---- CI: the load cap is BYPASSED (task #59) -----------------------------
+
+
+def test_compute_nproc_ci_bypasses_load_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On CI (CI=true) a high 5-minute load must NOT throttle workers.
+
+    CI shards run on fresh, isolated 2-core runners with ample per-shard RAM and
+    do not OOM, so the #45 load-average cap (which is a shared-LOCAL-box guard)
+    over-throttles them toward -n 1. With CI=true the count is sized ONLY by
+    min(cpu_count, RAM-bound) — the load cap is bypassed.
+    """
+    monkeypatch.setenv("CI", "true")
+    cores = 2
+    # A crushing 5-minute load: were the load cap applied, by_load would floor to
+    # 1 (int(2.5*2 - 100) < 0 -> max(1, ...) == 1). RAM is abundant so the only
+    # thing that could drop the count is the (now bypassed) load cap.
+    _pin_load(monkeypatch, 100.0)
+    n = at.compute_nproc(avail_gb=1000.0, cpu_count=cores, gb_per_worker=1.5)
+    assert n == cores  # == min(cpu_count, RAM-bound); load cap BYPASSED
+    assert n != 1  # explicitly NOT the load-throttled value
+
+
+def test_compute_nproc_no_ci_still_applies_load_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CI unset: the #45 local load cap STILL applies (regression guard).
+
+    This is the LOCAL shared-box behaviour and must be UNCHANGED — a high load
+    on a developer laptop still collapses the worker count toward 1.
+    """
+    monkeypatch.delenv("CI", raising=False)
+    cores = 8
+    # load5 = 2.4*cores -> by_load floors to 1 (same setup as the by_load test).
+    _pin_load(monkeypatch, 2.4 * cores)
+    assert at.compute_nproc(avail_gb=1000.0, cpu_count=cores, gb_per_worker=1.5) == 1
+
+
+def test_compute_nproc_ci_still_applies_ram_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On CI the RAM cap + OOM backstop stay: tiny RAM still bounds workers."""
+    monkeypatch.setenv("CI", "true")
+    # 3 GiB / 1.5 = 2 workers even though load is high and cores/RAM headroom exist.
+    _pin_load(monkeypatch, 100.0)
     assert at.compute_nproc(avail_gb=3.0, cpu_count=8, gb_per_worker=1.5) == 2
 
 

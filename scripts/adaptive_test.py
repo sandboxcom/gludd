@@ -15,7 +15,13 @@ current system LOAD, so a run never over-commits RAM and never drives the box's
 
 so the total working set stays within RAM and the machine stays responsive
 (this is the local-OOM fix — a heavily-loaded laptop no longer piles a full
-``-n auto`` fan-out on top of existing load). It also DETECTS an OOM-shaped exit
+``-n auto`` fan-out on top of existing load). On CI (``CI=true``) the load cap
+is BYPASSED and workers are sized by ``min(cores, by_mem)`` only: a CI shard is
+a fresh, isolated single-purpose runner with ample per-shard RAM and no
+competing load (and is sharded so it won't OOM), where the load cap only
+over-throttles — on a 2-core runner it collapsed a shard to ``-n 1`` and ran
+30+ min. The RAM cap and the OOM-halve-retry backstop still apply on CI. It also
+DETECTS an OOM-shaped exit
 (negative signal -9, exit 137, or an xdist "worker crashed / node down" line) and
 RETRIES with the worker count HALVED, down to ``-n 1``, before giving up. This
 keeps the local ``make test`` / ``make ci-test`` runs (which Claude Code drives)
@@ -128,6 +134,16 @@ def compute_nproc(
     * ``cpu_count`` — never more workers than cores.
 
     The result is always ``>= 1``.
+
+    On CI (``CI=true``) the load cap is BYPASSED and sizing is
+    ``min(cpu_count, by_mem)`` only. The load cap (#45) exists to keep a shared
+    LOCAL box responsive by not piling a full ``-n auto`` fan-out on top of the
+    developer's existing load. A CI shard is the opposite case: a fresh, isolated
+    single-purpose runner with ample per-shard RAM and no competing load, split so
+    it does not OOM — there the load cap only over-throttles (e.g. on a 2-core
+    runner it collapses to ``-n 1`` and a shard runs 30+ min). The RAM cap and the
+    OOM-halve-retry backstop still apply on CI, so an isolated shard is never
+    left unbounded.
     """
     cpu_count = max(1, cpu_count)
 
@@ -136,6 +152,13 @@ def compute_nproc(
         by_mem = cpu_count
     else:
         by_mem = max(1, int(avail_gb // gb_per_worker))
+
+    # CI shards are isolated (fresh, single-purpose runner, ample per-shard RAM,
+    # no competing load) and don't OOM, so the shared-LOCAL-box load cap only
+    # over-throttles them. Size by RAM + cores only; the RAM cap and the
+    # OOM-halve-retry backstop below still guard against over-commit.
+    if os.environ.get("CI") == "true":
+        return max(1, min(cpu_count, by_mem))
 
     # Load cap. Fail-open (no load cap) if the system monitor is unavailable so
     # the script still runs standalone / outside the general_ludd venv.
