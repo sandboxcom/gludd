@@ -263,3 +263,88 @@ def test_allowlist_configured_skips_unlisted_worker_model_update(monkeypatch) ->
     mock_post.assert_not_called()
     assert results[0].success is False
     assert results[0].error == "not allowlisted"
+
+
+# ---------------------------------------------------------------------------
+# ping_all: SSRF/address re-check parity (defense-in-depth, task #37). ping_all
+# sends NO PSK so it is lower risk, but the re-validate-on-send invariant must
+# hold identically to the broadcast_* methods: an unsafe/disallowed worker
+# address must NOT be contacted by the health-check transport either.
+# ---------------------------------------------------------------------------
+
+
+def test_ping_all_skips_injected_unsafe_worker(monkeypatch) -> None:
+    """Even if an unsafe worker slips directly into the registry, ping_all must
+    NOT issue an httpx.get to it (same re-validate-on-send invariant as the
+    PSK-bearing broadcast methods) and must report it unreachable."""
+    b = WorkerBroadcaster()
+    # Bypass register() to simulate a registry that already holds a bad entry.
+    b._workers["meta"] = WorkerInfo(worker_id="meta", address=_METADATA_ADDR)
+    with patch("general_ludd.reload.worker_broadcast.httpx.get") as mock_get:
+        mock_get.return_value = MagicMock(status_code=200)
+        results = b.ping_all()
+    mock_get.assert_not_called()
+    assert results == {"meta": False}
+
+
+def test_ping_all_skips_injected_plain_http_worker(monkeypatch) -> None:
+    """A plain-http (non-https) worker injected into the registry is not pinged."""
+    b = WorkerBroadcaster()
+    b._workers["evil"] = WorkerInfo(worker_id="evil", address=_EVIL_HTTP_ADDR)
+    with patch("general_ludd.reload.worker_broadcast.httpx.get") as mock_get:
+        mock_get.return_value = MagicMock(status_code=200)
+        results = b.ping_all()
+    mock_get.assert_not_called()
+    assert results == {"evil": False}
+
+
+def test_ping_all_still_pings_safe_https_worker(monkeypatch) -> None:
+    """Regression: a valid https worker is STILL pinged and reported reachable."""
+    b = WorkerBroadcaster()
+    b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
+    with patch("general_ludd.reload.worker_broadcast.httpx.get") as mock_get:
+        mock_get.return_value = MagicMock(status_code=200)
+        results = b.ping_all()
+    mock_get.assert_called_once()
+    assert mock_get.call_args[0][0] == f"{_SAFE_HTTPS_ADDR}/healthz"
+    assert results == {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Explicit httpx follow_redirects=False + verify=True (defense-in-depth, task
+# #37): the SSRF-via-redirect and TLS-verification guarantees must be
+# independent of httpx library defaults. An SSRF-validated URL must not be
+# redirect-able to an internal host AFTER the check, and TLS must be verified.
+# ---------------------------------------------------------------------------
+
+
+def test_broadcast_reload_sets_no_redirect_and_tls_verify(monkeypatch) -> None:
+    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    b = WorkerBroadcaster()
+    b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
+    with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        b.broadcast_reload("ALL")
+    assert mock_post.call_args[1]["follow_redirects"] is False
+    assert mock_post.call_args[1]["verify"] is True
+
+
+def test_broadcast_model_update_sets_no_redirect_and_tls_verify(monkeypatch) -> None:
+    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    b = WorkerBroadcaster()
+    b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
+    with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        b.broadcast_model_update("add", "gpt-5", {"provider": "openai"})
+    assert mock_post.call_args[1]["follow_redirects"] is False
+    assert mock_post.call_args[1]["verify"] is True
+
+
+def test_ping_all_sets_no_redirect_and_tls_verify(monkeypatch) -> None:
+    b = WorkerBroadcaster()
+    b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
+    with patch("general_ludd.reload.worker_broadcast.httpx.get") as mock_get:
+        mock_get.return_value = MagicMock(status_code=200)
+        b.ping_all()
+    assert mock_get.call_args[1]["follow_redirects"] is False
+    assert mock_get.call_args[1]["verify"] is True

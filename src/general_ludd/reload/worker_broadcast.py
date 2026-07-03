@@ -172,6 +172,13 @@ class WorkerBroadcaster:
                     json={"scope": scope_value},
                     headers=headers,
                     timeout=10.0,
+                    # Defense in depth (task #37): make the SSRF-via-redirect and
+                    # TLS guarantees independent of httpx defaults. follow_redirects
+                    # =False prevents an SSRF-validated URL from being redirected to
+                    # an internal host (leaking the PSK) AFTER the check; verify=True
+                    # enforces TLS certificate verification.
+                    follow_redirects=False,
+                    verify=True,
                 )
                 if resp.status_code == 200:
                     results.append(BroadcastResult(worker_id=w.worker_id, success=True))
@@ -238,6 +245,13 @@ class WorkerBroadcaster:
                     json={"action": action, "model_id": model_id, "profile": profile},
                     headers=headers,
                     timeout=10.0,
+                    # Defense in depth (task #37): make the SSRF-via-redirect and
+                    # TLS guarantees independent of httpx defaults. follow_redirects
+                    # =False prevents an SSRF-validated URL from being redirected to
+                    # an internal host (leaking the PSK) AFTER the check; verify=True
+                    # enforces TLS certificate verification.
+                    follow_redirects=False,
+                    verify=True,
                 )
                 if resp.status_code == 200:
                     results.append(BroadcastResult(worker_id=w.worker_id, success=True))
@@ -258,8 +272,29 @@ class WorkerBroadcaster:
     def ping_all(self) -> dict[str, bool]:
         results = {}
         for w in self._workers.values():
+            # Defense in depth (task #37): re-validate the address at send time,
+            # identically to the PSK-bearing broadcast_* methods, so the health
+            # probe is NEVER issued to a plain-http / loopback / link-local /
+            # cloud-metadata target even if one slipped into the registry. No PSK
+            # is sent here so it is lower risk, but the re-validate-on-send
+            # invariant must hold uniformly across every worker-contacting path.
+            if not _is_safe_worker_address(w.address):
+                logger.warning(
+                    "Skipping ping to %s: address %r is not a safe https target "
+                    "(must be https and not loopback/link-local/RFC-1918/"
+                    "cloud-metadata) — treating as unreachable",
+                    w.worker_id,
+                    w.address,
+                )
+                results[w.worker_id] = False
+                continue
             try:
-                resp = httpx.get(f"{w.address}/healthz", timeout=5.0)
+                resp = httpx.get(
+                    f"{w.address}/healthz",
+                    timeout=5.0,
+                    follow_redirects=False,
+                    verify=True,
+                )
                 results[w.worker_id] = resp.status_code == 200
             except Exception:
                 results[w.worker_id] = False
