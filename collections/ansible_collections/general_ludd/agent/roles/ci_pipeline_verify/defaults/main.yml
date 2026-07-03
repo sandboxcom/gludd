@@ -1,0 +1,25 @@
+---
+# ci_pipeline_verify role defaults
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Git
+ci_branch: "master"
+ci_commit_sha: ""
+repo_path: "."
+
+# Push control
+ci_push: false
+ci_push_remote: "origin"
+
+# Polling
+ci_poll_timeout_seconds: 600
+ci_poll_interval: 15
+ci_gh_repo: "sandboxcom/gludd"
+
+# CI status endpoint (set to override GitHub API polling with a custom endpoint)
+ci_status_endpoint: ""
+ci_status_headers: {}
+ci_status_expected_code: 200

@@ -1,0 +1,26 @@
+---
+# Run the REAL ci_pipeline_verify role against the mock daemon.
+- name: Converge - run ci_pipeline_verify role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8808', true) }}"
+  tasks:
+    - name: Invoke ci_pipeline_verify (polls mock daemon /ci-status)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.ci_pipeline_verify
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        ci_branch: "main"
+        ci_commit_sha: "abc1234"
+        ci_status_endpoint: "http://127.0.0.1:{{ mock_port }}/ci-status"
+        ci_poll_timeout_seconds: 60
+        ci_poll_interval: 5
+
+    - name: Persist ci_verdict facts for verify playbook
+      ansible.builtin.copy:
+        content: "{{ ci_verdict | to_nice_json }}"
+        dest: "/tmp/gludd-ci-verify-{{ mock_port }}-facts.json"
+        mode: "0644"

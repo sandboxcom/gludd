@@ -948,6 +948,15 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             # Degraded readiness gate: 200 but degraded=true -> gludd_reload treats it
             # as UNHEALTHY and rolls the hot-swapped module back (fail-closed gate).
             self._send_json(200, {"status": "degraded", "degraded": True})
+        elif path == "/ci-status":
+            self._send_json(200, {
+                "status": "completed",
+                "conclusion": "success",
+                "passed": True,
+                "run_id": "mock-run-001",
+                "commit_sha": "abc1234",
+                "failed_job_logs": [],
+            })
         elif path == "/api/facts":
             self._send_json(200, dict(FACTS_SNAPSHOT))
         elif path == "/api/metrics":

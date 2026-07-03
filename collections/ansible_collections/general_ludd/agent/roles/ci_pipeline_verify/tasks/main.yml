@@ -1,0 +1,121 @@
+---
+# ci_pipeline_verify role — verify CI pipeline status for a branch/commit.
+# Optionally pushes, then polls CI until completion/timeout, registers a
+# ci_verdict fact with pass/fail/timed_out.
+#
+# Flow:
+#   1. Gather live daemon facts for system context.
+#   2. Set commit SHA from vars or live facts.
+#   3. Optionally push the branch (ci_push: true).
+#   4. Poll CI status endpoint (uri) or gh CLI until completed or timeout.
+#   5. On failure, surface details. On success, ci_verdict.passed = true.
+#      On timeout, ci_verdict.timed_out = true.
+#   6. Register ci_verdict with commit_sha, run_id, conclusion, branch.
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Set commit SHA if not explicitly provided
+  ansible.builtin.set_fact:
+    ci_commit_sha: "{{ ci_commit_sha | default('HEAD') }}"
+
+- name: Push branch if requested
+  ansible.builtin.command:
+    cmd: "git push {{ ci_push_remote | default('origin') }} {{ ci_branch }}"
+    chdir: "{{ repo_path | default('.') }}"
+  when: ci_push | bool
+  register: _push_result
+  failed_when: _push_result.rc != 0
+  changed_when: true
+
+- name: Poll CI status endpoint (uri path)
+  ansible.builtin.uri:
+    url: "{{ ci_status_endpoint }}"
+    method: GET
+    headers: "{{ ci_status_headers | default({}) }}"
+    status_code: "{{ ci_status_expected_code | default(200) }}"
+  register: _ci_poll
+  until:
+    - _ci_poll.status == 200
+    - _ci_poll.json is defined
+    - _ci_poll.json.status == 'completed'
+  retries: "{{ (ci_poll_timeout_seconds | int) // (ci_poll_interval | int) }}"
+  delay: "{{ ci_poll_interval }}"
+  ignore_errors: true
+  when: ci_status_endpoint | default('') | length > 0
+
+- name: Poll CI status via gh CLI (command path)
+  ansible.builtin.command:
+    cmd: >-
+      gh run list --branch {{ ci_branch }} --repo {{ ci_gh_repo }}
+      --limit 1 --json databaseId,status,conclusion,headSha
+      --jq '.[0]'
+  register: _gh_poll
+  until:
+    - _gh_poll.rc == 0
+    - (_gh_poll.stdout | from_json).status == 'completed'
+  retries: "{{ (ci_poll_timeout_seconds | int) // (ci_poll_interval | int) }}"
+  delay: "{{ ci_poll_interval }}"
+  ignore_errors: true
+  when: ci_status_endpoint | default('') | length == 0
+
+- name: Set CI verdict from endpoint poll result
+  ansible.builtin.set_fact:
+    ci_verdict:
+      commit_sha: "{{ _ci_poll.json.commit_sha | default(ci_commit_sha) }}"
+      run_id: "{{ _ci_poll.json.run_id | default('') }}"
+      conclusion: "{{ _ci_poll.json.conclusion | default('unknown') }}"
+      passed: "{{ _ci_poll.json.passed | default(_ci_poll.json.conclusion == 'success') }}"
+      timed_out: "{{ _ci_poll.failed | default(false) or _ci_poll.get('json', {}).get('status', '') != 'completed' }}"
+      branch: "{{ ci_branch }}"
+      failed_job_logs: "{{ _ci_poll.json.failed_job_logs | default([]) }}"
+  when:
+    - _ci_poll is defined
+    - _ci_poll.json is defined
+
+- name: Set CI verdict from gh CLI poll result
+  ansible.builtin.set_fact:
+    _gh_parsed: "{{ _gh_poll.stdout | from_json }}"
+  when:
+    - _gh_poll is defined
+    - _gh_poll.rc | default(1) == 0
+    - _gh_poll.stdout | default('') | length > 0
+
+- name: Map gh CLI result to ci_verdict
+  ansible.builtin.set_fact:
+    ci_verdict:
+      commit_sha: "{{ _gh_parsed.headSha | default(ci_commit_sha) }}"
+      run_id: "{{ _gh_parsed.databaseId | default('') }}"
+      conclusion: "{{ _gh_parsed.conclusion | default('unknown') }}"
+      passed: "{{ _gh_parsed.conclusion == 'success' }}"
+      timed_out: "{{ _gh_poll.failed | default(false) }}"
+      branch: "{{ ci_branch }}"
+      failed_job_logs: []
+  when:
+    - _gh_parsed is defined
+
+- name: Set CI verdict as timed out (neither path produced a result)
+  ansible.builtin.set_fact:
+    ci_verdict:
+      commit_sha: "{{ ci_commit_sha }}"
+      run_id: ""
+      conclusion: "unknown"
+      passed: false
+      timed_out: true
+      branch: "{{ ci_branch }}"
+      failed_job_logs: []
+  when: ci_verdict is not defined
+
+- name: Report CI verdict
+  ansible.builtin.debug:
+    msg: >-
+      CI verdict: branch={{ ci_verdict.branch }}
+      sha={{ ci_verdict.commit_sha }}
+      run_id={{ ci_verdict.run_id }}
+      conclusion={{ ci_verdict.conclusion }}
+      passed={{ ci_verdict.passed }}
+      timed_out={{ ci_verdict.timed_out }}

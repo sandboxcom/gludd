@@ -438,6 +438,10 @@ git-show-full:
 	@test -n "$(SHA)" || (echo "Usage: make git-show-full SHA=<sha>"; exit 1)
 	git show $(SHA)
 
+git-show-name-only:
+	@test -n "$(SHA)" || (echo "Usage: make git-show-name-only SHA=<sha>"; exit 1)
+	git show --name-only $(SHA)
+
 git-add:
 	git add $(FILES)
 

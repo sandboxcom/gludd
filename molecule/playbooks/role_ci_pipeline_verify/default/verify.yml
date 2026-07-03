@@ -1,0 +1,39 @@
+---
+- name: Verify - ci_pipeline_verify produced a ci_verdict fact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8808', true) }}"
+    pidfile: "/tmp/gludd-mock-ci-verify-{{ mock_port }}.pid"
+  tasks:
+    - name: Assert ci_verdict fact exists
+      ansible.builtin.assert:
+        that:
+          - ci_verdict is defined
+          - ci_verdict.commit_sha is defined
+          - ci_verdict.run_id is defined
+          - ci_verdict.conclusion is defined
+          - ci_verdict.passed is defined
+          - ci_verdict.timed_out is defined
+          - ci_verdict.branch is defined
+          - ci_verdict.passed | bool
+          - not ci_verdict.timed_out | bool
+        fail_msg: "ci_verdict missing or wrong: {{ ci_verdict | default('undefined') }}"
+        success_msg: "ci_verdict valid: passed={{ ci_verdict.passed }} sha={{ ci_verdict.commit_sha }}"
+
+    - name: Assert ci_verdict was set to expected mock daemon values
+      ansible.builtin.assert:
+        that:
+          - ci_verdict.conclusion == 'success'
+          - ci_verdict.run_id == 'mock-run-001'
+          - ci_verdict.branch == 'main'
+        fail_msg: "ci_verdict values do not match mock daemon response"
+        success_msg: "ci_verdict values match mock daemon response"
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
