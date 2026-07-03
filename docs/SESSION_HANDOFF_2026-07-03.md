@@ -73,3 +73,51 @@ Earlier in the session (already in `cb58bdeb` and before): **security backlog CL
 ## Task tracker
 
 Tasks #1–#60 mostly completed; open: #29, #32 (SLICE D), #35 (SLICE 3/4), #36, #38, #50-#54, #58 (effectively resolved — the CI-red was the unit-1 timeout, now addressed by #59+#62; close once green confirmed), #61, #62. Full list in the task system.
+
+---
+
+## SESSION-CLOSE ADDENDUM (live findings, ~out of tokens)
+
+**Pushed state:** `sandboxcom/master` @ `799a9dbb`, tree CLEAN. CI run **`28643521001`** (has #62) in progress — verify green via `make run-view ID=28643521001`. Prior runs `28641992679` + `28639538401` both `cancelled` on the unit-1 30m timeout (diagnosis confirmed; #62 is the fix).
+
+**#35 SLICE 2 — READY but NOT committed (do this first, ONE porter only):**
+The full verified SLICE 2 (17/17 tests) is in worktree `.claude/worktrees/agent-ad3a5b4cb74c0f24b`. A porter (`a7b8e21c`) got mid-way and left a PARTIAL dirty tree (loop.py project-gate + gateway `ModelPausedError` def + ctor kwargs, but MISSING the gateway raise-site @call_model, the daemon wiring, and the 3 test files) — I RESET it (`make git-restore FILES='src/general_ludd/event_loop/loop.py src/general_ludd/models/gateway.py'`), tree is clean again. **To land:** dispatch ONE main-tree porter from that worktree; seams = project gate `loop.py:~1050 _phase_claim_runnable_todos` (paused ⇒ `claimed_todos=[]`), model gate `gateway.py:~445 call_model` raising `ModelPausedError` (defined ~gateway.py:65, NOT retryable), ctor kwargs `pause_controller` on both mirroring `spend_limiter`, daemon wiring injecting a shared PauseController into EventLoop + ModelGateway + `app.state._pause_controller`. NOTE: gateway budget is `budget_guard` (not `_spend_limiter`); pause controller is its OWN kwarg. **CONCURRENCY: never run 2 main-tree porters — a `make git-status` DIRTY check + single-owner is mandatory (this cost two recoveries this session).**
+
+**pause_controller.py robustness follow-ups (audit `aa40fea9`, NOT yet fixed — file a ticket):**
+1. `pause()` (lines 118-119): mutates RAM (`_index`) BEFORE `_persist()`; if `store.save()` raises, RAM says paused but disk doesn't → restart silently un-pauses. Fix: persist-first, or roll back RAM in an `except` around `_persist()`.
+2. `resume()` (lines 130-134): same non-atomic mutate-then-persist → restart re-materializes a cleared pause.
+3. `is_paused()` (lines 137-139): lock-free read of lock-mutated sets — benign under GIL, a data race under free-threaded 3.13t.
+4. `_set_for()` (lines 89-90): any non-`"project"` kind silently buckets as a model (no validation) — robustness gap.
+
+**Residual SSRF gaps (future tranche 6, from `a07c8d16` auditor — NOT in #40's completed scope):** `kubernetes.py:112`, `nomad.py:93`, `grafana_oncall.py:175` (soft-fail/DNS-resolving — different semantics, migrate with care). Plus the cilium_hubble DNS-rebind `_is_blocked_ip` loop omits `not ip.is_global` (misses CGNAT 100.64.0.0/10 incl. 100.100.100.200) — delegate that loop to `security.ssrf._ip_addr_is_blocked`.
+
+**#61 issue_sources SSRF + #50 dispatch_one fail-open:** were dispatched (`a97e9218`, `ac4971a9`) during a server-overload window; may have died — verify via worktrees / re-dispatch. #50 target: `AgentDispatcher.dispatch_one` capability gate fails OPEN for empty/None `invoker_name` (must fail CLOSED). #61: migrate `issue_sources/*` (base.py/jira/linear/asana/azure_boards clean; servicenow/redmine/clickup/monday/bitbucket with care; SKIP gitlab_issues + old GitHubIssueSource soft-fail).
+
+**#35 SLICE 3/4 (to complete pause/resume fully):** SLICE 3 = quiesce in-flight agents (reuse `HibernationController.dehydrate` — see #51) + resource listing (facts._spend_facet, leases, ProcessRegistry, connector registry) into `PauseRecord.resources/last_state`. SLICE 4 = router `routers/pause.py` (template `routers/spend.py`) with GET/POST + CLI `gludd pause project|model <id>` / `resume` / `pause list` (template `_cmd_project_*` in cli.py). Reads `app.state._pause_controller` (set by SLICE 2).
+
+**Operational reminders proven this session:** workflow-file commits push ONLY via `make git-push-sandboxcom-ssh`; discard dirty files via `make git-restore FILES='...'`; list runs via `make tag-run` (no run-list target); the "agent died" signal is often PREMATURE — verify via `git log`/worktree before re-doing; transient overload (429/529) = retry w/ backoff, not stop.
+
+**AUDIT BACKLOG (latent, unverified — from floor-holding auditors this session; file tickets, none are active crashes):**
+
+_`models/gateway.py` (`aaf09242`):_
+1. **Double-spend risk (strongest):** `_invoke_and_bill` (743-824) calls `record_spend(cost)` at 744, then UNGUARDED side-effects (health_tracker.record_success 754, _metrics_collector 756-765, token_tracker 774, _response_cache.set 815). If any raises, the paid-for `ModelResponse` is discarded and `call_model_with_fallback`'s broad `except Exception` (1301/1325) routes to a fallback → SECOND provider call + SECOND record_spend. Wrap post-billing side-effects so an already-billed response is always returned.
+2. Docstring says AUTH_ERROR/CONTEXT_LENGTH "re-raise immediately" but they surface as `openai.APIStatusError` (in `_retryable_exc_types`) → outer `except` at 1069 sets `_exhausted` and walks the FULL fallback chain (extra cost on terminal errors). Outer handler keys off exception type, not kind.
+3. `call_model` (434-504) has NO circuit-breaker gate — only the wrappers do; direct callers hammer unhealthy providers.
+4. Broad `except Exception` in fallback walkers (1146-1148, 1301/1325) would swallow a future pause/cancel signal → needs an explicit carve-out like the `BudgetExceededError`/`SSRFRejectionError` re-raises.
+5. Last-resort probe (898-901) deliberately hits `fallback_ids[0]` via health-gate-less `call_model` — re-hammers a just-judged-unhealthy model.
+6. `if not _exhausted: return None` (1074-1076) returns None where signature promises `ModelResponse` (latent AttributeError).
+7. `_try_call_model` (1239-1240) maps config `ValueError` (profile-not-found/no-registry) → None → silently fails over instead of surfacing misconfig.
+(Verified OK: BudgetExceededError/SSRFRejectionError propagate consistently + don't trigger failover; empty-200 guard raises before billing; NaN/Inf budget handling sound.)
+
+_`daemon.py` (`aec10b83`):_
+1. Event-loop deps `_benchmark_recorder`/`_model_perf_repo`/`app.state.model_perf_repo` (1339-1345) are attached AFTER `create_task(event_loop.run_forever)` at 1317 — the exact anti-pattern the H3 fix (constructor-inject `spend_limiter`) was written to avoid. Safe only because no `await` occurs in 1317-1350; any future await → first ticks lose benchmark/perf recording. Pass via constructor or move above 1317.
+2. `build_event_loop_mcp_dispatcher` (1204-1208) is NOT fail-soft (unlike the MCP client startup right above it at 1164-1197 which degrades to None) → a dispatcher build failure drops the WHOLE daemon into degraded mode instead of just disabling MCP dispatch.
+(Verified OK: spend_limiter ordering/H3, deployment_health_router None-safety, file_claim_registry fail-soft, single shared pricing_catalog.)
+
+_`event_loop/loop.py` claim/dispatch (`ab864a9c`) — relevant to #52/#53:_
+1. **Claim+dispatch not atomic → double-dispatch on tick-commit failure:** `claim_runnable` writes ACTIVE+leases into the TICK session (committed only after all phases, ~562), but concurrent dispatch uses isolated sessions that commit task_returns IMMEDIATELY (~1283). If the final tick commit fails (rollback ~563-575), the ACTIVE claim+leases are undone but the committed task_returns survive → todos revert to QUEUED, get re-claimed/re-dispatched next tick, AND the orphaned task_returns flow through review → duplicated work. (`_pushed_work`/`_applied_decisions` guard reconcile idempotency, not claim/dispatch.)
+2. Over-cap requeue best-effort-suppressed (1098-1127): `contextlib.suppress(Exception)` around the QUEUED transition + release_lease → on a version race the todo is dropped from dispatch yet stays ACTIVE; recovery only via lease expiry / 15-min `_reap_stuck_todos`.
+3. Concurrent-batch `asyncio.wait_for` timeout (1214-1235) `continue`s without inspecting results → jobs that completed before timeout are uncounted (`todos_dispatched` under-reports) + their todos stay ACTIVE.
+4. Budget gate estimates on PRE-cap claim count (1083-1090 uses len(claimed) before the PID cap trims at 1098) → can needlessly skip a tick that would fit.
+5. Lease-acquire failure in claim phase (1064-1075) leaves an ACTIVE todo with no lease → up to 15 min ACTIVE before requeue.
+(Residual low risk: parallel dispatch threads write gateway collaborators — budget_guard.record_spend, global token tracker, health/metrics sinks — without a gateway-held lock; verify their thread-safety. Note: this auditor saw the now-RESET partial-#35 loop.py; tree is clean again.)
