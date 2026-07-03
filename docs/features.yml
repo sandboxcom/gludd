@@ -384,7 +384,7 @@ sections:
         title: "Issue sources (~17 connectors: GitHub, Linear, CSV, Markdown, etc.)"
         pct: 20
         evidence_refs:
-          - "file:src/general_ludd/issue_sources/base.py::IssueSourceBase"
+          - "file:src/general_ludd/issue_sources/base.py::IssueSource"
         notes: "base + adapters with tests; NOT wired; package incomplete; `[audit]`"
 
       - id: connector-dedup
@@ -406,7 +406,7 @@ sections:
         title: "MCP per-request timeouts + kill fallback"
         pct: 100
         evidence_refs:
-          - "file:src/general_ludd/tool_loop.py::timeout"
+          - "file:src/general_ludd/execution/tool_loop.py::ToolCallLoop"
         notes: "`[9d487ab]`"
 
       - id: webmcp-require-auth
@@ -435,14 +435,14 @@ sections:
         title: "Conflict scanner + pre-commit hook (#33)"
         pct: 100
         evidence_refs:
-          - "file:scripts/scan_conflicts.py::scan_conflicts"
+          - "file:scripts/scan_conflicts.py::scan_paths"
         notes: "`make scan-conflicts`; `[9d487ab]`"
 
       - id: ci-regression-guards
         title: "CI regression guards (#30)"
         pct: 100
         evidence_refs:
-          - "test:tests/security/test_ci_regression_guards.py"
+          - "test:tests/unit/test_ci_regression_guards.py"
         notes: "`[9d487ab]`"
 
       - id: clone-rce-ssrf
@@ -500,16 +500,35 @@ sections:
         title: "SSRF connector consolidation: 18 connectors onto canonical is_url_blocked (tranche-3 + tranche-4)"
         pct: 100
         evidence_refs:
-          - "file:src/general_ludd/connectors/is_url_blocked.py::is_url_blocked"
+          - "test:tests/security/test_ssrf_canonical_parity.py"
+          - "file:src/general_ludd/security/ssrf.py::is_url_blocked"
         notes: "grafana_loki signoz nats kafka_exporter splunk_observability rabbitmq elastic_apm tempo_zipkin travis appdynamics k8s_events gcp_observability gcp_asset_inventory bugsnag graphite rollbar cloudflare cilium_hubble; _ssrf_guard.py deleted; `[9f935551]` `[2d775c2a]`"
 
       - id: pause-store-hardening
         title: "pause_store fail-closed hardening: MAC verification, keyfile checks, size cap (#60)"
         pct: 100
         evidence_refs:
-          - "test:tests/unit/test_pause_store.py"
-          - "file:src/general_ludd/pause/store.py::PauseStore"
+          - "test:tests/controllers/test_pause_store.py"
+          - "file:src/general_ludd/controllers/pause_store.py::PauseStore"
         notes: "10+11 tests passed; .keyed marker + MAC-sidecar; `[3597559a]`"
+
+      - id: openbao-backup-role
+        title: "OpenBao break-glass backup role + molecule scenario (RC.5)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_openbao_backup_role.py"
+          - "role:openbao_break_glass_backup"
+        notes: "GPG encrypt/verify path against mock OpenBao + throwaway GPG keyring; `[82862945]`"
+
+      - id: sandbox-backend
+        title: "Sandbox backend: Linux Landlock + bubblewrap; macOS sandbox deprecated (RC.8)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/security/sandboxes/linux_landlock.py::LandlockBackend"
+          - "file:src/general_ludd/security/sandboxes/linux_bubblewrap.py::BubblewrapBackend"
+          - "test:tests/unit/test_sandbox_backends.py::test_landlock_backend_exists"
+          - "test:tests/unit/test_sandbox_backends.py::test_bubblewrap_backend_exists"
+        notes: "Fine-grained file access confinement (Landlock LSM) + container sandbox (bubblewrap); macOS deprecated with migration guidance; 8 dedicated tests in test_sandbox_backends.py; `[226e194f]`"
 
       - id: base-url-ssrf
         title: "base_url SSRF guard (#61)"
@@ -725,10 +744,10 @@ sections:
         pct: 100
         pct_note: "(local)"
         evidence_refs:
-          - "molecule:module_gludd_ping"
-          - "molecule:module_gludd_facts"
-          - "molecule:module_gludd_model_call"
-        notes: "`make molecule-test-all` 14/14; CI-green unverified; `[761f79c]`"
+          - "module:gludd_ping"
+          - "module:gludd_facts"
+          - "module:gludd_model_call"
+        notes: "`make molecule-test-all` 14/14; CI-green unverified; `[761f79c]`; molecule scenarios at non-standard paths"
 
       - id: w10-6-role-scenarios
         title: "All 12 role molecule scenarios (W10.6)"
@@ -781,7 +800,7 @@ sections:
         title: "Per-project cost/time/LoC accounting (#28)"
         pct: 20
         evidence_refs:
-          - "file:src/general_ludd/observability/metrics_collector.py::get_cost_by_project"
+          - "file:src/general_ludd/metrics/collector.py::get_cost_by_project"
         notes: "cost only; time/LoC/role stats missing; `[audit]`"
 
       - id: watchdog-stall
@@ -844,6 +863,7 @@ sections:
         pct: 100
         evidence_refs:
           - "test:tests/unit/test_pause_slice2_wiring.py"
+          - "test:tests/unit/test_pause_router.py"
           - "file:src/general_ludd/pause/controller.py::PauseController"
         notes: "ModelPausedError gate in ModelGateway; EventLoop claim gate skips paused projects; quiesce_project dehydrates in-flight agents; pause/resume API router; `[97c89082]` `[2fa2d919]` `[8a5ebe57]`"
 
@@ -859,17 +879,41 @@ sections:
         title: "Push livelock escape: retry counter + exponential backoff (#53)"
         pct: 100
         evidence_refs:
-          - "test:tests/unit/test_push_livelock_escape.py"
-          - "file:src/general_ludd/event_loop/loop.py::MAX_PUSH_RETRIES"
-        notes: "MAX_PUSH_RETRIES=5, independent per-todo counters, BLOCKED transition; 7 tests; `[2fa2d919]`"
+          - "test:tests/unit/test_event_loop_file_claims.py::test_push_livelock_escapes_after_max_retries"
+          - "test:tests/unit/test_event_loop_file_claims.py::test_successful_push_resets_retry_counter"
+          - "file:src/general_ludd/event_loop/loop.py::_MAX_PUSH_RETRIES"
+        notes: "MAX_PUSH_RETRIES=5, independent per-todo counters, BLOCKED transition; 2 tests; `[2fa2d919]`"
 
       - id: tool-call-auditor
         title: "ToolCallAuditor + PromptEnhancer + BadCallSituationStore (#35 SLICE 3)"
+        pct: 80
+        evidence_refs:
+          - "file:src/general_ludd/execution/tool_auditor.py::ToolCallAuditor"
+        notes: "29+9 tests; BadCallSituationStore with MAC verification; `[e1c2d41a]` `[c273a408]`; test file not committed"
+
+      - id: session-start-plugin
+        title: "Session-start orchestration plugin: parallel-reads-then-dispatch contract enforced (Q2.1-Q2.3)"
         pct: 100
         evidence_refs:
-          - "test:tests/unit/test_tool_call_auditor.py"
-          - "file:src/general_ludd/pause/auditor.py::ToolCallAuditor"
-        notes: "29+9 tests; BadCallSituationStore with MAC verification; `[e1c2d41a]` `[c273a408]`"
+          - "file:.opencode/plugin/enforce-session-start.ts::SESSION"
+          - "test:tests/unit/test_session_start_plugin.py"
+        notes: "🚨 SESSION-START DIRECTIVE injected as first system-prompt block; opt-in hard gate via GLUDD_SESSION_START_ENFORCE; 21 tests; opencode.json registered"
+
+      - id: queue-lease-concurrency
+        title: "Queue-lease concurrency fixes: double-dispatch prevention, priority ordering, orphan-lease cleanup, expires_at index (Q.F1-F4)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_eventloop_redteam.py::test_reclaim_skips_requeue_when_live_lease_exists_for_same_bucket"
+          - "file:src/general_ludd/event_loop/loop.py::_phase_claim_runnable_todos"
+        notes: "F1 reclaim skip on live lease, F2 priority DESC ordering, F3 lease-row delete on PID-cap release, F4 alembic migration 011; `[4e13936]` `[6e684b4]` `[bba8c92]` `[14ee691]`"
+
+      - id: stream-module
+        title: "gludd_stream module + /admin/stream/dispatch + 3 operator playbooks + molecule scenarios (S.1-S.7)"
+        pct: 100
+        evidence_refs:
+          - "module:gludd_stream"
+          - "file:src/general_ludd/routers/stream.py::dispatch"
+        notes: "stream_audio_to_tasks, stream_video_feature_detection, stream_text_log_tail; 3 molecule scenarios; max_dispatches bounded; `[ea2cc7bc]`"
 
       - id: g1-persistent-agent-memory
         title: "Persistent agent memory (G1)"
@@ -963,7 +1007,7 @@ sections:
         title: "mypy 18 → 0 errors (W5.4)"
         pct: 100
         evidence_refs:
-          - "file:Makefile::MYPY_MAX"
+          - "file:Makefile::typecheck"
         notes: "`.gate-status typecheck PASS 0`; `MYPY_MAX=0`; `[526104b]`"
 
       - id: alembic-stamp-head
@@ -1053,10 +1097,9 @@ sections:
 
       - id: dogfood-passes
         title: "make dogfood passes self-hosting"
-        pct: 100
-        evidence_refs:
-          - "file:Makefile::dogfood"
-        notes: "PASSES; no API key required (monkeypatches dispatch)"
+        pct: 50
+        evidence_refs: []
+        notes: "PASSES; no API key required (monkeypatches dispatch); dogfood Makefile target removed — src/general_ludd/dogfood/orchestrator.py still exists"
 
       - id: ssh-key-rotation
         title: "Operator SSH key rotation + history scrub"
@@ -1084,6 +1127,14 @@ sections:
         evidence_refs:
           - "file:.github/workflows/build.yml::ignore-glob"
         notes: "unit-1 drops from 20+min toward ~10-12min; `[43083168]`"
+
+      - id: validate-opencode-config
+        title: "make validate-opencode-config gate prerequisite (Q2.8)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_opencode_json_schema.py"
+          - "file:Makefile::validate-opencode-config"
+        notes: "4 schema-allowed top-level key tests; wired as gate prerequisite; `[4ea8f168]`"
 
       - id: gate-background-targets
         title: "Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill)"
@@ -1132,7 +1183,7 @@ sections:
         title: "status-snapshot writes SESSION.md in place + drift detector (W1.4)"
         pct: 100
         evidence_refs:
-          - "file:scripts/status_snapshot.py::write_session_md"
+          - "file:scripts/status_snapshot.py::rewrite_session"
         notes: "`[audit W1.2-W1.7 DONE-VERIFIED]`"
 
       - id: w1-5-audit-evidence
@@ -1146,7 +1197,7 @@ sections:
         title: "Makefile hygiene: stderr capture, MYPY_MAX var, gate coverage (W1.6)"
         pct: 100
         evidence_refs:
-          - "file:Makefile::MYPY_MAX"
+          - "file:Makefile::typecheck"
         notes: "`[audit W1.2-W1.7 DONE-VERIFIED]`"
 
       - id: w1-7-preflight-fail-closed
@@ -1194,10 +1245,9 @@ sections:
 
       - id: w4-5-deptry
         title: "deptry installed; langchain/langgraph deferred (W4.5)"
-        pct: 100
-        evidence_refs:
-          - "test:tests/unit/test_w4_5_deps_audit.py"
-        notes: "`[15db868]`"
+        pct: 0
+        evidence_refs: []
+        notes: "`[15db868]`; test file not committed"
 
       - id: w5-5-readme-no-hardcoded
         title: "README claims measured / no hardcoded numbers (W5.5)"
@@ -1251,7 +1301,7 @@ sections:
         title: "`CosignKey.__repr__` leaks private_key + password to logs"
         pct: 100
         evidence_refs:
-          - "file:src/general_ludd/secrets/cosign.py::__repr__"
+          - "file:src/general_ludd/secrets/cosign.py::CosignKey"
         notes: "FIXED on `feature/alpha4-green-the-gate`; redacts private key + password; verified 2026-06-25"
 
       - id: sf-circuit-breaker-health
