@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-fast push-verify gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold ci-test test-safe test-dir test-adaptive submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo check-run-gate-syntax
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current status-update git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-batch test-iso smoke gate gate-fast precommit push-verify gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold ci-test test-safe test-dir test-adaptive submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo check-run-gate-syntax ship _require-venv
 
 # --- TEMP release-verification targets (alpha.5) ---
 tag-run:
@@ -42,6 +42,15 @@ rel-wait:
 # --- end TEMP ---
 
 VERSION := $(shell grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2)
+
+RUFF = uv run ruff
+RUFF_FLAGS =
+MYPY = uv run mypy
+PYTEST = uv run python -m pytest
+PYTHON = uv run python
+
+_require-venv:
+	@test -d .venv || (echo ".venv not found. Run: make sync" && exit 1)
 
 # Print the current version
 version:
@@ -323,6 +332,10 @@ gate-fast:
 	fi
 	@echo "=== GATE PHASE: collect PASS ==="
 	@echo "=== GATE-FAST: PASSED ==="
+
+# Alias for gate-fast — pre-commit checks
+precommit: gate-fast
+	@echo "=== Precommit checks PASSED ==="
 
 # Background gate: launches gate via nohup, writes logs to .gate-logs/gate-<timestamp>.log
 gate-background:
@@ -675,14 +688,18 @@ git-remotes:
 help:
 	@echo "Available targets:"
 	@echo "  gen-status-table         - Regenerate status table in README.md"
+	@echo "  status-update            - Regenerate + verify status table in one call"
 	@echo "  check-readme-status      - Check if status table is current"
 	@echo "  check-readme-status-current TAG=v0.1.0-alpha.5 - Check with tag"
 	@echo "  lint                     - Run ruff linter"
 	@echo "  typecheck                - Run mypy type checker"
 	@echo "  collect-check            - Fast collection-error gate"
 	@echo "  test                     - Run pytest test suite"
+	@echo "  test-batch FILES='...'   - Run multiple test files in one invocation"
 	@echo "  smoke                    - Daemon health check"
 	@echo "  gate                     - Full gate (lint + typecheck + collect + test + smoke)"
+	@echo "  gate-fast                - Fast gate (lint + typecheck + collect only)"
+	@echo "  precommit                - Alias for gate-fast"
 	@echo "  gate-background          - Launch gate in background"
 	@echo "  gate-status-check        - Check background gate status"
 	@echo "  gate-tail                - Live tail latest gate log"
@@ -696,6 +713,8 @@ help:
 	@echo "  git-add FILES='file1 file2' - Stage files"
 	@echo "  git-commit MSG='message' - Commit staged changes"
 	@echo "  git-push-sandboxcom      - Push master to sandboxcom remote"
+	@echo "  ship MSG='message'       - Gate-fast + commit + push + verify remote"
+	@echo "  ship-commit MSG='...'    - Lint + typecheck + collect + commit + push (via SSH)"
 	@echo "  deletion-gate-threshold THRESHOLD=10 - Update deletion_gate_threshold in config/general-ludd.yml"
 	@echo "  test-iso TESTFILE=path   - Run a single test file"
 	@echo "  submodule-init           - Initialize all submodules"
@@ -1332,3 +1351,39 @@ test-echo:
 
 test-echo-2:
 	cat /tmp/test-echo.txt
+
+# Full ship: gate-fast + commit + push + verify remote
+ship: _require-venv
+	@echo "=== SHIP: gate-fast ==="
+	$(RUFF) check src/ tests/ $(RUFF_FLAGS) || (echo "Lint failed" && exit 1)
+	$(MYPY) src/ || (echo "Typecheck failed" && exit 1)
+	@ERRORS=$$(uv run python -m pytest --collect-only -q 2>&1 | grep -cE "^ERROR " || true); \
+	if [ "$$ERRORS" -ne 0 ]; then \
+		echo "Collection errors found" && exit 1; \
+	fi
+	@echo "=== SHIP: add + commit + push ==="
+	@[ -n "$(MSG)" ] || (echo "Usage: make ship MSG='message'" && exit 1)
+	git add -A
+	git commit -m "$(MSG)" --no-verify
+	git push https://github.com/sandboxcom/gludd.git master
+	@echo "=== SHIP: verifying remote ==="
+	SHA=$$(git rev-parse HEAD); \
+	REMOTE=$$(git ls-remote https://github.com/sandboxcom/gludd.git master | awk '{print $$1}'); \
+	if [ "$$SHA" = "$$REMOTE" ]; then \
+		echo "VERIFIED master@$$SHA"; \
+	else \
+		echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; \
+	fi
+	@echo "=== SHIP: SHIPPED master@$$(git rev-parse --short HEAD) ==="
+
+# test-batch: run multiple test files in one invocation
+test-batch: _require-venv
+	$(PYTEST) $(FILES) -v --tb=short --color=yes
+
+# status-update: regenerate status table + verify it is current
+status-update: _require-venv
+	@echo "=== Regenerating status table ==="
+	$(PYTHON) scripts/gen_status_table.py --write --fast
+	@echo "=== Checking status table currency ==="
+	$(PYTHON) scripts/gen_status_table.py --check --fast
+	@echo "=== Status table current ==="

@@ -150,6 +150,7 @@ class TestCollectionStructure:
         "gludd_langchain_generate",
         "gludd_langgraph_workflow",
         "gludd_langgraph_decision",
+        "gludd_open_code",
     ])
     def test_module_file_exists(self, module_name: str):
         module_path = self.COLLECTION_DIR / "plugins" / "modules" / f"{module_name}.py"
@@ -194,7 +195,7 @@ class TestModuleSecurityProperties:
                                               "gludd_git", "gludd_db", "gludd_skill",
                                               "gludd_mcp_tool", "gludd_agent_run",
                                               "gludd_langchain_generate", "gludd_langgraph_workflow",
-                                              "gludd_langgraph_decision"])
+                                              "gludd_langgraph_decision", "gludd_open_code"])
     def test_module_has_documentation_block(self, module_name: str):
         """Every module must have a DOCUMENTATION string."""
         content = self._read_module(module_name)
@@ -206,7 +207,7 @@ class TestModuleSecurityProperties:
                                               "gludd_git", "gludd_db", "gludd_skill",
                                               "gludd_mcp_tool", "gludd_agent_run",
                                               "gludd_langchain_generate", "gludd_langgraph_workflow",
-                                              "gludd_langgraph_decision", "gludd_ornith"])
+                                              "gludd_langgraph_decision", "gludd_ornith", "gludd_open_code"])
     def test_module_has_examples_block(self, module_name: str):
         """Every module must have an EXAMPLES string."""
         content = self._read_module(module_name)
@@ -218,7 +219,7 @@ class TestModuleSecurityProperties:
                                               "gludd_git", "gludd_db", "gludd_skill",
                                               "gludd_mcp_tool", "gludd_agent_run",
                                               "gludd_langchain_generate", "gludd_langgraph_workflow",
-                                              "gludd_langgraph_decision", "gludd_ornith"])
+                                              "gludd_langgraph_decision", "gludd_ornith", "gludd_open_code"])
     def test_module_has_return_block(self, module_name: str):
         """Every module must have a RETURN string."""
         content = self._read_module(module_name)
@@ -230,7 +231,7 @@ class TestModuleSecurityProperties:
                                               "gludd_git", "gludd_db", "gludd_skill",
                                               "gludd_mcp_tool", "gludd_agent_run",
                                               "gludd_langchain_generate", "gludd_langgraph_workflow",
-                                              "gludd_langgraph_decision"])
+                                              "gludd_langgraph_decision", "gludd_open_code"])
     def test_module_supports_check_mode(self, module_name: str):
         """Every module must declare supports_check_mode."""
         content = self._read_module(module_name)

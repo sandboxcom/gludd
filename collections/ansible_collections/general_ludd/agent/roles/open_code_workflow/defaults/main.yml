@@ -1,0 +1,14 @@
+---
+# open_code_workflow role defaults
+
+oc_action: "commit_ship"  # gate_check, push_and_verify, commit_ship, test_batch, status_check
+oc_commit_msg: ""
+oc_test_files: []
+oc_branch: "master"
+oc_push: true
+oc_wait_for_ci: true
+oc_ci_timeout: 600
+
+# Output paths
+artifact_dir: "/tmp/gludd-open-code-workflow"
+repo_path: "."

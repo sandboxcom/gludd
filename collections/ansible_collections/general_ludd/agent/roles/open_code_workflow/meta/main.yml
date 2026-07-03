@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: Agentic Harness
+  description: Bundles repeated opencode agent tool-call patterns into single ansible tasks.
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms: []
+dependencies: []
