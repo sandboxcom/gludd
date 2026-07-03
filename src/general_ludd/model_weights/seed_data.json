@@ -1,0 +1,44 @@
+[
+  {
+    "model_id": "claude_opus_48",
+    "task_role": "planner",
+    "weight": 0.85,
+    "source": "benchmark"
+  },
+  {
+    "model_id": "claude_sonnet_46",
+    "task_role": "planner",
+    "weight": 0.80,
+    "source": "benchmark"
+  },
+  {
+    "model_id": "claude_haiku_45",
+    "task_role": "editor",
+    "weight": 0.80,
+    "source": "benchmark"
+  },
+  {
+    "model_id": "gpt4o_mini",
+    "task_role": "editor",
+    "weight": 0.75,
+    "source": "benchmark"
+  },
+  {
+    "model_id": "gemini_compactor",
+    "task_role": "compactor",
+    "weight": 0.90,
+    "source": "benchmark"
+  },
+  {
+    "model_id": "gpt41_nano",
+    "task_role": "enumerator",
+    "weight": 0.80,
+    "source": "benchmark"
+  },
+  {
+    "model_id": "qwen3_32b",
+    "task_role": "enumerator",
+    "weight": 0.75,
+    "source": "benchmark"
+  }
+]
