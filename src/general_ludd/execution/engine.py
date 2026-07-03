@@ -19,6 +19,65 @@ from general_ludd.schemas.task_return import TaskReturn
 
 logger = logging.getLogger(__name__)
 
+# Jinja2 SSTI patterns — must never appear in user-supplied variable values
+_JINJA2_EXPR = re.compile(r"\{\{.*?\}\}", re.DOTALL)
+_JINJA2_BLOCK = re.compile(r"\{%[\s\S]*?%\}")
+_JINJA2_COMMENT = re.compile(r"\{#.*?#\}", re.DOTALL)
+
+
+def validate_extra_vars_safe(
+    vars_dict: dict[str, Any],
+    allow_jinja2_in_extravars: bool = False,
+) -> None:
+    """Validate that extra_vars do not contain Jinja2 SSTI injection patterns.
+
+    Blocks {{...}}, {%...%}, and {#...#} Jinja2 syntax patterns in variable
+    VALUES (recursively). These are Jinja2 template expressions that should
+    never appear in user-supplied variable values — they should be literal
+    strings.
+
+    Args:
+        vars_dict: The extra_vars dictionary to validate.
+        allow_jinja2_in_extravars: If True, skip validation (documented risk).
+
+    Raises:
+        ValueError: If Jinja2 injection patterns are detected.
+    """
+    if allow_jinja2_in_extravars:
+        return
+
+    def _check_value(value: Any, path: str) -> None:
+        if isinstance(value, str):
+            if _JINJA2_EXPR.search(value):
+                raise ValueError(
+                    f"Jinja2 SSTI pattern detected in extra_vars at "
+                    f"'{path}': found {{ expression }} syntax. Set "
+                    f"allow_jinja2_in_extravars=True only if you understand "
+                    f"the SSTI->RCE risk."
+                )
+            if _JINJA2_BLOCK.search(value):
+                raise ValueError(
+                    f"Jinja2 SSTI pattern detected in extra_vars at "
+                    f"'{path}': found {{% block %}} syntax. Set "
+                    f"allow_jinja2_in_extravars=True only if you understand "
+                    f"the SSTI->RCE risk."
+                )
+            if _JINJA2_COMMENT.search(value):
+                raise ValueError(
+                    f"Jinja2 SSTI pattern detected in extra_vars at "
+                    f"'{path}': found {{# comment #}} syntax. Set "
+                    f"allow_jinja2_in_extravars=True only if you understand "
+                    f"the SSTI->RCE risk."
+                )
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                _check_value(v, f"{path}.{k}" if path else str(k))
+        elif isinstance(value, (list, tuple)):
+            for i, item in enumerate(value):
+                _check_value(item, f"{path}[{i}]")
+
+    _check_value(vars_dict, "")
+
 
 
 def _parse_fenced_blocks(text: str) -> list[dict[str, str]]:
