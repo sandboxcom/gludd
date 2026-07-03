@@ -158,8 +158,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Observability router (`routers/observe.py`) wired into daemon | ✓ 5% | **PASS** *(file-refs only)*: register() exists; never called; 1 daemon.py line needed; `[audit]` |
 | Receiver (buffer + parsers + OTLP/webhook/gelf) | ✓ 30% | **PASS** *(file-refs only)*: 393 lines; not wired; `[audit]` |
 | Issue sources (~17 connectors: GitHub, Linear, CSV, Markdown, etc.) | ✓ 20% | **PASS** *(file-refs only)*: base + adapters with tests; NOT wired; package incomplete; `[audit]` |
-| Connector dedup cleanup (7 duplicate pairs) | ✗ 0% | **PENDING**: pipeline_controller vs controller, windows_event vs windows_event_log, etc.; all unresolved; `[audit]` |
-| MisconfigDetector dedup (`misconfig_detector.py` vs `model_deploy_check.py`) | ✗ 0% | **PENDING**: two classes both named MisconfigDetector; neither canonical; `[audit]` |
+| Connector dedup cleanup (7 duplicate pairs) | ✓ 100% | **PASS** *(file-refs only)*: 7 duplicate pairs resolved; non-canonical files deleted; `[d76d5f44]` |
+| MisconfigDetector dedup (`misconfig_detector.py` vs `model_deploy_check.py`) | ✓ 100% | **PASS** *(file-refs only)*: 59 tests: canonical MisconfigDetector in model_deploy_check.py; orphan deleted; `[32642df7]` |
 
 ### Security Hardening
 
@@ -304,16 +304,16 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| `TaskDecisionModel.return_id` no FK/unique — dangling decisions | ✗ 0% | **PENDING**: `db/models.py:191`; P1; not built; `[NEW_FINDINGS]` |
-| `TodoModel.version` optimistic lock is no-op | ✗ 0% | **PENDING**: `db/models.py:109`; P1; `[NEW_FINDINGS]` |
-| `resolve()` leaks secret material via `str(exc)` in logs | ✗ 0% | **PENDING**: `secrets/manager.py:112-115,248`; P1; `[NEW_FINDINGS]` |
-| `SecretAlias` path/mount injection — arbitrary backend path read | ✗ 0% | **PENDING**: `secrets/manager.py:66-91`; P1; `[NEW_FINDINGS]` |
-| Worker workspace leak on failure (no cleanup) | ✗ 0% | **PENDING**: `worker/app.py:195-217`; P1; `[NEW_FINDINGS]` |
+| `TaskDecisionModel.return_id` no FK/unique — dangling decisions | ✓ 100% | **PASS** *(file-refs only)*: 3 tests: FK+unique constraint on return_id; `[9a0d8dd5]` |
+| `TodoModel.version` optimistic lock is no-op | ✓ 100% | **PASS** *(file-refs only)*: 3 tests: stale-version reject, concurrent-race, correct-version succeeds; `[cd3e8e9a]` |
+| `resolve()` leaks secret material via `str(exc)` in logs | ✓ 100% | **PASS** *(file-refs only)*: 5 tests: secret values redacted in error logs; `[5cf54f70]` |
+| `SecretAlias` path/mount injection — arbitrary backend path read | ✓ 100% | **PASS** *(file-refs only)*: 33 tests: traversal, command injection, null byte blocked; `[23e167cd]` |
+| Worker workspace leak on failure (no cleanup) | ✓ 100% | **PASS** *(file-refs only)*: already fixed: try/finally with shutil.rmtree in worker/app.py; `[audit]` |
 | `CosignKey.__repr__` leaks private_key + password to logs | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; redacts private key + password; verified 2026-06-25 |
-| `call_model_with_fallback` never checks circuit-breaker health | ✗ 0% | **PENDING**: `models/gateway.py:663-688`; P1; `[NEW_FINDINGS]` |
+| `call_model_with_fallback` never checks circuit-breaker health | ✓ 100% | **PASS** *(file-refs only)*: circuit-breaker health check before each fallback model; `[912cfcc3]` |
 | `AgentDispatcher.dispatch_one` never calls `registry.can_invoke` — permission matrix dead | ✓ 100% | **PASS** *(file-refs only)*: FIXED `[a4a2e1a]`; both dispatch sites stamp `invoker_name=build` (`pipeline/daemon_adapters.py:48,82` + `daemon_wiring.py:153`); verified 2026-06-25 |
-| Alembic migration drift: 9 tables created, ORM defines 16+ | ✗ 0% | **PENDING**: `alembic/migrations/001_initial_schema.py`; P1; `[NEW_FINDINGS]` |
-| `_fire_webhook` calls sync `httpx.post` from async path — freezes event loop | ✓ 30% | **PASS** *(file-refs only)*: STILL-OPEN as of 2026-06-26 audit — `_fire_webhook` (`hooks.py:227`) still calls blocking `httpx.post` (`hooks.py:252`), NOT `AsyncClient`; code comment defers async as a follow-up; can block event loop up to `timeout_seconds`; P1; `[NEW_FINDINGS]` |
+| Alembic migration drift: 9 tables created, ORM defines 16+ | ✓ 100% | **PASS** *(file-refs only)*: 4 tests: all 26 ORM tables in migrations, column parity verified; `[9a0d8dd5]` |
+| `_fire_webhook` calls sync `httpx.post` from async path — freezes event loop | ✓ 100% | **PASS** *(file-refs only)*: 42 tests: AsyncClient replaces sync httpx.post, non-blocking verified; `[fe8432c2]` |
 | Webhook full event payload leaks model credentials | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; payload filtered/redacted; verified 2026-06-25 |
 | MCP tool-name collision silently hijacks routing | ✓ 100% | **PASS** *(file-refs only)*: FIXED `[45fcfe7]`; `MCPToolRegistry.register_tool` (`mcp/registry.py:51`) raises `ValueError(Tool name collision)` — fail-closes on duplicate registration |
 | `connectors/registry.py` arbitrary code execution via `importlib.import_module` | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; pkgutil-built `_ALLOWED_CONNECTOR_MODULES` frozenset (`registry.py:310-313`) gates every importlib call via `_check_module_allowlist` (`registry.py:370-413`) |

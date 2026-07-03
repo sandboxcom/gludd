@@ -389,15 +389,17 @@ sections:
 
       - id: connector-dedup
         title: "Connector dedup cleanup (7 duplicate pairs)"
-        pct: 0
-        evidence_refs: []
-        notes: "pipeline_controller vs controller, windows_event vs windows_event_log, etc.; all unresolved; `[audit]`"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_connector_no_duplicates.py"
+        notes: "7 duplicate pairs resolved; non-canonical files deleted; `[d76d5f44]`"
 
       - id: misconfig-detector-dedup
         title: "MisconfigDetector dedup (`misconfig_detector.py` vs `model_deploy_check.py`)"
-        pct: 0
-        evidence_refs: []
-        notes: "two classes both named MisconfigDetector; neither canonical; `[audit]`"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_misconfig_detector.py"
+        notes: "59 tests: canonical MisconfigDetector in model_deploy_check.py; orphan deleted; `[32642df7]`"
 
   # ---------------------------------------------------------------------------
   - title: "Security Hardening"
@@ -1269,33 +1271,38 @@ sections:
     features:
       - id: sf-return-id-no-fk
         title: "`TaskDecisionModel.return_id` no FK/unique — dangling decisions"
-        pct: 0
-        evidence_refs: []
-        notes: "`db/models.py:191`; P1; not built; `[NEW_FINDINGS]`"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_task_decision_model.py"
+        notes: "3 tests: FK+unique constraint on return_id; `[9a0d8dd5]`"
 
       - id: sf-todo-version-noop
         title: "`TodoModel.version` optimistic lock is no-op"
-        pct: 0
-        evidence_refs: []
-        notes: "`db/models.py:109`; P1; `[NEW_FINDINGS]`"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_todo_optimistic_lock.py"
+        notes: "3 tests: stale-version reject, concurrent-race, correct-version succeeds; `[cd3e8e9a]`"
 
       - id: sf-resolve-secret-leak
         title: "`resolve()` leaks secret material via `str(exc)` in logs"
-        pct: 0
-        evidence_refs: []
-        notes: "`secrets/manager.py:112-115,248`; P1; `[NEW_FINDINGS]`"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_secrets_log_sanitization.py"
+        notes: "5 tests: secret values redacted in error logs; `[5cf54f70]`"
 
       - id: sf-secret-alias-injection
         title: "`SecretAlias` path/mount injection — arbitrary backend path read"
-        pct: 0
-        evidence_refs: []
-        notes: "`secrets/manager.py:66-91`; P1; `[NEW_FINDINGS]`"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_secret_alias_validation.py"
+        notes: "33 tests: traversal, command injection, null byte blocked; `[23e167cd]`"
 
       - id: sf-worker-workspace-leak
         title: "Worker workspace leak on failure (no cleanup)"
-        pct: 0
-        evidence_refs: []
-        notes: "`worker/app.py:195-217`; P1; `[NEW_FINDINGS]`"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_worker_workspace_cleanup.py"
+        notes: "already fixed: try/finally with shutil.rmtree in worker/app.py; `[audit]`"
 
       - id: sf-cosign-key-repr
         title: "`CosignKey.__repr__` leaks private_key + password to logs"
@@ -1306,9 +1313,10 @@ sections:
 
       - id: sf-circuit-breaker-health
         title: "`call_model_with_fallback` never checks circuit-breaker health"
-        pct: 0
-        evidence_refs: []
-        notes: "`models/gateway.py:663-688`; P1; `[NEW_FINDINGS]`"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_circuit_breaker_fallback.py"
+        notes: "circuit-breaker health check before each fallback model; `[912cfcc3]`"
 
       - id: sf-can-invoke-dead
         title: "`AgentDispatcher.dispatch_one` never calls `registry.can_invoke` — permission matrix dead"
@@ -1321,16 +1329,17 @@ sections:
 
       - id: sf-alembic-migration-drift
         title: "Alembic migration drift: 9 tables created, ORM defines 16+"
-        pct: 0
-        evidence_refs: []
-        notes: "`alembic/migrations/001_initial_schema.py`; P1; `[NEW_FINDINGS]`"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_alembic_orm_parity.py"
+        notes: "4 tests: all 26 ORM tables in migrations, column parity verified; `[9a0d8dd5]`"
 
       - id: sf-fire-webhook-sync
         title: "`_fire_webhook` calls sync `httpx.post` from async path — freezes event loop"
-        pct: 30
+        pct: 100
         evidence_refs:
-          - "file:src/general_ludd/events/hooks.py::_fire_webhook"
-        notes: "STILL-OPEN as of 2026-06-26 audit — `_fire_webhook` (`hooks.py:227`) still calls blocking `httpx.post` (`hooks.py:252`), NOT `AsyncClient`; code comment defers async as a follow-up; can block event loop up to `timeout_seconds`; P1; `[NEW_FINDINGS]`"
+          - "test:tests/unit/test_webhook_async.py"
+        notes: "42 tests: AsyncClient replaces sync httpx.post, non-blocking verified; `[fe8432c2]`"
 
       - id: sf-webhook-credentials-leak
         title: "Webhook full event payload leaks model credentials"
