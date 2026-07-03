@@ -8,6 +8,7 @@ import logging
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from typing import Any
 
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentTask
@@ -48,7 +49,7 @@ class AgentDispatcher:
         *,
         tracker: DurationTracker | None = None,
         watchdog: StallWatchdog | None = None,
-        pause_controller: object | None = None,
+        pause_controller: Any | None = None,
     ) -> None:
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
