@@ -7,6 +7,22 @@ tag-run:
 run-view:
 	gh run view $(ID) --repo sandboxcom/gludd
 
+# View only the FAILED log lines for a specific job in a run (CI-shard diagnosis).
+# Usage: make ci-job-log-failed ID=<jobid>
+ci-job-log-failed:
+	gh run view --job=$(ID) --repo sandboxcom/gludd --log-failed
+
+# Fetch a single completed job's raw log via the REST API (works even while the
+# overall run is still in progress, unlike `gh run view --log-failed`), and
+# surface just the failure-relevant lines. Usage: make ci-job-log-api ID=<jobid>
+ci-job-log-api:
+	gh api /repos/sandboxcom/gludd/actions/jobs/$(ID)/logs 2>/dev/null | grep -iE "FAILED|ERROR|assert|short test summary|Traceback|Exception|error:|no tests ran|== .* ==" | head -200
+
+# Tightest: just the "N% FAILED node-id" verdicts + the final failed/passed tally.
+# Usage: make ci-job-fails ID=<jobid>
+ci-job-fails:
+	gh api /repos/sandboxcom/gludd/actions/jobs/$(ID)/logs 2>/dev/null | grep -E "\] FAILED |^.*FAILED tests/|= [0-9]+ failed|ERROR tests/|no tests ran" | sed 's/::error.*//' | sort -u | head -80
+
 rel-view:
 	gh release view v0.1.0-alpha.5 --repo sandboxcom/gludd
 
