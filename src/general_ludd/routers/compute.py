@@ -12,9 +12,37 @@ from general_ludd.infra.compute import (
     GPUType,
     InferenceEngine,
 )
+from general_ludd.infra.deploy_precheck import precheck
 from general_ludd.infra.deployment import DeploymentManager
+from general_ludd.infra.model_deploy_check import Finding
 
 logger = logging.getLogger(__name__)
+
+
+def _finding_to_dict(f: Finding) -> dict[str, Any]:
+    """Serialize a MisconfigDetector Finding for a JSON response body."""
+    return {
+        "rule_id": f.rule_id,
+        "severity": f.severity,
+        "engine": f.engine,
+        "message": f.message,
+        "remediation": f.remediation,
+        "evidence": f.evidence,
+    }
+
+
+def _get_health_checker(app: FastAPI) -> Any | None:
+    """Return the wired DeploymentHealthChecker, or None if unavailable.
+
+    The self-healing router (set up by the daemon) owns the checker; mirror the
+    accessor in routers/deployments.py without importing its symbols. Fully
+    defensive — any missing attribute degrades to None so the deploy path never
+    fails because health tracking is absent.
+    """
+    router = getattr(app.state, "_deployment_health_router", None)
+    if router is None:
+        return None
+    return getattr(router, "health_checker", None)
 
 
 def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
@@ -130,12 +158,50 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             provider_auth_aliases=req.get("provider_auth_aliases"),
         )
 
+        # PRE-DEPLOY: static misconfig precheck. A critical finding refuses the
+        # spend (422) unless the caller explicitly forces past it. Non-critical
+        # findings ride along on the success response but do not block.
+        findings, remediations = precheck(config, req)
+        critical = [f for f in findings if f.severity == "critical"]
+        if critical and not req.get("force"):
+            crit_idx = {id(f) for f in critical}
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "deploy refused: critical misconfiguration detected",
+                    "misconfig": [_finding_to_dict(f) for f in critical],
+                    "remediations": [
+                        remediations[i]
+                        for i, f in enumerate(findings)
+                        if id(f) in crit_idx
+                    ],
+                    "hint": "resolve the misconfig or resubmit with force=true",
+                },
+            )
+
         mgr = _get_deployment_manager()
         try:
             instance = await mgr.deploy(config)
         except Exception as exc:
             logger.warning("compute deploy failed: %s", exc, exc_info=True)
-            raise HTTPException(status_code=500, detail="compute deploy failed") from exc
+            # POST-FAILURE: record the failure against the health checker (if
+            # wired) and surface the precheck findings alongside the 500 so the
+            # operator can diagnose. Never raise a NEW error from this path.
+            try:
+                checker = _get_health_checker(app)
+                if checker is not None:
+                    checker.record_failure(
+                        model_name, exc, kind="deploy_failure"
+                    )
+            except Exception:  # pragma: no cover - defensive
+                logger.debug("failed to record deploy failure", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "compute deploy failed",
+                    "misconfig_findings": [_finding_to_dict(f) for f in findings],
+                },
+            ) from exc
 
         app.state._compute_deployments[instance.instance_id] = instance
         return {
@@ -146,6 +212,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "port": instance.port,
             "gpu_type": instance.gpu_type.value,
             "endpoint_url": instance.endpoint_url,
+            "findings": [_finding_to_dict(f) for f in findings],
         }
 
     @app.delete("/admin/compute/destroy/{instance_id}")
