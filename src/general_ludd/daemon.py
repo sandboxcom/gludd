@@ -2111,6 +2111,7 @@ def create_daemon_app(
         model_performance,
         models,
         ornith,
+        pause,
         processes,
         projects,
         quantization,
@@ -2253,6 +2254,7 @@ def create_daemon_app(
         collection_handler=_lazy_collection_handler,
     )
     spend.register(app, daemon_state)
+    pause.register(app, daemon_state)
     from general_ludd.routers import coordination as _coord_router
     _coord_router.register(app, daemon_state)
 
