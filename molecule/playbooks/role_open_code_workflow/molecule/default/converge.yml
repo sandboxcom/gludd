@@ -1,14 +1,29 @@
 ---
-- name: Converge - run open_code_workflow role with gate_check action
+# Run the open_code_workflow module in check_mode to verify it reports correctly.
+# No actual make commands are executed — the module returns what WOULD happen.
+- name: Converge - run open_code_workflow role in check mode
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
   tasks:
-    - name: Invoke open_code_workflow
-      ansible.builtin.include_role:
-        name: general_ludd.agent.open_code_workflow
-      vars:
-        oc_action: "gate_check"
-        artifact_dir: "/tmp/gludd-open-code-workflow-{{ mock_port }}"
+    - name: Run gludd_open_code gate_check in check mode
+      general_ludd.agent.gludd_open_code:
+        action: gate_check
+        repo_path: "{{ project_dir }}"
+      check_mode: true
+      register: oc_result
+
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "/tmp/gludd-open-code-workflow-{{ mock_port }}"
+        state: directory
+        mode: "0755"
+
+    - name: Persist result for verify playbook
+      ansible.builtin.copy:
+        content: "{{ oc_result | to_nice_json }}"
+        dest: "/tmp/gludd-open-code-workflow-{{ mock_port }}/oc_result.json"
+        mode: "0644"
