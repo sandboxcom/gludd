@@ -695,138 +695,15 @@ export default (async ({ }) => {
       }
     },
 
-    // --- Stop-pattern enforcement (no-wait + backlog + ratchet + pending-todos) ---
-    // Runs in experimental.text.complete — accumulates text across chunks and
-    // examines the GROWING assistant message. Reads pre-computed state from
-    // /tmp/gludd-stop-state.json (written by session.idle), falling back to
-    // live calls if cache is missing/stale.
-    // The DEFAULT is ENFORCING (blocking) as of 2026-06-22. The advisory era
-    // (2026-06-21) allowed the agent to stop and ask "which option do you want?"
-    // — that was the bug. Set GLUDD_NO_WAIT_ENFORCE=0 to make it advisory again.
-    "experimental.text.complete": async (_input, output) => {
-      try {
-        turnState.accumulatedText += output.text || ""
-
-        if (turnState.blocked) {
-          output.text = ""
-          return output
-        }
-
-        let cache: StopStateCache | null = null
-        try {
-          if (fs.existsSync(STATE_FILE)) {
-            const raw = fs.readFileSync(STATE_FILE, "utf8")
-            cache = JSON.parse(raw)
-          }
-        } catch {
-          cache = null
-        }
-
-        const ratchetCount = cache?.ratchetEntries ?? ratchetHasEntries()
-        const tasksMdUnchecked = cache?.tasksMdUnchecked ?? tasksMdHasUnchecked()
-        const gateRed = cache?.gateStatusRed ?? gateStatusIsRed()
-        const repoPending = cache?.repoPending ?? repoHasPendingWork()
-        const backlogOpenCount = cache?.backlogOpen ?? (multitaskingBacklogOpen()?.open?.length ?? 0)
-        const backlogOpenItems = cache?.backlogItems ?? (multitaskingBacklogOpen()?.open ?? [])
-
-        const ciRed = gateRed || responseMentionsCiRed(turnState.accumulatedText)
-        const ciVerdictPendingOrRed = ciIsPendingOrRed()
-        const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed
-
-        // --- STATE-BASED CHECK: if the repo has pending work AND the response
-        // looks terminal, block. This is the Whac-A-Mole fix: instead of matching
-        // specific phrases, ask 'does the repo have pending work?' AND 'does this
-        // response look like a finale?' If both are true, the response is BLOCKED
-        // regardless of wording. ---
-        if (hasPendingWork && responseLooksTerminal(turnState.accumulatedText)) {
-          const ciRedLine = (ciRed || ciVerdictPendingOrRed) ? `; gate-status red: ${gateRed ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(turnState.accumulatedText) ? "yes" : "no"}; CI verdict: ${ciVerdictPendingOrRed ? "pending/red" : "green"}` : ""
-          output.text = [
-            "⛔ HARD STOP — STATE-BASED BLOCK: the repo has KNOWN-UNFINISHED WORK",
-            `(ratchet: ${ratchetCount} entries; git pending: ${repoPending ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdUnchecked ? "yes" : "no"}${ciRedLine})`,
-            "AND your response looks like a completion report (table, hash,",
-            "all-checked checkbox ledger, item-count claim, DONE/COMPLETE).",
-            "",
-            "YOU ARE STOPPING PREMATURELY. BUGS.md has 20+ incidents of this exact",
-            "pattern — the agent sent a text-only completion summary while pending",
-            "work existed. This is the Whac-A-Mole structural fix: instead of",
-            "matching specific phrases, this check asks 'does the repo have pending",
-            "work?' AND 'does this response look like a finale?' Both are true.",
-            "",
-            "IMMEDIATELY DISPATCH A TOOL CALL. Do NOT send another summary. Do NOT",
-            "end your turn. Dispatch ≥5 subagents on the next pending work items",
-            "NOW. A text-only stop is this bug repeating — do not be the 21st incident.",
-          ].join("\n")
-          turnState.blocked = true
-          return output
-        }
-
-        // --- PENDING-WORK AUDIT: if the repo has pending work and the response
-        // sounds like a stop (deferral/options/permission-seek), block. ---
-        if (hasPendingWork) {
-          const lower = turnState.accumulatedText.toLowerCase()
-          const soundsLikeStop = (
-            lower.includes("which do you want") ||
-            lower.includes("which would you") ||
-            lower.includes("which option") ||
-            lower.includes("what would you like") ||
-            lower.includes("do you want me to") ||
-            lower.includes("want me to") ||
-            lower.includes("should i") ||
-            lower.includes("shall i") ||
-            lower.includes("let me know") ||
-            lower.includes("your call") ||
-            lower.includes("up to you") ||
-            lower.includes("prefer") ||
-            lower.includes("options:") ||
-            lower.includes("option 1") ||
-            (lower.includes("options") && lower.includes("?"))
-          )
-          if (soundsLikeStop) {
-            const ciRedLine = (ciRed || ciVerdictPendingOrRed) ? `; gate-status red: ${gateRed ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(turnState.accumulatedText) ? "yes" : "no"}; CI verdict: ${ciVerdictPendingOrRed ? "pending/red" : "green"}` : ""
-            output.text = [
-              "⛔ HARD STOP — PENDING-WORK AUDIT: the repo has KNOWN-UNFINISHED",
-              `work (${ratchetCount} ratchet entries; git pending: ${repoPending ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdUnchecked ? "yes" : "no"}${ciRedLine}).`,
-              "Your response presents options / asks permission",
-              "instead of DOING THE WORK. Per the Never-Block-on-Questions",
-              "policy: pick the highest-probability-success option, state the",
-              "assumption in one line, and EXECUTE. Do NOT present options and",
-              "ask which one the user wants. That is the stop-and-ask bug.",
-              "",
-              "DISPATCH WORK NOW. Do not ask. Do not present. EXECUTE.",
-            ].join("\n")
-            turnState.blocked = true
-            return output
-          }
-        }
-
-        // Constraint-as-stop (self-heal — 2026-06-23): same enforcement gate as
-        // no-wait. Runs BEFORE the no-wait check so the constraint-specific
-        // directive wins for overlapping phrases.
-        if (NO_WAIT_ENFORCE && detectConstraintAsStop(turnState.accumulatedText)) {
-          output.text = constraintBlockResponse()
-          turnState.blocked = true
-          return output
-        }
-
-        // No-wait stop pattern (now ENFORCING by default — 2026-06-22)
-        if (NO_WAIT_ENFORCE && detectNoWaitPattern(turnState.accumulatedText)) {
-          output.text = noWaitBlockResponse()
-          turnState.blocked = true
-          return output
-        }
-
-        // Multitasking backlog (always enforces — it's a standing user directive
-        // that the backlog is worked until done-with-evidence).
-        if (backlogOpenCount > 0) {
-          output.text = backlogBlockResponse(backlogOpenItems)
-          turnState.blocked = true
-          return output
-        }
-
-        return output
-      } catch {
-        return output  // fail open
-      }
+    // --- Stop-pattern injection REMOVED (2026-07-03) ---
+    // The HARD STOP / YOU ARE STOPPING PREMATURELY / IMMEDIATELY DISPATCH
+    // text injections were pure noise — they never prevented stopping, just
+    // replaced response text with loud messages. Replaced by mechanical
+    // enforcement in enforce-floor.ts (streak counter blocks non-dispatch
+    // calls) and enforce-delegate.ts (threshold=1 blocks immediately).
+    // This handler is now a transparent pass-through.
+    "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
+      return output
     },
   }
 }) satisfies Plugin
