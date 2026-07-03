@@ -227,7 +227,7 @@ class _FakeHealthTracker:
     def __init__(self, unhealthy: set[str]) -> None:
         self._unhealthy = unhealthy
 
-    def is_healthy(self, profile_id: str) -> bool:
+    def is_healthy(self, profile_id: str, *, admit_probe: bool = True) -> bool:
         return profile_id not in self._unhealthy
 
     def record_success(self, profile_id: str) -> None:

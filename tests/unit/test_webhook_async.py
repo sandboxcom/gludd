@@ -11,10 +11,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from general_ludd.events.hooks import HookSystem
-
 
 # ---------------------------------------------------------------------------
 # Test 1: AsyncClient is used in async context (NOT sync httpx.post)

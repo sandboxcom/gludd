@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.gateway import CircuitBreakerOpenError, ModelGateway, ModelProfile
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.secrets.manager import SecretAlias, SecretsManager
 
@@ -69,7 +69,7 @@ class _FakeHealthTracker:
     def __init__(self, unhealthy: set[str]) -> None:
         self._unhealthy = unhealthy
 
-    def is_healthy(self, profile_id: str) -> bool:
+    def is_healthy(self, profile_id: str, *, admit_probe: bool = True) -> bool:
         return profile_id not in self._unhealthy
 
     def record_success(self, profile_id: str) -> None:
@@ -174,7 +174,7 @@ class TestD22FallbackHealthCheck:
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=MagicMock()),
             patch.object(gw, "_try_call_model") as spy,
-            pytest.raises(ValueError, match="circuit-open"),
+            pytest.raises(CircuitBreakerOpenError, match="circuit-open"),
         ):
             gw.call_model_with_fallback(
                 "primary_sick",

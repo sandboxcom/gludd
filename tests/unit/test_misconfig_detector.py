@@ -45,10 +45,13 @@ def test_exactly_one_misconfig_detector_class_in_infra() -> None:
         except ImportError:
             continue
         for attr_name, attr_value in vars(module).items():
-            if attr_name == "MisconfigDetector" and inspect.isclass(attr_value):
-                if attr_value.__module__ == f"general_ludd.infra.{name}":
-                    count += 1
-                    locations.append(f"{name}.py")
+            if (
+                attr_name == "MisconfigDetector"
+                and inspect.isclass(attr_value)
+                and attr_value.__module__ == f"general_ludd.infra.{name}"
+            ):
+                count += 1
+                locations.append(f"{name}.py")
     assert count == 1, (
         f"Expected 1 MisconfigDetector class defined in src/general_ludd/infra/, "
         f"found {count}: {locations}"

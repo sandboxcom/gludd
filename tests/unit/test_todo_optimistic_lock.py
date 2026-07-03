@@ -123,7 +123,12 @@ class TestTodoOptimisticLock:
                 )
 
         # Verify writer A's changes persisted (not overwritten by B).
-        updated = await repo.get_by_id(created.todo_id)
+        # Use a raw query on the primary session to bypass identity-map caching.
+        from sqlalchemy import select as _select
+        result = await async_session.execute(
+            _select(TodoModel).where(TodoModel.todo_id == created.todo_id)
+        )
+        updated = result.scalar_one_or_none()
         assert updated is not None
         assert updated.title == "Writer A won"
         assert updated.version == 2

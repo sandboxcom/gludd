@@ -84,6 +84,16 @@ class ModelPausedError(Exception):
     """
 
 
+class CircuitBreakerOpenError(Exception):
+    """Raised when ALL models in a fallback chain have open circuit breakers.
+
+    Not a subclass of ValueError (mirrors ModelPausedError) so the
+    ``except (ValueError, ImportError)`` in ``_try_call_model`` does not
+    silently swallow it — a fully-open circuit must propagate, not fall through
+    to the next fallback.
+    """
+
+
 class ModelProfile(BaseModel):
     model_profile_id: str
     role_names: list[str] = Field(default_factory=list)
@@ -1294,13 +1304,19 @@ class ModelGateway:
         # unhealthy entry only to raise at the end. Walking an all-unhealthy chain
         # amplifies retry storms because the caller sees a ValueError after a full
         # no-op sweep and re-invokes, repeating the same useless walk.
+        #
+        # admit_probe=False: the pre-check is a pure status poll — it must NOT
+        # consume the single half-open probe slot that the loop-level is_healthy()
+        # call at line 1342 expects to admit. Without this, a model whose cooldown
+        # has elapsed would have its probe consumed here, and the loop-level check
+        # would see it as unhealthy, so the model is NEVER actually tried.
         if tracker is not None:
-            primary_healthy = tracker.is_healthy(profile_id)
+            primary_healthy = tracker.is_healthy(profile_id, admit_probe=False)
             any_healthy = primary_healthy or any(
-                tracker.is_healthy(fb) for fb in fallback_ids
+                tracker.is_healthy(fb, admit_probe=False) for fb in fallback_ids
             )
             if not any_healthy:
-                raise ValueError(
+                raise CircuitBreakerOpenError(
                     f"All profiles in fallback chain for '{profile_id}' are "
                     f"circuit-open; not attempting any"
                 )
@@ -1361,7 +1377,7 @@ class ModelGateway:
 
         if last_exc is not None:
             raise last_exc
-        raise ValueError(
+        raise CircuitBreakerOpenError(
             f"All profiles in fallback chain failed for '{profile_id}'"
         )
 

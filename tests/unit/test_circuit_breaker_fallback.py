@@ -33,7 +33,6 @@ from general_ludd.models.timeout_detector import (
     TimeoutKind,
 )
 
-
 # ---------------------------------------------------------------------------
 # Shared test infrastructure
 # ---------------------------------------------------------------------------

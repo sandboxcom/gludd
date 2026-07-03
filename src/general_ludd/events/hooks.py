@@ -233,68 +233,72 @@ class HookSystem:
     def _fire_webhook(self, config: WebhookConfig, event_name: str, payload: dict[str, Any]) -> None:
         # Fix A: strip credential keys before forwarding.  Redaction happens
         # here (on the calling thread) so that the redacted body is captured by
-        # the _do_post closure — no race on the original payload dict.
+        # the coroutine closure — no race on the original payload dict.
         body = {"event": event_name, "payload": _redact_payload(payload)}
         # Fix C: clamp retry_count so misconfigured values can't cause DoS.
         retry_count = min(max(1, config.retry_count), 5)
 
-        def _do_post() -> None:
-            """Retry loop that issues the blocking httpx.post.
+        async def _do_post_async() -> None:
+            """Retry loop using httpx.AsyncClient for native async I/O.
 
-            Keeping the sync httpx.post call here (rather than switching to
-            httpx.AsyncClient) preserves the existing mock surface used by
-            tests that patch ``general_ludd.events.hooks.httpx.post``.
+            Uses an async context manager so the client is properly closed
+            even on error.  Unlike the prior sync httpx.post + run_in_executor
+            workaround, this never consumes a thread-pool thread and cannot
+            freeze the event loop.
             """
-            last_exc: Exception | None = None
-            for attempt in range(retry_count):
-                try:
-                    response = httpx.post(
-                        config.url,
-                        json=body,
-                        headers=config.headers,
-                        timeout=config.timeout_seconds,
-                        # Never auto-follow redirects: a 30x to an internal
-                        # address would bypass the registration-time SSRF check.
-                        follow_redirects=False,
-                    )
-                    response.raise_for_status()
-                    return
-                except Exception as exc:
-                    last_exc = exc
-                    logger.warning(
-                        "Webhook attempt %d/%d failed: %s", attempt + 1, retry_count, exc
-                    )
-            if last_exc is not None:
-                raise last_exc
+            async with httpx.AsyncClient() as client:
+                last_exc: Exception | None = None
+                for attempt in range(retry_count):
+                    try:
+                        response = await client.post(
+                            config.url,
+                            json=body,
+                            headers=config.headers,
+                            timeout=config.timeout_seconds,
+                            # Never auto-follow redirects: a 30x to an internal
+                            # address would bypass the registration-time SSRF check.
+                            follow_redirects=False,
+                        )
+                        response.raise_for_status()
+                        return
+                    except Exception as exc:
+                        last_exc = exc
+                        logger.warning(
+                            "Webhook attempt %d/%d failed: %s",
+                            attempt + 1,
+                            retry_count,
+                            exc,
+                        )
+                if last_exc is not None:
+                    raise last_exc
 
         try:
-            loop = asyncio.get_running_loop()
-            # A running event loop means we are on the async path (e.g. a
-            # FastAPI request handler).  Off-load the blocking network call to
-            # a thread pool executor so the loop stays free for other coroutines.
-            # The entire retry loop lives inside _do_post so retries, timeout
-            # bounds, and raise_for_status checks are all preserved.
-            # fire() is sync and cannot await, so we cannot block on delivery —
-            # but we MUST keep a reference to the Future (else it can be GC'd
-            # mid-flight) and attach a done-callback so a failed delivery is
-            # logged rather than silently swallowed (SF-fire-webhook-sync).
-            future = loop.run_in_executor(None, _do_post)
-            self._pending_webhooks.add(future)
+            asyncio.get_running_loop()
+            # fire() is sync and fire-and-forget, so we schedule the async
+            # coroutine as a task on the running loop.  This yields native
+            # async I/O (no thread-pool thread consumed) and, critically,
+            # never freezes the event loop — the task yields to the loop
+            # on every await.
+            task = asyncio.ensure_future(_do_post_async())
+            self._pending_webhooks.add(task)
 
-            def _on_webhook_done(task: asyncio.Future[None]) -> None:
-                self._pending_webhooks.discard(task)
+            def _on_webhook_done(t: asyncio.Task[None]) -> None:
+                self._pending_webhooks.discard(t)
                 try:
-                    task.result()
+                    t.result()
                 except asyncio.CancelledError:
                     logger.warning("Webhook delivery task was cancelled")
                 except Exception:
-                    logger.warning("Webhook delivery failed after retries", exc_info=True)
+                    logger.warning(
+                        "Webhook delivery failed after retries", exc_info=True
+                    )
 
-            future.add_done_callback(_on_webhook_done)
+            task.add_done_callback(_on_webhook_done)
         except RuntimeError:
-            # No running event loop — safe to call _do_post directly
-            # (sync startup path, CLI, or unit tests without an event loop).
-            _do_post()
+            # No running event loop — run the async coroutine synchronously
+            # via asyncio.run (sync startup path, CLI, or unit tests without
+            # an event loop).
+            asyncio.run(_do_post_async())
 
     def list_hooks(self) -> list[HookRegistration]:
         result = []
