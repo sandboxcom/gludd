@@ -1,0 +1,14 @@
+---
+- name: Converge - run open_code_workflow role with gate_check action
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+  tasks:
+    - name: Invoke open_code_workflow
+      ansible.builtin.include_role:
+        name: general_ludd.agent.open_code_workflow
+      vars:
+        oc_action: "gate_check"
+        artifact_dir: "/tmp/gludd-open-code-workflow-{{ mock_port }}"
