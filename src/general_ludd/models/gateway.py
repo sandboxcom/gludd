@@ -1085,6 +1085,14 @@ class ModelGateway:
                 # budget ceiling. Re-raise (mirrors _try_call_model /
                 # call_model_with_fallback) so the budget gate is enforced.
                 raise
+            except SSRFRejectionError:
+                # F-E: an SSRF egress rejection on the fallback path MUST
+                # propagate. _try_call_model already re-raises it, but the bare
+                # ``except Exception`` below would re-swallow it here and continue
+                # to the next fallback, silently routing past the blocked egress.
+                # Re-raise (mirrors BudgetExceededError) so the SSRF guard hard-
+                # stops the chain instead of falling open.
+                raise
             except Exception as exc:  # try the next fallback
                 last_exc = exc
                 continue
@@ -1233,6 +1241,13 @@ class ModelGateway:
                 result = self._try_call_model(profile_id, messages, **kwargs)
             except BudgetExceededError:
                 raise
+            except SSRFRejectionError:
+                # F-E: an SSRF egress rejection on the primary MUST propagate.
+                # _try_call_model re-raises it, but the bare ``except Exception``
+                # below would re-swallow it into the fallback chain, silently
+                # routing the blocked egress onward to the next profile. Re-raise
+                # (mirrors BudgetExceededError) so the SSRF guard hard-stops.
+                raise
             except Exception as exc:
                 # D-22: see below — a provider-level failure on the primary must
                 # fall through to the fallback chain, not abort the whole call.
@@ -1249,6 +1264,13 @@ class ModelGateway:
             except BudgetExceededError:
                 # D-24: budget rejection is a hard fail — do not continue the
                 # fallback chain (would bypass the per-profile spending cap).
+                raise
+            except SSRFRejectionError:
+                # F-E: an SSRF egress rejection is a hard security fail — do not
+                # continue the fallback chain. Without this the bare ``except
+                # Exception`` below re-swallows the rejection re-raised by
+                # _try_call_model and routes onward to the next profile, masking
+                # the egress block. Re-raise (mirrors BudgetExceededError).
                 raise
             except Exception as exc:
                 # D-22: a provider-level failure from one fallback must NOT abort

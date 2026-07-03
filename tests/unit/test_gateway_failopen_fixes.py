@@ -101,3 +101,110 @@ class TestWalkFallbacksBudgetPropagates:
             )
         assert resp is None
         assert last_exc is err
+
+
+_MSG = [{"role": "user", "content": "hi"}]
+
+
+class TestWalkFallbacksSSRFPropagates:
+    """Defense-in-depth: an SSRFRejectionError raised while walking the fallback
+    chain MUST propagate and hard-stop the walk, NOT be re-swallowed by the bare
+    ``except Exception`` and routed onward to the next profile (which would mask
+    the egress block). Mirrors the BudgetExceededError re-raise at the same site.
+    """
+
+    def test_walk_fallbacks_propagates_ssrf_rejection(self):
+        # Site: _walk_fallbacks. First fallback's call raises SSRF → propagate;
+        # the SECOND fallback must never be attempted.
+        gw, _ = _make_gateway()
+        called: list[str] = []
+
+        def fake_call_fallback(fb_id, messages, **kwargs):
+            called.append(fb_id)
+            if fb_id == "fb1":
+                raise SSRFRejectionError("SSRF guard: refusing blocked URL")
+            return object()
+
+        with patch.object(
+            gw, "_call_fallback", side_effect=fake_call_fallback
+        ), pytest.raises(SSRFRejectionError):
+            gw._walk_fallbacks(["fb1", "fb2"], _MSG)
+
+        assert called == ["fb1"]
+        assert "fb2" not in called
+
+
+class TestCallModelWithFallbackSSRFPropagates:
+    """The two ``except Exception`` sites inside call_model_with_fallback (the
+    primary attempt and the fallback loop) must NOT re-swallow an SSRF rejection
+    re-raised by _try_call_model; it must hard-stop the chain.
+    """
+
+    def test_primary_ssrf_propagates_and_fallback_not_tried(self):
+        # Site: call_model_with_fallback primary attempt. Primary raises SSRF →
+        # propagate; the fallback profile's call is NEVER invoked.
+        gw, _ = _make_gateway()
+        called: list[str] = []
+
+        def fake_call_model(pid, messages, **kwargs):
+            called.append(pid)
+            if pid == "primary":
+                raise SSRFRejectionError("SSRF guard: refusing blocked URL")
+            return object()
+
+        with patch.object(
+            gw, "call_model", side_effect=fake_call_model
+        ), pytest.raises(SSRFRejectionError):
+            gw.call_model_with_fallback(
+                "primary", _MSG, fallback_profiles=["fallback"]
+            )
+
+        assert called == ["primary"]
+        assert "fallback" not in called
+
+    def test_fallback_loop_ssrf_propagates_and_next_not_tried(self):
+        # Site: call_model_with_fallback fallback loop. Primary fails soft
+        # (plain ValueError → None), first fallback raises SSRF → propagate; the
+        # SECOND fallback must never be attempted.
+        gw, _ = _make_gateway()
+        called: list[str] = []
+
+        def fake_call_model(pid, messages, **kwargs):
+            called.append(pid)
+            if pid == "primary":
+                raise ValueError("transient")  # fail-soft → _try returns None
+            if pid == "fb1":
+                raise SSRFRejectionError("SSRF guard: refusing blocked URL")
+            return object()
+
+        with patch.object(
+            gw, "call_model", side_effect=fake_call_model
+        ), pytest.raises(SSRFRejectionError):
+            gw.call_model_with_fallback(
+                "primary", _MSG, fallback_profiles=["fb1", "fb2"]
+            )
+
+        assert called == ["primary", "fb1"]
+        assert "fb2" not in called
+
+    def test_generic_error_still_falls_through_to_fallback(self):
+        # Regression: a non-security transient error on the primary MUST still
+        # fall through to the next profile (swallow behavior preserved for
+        # non-SSRF/non-budget errors).
+        gw, _ = _make_gateway()
+        sentinel = object()
+        called: list[str] = []
+
+        def fake_call_model(pid, messages, **kwargs):
+            called.append(pid)
+            if pid == "primary":
+                raise RuntimeError("transient")
+            return sentinel
+
+        with patch.object(gw, "call_model", side_effect=fake_call_model):
+            result = gw.call_model_with_fallback(
+                "primary", _MSG, fallback_profiles=["fallback"]
+            )
+
+        assert result is sentinel
+        assert called == ["primary", "fallback"]
