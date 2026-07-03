@@ -63,7 +63,9 @@ def test_facts_codebase_facet_offloaded(monkeypatch) -> None:
 
     seen: dict[str, bool] = {}
 
-    def fake_codebase(app: FastAPI, recent_failures: Any = None) -> dict[str, Any]:
+    def fake_codebase(
+        app: FastAPI, recent_failures: Any = None, project_id: Any = None
+    ) -> dict[str, Any]:
         seen["on_loop"] = _on_event_loop_thread()
         return {"churn": None}
 

@@ -38,7 +38,7 @@ def test_models_router_no_exc_leak() -> None:
 def test_compute_router_no_exc_leak() -> None:
     src = _module_source("general_ludd.routers.compute")
     assert "detail=str(exc)" not in src
-    assert 'detail="compute deploy failed"' in src
+    assert '"error": "compute deploy failed"' in src
     assert 'detail="compute destroy failed"' in src
 
 

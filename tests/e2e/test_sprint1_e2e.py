@@ -148,7 +148,7 @@ class TestE2ELangGraph:
 
         call_count = 0
 
-        async def mock_fn(profile_id: str, messages: list) -> MagicMock:
+        async def mock_fn(profile_id: str, messages: list, **kwargs) -> MagicMock:
             nonlocal call_count
             call_count += 1
             if call_count == 1:

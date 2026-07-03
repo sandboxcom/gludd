@@ -461,7 +461,7 @@ class TestWorkerBroadcasterE2E:
 
     def test_register_worker(self):
         broadcaster = WorkerBroadcaster()
-        info = WorkerInfo(worker_id="w1", address="http://localhost:8001")
+        info = WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example")
         broadcaster.register(info)
         workers = broadcaster.list_workers()
         assert len(workers) == 1
@@ -469,14 +469,14 @@ class TestWorkerBroadcasterE2E:
 
     def test_unregister_worker(self):
         broadcaster = WorkerBroadcaster()
-        info = WorkerInfo(worker_id="w1", address="http://localhost:8001")
+        info = WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example")
         broadcaster.register(info)
         broadcaster.unregister("w1")
         assert len(broadcaster.list_workers()) == 0
 
     def test_worker_heartbeat_updates_last_seen(self):
         broadcaster = WorkerBroadcaster()
-        info = WorkerInfo(worker_id="w1", address="http://localhost:8001")
+        info = WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example")
         broadcaster.register(info)
         old_seen = broadcaster.list_workers()[0].last_seen
         time.sleep(0.01)
@@ -486,8 +486,8 @@ class TestWorkerBroadcasterE2E:
 
     def test_broadcast_reload_to_all_workers(self):
         broadcaster = WorkerBroadcaster()
-        broadcaster.register(WorkerInfo(worker_id="w1", address="http://localhost:8001"))
-        broadcaster.register(WorkerInfo(worker_id="w2", address="http://localhost:8002"))
+        broadcaster.register(WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example"))
+        broadcaster.register(WorkerInfo(worker_id="w2", address="https://worker-8002.internal.example"))
 
         with patch("httpx.post") as mock_post:
             mock_post.return_value = MagicMock(status_code=200)
@@ -497,8 +497,8 @@ class TestWorkerBroadcasterE2E:
 
     def test_broadcast_handles_worker_failure(self):
         broadcaster = WorkerBroadcaster()
-        broadcaster.register(WorkerInfo(worker_id="w1", address="http://localhost:8001"))
-        broadcaster.register(WorkerInfo(worker_id="w2", address="http://localhost:8002"))
+        broadcaster.register(WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example"))
+        broadcaster.register(WorkerInfo(worker_id="w2", address="https://worker-8002.internal.example"))
 
         with patch("httpx.post") as mock_post:
             mock_post.side_effect = [
@@ -511,7 +511,7 @@ class TestWorkerBroadcasterE2E:
 
     def test_stale_worker_cleanup(self):
         broadcaster = WorkerBroadcaster(stale_threshold_seconds=0.01)
-        info = WorkerInfo(worker_id="w1", address="http://localhost:8001")
+        info = WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example")
         broadcaster.register(info)
         time.sleep(0.05)
         broadcaster.cleanup_stale()
@@ -519,7 +519,7 @@ class TestWorkerBroadcasterE2E:
 
     def test_worker_heartbeat_keeps_alive(self):
         broadcaster = WorkerBroadcaster(stale_threshold_seconds=0.05)
-        broadcaster.register(WorkerInfo(worker_id="w1", address="http://localhost:8001"))
+        broadcaster.register(WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example"))
         for _ in range(5):
             broadcaster.heartbeat("w1")
             time.sleep(0.01)
@@ -528,7 +528,7 @@ class TestWorkerBroadcasterE2E:
 
     def test_broadcast_model_update(self):
         broadcaster = WorkerBroadcaster()
-        broadcaster.register(WorkerInfo(worker_id="w1", address="http://localhost:8001"))
+        broadcaster.register(WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example"))
 
         with patch("httpx.post") as mock_post:
             mock_post.return_value = MagicMock(status_code=200)
@@ -545,8 +545,8 @@ class TestWorkerBroadcasterE2E:
 
     def test_ping_all_workers(self):
         broadcaster = WorkerBroadcaster()
-        broadcaster.register(WorkerInfo(worker_id="w1", address="http://localhost:8001"))
-        broadcaster.register(WorkerInfo(worker_id="w2", address="http://localhost:8002"))
+        broadcaster.register(WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example"))
+        broadcaster.register(WorkerInfo(worker_id="w2", address="https://worker-8002.internal.example"))
 
         with patch("httpx.get") as mock_get:
             mock_get.return_value = MagicMock(status_code=200, json=lambda: {"status": "ok"})
@@ -1086,7 +1086,7 @@ class TestHotReloadFullIntegration:
         hooks = HookSystem()
         broadcaster = WorkerBroadcaster()
 
-        broadcaster.register(WorkerInfo(worker_id="w1", address="http://localhost:8001"))
+        broadcaster.register(WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example"))
 
         hook_events = []
         hooks.register_callback("on_model_added", lambda e: hook_events.append(e))
@@ -1132,7 +1132,7 @@ class TestHotReloadFullIntegration:
             bus = EventBus()
             hooks = HookSystem()
             broadcaster = WorkerBroadcaster()
-            broadcaster.register(WorkerInfo(worker_id="w1", address="http://localhost:8001"))
+            broadcaster.register(WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example"))
 
             registry = ProviderRegistry()
             router = ModelRouter()
@@ -1170,7 +1170,7 @@ class TestHotReloadFullIntegration:
         bus = EventBus()
         hooks = HookSystem()
         broadcaster = WorkerBroadcaster()
-        broadcaster.register(WorkerInfo(worker_id="w1", address="http://localhost:8001"))
+        broadcaster.register(WorkerInfo(worker_id="w1", address="https://worker-8001.internal.example"))
 
         hook_events = []
         hooks.register_callback("on_model_removed", lambda e: hook_events.append(e))
