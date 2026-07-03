@@ -156,10 +156,30 @@ class AgentCapabilities:
     ) -> ToolCallLoop:
         # mcp_registry pins the capability gate (Finding 3) explicitly; if not
         # passed, ToolCallLoop falls back to the client's own registry.
+        #
+        # SLICE 2 (task #56): thread the SAME opt-in SLM compaction config into the
+        # ITERATIVE tool loop so long tool conversations send fewer tokens per
+        # model call. Only wired when SLM compaction is actually enabled on this
+        # bundle (``_slm_compactor is not None``); otherwise both stay None so the
+        # tool loop is byte-for-byte identical to today (default OFF). When enabled
+        # without an explicit rung we synthesize one from the ctor threshold /
+        # preserve_recent, mirroring ``prepare_messages``.
+        tool_compaction_level = None
+        tool_summarize_fn = None
+        if self._slm_compactor is not None:
+            from general_ludd.compaction.aggressive import CompactionLevel
+
+            tool_compaction_level = self._compaction_level or CompactionLevel(
+                preserve_recent=self._preserve_recent_count,
+                threshold=self._compaction_threshold,
+            )
+            tool_summarize_fn = self._slm_summarize_fn
         return ToolCallLoop(
             model_gateway=model_gateway,
             mcp_client=mcp_client,
             mcp_registry=mcp_registry,
+            compaction_level=tool_compaction_level,
+            summarize_fn=tool_summarize_fn,
         )
 
     def make_graph_gateway(

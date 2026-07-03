@@ -9,12 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, cast
 
+from general_ludd.compaction.aggressive import compact_dicts
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.mcp.transport import MCPTransportError
 from general_ludd.schemas.job import JobSpec
 from general_ludd.security.capability_lattice import check_dispatch
+
+if TYPE_CHECKING:
+    from general_ludd.compaction.aggressive import CompactionLevel
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +46,25 @@ class ToolCallLoop:
         per_tool_timeout: float = PER_TOOL_TIMEOUT_SECONDS,
         mcp_registry: MCPToolRegistry | None = None,
         role: str | None = None,
+        compaction_level: CompactionLevel | None = None,
+        summarize_fn: Callable[[str, str], str] | None = None,
     ) -> None:
         self._gateway = model_gateway
         self._mcp_client = mcp_client
         self._max_iterations = max_iterations
         self._per_tool_timeout = per_tool_timeout
+        # SLICE 2 (task #56): opt-in pre-call SLM context-compaction. When a
+        # ``compaction_level`` is supplied, the ITERATIVE tool-loop history is
+        # compacted BEFORE each model call so long tool conversations send fewer
+        # tokens. ``summarize_fn`` is the small-model summarizer (from
+        # ``compaction.slm.make_slm_summarize_fn``); None uses the deterministic
+        # extractive fallback. BOTH default to None → the loop is byte-for-byte
+        # identical to the pre-SLICE-2 behaviour (fully backward compatible), and
+        # ``compact_dicts`` is itself fail-soft so compaction can never crash the
+        # loop. The trailing (open) tool round is ALWAYS preserved verbatim so an
+        # open ``tool_call_id`` is never orphaned — see ``run_with_tools``.
+        self._compaction_level = compaction_level
+        self._summarize_fn = summarize_fn
         # Per-role capability gate (issue #58 lattice): when a role is supplied,
         # MCP tool use is gated through ``check_dispatch(role, "mcp")`` before any
         # tool is invoked. A role without the "mcp" dispatch capability is
@@ -119,6 +138,13 @@ class ToolCallLoop:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+        # SLICE 2 pairing guard: index in ``messages`` where the CURRENT open
+        # tool round begins. Everything from here on (the tool results answering
+        # the tool_call_ids the model just asked for) is preserved verbatim by
+        # ``_compact_history`` so an open ``tool_call_id`` can never be summarized
+        # away. It is re-marked each iteration just before new tool results are
+        # appended.
+        open_round_start = len(messages)
 
         tools = await self._mcp_client.list_tools()
         tool_schemas = [
@@ -131,11 +157,24 @@ class ToolCallLoop:
         ]
 
         for _ in range(self._max_iterations):
+            # SLICE 2 (task #56): pre-call SLM context-compaction. When enabled,
+            # shrink the ITERATIVE history BEFORE the model call so long tool
+            # conversations send fewer tokens. Default OFF (compaction_level is
+            # None) → this is a no-op and ``messages`` is unchanged. The helper is
+            # fail-soft (returns the input on any error) so compaction can NEVER
+            # crash the loop, and it preserves the open tool round verbatim.
+            if self._compaction_level is not None:
+                messages = self._compact_history(
+                    messages, goal=user_prompt, open_round_start=open_round_start,
+                )
             response = await self._call_with_tools(job, messages, tool_schemas)
             content = getattr(response, "content", "") or str(response)
             tool_calls = getattr(response, "tool_calls", None)
 
             if tool_calls:
+                # This iteration's tool results are the new OPEN round: mark the
+                # boundary so they are preserved verbatim on the next compaction.
+                open_round_start = len(messages)
                 for tc in tool_calls:
                     tc_name = tc.get("function", {}).get("name", "")
                     tc_args = tc.get("function", {}).get("arguments", "{}")
@@ -202,6 +241,42 @@ class ToolCallLoop:
             f"for job {job.job_id} while the model was still requesting tools; "
             f"no final assistant answer was produced"
         )
+
+    def _compact_history(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        goal: str,
+        open_round_start: int,
+    ) -> list[dict[str, Any]]:
+        """Compact only the OLDER prefix of the tool-loop history, fail-soft.
+
+        Tool-call/tool-result PAIRING preservation (the load-bearing invariant):
+        everything from ``open_round_start`` onward is the CURRENT open tool round
+        — the ``role: "tool"`` results answering the ``tool_call_id`` s the model
+        just requested. That trailing run is preserved VERBATIM (the original dict
+        objects, ``tool_call_id`` intact) and is NEVER handed to ``compact_dicts``
+        (which strips messages to ``{role, content}`` and would drop the id,
+        orphaning the open call). Only the older prefix is summarized.
+
+        ``compact_dicts`` itself is fail-soft (returns its input on any error) and
+        does its own threshold gating, so short histories pass through untouched
+        and compaction can never raise into the loop.
+        """
+        level = self._compaction_level
+        if level is None:  # pragma: no cover - guarded by caller
+            return messages
+        prefix = messages[:open_round_start]
+        trailing = messages[open_round_start:]
+        if not prefix:
+            return messages
+        compacted_prefix = compact_dicts(
+            prefix,
+            goal=goal,
+            level=level,
+            summarize_fn=self._summarize_fn,
+        )
+        return [*compacted_prefix, *trailing]
 
     async def _call_model(
         self, job: JobSpec, system_prompt: str, user_prompt: str,

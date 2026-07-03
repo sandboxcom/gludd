@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from general_ludd.compaction.aggressive import CompactionLevel
 from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.execution.tool_loop import ToolCallLoop, ToolLoopExhausted
 from general_ludd.git_automation.repo import (
@@ -380,3 +381,225 @@ class TestFix3PathContainment:
             changed = engine._apply_unified_diff(diff)
         mock_run.assert_called_once()
         assert "src/main.py" in changed
+
+
+# --------------------------------------------------------------------------- #
+# SLICE 2 (task #56) — pre-call SLM context-compaction in the tool/MCP loop.
+#
+# The ToolCallLoop compacts the OLDER prefix of its iterative history right
+# before each model call so long tool conversations send fewer tokens. It is
+# opt-in (compaction_level defaults to None -> exact pre-slice-2 behaviour),
+# fail-soft (compaction can never crash the loop), and it ALWAYS preserves the
+# trailing open tool round verbatim so an open tool_call_id is never orphaned.
+# --------------------------------------------------------------------------- #
+def _recording_gateway(responses):
+    """MagicMock gateway that records a DEEP COPY of the messages handed to each
+    call_model (the live list is mutated afterwards) and returns *responses* in
+    order."""
+    import copy
+
+    captured: list[list[dict]] = []
+    seq = list(responses)
+
+    def _record(*_args, **kwargs):
+        captured.append(copy.deepcopy(kwargs.get("messages")))
+        return seq.pop(0)
+
+    gateway = MagicMock()
+    gateway.call_model = MagicMock(side_effect=_record)
+    return gateway, captured
+
+
+def _tool_wiring(tool_result="{'ok': True}"):
+    """A registry + mcp_client + job that drives one tool per model turn."""
+    registry = MCPToolRegistry()
+    registry.register_tool("fs", MCPTool(name="read_file", server_id="fs"))
+    mcp_client = MagicMock()
+    mcp_client.list_tools = AsyncMock(
+        return_value=[MCPTool(name="read_file", server_id="fs")]
+    )
+    mcp_client.call_tool = AsyncMock(return_value=tool_result)
+    job = MagicMock()
+    job.job_id = "JOB-COMPACT"
+    return registry, mcp_client, job
+
+
+def _toks(msgs):
+    return sum(len(m["content"]) // 4 for m in msgs)
+
+
+class TestSlice2ToolLoopCompaction:
+    @pytest.mark.asyncio
+    async def test_level_none_is_byte_identical_and_never_compacts(self):
+        """compaction_level=None -> compact_dicts is NEVER called and the messages
+        handed to the model are byte-for-byte the pre-slice-2 history."""
+        registry, mcp_client, job = _tool_wiring(tool_result="RES")
+        gateway, captured = _recording_gateway([
+            _Resp(tool_calls=[_tc("read_file", {"path": "x"})]),
+            _Resp(tool_calls=[_tc("read_file", {"path": "y"})]),
+            _Resp(content="final"),
+        ])
+        loop = ToolCallLoop(
+            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            compaction_level=None,
+        )
+
+        with patch("general_ludd.execution.tool_loop.compact_dicts") as spy:
+            result = await asyncio.wait_for(
+                loop.run_with_tools(job, "sys", "user"), timeout=5
+            )
+
+        assert result == "final"
+        # Default OFF: the compaction helper is never invoked.
+        spy.assert_not_called()
+        # Byte-identical history: 2nd model call sees exactly [sys, user, tool].
+        assert captured[1] == [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "user"},
+            {"role": "tool", "tool_call_id": "call-1", "content": "RES"},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_aggressive_level_compacts_old_context_and_reduces_tokens(self):
+        """An aggressive level + a >threshold history -> a later model call carries
+        a '[prior context]' system message, drops the summarized-away user prompt,
+        and has FEWER tokens than the same run with compaction OFF."""
+        user_prompt = "USERPROMPT_" + ("U" * 8000)
+        tool_result = "TOOLRESULT_" + ("T" * 8000)
+        level = CompactionLevel(preserve_recent=1, threshold=0.01)
+
+        # Two identical runs: one compacted, one OFF, compared at the 3rd call.
+        def _run_responses():
+            return [
+                _Resp(tool_calls=[_tc("read_file", {"path": "x"})]),
+                _Resp(tool_calls=[_tc("read_file", {"path": "y"})]),
+                _Resp(content="final"),
+            ]
+
+        reg1, cli1, job1 = _tool_wiring(tool_result=tool_result)
+        gw_off, cap_off = _recording_gateway(_run_responses())
+        loop_off = ToolCallLoop(
+            gw_off, mcp_client=cli1, mcp_registry=reg1, compaction_level=None,
+        )
+        await asyncio.wait_for(
+            loop_off.run_with_tools(job1, "sys", user_prompt), timeout=5
+        )
+
+        reg2, cli2, job2 = _tool_wiring(tool_result=tool_result)
+        gw_on, cap_on = _recording_gateway(_run_responses())
+        loop_on = ToolCallLoop(
+            gw_on, mcp_client=cli2, mcp_registry=reg2,
+            compaction_level=level,
+            summarize_fn=lambda goal, text: "SUMMARY",
+        )
+        result = await asyncio.wait_for(
+            loop_on.run_with_tools(job2, "sys", user_prompt), timeout=5
+        )
+        assert result == "final"
+
+        off_third = cap_off[2]
+        on_third = cap_on[2]
+
+        # OFF run carries the full user prompt uncompacted.
+        assert any("USERPROMPT_" in m["content"] for m in off_third)
+        # ON run: the old user prompt was summarized away and replaced by a
+        # single '[prior context]' system message.
+        assert not any("USERPROMPT_" in m["content"] for m in on_third)
+        assert any(
+            m["role"] == "system" and "[prior context" in m["content"]
+            for m in on_third
+        )
+        # The compacted call is strictly smaller than the uncompacted one.
+        assert _toks(on_third) < _toks(off_third)
+
+    @pytest.mark.asyncio
+    async def test_open_tool_round_is_preserved_verbatim_never_summarized(self):
+        """LOAD-BEARING pairing guard: the trailing open tool reply (its role,
+        tool_call_id AND content) survives compaction byte-for-byte, so the model
+        never sees an orphaned open tool_call_id."""
+        user_prompt = "USERPROMPT_" + ("U" * 8000)
+        tool_result = "TOOLRESULT_" + ("T" * 8000)
+        level = CompactionLevel(preserve_recent=1, threshold=0.01)
+
+        registry, mcp_client, job = _tool_wiring(tool_result=tool_result)
+        gateway, captured = _recording_gateway([
+            _Resp(tool_calls=[_tc("read_file", {"path": "x"})]),
+            _Resp(tool_calls=[_tc("read_file", {"path": "y"})]),
+            _Resp(content="final"),
+        ])
+        loop = ToolCallLoop(
+            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            compaction_level=level,
+            summarize_fn=lambda goal, text: "SUMMARY",
+        )
+
+        await asyncio.wait_for(
+            loop.run_with_tools(job, "sys", user_prompt), timeout=5
+        )
+
+        # On the 3rd call compaction fired. Its LAST message is the still-open
+        # tool round: preserved verbatim WITH its tool_call_id (compact_dicts
+        # would have stripped the id -> orphaning the call).
+        on_third = captured[2]
+        assert on_third[-1] == {
+            "role": "tool",
+            "tool_call_id": "call-1",
+            "content": tool_result,
+        }
+        # A '[prior context]' summary IS present (compaction really ran), proving
+        # the pairing survived DESPITE active summarization, not because
+        # compaction was skipped.
+        assert any(
+            m["role"] == "system" and "[prior context" in m["content"]
+            for m in on_third
+        )
+
+    @pytest.mark.asyncio
+    async def test_summarize_fn_raising_mid_loop_is_fail_soft(self):
+        """If summarize_fn raises, the loop must still complete and return the
+        final content — compaction can NEVER let an exception escape."""
+        user_prompt = "USERPROMPT_" + ("U" * 8000)
+        tool_result = "TOOLRESULT_" + ("T" * 8000)
+        level = CompactionLevel(preserve_recent=1, threshold=0.01)
+
+        def _boom(goal, text):
+            raise RuntimeError("summarizer exploded")
+
+        registry, mcp_client, job = _tool_wiring(tool_result=tool_result)
+        gateway, _captured = _recording_gateway([
+            _Resp(tool_calls=[_tc("read_file", {"path": "x"})]),
+            _Resp(tool_calls=[_tc("read_file", {"path": "y"})]),
+            _Resp(content="final"),
+        ])
+        loop = ToolCallLoop(
+            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            compaction_level=level,
+            summarize_fn=_boom,
+        )
+
+        result = await asyncio.wait_for(
+            loop.run_with_tools(job, "sys", user_prompt), timeout=5
+        )
+        assert result == "final"
+
+    @pytest.mark.asyncio
+    async def test_exhaustion_still_raised_with_compaction_on(self):
+        """Compaction must not mask ToolLoopExhausted: a model that never stops
+        requesting tools still raises after the iteration cap."""
+        registry, mcp_client, job = _tool_wiring()
+        gateway = MagicMock()
+        gateway.call_model = MagicMock(
+            return_value=_Resp(tool_calls=[_tc("read_file", {"path": "x"})])
+        )
+        loop = ToolCallLoop(
+            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            max_iterations=3,
+            compaction_level=CompactionLevel(preserve_recent=1, threshold=0.01),
+            summarize_fn=lambda goal, text: "SUMMARY",
+        )
+
+        with pytest.raises(ToolLoopExhausted):
+            await asyncio.wait_for(
+                loop.run_with_tools(job, "sys", "user"), timeout=5
+            )
+        assert gateway.call_model.call_count == 3
