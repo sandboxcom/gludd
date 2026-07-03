@@ -18,6 +18,7 @@ from general_ludd.compaction.aggressive import (
     CompactionLevel,
     compact_dicts,
     compact_messages,
+    level_at,
 )
 
 # LEVELS[1] == CompactionLevel(4, 0.8): keep 4 recent, compact at ratio >= 0.8.
@@ -159,3 +160,18 @@ def test_levels_ladder_is_ordered_least_to_most_aggressive() -> None:
     # preserve_recent strictly decreases (more aggressive) down the ladder.
     preserves = [lvl.preserve_recent for lvl in LEVELS]
     assert preserves == sorted(preserves, reverse=True)
+
+
+def test_level_at_infinite_index_clamps_without_raising() -> None:
+    """An infinite config index must clamp, never crash the loop that reads it.
+
+    ``int(float("inf"))`` raises OverflowError (not TypeError/ValueError), so
+    without OverflowError in level_at's caught tuple an ``inf`` compaction.level
+    would propagate out of the generation/tool loop. level_at must catch it and
+    fall back to a valid clamped rung.
+    """
+    result = level_at(float("inf"))
+    assert isinstance(result, CompactionLevel)
+    assert result in LEVELS
+    # Negative infinity likewise clamps to a valid rung rather than raising.
+    assert level_at(float("-inf")) in LEVELS

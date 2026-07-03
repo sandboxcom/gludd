@@ -69,7 +69,10 @@ def level_at(index: int) -> CompactionLevel:
     """
     try:
         i = max(0, min(int(index), len(LEVELS) - 1))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError guards an infinite index: int(float("inf")) raises it,
+        # so an inf config value clamps to the default rung instead of crashing
+        # the loop that reads compaction.level.
         i = _DEFAULT_LEVEL_INDEX
     return LEVELS[i]
 
