@@ -223,7 +223,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Per-project cost/time/LoC accounting (#28) | ✓ 100% | **PASS** *(file-refs only)*: cost+time+LoC per project; 13 tests; `[e2b21d14]` |
 | Watchdog/stall detection improvements (mt-6-watchdog branch) | ✓ 0% | **PASS** *(file-refs only)*: branch abandoned; re-scoped into master |
 | Gate-safe + predictive floor controller (floor_controller-consolidated branch) | ✓ 55% | **PASS** *(file-refs only)*: branch `floor_controller-consolidated` never existed — abandoned; `scripts/floor_controller.py` (208 lines) + 21 tests; NOT wired into daemon event loop; `[branch abandoned — re-scoped into master]` |
-| self_update wired into daemon | ✓ 90% | **PASS** *(file-refs only)*: wired `feature/alpha4-green-the-gate`; verified 2026-06-25; −10% pending e2e proof |
+| self_update wired into daemon | ✓ 100% | **PASS** *(file-refs only)*: 11 e2e tests: plan/applied/audit, rollback, daemon_state tracking; `[2cc8715f]` |
 | Remediation system: blocker detector, dispatcher, chronic reporter | ✓ 100% | **PASS** *(file-refs only)*: `BlockerDetector` + `RemediationDispatcher` + `ChronicReporter` wired via `/api/remediation`; `[audit]` |
 | HumanTodo system (bot→human task requests) | ✓ 100% | **PASS** *(file-refs only)*: `HumanTodoModel` + `HumanTodoRepository` + `/api/human-todos` router + CLI; `[audit]` |
 | Project collections/init (scaffold + precedence) | ✓ 100% | **PASS** *(file-refs only)*: `project_init` role scaffolds .gludd/collections/; 3-tier precedence: project > user > bundled; `[audit]` |

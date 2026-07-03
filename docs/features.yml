@@ -830,11 +830,12 @@ sections:
 
       - id: self-update-wired
         title: "self_update wired into daemon"
-        pct: 90
+        pct: 100
         evidence_refs:
+          - "test:tests/e2e/test_self_update_e2e.py"
           - "file:src/general_ludd/daemon.py::self_update"
           - "file:src/general_ludd/event_loop/loop.py::_apply_self_update_code"
-        notes: "wired `feature/alpha4-green-the-gate`; verified 2026-06-25; −10% pending e2e proof"
+        notes: "11 e2e tests: plan/applied/audit, rollback, daemon_state tracking; `[2cc8715f]`"
 
       - id: remediation-system
         title: "Remediation system: blocker detector, dispatcher, chronic reporter"
