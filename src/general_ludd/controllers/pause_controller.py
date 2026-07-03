@@ -97,12 +97,24 @@ class PauseController:
     # Public API
     # ------------------------------------------------------------------
 
-    def pause(self, kind: PauseKind, target_id: str, *, reason: str = "") -> PauseRecord:
+    def pause(
+        self,
+        kind: PauseKind,
+        target_id: str,
+        *,
+        reason: str = "",
+        resources: dict[str, object] | None = None,
+        last_state: dict[str, object] | None = None,
+    ) -> PauseRecord:
         """Mark ``(kind, target_id)`` paused, persist, and return its record.
 
         Idempotent: re-pausing an already-paused entity returns the existing
         record unchanged (its original ``paused_at`` is preserved) and does not
         rewrite the store.
+
+        *resources* and *last_state* are SLICE 3 capture fields: callers
+        snapshot live daemon state (spend facet, leases, registries) at pause
+        time so a later resume can restore context.
         """
         key = (kind, target_id)
         with self._lock:
@@ -114,6 +126,8 @@ class PauseController:
                 target_id=target_id,
                 paused_at=time.time(),
                 reason=reason,
+                resources=resources or {},
+                last_state=last_state or {},
             )
             self._index(record)
             self._persist()
