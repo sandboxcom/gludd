@@ -23,6 +23,8 @@ class TaskType(StrEnum):
 
 class TaskRole(StrEnum):
     PLANNER = "planner"
+    CODER = "coder"
+    REVIEWER = "reviewer"
     EDITOR = "editor"
     COMPACTOR = "compactor"
     ENUMERATOR = "enumerator"

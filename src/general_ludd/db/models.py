@@ -662,6 +662,9 @@ class BenchmarkResultModel(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     raw_output: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    task_role: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default=None, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
@@ -672,6 +675,7 @@ class BenchmarkResultModel(Base):
         # Project-aware aggregation key: get_aggregate_scores(project_id=...)
         # filters and groups on (project_id, task_type) when borrowing is on.
         Index("ix_benchmark_project_task", "project_id", "task_type"),
+        Index("ix_benchmark_task_role", "task_role"),
     )
 
 

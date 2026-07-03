@@ -320,6 +320,11 @@ def register(
     async def ingest_beats(request: Request) -> Response:
         return await _handle(request, lambda b, ct: _parse_beats(b))
 
+    # --- health ------------------------------------------------------------ #
+    @app.get("/api/receive/health")
+    async def receiver_health() -> JSONResponse:
+        return JSONResponse(content=buffer.snapshot())
+
 
 def _parse_webhook(payload: bytes) -> list[dict[str, Any]]:
     """Parse a generic JSON webhook body into normalized log records, fail-soft.

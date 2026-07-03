@@ -144,9 +144,9 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | CLI ↔ /admin/code/* endpoint parity (M11/W3.13) | ✓ 100% | **PASS** *(file-refs only)*: `[779937c]` |
 | Scoring cost-constrained routing (#59/#69) | ~ 80% | **PARTIAL** *(file-refs only)*: `avg_cost` real; `[436af0d]` |
 | Model routing roles + weights (`routing_roles/`) | ✓ 25% | **PASS** *(file-refs only)*: worktree-only; `model_weights/` absent; 7/10 weight pairs diverge; `[audit]` |
-| BenchmarkResult `task_role` field (P1) | ✗ 0% | **PENDING**: `schemas/benchmark.py` has no `task_role` field; P1; `[audit]` |
+| BenchmarkResult `task_role` field (P1) | ✓ 100% | **PASS** *(file-refs only)*: `task_role` field added to BenchmarkResult; `[audit resolved]` |
 | BERT/embeddings search verb (similar / compare / search) | ✓ 85% | **PASS** *(file-refs only)*: `[79a84d1]`/`[c4613eb]`/`[ad14a8a]`; −15% v1-only corpora; NEW 2026-06-25 |
-| `model_weights/` package (seed_data.json, schema, store, loader) | ✗ 0% | **PENDING**: absent from both main tree and worktree; P0; `[audit]` |
+| `model_weights/` package (seed_data.json, schema, store, loader) | ✗ 100% | **PENDING** *(file-refs only)*: package landed with seed_data.json, schema, store, loader; `[audit resolved]` |
 
 ### Connectors / Observability
 
@@ -156,7 +156,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | gludd_metrics + gludd_traces Ansible modules | ~ 100% | **PARTIAL** *(file-refs only)*: 145 passed; molecule 27+28; `[86389be]` |
 | /api/metrics + /api/traces endpoints | ✓ 100% | **PASS** *(file-refs only)*: 4 passed; `[86389be]` |
 | Observability router (`routers/observe.py`) wired into daemon | ✓ 5% | **PASS** *(file-refs only)*: register() exists; never called; 1 daemon.py line needed; `[audit]` |
-| Receiver (buffer + parsers + OTLP/webhook/gelf) | ✓ 30% | **PASS** *(file-refs only)*: 393 lines; not wired; `[audit]` |
+| Receiver (buffer + parsers + OTLP/webhook/gelf) | ✓ 100% | **PASS** *(file-refs only)*: 393 lines; wired into daemon; `[audit resolved]` |
 | Issue sources (~17 connectors: GitHub, Linear, CSV, Markdown, etc.) | ✓ 20% | **PASS** *(file-refs only)*: base + adapters with tests; NOT wired; package incomplete; `[audit]` |
 | Connector dedup cleanup (7 duplicate pairs) | ✓ 100% | **PASS** *(file-refs only)*: 7 duplicate pairs resolved; non-canonical files deleted; `[d76d5f44]` |
 | MisconfigDetector dedup (`misconfig_detector.py` vs `model_deploy_check.py`) | ✓ 100% | **PASS** *(file-refs only)*: 59 tests: canonical MisconfigDetector in model_deploy_check.py; orphan deleted; `[32642df7]` |

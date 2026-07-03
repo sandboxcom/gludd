@@ -900,9 +900,12 @@ class BenchmarkRepository:
         return cast(BenchmarkResultModel, await self._execute_with_session(_do))
 
     async def get_aggregate_scores(
-        self, task_type: str | None = None, project_id: str | None = None
+        self,
+        task_type: str | None = None,
+        project_id: str | None = None,
+        task_role: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Aggregate benchmark scores grouped by prompt/model/task (+ project).
+        """Aggregate benchmark scores grouped by prompt/model/task (+ project + role).
 
         ``project_id`` is the project-hierarchy phase-3 axis: when None (the
         default and every legacy caller's behaviour) the scores are GLOBAL —
@@ -912,6 +915,11 @@ class BenchmarkRepository:
         separately and borrow across declared edges. ``project_id`` is always a
         group key and is returned in every row so the router can attribute a
         borrowed pick to its source project.
+
+        ``task_role`` filters and groups by the assigned role (planner, coder,
+        reviewer, editor, compactor, enumerator), enabling per-role quality
+        comparisons. When provided, results are filtered to that role.
+        ``task_role`` is included as a group-by key and returned in every row.
         """
         async def _do(session: AsyncSession) -> list[dict[str, Any]]:
             from sqlalchemy import func
@@ -921,6 +929,7 @@ class BenchmarkRepository:
                     BenchmarkResultModel.model_profile_id,
                     BenchmarkResultModel.task_type,
                     BenchmarkResultModel.project_id,
+                    BenchmarkResultModel.task_role,
                     func.avg(BenchmarkResultModel.completion_score).label("avg_completion"),
                     func.avg(BenchmarkResultModel.code_quality_score).label("avg_quality"),
                     func.avg(BenchmarkResultModel.instruction_adherence_score).label("avg_instruction"),
@@ -940,12 +949,15 @@ class BenchmarkRepository:
                     BenchmarkResultModel.model_profile_id,
                     BenchmarkResultModel.task_type,
                     BenchmarkResultModel.project_id,
+                    BenchmarkResultModel.task_role,
                 )
             )
             if task_type is not None:
                 stmt = stmt.where(BenchmarkResultModel.task_type == task_type)
             if project_id is not None:
                 stmt = stmt.where(BenchmarkResultModel.project_id == project_id)
+            if task_role is not None:
+                stmt = stmt.where(BenchmarkResultModel.task_role == task_role)
             result = await session.execute(stmt)
             rows = result.all()
             return [
@@ -954,6 +966,7 @@ class BenchmarkRepository:
                     "model_profile_id": r.model_profile_id,
                     "task_type": r.task_type,
                     "project_id": r.project_id,
+                    "task_role": r.task_role,
                     "avg_completion": r.avg_completion,
                     "avg_quality": r.avg_quality,
                     "avg_instruction": r.avg_instruction,

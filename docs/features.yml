@@ -313,9 +313,10 @@ sections:
 
       - id: p1-benchmark-task-role
         title: "BenchmarkResult `task_role` field (P1)"
-        pct: 0
-        evidence_refs: []
-        notes: "`schemas/benchmark.py` has no `task_role` field; P1; `[audit]`"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/schemas/benchmark.py::BenchmarkResult"
+        notes: "`task_role` field added to BenchmarkResult; `[audit resolved]`"
 
       - id: bert-embeddings-search
         title: "BERT/embeddings search verb (similar / compare / search)"
@@ -329,9 +330,11 @@ sections:
 
       - id: model-weights-package
         title: "`model_weights/` package (seed_data.json, schema, store, loader)"
-        pct: 0
-        evidence_refs: []
-        notes: "absent from both main tree and worktree; P0; `[audit]`"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/model_weights/__init__.py"
+          - "file:src/general_ludd/model_weights/store.py::WeightStore"
+        notes: "package landed with seed_data.json, schema, store, loader; `[audit resolved]`"
 
   # ---------------------------------------------------------------------------
   - title: "Connectors / Observability"
@@ -374,11 +377,11 @@ sections:
 
       - id: receiver
         title: "Receiver (buffer + parsers + OTLP/webhook/gelf)"
-        pct: 30
+        pct: 100
         evidence_refs:
           - "file:src/general_ludd/receiver/router.py::router"
           - "file:src/general_ludd/receiver/buffer.py::ReceiverBuffer"
-        notes: "393 lines; not wired; `[audit]`"
+        notes: "393 lines; wired into daemon; `[audit resolved]`"
 
       - id: issue-sources
         title: "Issue sources (~17 connectors: GitHub, Linear, CSV, Markdown, etc.)"
