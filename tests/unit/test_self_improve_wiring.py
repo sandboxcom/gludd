@@ -317,6 +317,100 @@ class TestSelfImproveApplyConfigTierApprovalGate:
                 assert resp.status_code == 503
                 MockApplier.assert_not_called()
 
+    @staticmethod
+    async def _enqueue_approve_apply(
+        client, target_path: str, *, title: str = "", content: str = "key: changed\n"
+    ) -> str:
+        """Drive the enqueue -> approve -> apply flow; return the approval id."""
+        body: dict = {
+            "kind": "config",
+            "capability_required": "config_write",
+            "target_paths": [target_path],
+            "change_content": content,
+        }
+        if title:
+            body["title"] = title
+        resp = await client.post("/admin/self-improve/apply", json=body)
+        approval_id = resp.json()["approval_id"]
+        resp = await client.post(
+            f"/admin/self-improve/approvals/{approval_id}/approve"
+        )
+        assert resp.status_code == 200
+        resp = await client.post(
+            "/admin/self-improve/apply",
+            json={"kind": "config", "approval_id": approval_id},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "applied"
+        return approval_id
+
+    @pytest.mark.asyncio
+    async def test_apply_records_change_export_entry(
+        self, app, tmp_path, monkeypatch
+    ):
+        """Task #47: a successful config-tier apply POPULATES the
+        ChangeRecordStore so `core-changes` has something to export. The dead
+        store is now wired to the real write path."""
+        from general_ludd.integrity.change_log import ChangeRecordStore
+
+        store_dir = tmp_path / "changestore"
+        monkeypatch.setenv("GL_CHANGE_STORE_DIR", str(store_dir))
+        engine, _factory = await _attach_inmemory_db(app)
+        monkeypatch.setattr(
+            "general_ludd.routers.self_improve.Path.cwd", lambda: tmp_path
+        )
+        target = tmp_path / "cfg.yml"
+        target.write_text("key: original\n")
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                await self._enqueue_approve_apply(
+                    client, str(target), title="tune the widget"
+                )
+
+            records = ChangeRecordStore(store_dir=str(store_dir)).list_records()
+            assert len(records) == 1
+            rec = records[0]
+            assert rec.file_path == str(target.resolve())
+            assert rec.change_type == "config"
+            assert rec.reason == "tune the widget"
+            assert rec.new_content == "key: changed\n"
+            assert rec.old_content == b"key: original\n"
+            assert rec.signer == "self_improve_apply"
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_apply_excluded_path_records_nothing(
+        self, app, tmp_path, monkeypatch
+    ):
+        """An excluded artefact (e.g. a .pyc path) must NOT be recorded even
+        though the write itself proceeds."""
+        from general_ludd.integrity.change_log import ChangeRecordStore
+
+        store_dir = tmp_path / "changestore"
+        monkeypatch.setenv("GL_CHANGE_STORE_DIR", str(store_dir))
+        engine, _factory = await _attach_inmemory_db(app)
+        monkeypatch.setattr(
+            "general_ludd.routers.self_improve.Path.cwd", lambda: tmp_path
+        )
+        target = tmp_path / "artifact.pyc"
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                await self._enqueue_approve_apply(
+                    client, str(target), title="compiled artefact"
+                )
+
+            # Write proceeded, but the excluded path produced no change record.
+            assert target.read_text() == "key: changed\n"
+            records = ChangeRecordStore(store_dir=str(store_dir)).list_records()
+            assert records == []
+        finally:
+            await engine.dispose()
+
 
 class TestSelfImproveApplyConfigTier:
     """Config-tier plans route through UpdateApplier + AtomicSafeWriter."""

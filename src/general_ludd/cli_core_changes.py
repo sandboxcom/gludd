@@ -22,10 +22,13 @@ import importlib.util
 import json as _json
 import os
 import re
+import shlex
 from pathlib import Path
 from typing import Any, Literal
 
+from general_ludd.git_automation.repo import GitAutomation
 from general_ludd.integrity.change_log import ChangeLogEntry, ChangeRecordStore
+from general_ludd.self_update.safe_writer import AtomicSafeWriter
 
 # Canonical FIM exclude set (mirrors cli.py ``_scan_local_integrity``): never
 # surface compiled artefacts, VCS internals, or on-disk databases as "changes".
@@ -150,6 +153,91 @@ def _cmd_core_changes_list(args: argparse.Namespace) -> None:
         print()
 
 
+def _rel_from_src(file_path: str) -> str:
+    """Return the target path relative to a ``src/general_ludd/`` checkout root.
+
+    A recorded ``file_path`` is the ABSOLUTE on-disk location where the change
+    was applied (e.g. ``/some/worktree/src/general_ludd/routers/x.py``).  To
+    replay it into a *different* repo checkout (``--repo``), we re-anchor it at
+    the ``src/general_ludd/`` marker so the write lands at the same package
+    location beneath the target repo root (``src/general_ludd/routers/x.py``).
+
+    When the path contains no ``src/general_ludd/`` marker it is returned
+    UNCHANGED — an absolute path that does not live under the target repo will
+    then be refused by :class:`AtomicSafeWriter` (fail-closed: we never smuggle
+    an out-of-tree path into a write).
+    """
+    norm = file_path.replace(os.sep, "/")
+    marker = "src/general_ludd/"
+    idx = norm.find(marker)
+    if idx == -1:
+        return file_path
+    return norm[idx:]
+
+
+def _cmd_core_changes_commit(args: argparse.Namespace) -> int:
+    """Materialise recorded change(s) into ``--repo`` and gated-commit them.
+
+    Selection (over the UNPRUNED records only):
+
+    * ``--id N`` — exactly the record with id ``N``.
+    * ``--all`` — every unpruned record.
+    * neither — default to records classified as ``core`` (changes to gludd
+      itself); ``user`` changes are left for the operator's own project VCS.
+
+    Excluded artefacts (compiled files, ``.git``, DBs) are always dropped.  Each
+    selected record's ``new_content`` is written (via the confined
+    :class:`AtomicSafeWriter`) to its ``src/general_ludd/`` location beneath the
+    resolved repo root, then a single gated commit is attempted.  A record is
+    marked committed ONLY after the gate passes (fail-closed: a failed gate
+    leaves every record unpruned so it can be retried).
+    """
+    store = ChangeRecordStore(store_dir=getattr(args, "store_dir", "") or "")
+    records = store.list_records(unpruned_only=True)
+
+    # Never try to commit excluded artefacts.
+    records = [r for r in records if not _excluded(r.file_path)]
+
+    record_id = getattr(args, "id", None)
+    if record_id is not None:
+        selected = [r for r in records if r.id == int(record_id)]
+    elif bool(getattr(args, "all", False)):
+        selected = list(records)
+    else:
+        selected = [r for r in records if classify(r.file_path) == "core"]
+
+    if not selected:
+        print("(no matching recorded changes to commit)")
+        return 0
+
+    repo_root = Path(args.repo).resolve()
+    writer = AtomicSafeWriter(workspace_root=repo_root)
+
+    written: list[str] = []
+    for rec in selected:
+        rel = _rel_from_src(rec.file_path)
+        # A path escaping the repo root raises ValueError here — fail-closed,
+        # BEFORE any commit, so no record is marked.
+        writer.write(rel, _as_text(rec.new_content))
+        written.append(rel)
+
+    gate_cmd = shlex.split(args.gate) if getattr(args, "gate", "") else ["make", "gate"]
+    message = getattr(args, "message", "") or selected[0].reason
+    result = GitAutomation(repo_path=args.repo).gated_commit(
+        files=written, message=message, gate_cmd=gate_cmd
+    )
+
+    if not result.success:
+        # Fail-closed: do NOT mark anything committed so it can be retried.
+        print(f"commit failed: {result.message}")
+        return 1
+
+    for rec in selected:
+        store.mark_committed(rec.id)
+    print(result.commit_sha or "")
+    return 0
+
+
 def add_core_changes_subparser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     p = sub.add_parser(
         "core-changes",
@@ -179,3 +267,47 @@ def add_core_changes_subparser(sub: argparse._SubParsersAction) -> None:  # type
         help="Read a specific ChangeRecordStore directory (default: user store)",
     )
     lst.set_defaults(func=_cmd_core_changes_list)
+
+    cmt = csub.add_parser(
+        "commit",
+        help="Materialise recorded change(s) into a repo and gated-commit them",
+    )
+    cmt.add_argument(
+        "--all",
+        action="store_true",
+        dest="all",
+        help="Commit every unpruned record (default: only core changes)",
+    )
+    cmt.add_argument(
+        "--id",
+        dest="id",
+        type=int,
+        default=None,
+        help="Commit only the single record with this id",
+    )
+    cmt.add_argument(
+        "--message",
+        "-m",
+        dest="message",
+        default="",
+        help="Commit message (default: the record's reason)",
+    )
+    cmt.add_argument(
+        "--repo",
+        dest="repo",
+        required=True,
+        help="Target repo checkout to materialise the change(s) into",
+    )
+    cmt.add_argument(
+        "--gate",
+        dest="gate",
+        default="make gate",
+        help="Gate command run before committing (default: 'make gate')",
+    )
+    cmt.add_argument(
+        "--store-dir",
+        default="",
+        dest="store_dir",
+        help="Read a specific ChangeRecordStore directory (default: user store)",
+    )
+    cmt.set_defaults(func=_cmd_core_changes_commit)

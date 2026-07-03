@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from general_ludd.cli_core_changes import _excluded
 from general_ludd.db.repository import TodoRepository
+from general_ludd.integrity.change_log import ChangeRecordStore
 from general_ludd.schemas.todo import TodoStatus
 from general_ludd.self_improve.approval import (
     SELF_IMPROVE_WORK_TYPE,
@@ -145,6 +148,13 @@ async def _enqueue_config_change(
     ``plan_artifact`` so the eventual apply writes exactly what a human reviewed
     — the request that triggers the release cannot substitute different content.
     """
+    # A human-meaningful reason, captured now so the eventual change-export
+    # record explains WHY the file changed (falls back to a generic label).
+    reason = (
+        str(payload.get("title", "")).strip()
+        or str(payload.get("description", "")).strip()
+        or f"self-improve config write ({kind})"
+    )
     spec = {
         "kind": kind,
         "capability_required": str(
@@ -152,6 +162,7 @@ async def _enqueue_config_change(
         ),
         "target_paths": list(payload.get("target_paths", [])),
         "change_content": str(payload.get("change_content", "")),
+        "reason": reason,
     }
     targets = ", ".join(spec["target_paths"]) or kind
     async with factory() as session:
@@ -223,7 +234,35 @@ async def _apply_approved_config_change(
             ) from exc
 
         workspace_root = Path.cwd()
-        safe_writer = AtomicSafeWriter(workspace_root=workspace_root)
+
+        # Change-export recorder (task #47): populate the ChangeRecordStore on
+        # every successful config-tier write so `core-changes list/commit` has
+        # something to export. Least-invasive + fail-soft — AtomicSafeWriter
+        # swallows any exception this raises, so recording never breaks a write.
+        reason = str(spec.get("reason", "")) or (
+            f"self-improve config write ({spec.get('kind', 'config')})"
+        )
+        change_type = str(spec.get("kind", "config"))
+
+        def _recorder(file_path: str, old: bytes | None, new: str) -> None:
+            # Never record compiled artefacts / VCS internals / on-disk DBs.
+            if _excluded(file_path):
+                return
+            store = ChangeRecordStore(
+                store_dir=os.environ.get("GL_CHANGE_STORE_DIR", "")
+            )
+            store.record(
+                file_path,
+                change_type=change_type,
+                reason=reason,
+                old_content=old,
+                new_content=new,
+                signer="self_improve_apply",
+            )
+
+        safe_writer = AtomicSafeWriter(
+            workspace_root=workspace_root, recorder=_recorder
+        )
         applier = UpdateApplier(
             writer=safe_writer,
             capability_checker=_ConfigTierCapabilityChecker(),

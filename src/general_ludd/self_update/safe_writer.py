@@ -47,10 +47,19 @@ class AtomicSafeWriter:
     and passes the ``runtime_checkable`` ``isinstance`` check.
     """
 
-    def __init__(self, workspace_root: Path | str) -> None:
+    def __init__(
+        self,
+        workspace_root: Path | str,
+        recorder: Callable[[str, bytes | None, str], None] | None = None,
+    ) -> None:
         # Resolve once at construction so a later cwd change can't shift the
         # root under us. Symlinks in the root path are followed.
         self._workspace_root: Path = Path(workspace_root).resolve()
+        # Optional change-export hook, invoked on a SUCCESSFUL, validated write
+        # with ``(resolved_path, original_bytes_or_None, new_content)``. It is
+        # called FAIL-SOFT (any exception is swallowed) so recording can NEVER
+        # break or roll back the write itself. ``None`` disables recording.
+        self._recorder: Callable[[str, bytes | None, str], None] | None = recorder
 
     @property
     def workspace_root(self) -> Path:
@@ -137,6 +146,14 @@ class AtomicSafeWriter:
             if not accepted:
                 self._restore(target, original)
                 raise RuntimeError("post-write validation failed, rolled back")
+
+        # Change-export hook: record the (path, prior bytes, new content) AFTER
+        # the write has fully succeeded and passed validation. FAIL-SOFT — any
+        # exception from the recorder is swallowed so a recording failure can
+        # never break the write or trigger a rollback of an already-good file.
+        if self._recorder is not None:
+            with contextlib.suppress(Exception):
+                self._recorder(str(target), original, content)
 
         return str(target)
 
