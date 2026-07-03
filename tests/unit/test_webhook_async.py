@@ -9,13 +9,52 @@ freezing AND thread-pool exhaustion.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from general_ludd.events.hooks import HookSystem
+
+
+class _FakeResponse:
+    """Minimal httpx.Response stand-in that supports raise_for_status()."""
+    status_code: int = 200
+
+    def raise_for_status(self) -> None:
+        pass
+
+    def json(self) -> dict:
+        return {}
+
+
+def _make_fake_client(callback=None):
+    """Return a class-based async context manager whose ``post`` method
+    records calls to *callback* (if given) and returns a _FakeResponse.
+
+    Using a real class instead of ``unittest.mock.AsyncMock`` avoids the
+    edge-cases AsyncMock exhibits when patched in place of an async context
+    manager used inside a ``patch``-wrapped call.
+    """
+
+    async def _post(url, **kwargs):
+        if callback:
+            callback(url, **kwargs)
+        return _FakeResponse()
+
+    class _FakeAsyncClient:
+        post = _post
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+    return _FakeAsyncClient()
+
 
 # ---------------------------------------------------------------------------
 # Test 1: AsyncClient is used in async context (NOT sync httpx.post)
 # ---------------------------------------------------------------------------
+
 
 class TestAsyncClientUsed:
     """TDD-1 — _fire_webhook from async context must use AsyncClient."""
@@ -28,21 +67,18 @@ class TestAsyncClientUsed:
         - Fire a webhook from inside a real asyncio event loop.
         - Assert AsyncClient.post received the call, and sync httpx.post did NOT.
         """
-        async_post_calls: list[dict] = []
-        sync_post_calls: list[dict] = []
+        async_post_calls: list[str] = []
+        sync_post_calls: list[str] = []
 
-        async def fake_async_post(url, **kwargs):
-            async_post_calls.append({"url": url, "kwargs": kwargs})
+        def record_async(url, **kwargs):
+            async_post_calls.append(url)
 
-        def fake_sync_post(url, **kwargs):
-            sync_post_calls.append({"url": url})
+        def record_sync(url, **kwargs):
+            sync_post_calls.append(url)
             from unittest.mock import MagicMock
             return MagicMock(status_code=200)
 
-        mock_client = AsyncMock()
-        mock_client.post = fake_async_post
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        fake_client = _make_fake_client(callback=record_async)
 
         hs = HookSystem()
         hs.register_webhook(
@@ -52,11 +88,11 @@ class TestAsyncClientUsed:
         with (
             patch(
                 "general_ludd.events.hooks.httpx.AsyncClient",
-                return_value=mock_client,
+                return_value=fake_client,
             ),
             patch(
                 "general_ludd.events.hooks.httpx.post",
-                side_effect=fake_sync_post,
+                side_effect=record_sync,
             ),
         ):
             hs.fire("evt_async", {"name": "test", "type": "model_added"})
@@ -82,6 +118,7 @@ class TestAsyncClientUsed:
 # Test 2: Non-blocking proof with a real event loop
 # ---------------------------------------------------------------------------
 
+
 class TestAsyncWebhookNonBlocking:
     """TDD-2 — _fire_webhook must not block the event loop."""
 
@@ -96,13 +133,12 @@ class TestAsyncWebhookNonBlocking:
           If the loop thread were held by the slow POST, the sentinel could
           not have completed before the 0.3 s deadline.
         """
+
         async def slow_post(url, **kwargs):
             await asyncio.sleep(0.5)
 
-        mock_client = AsyncMock()
-        mock_client.post = slow_post
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        fake_client = _make_fake_client()
+        fake_client.post = slow_post  # override with slow version
 
         hs = HookSystem()
         hs.register_webhook(
@@ -119,7 +155,7 @@ class TestAsyncWebhookNonBlocking:
 
         with patch(
             "general_ludd.events.hooks.httpx.AsyncClient",
-            return_value=mock_client,
+            return_value=fake_client,
         ):
             hs.fire("slow_evt", {"name": "ok", "type": "model_added"})
 
@@ -138,21 +174,19 @@ class TestAsyncWebhookNonBlocking:
 # Test 3: Sync context (no running loop) also uses AsyncClient via asyncio.run
 # ---------------------------------------------------------------------------
 
+
 class TestSyncContextAsyncClient:
     """TDD-3 — sync context (no loop) uses AsyncClient via asyncio.run."""
 
     def test_sync_context_uses_async_client(self):
         """When no event loop is running, _fire_webhook calls asyncio.run
         with an async function that uses httpx.AsyncClient."""
-        async_post_calls: list[dict] = []
+        async_post_calls: list[str] = []
 
-        async def fake_async_post(url, **kwargs):
-            async_post_calls.append({"url": url, "kwargs": kwargs})
+        def record_async(url, **kwargs):
+            async_post_calls.append(url)
 
-        mock_client = AsyncMock()
-        mock_client.post = fake_async_post
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        fake_client = _make_fake_client(callback=record_async)
 
         hs = HookSystem()
         hs.register_webhook(
@@ -162,7 +196,7 @@ class TestSyncContextAsyncClient:
         with (
             patch(
                 "general_ludd.events.hooks.httpx.AsyncClient",
-                return_value=mock_client,
+                return_value=fake_client,
             ),
             patch(
                 "general_ludd.events.hooks.httpx.post",

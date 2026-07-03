@@ -108,10 +108,13 @@ class TestTodoOptimisticLock:
             {"title": "Writer A won"},
             expected_version=1,
         )
+        # Commit so the new version is visible to other sessions.
+        await async_session.commit()
 
         # Writer B (the loser): opens a SEPARATE session and tries to update
-        # using the now-stale version 1.  The WHERE clause on id AND version
-        # matches zero rows, so update() raises ConcurrencyError.
+        # using the now-stale version 1.  The repository's read-check-then-update
+        # path loads version=2 from the committed DB state, sees 2 != 1,
+        # and raises ConcurrencyError without reaching the UPDATE.
         session_factory = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
         async with session_factory() as writer_b_session:
             writer_b_repo = TodoRepository(writer_b_session)
@@ -123,12 +126,7 @@ class TestTodoOptimisticLock:
                 )
 
         # Verify writer A's changes persisted (not overwritten by B).
-        # Use a raw query on the primary session to bypass identity-map caching.
-        from sqlalchemy import select as _select
-        result = await async_session.execute(
-            _select(TodoModel).where(TodoModel.todo_id == created.todo_id)
-        )
-        updated = result.scalar_one_or_none()
+        updated = await repo.get_by_id(created.todo_id)
         assert updated is not None
         assert updated.title == "Writer A won"
         assert updated.version == 2
