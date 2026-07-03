@@ -177,10 +177,6 @@ export default (async ({ }) => {
         }
         _streakCount++
         if (_streakCount <= MAX_STREAK) return
-        if (!openWorkExists()) {
-          _streakCount = 0
-          return
-        }
         return {
           permissionDecision: "deny" as const,
           message: [
