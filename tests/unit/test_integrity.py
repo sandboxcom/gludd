@@ -546,3 +546,197 @@ class TestHashStoreNoKey:
             store.mkdir()
             scanner = FileIntegrityScanner(store_dir=str(store))
             assert scanner._load_hashes() == {}
+
+
+class TestHashStoreDeletedStore:
+    """Gap A: a surviving signature whose store was deleted is an attack, not a
+    first run.  A true first run has NEITHER the store NOR a signature."""
+
+    @pytest.fixture(autouse=True)
+    def _set_key(self, monkeypatch):
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "deleted-store-key-fixed")
+        import general_ludd.integrity.scanner as _m
+        monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+
+    def _scanner(self, tmp):
+        from general_ludd.integrity.scanner import FileIntegrityScanner
+
+        store = Path(tmp) / "store"
+        store.mkdir()
+        return FileIntegrityScanner(store_dir=str(store)), store
+
+    def test_deleted_store_with_surviving_mac_fails_closed(self):
+        """rm integrity_db.json but leave a valid .mac + key set → raise."""
+        from general_ludd.integrity.scanner import IntegrityStoreError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            scanner._save_hashes({"/etc/passwd": "good-hash"})
+            # Attacker deletes only the store, leaving the signed sidecar behind.
+            (store / "integrity_db.json").unlink()
+            assert (store / "integrity_db.mac").exists()
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+    def test_true_first_run_returns_empty(self):
+        """Neither store nor .mac present → legitimate empty baseline (regression)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            assert not (store / "integrity_db.json").exists()
+            assert not (store / "integrity_db.mac").exists()
+            assert scanner._load_hashes() == {}
+
+
+class TestHashStoreAntiRollback:
+    """Gap B: an old, legitimately-signed (store, .mac) pair must not re-validate
+    once a newer signed state exists (monotonic counter + high-water-mark)."""
+
+    @pytest.fixture(autouse=True)
+    def _set_key(self, monkeypatch):
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "anti-rollback-key-fixed")
+        import general_ludd.integrity.scanner as _m
+        monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+
+    def _scanner(self, tmp):
+        from general_ludd.integrity.scanner import FileIntegrityScanner
+
+        store = Path(tmp) / "store"
+        store.mkdir()
+        return FileIntegrityScanner(store_dir=str(store)), store
+
+    def test_rollback_to_earlier_signed_pair_is_rejected(self):
+        """Restore an earlier signed (store, .mac) pair → load fails closed."""
+        from general_ludd.integrity.scanner import IntegrityStoreError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            db = store / "integrity_db.json"
+            mac = store / "integrity_db.mac"
+
+            # v1: capture the store + its matching signature (lower counter).
+            scanner._save_hashes({"/a": "v1-hash"})
+            v1_store = db.read_text()
+            v1_mac = mac.read_text()
+
+            # v2: a newer signed state bumps the high-water-mark.
+            scanner._save_hashes({"/a": "v2-hash"})
+            assert scanner._load_hashes() == {"/a": "v2-hash"}
+
+            # Attacker restores ONLY the old store + its old (valid) signature,
+            # leaving the newer high-water-mark in place.
+            db.write_text(v1_store)
+            mac.write_text(v1_mac)
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+    def test_monotonic_save_load_save_round_trips(self):
+        """Normal save→load→save must NOT be falsely rejected as a rollback."""
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, _store = self._scanner(tmp)
+            scanner._save_hashes({"/a": "h1"})
+            assert scanner._load_hashes() == {"/a": "h1"}
+            scanner._save_hashes({"/a": "h2", "/b": "h3"})
+            assert scanner._load_hashes() == {"/a": "h2", "/b": "h3"}
+            scanner._save_hashes({"/a": "h4"})
+            assert scanner._load_hashes() == {"/a": "h4"}
+
+    def test_tampered_high_water_mark_fails_closed(self):
+        """Editing the .hwm sidecar out of band is itself detected."""
+        from general_ludd.integrity.scanner import IntegrityStoreError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            scanner._save_hashes({"/a": "h1"})
+            hwm = store / "integrity_db.hwm"
+            hwm.write_text(json.dumps({"hwm": 0, "mac": "deadbeef" * 8}))
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+    def test_deleted_high_water_mark_fails_closed(self):
+        """Deleting only the .hwm (versioned store survives) drops rollback
+        protection → fail closed instead of silently trusting."""
+        from general_ludd.integrity.scanner import IntegrityStoreError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            scanner._save_hashes({"/a": "h1"})
+            (store / "integrity_db.hwm").unlink()
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+
+class TestHashStoreKeyRotationRebaseline:
+    """Gap D: rotating GL_INTEGRITY_KEY hard-raises forever until the operator
+    EXPLICITLY rebaselines — recovery must never be automatic on a bad MAC."""
+
+    def _scanner(self, tmp):
+        from general_ludd.integrity.scanner import FileIntegrityScanner
+
+        store = Path(tmp) / "store"
+        store.mkdir()
+        return FileIntegrityScanner(store_dir=str(store)), store
+
+    def test_key_rotation_raises_then_explicit_rebaseline_recovers(self, monkeypatch):
+        import general_ludd.integrity.scanner as _m
+        from general_ludd.integrity.scanner import IntegrityStoreError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, _store = self._scanner(tmp)
+
+            # Baseline signed under the ORIGINAL key.
+            monkeypatch.setenv("GL_INTEGRITY_KEY", "rotation-key-OLD")
+            monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+            scanner._save_hashes({"/a": "h1"})
+            assert scanner._load_hashes() == {"/a": "h1"}
+
+            # Operator rotates the key → old MAC no longer verifies → fail closed.
+            monkeypatch.setenv("GL_INTEGRITY_KEY", "rotation-key-NEW")
+            monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+            # A bad MAC must NOT silently self-heal: a second load still raises.
+            with pytest.raises(IntegrityStoreError):
+                scanner._load_hashes()
+
+            # Explicit operator recovery re-signs the current store with the new
+            # key; subsequent loads succeed and preserve the recorded hashes.
+            recovered = scanner.rebaseline()
+            assert recovered == {"/a": "h1"}
+            assert scanner._load_hashes() == {"/a": "h1"}
+
+    def test_rebaseline_requires_key(self, monkeypatch):
+        import general_ludd.integrity.scanner as _m
+        from general_ludd.integrity.scanner import IntegrityKeyError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, _store = self._scanner(tmp)
+            monkeypatch.setenv("GL_INTEGRITY_KEY", "rebase-needs-key")
+            monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+            scanner._save_hashes({"/a": "h1"})
+            # Unset the key → rebaseline must fail closed rather than sign blindly.
+            monkeypatch.delenv("GL_INTEGRITY_KEY", raising=False)
+            monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+            with pytest.raises(IntegrityKeyError):
+                scanner.rebaseline()
+
+    def test_rebaseline_bumps_counter_above_high_water_mark(self, monkeypatch):
+        """After rebaseline the counter must exceed the prior high-water-mark so
+        the re-signed store is not itself seen as a rollback."""
+        import general_ludd.integrity.scanner as _m
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scanner, store = self._scanner(tmp)
+            monkeypatch.setenv("GL_INTEGRITY_KEY", "rebase-counter-old")
+            monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+            scanner._save_hashes({"/a": "h1"})
+            scanner._save_hashes({"/a": "h2"})  # counter now 2
+            mac_before = json.loads((store / "integrity_db.mac").read_text())
+
+            monkeypatch.setenv("GL_INTEGRITY_KEY", "rebase-counter-new")
+            monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+            scanner.rebaseline()
+            mac_after = json.loads((store / "integrity_db.mac").read_text())
+            assert mac_after["counter"] > mac_before["counter"]
+            # And the load path accepts the freshly rebaselined store.
+            assert scanner._load_hashes() == {"/a": "h2"}

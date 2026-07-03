@@ -104,7 +104,20 @@ class FileIntegrityScanner:
         # Sidecar HMAC signature over the serialized store bytes.  Kept in a
         # separate file so the store itself stays a plain ``{path: hash}`` JSON
         # object (backward compatible) while the MAC provides tamper detection.
+        #
+        # The sidecar has two on-disk shapes:
+        #   * legacy  — a bare hex HMAC over the serialized store (no counter);
+        #   * versioned — a JSON object ``{"mac": <hex>, "counter": <int>}`` whose
+        #     HMAC covers ``counter|serialized`` so the signed baseline is bound
+        #     to a MONOTONIC counter (anti-rollback, gap B).
+        # A legacy sidecar is accepted once, then upgraded to the versioned shape
+        # on the next save so existing deployments do not hard-break.
         self._mac_path = self._store.with_suffix(".mac")
+        # High-water-mark sidecar: the highest counter ever signed, itself HMAC
+        # protected.  Persisted SEPARATELY from the (store, .mac) pair so that
+        # restoring an old, legitimately-signed pair (whose counter is below the
+        # high-water-mark) is rejected as a rollback rather than re-validating.
+        self._hwm_path = self._store.with_suffix(".hwm")
 
     def _hash_file(self, path: str) -> str:
         try:
@@ -115,8 +128,139 @@ class FileIntegrityScanner:
 
     @staticmethod
     def _store_mac(serialized: str, key: str) -> str:
-        """HMAC-SHA256 over the exact serialized store bytes."""
+        """HMAC-SHA256 over the exact serialized store bytes (legacy, counterless)."""
         return hmac.new(key.encode(), serialized.encode(), hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def _store_mac_versioned(serialized: str, counter: int, key: str) -> str:
+        """HMAC-SHA256 binding the store bytes to a monotonic *counter*.
+
+        The counter is signed alongside the store so an attacker cannot swap in
+        an older validly-signed store without also forging the MAC (which they
+        cannot without the key).  The counter is prefixed (``counter|serialized``)
+        so the signed message is an unambiguous encoding of both.
+        """
+        msg = f"{counter}|{serialized}"
+        return hmac.new(key.encode(), msg.encode(), hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def _hwm_mac(counter: int, key: str) -> str:
+        """HMAC over the high-water-mark value so it cannot be edited downward."""
+        return hmac.new(key.encode(), f"hwm:{counter}".encode(), hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def _parse_mac_sidecar(sidecar: str) -> tuple[int | None, str]:
+        """Return ``(counter, mac)`` for a versioned sidecar, else ``(None, raw)``.
+
+        A versioned sidecar is JSON ``{"mac": <hex>, "counter": <int>}``.  A
+        legacy sidecar is a bare hex string; we return ``(None, <the raw hex>)``
+        so the caller can verify it with the counterless MAC and upgrade it on
+        the next save.
+        """
+        try:
+            obj = json.loads(sidecar)
+        except (json.JSONDecodeError, ValueError):
+            return None, sidecar
+        if isinstance(obj, dict) and "mac" in obj and "counter" in obj:
+            try:
+                return int(obj["counter"]), str(obj["mac"])
+            except (TypeError, ValueError):
+                # Present-but-malformed versioned sidecar → treat as tamper by
+                # returning an impossible counter/mac that will fail the compare.
+                return None, ""
+        # Parsed JSON but not our shape → not a valid legacy hex either.
+        return None, ""
+
+    def _write_mac_and_hwm(self, serialized: str, counter: int, key: str) -> None:
+        """Persist the versioned MAC sidecar and the signed high-water-mark."""
+        mac = self._store_mac_versioned(serialized, counter, key)
+        self._mac_path.write_text(json.dumps({"mac": mac, "counter": counter}))
+        self._hwm_path.write_text(
+            json.dumps({"hwm": counter, "mac": self._hwm_mac(counter, key)})
+        )
+
+    def _read_current_counter_best_effort(self, key: str) -> int:
+        """Counter recorded in the on-disk MAC sidecar, or 0 if absent/legacy.
+
+        Best-effort (never raises): used only to pick the next counter on save,
+        where the authoritative rollback check is the high-water-mark.
+        """
+        if not self._mac_path.exists():
+            return 0
+        try:
+            counter, _mac = self._parse_mac_sidecar(self._mac_path.read_text().strip())
+        except Exception:
+            return 0
+        return counter if counter is not None else 0
+
+    def _read_hwm_value(self, key: str) -> int | None:
+        """Verified high-water-mark, or ``None`` if no HWM sidecar exists.
+
+        Raises :class:`IntegrityStoreError` if the HWM sidecar is present but
+        unparseable or fails its own HMAC — a tampered HWM is itself an attack.
+        """
+        if not self._hwm_path.exists():
+            return None
+        try:
+            obj = json.loads(self._hwm_path.read_text())
+            value = int(obj["hwm"])
+            mac = str(obj["mac"])
+        except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+            raise IntegrityStoreError(
+                f"integrity high-water-mark sidecar is unparseable ({self._hwm_path}); "
+                "refusing to load — the rollback guard was tampered with"
+            ) from exc
+        if not hmac.compare_digest(mac, self._hwm_mac(value, key)):
+            raise IntegrityStoreError(
+                f"integrity high-water-mark signature is invalid ({self._hwm_path}); "
+                "the anti-rollback counter was modified out of band"
+            )
+        return value
+
+    def _read_hwm_value_best_effort(self, key: str) -> int:
+        try:
+            value = self._read_hwm_value(key)
+        except IntegrityStoreError:
+            return 0
+        return value if value is not None else 0
+
+    def _verify_mac_and_get_counter(self, raw: str, key: str) -> int:
+        """Verify the MAC sidecar over *raw* and return its counter.
+
+        Accepts both the legacy (counterless, counter reported as 0) and the
+        versioned sidecar shapes.  Raises :class:`IntegrityStoreError` on a
+        missing, malformed, or non-matching MAC (fail closed).
+        """
+        if not self._mac_path.exists():
+            raise IntegrityStoreError(
+                "integrity hash store failed HMAC verification "
+                f"(missing signature: {self._mac_path}). Refusing to rebaseline — "
+                "an absent signature with a key configured is a downgrade attack, "
+                "or GL_INTEGRITY_KEY changed (use rebaseline() to recover)."
+            )
+        sidecar = self._mac_path.read_text().strip()
+        counter, mac = self._parse_mac_sidecar(sidecar)
+        if counter is None:
+            # Legacy (counterless) sidecar: verify with the old MAC and treat the
+            # counter as 0 so the next save upgrades it to the versioned shape.
+            expected = self._store_mac(raw, key)
+            if not mac or not hmac.compare_digest(mac, expected):
+                raise IntegrityStoreError(
+                    "integrity hash store failed HMAC verification "
+                    f"(tampered signature: {self._mac_path}). Refusing to "
+                    "rebaseline — the store or its signature was modified out of "
+                    "band, or GL_INTEGRITY_KEY changed (use rebaseline() to recover)."
+                )
+            return 0
+        expected = self._store_mac_versioned(raw, counter, key)
+        if not hmac.compare_digest(mac, expected):
+            raise IntegrityStoreError(
+                "integrity hash store failed HMAC verification "
+                f"(tampered signature: {self._mac_path}). Refusing to rebaseline — "
+                "the store or its signature was modified out of band, or "
+                "GL_INTEGRITY_KEY changed (use rebaseline() to recover)."
+            )
+        return counter
 
     def _parse_store(self, raw: str) -> dict[str, str]:
         """Parse the store JSON, failing CLOSED on corruption.
@@ -141,8 +285,30 @@ class FileIntegrityScanner:
         return {str(k): str(v) for k, v in data.items()}
 
     def _load_hashes(self) -> dict[str, str]:
-        # (a) Store MISSING → legitimate empty baseline (first run).
-        if not self._store.exists():
+        store_exists = self._store.exists()
+
+        # (A) DELETED-STORE rebaseline defense.  A true first run has NEITHER the
+        # store NOR a signature.  If the store is gone but a .mac sidecar (or the
+        # high-water-mark) survives and a key is configured, that is a deletion/
+        # downgrade attack — a signature without its store — NOT a first run, so
+        # fail closed instead of silently returning an empty baseline.
+        if not store_exists:
+            if self._mac_path.exists() or self._hwm_path.exists():
+                try:
+                    _get_integrity_key()
+                except IntegrityKeyError:
+                    # No key → no integrity guarantee anyway; mirror the tolerant
+                    # no-key mode rather than crash normal operation.
+                    return {}
+                raise IntegrityStoreError(
+                    f"integrity hash store is missing ({self._store}) but its "
+                    f"signature sidecar survives ({self._mac_path} / "
+                    f"{self._hwm_path}). A signature without its store is a "
+                    "deletion/rollback attack, not a first run — refusing to "
+                    "rebaseline. Use rebaseline() to intentionally re-establish "
+                    "a baseline."
+                )
+            # Neither file present → legitimate empty baseline (first run).
             return {}
 
         raw = self._store.read_text()
@@ -160,23 +326,39 @@ class FileIntegrityScanner:
             # this mode — that is exactly why GL_INTEGRITY_KEY must be set.
             return hashes
 
-        # Key configured → verification is MANDATORY.
-        expected = self._store_mac(raw, key)
-        stored_mac = ""
-        if self._mac_path.exists():
-            stored_mac = self._mac_path.read_text().strip()
-        # (c-ii) BAD or ABSENT MAC → fail closed.  An absent MAC with a key
-        # configured is a downgrade attack (attacker deletes the signature and
-        # rewrites the store); a bad MAC means the store or signature was
-        # edited out of band.  Constant-time compare (see verify_signature).
-        if not stored_mac or not hmac.compare_digest(stored_mac, expected):
+        # Key configured → verification is MANDATORY.  (c-ii) BAD or ABSENT MAC
+        # → fail closed (raises inside the helper); returns the signed counter.
+        counter = self._verify_mac_and_get_counter(raw, key)
+
+        # (B) ANTI-ROLLBACK: reject a store whose signed counter is BELOW the
+        # persisted high-water-mark.  Restoring an old, legitimately-signed
+        # (store, .mac) pair re-validates its MAC, but its counter is stale, so
+        # the separately-persisted high-water-mark catches the rollback.  We
+        # accept counter >= hwm (not ==) so a crash between the MAC write and the
+        # HWM advance is forward-safe: a higher counter still needs a valid MAC,
+        # which an attacker cannot forge.
+        hwm = self._read_hwm_value(key)
+        if hwm is None:
+            if counter >= 1:
+                # A VERSIONED store (counter >= 1) with NO high-water-mark means
+                # the rollback guard was deleted out of band — fail closed rather
+                # than silently drop anti-rollback protection.  (A counterless
+                # legacy store, counter == 0, is still accepted once and upgraded
+                # on the next save.)  Recover intentionally via rebaseline().
+                raise IntegrityStoreError(
+                    f"integrity hash store is versioned (counter {counter}) but "
+                    f"its high-water-mark sidecar is missing ({self._hwm_path}) — "
+                    "the anti-rollback guard was deleted. Refusing to load. Use "
+                    "rebaseline() to intentionally re-establish a baseline."
+                )
+        elif counter < hwm:
             raise IntegrityStoreError(
-                "integrity hash store failed HMAC verification "
-                f"(missing or tampered signature: {self._mac_path}). Refusing "
-                "to rebaseline — the store or its signature was modified out of "
-                "band, or GL_INTEGRITY_KEY changed."
+                f"integrity hash store counter ({counter}) is below the "
+                f"high-water-mark ({hwm}) — the store was rolled back to an "
+                "earlier signed state. Refusing to load. Use rebaseline() to "
+                "intentionally re-establish a baseline."
             )
-        # (b) Present + VALID MAC → trusted baseline.
+        # Present + VALID MAC + non-stale counter → trusted baseline.
         return hashes
 
     def _save_hashes(self, hashes: dict[str, str]) -> None:
@@ -188,11 +370,67 @@ class FileIntegrityScanner:
         except IntegrityKeyError:
             # No key: cannot sign.  Do not mint an ephemeral key (that would
             # make cross-process verification always fail).  Drop any stale
-            # sidecar so a later key-configured load fails closed instead of
-            # trusting an outdated signature.
+            # sidecars so a later key-configured load fails closed instead of
+            # trusting an outdated signature or high-water-mark.
             self._mac_path.unlink(missing_ok=True)
+            self._hwm_path.unlink(missing_ok=True)
             return
-        self._mac_path.write_text(self._store_mac(serialized, key))
+        # (B) Increment the monotonic counter above both the previous store
+        # counter AND the high-water-mark, then persist the versioned MAC and a
+        # fresh high-water-mark.  ``max(...)`` defends against a counter that was
+        # reset downward out of band (the higher of the two still wins).
+        prev = max(
+            self._read_current_counter_best_effort(key),
+            self._read_hwm_value_best_effort(key),
+        )
+        self._write_mac_and_hwm(serialized, prev + 1, key)
+
+    def rebaseline(self) -> dict[str, str]:
+        """Explicit operator recovery after a deliberate GL_INTEGRITY_KEY rotation.
+
+        Provisioning or rotating ``GL_INTEGRITY_KEY`` against an existing store
+        makes every subsequent load fail closed (the old MAC no longer verifies).
+        That is intentional — a silent auto-rebaseline on a bad MAC would be a
+        hole an attacker could drive a truck through.  Recovery is therefore an
+        EXPLICIT, LOGGED operator action: this method re-signs the CURRENT
+        on-disk store with the currently-configured key and bumps the monotonic
+        counter above the high-water-mark, so a legitimate operator can recover
+        while an attacker (who lacks the new key) still cannot.
+
+        It is never invoked automatically by :meth:`_load_hashes`; the bad-MAC
+        path stays fail-closed.  Requires a key (raises :class:`IntegrityKeyError`
+        if unset) and a well-formed store on disk.
+
+        Returns the re-signed hashes.
+        """
+        # Drop the memoized key so a key ROTATED in the environment after this
+        # process first cached the old key is actually picked up — otherwise
+        # rebaseline would re-sign with the stale key and never recover.
+        global _INTEGRITY_KEY
+        _INTEGRITY_KEY = None
+        key = _get_integrity_key()  # rebaseline requires a key; fail closed if unset
+        if not self._store.exists():
+            raise IntegrityStoreError(
+                f"cannot rebaseline: no integrity hash store on disk ({self._store})"
+            )
+        raw = self._store.read_text()
+        hashes = self._parse_store(raw)  # still refuse to re-sign a corrupt store
+        prev = max(
+            self._read_current_counter_best_effort(key),
+            self._read_hwm_value_best_effort(key),
+        )
+        counter = prev + 1
+        # Sign over the EXACT on-disk bytes (raw) so the MAC matches what
+        # _load_hashes reads back; do not re-serialize.
+        self._write_mac_and_hwm(raw, counter, key)
+        logger.warning(
+            "integrity hash store REBASELINED under the current GL_INTEGRITY_KEY "
+            "(explicit operator action): store=%s counter=%d entries=%d",
+            self._store,
+            counter,
+            len(hashes),
+        )
+        return hashes
 
     def _is_vc_controlled(self, path: str) -> bool:
         current = Path(path).resolve()
