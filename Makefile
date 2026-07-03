@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold ci-test test-safe test-dir test-adaptive submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo check-run-gate-syntax
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-fast push-verify gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold ci-test test-safe test-dir test-adaptive submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo check-run-gate-syntax
 
 # --- TEMP release-verification targets (alpha.5) ---
 tag-run:
@@ -307,6 +307,20 @@ gate:
 	@$(MAKE) smoke > /tmp/gludd-gate-smoke.log 2>&1 || (echo "=== GATE PHASE: smoke FAILED (tail -20 /tmp/gludd-gate-smoke.log) ===" && tail -20 /tmp/gludd-gate-smoke.log && echo "=== GATE: FAILED ===" && exit 1)
 	@echo "=== GATE: PASSED ==="
 
+# Fast gate: lint + typecheck + collect-check only, no test suite. For pre-commit
+# verification when CI-as-gate is the policy (commits use GLUDD_CI_IS_GATE=1).
+gate-fast:
+	@echo "=== GATE-FAST: lint + typecheck + collect ==="
+	@$(MAKE) lint || (echo "=== GATE-FAST: FAILED ===" && exit 1)
+	@echo "=== GATE PHASE: lint PASS ==="
+	@$(MAKE) typecheck || (echo "=== GATE-FAST: FAILED ===" && exit 1)
+	@echo "=== GATE PHASE: typecheck PASS ==="
+	@uv run python -m pytest --collect-only -q 2>&1 | (grep -E "ERROR|error" || true) | (! grep -c "ERROR") || \
+		(echo "=== GATE PHASE: collect FAILED ===" && \
+		 echo "  Collection errors found. Fix them with: make collect-detail" && exit 1)
+	@echo "=== GATE PHASE: collect PASS ==="
+	@echo "=== GATE-FAST: PASSED ==="
+
 # Background gate: launches gate via nohup, writes logs to .gate-logs/gate-<timestamp>.log
 gate-background:
 	@mkdir -p .gate-logs
@@ -472,6 +486,10 @@ git-add-all:
 git-push-sandboxcom:
 	git push https://github.com/sandboxcom/gludd.git master
 
+# Verifies local quality checks pass then pushes — for CI-as-gate workflows.
+push-verify: gate-fast git-push-sandboxcom
+	@echo "=== PUSH-VERIFY: pushed after gate-fast PASS ==="
+
 git-push-sandboxcom-ssh:
 	GIT_SSH_COMMAND="ssh -i sandboxcom_github_rsa -o IdentitiesOnly=yes" git push sandboxcom master
 
@@ -558,6 +576,22 @@ ci-verdict-capture:
 	@test -n "$(BRANCH)" || (echo "Usage: make ci-verdict-capture BRANCH=<branch>"; exit 1)
 	@make ci-verdict BRANCH=$(BRANCH) > /tmp/ci-verdict-stdout.txt 2> /tmp/ci-verdict-stderr.txt; \
 	echo $$? > /tmp/ci-verdict-exit.txt
+
+# Push then poll CI on a SHA until completion or timeout.
+# Usage: make ci-push-and-verify [SHA=<sha>] — pushes master to sandboxcom,
+# then polls CI every 15s for up to 10 min. Exit 0=PASS, 1=FAIL, 2=TIMEOUT.
+ci-push-and-verify: _require-gh
+	@chmod +x scripts/ci_push_and_verify.sh 2>/dev/null || true
+	./scripts/ci_push_and_verify.sh $(SHA)
+
+# Dry-run variant: poll existing CI without pushing.
+# Usage: make ci-verify-wait [SHA=<sha>]
+ci-verify-wait: _require-gh
+	@chmod +x scripts/ci_push_and_verify.sh 2>/dev/null || true
+	CI_DRY_RUN=1 ./scripts/ci_push_and_verify.sh $(SHA)
+
+_require-gh:
+	@command -v gh >/dev/null 2>&1 || { echo "gh CLI not found. Install: brew install gh"; exit 2; }
 
 # Poll a branch's LATEST run to its RUN-LEVEL conclusion with a per-cycle
 # heartbeat (never a silent sleep loop). Trusts the run object's own
@@ -1045,6 +1079,11 @@ dist: bundle-binaries sbom
 	fi
 	tar -czf gludd-dist.tar.gz $(TARBALL_DIR)/
 	@echo "dist: tarball created at gludd-dist.tar.gz"
+
+# Make a single file executable. Usage: make chmod-exec F=scripts/foo.sh
+chmod-exec:
+	@test -n "$(F)" || (echo "Usage: make chmod-exec F=<path>"; exit 1)
+	chmod +x "$(F)" && echo "chmod: $(F) -> +x"
 
 # Dependencies audit
 deps-audit:
