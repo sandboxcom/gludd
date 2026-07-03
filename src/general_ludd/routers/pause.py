@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 class PauseRequest(BaseModel):
     target_id: str = Field(..., min_length=1, description="Project or model identifier")
     reason: str = Field("", description="Reason for pausing")
+    resources: dict[str, object] | None = Field(
+        None, description="Snapshot of daemon state (spend, leases, registries) at pause time"
+    )
+    last_state: dict[str, object] | None = Field(
+        None, description="Last working state before pause (phase, cursor, etc.)"
+    )
 
 
 class ResumeRequest(BaseModel):
@@ -63,13 +69,21 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         controller = _get_controller(app)
         if controller is None:
             return {"error": "pause controller not available", "paused": False}
-        record = controller.pause("project", req.target_id, reason=req.reason)
+        record = controller.pause(
+            "project",
+            req.target_id,
+            reason=req.reason,
+            resources=req.resources or None,
+            last_state=req.last_state or None,
+        )
         return {
             "paused": True,
             "kind": "project",
             "target_id": record.target_id,
             "paused_at": record.paused_at,
             "reason": record.reason,
+            "resources": record.resources,
+            "last_state": record.last_state,
         }
 
     @app.post("/api/pause/model")
@@ -78,13 +92,21 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         controller = _get_controller(app)
         if controller is None:
             return {"error": "pause controller not available", "paused": False}
-        record = controller.pause("model", req.target_id, reason=req.reason)
+        record = controller.pause(
+            "model",
+            req.target_id,
+            reason=req.reason,
+            resources=req.resources or None,
+            last_state=req.last_state or None,
+        )
         return {
             "paused": True,
             "kind": "model",
             "target_id": record.target_id,
             "paused_at": record.paused_at,
             "reason": record.reason,
+            "resources": record.resources,
+            "last_state": record.last_state,
         }
 
     @app.post("/api/resume/project")

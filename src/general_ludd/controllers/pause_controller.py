@@ -17,11 +17,18 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
 from general_ludd.controllers.pause_store import PauseStore
+
+if TYPE_CHECKING:
+    from general_ludd.agents.dispatcher import AgentDispatcher
+    from general_ludd.agents.hibernation import (
+        HibernationController,
+        HibernationHandle,
+    )
 
 PauseKind = Literal["project", "model"]
 
@@ -94,6 +101,47 @@ class PauseController:
         self._store.save([r.model_dump() for r in self._records.values()])
 
     # ------------------------------------------------------------------
+    # SLICE 3b — agent quiescing
+    # ------------------------------------------------------------------
+
+    async def quiesce_project(
+        self,
+        project_id: str,
+        dispatcher: AgentDispatcher | None = None,
+        hibernation: HibernationController | None = None,
+    ) -> list[HibernationHandle]:
+        """Dehydrate in-flight agents for *project_id* before pausing.
+
+        Iterates the dispatcher's active tasks filterable to this project.
+        Each task is converted to a :class:`AgentEnvironmentSnapshot` and
+        dehydrated through *hibernation* if its policy warrants it.
+
+        Returns the list of :class:`HibernationHandle` references to store in
+        :attr:`PauseRecord.agent_handles` so a later resume can rehydrate.
+
+        When *dispatcher* or *hibernation* is ``None`` returns an empty list
+        — graceful degradation for daemon boots where these subsystems are not
+        yet wired.
+        """
+        if dispatcher is None or hibernation is None:
+            return []
+        from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
+
+        tasks = await dispatcher.get_active_tasks_for_project(project_id)
+        handles: list[HibernationHandle] = []
+        for task in tasks:
+            snap = AgentEnvironmentSnapshot(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                parent_task_id=task.parent_task_id,
+                invoker_name=task.invoker_name,
+            )
+            if hibernation.should_dehydrate(snap):
+                handle = await hibernation._store.dehydrate_async(snap)
+                handles.append(handle)
+        return handles
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -105,6 +153,7 @@ class PauseController:
         reason: str = "",
         resources: dict[str, object] | None = None,
         last_state: dict[str, object] | None = None,
+        agent_handles: list[object] | None = None,
     ) -> PauseRecord:
         """Mark ``(kind, target_id)`` paused, persist, and return its record.
 
@@ -115,6 +164,10 @@ class PauseController:
         *resources* and *last_state* are SLICE 3 capture fields: callers
         snapshot live daemon state (spend facet, leases, registries) at pause
         time so a later resume can restore context.
+
+        *agent_handles* (SLICE 3b) are :class:`HibernationHandle` references
+        for agents that were quiesced (dehydrated) when the project was paused.
+        They are stored in the record so a later resume can rehydrate them.
         """
         key = (kind, target_id)
         with self._lock:
@@ -128,6 +181,7 @@ class PauseController:
                 reason=reason,
                 resources=resources or {},
                 last_state=last_state or {},
+                agent_handles=agent_handles if agent_handles is not None else [],
             )
             self._index(record)
             self._persist()

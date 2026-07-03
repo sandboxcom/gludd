@@ -8,6 +8,7 @@ and the results are fed back to continue the conversation.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
@@ -48,6 +49,8 @@ class ToolCallLoop:
         role: str | None = None,
         compaction_level: CompactionLevel | None = None,
         summarize_fn: Callable[[str, str], str] | None = None,
+        tool_auditor: Any = None,
+        situation_store: Any = None,
     ) -> None:
         self._gateway = model_gateway
         self._mcp_client = mcp_client
@@ -65,6 +68,8 @@ class ToolCallLoop:
         # open ``tool_call_id`` is never orphaned — see ``run_with_tools``.
         self._compaction_level = compaction_level
         self._summarize_fn = summarize_fn
+        self._auditor = tool_auditor
+        self._situation_store = situation_store
         # Per-role capability gate (issue #58 lattice): when a role is supplied,
         # MCP tool use is gated through ``check_dispatch(role, "mcp")`` before any
         # tool is invoked. A role without the "mcp" dispatch capability is
@@ -192,6 +197,32 @@ class ToolCallLoop:
                                 tc_name, job.job_id, tc_args,
                             )
                             tc_args = {}
+                    # Audit the tool call before execution
+                    if self._auditor is not None:
+                        situation = self._auditor.audit(
+                            tc_name, tc_args,
+                            task_context=user_prompt[:500],
+                            work_type=getattr(job, "work_type", ""),
+                            capture_situation=True,
+                        )
+                        if situation is not None:
+                            if self._situation_store is not None:
+                                with contextlib.suppress(Exception):
+                                    self._situation_store.save(situation)
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.get("id", ""),
+                                "content": (
+                                    f"Tool call blocked by auditor: {situation.classification}. "
+                                    f"{situation.reason} "
+                                    f"Do not retry this call. Use a different approach."
+                                ),
+                            })
+                            logger.info(
+                                "Blocked tool call %r for job %s: %s",
+                                tc_name, job.job_id, situation.classification,
+                            )
+                            continue
                     try:
                         server_id = self._resolve_server_id(tc_name)
                         # Per-tool timeout: a hung/slow MCP tool must NOT stall the
@@ -205,12 +236,19 @@ class ToolCallLoop:
                             ),
                             timeout=self._per_tool_timeout,
                         )
+                        if self._auditor is not None:
+                            self._auditor.record_success(tc_name, tc_args, result)
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tc.get("id", ""),
                             "content": str(result),
                         })
                     except TimeoutError:
+                        if self._auditor is not None:
+                            self._auditor.record_error(
+                                tc_name, tc_args,
+                                f"timeout after {self._per_tool_timeout}s",
+                            )
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tc.get("id", ""),
@@ -224,6 +262,8 @@ class ToolCallLoop:
                             tc_name, self._per_tool_timeout, job.job_id,
                         )
                     except Exception as exc:
+                        if self._auditor is not None:
+                            self._auditor.record_error(tc_name, tc_args, str(exc))
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tc.get("id", ""),
@@ -241,6 +281,11 @@ class ToolCallLoop:
             f"for job {job.job_id} while the model was still requesting tools; "
             f"no final assistant answer was produced"
         )
+
+    def reset_auditor(self) -> None:
+        """Reset the auditor state for a fresh job."""
+        if self._auditor is not None:
+            self._auditor.reset()
 
     def _compact_history(
         self,

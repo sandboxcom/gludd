@@ -1,0 +1,249 @@
+---
+# git_commit_push role — complete commit+push workflow with idempotent
+# tree-clean gate, workflow-aware SSH/HTTPS remote selection, and
+# push-verify step.
+#
+# SAFE-BY-DEFAULT: enable_git_push=false.  Even if enable_git_commit=true
+# (default), push never runs without an explicit opt-in.
+#
+# Flow:
+#   1. Gather live daemon facts (optional — for system context).
+#   2. Check tree for uncommitted changes (idempotent — ends play when clean).
+#   3. Detect workflow-file changes for SSH remote selection.
+#   4. Commit via gludd_git (which itself is idempotent — changed_files()
+#      gate inside the module).
+#   5. Select push remote (SSH for workflow changes, HTTPS otherwise).
+#   6. Push via gludd_git (only when enable_git_push=true AND not check_mode).
+#   7. Verify push via make verify-remote (optional, enable_push_verify).
+#   8. Write JSON + MD artifact; report outcome via debug.
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _gcp_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Idempotency gate: check tree cleanliness ─────────────────────────────
+
+- name: Check for uncommitted changes (porcelain)
+  ansible.builtin.command:
+    cmd: git status --porcelain
+    chdir: "{{ repo_path }}"
+  register: _gcp_status
+  changed_when: false
+  failed_when: false
+
+- name: Parse changed-file paths from porcelain output
+  ansible.builtin.set_fact:
+    _gcp_changed_files: >-
+      {%- set paths = [] -%}
+      {%- for line in (_gcp_status.stdout_lines | default([])) -%}
+        {%- if line | length >= 4 -%}
+          {%- set entry = (line[3:] | trim) -%}
+          {%- if entry -%}
+            {%- if ' -> ' in entry -%}
+              {%- set entry = entry.split(' -> ', 1)[1] | trim -%}
+            {%- endif -%}
+            {%- if entry | length >= 2 and entry[0] == '"' and entry[-1] == '"' -%}
+              {%- set entry = entry[1:-1] -%}
+            {%- endif -%}
+            {%- set _ = paths.append(entry) -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ paths }}
+    _gcp_is_dirty: "{{ (_gcp_status.stdout_lines | default([])) | list | length > 0 }}"
+
+- name: End play — nothing to commit (idempotent)
+  ansible.builtin.meta: end_play
+  when: not _gcp_is_dirty | bool
+
+# ── Detect workflow changes for SSH remote selection ────────────────────
+
+- name: Detect workflow-file changes
+  ansible.builtin.set_fact:
+    _gcp_has_workflow_changes: >-
+      {{ _gcp_changed_files | select('match', workflow_glob) | list | length > 0 }}
+
+# ── Commit ──────────────────────────────────────────────────────────────
+
+- name: Guard — commit explicitly disabled but tree is dirty
+  ansible.builtin.fail:
+    msg: >-
+      {{ _gcp_changed_files | length }} uncommitted file(s) exist but
+      enable_git_commit=false — refusing to proceed.
+      Files: {{ _gcp_changed_files | join(', ') }}
+  when: not (enable_git_commit | bool)
+
+- name: Commit changes via gludd_git (idempotent — skipped when clean)
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: commit
+    message: "{{ commit_message }}"
+  register: _gcp_commit
+  when:
+    - enable_git_commit | bool
+    - not ansible_check_mode
+
+# ── Determine push method: SSH for workflows, HTTPS otherwise ──────────
+
+- name: Select push remote
+  ansible.builtin.set_fact:
+    _gcp_push_remote: >-
+      {{ ssh_remote if _gcp_has_workflow_changes | bool else https_remote }}
+
+- name: Evaluate push eligibility
+  ansible.builtin.set_fact:
+    _gcp_push_eligible: >-
+      {{ enable_git_push | bool
+         and _gcp_commit.changed | default(false) | bool
+         and not ansible_check_mode }}
+
+# ── Push ────────────────────────────────────────────────────────────────
+
+- name: Push to remote
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: push
+    branch: "{{ push_branch }}"
+    remote: "{{ _gcp_push_remote }}"
+  register: _gcp_push
+  when: _gcp_push_eligible | bool
+
+# ── Verify push ─────────────────────────────────────────────────────────
+
+- name: Verify push landed on remote
+  ansible.builtin.command:
+    cmd: >-
+      make verify-remote
+      BRANCH={{ push_branch }}
+      SHA={{ _gcp_commit.sha | default('HEAD') }}
+    chdir: "{{ repo_path }}"
+  register: _gcp_verify
+  changed_when: false
+  failed_when: false
+  when:
+    - _gcp_push_eligible | bool
+    - _gcp_push.changed | default(false) | bool
+    - enable_push_verify | bool
+
+# ── Outcome ─────────────────────────────────────────────────────────────
+
+- name: Determine overall outcome
+  ansible.builtin.set_fact:
+    _gcp_outcome: >-
+      {%- if not _gcp_is_dirty | bool -%}
+        nothing_to_commit
+      {%- elif not (enable_git_commit | bool) -%}
+        commit_disabled
+      {%- elif ansible_check_mode -%}
+        check_mode
+      {%- elif not (enable_git_push | bool) -%}
+        committed_no_push
+      {%- elif _gcp_push_eligible | bool and (_gcp_push.result.success | default(false)) -%}
+        pushed
+      {%- else -%}
+        push_failed
+      {%- endif -%}
+
+# ── Artifacts ────────────────────────────────────────────────────────────
+
+- name: Write JSON artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'git_commit_push',
+        'status': 'completed',
+        'outcome': _gcp_outcome,
+        'is_dirty': _gcp_is_dirty | bool,
+        'changed_file_count': _gcp_changed_files | length,
+        'changed_files': _gcp_changed_files,
+        'has_workflow_changes': _gcp_has_workflow_changes | bool,
+        'commit_sha': _gcp_commit.sha | default(none),
+        'commit_changed': _gcp_commit.changed | default(false),
+        'commit_message': commit_message,
+        'push_remote': _gcp_push_remote | default(none),
+        'push_branch': push_branch,
+        'push_eligible': _gcp_push_eligible | bool,
+        'push_success': _gcp_push.result.success | default(false),
+        'push_message': _gcp_push.result.message | default(''),
+        'verify_ran': enable_push_verify | bool,
+        'verify_rc': _gcp_verify.rc | default(-1),
+        'system_context': {
+          'backlog_size': _gcp_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+          'success_rate': _gcp_facts.ansible_facts.gludd.history.success_rate | default(0)
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/git_commit_push.json"
+    mode: "0644"
+
+- name: Write markdown report
+  ansible.builtin.copy:
+    content: |
+      # Git Commit + Push Report
+
+      **Outcome:** {{ _gcp_outcome | upper }}
+      **Commit SHA:** {{ _gcp_commit.sha | default('—') }}
+
+      ## Changes
+
+      - **Dirty:** {{ _gcp_is_dirty }}
+      - **Files changed:** {{ _gcp_changed_files | length }}
+      - **Workflow files affected:** {{ _gcp_has_workflow_changes }}
+
+      {% if _gcp_changed_files | length > 0 %}
+      ### Changed files
+      {% for f in _gcp_changed_files %}
+      - `{{ f }}`
+      {% endfor %}
+      {% endif %}
+
+      ## Commit
+
+      - **Message:** `{{ commit_message }}`
+      - **Committed:** {{ _gcp_commit.changed | default(false) }}
+
+      ## Push
+
+      - **Remote:** {{ _gcp_push_remote | default('—') }}
+      - **Branch:** `{{ push_branch }}`
+      - **Push eligible:** {{ _gcp_push_eligible | bool }}
+      - **Push success:** {{ _gcp_push.result.success | default(false) }}
+      - **Push message:** {{ _gcp_push.result.message | default('') }}
+      {% if enable_push_verify | bool %}
+      - **Verify ran:** {{ enable_push_verify | bool }}
+      - **Verify rc:** {{ _gcp_verify.rc | default(-1) }}
+      {% endif %}
+
+      {% if _gcp_outcome == 'nothing_to_commit' %}
+      Tree was clean — nothing to do.
+      {% elif _gcp_outcome == 'committed_no_push' %}
+      Committed locally. Push not requested (enable_git_push=false).
+      {% elif _gcp_outcome == 'pushed' %}
+      Committed and pushed successfully to `{{ _gcp_push_remote }}`.
+      {% elif _gcp_outcome == 'push_failed' %}
+      Committed but push FAILED — check remote connectivity.
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.git_commit_push*
+    dest: "{{ artifact_dir }}/git_commit_push.md"
+    mode: "0644"
+
+# ── Report ───────────────────────────────────────────────────────────────
+
+- name: Report git_commit_push completion
+  ansible.builtin.debug:
+    msg: >-
+      git_commit_push: outcome={{ _gcp_outcome }}
+      sha={{ _gcp_commit.sha | default('none') }}
+      files={{ _gcp_changed_files | length }}
+      workflow={{ _gcp_has_workflow_changes | bool }}
+      remote={{ _gcp_push_remote | default('none') }}

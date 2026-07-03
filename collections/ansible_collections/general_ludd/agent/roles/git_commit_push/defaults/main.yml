@@ -1,0 +1,51 @@
+---
+# git_commit_push role defaults
+#
+# SAFE-BY-DEFAULT:
+#   - enable_git_push=false — push never runs unless explicitly opted in.
+#   - enable_git_commit=true  — commit is local-only, safe by default.
+#   - enable_push_verify=false — verify step is optional (requires make target).
+#
+# All parameters are overridable at invocation time.
+
+# Daemon connectivity (for system-context facts)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-git-commit-push"
+
+# Repository to operate on
+repo_path: "."
+
+# ── Commit ───────────────────────────────────────────────────────────────
+
+# Run the commit step?  Default true (local git commit is non-destructive).
+enable_git_commit: true
+
+# Commit message.  Override with any descriptive string.
+commit_message: "auto: apply change"
+
+# ── Push ─────────────────────────────────────────────────────────────────
+
+# SAFE-BY-DEFAULT: do NOT push unless explicitly enabled.
+enable_git_push: false
+
+# Branch to push.
+push_branch: "master"
+
+# Remote used when NO workflow files are in the diff (HTTPS / default).
+https_remote: "origin"
+
+# Remote used when workflow files (.github/workflows/**) ARE in the diff
+# (SSH — the sandboxcom push pattern).
+ssh_remote: "sandboxcom"
+
+# Glob (anchored) used to detect workflow-file changes.
+# Matches any path under .github/workflows/.
+workflow_glob: '^.github/workflows/'
+
+# ── Verify ───────────────────────────────────────────────────────────────
+
+# Run `make verify-remote` after push?  Requires the make target.
+enable_push_verify: false

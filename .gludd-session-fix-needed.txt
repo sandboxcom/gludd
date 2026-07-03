@@ -1,0 +1,18 @@
+Session 2026-07-03 — STATE (restart needed for enforcement fixes)
+
+Enforcement fixes committed + pushed (need restart):
+  78761de3 fix(floor): streak counter replacing dead Python-shell-out
+  2aedeba8 fix(floor): unconditional block after 2 non-dispatch calls  
+  8d98f601 fix(delegate): MAINTHREAD_THRESHOLD 4 → 1
+
+Feature work committed + pushed:
+  97c89082 fix(#35,#50): SLICE 2 PauseController wiring + dispatch fail-closed
+  8a5ebe57 feat(#35): SLICE 4 pause/resume router + daemon wiring (7 tests)
+  32b06729 docs: SESSION.md update (committed, NOT PUSHED — streak blocked)
+
+Unpushed: 32b06729 (SESSION.md update)
+
+Pending work:
+  #35 SLICE 3 — quiesce in-flight agents + resource listing
+  #51 — wire hibernation into dispatch  
+  #53 — commit-path file-claim livelock audit

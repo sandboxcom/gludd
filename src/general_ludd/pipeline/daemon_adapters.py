@@ -46,6 +46,7 @@ def make_dispatch_fn(
     *,
     agent_name: str = "general",
     invoker_name: str = "build",
+    project_id: str | None = None,
     task_builder: Callable[[str], Any] | None = None,
 ) -> Callable[[str], Awaitable[object]]:
     """Build a ``DispatchFn`` that launches a role-agent for a backlog unit id.
@@ -70,6 +71,9 @@ def make_dispatch_fn(
     covers every registered target via its ``["*"]`` allow-list, so a
     legitimate pipeline dispatch is never denied while an unregistered target
     is still fail-closed.
+
+    ``project_id`` threads the owning project through to the ``AgentTask`` so
+    the dispatcher's pause gate can block dispatch for a paused project (#51).
     """
     from general_ludd.agents.types import AgentTask
 
@@ -80,6 +84,7 @@ def make_dispatch_fn(
             description=f"pipeline unit {unit_id}",
             prompt=f"Work backlog unit {unit_id}",
             invoker_name=invoker_name,
+            project_id=project_id,
         )
 
     build = task_builder or _default_builder

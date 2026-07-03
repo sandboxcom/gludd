@@ -267,6 +267,9 @@ check-readme-status-current:
 lint:
 	uv run ruff check src/ tests/
 
+lint-files:
+	uv run ruff check $(FILES)
+
 # Typecheck with mypy
 typecheck:
 	uv run mypy src/

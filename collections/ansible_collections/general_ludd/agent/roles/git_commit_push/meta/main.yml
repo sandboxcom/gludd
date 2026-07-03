@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: git_commit_push
+  author: Agentic Harness Agent
+  description: >
+    Complete commit-and-push workflow. Idempotent (skips when tree is clean),
+    SAFE-BY-DEFAULT (enable_git_push=false), and workflow-aware (selects SSH
+    remote when .github/workflows/ files are in the diff, HTTPS otherwise).
+    Uses gludd_git for commit + push, gludd_facts for system context, and
+    optionally verifies the push via make verify-remote. Emits JSON+MD
+    artifacts and reports the outcome.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

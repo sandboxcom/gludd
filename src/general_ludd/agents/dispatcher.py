@@ -48,12 +48,15 @@ class AgentDispatcher:
         *,
         tracker: DurationTracker | None = None,
         watchdog: StallWatchdog | None = None,
+        pause_controller: object | None = None,
     ) -> None:
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._active_count = 0
+        self._active_tasks: dict[str, AgentTask] = {}
         self._lock = asyncio.Lock()
+        self._pause_controller = pause_controller
         # Per-task duration-anomaly + hung-task detection. The tracker learns a
         # per-agent baseline from completed/failed runs; the (optional) watchdog
         # registers each in-flight task so the daemon's stall sweeper can flag a
@@ -65,6 +68,16 @@ class AgentDispatcher:
     @property
     def active_count(self) -> int:
         return self._active_count
+
+    async def get_active_tasks_for_project(
+        self, project_id: str
+    ) -> list[AgentTask]:
+        async with self._lock:
+            return [
+                t
+                for t in self._active_tasks.values()
+                if t.project_id == project_id
+            ]
 
     def _get_semaphore(self, agent_name: str) -> asyncio.Semaphore:
         if agent_name not in self._semaphores:
@@ -90,6 +103,17 @@ class AgentDispatcher:
                 status="failed",
                 output=f"Agent '{task.agent_name}' is disabled",
             )
+
+        if self._pause_controller is not None and task.project_id:
+            silenced = self._pause_controller.is_paused("project", task.project_id)
+            if silenced:
+                return AgentTaskResult(
+                    task_id=task.task_id,
+                    agent_name=task.agent_name,
+                    status="blocked",
+                    output="Project is paused",
+                )
+
         # Capability gate: fail CLOSED. An empty / None / whitespace-only
         # invoker_name is an UNTRUSTED (un-named) invoker, NOT a privileged one —
         # it must be DENIED, never allowed to bypass the can_invoke matrix. (The
@@ -123,6 +147,7 @@ class AgentDispatcher:
         async with semaphore:
             async with self._lock:
                 self._active_count += 1
+                self._active_tasks[task.task_id] = task
             try:
                 # Watch the in-flight task so the StallWatchdog's sweeper can flag
                 # it if it hangs past its expected time; nullcontext when no
@@ -171,6 +196,7 @@ class AgentDispatcher:
             finally:
                 async with self._lock:
                     self._active_count -= 1
+                    self._active_tasks.pop(task.task_id, None)
 
     async def dispatch_many(
         self,

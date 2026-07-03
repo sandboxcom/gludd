@@ -27,6 +27,8 @@ from general_ludd.db.repository import (
     VariableNamespaceRepository,
 )
 from general_ludd.event_loop.lease import reclaim_expired_leases
+from general_ludd.execution.situation_store import BadCallSituationStore
+from general_ludd.execution.tool_auditor import ToolCallAuditor
 from general_ludd.mcp.client import MCPClient
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.models.job_invocation import (
@@ -294,26 +296,19 @@ class EventLoop:
         self._bg_tasks_lock = asyncio.Lock()
         self._observability_enabled: bool = bool(adaptive_router)
         self._tick_metrics: dict[str, Any] = {}
-        # Reconcile idempotency ledgers (defects F1/F2):
+        # Reconcile idempotency ledgers (defects F1/F2/F5):
         #   _applied_decisions  — decision ids whose status transition has already
         #     been applied; re-applying the same decision on a later tick/re-run is
         #     a no-op (F1: non-idempotent decision re-apply).
         #   _pushed_work        — todo (work) ids whose completed work has already
         #     been pushed; guarantees the push fires exactly once and is never
         #     duplicated across ticks (F2: completed-work push lost/double).
-        #
-        # P3 (unbounded ledger growth): these are bounded LRU sets. Each is an
-        # insertion-ordered ``OrderedDict`` used as an ordered set (value is an
-        # ignored ``None``); when it exceeds ``_MAX_LEDGER_SIZE`` the OLDEST key is
-        # evicted in O(1) via ``popitem(last=False)``. Insertion-order eviction is
-        # deliberate: a naive ``set`` drop picks an ARBITRARY (unordered) victim and
-        # could evict a still-recent key, re-opening the F1/F2 re-apply / re-push
-        # window. FIFO-by-insertion evicts the genuinely-oldest id first, which is
-        # the one least likely to still be in flight — preserving idempotency across
-        # the bounded window without the O(n) ``list(set)`` materialisation the old
-        # set-prune incurred at capacity.
+        #   _push_retry_count   — per-todo consecutive push failure counter (#53);
+        #     after _MAX_PUSH_RETRIES failures the todo is transitioned to BLOCKED
+        #     instead of retrying every tick forever (F5: file-claim livelock).
         self._applied_decisions: OrderedDict[str, None] = OrderedDict()
         self._pushed_work: OrderedDict[str, None] = OrderedDict()
+        self._push_retry_count: dict[str, int] = {}
         self._config_snapshot: dict[str, Any] = {}
         # M14 (W3.14): single project selected per tick, shared across all phases.
         # Reset to None at the end of every tick (see tick() finally block).
@@ -1926,6 +1921,8 @@ class EventLoop:
                             self._model_gateway, "compactor"
                         )
 
+                    auditor = ToolCallAuditor()
+                    store = BadCallSituationStore()
                     tool_loop = ToolCallLoop(
                         model_gateway=self._model_gateway,
                         mcp_client=self._mcp_client,
@@ -1939,6 +1936,8 @@ class EventLoop:
                         role="event_loop",
                         compaction_level=_tl_level,
                         summarize_fn=_tl_summarize_fn,
+                        tool_auditor=auditor,
+                        situation_store=store,
                     )
                     # Use the Phase-1 generated text as additional context so the
                     # tool-driven phase REFINES the analysis rather than starting
@@ -2571,25 +2570,113 @@ class EventLoop:
         F3: a commit/push failure is surfaced (returned True + error log), and
         the work id is left OUT of the ledger so the push is RETRIED on a later
         tick rather than silently leaving status=COMPLETE-but-unpushed.
+        #53: retry limit — after _MAX_PUSH_RETRIES consecutive failures the
+        todo is transitioned to BLOCKED instead of retrying every tick forever.
+        Exponential backoff spreads retries apart so a persistent conflict
+        doesn't burn every tick.
         """
-        if todo.todo_id in self._pushed_work:
+        tid = todo.todo_id
+        if tid in self._pushed_work:
             logger.debug(
                 "Completed work %s already pushed — skipping duplicate push",
-                todo.todo_id,
+                tid,
             )
             return False
+
+        # #53: if we already escaped the livelock for this todo (BLOCKED or
+        # BLOCKED_ON_HUMAN), don't retry.
+        todo_status = _safe_str(todo, "status", "")
+        if todo_status in (TodoStatus.BLOCKED.value, TodoStatus.BLOCKED_ON_HUMAN.value):
+            logger.debug(
+                "#53: todo %s is %s — push skipped (livelock already escaped)",
+                tid, todo_status,
+            )
+            return False
+
+        # #53: exponential backoff — after the first failure, skip retries on
+        # ticks that don't match the backoff window so a persistent conflict
+        # doesn't burn every single tick.
+        retry_count = self._push_retry_count.get(tid, 0)
+        if retry_count > 0:
+            window = 2 ** min(retry_count, 6)  # cap at 64-tick window
+            tick = self._total_ticks
+            if tick % window != 0:
+                logger.debug(
+                    "#53: backoff skip for %s (retry %d, tick %d, window %d)",
+                    tid, retry_count, tick, window,
+                )
+                return True  # signal failure so ledger skips marking pushed
+
         try:
             await self._try_commit_completed_work(todo)
         except Exception as exc:
+            # #53: increment retry counter; escape to BLOCKED at the limit.
+            self._push_retry_count[tid] = retry_count + 1
+            new_retry = self._push_retry_count[tid]
+            if new_retry > self._MAX_PUSH_RETRIES:
+                logger.error(
+                    "#53: livelock ESCAPE — todo %s failed push %d times "
+                    "(max %d). Transitioning to BLOCKED. Last error: %s",
+                    tid, new_retry, self._MAX_PUSH_RETRIES, exc,
+                )
+                await self._escape_push_livelock(todo, new_retry, exc)
+                return False
             logger.error(
                 "Reconcile: completed-work push FAILED for %s "
-                "(state diverged COMPLETE vs unpushed) — will retry: %s",
-                todo.todo_id, exc,
+                "(state diverged COMPLETE vs unpushed) — will retry "
+                "(attempt %d/%d): %s",
+                tid, new_retry, self._MAX_PUSH_RETRIES, exc,
             )
             return True
-        # P3: bounded LRU insert — evicts the oldest id (FIFO) past the cap.
-        self._ledger_add(self._pushed_work, todo.todo_id)
+
+        # Success: clear retry counter + record push.
+        self._push_retry_count.pop(tid, None)
+        self._ledger_add(self._pushed_work, tid)
         return False
+
+    async def _escape_push_livelock(
+        self, todo: Any, retry_count: int, last_error: Exception,
+    ) -> None:
+        """#53: transition the todo to BLOCKED after exhausting push retries.
+
+        Best-effort: a failure here (no repo, version mismatch, etc.) is logged
+        but never propagated — the todo may stay stuck, but the retry loop has
+        already been broken by returning False from _attempt_completed_push.
+        """
+        tid = todo.todo_id
+        try:
+            if self._todo_repo is not None:
+                todo_version = getattr(todo, "version", None)
+                if todo_version is not None:
+                    await self._todo_repo.transition(
+                        tid, TodoStatus.BLOCKED, todo_version,
+                    )
+                    logger.info(
+                        "#53: todo %s transitioned to BLOCKED after %d "
+                        "failed push attempts",
+                        tid, retry_count,
+                    )
+                else:
+                    logger.warning(
+                        "#53: cannot transition %s — no version on todo object",
+                        tid,
+                    )
+            else:
+                logger.warning(
+                    "#53: cannot transition %s — no TodoRepository wired",
+                    tid,
+                )
+        except Exception as transition_exc:
+            logger.error(
+                "#53: BLOCKED transition failed for %s after livelock escape "
+                "(retries=%d, push_error=%s, transition_error=%s). "
+                "The todo may remain stuck but the retry loop is broken.",
+                tid, retry_count, last_error, transition_exc,
+            )
+
+        # Clear the retry counter so a future status change (manual unblock)
+        # starts a fresh budget.
+        self._push_retry_count.pop(tid, None)
 
     def _decision_to_status(self, decision: str) -> TodoStatus | None:
         mapping: dict[str, TodoStatus] = {
@@ -2836,6 +2923,8 @@ class EventLoop:
     # Maximum entries kept in the per-instance idempotency ledgers.
     # Beyond this cap, the oldest entry is evicted (FIFO) so the ledgers never
     # grow without bound (P3: unbounded-memory defect, audit finding MED).
+    _MAX_PUSH_RETRIES: ClassVar[int] = 5
+
     _MAX_LEDGER_SIZE: ClassVar[int] = 10_000
 
     def _ledger_add(self, ledger: OrderedDict[str, None], key: str) -> None:

@@ -2,8 +2,9 @@
 
 Covers: JSON round-trip fidelity, the tiny-handle memory reclaim, SHA-256
 integrity/tamper rejection, path-traversal jailing, the ``parked()`` policy
-context manager, and a nested deep-recursion unwind where each ancestor is
-dehydrated while its descendant runs and rehydrated on the way back up.
+context manager, a nested deep-recursion unwind where each ancestor is
+dehydrated while its descendant runs and rehydrated on the way back up, and
+dispatcher-level pause-gate integration (#51).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from general_ludd.agents.context import ContextMessage
+from general_ludd.agents.dispatcher import AgentDispatcher
 from general_ludd.agents.hibernation import (
     AgentEnvironmentSnapshot,
     HibernationController,
@@ -23,6 +25,8 @@ from general_ludd.agents.hibernation import (
     IntegrityError,
     messages_from_dicts,
 )
+from general_ludd.agents.registry import AgentRegistry
+from general_ludd.agents.types import AgentConfig, AgentPermission, AgentTask, AgentType
 
 
 def _make_messages(n: int) -> list[ContextMessage]:
@@ -510,3 +514,102 @@ class TestDefaultDir:
         monkeypatch.delenv("GLUDD_HIBERNATION_DIR", raising=False)
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
         assert default_hibernation_dir() == tmp_path / "xdg" / "general-ludd" / "hibernation"
+
+
+# --------------------------------------------------------------------------- #
+# Dispatcher pause-gate integration (#51)                                      #
+# --------------------------------------------------------------------------- #
+
+
+def _test_registry() -> AgentRegistry:
+    registry = AgentRegistry()
+    registry.register(
+        AgentConfig(
+            name="general",
+            description="general-purpose subagent",
+            type=AgentType.SUBAGENT,
+            permissions=AgentPermission(),
+            max_concurrent=1,
+        )
+    )
+    registry.seal()
+    return registry
+
+
+class TestDispatcherIntegration:
+    async def test_paused_project_blocks_dispatch(self, tmp_path):
+        store = HibernationStore(tmp_path)
+        ctrl = HibernationController(store)
+        # Use the new pause_project API to mark a project as paused.
+        ctrl.pause_project("test-project")
+
+        registry = _test_registry()
+        dispatcher = AgentDispatcher(registry, pause_controller=ctrl)
+
+        task = AgentTask(
+            task_id="task-1",
+            agent_name="general",
+            description="test task",
+            prompt="do something",
+            project_id="test-project",
+        )
+        result = await dispatcher.dispatch_one(task)
+
+        assert result.status == "blocked"
+        assert result.task_id == "task-1"
+        assert "paused" in result.output.lower() or "blocked" in result.output.lower()
+
+    async def test_non_paused_project_proceeds_normally(self, tmp_path):
+        store = HibernationStore(tmp_path)
+        ctrl = HibernationController(store)
+
+        registry = _test_registry()
+        dispatcher = AgentDispatcher(registry, pause_controller=ctrl)
+
+        task = AgentTask(
+            task_id="task-2",
+            agent_name="general",
+            description="test task",
+            prompt="do something",
+            project_id="active-project",
+        )
+        result = await dispatcher.dispatch_one(task)
+
+        assert result.status != "blocked"
+        assert result.task_id == "task-2"
+
+    async def test_no_project_id_skips_pause_check(self, tmp_path):
+        store = HibernationStore(tmp_path)
+        ctrl = HibernationController(store)
+        ctrl.pause_project("some-project")
+
+        registry = _test_registry()
+        dispatcher = AgentDispatcher(registry, pause_controller=ctrl)
+
+        task = AgentTask(
+            task_id="task-3",
+            agent_name="general",
+            description="test task",
+            prompt="do something",
+            # project_id not set → should skip pause check and proceed
+        )
+        result = await dispatcher.dispatch_one(task)
+
+        assert result.status != "blocked"
+        assert result.task_id == "task-3"
+
+    async def test_no_pause_controller_proceeds_normally(self, tmp_path):
+        registry = _test_registry()
+        dispatcher = AgentDispatcher(registry)  # no pause_controller
+
+        task = AgentTask(
+            task_id="task-4",
+            agent_name="general",
+            description="test task",
+            prompt="do something",
+            project_id="paused-by-default",
+        )
+        result = await dispatcher.dispatch_one(task)
+
+        assert result.status != "blocked"
+        assert result.task_id == "task-4"

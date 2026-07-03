@@ -375,6 +375,25 @@ class HibernationController:
         self._min_depth = min_depth
         self._min_context_messages = min_context_messages
         self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
+        self._paused_projects: set[str] = set()
+
+    def pause_project(self, project_id: str) -> None:
+        """Mark a project as paused so its dispatch is gated."""
+        self._paused_projects.add(project_id)
+
+    def resume_project(self, project_id: str) -> None:
+        """Resume a previously paused project."""
+        self._paused_projects.discard(project_id)
+
+    def is_paused(self, scope: str, identifier: str) -> bool:
+        """Return True when *identifier* of *scope* is currently paused.
+
+        At present only ``"project"`` scope is supported; a paused project
+        blocks dispatch of tasks carrying its ``project_id``.
+        """
+        if scope == "project":
+            return identifier in self._paused_projects
+        return False
 
     def should_dehydrate(self, snap: AgentEnvironmentSnapshot) -> bool:
         return (

@@ -1485,6 +1485,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._agent_dispatcher = AgentDispatcher(
             registry=registry,
             executor=dispatcher_executor,
+            pause_controller=app.state._pause_controller,
         )
 
         # --- 3-lane multitask+merge pipeline (#77), behind config flag ----- #

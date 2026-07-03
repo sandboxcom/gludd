@@ -14,18 +14,22 @@ Behaviours proven:
   * once the first worker RELEASES (delivery settled), the overlapping worker may
     proceed;
   * the coordination facet reflects the active claim while a delivery is held.
+
+#53 (file-claim livelock): the push-retry loop must escape after a bounded
+number of failures instead of retrying every tick without limit.
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from general_ludd.coordination.file_claims import FileClaimRegistry
 from general_ludd.event_loop.loop import EventLoop, _FileClaimConflict
 from general_ludd.routers.coordination import _coordination_facet
+from general_ludd.schemas.todo import TodoStatus
 
 _GIT = "general_ludd.git_automation.repo.GitAutomation"
 
@@ -65,6 +69,8 @@ def _todo(todo_id: str, worktree: str) -> SimpleNamespace:
         branch_name=f"gludd-{todo_id.lower()}",
         worktree=worktree,
         project_id="proj-31",
+        status="complete",
+        version=3,
     )
 
 
@@ -186,3 +192,100 @@ async def test_none_registry_leaves_delivery_unchanged() -> None:
         await loop._try_commit_completed_work(_todo("T-A", "/wt/A"))
 
     assert _FakeGit.commits  # committed normally
+
+
+# ── #53: file-claim livelock escape ───────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_push_livelock_escapes_after_max_retries() -> None:
+    """#53: when a todo's completed-work push fails with a file-claim conflict
+    every tick, the retry loop must escape after _MAX_PUSH_RETRIES instead of
+    retrying forever.
+
+    BEFORE fix: every call to _attempt_completed_push returns True (fail),
+    the retry counter is never incremented, and no BLOCKED transition occurs
+    — the todo livelocks indefinitely.
+
+    AFTER fix: after 5 consecutive failures the 6th call transitions the todo
+    to BLOCKED, clears the retry counter, and returns False so the reconcile
+    loop does NOT count it as a push failure to retry.
+    """
+    registry = FileClaimRegistry()
+    # Pre-claim the shared file so every push attempt hits a conflict.
+    registry.claim("T-OTHER", ["src/shared.py"])
+
+    mock_todo_repo = AsyncMock()
+
+    loop = EventLoop(file_claim_registry=registry, todo_repo=mock_todo_repo)
+    _FakeGit.files_by_repo = {"/wt/X": ["src/shared.py"]}
+    todo = _todo("T-X", "/wt/X")
+
+    with patch(_GIT, _FakeGit):
+        results = []
+        for _ in range(6):
+            results.append(await loop._attempt_completed_push(todo))
+
+    # First 5: all fail (retry budget exhausted on the 5th).
+    assert results[:5] == [True] * 5, (
+        f"Expected first 5 attempts to return True (failure), got {results[:5]}"
+    )
+    # 6th: escaped the livelock — todo was transitioned to BLOCKED.
+    assert results[5] is False, (
+        f"Expected 6th attempt to return False (livelock escaped), got {results[5]}"
+    )
+
+    mock_todo_repo.transition.assert_called_once()
+    call_args = mock_todo_repo.transition.call_args
+    assert call_args[0][0] == "T-X", f"Expected todo_id T-X, got {call_args[0][0]}"
+    assert call_args[0][1] == TodoStatus.BLOCKED, (
+        f"Expected status BLOCKED, got {call_args[0][1]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_successful_push_resets_retry_counter() -> None:
+    """#53: a successful push clears the retry count so subsequent failures
+    get a fresh budget rather than carrying stale retry state."""
+    registry = FileClaimRegistry()
+    mock_todo_repo = AsyncMock()
+
+    loop = EventLoop(file_claim_registry=registry, todo_repo=mock_todo_repo)
+
+    # Two different todos, same file set.  First fails 3 times, then succeeds.
+    # A second todo failing should NOT inherit the first's retry counter.
+    todo_a = _todo("T-A", "/wt/A")
+    todo_b = _todo("T-B", "/wt/B")
+
+    # Fail todo-A 2 times with a conflict.
+    registry.claim("T-OTHER", ["src/shared.py"])
+    _FakeGit.files_by_repo = {"/wt/A": ["src/shared.py"]}
+    with patch(_GIT, _FakeGit):
+        await loop._attempt_completed_push(todo_a)
+        await loop._attempt_completed_push(todo_a)
+
+    # Now clear the conflict for A (but keep it for B).
+    registry.release("T-OTHER")
+    _FakeGit.files_by_repo = {"/wt/A": ["src/clean.py"]}
+    with patch(_GIT, _FakeGit):
+        result = await loop._attempt_completed_push(todo_a)
+        assert result is False
+
+    # B gets its own independent retry counter.
+    registry.claim("T-OTHER", ["src/b.py"])
+    _FakeGit.files_by_repo = {"/wt/B": ["src/b.py"]}
+    with patch(_GIT, _FakeGit):
+        # B should get a full budget of 5 retries, not 3 (leftover from A).
+        for _ in range(5):
+            result = await loop._attempt_completed_push(todo_b)
+            assert result is True  # conflict → failure
+        # 6th: escape.
+        result = await loop._attempt_completed_push(todo_b)
+        assert result is False
+
+    # Verify B was transitioned to BLOCKED (its own count hit 5).
+    transition_calls_after = mock_todo_repo.transition.call_count
+    assert transition_calls_after == 1, (
+        f"Expected exactly 1 BLOCKED transition (for B after its own 5 retries), "
+        f"got {transition_calls_after}"
+    )
