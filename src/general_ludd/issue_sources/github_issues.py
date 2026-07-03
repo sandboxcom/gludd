@@ -341,7 +341,6 @@ class GitHubIssueSource:
 # ---------------------------------------------------------------------------
 # IssueSource-compatible adapter (the adapter-family API: SOURCE, fetch,
 # write_back). This class is what the test suite imports as GitHubIssuesSource.
-# The older GitHubIssueSource (singular) is kept for backward compatibility.
 # ---------------------------------------------------------------------------
 
 from general_ludd.issue_sources.base import IssueRecord, IssueSource, Transition  # noqa: E402
