@@ -221,8 +221,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | 9 agile/sprint roles + molecule scenarios (W15.1) | ✓ 100%(local) | **PASS** *(file-refs only)*: `make molecule-test-all` 49/49; CI-green unverified; `[8b252e1]` |
 | File-overlap coordination router (#31) | ✓ 10% | **PASS** *(file-refs only)*: exists; has `# TODO(integration)`; NOT registered in daemon; `[audit]` |
 | Per-project cost/time/LoC accounting (#28) | ✓ 20% | **PASS** *(file-refs only)*: cost only; time/LoC/role stats missing; `[audit]` |
-| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 15% | **PENDING**: branch building; not merged; `[SESSION.md:28]` |
-| Gate-safe + predictive floor controller (floor_controller-consolidated branch) | ✗ 15% | **PENDING**: branch building; not merged; `[SESSION.md:29]` |
+| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✓ 85% | **PASS** *(file-refs only)*: branch `mt-6-watchdog` never existed — abandoned; `StallWatchdog` + sweeper wired into daemon + dispatcher; `FileWatcher` in integrity/scanner.py; `[branch abandoned — re-scoped into master]` |
+| Gate-safe + predictive floor controller (floor_controller-consolidated branch) | ✓ 55% | **PASS** *(file-refs only)*: branch `floor_controller-consolidated` never existed — abandoned; `scripts/floor_controller.py` (208 lines) + 21 tests; NOT wired into daemon event loop; `[branch abandoned — re-scoped into master]` |
 | self_update wired into daemon | ✓ 90% | **PASS** *(file-refs only)*: wired `feature/alpha4-green-the-gate`; verified 2026-06-25; −10% pending e2e proof |
 | Remediation system: blocker detector, dispatcher, chronic reporter | ✓ 100% | **PASS** *(file-refs only)*: `BlockerDetector` + `RemediationDispatcher` + `ChronicReporter` wired via `/api/remediation`; `[audit]` |
 | HumanTodo system (bot→human task requests) | ✓ 100% | **PASS** *(file-refs only)*: `HumanTodoModel` + `HumanTodoRepository` + `/api/human-todos` router + CLI; `[audit]` |

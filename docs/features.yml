@@ -810,15 +810,21 @@ sections:
 
       - id: watchdog-stall
         title: "Watchdog/stall detection improvements (mt-6-watchdog branch)"
-        pct: 15
-        evidence_refs: []
-        notes: "branch building; not merged; `[SESSION.md:28]`"
+        pct: 85
+        evidence_refs:
+          - "file:src/general_ludd/observability/timing.py::StallWatchdog"
+          - "file:src/general_ludd/daemon.py::_stall_watchdog"
+          - "file:src/general_ludd/agents/dispatcher.py::_watchdog"
+          - "file:src/general_ludd/events/types.py::STALL_DETECTED"
+        notes: "branch `mt-6-watchdog` never existed — abandoned; `StallWatchdog` + sweeper wired into daemon + dispatcher; `FileWatcher` in integrity/scanner.py; `[branch abandoned — re-scoped into master]`"
 
       - id: floor-controller
         title: "Gate-safe + predictive floor controller (floor_controller-consolidated branch)"
-        pct: 15
-        evidence_refs: []
-        notes: "branch building; not merged; `[SESSION.md:29]`"
+        pct: 55
+        evidence_refs:
+          - "test:tests/unit/test_floor_controller.py"
+          - "file:scripts/floor_controller.py::decide"
+        notes: "branch `floor_controller-consolidated` never existed — abandoned; `scripts/floor_controller.py` (208 lines) + 21 tests; NOT wired into daemon event loop; `[branch abandoned — re-scoped into master]`"
 
       - id: self-update-wired
         title: "self_update wired into daemon"
