@@ -135,6 +135,83 @@ def _cmd_run(args: argparse.Namespace) -> None:
         sys.exit(2)
 
 
+def _cmd_suggest_fix(args: argparse.Namespace) -> None:
+    """POST a deployment to /suggest-fix and print the proposed patch + source."""
+    deployment = _load_deployment(args.config)
+    body: dict[str, Any] = {"deployment": deployment}
+    if args.gpu_type:
+        body["gpu_type"] = args.gpu_type
+        body["gpu_count"] = args.gpu_count
+    data = (
+        _http(
+            "POST",
+            f"{args.daemon_url}/admin/deployments/suggest-fix",
+            json_body=body,
+        )
+        or {}
+    )
+    if args.json:
+        _print_json(data)
+        return
+    if not isinstance(data, dict):
+        print("No fix suggestion returned.")
+        return
+    print(f"fix_id: {data.get('fix_id', '')}")
+    print(f"source: {data.get('source', '')}")
+    patch = data.get("patch", {})
+    if patch:
+        print(f"patch: {_json.dumps(patch, default=str)}")
+    else:
+        print("patch: (empty — no config change proposed)")
+
+
+def _cmd_approve(args: argparse.Namespace) -> None:
+    """POST /fixes/{fix_id}/approve (optionally with retry) and print the result."""
+    data = (
+        _http(
+            "POST",
+            f"{args.daemon_url}/admin/deployments/fixes/{args.fix_id}/approve",
+            json_body={"retry": bool(args.retry)},
+        )
+        or {}
+    )
+    if args.json:
+        _print_json(data)
+        return
+    if not isinstance(data, dict):
+        print("No response.")
+        return
+    print(f"status: {data.get('status', '')}")
+    merged = data.get("merged_config", {})
+    if merged:
+        print(f"merged_config: {_json.dumps(merged, default=str)}")
+    if "retried" in data:
+        print(f"retried: {data.get('retried')}")
+    if data.get("note"):
+        print(f"note: {data['note']}")
+
+
+def _cmd_reject(args: argparse.Namespace) -> None:
+    """POST /fixes/{fix_id}/reject with an optional reason and print the result."""
+    data = (
+        _http(
+            "POST",
+            f"{args.daemon_url}/admin/deployments/fixes/{args.fix_id}/reject",
+            json_body={"reason": args.reason or ""},
+        )
+        or {}
+    )
+    if args.json:
+        _print_json(data)
+        return
+    if not isinstance(data, dict):
+        print("No response.")
+        return
+    print(f"status: {data.get('status', '')}")
+    if data.get("reason"):
+        print(f"reason: {data['reason']}")
+
+
 def add_deploy_check_subparser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     p = sub.add_parser(
         "deploy-check", help="Statically lint a model serving config for misconfigs"
@@ -153,3 +230,38 @@ def add_deploy_check_subparser(sub: argparse._SubParsersAction) -> None:  # type
     run.add_argument("--daemon-url", default="http://localhost:8000")
     run.add_argument("--json", action="store_true")
     run.set_defaults(func=_cmd_run)
+
+    suggest = dsub.add_parser(
+        "suggest-fix",
+        help="Propose a config-patch fix for a deployment's misconfigs (SLM + deterministic)",
+    )
+    suggest.add_argument(
+        "--config", required=True, help="Path to a deployment config (.yaml/.yml/.json)"
+    )
+    suggest.add_argument(
+        "--gpu-type", default=None, help="GPU type (e.g. h100, a100_80, l40s)"
+    )
+    suggest.add_argument(
+        "--gpu-count", type=int, default=1, help="Number of GPUs (default 1)"
+    )
+    suggest.add_argument("--daemon-url", default="http://localhost:8000")
+    suggest.add_argument("--json", action="store_true")
+    suggest.set_defaults(func=_cmd_suggest_fix)
+
+    approve = dsub.add_parser(
+        "approve", help="Approve a parked fix proposal and print its merged config"
+    )
+    approve.add_argument("fix_id", help="The fix_id returned by suggest-fix")
+    approve.add_argument(
+        "--retry", action="store_true", help="Re-run the deploy with the merged config"
+    )
+    approve.add_argument("--daemon-url", default="http://localhost:8000")
+    approve.add_argument("--json", action="store_true")
+    approve.set_defaults(func=_cmd_approve)
+
+    reject = dsub.add_parser("reject", help="Reject a parked fix proposal")
+    reject.add_argument("fix_id", help="The fix_id returned by suggest-fix")
+    reject.add_argument("--reason", default="", help="Reason recorded on the proposal")
+    reject.add_argument("--daemon-url", default="http://localhost:8000")
+    reject.add_argument("--json", action="store_true")
+    reject.set_defaults(func=_cmd_reject)

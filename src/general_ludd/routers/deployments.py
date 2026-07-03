@@ -18,6 +18,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from general_ludd.infra.fix_approval import FixApprovalError, FixApprovalManager
+from general_ludd.infra.fix_suggester import FixSuggester, make_fix_suggestion_fn
 from general_ludd.infra.gpu_info_adapter import gpu_info_from_gpu_type
 from general_ludd.infra.model_deploy_check import Finding, MisconfigDetector
 from general_ludd.models.deployment_health import (
@@ -94,6 +96,41 @@ class MisconfigCheckResponse(BaseModel):
     has_critical: bool
 
 
+class SuggestFixRequest(BaseModel):
+    """Body for the SLM-backed config-fix suggester.
+
+    ``deployment`` is the serving config to fix. ``findings`` may be supplied
+    directly (as finding dicts); when absent the detector re-derives them from
+    ``deployment`` + GPU context (``gpu_info`` or ``gpu_type``/``gpu_count``).
+    """
+
+    deployment: Any
+    findings: list[dict[str, Any]] | None = None
+    gpu_info: dict[str, Any] | None = None
+    gpu_type: str | None = None
+    gpu_count: int = Field(default=1, ge=1)
+
+
+class FixDecisionRequest(BaseModel):
+    """Body for approve/reject. ``retry`` triggers an optional redeploy."""
+
+    retry: bool = False
+    reason: str = ""
+
+
+def _dict_to_finding(d: dict[str, Any]) -> Finding:
+    """Build a :class:`Finding` from a plain dict (fail-soft on missing keys)."""
+    evidence = d.get("evidence")
+    return Finding(
+        rule_id=str(d.get("rule_id", "")),
+        severity=str(d.get("severity", "warn")),
+        engine=str(d.get("engine", "any")),
+        message=str(d.get("message", "")),
+        remediation=str(d.get("remediation", "")),
+        evidence=dict(evidence) if isinstance(evidence, dict) else {},
+    )
+
+
 def _finding_to_dict(f: Finding) -> dict[str, Any]:
     return {
         "rule_id": f.rule_id,
@@ -135,6 +172,15 @@ def _incident_to_dict(i: DeploymentHealthIncident) -> dict[str, Any]:
 
 
 def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
+    # One approval manager per app, held on app.state so state survives across
+    # requests (suggest-fix -> approve/reject) and is isolated per app instance.
+    fix_manager: FixApprovalManager | None = getattr(
+        app.state, "_fix_approval_manager", None
+    )
+    if fix_manager is None:
+        fix_manager = FixApprovalManager()
+        app.state._fix_approval_manager = fix_manager
+
     @app.get(
         "/admin/deployments/health",
         response_model=None,
@@ -218,4 +264,113 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
             "findings": [_finding_to_dict(f) for f in findings],
             "remediations": [detector.remediate(f) for f in findings],
             "has_critical": any(f.severity == "critical" for f in findings),
+        }
+
+    @app.post(
+        "/admin/deployments/suggest-fix",
+        response_model=None,
+    )
+    async def post_suggest_fix(body: SuggestFixRequest) -> dict[str, Any]:
+        """Propose a config-patch to fix a deployment's misconfigurations.
+
+        Uses the SLM ``FixSuggester`` when a ``ModelGateway`` is wired on
+        ``app.state._model_gateway``; otherwise falls back to the DETERMINISTIC
+        ``MisconfigDetector.remediate()`` merge. NEVER 503s on a missing model —
+        the fix loop is fail-soft by construction. Returns a ``fix_id`` for the
+        parked proposal plus the ``patch`` and its ``source``.
+        """
+        detector = MisconfigDetector()
+        if body.findings is not None:
+            findings = [_dict_to_finding(f) for f in body.findings]
+        else:
+            if body.gpu_info is not None:
+                gpu_info: dict[str, Any] = body.gpu_info
+            elif body.gpu_type:
+                gpu_info = gpu_info_from_gpu_type(body.gpu_type, body.gpu_count)
+            else:
+                gpu_info = {}
+            findings = detector.check(body.deployment, gpu_info)
+
+        gateway = getattr(app.state, "_model_gateway", None)
+        suggest_fn = make_fix_suggestion_fn(gateway) if gateway is not None else None
+
+        # Ask the SLM once (fail-soft — the wrapper never raises); label the
+        # source by whether it actually produced a usable patch, NOT by whether
+        # that patch differs from the deterministic merge (the SLM is steered to
+        # echo the deterministic hint, so a value-compare would under-report it).
+        slm_patch = suggest_fn(body.deployment, findings) if suggest_fn is not None else None
+        if isinstance(slm_patch, dict) and slm_patch:
+            patch = slm_patch
+            source = "slm"
+        else:
+            # Deterministic fallback: the guaranteed remediate() merge, no model.
+            patch = FixSuggester(detector, None).suggest(body.deployment, findings)
+            source = "deterministic"
+
+        # A non-dict deployment can't be merged; base the proposal on {} so the
+        # endpoint stays fail-soft (never 500) — mirrors misconfig-check.
+        base = body.deployment if isinstance(body.deployment, dict) else {}
+        proposal = fix_manager.propose(base, patch)
+        return {"fix_id": proposal.fix_id, "patch": patch, "source": source}
+
+    @app.post(
+        "/admin/deployments/fixes/{fix_id}/approve",
+        response_model=None,
+    )
+    async def post_approve_fix(
+        fix_id: str, body: FixDecisionRequest | None = None
+    ) -> dict[str, Any]:
+        """Approve a parked fix and return its merged config to apply.
+
+        With ``{"retry": true}`` and a redeploy hook wired on
+        ``app.state._deployment_redeploy_fn``, re-runs the deploy path with the
+        merged config; otherwise the merged config is returned for the caller to
+        redeploy (never blocks).
+        """
+        decision = body or FixDecisionRequest()
+        try:
+            proposal = fix_manager.approve(fix_id)
+        except FixApprovalError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        merged = proposal.merged_config()
+        result: dict[str, Any] = {
+            "fix_id": fix_id,
+            "status": proposal.status,
+            "merged_config": merged,
+        }
+        if decision.retry:
+            redeploy = getattr(app.state, "_deployment_redeploy_fn", None)
+            if redeploy is not None:
+                try:
+                    result["retry_result"] = redeploy(merged)
+                    result["retried"] = True
+                except Exception as exc:  # fail-soft: never 500 on a redeploy error
+                    logger.warning("fix redeploy failed", exc_info=True)
+                    result["retried"] = False
+                    result["retry_error"] = str(exc)
+            else:
+                result["retried"] = False
+                result["note"] = (
+                    "no redeploy hook wired; apply merged_config to redeploy"
+                )
+        return result
+
+    @app.post(
+        "/admin/deployments/fixes/{fix_id}/reject",
+        response_model=None,
+    )
+    async def post_reject_fix(
+        fix_id: str, body: FixDecisionRequest | None = None
+    ) -> dict[str, Any]:
+        """Reject a parked fix, recording an optional ``reason``."""
+        decision = body or FixDecisionRequest()
+        try:
+            proposal = fix_manager.reject(fix_id, decision.reason)
+        except FixApprovalError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "fix_id": fix_id,
+            "status": proposal.status,
+            "reason": proposal.reason,
         }

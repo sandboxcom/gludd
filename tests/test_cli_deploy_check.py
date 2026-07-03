@@ -10,7 +10,12 @@ import pytest
 
 import general_ludd.cli_deploy_check as mod
 from general_ludd.cli import build_parser
-from general_ludd.cli_deploy_check import _cmd_run
+from general_ludd.cli_deploy_check import (
+    _cmd_approve,
+    _cmd_reject,
+    _cmd_run,
+    _cmd_suggest_fix,
+)
 
 
 class _Args:
@@ -130,3 +135,87 @@ def test_run_subparser_is_registered() -> None:
     for a in subactions:
         choices.update(a.choices)  # type: ignore[attr-defined]
     assert "run" in choices
+    # The SLM fix-loop subcommands are also registered.
+    assert "suggest-fix" in choices
+    assert "approve" in choices
+    assert "reject" in choices
+
+
+def test_suggest_fix_prints_patch_and_source(tmp_path, monkeypatch) -> None:
+    cfg = tmp_path / "d.json"
+    cfg.write_text(json.dumps({"engine": "vllm", "gpu_memory_utilization": 0.99}))
+    canned = {
+        "fix_id": "abc123",
+        "patch": {"gpu_memory_utilization": 0.90},
+        "source": "deterministic",
+    }
+    monkeypatch.setattr(mod, "_http", lambda *a, **k: canned)
+    args = _Args(
+        config=str(cfg),
+        gpu_type="a100_80",
+        gpu_count=1,
+        daemon_url="http://localhost:8000",
+        json=False,
+    )
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        _cmd_suggest_fix(args)
+    out = captured.getvalue()
+    assert "abc123" in out
+    assert "deterministic" in out
+    assert "gpu_memory_utilization" in out
+
+
+def test_approve_prints_status_and_merged_config(monkeypatch) -> None:
+    canned = {
+        "fix_id": "abc123",
+        "status": "approved",
+        "merged_config": {"engine": "vllm", "gpu_memory_utilization": 0.90},
+        "retried": True,
+    }
+    seen: dict[str, object] = {}
+
+    def _fake_http(method, url, *, json_body=None, **k):  # type: ignore[no-untyped-def]
+        seen["url"] = url
+        seen["json_body"] = json_body
+        return canned
+
+    monkeypatch.setattr(mod, "_http", _fake_http)
+    args = _Args(
+        fix_id="abc123",
+        retry=True,
+        daemon_url="http://localhost:8000",
+        json=False,
+    )
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        _cmd_approve(args)
+    out = captured.getvalue()
+    assert "approved" in out
+    assert "gpu_memory_utilization" in out
+    assert seen["url"].endswith("/admin/deployments/fixes/abc123/approve")  # type: ignore[union-attr]
+    assert seen["json_body"] == {"retry": True}
+
+
+def test_reject_prints_status_and_reason(monkeypatch) -> None:
+    canned = {"fix_id": "abc123", "status": "rejected", "reason": "nope"}
+    seen: dict[str, object] = {}
+
+    def _fake_http(method, url, *, json_body=None, **k):  # type: ignore[no-untyped-def]
+        seen["json_body"] = json_body
+        return canned
+
+    monkeypatch.setattr(mod, "_http", _fake_http)
+    args = _Args(
+        fix_id="abc123",
+        reason="nope",
+        daemon_url="http://localhost:8000",
+        json=False,
+    )
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        _cmd_reject(args)
+    out = captured.getvalue()
+    assert "rejected" in out
+    assert "nope" in out
+    assert seen["json_body"] == {"reason": "nope"}
