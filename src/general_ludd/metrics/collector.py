@@ -363,14 +363,13 @@ class MetricsCollector:
         self,
     ) -> dict[str, dict[str, Any]]:
         with self._lock:
-            cost = {
-                agent.project: agent.total_cost_usd
-                for agent in self._agents.values()
-                if agent.project
-            }
             _merge_cost: dict[str, float] = {}
-            for pid, c in cost.items():
-                _merge_cost[pid] = _merge_cost.get(pid, 0.0) + c
+            for agent in self._agents.values():
+                if agent.project:
+                    _merge_cost[agent.project] = (
+                        _merge_cost.get(agent.project, 0.0)
+                        + agent.total_cost_usd
+                    )
             time_: dict[str, float] = {
                 pid: sum(times) for pid, times in self._task_times.items()
             }
