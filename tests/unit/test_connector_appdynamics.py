@@ -207,6 +207,35 @@ def test_public_base_url_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
     assert src.base_url == "https://1.1.1.1/controller"
 
 
+# Canonical SSRF guard coverage — 100.100.100.200 is the Alibaba metadata IP
+# the shared general_ludd.security.ssrf.is_url_blocked guarantees.
+_CANONICAL_SSRF_URLS = [
+    "http://localhost/",
+    "http://metadata.google.internal/",
+    "http://169.254.169.254/",
+    "http://100.100.100.200/",
+]
+
+
+@pytest.mark.parametrize("bad_url", _CANONICAL_SSRF_URLS)
+def test_canonical_ssrf_urls_rejected(
+    bad_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("APPD_TEST_TOKEN", "tok")
+    with pytest.raises(ConnectorConfigError):
+        AppDynamicsSource(_config(base_url=bad_url), transport=FakeTransport())
+
+
+def test_public_base_url_constructs_after_consolidation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APPD_TEST_TOKEN", "tok")
+    src = AppDynamicsSource(
+        _config(base_url="https://api.example.com"), transport=FakeTransport()
+    )
+    assert src.base_url == "https://api.example.com"
+
+
 def test_empty_metric_path_returns_no_records(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APPD_TEST_TOKEN", "tok")
     t = FakeTransport(body=METRIC_PAYLOAD)

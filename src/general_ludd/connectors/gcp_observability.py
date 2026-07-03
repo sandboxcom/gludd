@@ -31,23 +31,15 @@ defines no shared base class — it is standalone.
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.security.ssrf import is_url_blocked
+
 DEFAULT_LOGGING_ENDPOINT = "https://logging.googleapis.com/v2/entries:list"
 DEFAULT_MONITORING_BASE = "https://monitoring.googleapis.com/v3"
 DEFAULT_TIMEOUT = 15.0
-
-# Literal hostnames that must never be contacted (no DNS — exact-string match).
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "metadata",
-        "metadata.google.internal",
-    }
-)
 
 
 @runtime_checkable
@@ -75,34 +67,14 @@ class HttpTransport(Protocol):
     ) -> HttpResponse: ...
 
 
-def _host_is_internal(host: str) -> bool:
-    """Return True if ``host`` is a literal internal/loopback/private target.
-
-    The check is purely lexical: a bare-IP host is parsed and classified, and a
-    named host is matched against a small denylist. No DNS resolution happens,
-    so this cannot be defeated by a rebinding DNS answer.
-    """
-
-    bare = host.strip("[]").lower()
-    if bare in _BLOCKED_HOSTNAMES:
-        return True
-    try:
-        ip = ipaddress.ip_address(bare)
-    except ValueError:
-        # Not a literal IP. Only the explicit denylist above blocks named hosts;
-        # public API hostnames (e.g. *.googleapis.com) are allowed.
-        return False
-    return (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
-
-
 def _require_safe_endpoint(url: str) -> str:
-    """Validate an endpoint URL, rejecting internal/SSRF targets. No DNS."""
+    """Validate an endpoint URL, rejecting internal/SSRF targets. No DNS.
+
+    The private/metadata decision is delegated to the canonical shared guard
+    :func:`general_ludd.security.ssrf.is_url_blocked` so this connector cannot
+    drift weaker than the single source of truth. The URL is returned UNCHANGED
+    (no rstrip) — callers build endpoint paths off the exact string.
+    """
 
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https"):
@@ -110,7 +82,7 @@ def _require_safe_endpoint(url: str) -> str:
     host = parts.hostname
     if not host:
         raise ValueError(f"endpoint has no host: {url!r}")
-    if _host_is_internal(host):
+    if is_url_blocked(url, scheme_allowlist=("http", "https")):
         raise ValueError(f"refusing internal/SSRF endpoint: {url!r}")
     return url
 

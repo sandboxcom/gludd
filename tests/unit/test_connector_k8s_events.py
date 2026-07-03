@@ -191,6 +191,33 @@ class TestSSRF:
         with pytest.raises(SSRFError):
             assert_url_allowed("ftp://example.com", allow_private=False)
 
+    # Canonical SSRF guard coverage — 100.100.100.200 is the Alibaba metadata IP
+    # the shared general_ludd.security.ssrf.is_url_blocked guarantees.
+    @pytest.mark.parametrize(
+        "bad_url",
+        [
+            "http://localhost/",
+            "http://metadata.google.internal/",
+            "http://169.254.169.254/",
+            "http://100.100.100.200/",
+        ],
+    )
+    def test_canonical_ssrf_urls_rejected(self, bad_url: str) -> None:
+        with pytest.raises(SSRFError):
+            K8sEventsSource(config={"base_url": bad_url}, transport=_CannedTransport())
+
+    def test_allow_private_permits_localhost(self) -> None:
+        # Clusters are internal; allow_private must let a loopback API server in.
+        src = K8sEventsSource(
+            config={"base_url": "http://localhost:6443", "allow_private": True},
+            transport=_CannedTransport(payload=CANNED_EVENTS),
+        )
+        assert src.query({}) == src.query({})  # no SSRFError raised
+
+    def test_public_base_url_constructs_after_consolidation(self) -> None:
+        src = K8sEventsSource(config=_public_config(), transport=_CannedTransport())
+        assert src.name == "k8s"
+
 
 class TestToken:
     def test_token_from_env_used_as_bearer(

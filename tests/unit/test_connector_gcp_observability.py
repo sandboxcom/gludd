@@ -204,6 +204,34 @@ def test_public_googleapis_endpoint_allowed(
     assert src is not None
 
 
+# Canonical SSRF guard coverage — 100.100.100.200 is the Alibaba metadata IP
+# the shared general_ludd.security.ssrf.is_url_blocked guarantees.
+@pytest.mark.parametrize(
+    "bad_endpoint",
+    [
+        "http://localhost/",
+        "http://metadata.google.internal/",
+        "http://169.254.169.254/",
+        "http://100.100.100.200/",
+    ],
+)
+def test_canonical_ssrf_endpoints_rejected(
+    monkeypatch: pytest.MonkeyPatch, bad_endpoint: str
+) -> None:
+    transport = RecordingTransport({})
+    with pytest.raises(ValueError):
+        make_source(transport, monkeypatch, config={"logging_endpoint": bad_endpoint})
+    assert transport.calls == []
+
+
+def test_public_endpoint_constructs_after_consolidation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = RecordingTransport({})
+    src = make_source(transport, monkeypatch)  # default public endpoints
+    assert src.name
+
+
 # --------------------------------------------------------------------------- #
 # health()
 # --------------------------------------------------------------------------- #

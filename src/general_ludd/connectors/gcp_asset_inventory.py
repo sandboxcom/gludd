@@ -27,6 +27,8 @@ import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.security.ssrf import is_url_blocked
+
 DEFAULT_ENDPOINT = "https://cloudasset.googleapis.com/v1"
 _ALLOWED_DEFAULT_HOST = "cloudasset.googleapis.com"
 
@@ -86,14 +88,24 @@ def _host_is_internal(host: str) -> bool:
 
 
 def _validate_endpoint(endpoint: str) -> str:
-    """Validate the endpoint URL: https only, non-internal literal host."""
+    """Validate the endpoint URL: https only, non-internal literal host.
+
+    The private/metadata literal decision is delegated to the canonical shared
+    guard :func:`general_ludd.security.ssrf.is_url_blocked` (https-only here).
+    A connector-specific single-label reject is retained BEFORE delegating,
+    because ``is_url_blocked`` does not vet arbitrary dot-less public names like
+    ``internal`` — those cannot be public FQDNs and are treated as internal.
+    """
     parts = urlsplit(endpoint)
     if parts.scheme != "https":
         raise ValueError(f"endpoint must use https, got scheme={parts.scheme!r}")
-    host = parts.hostname or ""
+    host = (parts.hostname or "").strip().lower()
     if not host:
         raise ValueError("endpoint has no host")
-    if _host_is_internal(host):
+    # Reject single-label (dot-less, colon-less) hostnames, e.g. "internal".
+    if "." not in host and ":" not in host:
+        raise ValueError(f"endpoint host {host!r} is internal/blocked (SSRF guard)")
+    if is_url_blocked(endpoint, scheme_allowlist=("https",)):
         raise ValueError(f"endpoint host {host!r} is internal/blocked (SSRF guard)")
     return endpoint.rstrip("/")
 

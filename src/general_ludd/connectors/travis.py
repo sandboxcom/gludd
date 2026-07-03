@@ -17,7 +17,6 @@ Contract (shared by every pipeline connector):
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import urllib.error
@@ -25,6 +24,8 @@ import urllib.request
 from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
 
@@ -36,49 +37,15 @@ class ConnectorError(RuntimeError):
     """Raised for configuration / transport problems specific to this connector."""
 
 
-# Hostnames that always resolve to the local machine or cloud-metadata service
-# and must be rejected regardless of whether they parse as IP literals.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "ip6-localhost",
-        "metadata",
-        "metadata.google.internal",
-    }
-)
-
-
-def _host_is_private_literal(host: str) -> bool:
-    """True if ``host`` is a non-public IP *literal* or a blocked hostname (no DNS resolution)."""
-    name = host.strip().lower().rstrip(".")
-    if not name:
-        return True
-    # Strip IPv6 brackets before the name check so "[::1]" matches correctly.
-    stripped = name[1:-1] if (name.startswith("[") and name.endswith("]")) else name
-    if stripped in _BLOCKED_HOSTNAMES:
-        return True
-    try:
-        ip = ipaddress.ip_address(stripped)
-    except ValueError:
-        return False
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
-
 def _guard_base_url(base_url: str) -> str:
     parts = urlsplit(base_url)
     if parts.scheme not in ("http", "https"):
         raise ConnectorError(f"base_url must be http(s): {base_url!r}")
     if not parts.hostname:
         raise ConnectorError(f"base_url has no host: {base_url!r}")
-    if _host_is_private_literal(parts.hostname):
+    # Delegate the private/loopback/metadata literal decision to the canonical
+    # shared guard so this connector cannot drift weaker (no DNS resolution).
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
         raise ConnectorError(f"base_url host is a private/loopback literal (SSRF blocked): {parts.hostname}")
     return base_url.rstrip("/")
 

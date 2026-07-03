@@ -20,11 +20,12 @@ Design constraints (enforced here, not inherited):
 
 from __future__ import annotations
 
-import ipaddress
 import logging
 import os
 from typing import Any, ClassVar, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
 
@@ -73,24 +74,10 @@ def _assert_public_base_url(base_url: str) -> None:
     if not host:
         raise ValueError("base_url has no host")
 
-    lowered = host.lower()
-    if lowered in {"localhost", "localhost.localdomain", "ip6-localhost"}:
+    # Delegate the private/loopback/metadata literal decision to the canonical
+    # shared guard so this connector cannot drift weaker (no DNS resolution).
+    if is_url_blocked(base_url, scheme_allowlist=_ALLOWED_SCHEMES):
         raise ValueError(f"refusing internal host: {host!r}")
-
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return  # DNS name; literal block does not vet names
-
-    if (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    ):
-        raise ValueError(f"refusing internal IP literal: {host!r}")
 
 
 # --------------------------------------------------------------------------- #

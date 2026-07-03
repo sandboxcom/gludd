@@ -210,3 +210,25 @@ class TestSsrf:
         transport = RecordingTransport(FakeResponse(200, {"results": []}))
         src = make_source(transport)  # default endpoint, no raise
         assert src.KIND == "infra"
+
+    # Canonical SSRF guard coverage — 100.100.100.200 is the Alibaba metadata IP
+    # the shared general_ludd.security.ssrf.is_url_blocked guarantees. This
+    # connector is https-only, so the canonical hosts are exercised over https.
+    @pytest.mark.parametrize(
+        "bad_endpoint",
+        [
+            "https://localhost/",
+            "https://metadata.google.internal/",
+            "https://169.254.169.254/",
+            "https://100.100.100.200/",
+        ],
+    )
+    def test_canonical_ssrf_endpoints_rejected(self, bad_endpoint: str) -> None:
+        transport = RecordingTransport(FakeResponse(200, {"results": []}))
+        with pytest.raises(ValueError):
+            make_source(transport, endpoint=bad_endpoint)
+
+    def test_public_endpoint_constructs_after_consolidation(self) -> None:
+        transport = RecordingTransport(FakeResponse(200, {"results": []}))
+        src = make_source(transport, endpoint="https://cloudasset.googleapis.com/v1")
+        assert src.KIND == "infra"

@@ -396,3 +396,26 @@ def test_internal_base_url_rejected(bad_url: str) -> None:
 
 def test_public_base_url_allowed() -> None:
     TempoZipkinSource({"base_url": "https://tempo.example.com"}, transport=FakeTransport({}))
+
+
+# Canonical SSRF guard coverage — 100.100.100.200 is the Alibaba metadata IP
+# the shared general_ludd.security.ssrf.is_url_blocked guarantees.
+_CANONICAL_SSRF_URLS = [
+    "http://localhost/",
+    "http://metadata.google.internal/",
+    "http://169.254.169.254/",
+    "http://100.100.100.200/",
+]
+
+
+@pytest.mark.parametrize("bad_url", _CANONICAL_SSRF_URLS)
+def test_canonical_ssrf_urls_rejected(bad_url: str) -> None:
+    with pytest.raises(ValueError):
+        TempoZipkinSource({"base_url": bad_url}, transport=FakeTransport({}))
+
+
+def test_public_base_url_constructs_after_consolidation() -> None:
+    src = TempoZipkinSource(
+        {"base_url": "https://api.example.com"}, transport=FakeTransport({})
+    )
+    assert src.name

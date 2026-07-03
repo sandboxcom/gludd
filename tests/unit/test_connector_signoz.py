@@ -231,3 +231,30 @@ def test_public_base_url_accepted() -> None:
         transport=transport,
     )
     assert src.name == "signoz"
+
+
+# Canonical SSRF guard (general_ludd.security.ssrf.is_url_blocked) coverage —
+# 100.100.100.200 is the Alibaba metadata endpoint the shared guard guarantees.
+_CANONICAL_SSRF_URLS = [
+    "http://localhost/",
+    "http://metadata.google.internal/",
+    "http://169.254.169.254/",
+    "http://100.100.100.200/",
+]
+
+
+@pytest.mark.parametrize("bad_url", _CANONICAL_SSRF_URLS)
+def test_canonical_ssrf_urls_rejected(bad_url: str) -> None:
+    with pytest.raises(ValueError):
+        SigNozSource(
+            config={"base_url": bad_url, "token_env": "SIGNOZ_TOKEN"},
+            transport=_StubTransport(),
+        )
+
+
+def test_public_base_url_constructs_after_consolidation() -> None:
+    src = SigNozSource(
+        config={"base_url": "https://api.example.com", "token_env": "X"},
+        transport=_StubTransport(),
+    )
+    assert src.name == "signoz"

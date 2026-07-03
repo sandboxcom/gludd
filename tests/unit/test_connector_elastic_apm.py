@@ -177,6 +177,27 @@ def test_public_host_allowed() -> None:
     ElasticApmSource({"base_url": "https://8.8.8.8"})
 
 
+# Canonical SSRF guard coverage — 100.100.100.200 is the Alibaba metadata IP
+# the shared general_ludd.security.ssrf.is_url_blocked guarantees.
+_CANONICAL_SSRF_URLS = [
+    "http://localhost/",
+    "http://metadata.google.internal/",
+    "http://169.254.169.254/",
+    "http://100.100.100.200/",
+]
+
+
+@pytest.mark.parametrize("bad_url", _CANONICAL_SSRF_URLS)
+def test_canonical_ssrf_urls_rejected(bad_url: str) -> None:
+    with pytest.raises(SSRFError):
+        ElasticApmSource({"base_url": bad_url})
+
+
+def test_public_base_url_constructs_after_consolidation() -> None:
+    src = ElasticApmSource({"base_url": "https://api.example.com"})
+    assert src.name == "elastic_apm"
+
+
 def test_health_ok() -> None:
     transport = RecordingTransport(FakeResponse(200, {}))
     src = ElasticApmSource({"base_url": "https://es.example.com"}, transport=transport)

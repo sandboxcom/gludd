@@ -32,6 +32,8 @@ import re
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from general_ludd.security.ssrf import is_url_blocked
+
 
 class _Response(Protocol):
     status_code: int
@@ -101,7 +103,11 @@ def assert_url_allowed(base_url: str, *, allow_private: bool) -> None:
     host = parts.hostname or ""
     if not host:
         raise SSRFError(f"base_url has no host: {base_url!r}")
-    if not allow_private and host_is_blocked(host):
+    # Delegate the private/loopback/metadata literal decision to the canonical
+    # shared guard so this connector cannot drift weaker (no DNS resolution).
+    # ``host_is_blocked`` / ``_BLOCKED_NETS`` remain for the public helper API
+    # (a test imports ``host_is_blocked``).
+    if not allow_private and is_url_blocked(base_url):
         raise SSRFError(
             f"refusing internal host {host!r} (set allow_private=True for clusters)"
         )

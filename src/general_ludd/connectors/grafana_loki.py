@@ -25,26 +25,16 @@ per-request timeout, and a caller-bounded start/end window. No ``shell=True``.
 
 from __future__ import annotations
 
-import ipaddress
 import logging
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.security.ssrf import is_url_blocked
+
 __all__ = ["GrafanaLokiSource"]
 
 logger = logging.getLogger(__name__)
-
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "ip6-localhost",
-        "metadata",
-        "metadata.google.internal",
-        "metadata.goog",
-    }
-)
 
 _DEFAULT_TIMEOUT = 15.0
 _DEFAULT_LIMIT = 100
@@ -70,35 +60,14 @@ class _Transport(Protocol):
     ) -> tuple[int, Any]: ...
 
 
-def _host_is_blocked(host: str) -> bool:
-    """Return True if ``host`` is a literal internal/metadata target (no DNS)."""
-    if not host:
-        return True
-    bare = host.strip().lower()
-    if bare.startswith("[") and bare.endswith("]"):
-        bare = bare[1:-1]
-    if bare in _BLOCKED_HOSTNAMES:
-        return True
-    try:
-        ip = ipaddress.ip_address(bare)
-    except ValueError:
-        return False
-    return (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-        or ip.is_multicast
-    )
-
-
 def _validate_base_url(base_url: str) -> str:
     parts = urlsplit(base_url)
     if parts.scheme not in ("http", "https"):
         raise ValueError(f"GrafanaLokiSource: unsupported URL scheme: {parts.scheme!r}")
-    host = parts.hostname or ""
-    if _host_is_blocked(host):
+    host = (parts.hostname or "").strip().lower()
+    if not host:
+        raise ValueError(f"GrafanaLokiSource: refusing internal/blocked host: {host!r}")
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
         raise ValueError(f"GrafanaLokiSource: refusing internal/blocked host: {host!r}")
     return base_url.rstrip("/")
 
