@@ -2179,7 +2179,12 @@ def create_daemon_app(
     # subsystems lazily at call time so they resolve against the live
     # lifespan-initialised state rather than the not-yet-started state at
     # app-creation time.  W: event-loop-wiring (#26).
-    from general_ludd.daemon_wiring import make_mcp_handler, make_role_handler, make_skill_handler
+    from general_ludd.daemon_wiring import (
+        make_collection_handler,
+        make_mcp_handler,
+        make_role_handler,
+        make_skill_handler,
+    )
 
     async def _lazy_mcp_handler(name: str, args: dict[str, Any]) -> Any:
         mcp_client = getattr(app.state, "_mcp_client", None)
@@ -2202,13 +2207,27 @@ def create_daemon_app(
             raise RuntimeError("AgentDispatcher not available")
         return await h(name, args)
 
+    async def _lazy_collection_handler(name: str, args: dict[str, Any]) -> Any:
+        # The live AnsibleRunnerAdapter is assigned to app.state._runner during
+        # lifespan startup (see ~line 1296), AFTER the router registers here at
+        # app-creation. Resolving it lazily (like the mcp/role handlers) means
+        # the ``collection`` kind wires to the real adapter once startup runs.
+        # A missing runner FAILS CLOSED: raising is caught by DynamicDispatcher,
+        # which returns DispatchResult(ok=False, error="handler_error") — the
+        # same fail-closed shape the mcp/role lazy handlers produce.
+        runner = getattr(app.state, "_runner", None)
+        h = make_collection_handler(runner)
+        if h is None:
+            raise RuntimeError("AnsibleRunnerAdapter not available")
+        return await h(name, args)
+
     dispatch_router.register(
         app,
         daemon_state,
         role_handler=_lazy_role_handler,
         mcp_handler=_lazy_mcp_handler,
         skill_handler=_lazy_skill_handler,
-        collection_handler=None,  # TODO(integration): wire to collection loader — no loader exists
+        collection_handler=_lazy_collection_handler,
     )
     spend.register(app, daemon_state)
     from general_ludd.routers import coordination as _coord_router
