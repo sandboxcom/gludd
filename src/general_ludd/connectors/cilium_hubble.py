@@ -33,9 +33,10 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
+from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
 
-__all__ = ["CiliumHubbleSource", "SSRFError"]
+__all__ = ["CiliumHubbleSource"]
 
 # A transport is any callable that performs an HTTP GET against an absolute URL
 # and returns ``(status_code, body_text)``. Injecting it keeps the connector
@@ -44,10 +45,6 @@ HttpTransport = Callable[[str, float], "tuple[int, str]"]
 
 # A flow runner returns a list of raw Hubble flow dicts for a given query spec.
 FlowRunner = Callable[[dict[str, Any]], list[dict[str, Any]]]
-
-
-class SSRFError(ValueError):
-    """Raised when a request target is blocked by the SSRF guard."""
 
 
 # Record level mapping for flow verdicts. Drops are notable; forwards are fine.

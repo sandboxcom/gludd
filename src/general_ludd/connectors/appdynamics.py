@@ -29,6 +29,7 @@ from typing import Any, Protocol, runtime_checkable
 from urllib.parse import quote, urlencode, urlparse, urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
+from general_ludd.connectors._errors import ConnectorConfigError
 
 KIND_METRICS = "metrics"
 KIND_TRACES = "traces"
@@ -36,9 +37,6 @@ VALID_KINDS = frozenset({KIND_METRICS, KIND_TRACES})
 
 DEFAULT_TIMEOUT = 30.0
 
-
-class ConnectorConfigError(ValueError):
-    """Raised when a connector is misconfigured (bad URL, missing secret env)."""
 
 
 @runtime_checkable

@@ -38,6 +38,8 @@ import os
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._protocols import HttpResponse
+
 import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
@@ -51,12 +53,6 @@ _QUERY_RANGE_PATH = "/parca.query.v1alpha1.QueryService/QueryRange"
 # --------------------------------------------------------------------------- #
 # Injectable transport contract
 # --------------------------------------------------------------------------- #
-class _Response(Protocol):
-    status_code: int
-
-    def json(self) -> Any: ...
-
-
 class _Transport(Protocol):
     def post(
         self,
@@ -65,7 +61,7 @@ class _Transport(Protocol):
         json: Any = ...,
         headers: dict[str, str] | None = ...,
         timeout: float | None = ...,
-    ) -> _Response: ...
+    ) -> HttpResponse: ...
 
 
 class _HttpxTransport:
@@ -83,7 +79,7 @@ class _HttpxTransport:
         json: Any = None,
         headers: dict[str, str] | None = None,
         timeout: float | None = None,
-    ) -> _Response:
+    ) -> HttpResponse:
         with httpx.Client(timeout=timeout, follow_redirects=False) as client:
             return client.post(url, json=json, headers=headers)
 

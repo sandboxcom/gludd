@@ -7,7 +7,7 @@ from collections.abc import Mapping
 
 import pytest
 
-from general_ludd.connectors.buildkite import BuildkiteSource, ConnectorError
+from general_ludd.connectors.buildkite import BuildkiteSource, ConnectorConfigError
 
 CANNED_BUILDS = [
     {
@@ -117,7 +117,7 @@ def test_token_never_hardcoded() -> None:
     ],
 )
 def test_internal_base_url_rejected(bad_url: str) -> None:
-    with pytest.raises(ConnectorError):
+    with pytest.raises(ConnectorConfigError):
         BuildkiteSource(_config(base_url=bad_url))
 
 
@@ -150,7 +150,7 @@ def test_health_never_raises() -> None:
 
 def test_query_raises_on_http_error() -> None:
     src = BuildkiteSource(_config(), transport=_FakeTransport(500, b""))
-    with pytest.raises(ConnectorError):
+    with pytest.raises(ConnectorConfigError):
         src.query()
 
 

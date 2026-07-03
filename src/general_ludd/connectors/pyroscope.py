@@ -40,6 +40,8 @@ import os
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._protocols import HttpResponse
+
 import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
@@ -52,12 +54,6 @@ _RENDER_PATH = "/render"
 # --------------------------------------------------------------------------- #
 # Injectable transport contract
 # --------------------------------------------------------------------------- #
-class _Response(Protocol):
-    status_code: int
-
-    def json(self) -> Any: ...
-
-
 class _Transport(Protocol):
     def get(
         self,
@@ -66,7 +62,7 @@ class _Transport(Protocol):
         params: dict[str, Any] | None = ...,
         headers: dict[str, str] | None = ...,
         timeout: float | None = ...,
-    ) -> _Response: ...
+    ) -> HttpResponse: ...
 
 
 class _HttpxTransport:
@@ -79,7 +75,7 @@ class _HttpxTransport:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         timeout: float | None = None,
-    ) -> _Response:
+    ) -> HttpResponse:
         with httpx.Client(timeout=timeout) as client:
             return client.get(url, params=params, headers=headers)
 

@@ -44,8 +44,10 @@ import logging
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol
 from urllib.parse import urlsplit
+
+from general_ludd.connectors._protocols import HttpResponse
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -69,25 +71,11 @@ SYSLOG_LEVEL_NAMES: dict[int, str] = {
 }
 
 
-@runtime_checkable
-class _Response(Protocol):
-    """Minimal response surface the connector relies on.
-
-    ``httpx.Response`` satisfies this, and so does any small test double — which
-    is what keeps the transport trivially mockable.
-    """
-
-    @property
-    def status_code(self) -> int: ...
-
-    def json(self) -> Any: ...
-
-
 class _Transport(Protocol):
     """Injectable HTTP transport.
 
     A transport is any callable that performs one GET request and returns a
-    ``_Response``. The default implementation wraps ``httpx``; tests pass a
+    ``HttpResponse``. The default implementation wraps ``httpx``; tests pass a
     canned callable so no socket is ever opened.
     """
 
@@ -98,7 +86,7 @@ class _Transport(Protocol):
         headers: Mapping[str, str],
         params: Mapping[str, Any] | None,
         timeout: float,
-    ) -> _Response: ...
+    ) -> HttpResponse: ...
 
 
 def _default_transport(
@@ -107,7 +95,7 @@ def _default_transport(
     headers: Mapping[str, str],
     params: Mapping[str, Any] | None,
     timeout: float,
-) -> _Response:
+) -> HttpResponse:
     """Real GET via httpx with a bounded timeout (imported lazily).
 
     httpx is imported inside the function so that importing this module (and

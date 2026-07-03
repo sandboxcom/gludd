@@ -22,19 +22,10 @@ import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 _DEFAULT_API = "https://api.cloudflare.com/client/v4"
-
-
-@runtime_checkable
-class Response(Protocol):
-    """Minimal structural contract for an HTTP response object."""
-
-    status_code: int
-
-    def json(self) -> Any:  # pragma: no cover - structural typing only
-        ...
 
 
 @runtime_checkable
@@ -49,7 +40,7 @@ class Transport(Protocol):
         headers: dict[str, str] | None = None,
         params: dict[str, str] | None = None,
         timeout: float = 30.0,
-    ) -> Response:  # pragma: no cover - structural typing only
+    ) -> HttpResponse:  # pragma: no cover - structural typing only
         ...
 
 
@@ -60,7 +51,7 @@ def _default_transport(
     headers: dict[str, str] | None = None,
     params: dict[str, str] | None = None,
     timeout: float = 30.0,
-) -> Response:
+) -> HttpResponse:
     """Default transport backed by httpx (imported lazily to stay optional)."""
     import httpx
 

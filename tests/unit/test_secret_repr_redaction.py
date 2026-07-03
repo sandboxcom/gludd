@@ -23,8 +23,8 @@ These tests pin that contract: the secret sentinel must be ABSENT from
 
 from __future__ import annotations
 
-from general_ludd.connectors.docker_engine import Response as DockerResponse
-from general_ludd.connectors.podman import Response as PodmanResponse
+from general_ludd.connectors.docker_engine import _DockerResponse as DockerResponse
+from general_ludd.connectors.podman import _PodmanResponse as PodmanResponse
 from general_ludd.events.hooks import WebhookConfig
 from general_ludd.routers.reload import RegisterHookRequest
 from general_ludd.security.auth import AuthPosture

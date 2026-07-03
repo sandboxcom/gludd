@@ -36,6 +36,8 @@ import socket
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
+from general_ludd.connectors._protocols import HttpResponse
+
 
 class NomadSSRFError(ValueError):
     """Raised when a target host is blocked by SSRF policy."""
@@ -46,12 +48,6 @@ class NomadTransportError(RuntimeError):
 
 
 @runtime_checkable
-class _Response(Protocol):
-    status_code: int
-    text: str
-
-
-@runtime_checkable
 class _Transport(Protocol):
     def __call__(
         self,
@@ -59,7 +55,7 @@ class _Transport(Protocol):
         url: str,
         headers: dict[str, str],
         params: dict[str, str] | None,
-    ) -> _Response: ...
+    ) -> HttpResponse: ...
 
 
 class _UrllibResponse:
@@ -165,7 +161,7 @@ class NomadSource:
                 headers["X-Nomad-Token"] = token
         return headers
 
-    def _get(self, path: str, params: dict[str, str] | None = None) -> _Response:
+    def _get(self, path: str, params: dict[str, str] | None = None) -> HttpResponse:
         self._guard_ssrf()
         url = f"{self._base_url}{path}"
         resp = self._transport("GET", url, self._headers(), params)

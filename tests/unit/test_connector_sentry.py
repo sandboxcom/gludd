@@ -37,7 +37,7 @@ def _load_module() -> Any:
 
 sentry = _load_module()
 SentrySource = sentry.SentrySource
-HttpResponse = sentry.HttpResponse
+HttpResponse = sentry._SentryResponse
 
 
 # --------------------------------------------------------------------------- #

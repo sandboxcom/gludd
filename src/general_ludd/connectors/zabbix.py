@@ -27,6 +27,8 @@ from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._errors import SSRFError
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 KIND = "metrics"
@@ -42,20 +44,7 @@ _SEVERITY = {
 }
 
 
-@runtime_checkable
-class HttpResponse(Protocol):
-    """Minimal response surface the connector relies on."""
-
-    status_code: int
-
-    def json(self) -> Any: ...
-
-
 Transport = Callable[..., HttpResponse]
-
-
-class SSRFError(ValueError):
-    """Raised when ``base_url`` points at a blocked internal literal host."""
 
 
 def _validate_base_url(base_url: str) -> str:

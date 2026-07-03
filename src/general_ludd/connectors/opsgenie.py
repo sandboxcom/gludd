@@ -17,18 +17,12 @@ from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 DEFAULT_BASE_URL = "https://api.opsgenie.com"
 DEFAULT_TIMEOUT = 15.0
 DEFAULT_LIMIT = 100
-
-
-@runtime_checkable
-class HttpResponse(Protocol):
-    status_code: int
-
-    def json(self) -> Any: ...
 
 
 @runtime_checkable

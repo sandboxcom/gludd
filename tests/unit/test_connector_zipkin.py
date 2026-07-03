@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from general_ludd.connectors.zipkin import HttpResponse, SsrfError, ZipkinSource
+from general_ludd.connectors.zipkin import _ZipkinResponse, SSRFError, ZipkinSource
 
 
 class FakeTransport:
@@ -15,16 +15,16 @@ class FakeTransport:
         self._responses = responses
         self.calls: list[dict[str, Any]] = []
 
-    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> HttpResponse:
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> _ZipkinResponse:
         self.calls.append({"url": url, "headers": headers, "timeout": timeout})
         for substr, status, body in self._responses:
             if substr in url:
-                return HttpResponse(status, json.dumps(body).encode("utf-8"))
-        return HttpResponse(404, b"[]")
+                return _ZipkinResponse(status, json.dumps(body).encode("utf-8"))
+        return _ZipkinResponse(404, b"[]")
 
 
 class RaisingTransport:
-    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> HttpResponse:
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> _ZipkinResponse:
         raise TimeoutError("slow")
 
 
@@ -120,7 +120,7 @@ class TestSsrf:
         ],
     )
     def test_private_host_rejected(self, url: str) -> None:
-        with pytest.raises(SsrfError):
+        with pytest.raises(SSRFError):
             _source(FakeTransport([]), base_url=url)
 
     def test_private_allowed_with_optin(self) -> None:

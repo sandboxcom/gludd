@@ -32,13 +32,9 @@ import re
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._errors import SSRFError
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
-
-
-class _Response(Protocol):
-    status_code: int
-
-    def json(self) -> Any: ...
 
 
 class _Transport(Protocol):
@@ -57,7 +53,7 @@ class _Transport(Protocol):
         params: dict[str, Any] | None = None,
         verify: str | bool = True,
         timeout: float | None = None,
-    ) -> _Response: ...
+    ) -> HttpResponse: ...
 
 
 # Literal hosts/networks that must never be reached unless allow_private=True.
@@ -75,10 +71,6 @@ _BLOCKED_HOSTNAMES = {"localhost", "metadata", "metadata.google.internal"}
 
 # Kubernetes event.type -> normalized level
 _TYPE_LEVEL = {"Normal": "info", "Warning": "warning"}
-
-
-class SSRFError(ValueError):
-    """Raised when a base_url host is blocked by the literal SSRF guard."""
 
 
 def host_is_blocked(host: str) -> bool:

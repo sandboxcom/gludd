@@ -26,6 +26,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
+from general_ludd.connectors._errors import ConnectorConfigError
 
 Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
 
@@ -33,20 +34,17 @@ DEFAULT_BASE_URL = "https://api.travis-ci.com"
 TRAVIS_API_VERSION = "3"
 
 
-class ConnectorError(RuntimeError):
-    """Raised for configuration / transport problems specific to this connector."""
-
 
 def _guard_base_url(base_url: str) -> str:
     parts = urlsplit(base_url)
     if parts.scheme not in ("http", "https"):
-        raise ConnectorError(f"base_url must be http(s): {base_url!r}")
+        raise ConnectorConfigError(f"base_url must be http(s): {base_url!r}")
     if not parts.hostname:
-        raise ConnectorError(f"base_url has no host: {base_url!r}")
+        raise ConnectorConfigError(f"base_url has no host: {base_url!r}")
     # Delegate the private/loopback/metadata literal decision to the canonical
     # shared guard so this connector cannot drift weaker (no DNS resolution).
     if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
-        raise ConnectorError(f"base_url host is a private/loopback literal (SSRF blocked): {parts.hostname}")
+        raise ConnectorConfigError(f"base_url host is a private/loopback literal (SSRF blocked): {parts.hostname}")
     return base_url.rstrip("/")
 
 
@@ -134,13 +132,13 @@ class TravisSource:
     def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         status, body = self._request("GET", self._builds_url())
         if not (200 <= status < 300):
-            raise ConnectorError(f"travis builds query failed: HTTP {status}")
+            raise ConnectorConfigError(f"travis builds query failed: HTTP {status}")
         payload = json.loads(body.decode("utf-8") or "{}")
         if not isinstance(payload, Mapping):
-            raise ConnectorError("travis builds response was not a JSON object")
+            raise ConnectorConfigError("travis builds response was not a JSON object")
         builds = payload.get("builds", [])
         if not isinstance(builds, list):
-            raise ConnectorError("travis 'builds' field was not a JSON array")
+            raise ConnectorConfigError("travis 'builds' field was not a JSON array")
         return [self._normalize_build(b) for b in builds if isinstance(b, Mapping)]
 
     def fetch_log(self, job_id: str) -> str:
@@ -148,7 +146,7 @@ class TravisSource:
         url = f"{self.base_url}/job/{job_id}/log"
         status, body = self._request("GET", url)
         if not (200 <= status < 300):
-            raise ConnectorError(f"travis log fetch failed: HTTP {status}")
+            raise ConnectorConfigError(f"travis log fetch failed: HTTP {status}")
         decoded = body.decode("utf-8")
         try:
             doc = json.loads(decoded)

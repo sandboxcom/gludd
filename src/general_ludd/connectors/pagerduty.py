@@ -16,18 +16,12 @@ from __future__ import annotations
 import os
 from typing import Any, Protocol, runtime_checkable
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 DEFAULT_BASE_URL = "https://api.pagerduty.com"
 DEFAULT_TIMEOUT = 15.0
 ACCEPT_HEADER = "application/vnd.pagerduty+json;version=2"
-
-
-@runtime_checkable
-class HttpResponse(Protocol):
-    status_code: int
-
-    def json(self) -> Any: ...
 
 
 @runtime_checkable

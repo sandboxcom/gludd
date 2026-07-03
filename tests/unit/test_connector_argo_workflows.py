@@ -7,7 +7,7 @@ from collections.abc import Mapping
 
 import pytest
 
-from general_ludd.connectors.argo_workflows import ArgoWorkflowsSource, ConnectorError
+from general_ludd.connectors.argo_workflows import ArgoWorkflowsSource, ConnectorConfigError
 
 CANNED_RESPONSE = {
     "items": [
@@ -140,7 +140,7 @@ def test_token_never_hardcoded() -> None:
     ],
 )
 def test_internal_base_url_rejected_by_default(bad_url: str) -> None:
-    with pytest.raises(ConnectorError):
+    with pytest.raises(ConnectorConfigError):
         ArgoWorkflowsSource(_config(base_url=bad_url))
 
 
@@ -181,7 +181,7 @@ def test_canonical_metadata_hosts_rejected(bad_url: str) -> None:
     # decision now delegates to security.ssrf.is_url_blocked, which blocks the
     # full canonical set — including the Alibaba metadata IP the bespoke
     # literal guard used to miss.
-    with pytest.raises(ConnectorError):
+    with pytest.raises(ConnectorConfigError):
         ArgoWorkflowsSource(_config(base_url=bad_url))
 
 
@@ -214,7 +214,7 @@ def test_health_never_raises() -> None:
 
 def test_query_raises_on_http_error() -> None:
     src = ArgoWorkflowsSource(_config(), transport=_FakeTransport(500, b""))
-    with pytest.raises(ConnectorError):
+    with pytest.raises(ConnectorConfigError):
         src.query()
 
 

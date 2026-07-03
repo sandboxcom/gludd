@@ -32,6 +32,7 @@ from datetime import datetime
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
 
 # Transport contract: (method, url, headers, body) -> (status_code, json_dict)
@@ -40,10 +41,6 @@ HttpRequest = Callable[[str, str, Mapping[str, str], "bytes | None"], "tuple[int
 RecordKind = Literal["logs", "traces"]
 
 _DEFAULT_TIMEOUT_SECONDS = 10.0
-
-
-class SSRFError(ValueError):
-    """Raised when ``base_url`` points at a disallowed (internal) host."""
 
 
 class ElasticsearchConfigError(ValueError):

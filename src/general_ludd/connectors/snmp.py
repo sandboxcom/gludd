@@ -32,7 +32,9 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
-__all__ = ["COMMUNITY_REDACTED", "SSRFError", "SnmpSource"]
+from general_ludd.connectors._errors import SSRFError
+
+__all__ = ["COMMUNITY_REDACTED", "SnmpSource"]
 
 # The token that stands in for a community string anywhere it would otherwise be
 # exposed (labels, raw payloads, error detail). Must never be the real value.
@@ -46,10 +48,6 @@ SnmpGetter = Callable[
 
 # transport(url, timeout) -> (status_code, body_text)
 HttpTransport = Callable[[str, float], tuple[int, str]]
-
-
-class SSRFError(ValueError):
-    """Raised when an HTTP target is blocked by the SSRF guard."""
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:

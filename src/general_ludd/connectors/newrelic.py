@@ -30,6 +30,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -39,21 +40,8 @@ __all__ = ["NewRelicSource"]
 # --------------------------------------------------------------------------- #
 # Transport protocol
 # --------------------------------------------------------------------------- #
-@runtime_checkable
-class _Response(Protocol):
-    """Minimal response shape the connector relies on.
-
-    Compatible with ``requests``/``httpx`` responses and trivially mockable.
-    """
-
-    status_code: int
-
-    def json(self) -> Any:  # pragma: no cover - structural typing only
-        ...
-
-
-# transport(url, *, headers, json, timeout) -> _Response
-Transport = Callable[..., _Response]
+# transport(url, *, headers, json, timeout) -> HttpResponse
+Transport = Callable[..., HttpResponse]
 
 
 # --------------------------------------------------------------------------- #
@@ -76,7 +64,7 @@ def _validate_api_url(api_url: str) -> str:
 # --------------------------------------------------------------------------- #
 def _default_transport(
     url: str, *, headers: dict[str, str], json: Any, timeout: float
-) -> _Response:
+) -> HttpResponse:
     """Real HTTP POST transport using ``requests``; imported lazily.
 
     Tests inject their own transport and never reach this path.

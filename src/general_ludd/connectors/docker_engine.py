@@ -16,7 +16,7 @@ Contract:
 
 The HTTP transport is a simple callable injected via ``config["transport"]``.
 It is called as ``transport(method, path, query, base_url, timeout)`` and must
-return a ``Response`` (``.status``, ``.headers``, ``.body`` bytes). A default
+return a ``_DockerResponse`` (``.status``, ``.headers``, ``.body`` bytes). A default
 transport built on the stdlib is provided for real use; tests inject a fake.
 """
 
@@ -35,7 +35,7 @@ from urllib.parse import urlsplit
 # Transport abstraction
 # --------------------------------------------------------------------------- #
 @dataclass
-class Response:
+class _DockerResponse:
     """Minimal HTTP response container returned by a transport."""
 
     status: int
@@ -48,7 +48,7 @@ class Transport(Protocol):
     """Injectable HTTP transport.
 
     Implementations must work over a Unix socket *or* a TCP host depending on
-    ``base_url``. Tests supply a fake that returns canned :class:`Response`
+    ``base_url``. Tests supply a fake that returns canned :class:`_DockerResponse`
     objects keyed off ``method``/``path``.
     """
 
@@ -59,7 +59,7 @@ class Transport(Protocol):
         query: dict[str, Any] | None,
         base_url: str,
         timeout: float,
-    ) -> Response: ...
+    ) -> _DockerResponse: ...
 
 
 # --------------------------------------------------------------------------- #
@@ -101,7 +101,7 @@ def _default_transport(
     query: dict[str, Any] | None,
     base_url: str,
     timeout: float,
-) -> Response:
+) -> _DockerResponse:
     """Stdlib HTTP/1.1 transport over a Unix socket or TCP.
 
     Used for real connections; unit tests inject a fake instead. Implemented
@@ -159,7 +159,7 @@ def _default_transport(
         key, sep, value = line.partition(b":")
         if sep:
             headers[key.decode("latin-1").strip().lower()] = value.decode("latin-1").strip()
-    return Response(status=status, headers=headers, body=body)
+    return _DockerResponse(status=status, headers=headers, body=body)
 
 
 # --------------------------------------------------------------------------- #
@@ -297,7 +297,7 @@ class DockerEngineSource:
         return None
 
     # -- HTTP plumbing ----------------------------------------------------- #
-    def _get(self, path: str, query: dict[str, Any] | None = None) -> Response:
+    def _get(self, path: str, query: dict[str, Any] | None = None) -> _DockerResponse:
         return self._transport("GET", path, query, self.base_url, self.timeout)
 
     def _get_json(self, path: str, query: dict[str, Any] | None = None) -> Any:

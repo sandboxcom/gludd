@@ -7,7 +7,7 @@ from collections.abc import Mapping
 
 import pytest
 
-from general_ludd.connectors.travis import ConnectorError, TravisSource
+from general_ludd.connectors.travis import ConnectorConfigError, TravisSource
 
 CANNED_RESPONSE = {
     "builds": [
@@ -120,7 +120,7 @@ def test_token_never_hardcoded() -> None:
     ],
 )
 def test_internal_base_url_rejected(bad_url: str) -> None:
-    with pytest.raises(ConnectorError):
+    with pytest.raises(ConnectorConfigError):
         TravisSource(_config(base_url=bad_url))
 
 
@@ -141,7 +141,7 @@ _CANONICAL_SSRF_URLS = [
 
 @pytest.mark.parametrize("bad_url", _CANONICAL_SSRF_URLS)
 def test_canonical_ssrf_urls_rejected(bad_url: str) -> None:
-    with pytest.raises(ConnectorError):
+    with pytest.raises(ConnectorConfigError):
         TravisSource(_config(base_url=bad_url))
 
 

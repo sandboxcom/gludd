@@ -35,20 +35,12 @@ import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 DEFAULT_LOGGING_ENDPOINT = "https://logging.googleapis.com/v2/entries:list"
 DEFAULT_MONITORING_BASE = "https://monitoring.googleapis.com/v3"
 DEFAULT_TIMEOUT = 15.0
-
-
-@runtime_checkable
-class HttpResponse(Protocol):
-    """Minimal response contract the connector relies on."""
-
-    status: int
-
-    def json(self) -> dict[str, Any]: ...
 
 
 @runtime_checkable

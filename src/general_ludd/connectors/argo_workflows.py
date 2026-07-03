@@ -31,6 +31,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
+from general_ludd.connectors._errors import ConnectorConfigError
 
 Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
 
@@ -39,22 +40,19 @@ Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
 _PHASE_STATUSES = frozenset({"Pending", "Running", "Succeeded", "Failed", "Error", "Skipped"})
 
 
-class ConnectorError(RuntimeError):
-    """Raised for configuration / transport problems specific to this connector."""
-
 
 def _guard_base_url(base_url: str, allow_private: bool) -> str:
     parts = urlsplit(base_url)
     # Always-on scheme + present-host check: a bad scheme / hostless URL is
     # rejected even when allow_private=True.
     if parts.scheme not in ("http", "https"):
-        raise ConnectorError(f"base_url must be http(s): {base_url!r}")
+        raise ConnectorConfigError(f"base_url must be http(s): {base_url!r}")
     if not parts.hostname:
-        raise ConnectorError(f"base_url has no host: {base_url!r}")
+        raise ConnectorConfigError(f"base_url has no host: {base_url!r}")
     # Private/loopback/metadata literal decision delegates to the canonical
     # SSRF guard so this connector's blocklist can never drift.
     if not allow_private and is_url_blocked(base_url, scheme_allowlist=("http", "https")):
-        raise ConnectorError(
+        raise ConnectorConfigError(
             f"base_url host is a private/loopback literal (SSRF blocked; set allow_private=True "
             f"to permit in-cluster targets): {parts.hostname}"
         )
@@ -137,16 +135,16 @@ class ArgoWorkflowsSource:
     def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         status, body = self._request("GET", self._workflows_url())
         if not (200 <= status < 300):
-            raise ConnectorError(f"argo workflows query failed: HTTP {status}")
+            raise ConnectorConfigError(f"argo workflows query failed: HTTP {status}")
         payload = json.loads(body.decode("utf-8") or "{}")
         if not isinstance(payload, Mapping):
-            raise ConnectorError("argo workflows response was not a JSON object")
+            raise ConnectorConfigError("argo workflows response was not a JSON object")
         items = payload.get("items")
         # Argo returns null `items` when the list is empty.
         if items is None:
             items = []
         if not isinstance(items, list):
-            raise ConnectorError("argo 'items' field was not a JSON array")
+            raise ConnectorConfigError("argo 'items' field was not a JSON array")
         return [self._normalize_workflow(w) for w in items if isinstance(w, Mapping)]
 
     def fetch_jobs(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:

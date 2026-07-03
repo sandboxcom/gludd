@@ -30,16 +30,13 @@ import urllib.parse
 import urllib.request
 from typing import Any, Protocol, runtime_checkable
 
+from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
 
-__all__ = ["HttpResponse", "SsrfError", "ZipkinSource"]
+__all__ = ["ZipkinSource"]
 
 
-class SsrfError(ValueError):
-    """Raised when ``base_url`` targets a blocked (private/internal) host."""
-
-
-class HttpResponse:
+class _ZipkinResponse:
     """Minimal transport response: status code plus raw body bytes."""
 
     def __init__(self, status: int, body: bytes) -> None:
@@ -56,29 +53,29 @@ class HttpTransport(Protocol):
 
     def get(
         self, url: str, *, headers: dict[str, str], timeout: float
-    ) -> HttpResponse: ...
+    ) -> _ZipkinResponse: ...
 
 
 class _UrllibTransport:
     """Default time-bound transport backed by ``urllib.request`` (no shell)."""
 
-    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> HttpResponse:
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> _ZipkinResponse:
         req = urllib.request.Request(url, headers=headers, method="GET")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body: bytes = resp.read()
             status = int(getattr(resp, "status", 200) or 200)
-            return HttpResponse(status, body)
+            return _ZipkinResponse(status, body)
 
 
 def _guard_base_url(base_url: str, *, allow_private: bool) -> str:
     if not allow_private and is_url_blocked(base_url, scheme_allowlist=("http", "https")):
-        raise SsrfError(f"blocked private/internal host: {base_url!r}")
+        raise SSRFError(f"blocked private/internal host: {base_url!r}")
     # Scheme check still applies even when allow_private is True.
     parsed = urllib.parse.urlparse(base_url)
     if parsed.scheme not in {"http", "https"}:
-        raise SsrfError(f"unsupported url scheme: {parsed.scheme!r}")
+        raise SSRFError(f"unsupported url scheme: {parsed.scheme!r}")
     if not parsed.hostname:
-        raise SsrfError(f"no host in base_url: {base_url!r}")
+        raise SSRFError(f"no host in base_url: {base_url!r}")
     return base_url.rstrip("/")
 
 
@@ -111,7 +108,7 @@ class ZipkinSource:
             headers["Authorization"] = f"Bearer {self._token}"
         return headers
 
-    def _get(self, path: str, params: dict[str, Any]) -> HttpResponse:
+    def _get(self, path: str, params: dict[str, Any]) -> _ZipkinResponse:
         query = urllib.parse.urlencode(
             {k: v for k, v in params.items() if v is not None}, doseq=True
         )

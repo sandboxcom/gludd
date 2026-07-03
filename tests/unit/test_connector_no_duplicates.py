@@ -31,32 +31,25 @@ _EXCLUDED_FILES = frozenset(
         "normalize",
         "ingest",
         "ingest_formats",
+        "_protocols",
+        "_errors",
     }
 )
 
 _UTILITY_ALLOWLIST: frozenset[str] = frozenset(
     {
-        # Transport abstractions (per-module, self-contained)
+        # Transport abstractions (per-module, self-contained — signature varies)
         "HttpTransport",
-        "HttpResponse",
-        "HTTPResponse",
         "_Transport",
-        "_Response",
         "Transport",
-        "Response",
         "_UrllibTransport",
         "_UrllibResponse",
         "_HttpxTransport",
         "_DefaultTransport",
         "TransportResponse",
-        "HTTPException",
         # Error types (per-module, self-contained)
-        "SSRFError",
-        "SsrfError",
         "NomadSSRFError",
         "NomadTransportError",
-        "ConnectorConfigError",
-        "ConnectorError",
         "PredicateValidationError",
         "PredicateError",
         "OpenShiftConfigError",

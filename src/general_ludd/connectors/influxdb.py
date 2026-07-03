@@ -18,13 +18,8 @@ from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
-
-
-@runtime_checkable
-class HttpResponse(Protocol):
-    status_code: int
-
-    def json(self) -> Any: ...
+from general_ludd.connectors._errors import ConnectorConfigError
+from general_ludd.connectors._protocols import HttpResponse
 
 
 @runtime_checkable
@@ -39,10 +34,6 @@ class HttpTransport(Protocol):
         data: Any = ...,
         timeout: float | None = ...,
     ) -> HttpResponse: ...
-
-
-class ConnectorConfigError(ValueError):
-    """Invalid config or a blocked base_url host."""
 
 
 def _assert_public_base_url(base_url: str) -> None:

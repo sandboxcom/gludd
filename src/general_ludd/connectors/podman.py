@@ -36,7 +36,7 @@ from urllib.parse import urlsplit
 # Transport abstraction
 # --------------------------------------------------------------------------- #
 @dataclass
-class Response:
+class _PodmanResponse:
     """Minimal HTTP response container returned by a transport."""
 
     status: int
@@ -55,7 +55,7 @@ class Transport(Protocol):
         query: dict[str, Any] | None,
         base_url: str,
         timeout: float,
-    ) -> Response: ...
+    ) -> _PodmanResponse: ...
 
 
 # --------------------------------------------------------------------------- #
@@ -94,7 +94,7 @@ def _default_transport(
     query: dict[str, Any] | None,
     base_url: str,
     timeout: float,
-) -> Response:
+) -> _PodmanResponse:
     """Stdlib HTTP/1.1 transport over a Unix socket or TCP (no shell)."""
     from urllib.parse import urlencode
 
@@ -147,7 +147,7 @@ def _default_transport(
         key, sep, value = line.partition(b":")
         if sep:
             headers[key.decode("latin-1").strip().lower()] = value.decode("latin-1").strip()
-    return Response(status=status, headers=headers, body=body)
+    return _PodmanResponse(status=status, headers=headers, body=body)
 
 
 # --------------------------------------------------------------------------- #
@@ -266,7 +266,7 @@ class PodmanSource:
         return None
 
     # -- HTTP plumbing ----------------------------------------------------- #
-    def _get(self, path: str, query: dict[str, Any] | None = None) -> Response:
+    def _get(self, path: str, query: dict[str, Any] | None = None) -> _PodmanResponse:
         return self._transport("GET", path, query, self.base_url, self.timeout)
 
     def _get_json(self, path: str, query: dict[str, Any] | None = None) -> Any:

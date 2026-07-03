@@ -47,25 +47,18 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from urllib.parse import quote, urlencode, urlsplit
 
+from general_ludd.connectors._protocols import HttpResponse
+
 __all__ = ["KubernetesSource"]
 
 
 # --------------------------------------------------------------------------- #
 # Transport protocol + record builder (inlined; no base import)
 # --------------------------------------------------------------------------- #
-class _Response(Protocol):
-    """Structural shape the connector needs from an HTTP response."""
-
-    status_code: int
-    text: str
-
-    def json(self) -> Any: ...
-
-
 class _Transport(Protocol):
     """Injectable HTTP transport callable.
 
-    A call returns an object satisfying :class:`_Response`. Production transports
+    A call returns an object satisfying :class:`HttpResponse`. Production transports
     may accept ``verify`` for TLS; the connector passes it only when configured.
     """
 
@@ -76,7 +69,7 @@ class _Transport(Protocol):
         *,
         headers: dict[str, str] | None = ...,
         timeout: float | None = ...,
-    ) -> _Response: ...
+    ) -> HttpResponse: ...
 
 
 def _record(
@@ -304,7 +297,7 @@ class KubernetesSource:
     def _headers(self, token: str, *, accept: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {token}", "Accept": accept}
 
-    def _send(self, url: str, *, accept: str) -> _Response:
+    def _send(self, url: str, *, accept: str) -> HttpResponse:
         """Issue a time-bound GET with Bearer auth. May raise (caller wraps)."""
         token = self._bearer_token()
         if token is None:

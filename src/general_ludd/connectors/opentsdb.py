@@ -30,6 +30,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Protocol, runtime_checkable
 
+from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
 
 KIND = "metrics"
@@ -76,10 +77,6 @@ class _UrllibTransport:
         except urllib.error.HTTPError as exc:
             raw = exc.read() if hasattr(exc, "read") else b""
             return int(exc.code), raw.decode("utf-8", "replace")
-
-
-class SSRFError(ValueError):
-    """Raised when ``base_url`` resolves to a private/loopback host."""
 
 
 def _guard_base_url(base_url: str, allow_private: bool) -> str:

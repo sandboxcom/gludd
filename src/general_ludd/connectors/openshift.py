@@ -33,25 +33,10 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["HttpResponse", "HttpTransport", "OpenShiftSource"]
-
-
-@runtime_checkable
-class HttpResponse(Protocol):
-    """Minimal response shape the connector relies on.
-
-    ``httpx.Response`` satisfies this, and tests can supply a trivial stub.
-    """
-
-    @property
-    def status_code(self) -> int: ...
-
-    @property
-    def text(self) -> str: ...
-
-    def json(self) -> Any: ...
 
 
 @runtime_checkable

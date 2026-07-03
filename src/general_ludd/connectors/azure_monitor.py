@@ -28,25 +28,13 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 # Injectable transport contract: (method, url, headers, json_body, timeout) -> response.
 # The response only needs ``.status_code: int`` and ``.json() -> Any`` (httpx.Response
 # satisfies this; tests pass a tiny stub).
-Transport = Callable[[str, str, Mapping[str, str], Any, float], "HTTPResponse"]
-
-
-class HTTPResponse:
-    """Structural type for the transport response (documentation only).
-
-    Concrete transports (httpx, test stubs) are duck-typed against this; it is
-    never instantiated directly here.
-    """
-
-    status_code: int
-
-    def json(self) -> Any:  # pragma: no cover - structural placeholder
-        raise NotImplementedError
+Transport = Callable[[str, str, Mapping[str, str], Any, float], HttpResponse]
 
 
 # --- literal-host SSRF block (NO DNS) -------------------------------------------------

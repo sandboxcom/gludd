@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 from typing import Any, Protocol, runtime_checkable
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["HoneycombSource"]
@@ -31,21 +32,11 @@ TEAM_HEADER = "X-Honeycomb-Team"
 
 
 @runtime_checkable
-class _Response(Protocol):
-    """Structural type for the response object the transport returns."""
-
-    status_code: int
-    text: str
-
-    def json(self) -> Any: ...
-
-
-@runtime_checkable
 class _Transport(Protocol):
     """Injectable HTTP transport.
 
     Implementations must accept this keyword-only signature and return an object
-    satisfying :class:`_Response`.
+    satisfying :class:`HttpResponse`.
     """
 
     def __call__(
@@ -56,7 +47,7 @@ class _Transport(Protocol):
         headers: dict[str, str] | None = None,
         json: Any = None,
         timeout: float | None = None,
-    ) -> _Response: ...
+    ) -> HttpResponse: ...
 
 
 class HoneycombSource:
@@ -195,13 +186,13 @@ class HoneycombSource:
     # helpers
     # ------------------------------------------------------------------ #
     @staticmethod
-    def _safe_json(resp: _Response) -> Any:
+    def _safe_json(resp: HttpResponse) -> Any:
         try:
             return resp.json()
         except Exception:
             return {}
 
-    def _extract_id(self, resp: _Response) -> str:
+    def _extract_id(self, resp: HttpResponse) -> str:
         body = self._safe_json(resp)
         if isinstance(body, dict) and body.get("id"):
             return str(body["id"])
@@ -283,7 +274,7 @@ def _no_transport(
     headers: dict[str, str] | None = None,
     json: Any = None,
     timeout: float | None = None,
-) -> _Response:
+) -> HttpResponse:
     raise RuntimeError(
         "no HTTP transport configured for HoneycombSource "
         "(pass config['transport'])"

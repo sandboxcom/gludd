@@ -29,19 +29,11 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 # (method, url, headers, json_body, timeout) -> response with ``.status_code`` + ``.json()``.
-Transport = Callable[[str, str, Mapping[str, str], Any, float], "HTTPResponse"]
-
-
-class HTTPResponse:
-    """Structural type for the transport response (documentation only)."""
-
-    status_code: int
-
-    def json(self) -> Any:  # pragma: no cover - structural placeholder
-        raise NotImplementedError
+Transport = Callable[[str, str, Mapping[str, str], Any, float], HttpResponse]
 
 
 # --- literal-host SSRF block (NO DNS) -------------------------------------------------

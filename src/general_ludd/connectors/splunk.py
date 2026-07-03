@@ -26,27 +26,15 @@ import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.connectors._errors import SSRFError
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["HttpResponse", "HttpTransport", "SSRFError", "SplunkSource"]
+__all__ = ["HttpTransport", "SplunkSource"]
 
 KIND = "logs"
-
-
-class SSRFError(ValueError):
-    """Raised when ``base_url`` points at a forbidden (internal) host."""
-
-
-@runtime_checkable
-class HttpResponse(Protocol):
-    """Minimal response shape the connector relies on."""
-
-    status_code: int
-
-    def json(self) -> Any:  # pragma: no cover - structural typing only
-        ...
 
 
 @runtime_checkable

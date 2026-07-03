@@ -34,7 +34,7 @@ from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
 
-__all__ = ["HttpResponse", "SentrySource", "Transport"]
+__all__ = ["SentrySource", "Transport"]
 
 _DEFAULT_BASE_URL = "https://sentry.io"
 _DEFAULT_TIMEOUT = 30.0
@@ -42,7 +42,7 @@ _DEFAULT_STATS_PERIOD = "24h"
 _DEFAULT_LIMIT = 100
 
 
-class HttpResponse:
+class _SentryResponse:
     """A minimal, transport-agnostic HTTP response.
 
     Only the surface the connector needs is modeled: a status code and a raw
@@ -72,7 +72,7 @@ class HttpResponse:
 class Transport(Protocol):
     """Injectable HTTP transport.
 
-    Implementations perform a single GET and return an :class:`HttpResponse`.
+    Implementations perform a single GET and return an :class:`_SentryResponse`.
     A mocked transport in tests can record the requested URL/headers and return
     canned payloads without any network access.
     """
@@ -83,7 +83,7 @@ class Transport(Protocol):
         *,
         headers: dict[str, str],
         timeout: float,
-    ) -> HttpResponse: ...
+    ) -> _SentryResponse: ...
 
 
 class _UrllibTransport:
@@ -95,16 +95,16 @@ class _UrllibTransport:
         *,
         headers: dict[str, str],
         timeout: float,
-    ) -> HttpResponse:
+    ) -> _SentryResponse:
         req = urllib.request.Request(url, headers=headers, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 status = int(getattr(resp, "status", 0) or resp.getcode() or 0)
                 raw = resp.read()
-            return HttpResponse(status=status, body=raw)
+            return _SentryResponse(status=status, body=raw)
         except urllib.error.HTTPError as exc:  # 4xx/5xx are responses, not failures
             body = exc.read() if hasattr(exc, "read") else b""
-            return HttpResponse(status=int(exc.code), body=body)
+            return _SentryResponse(status=int(exc.code), body=body)
 
 
 class SentrySource:
@@ -189,7 +189,7 @@ class SentrySource:
             "Accept": "application/json",
         }
 
-    def _get(self, url: str) -> HttpResponse:
+    def _get(self, url: str) -> _SentryResponse:
         # Defense in depth: re-validate every URL we are about to fetch.
         self._validate_base_url(url)
         return self._transport.get(url, headers=self._headers(), timeout=self.timeout)
