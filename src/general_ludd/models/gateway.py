@@ -1321,7 +1321,6 @@ class ModelGateway:
                     f"circuit-open; not attempting any"
                 )
 
-        last_exc: BaseException | None = None
         if tracker is None or tracker.is_healthy(profile_id):
             try:
                 result = self._try_call_model(profile_id, messages, **kwargs)
@@ -1336,10 +1335,9 @@ class ModelGateway:
                 raise
             except ModelPausedError:
                 raise
-            except Exception as exc:
+            except Exception:
                 # D-22: see below — a provider-level failure on the primary must
                 # fall through to the fallback chain, not abort the whole call.
-                last_exc = exc
                 result = None
             if result is not None:
                 return result
@@ -1362,7 +1360,7 @@ class ModelGateway:
                 raise
             except ModelPausedError:
                 raise
-            except Exception as exc:
+            except Exception:
                 # D-22: a provider-level failure from one fallback must NOT abort
                 # the whole chain. call_model already recorded the failure on the
                 # health tracker (record_timeout_on_failure), so the next
@@ -1370,13 +1368,15 @@ class ModelGateway:
                 # circuit. Swallow here and continue to the next fallback so the
                 # is_healthy gate gets to skip the now-unhealthy model instead of
                 # the caller retrying the whole chain (retry-storm amplifier).
-                last_exc = exc
                 continue
             if result is not None:
                 return result
 
-        if last_exc is not None:
-            raise last_exc
+        # After the D-22 fix every provider-level exception is swallowed with
+        # ``continue`` in the fallback loop, so by the time we reach this point
+        # every model was either skipped (unhealthy) or tried-and-failed (breaker
+        # now open). There is no useful case for re-raising the raw last_exc — it
+        # masks the circuit-breaker state and amplifies retry storms.
         raise CircuitBreakerOpenError(
             f"All profiles in fallback chain failed for '{profile_id}'"
         )

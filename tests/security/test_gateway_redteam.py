@@ -18,7 +18,11 @@ import pytest
 
 from general_ludd.controllers.budget import RunBudgetGuard
 from general_ludd.models.failover import ModelFailoverChain
-from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.gateway import (
+    CircuitBreakerOpenError,
+    ModelGateway,
+    ModelProfile,
+)
 from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import (
@@ -204,7 +208,7 @@ def test_fallback_does_not_loop_holds():
     pa = _profile("a", fallback_profiles=["b"])
     pb = _profile("b", fallback_profiles=["a"])
     gw = _gateway_with(chat, [pa, pb])
-    with pytest.raises(ValueError, match="All profiles in fallback chain failed"):
+    with pytest.raises(CircuitBreakerOpenError, match="All profiles in fallback chain failed"):
         gw.call_model_with_fallback("a", [{"role": "user", "content": "hi"}])
 
 
