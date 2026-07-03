@@ -284,10 +284,12 @@ class TestAgentDispatcher:
 
         dispatcher = AgentDispatcher(registry=registry, executor=fake_executor)
 
+        # invoker_name="build" — the fixture's PRIMARY agent with allowed_subagents=["*"];
+        # required now that the dispatcher fails CLOSED on an empty invoker (task #50).
         tasks = [
-            AgentTask(task_id="t1", agent_name="explore", description="d1", prompt="p1"),
-            AgentTask(task_id="t2", agent_name="explore", description="d2", prompt="p2"),
-            AgentTask(task_id="t3", agent_name="general", description="d3", prompt="p3"),
+            AgentTask(task_id="t1", agent_name="explore", description="d1", prompt="p1", invoker_name="build"),
+            AgentTask(task_id="t2", agent_name="explore", description="d2", prompt="p2", invoker_name="build"),
+            AgentTask(task_id="t3", agent_name="general", description="d3", prompt="p3", invoker_name="build"),
         ]
 
         start = time.monotonic()
@@ -314,7 +316,7 @@ class TestAgentDispatcher:
         dispatcher = AgentDispatcher(registry=registry, executor=tracking_executor)
 
         tasks = [
-            AgentTask(task_id=f"t{i}", agent_name="general", description="", prompt="")
+            AgentTask(task_id=f"t{i}", agent_name="general", description="", prompt="", invoker_name="build")
             for i in range(6)
         ]
 
@@ -330,7 +332,9 @@ class TestAgentDispatcher:
         )
         assert dispatcher.active_count == 0
 
-        task = AgentTask(task_id="t1", agent_name="explore", description="d", prompt="p")
+        task = AgentTask(
+            task_id="t1", agent_name="explore", description="d", prompt="p", invoker_name="build"
+        )
         result = await dispatcher.dispatch_one(task)
         assert result.status == "completed"
         assert result.agent_name == "explore"

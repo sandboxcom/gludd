@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from general_ludd.agents.dispatcher import AgentDispatcher, AgentTaskResult
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentConfig, AgentPermission, AgentTask, AgentType
@@ -107,9 +109,15 @@ def test_restricted_invoker_allowed_sub_proceeds() -> None:
     assert result.output == "hello"
 
 
-def test_empty_invoker_name_skips_permission_check() -> None:
-    """When invoker_name is empty string, the can_invoke check is skipped."""
+@pytest.mark.parametrize("empty_invoker", ["", "   ", "\t", None])
+def test_empty_invoker_name_is_denied_fail_closed(empty_invoker: str | None) -> None:
+    """SECURITY (task #50): an empty / None / whitespace-only invoker_name is an
+    UNTRUSTED (un-named) invoker and must be DENIED — it must NOT bypass the
+    can_invoke matrix (fail-CLOSED). The transport/executor must NOT run."""
+    executor_ran = {"called": False}
+
     async def _echo(task: AgentTask) -> str:
+        executor_ran["called"] = True
         return "ok"
 
     registry = _make_registry()
@@ -119,11 +127,15 @@ def test_empty_invoker_name_skips_permission_check() -> None:
         agent_name="forbidden-sub",
         description="test",
         prompt="do stuff",
-        invoker_name="",  # no invoker — check must be skipped
     )
+    # Assign directly so we can also exercise the None case (dataclass default "").
+    task.invoker_name = empty_invoker  # type: ignore[assignment]
     result: AgentTaskResult = _run(dispatcher.dispatch_one(task))
-    assert result.status == "completed"
-    assert result.output == "ok"
+    assert result.status == "failed"
+    assert "permission denied" in result.output.lower()
+    assert "forbidden-sub" in result.output
+    # The executor (transport / target) must never have been reached.
+    assert executor_ran["called"] is False
 
 
 def test_unknown_agent_returns_failed() -> None:

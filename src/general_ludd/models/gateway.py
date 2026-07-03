@@ -73,6 +73,17 @@ class SSRFRejectionError(ValueError):
     """
 
 
+class ModelPausedError(Exception):
+    """Raised when a model call is blocked because the profile or its project is paused.
+
+    NOT a subclass of ValueError (unlike BudgetExceededError / SSRFRejectionError)
+    so the fallback-chain exception handlers do NOT treat it as retryable — a paused
+    model must not trigger a failover to the next profile in the chain (which would
+    silently bypass the pause). The outer call_model_with_fallback / call_model_by_role
+    walkers must check is_instance this type and re-raise immediately.
+    """
+
+
 class ModelProfile(BaseModel):
     model_profile_id: str
     role_names: list[str] = Field(default_factory=list)
@@ -256,6 +267,7 @@ class ModelGateway:
         response_cache: Any | None = None,
         response_cache_ttl_seconds: int = DEFAULT_RESPONSE_CACHE_TTL_SECONDS,
         health_tracker: Any | None = None,
+        pause_controller: Any | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -274,6 +286,7 @@ class ModelGateway:
         self._response_cache = response_cache
         self._response_cache_ttl_seconds = response_cache_ttl_seconds
         self._health_tracker = health_tracker
+        self._pause_controller = pause_controller
         # Per-cache-key single-flight locks: under concurrency, N identical
         # cache misses would all call the provider (cache stampede). We serialize
         # identical misses on a per-key lock so only the first does the provider
@@ -444,6 +457,11 @@ class ModelGateway:
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
+
+        if self._pause_controller is not None and self._pause_controller.is_paused("model", profile_id):
+            raise ModelPausedError(
+                f"Model profile '{profile_id}' is paused — call refused"
+            )
 
         # requested_max_output_tokens (D-21 over-conservatism fix): when a caller
         # knows it will cap the model's output (e.g. the /admin/models/call
@@ -1143,6 +1161,8 @@ class ModelGateway:
                 # Re-raise (mirrors BudgetExceededError) so the SSRF guard hard-
                 # stops the chain instead of falling open.
                 raise
+            except ModelPausedError:
+                raise
             except Exception as exc:  # try the next fallback
                 last_exc = exc
                 continue
@@ -1298,6 +1318,8 @@ class ModelGateway:
                 # routing the blocked egress onward to the next profile. Re-raise
                 # (mirrors BudgetExceededError) so the SSRF guard hard-stops.
                 raise
+            except ModelPausedError:
+                raise
             except Exception as exc:
                 # D-22: see below — a provider-level failure on the primary must
                 # fall through to the fallback chain, not abort the whole call.
@@ -1321,6 +1343,8 @@ class ModelGateway:
                 # Exception`` below re-swallows the rejection re-raised by
                 # _try_call_model and routes onward to the next profile, masking
                 # the egress block. Re-raise (mirrors BudgetExceededError).
+                raise
+            except ModelPausedError:
                 raise
             except Exception as exc:
                 # D-22: a provider-level failure from one fallback must NOT abort

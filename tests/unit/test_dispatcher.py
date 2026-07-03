@@ -64,6 +64,19 @@ async def _async_executor(task: AgentTask) -> str:
     return f"executed:{task.agent_name}"
 
 
+# A trusted, dispatch-capable invoker for tests that exercise the executor path
+# (duration / watchdog / cancellation). Since the dispatcher now fails CLOSED on
+# an empty invoker (task #50 security fix), a task must carry a named invoker that
+# can_invoke its target, else the capability gate denies it before the executor
+# runs. allowed=["*"] covers any registered target via fnmatch.
+_TRUSTED_INVOKER = "trusted-caller"
+
+
+def _register_trusted_invoker(registry: AgentRegistry) -> str:
+    registry.register(_invoker_config(_TRUSTED_INVOKER, can_dispatch=True, allowed=["*"]))
+    return _TRUSTED_INVOKER
+
+
 def _run(coro):  # type: ignore[return]
     return asyncio.run(coro)
 
@@ -155,14 +168,23 @@ class TestDispatchUnpermittedInvoker:
         assert "target" in result.output, f"target not named: {result.output!r}"
 
 
-class TestDispatchBackCompatNoInvoker:
-    def test_dispatch_back_compat_no_invoker(self) -> None:
-        """Existing calls without invoker field complete normally (back-compat)."""
+class TestDispatchNoInvokerFailsClosed:
+    def test_dispatch_no_invoker_is_denied(self) -> None:
+        """SECURITY (task #50): a dispatch with NO invoker field is an un-named
+        (untrusted) caller and must be DENIED — fail CLOSED. Previously this
+        completed normally ("back-compat"), which was the fail-OPEN hole: an
+        unnamed invoker bypassed the can_invoke matrix. The executor must NOT run."""
+        ran = {"called": False}
+
+        async def _tracking_executor(task: AgentTask) -> str:
+            ran["called"] = True
+            return f"executed:{task.agent_name}"
+
         registry = _make_registry()
         registry.register(_subagent_config("worker"))
-        dispatcher = AgentDispatcher(registry, executor=_async_executor)
+        dispatcher = AgentDispatcher(registry, executor=_tracking_executor)
 
-        # No invoker keyword — old call pattern
+        # No invoker keyword — old call pattern, now fail-closed.
         task = AgentTask(
             task_id="t4",
             agent_name="worker",
@@ -171,8 +193,11 @@ class TestDispatchBackCompatNoInvoker:
         )
         result = _run(dispatcher.dispatch_one(task))
 
-        assert result.status == "completed", f"Expected completed, got {result.status!r}"
-        assert "executed:worker" in result.output
+        assert result.status == "failed", f"Expected failed, got {result.status!r}"
+        assert "permission denied" in result.output.lower(), (
+            f"Expected 'permission denied' in output, got: {result.output!r}"
+        )
+        assert ran["called"] is False, "executor ran despite denied dispatch"
 
 
 class TestDispatchPermittedInvoker:
@@ -215,6 +240,7 @@ class TestDispatchOneCancellation:
         dispatch_many timeout cancellation is masked as a genuine failure."""
         registry = _make_registry()
         registry.register(_subagent_config("worker"))
+        invoker = _register_trusted_invoker(registry)
         dispatcher = AgentDispatcher(registry, executor=_cancelled_executor)
 
         task = AgentTask(
@@ -222,6 +248,7 @@ class TestDispatchOneCancellation:
             agent_name="worker",
             description="do work",
             prompt="run it",
+            invoker_name=invoker,
         )
 
         raised = False
@@ -242,6 +269,7 @@ class TestDispatchOneCancellation:
         `except Exception` path is unchanged)."""
         registry = _make_registry()
         registry.register(_subagent_config("worker"))
+        invoker = _register_trusted_invoker(registry)
         dispatcher = AgentDispatcher(registry, executor=_raising_executor)
 
         task = AgentTask(
@@ -249,6 +277,7 @@ class TestDispatchOneCancellation:
             agent_name="worker",
             description="do work",
             prompt="run it",
+            invoker_name=invoker,
         )
         result = _run(dispatcher.dispatch_one(task))
 
@@ -359,6 +388,7 @@ class TestDispatchDurationTracking:
         per-agent baseline — proving each run's duration was recorded."""
         registry = _make_registry()
         registry.register(_subagent_config("worker"))
+        invoker = _register_trusted_invoker(registry)
         # min_samples defaults to 5; run that many so a baseline forms.
         tracker = DurationTracker(min_samples=5)
         dispatcher = AgentDispatcher(
@@ -373,6 +403,7 @@ class TestDispatchDurationTracking:
                 agent_name="worker",
                 description="do work",
                 prompt="run it",
+                invoker_name=invoker,
             )
             result = _run(dispatcher.dispatch_one(task))
             assert result.status == "completed"
@@ -386,6 +417,7 @@ class TestDispatchDurationTracking:
         must be learned too (the CancelledError path is the only exclusion)."""
         registry = _make_registry()
         registry.register(_subagent_config("worker"))
+        invoker = _register_trusted_invoker(registry)
         tracker = DurationTracker(min_samples=3)
         dispatcher = AgentDispatcher(
             registry, executor=_raising_executor, tracker=tracker
@@ -397,6 +429,7 @@ class TestDispatchDurationTracking:
                 agent_name="worker",
                 description="do work",
                 prompt="run it",
+                invoker_name=invoker,
             )
             result = _run(dispatcher.dispatch_one(task))
             assert result.status == "failed"
@@ -410,6 +443,7 @@ class TestDispatchDurationTracking:
         (watch() entered) and cleared once it finishes (watch() exited)."""
         registry = _make_registry()
         registry.register(_subagent_config("worker"))
+        invoker = _register_trusted_invoker(registry)
         watchdog = StallWatchdog()
         seen: dict[str, bool] = {}
 
@@ -426,6 +460,7 @@ class TestDispatchDurationTracking:
             agent_name="worker",
             description="do work",
             prompt="run it",
+            invoker_name=invoker,
         )
         result = _run(dispatcher.dispatch_one(task))
 
@@ -442,6 +477,7 @@ class TestDispatchDurationTracking:
         """With no watchdog injected, dispatch still works (nullcontext path)."""
         registry = _make_registry()
         registry.register(_subagent_config("worker"))
+        invoker = _register_trusted_invoker(registry)
         dispatcher = AgentDispatcher(registry, executor=_async_executor)
         assert dispatcher._watchdog is None
 
@@ -450,6 +486,7 @@ class TestDispatchDurationTracking:
             agent_name="worker",
             description="do work",
             prompt="run it",
+            invoker_name=invoker,
         )
         result = _run(dispatcher.dispatch_one(task))
         assert result.status == "completed"

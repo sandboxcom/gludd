@@ -1056,6 +1056,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # construction so the AdaptiveRouter holds the live instance (not None).
         health_tracker = app.state._health_tracker
 
+        from general_ludd.controllers.pause_controller import PauseController
+        app.state._pause_controller = PauseController()
+
         model_gateway = None
         deployment_health_router = None
         if model_profiles:
@@ -1080,6 +1083,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # ceiling is actually enforced — it was built above but never passed,
                 # leaving budgets silently inert in the daemon.
                 budget_guard=budget_guard,
+                pause_controller=app.state._pause_controller,
             )
             app.state._model_gateway = model_gateway
 
@@ -1308,6 +1312,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             file_claim_registry=getattr(app.state, "_file_claims", None),
             ansible_env_updater=getattr(app.state, "_ansible_env_updater", None),
             deployment_health_router=deployment_health_router,
+            pause_controller=getattr(app.state, "_pause_controller", None),
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner

@@ -127,6 +127,13 @@ wt-diff-file:
 ps-pytest:
 	@ps -Ao pid,ppid,pcpu,pmem,etime,command | grep -E '[p]ytest|execnet|[x]dist' | grep -v 'grep' || echo "no pytest processes running"
 
+# Self-diagnostic — surface CRITICAL banners, gate status, ratchet count,
+# TASKS.md unchecked items, and permission-ordering issues in one shot.
+# Designed for agent self-troubleshooting so common issues are identified in
+# ≤2 turns instead of 10+ turns of manual analysis.
+troubleshoot:
+	@uv run python scripts/troubleshoot.py
+
 # Prune stray pytest / xdist processes (SIGTERM, then SIGKILL survivors).
 kill-pytest:
 	@echo "pytest processes before:"; ps -Ao pid,command | grep -E '[p]ytest|execnet' | grep -v grep | wc -l | tr -d ' '

@@ -598,10 +598,15 @@ function buildOrchestrationContext(): string {
 export default (async ({ }) => {
   return {
     // --- Session idle — reset turn state and cache expensive checks ----------
+    // PERSISTENT BLOCK (2026-07-03): turnState.blocked is NOT reset here.
+    // If the previous turn was blocked for a stop pattern, the block persists
+    // across turns until a tool call clears it. This prevents the pattern where
+    // the agent sees the block message and then sends ANOTHER text-only response
+    // explaining its analysis — every text-only response after a block is also
+    // suppressed. The block is cleared in tool.execute.before (any tool call).
     "session.idle": async () => {
       try {
         turnState.accumulatedText = ""
-        turnState.blocked = false
 
         // Warm the CI verdict cache (Deficiency A+B)
         ciIsPendingOrRed()
@@ -630,6 +635,16 @@ export default (async ({ }) => {
 
     // --- Deny the question tool (no-blocking-questions) ----------------------
     "tool.execute.before": async (input, output) => {
+      // --- PERSISTENT BLOCK CLEAR (2026-07-03) --------------------------
+      // Any tool call clears the cross-turn persistent block. This is the
+      // antidote to the text-only-response-after-block pattern: once blocked,
+      // the agent MUST make a tool call to resume normal text output.
+      // Read-only tools (read, grep, glob) and dispatch tools (task) are
+      // included — the point is to force an action, not a specific kind.
+      if (turnState.blocked) {
+        turnState.blocked = false
+      }
+
       if (input.tool === "question") {
         throw new Error(QUESTION_DENY_REASON)
       }

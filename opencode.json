@@ -2,9 +2,10 @@
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "bash": {
-      "make *": "allow",
-      "*": "deny"
-    }
+      "*": "deny",
+      "make *": "allow"
+    },
+    "doom_loop": "deny"
   },
   "plugin": [
     "./.opencode/plugin/enforce-make.ts",

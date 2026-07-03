@@ -90,17 +90,29 @@ class AgentDispatcher:
                 status="failed",
                 output=f"Agent '{task.agent_name}' is disabled",
             )
-        if task.invoker_name and not self._registry.can_invoke(task.invoker_name, task.agent_name):
-            # Return a failed result (do NOT raise) so the can_invoke denial flows
-            # through the same AgentTaskResult contract as the not-found/disabled
-            # branches above — dispatch_one's caller (and dispatch_many's gather)
-            # expect a result, and the message must reach result.output.
+        # Capability gate: fail CLOSED. An empty / None / whitespace-only
+        # invoker_name is an UNTRUSTED (un-named) invoker, NOT a privileged one —
+        # it must be DENIED, never allowed to bypass the can_invoke matrix. (The
+        # historic `if task.invoker_name and ...` guard short-circuited on a falsy
+        # invoker, so an unnamed caller silently skipped the permission check and
+        # could dispatch anything — a fail-OPEN security hole.) A named invoker is
+        # still gated by can_invoke exactly as before: valid capability dispatches,
+        # missing capability is denied. can_invoke("", target) already returns
+        # False (empty is not a registered agent), so an empty invoker is denied
+        # by the same predicate rather than skipping it.
+        invoker = (task.invoker_name or "").strip()
+        if not invoker or not self._registry.can_invoke(invoker, task.agent_name):
+            # Return a failed result (do NOT raise) so the denial flows through the
+            # same AgentTaskResult contract as the not-found/disabled branches above
+            # — dispatch_one's caller (and dispatch_many's gather) expect a result,
+            # and the message must reach result.output.
+            denied = invoker or "<empty>"
             return AgentTaskResult(
                 task_id=task.task_id,
                 agent_name=task.agent_name,
                 status="failed",
                 output=(
-                    f"Permission denied: '{task.invoker_name}' is not permitted "
+                    f"Permission denied: '{denied}' is not permitted "
                     f"to dispatch '{task.agent_name}'"
                 ),
             )

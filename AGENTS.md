@@ -11,6 +11,7 @@
 7. **Read `TASKS.md` for current work.** Read `BUGS.md` before claiming anything is finished. Update both as you go.
 8. **Use existing mature projects — never write custom code when a well-formed existing tool exists.** Before writing a secrets scanner, linter, formatter, type checker, test runner, git hook framework, build system, or security scanner, check if an established project (detect-secrets, gitleaks, trufflehog, ruff, mypy, pytest, pre-commit, etc.) exists. Writing custom infrastructure code that duplicates a mature OSS project is a bug. The only exception is application-specific business logic that has no standard library.
 9. **No unseen events — an unobservable operation is a broken operation.** Any operation that runs longer than a few seconds (a gate, a test suite, a build, a poll loop, a backgrounded task, a daemon background job) MUST surface continuous progress: stream its output (`tee`), emit a per-phase marker, or print a periodic heartbeat. Never redirect a long-running operation solely to `/dev/null` or a buffered file with no live signal. If an event happens and no one can see it, it did not happen. Enforced by `tests/unit/test_observability_guardrails.py`; mirrored for agent behavior in [[gludd-observability-invariant]] memory.
+10. **Bash unavailable ⇒ adapt in ≤2 turns.** If `make` commands fail or bash is missing from your tool list, execute the 3-step diagnosis (check tool list, read SESSION.md for known issue, read opencode.json for permissions) IN ONE PARALLEL MESSAGE. Then adapt: use read/edit/write/grep/glob tools directly. Never spend 10+ turns diagnosing a tool-unavailable error — it is either a provider/model limitation (unfixable mid-session) or a permission-ordering bug (one-line fix). SESSION.md line ~9 documents known bash-unavailable sessions. BUGS.md tracks bash-diagnosis-relapse incidents.
 
 ## CRITICAL: Session Start Protocol (FIRST action of every session)
 
@@ -22,6 +23,60 @@
 The ONLY valid exceptions to step 2: (a) the user's first message is a direct factual question with a one-word/one-line answer; (b) the user explicitly says "don't multitask yet." In both cases, answer briefly and then dispatch.
 
 A Q&A-style first response ("Sure! Let me look into that.") with no tool calls is a **policy violation** whenever a task backlog exists. Prose-first session starts are forbidden.
+
+## CRITICAL: Bash Tool Unavailability — 4-Step Diagnosis (MAX 4 TURNS)
+
+**When `make` commands fail or the bash tool is unavailable, execute this 4-step diagnosis. Do NOT spend 10+ turns analyzing. The diagnosis is mechanical, not analytical.**
+
+### The config stack (3 layers — understand this FIRST)
+
+Tool availability is gated by THREE separate config layers, in order:
+1. **Agent config** — the agent definition (in `~/.config/opencode/` or wherever opencode stores agent configs) lists which tools this agent can use. A tool NOT in this list is invisible to the agent — the system prompt won't mention it, and no amount of permission-fixing in `opencode.json` will make it appear. **This is the most common root cause of "tool X is missing."**
+2. **Project `opencode.json` `permission` block** — once a tool IS in the agent config, project-level permissions gate whether it can actually be invoked. Last-matching-rule-wins semantics apply.
+3. **System prompt** — the tool list the model sees. If a tool is in the agent config AND not denied by permissions, it appears here.
+
+The 2026-07-03 incident proved this: the agent spent 15+ turns diagnosing a missing `bash` tool under the AGENTS.md assumption "tool absent = provider limitation." The user fixed it in <5 minutes by adding `bash` to the agent config. The tool was never a provider limitation — it was a config gap at layer 1.
+
+### Step 1 (ONE turn, parallel): Determine WHY
+
+Make these 4 checks in PARALLEL in a single message:
+1. **Check if the tool is in your system prompt tool list.** If absent, the tool is not registered for this agent — go to step 2a.
+2. **Check the agent config for tool availability.** The agent definition controls which tools are visible. If the missing tool isn't listed, **the agent config is the root cause** — the fix is adding the tool name there, not in project config. This is a human-level config edit (you likely can't modify it mid-session), but you should REPORT it accurately rather than misdiagnosing it as a "provider limitation."
+3. **Read `SESSION.md` for the "CRITICAL: bash tool unavailable" banner.** If present, the issue is known and pre-documented.
+4. **Read `opencode.json` for permissions.** If the ordering has `*: deny` AFTER `make *: allow`, the last-matching-rule-wins semantics deny everything. This is layer 2 — only relevant if layer 1 (agent config) is correct.
+
+### Step 2 (ONE turn): Classify the root cause
+
+Three possible root causes — NEVER default to "provider limitation":
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| Tool NOT in system prompt tool list | **Agent config missing the tool** (layer 1) | Add tool name to agent config. Report to user: "bash is missing from the agent tool config — add it to the agent definition." If you can edit the agent config, do it. |
+| Tool IS in system prompt but `make` commands fail with "denied" | **Permission misconfiguration** (layer 2) | Fix `opencode.json` permission ordering: `*: deny` FIRST, `make *: allow` SECOND. |
+| Tool IS in system prompt, permissions correct, but commands fail with "not found" / timeout | **Provider/model limitation** (unfixable mid-session) | Switch to read/edit/write/grep/glob tools for all work. Update SESSION.md. |
+
+### Step 3 (ONE turn): Adapt
+
+- **Agent config gap → fix or report.** If you can edit the agent config, add the tool and retry. If you can't, report the exact config location and missing tool name, then adapt with available tools.
+- **Permission bug → fix opencode.json.** Swap `*: deny` FIRST, `make *: allow` SECOND. Then retry.
+- **Provider limitation → adapt.** Use read/edit/write/grep/glob tools. Update SESSION.md. Continue work.
+
+### Forbidden behaviors (these are BUGS — log in BUGS.md):
+
+| Behavior | Why forbidden |
+|---|---|
+| Defaulting to "provider limitation" without checking agent config | 2026-07-03: agent spent 15+ turns assuming provider limitation when agent config was the real fix |
+| 10+ turns analyzing a tool-unavailable error | The 4-step diagnosis takes ≤4 turns |
+| Trying to call `Bash` (uppercase) | Tool names are lowercase: `bash` |
+| Dispatching subagents expecting them to have bash | Subagents inherit the same tool set as the main agent |
+| Sending text-only explanations of the problem | Tool unavailable = classify root cause + adapt, don't explain |
+| Asking the user to fix/reconfigure/restart | Classify the cause; if it's agent config, report the specific fix needed in ≤2 lines |
+
+### Enforced by:
+- This AGENTS.md section — proactive instruction
+- SESSION.md "CRITICAL: bash tool unavailable" banner (read on session start)
+- `enforce-make.ts` `system.transform` injection (4-step diagnosis injected into system prompt)
+- BUGS.md entries for bash-diagnosis-relapse incidents
 
 **Enforcement (3-layer guardrail):**
 - **Prompt** — this section (proactive instruction).

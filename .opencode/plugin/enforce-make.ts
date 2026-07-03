@@ -251,6 +251,37 @@ const BASH_METACHAR_POLICY = [
   "",
 ].join("\n")
 
+const BATCHING_POLICY = [
+  "",
+  "## CRITICAL: Batch-Everything Policy (HARD BLOCK on serial calls)",
+  "",
+  "EVERY response with tool calls MUST batch all independent operations",
+  "into ONE message with multiple parallel tool invocations. Never serialize",
+  "what can run concurrently.",
+  "",
+  "SERIAL CALLS ARE FORBIDDEN when:",
+  "  - Reading multiple files → batch reads in ONE message",
+  "  - Searching for multiple patterns → batch greps in ONE message",
+  "  - Editing multiple independent files → batch edits in ONE message",
+  "  - Dispatching subagents → batch 5+ tasks/agents in ONE message",
+  "  - Any read/edit/grep/glob that doesn't depend on prior output",
+  "",
+  "The ONLY valid serial pattern is when tool call N's output is NEEDED",
+  "to construct tool call N+1 (e.g., grep found a line number, then read",
+  "that specific range). Everything else = batch it.",
+  "",
+  "VIOLATIONS (blocked):",
+  "  read file A → wait → read file B          # batch the reads",
+  "  grep pattern → wait → read result          # batch grep+read if independent",
+  "  dispatch 1 task → wait → dispatch 1 task   # batch 5+ dispatches",
+  "  edit file → wait → grep → wait → read      # batch independent ops",
+  "",
+  "CORRECT:",
+  "  <tool>read A</tool><tool>read B</tool><tool>grep X</tool>  # all in ONE message",
+  "  <tool>task desc=A</tool><tool>task desc=B</tool>... # 5+ dispatches at once",
+  "",
+].join("\n")
+
 const STOP_PATTERN_BLOCK = [
   "⛔ STOP-PATTERN DETECTED — AUTO-INJECTED OVERRIDE",
   "",
@@ -768,6 +799,45 @@ export default (async ({ }) => {
     },
 
     "experimental.chat.system.transform": async (_input, output) => {
+      // --- BASH-AVAILABILITY CHECK (2026-07-03) -------------------------------
+      // Reads SESSION.md for the "CRITICAL: bash tool unavailable" banner.
+      // If present, injects a prominent warning at the VERY TOP of the system
+      // prompt so the agent knows IMMEDIATELY that `make` targets cannot run.
+      // This prevents the 10+ turn diagnosis-loop pattern: the agent tries
+      // `make`, fails, analyzes for 15 turns instead of adapting.
+      let bashWarning = ""
+      try {
+        const sessionPath = path.join(process.cwd(), "SESSION.md")
+        if (fs.existsSync(sessionPath)) {
+          const sessionContent = fs.readFileSync(sessionPath, "utf8")
+          if (sessionContent.includes("CRITICAL: bash tool unavailable")) {
+            bashWarning = [
+              "⛔⛔⛔ CRITICAL — BASH TOOL UNAVAILABLE ⛔⛔⛔",
+              "",
+              "SESSION.md line ~9 says: \"CRITICAL: bash tool unavailable —",
+              "`make` targets cannot run.\" This was pre-documented by the prior",
+              "session. The bash tool is NOT in your tool list (provider/model",
+              "limitation). Do NOT attempt `make <target>` — it will fail.",
+              "",
+              "WHAT TO DO INSTEAD:",
+              "  - Use read, edit, write, grep, glob tools directly.",
+              "  - Do NOT dispatch subagents expecting them to run `make`.",
+              "  - Do NOT spend turns diagnosing WHY bash is missing.",
+              "  - State \"bash unavailable, adapting\" in ≤1 line, then WORK.",
+              "",
+              "WHAT IS FORBIDDEN:",
+              "  - 10+ turns analyzing tool-unavailable errors (BUG, log in BUGS.md)",
+              "  - Sending text-only explanations of the problem",
+              "  - Asking the user to fix/reconfigure/restart opencode",
+              "  - Trying to call 'Bash' (uppercase — tool name is lowercase 'bash')",
+              "",
+              "POLICY: AGENTS.md \"Bash Tool Unavailability — 3-Step Diagnosis\"",
+              "",
+            ].join("\n")
+          }
+        }
+      } catch { /* fail open */ }
+
       const mechanicalContract = [
         "⛔ MECHANICAL CONTRACT — VIOLATIONS ARE BLOCKED",
         "",
@@ -778,13 +848,29 @@ export default (async ({ }) => {
         "5. Found a gap? Fix it now. Never list it and ask. BLOCKED if you ask.",
         "6. Trust gate output, not SESSION.md. Gate exit codes are truth.",
         "7. Read `TASKS.md` for current work. Read `BUGS.md` before claiming done.",
+        "8. BATCH ALL independent tool calls in ONE message. Serial calls = BLOCKED.",
+        "9. Subagent returns empty? DO NOT re-dispatch same work. Diagnose first.",
+        "   — Check if bash tool is available (list your tools before dispatching).",
+        "   — If bash is missing, adapt: use read/edit/write/grep directly.",
+        "   — 3+ empty subagent results in a row = TOOL AVAILABILITY BUG, not retry.",
+        "",
+
+        "CRITICAL: Bash Tool Unavailability — 3-Step Diagnosis (MAX 2 TURNS)",
+        "When `make` commands fail or bash is unavailable:",
+        "  Step 1 (ONE turn, parallel): (a) check if bash is in your tool list,",
+        "    (b) read SESSION.md for the \"CRITICAL: bash tool unavailable\" banner,",
+        "    (c) read opencode.json for bash permissions.",
+        "  Step 2 (ONE turn): if bash absent → adapt (read/edit/write/grep only);",
+        "    if permissions wrong → fix opencode.json ordering. Never spend 10+",
+        "    turns diagnosing. BUGS.md records bash-diagnosis-relapse incidents.",
         "",
         "STOP-PATTERN DETECTION: Text-only responses with pending work are BLOCKED.",
-        "The chat.response.transform hook replaces completion claims when gate is red.",
         "Full rationale in AGENTS.md. This contract is all you need for mechanics.",
         "",
       ].join("\n");
       const policyInjection = [
+        BATCHING_POLICY,
+        "",
         BASH_METACHAR_POLICY,
         "",
         TASK_COMPLETION_WARNING,
@@ -792,7 +878,7 @@ export default (async ({ }) => {
         SELF_DIRECTED_WORK_WARNING,
       ].join("\n")
       if (typeof output === "string") {
-        output = mechanicalContract + "\n\n" + policyInjection + "\n\n" + output
+        output = bashWarning + "\n" + mechanicalContract + "\n\n" + policyInjection + "\n\n" + output
       }
       return output // FORBIDDEN stop patterns enforced by this contract + response.transform hook
     },

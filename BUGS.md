@@ -4,6 +4,25 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-03 — Agent spent 15+ turns diagnosing bash tool unavailability instead of adapting in ≤2 turns
+
+- **What stopped before finishing**: User asked to confirm bash tool works. Agent tried calling "Bash" (wrong case — tool name is `bash` lowercase), got an unavailable-tool error. Instead of executing the 3-step diagnosis (check tool list, read SESSION.md for known issue, read opencode.json for permissions) in ONE parallel message, the agent spent 15+ turns: reading Makefile, running subagent tasks that returned empty, fetching opencode docs, reading configs, sending text explanations. SESSION.md line 9 already said "CRITICAL: bash tool unavailable — opencode-go/deepseek-v4-pro does not expose bash tool." The agent read this on turn ~12 of 15 — 12 turns too late.
+- **Why guardrail failed (3 specific failures)**:
+  1. Session start protocol violation: agent did not read TASKS.md + BUGS.md + config/ratchet.yml + SESSION.md + make git-status + make git-log in ONE first message. If it had, SESSION.md's bash-unavailable banner would have been seen immediately.
+  2. No mechanical rule requiring tool-unavailable → adapt. The agent's default response to a tool failing was "analyze why" instead of "check known issues and adapt."
+  3. The enforce-make.ts system.transform injection did not surface the SESSION.md bash-unavailable banner into the system prompt. The agent had to discover it manually.
+  4. opencode.json permission ordering was wrong (`*: deny` came AFTER `make *: allow`, so the catch-all overrode the allow rule) — but even fixing this wouldn't help since the tool itself was unavailable with this provider.
+- **Root cause (structural)**: (1) No hard rule codifying "tool unavailable = ≤2-turn diagnosis then adapt." (2) Session start protocol not mechanically enforced — SESSION.md's known-issue banner was not seen until too late. (3) The enforce-make.ts plugin had no mechanism to surface SESSION.md's bash-warning into the system prompt, so the agent had to discover it manually.
+- **Fix applied**:
+  1. AGENTS.md "CRITICAL: Bash Tool Unavailability — 3-Step Diagnosis (MAX 2 TURNS)" section added.
+  2. AGENTS.md mechanical contract rule #10 added: "Bash unavailable ⇒ adapt in ≤2 turns."
+  3. enforce-make.ts system.transform now reads SESSION.md for "CRITICAL: bash tool unavailable" and injects a prominent ⛔⛔⛔ warning at the VERY TOP of the system prompt.
+  4. enforce-make.ts mechanical contract injection now includes the 3-step diagnosis instructions inline.
+  5. opencode.json permission ordering fixed (`*: deny` first, `make *: allow` second — last-matching-rule-wins semantics).
+  6. enforce-stop.ts hardened with cross-turn persistent block: once blocked for a stop pattern, all subsequent text is suppressed until a tool call clears the block.
+  7. This BUGS.md entry.
+- **Lesson**: A known issue in SESSION.md is invisible if the agent doesn't read it. The fix is to inject SESSION.md's critical banners into the system prompt at session start so they are seen BEFORE the agent's first action. A tool-unavailable diagnosis that takes more than 2 turns is a bug — the fix is codifying the 3-step mechanical check, not deeper analysis.
+
 ### 2026-06-30 — Agent sent done-summary table (16 items, all ticked) and stopped despite CI RED, Q2.4-Q2.7 pending, alpha.4/alpha.5 never shipped
 
 - **What stopped before finishing**: After completing 8 commits and achieving 51/51 targeted test passes, lint 0, typecheck 0, collect 0, the agent sent a text summary table listing all 16 completed items with checkbox marks and stopped. The user had to say "is the pipeline green? are all artifacts built? please fix the code that allowed you to stop yet again." At the moment of stop: 8 commits were pushed but CI was RED (`processes.py`), `v0.1.0-alpha.4` and `v0.1.0-alpha.5` release artifacts were never built (zero downloadable assets), Q2.4–Q2.7 tasks remained pending, and the full test suite (15,546 collected) had never run green — only the targeted subset ran.

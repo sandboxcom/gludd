@@ -5,147 +5,62 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-01
+- 2026-07-03 (opencode session — deepseek-v4-pro via opencode-go)
+- **2026-07-03 (current session):** bash unavailable (openode-go/deepseek-v4-pro). 3 guardrail layers hardened: (1) AGENTS.md bash-diagnosis section + mechanical contract rule #10, (2) enforce-make.ts SESSION.md bash-warning injection into system prompt, (3) enforce-stop.ts cross-turn persistent block, (4) opencode.json permission ordering fixed. Working via read/edit/write/grep/glob tools. Uncommitted: gateway.py, loop.py, daemon.py, test_pause_slice2_wiring.py, enforce-make.ts, enforce-stop.ts, opencode.json, AGENTS.md, BUGS.md, SESSION.md.
 
 ## Current Work
 
-- **HEAD: `8ed0ed1f`** on master — 26 commits ahead of sandboxcom/master.
-- **Lint 0, typecheck 0 (465 source files), collect 0 (15,685 tests).** Gate prereqs all green.
-- **119 enforce-stop.ts CI verdict query tests pass** (Q3.9 evidence row).
-- **CI fix wave active** — narrowed from hundreds of failures to ~53. Systemic fixes: caplog propagate session fixture, dist/artifact CI skip guards, roles/.gitkeep test acceptance (`8ed0ed1f`), dist readiness stubs in CI_DIST mode (`edc1d391`), facts_facets osquery, tasks_tick check, to_thread mock, project_local env, ansible-syntax path, hostile MCP mocks (`4ea8f168`).
+- **HEAD: `204eee12`** on master — 3 commits ahead of sandboxcom/master (`799a9dbb`).
+- **3 commits unpushed**: #62 CI rebalance, #40 SSRF tranche-4, docs.
+- **#35 SLICE 2 (PauseController wiring): IMPLEMENTED, UNCOMMITTED** — ModelPausedError + pause gates in gateway.py + loop.py + daemon.py, 5 tests.
+- **OpenCode plugin fixes: UNCOMMITTED** — BATCHING_POLICY, mechanical contract rules 8-9, doom_loop:deny.
+- **Uncommitted files**: gateway.py, loop.py, daemon.py, test_pause_slice2_wiring.py, enforce-make.ts, opencode.json, SESSION.md
+- **#35 SLICE 1: COMPLETE** (PauseController + PauseStore committed in `657e2b13`, hardened in `3597559a`).
+- **Open issues:** #35 SLICE 3/4, #50–#54, #61, et al.
 - **Alpha.3** is the only released version with a downloadable artifact.
-  Alpha.4 and alpha.5 were never shipped (no artifact, no green CI release job).
-
-### Major features landed this session (2026-06-30)
-
-| Feature | Commits |
-|---------|---------|
-| Fix #4: Makefile release targets real (release-cut, release-recut, release-create, release-branch-new, release-promote, git-tag-push, release-view) | `2ed2ea08` |
-| `enforce-false-done.ts` release-claim gating with RELEASE_CLAIM_PATTERNS + RELEASE_EVIDENCE_PATTERNS in classify() | `2ed2ea08` |
-| 22 tests in `tests/unit/test_enforce_false_done.py` all passing | `2ed2ea08` |
-| 4 missing plugins registered in opencode.json (enforce-todos, enforce-false-done, enforce-session-start, enforce-deadline) — 9 total now | `2ed2ea08` |
-| Kubernetes deployment support (module, 2 stacks, reference manifests) | `f621cc44`, `48e74211` |
-| 5 new llama.cpp terraform stacks | `48e74211` |
-| 4 new cloud providers (Together, Fireworks, HuggingFace, Replicate) | `48e74211` |
-| KUBERNETES provider | `f621cc44` |
-| Guided decoding support (vLLM + llama.cpp) | `f621cc44` |
-| Deployment health + self-healing router | `f621cc44`, `64d53998`, `a0c90fd7` |
-| Deployment optimization config | `f621cc44` |
-| `enforce-stop.ts` strengthened to HARD STOP | `3b5cbafb` |
-| Plugin behavior tests | `3b5cbafb` |
-| README version bumped to alpha.5, features.yml expanded | `3b5cbafb` |
-| CI `check-status-table` conditional (tags only) | `48e74211` |
-| `ci-verdict` targets fixed (branch→SHA resolution) | `4b27b922` |
-| Cross-platform `processes.py` type:ignore fix | `a7a2aa0d` |
-| Event loop `_session_factory` mock fix (48/48 target tests pass) | `24c21085` |
-| 6 stub Makefile targets (container-*, dist, test-integration) | `7538be54` |
-| Provider count assertions 10→16, phase count 11→13, vsphere-llamacpp variables.tf | `ba3225c0` |
-| CI test shard fixes: caplog propagate, release target stubs, worker assertions, model gateway errors | `2757daa0`, `f62289bd`, `43b60450` |
-| Version Makefile target, opencode.json permission key | `9b0b67ad`, `496f2622` |
 
 ## Last Commits
 
 | Hash | Message |
 |------|---------|
-| `8ed0ed1f` | fix: systemic caplog propagate session fixture, dist/artifact skip guards for CI, roles/.gitkeep test acceptance |
-| `edc1d391` | fix: dist readiness stubs in CI_DIST mode, TASKS.md Q3.10-Q3.16 evidence rows |
-| `4ea8f168` | fix: CI misc failures — facts_facets osquery, tasks_tick check, to_thread mock, project_local env, ansible-syntax path, hostile MCP mocks |
-| `9c7cbe58` | docs: update SESSION.md with enforce-stop CI PENDING fix and CI fix wave state |
-| `efdee46a` | feat: enforce-stop.ts CI verdict query (A-D), session summary detection, CI PENDING wired into hasPendingWork (119 tests) |
-| `2495d0f1` | fix: migrate enforce-false-done and enforce-stop from dead response.transform to text.complete + session.idle hooks (BUGS.md 2026-06-30 incident fix #1-3) |
-| `c0422a8f` | docs: document response.transform dead-code finding, update SESSION.md with Fix #4 + new critical gap |
-| `2ed2ea08` | feat: Fix #4 — wire verify-release-artifact into completion gate, real release targets, plugin registration (BUGS.md 2026-06-30 incident) |
-| `2f96c21b` | docs: add Q3.9 evidence row to TASKS.md |
-| `252c15dc` | docs: update SESSION.md with session end state - HEAD 2757daa0, 15658 tests, 24 commits, CI fix wave |
-| `2757daa0` | fix: CI test shard failures - todos pagination deque, release target stubs, caplog propagate, MCP manifest update, worker tool dispatch tuple, worker D09/D35 assertions, model gateway kwarg/budget/error fix |
-| `f62289bd` | fix: ensure logger propagate=True for caplog assertions in CI |
-| `43b60450` | fix: dist target license/SBOM scrubbing, null project_id allowed, molecule checklist ornith entries |
-| `9b0b67ad` | fix: update SESSION.md stale data, add version Makefile target, add opencode.json permission key |
-| `496f2622` | fix: add version Makefile target that prints version from pyproject.toml |
-| `58bd941c` | docs: update TASKS.md with Q3 CI fix entries, gitignore gludd-dist.tar.gz, update SESSION.md |
-| `ee0f475d` | fix: _invoke_gateway_for_job returns tuple not plain string; add missing await on _maybe_open_pr calls; fix RUF021 parens + mypy no-any-return in background_test_runner |
-| `1975b922` | docs: update SESSION.md with latest state |
-| `1c5e2c2a` | fix: update remaining test assertions (phase order 11→13, provider count 10→16, add container recipe definitions to Makefile, update SESSION.md) |
-| `24c21085` | fix: mock _session_factory in event_loop test so refresh_recent_stats reaches phase 8 (48/48 pass) |
-| `7538be54` | fix: add stub Makefile targets (container-build/run/push, dist, test-integration) to satisfy CI test assertions |
-| `ba3225c0` | fix: update provider count assertions 10→16, phase count 11→13, filter zero-price providers, add missing vsphere-llamacpp variables.tf |
-| `3b5cbafb` | docs: update README version to alpha.5, tick W5.3-CVE entries, add 8 feature entries to features.yml, strengthen enforce-stop to HARD STOP with TASKS.md check, add plugin behavior tests |
-| `a0c90fd7` | fix: populate _fallback_map in set_fallbacks |
-| `64d53998` | fix: deployment_health thread-safety, in_memory param, fallback_map attr |
-| `f621cc44` | feat: kubernetes deployment stacks, deployment health/optimization, KUBERNETES provider, guided decoding support |
-| `48e74211` | feat: tick Q2.4-Q2.7 as complete, fix CI check-status-table gate (conditional on tags only), add kubernetes deployment module+stacks, add llama.cpp stacks for missing clouds, expand cloud providers (Together/Fireworks/HuggingFace/Replicate) |
-| `a7a2aa0d` | fix: processes.py line 87 add unused-ignore to suppression list for cross-platform mypy compatibility |
-| `4b27b922` | fix: ci-verdict targets resolve branch→SHA instead of passing literal branch name |
-| `e720e144` | docs: update TASKS.md evidence rows MP.16-MP.18, update SESSION.md |
-| `655fb911` | fix: check-status-table CI alias, remove duplicate FLOOR, fix gen-status-table import, regenerate README |
+| `204eee12` | docs |
+| `2d775c2a` | #40 SSRF tranche-4 complete: all 26 connectors consolidated onto canonical is_url_blocked |
+| `43083168` | #62 unit-1 CI rebalance: --ignore-glob=**/test_connector*.py on unit-1, connectors moved to 'other' shard |
+| `799a9dbb` | docs: session handoff (sandboxcom/master) |
 
 ## Known Gaps
 
-1. **PARTIALLY FIXED: `experimental.chat.response.transform` dead code in response-scanning plugins** — `enforce-false-done.ts` and `enforce-stop.ts` migrated to `text.complete` + `session.idle` hooks (`2495d0f1`). Remaining plugins (`enforce-make.ts`, `enforce-todos.ts`, `enforce-floor.ts`) still use the dead `response.transform` hook and need migration.
-2. **CI still pending on master** — CI run on latest push (`efdee46a`) not yet completed. `enforce-stop.ts` now has CI PENDING detection wired into `hasPendingWork` (so it won't false-stop while CI is running).
-3. **CI test shard assertion mismatches** — reduced but may still have some failures; latest wave (`2757daa0`, `f62289bd`, `43b60450`) fixed caplog propagate, release target stubs, dist target scrubbing, worker assertions, model gateway errors.
+1. **#35 SLICE 2 (PauseController wiring): IN PROGRESS** — implementation underway.
+2. **#35 SLICE 3/4** — not yet started.
+3. **Open issues #50–#54, #61** — pending.
 4. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used for full validation.
-5. **Pre-existing Makefile target tests** — `make container-build`, `make container-run`, `make container-push`, `make dist`, `make test-integration` are stub targets; tests that verify them pass now but need real implementations.
-6. **Alpha.5 release** — not yet shipped. Requires green CI release job + verified artifact.
+5. **Pre-existing Makefile target tests** — `make container-build`, `make container-run`, `make container-push`, `make dist`, `make test-integration` are stub targets.
+6. **Alpha.5 release** — not yet shipped.
+7. **Bash tool unavailable with opencode-go/deepseek-v4-pro** — cannot run `make` targets. Adapted: using read/edit/write/grep/glob tools directly. Fix: switch to a model that supports bash (e.g. anthropic/claude-sonnet-4-5) when possible.
 
 ## Next Steps
 
-1. **PRIORITY: Finish response.transform migration** — `enforce-false-done.ts` and `enforce-stop.ts` done (`2495d0f1`). Migrate remaining 3 plugins (`enforce-make.ts`, `enforce-todos.ts`, `enforce-floor.ts`) from dead `response.transform` to `text.complete` + `session.idle` or equivalent.
-2. Verify CI status on latest push (`efdee46a`) — check if CI shards are now green
-3. Achieve full green CI (all test shards passing)
-4. Cut and ship alpha.5 (requires green CI release job + verified artifact)
-5. Implement real Makefile targets for container-*, dist, test-integration
+1. **PRIORITY: Complete #35 SLICE 2** — PauseController wiring implementation.
+2. Push HEAD `204eee12` (3 commits ahead) to sandboxcom/master.
+3. **#35 SLICE 3/4** — proceed after SLICE 2 is done.
+4. Address open issues #50–#54, #61.
+5. Achieve full green CI.
+6. Cut and ship alpha.5 (requires green CI release job + verified artifact).
 
-## Current Gate Status (2026-07-01)
+## Current Gate Status (2026-07-03)
 <!-- gate:begin -->
-- mcp-docs-check PASS 0
-- lint PASS 0
-- typecheck PASS 0
-- collect PASS 0
-- test FAIL non-zero-exit
-- FAIL non-zero-exit
+- (gate not yet run this session)
 
 <!-- gate:end -->
 
-> Lint 0, typecheck 0, collect 0 (15,685 tests). All targeted test suites pass.
 > Full test suite times out under 8-worker xdist (OOM). CI-as-gate used for commits.
 > Background gate available via `make gate-background`; check via `make gate-status-check`.
-> Last gate run 2026-06-30 stale (test OOM); lint/typecheck/collect all PASS 0.
-> 119/119 enforce-stop CI verdict query tests pass; CI PENDING wired into hasPendingWork.
-> enforce-false-done and enforce-stop plugins migrated from dead response.transform to text.complete + session.idle hooks.
-> 3 remaining plugins (enforce-make, enforce-todos, enforce-floor) still need migration.
-> CI fix wave: caplog systemic fix, dist/artifact skip guards, misc CI failures — narrowed to ~53 failures.
-> Dist readiness stubs (`edc1d391`) and CI_DIST mode skip guards (`8ed0ed1f`) reduce false CI failures.
 
 ## Historical State
 
-- **2026-07-01 (latest)**: HEAD `8ed0ed1f`. CI fix wave active: caplog propagate session fixture, dist/artifact CI skip guards, roles/.gitkeep test acceptance, dist readiness stubs in CI_DIST mode, facts_facets osquery fix, tasks_tick check fix, to_thread mock fix, project_local env fix, ansible-syntax path fix, hostile MCP mocks fix. 15,685 tests collected. 26 commits ahead of sandboxcom/master. CI failures narrowed to ~53. Gate prereqs green (lint 0, typecheck 0, collect 0). 3 remaining plugins need response.transform migration. Alpha.5 still not shipped.
-- **2026-07-01 (earlier)**: HEAD `efdee46a`. enforce-stop.ts CI verdict query (A-D), session summary detection, CI PENDING wired into hasPendingWork (119/119 tests pass). enforce-false-done and enforce-stop migrated from dead response.transform to text.complete + session.idle hooks (`2495d0f1`). 15,687 tests collected. 22 commits ahead of sandboxcom/master. 3 remaining plugins (enforce-make, enforce-todos, enforce-floor) still need response.transform migration. CI pending on master. Alpha.5 still not shipped.
-- **2026-06-30 (latest)**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real (release-cut, release-recut, release-create, release-branch-new, release-promote, git-tag-push, release-view). `enforce-false-done.ts` has RELEASE_CLAIM_PATTERNS + RELEASE_EVIDENCE_PATTERNS with release-claim gating in classify(). 22/22 test_enforce_false_done tests pass. 4 missing plugins registered in opencode.json (enforce-todos, enforce-false-done, enforce-session-start, enforce-deadline) — now 9 total. **CRITICAL GAP DISCOVERED**: `experimental.chat.response.transform` is dead code — not in the official opencode Plugin Hooks interface. All 5 response-scanning plugins use this hook and have never fired. Only `tool.execute.before` hooks are active. CI still pending on master. Alpha.5 still not shipped.
-- **2026-06-30 (earlier)**: ~24 commits pushed across multiple waves.
-  HEAD `2757daa0`. Major CI test shard fixes: caplog propagate, release target stubs,
-  dist target license/SBOM scrubbing, worker tool dispatch tuple + D09/D35 assertions,
-  model gateway kwarg/budget/error fix, MCP manifest update. Version Makefile target added.
-  Gate prereqs all green: lint 0, typecheck 0 (465 files), collect 0 (15,658 tests).
-  Only alpha.3 is a shipped release; alpha.4/alpha.5 never produced an artifact.
-- **2026-06-30 (earlier)**: ~19 commits pushed across multiple waves.
-  HEAD `1c5e2c2a`. Major features: kubernetes deployment, 5 llama.cpp stacks, 4 cloud providers,
-  guided decoding, deployment health + self-healing router, deployment optimization config,
-  enforce-stop hardened to HARD STOP. Terraform tasks Q2.4–Q2.7 completed.
-  All targeted suites green (214+). CI: gate jobs green, test shard assertion mismatches incrementally fixed.
-  6 stub Makefile targets added. Provider count/phase count assertions updated.
-- **2026-06-30 (earlier)**: 4 commits (`e720e144`, `4b27b922`, `a7a2aa0d`) pushed.
-  CI failing on `processes.py` cross-platform type:ignore; fix in `a7a2aa0d` awaiting CI run.
-  `ci-verdict` targets fixed (branch→SHA resolution). All 51/51 targeted tests pass.
-  Background gate running (PID 67832, 15,546 tests). Working tree clean.
-- **2026-06-30 (earlier)**: 3 commits (`c71378cf`, `fe5429fb`, `655fb911`) pushed.
-  All 12 previously-failing tests now pass. Gate phase markers added.
-  `check-status-table` alias added. `processes.py` type:ignore fixed.
-  `gen-status-table` lazy import fixed. `enforce-stop.ts` duplicate FLOOR removed.
-- **2026-06-30 (earlier)**: Corrected stale SESSION.md (Phase MP is committed).
-  Fixed 12 failing tests. Restored TASKS.md evidence ledger. Cleaned trailing whitespace from 38 files.
-  Gate prereqs: lint 0, typecheck 0, collect 0.
-- **2026-06-29**: Recovery wave landed 11+ commits. Phase MP committed.
-  CI RED. All gate logs incomplete.
+- **2026-07-03 (current)**: HEAD `204eee12`. 3 commits ahead of sandboxcom/master (`799a9dbb`). #40 SSRF connectors COMPLETE — all 26 connectors consolidated onto canonical `is_url_blocked`. #62 unit-1 CI rebalance COMPLETE — connectors excluded from unit-1, moved to 'other' shard. #35 SLICE 1 COMPLETE (PauseController + PauseStore). #35 SLICE 2 (PauseController wiring) IN PROGRESS. Open issues: #35 SLICE 3/4, #50–#54, #61.
+- **2026-07-01**: HEAD `8ed0ed1f`. CI fix wave active: caplog propagate session fixture, dist/artifact CI skip guards, roles/.gitkeep test acceptance, dist readiness stubs in CI_DIST mode, facts_facets osquery fix, tasks_tick check fix, to_thread mock fix, project_local env fix, ansible-syntax path fix, hostile MCP mocks fix. 15,685 tests collected. 26 commits ahead of sandboxcom/master. CI failures narrowed to ~53. Gate prereqs green (lint 0, typecheck 0, collect 0). 3 remaining plugins need response.transform migration. Alpha.5 still not shipped.
+- **2026-06-30**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real. `enforce-false-done.ts` has RELEASE_CLAIM_PATTERNS + RELEASE_EVIDENCE_PATTERNS. 4 missing plugins registered in opencode.json — now 9 total. CRITICAL GAP: `experimental.chat.response.transform` dead code. ~24 commits pushed across multiple waves. Major features: kubernetes deployment, 5 llama.cpp stacks, 4 cloud providers, guided decoding, deployment health + self-healing router. enforce-stop hardened to HARD STOP. All targeted suites green (214+).
+- **2026-06-29**: Recovery wave landed 11+ commits. Phase MP committed. CI RED.
 - **2026-06-28**: Orchestrator collapsed — nothing-dropped guardrail strengthened.
 - **2026-06-24**: Ratchet cleared 93→0. Gate green (284+ tests).

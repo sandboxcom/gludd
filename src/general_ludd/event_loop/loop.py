@@ -241,6 +241,7 @@ class EventLoop:
         model_gateway: Any | None = None,
         dispatcher: Any | None = None,
         loc_ledger: Any | None = None,
+        pause_controller: Any | None = None,
         spend_limiter: Any | None = None,
         file_claim_registry: Any | None = None,
         ansible_env_updater: Any | None = None,
@@ -258,6 +259,7 @@ class EventLoop:
         self._model_gateway = model_gateway
         self._dispatcher = dispatcher
         self._spend_limiter = spend_limiter  # may be overwritten post-construction by the daemon
+        self._pause_controller = pause_controller
         self._stuck_timeout_minutes = 15
         self._max_retries = 3
         if isinstance(session, async_sessionmaker):
@@ -1040,6 +1042,14 @@ class EventLoop:
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
+        if (
+            self._pause_controller is not None
+            and self._tick_project_id is not None
+            and self._pause_controller.is_paused("project", self._tick_project_id)
+        ):
+                logger.info("Project %s is paused — skipping claim", self._tick_project_id)
+                self._tick_state["claimed_todos"] = []
+                return
         project_id = self._tick_project_id
         if project_id is not None:
             claimed = await self._todo_repo.claim_runnable(project_id=project_id)

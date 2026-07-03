@@ -7,8 +7,20 @@ import pytest
 
 from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask, _noop_executor
 from general_ludd.agents.registry import AgentRegistry
-from general_ludd.agents.types import AgentConfig, AgentType
+from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
 from general_ludd.models.gateway import ModelGateway, ModelProfile, ModelResponse
+
+
+def _register_invoker(reg: AgentRegistry, name: str = "build") -> str:
+    """Register a PRIMARY invoker permitted to dispatch any target. Required now
+    that the dispatcher fails CLOSED on an empty invoker_name (task #50)."""
+    reg.register(AgentConfig(
+        name=name,
+        type=AgentType.PRIMARY,
+        description="d",
+        permissions=AgentPermission(can_dispatch_subagents=True, allowed_subagents=["*"]),
+    ))
+    return name
 
 
 class TestGatewayBackedExecutor:
@@ -36,6 +48,7 @@ class TestGatewayBackedExecutor:
     async def test_dispatcher_with_gateway_executor(self):
         reg = AgentRegistry()
         reg.register(AgentConfig(name="g", type=AgentType.SUBAGENT, description="d"))
+        invoker = _register_invoker(reg)
         gw = ModelGateway(profiles=[ModelProfile(
             model_profile_id="m1", provider="openai",
             provider_package="lp", provider_class_hint="COAI",
@@ -51,7 +64,7 @@ class TestGatewayBackedExecutor:
             return r.content
         d = AgentDispatcher(registry=reg, executor=ex)
         r = await d.dispatch_one(AgentTask(
-            task_id="t3", agent_name="g", description="d", prompt="p",
+            task_id="t3", agent_name="g", description="d", prompt="p", invoker_name=invoker,
         ))
         assert r.status == "completed"
         assert r.output == "result"
@@ -60,9 +73,10 @@ class TestGatewayBackedExecutor:
     async def test_dispatcher_falls_back_to_noop(self):
         reg = AgentRegistry()
         reg.register(AgentConfig(name="g", type=AgentType.SUBAGENT, description="d"))
+        invoker = _register_invoker(reg)
         d = AgentDispatcher(registry=reg)
         r = await d.dispatch_one(AgentTask(
-            task_id="t4", agent_name="g", description="d", prompt="p",
+            task_id="t4", agent_name="g", description="d", prompt="p", invoker_name=invoker,
         ))
         assert r.status == "completed"
         assert r.output == ""
