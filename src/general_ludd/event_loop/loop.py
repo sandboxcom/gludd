@@ -1929,6 +1929,14 @@ class EventLoop:
                     _trace = ExecutionTrace(
                         todo_id=_safe_str(todo, "todo_id", "") or "",
                         work_type=work_type,
+                        # Tenant attribution (task #19): carry the project this
+                        # todo belongs to so the trace is visible to
+                        # project-scoped /api/traces callers. Without it every
+                        # real trace records project_id=None and is EXCLUDED by
+                        # the tenant-boundary filter in
+                        # RecentTracesBuffer.recent()/snapshot(). None stays
+                        # valid for genuinely project-less traces.
+                        project_id=project_id_val,
                     )
                     _span = _trace.start_span(name="model_generation", phase="generate")
                     _span.complete(

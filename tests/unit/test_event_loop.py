@@ -175,6 +175,107 @@ class TestEventLoop:
         assert recent[0].work_type == "code"
 
     @pytest.mark.asyncio
+    async def test_dispatch_execute_job_attributes_project_id_to_trace(self):
+        """A generation dispatch for a project todo must stamp the trace's project_id.
+
+        Task #19 tenant-attribution regression: the EventLoop built the
+        ExecutionTrace with NO project_id, so every real trace recorded
+        project_id=None and was EXCLUDED by the tenant-boundary filter in
+        RecentTracesBuffer.recent()/snapshot(). A project-scoped /api/traces
+        caller therefore saw none of its own traces. This asserts the trace now
+        carries the todo's project_id AND that a scoped read includes it while a
+        different project's scoped read excludes it.
+        """
+        from general_ludd.observability.recorder import AutoBenchmarkRecorder
+        from general_ludd.observability.trace_store import RecentTracesBuffer
+
+        buffer = RecentTracesBuffer()
+        recorder = AutoBenchmarkRecorder(benchmark_repo=None, trace_buffer=buffer)
+
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/exec-trace-proj-test"}
+
+        loop, _ = _make_loop(runner=runner, model_gateway=MagicMock())
+        loop._benchmark_recorder = recorder
+
+        todo = Todo(
+            title="generate a thing",
+            description="please",
+            status=TodoStatus.ACTIVE,
+            work_type="code",
+            project_id="proj-alpha",
+        )
+
+        with patch(
+            "general_ludd.event_loop.loop.invoke_model_for_generation",
+            return_value=("GENERATED OUTPUT", None),
+        ):
+            await loop._dispatch_execute_job(todo)
+
+        # Drain the fire-and-forget background tasks (record_from_trace runs in one).
+        for _t in list(loop._background_tasks):
+            await _t
+
+        # 1) The recorded ExecutionTrace carries the todo's project_id.
+        recent = buffer.recent()
+        assert recent, "trace buffer must have captured a trace"
+        assert recent[0].project_id == "proj-alpha"
+
+        # 2) A project-scoped read INCLUDES the trace (previously excluded).
+        scoped = buffer.snapshot(project_id="proj-alpha")
+        assert scoped["count"] > 0
+        assert all(
+            r["project_id"] == "proj-alpha" for r in scoped["recent"]
+        ), scoped["recent"]
+
+        # 3) A DIFFERENT project's scoped read EXCLUDES the trace (tenant boundary).
+        other = buffer.snapshot(project_id="proj-beta")
+        assert other["count"] == 0, other["recent"]
+
+    @pytest.mark.asyncio
+    async def test_dispatch_execute_job_trace_project_none_when_unscoped(self):
+        """Regression: a todo with no project still records a trace with project_id None.
+
+        None stays valid for genuinely project-less traces — an unscoped/global
+        caller still sees it, but a scoped caller does not.
+        """
+        from general_ludd.observability.recorder import AutoBenchmarkRecorder
+        from general_ludd.observability.trace_store import RecentTracesBuffer
+
+        buffer = RecentTracesBuffer()
+        recorder = AutoBenchmarkRecorder(benchmark_repo=None, trace_buffer=buffer)
+
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/exec-trace-none-test"}
+
+        loop, _ = _make_loop(runner=runner, model_gateway=MagicMock())
+        loop._benchmark_recorder = recorder
+
+        todo = Todo(
+            title="generate a thing",
+            description="please",
+            status=TodoStatus.ACTIVE,
+            work_type="code",
+        )  # no project_id
+
+        with patch(
+            "general_ludd.event_loop.loop.invoke_model_for_generation",
+            return_value=("GENERATED OUTPUT", None),
+        ):
+            await loop._dispatch_execute_job(todo)
+
+        for _t in list(loop._background_tasks):
+            await _t
+
+        recent = buffer.recent()
+        assert recent, "trace buffer must have captured a trace"
+        assert recent[0].project_id is None
+        # Unscoped/global caller still sees the None-project trace.
+        assert buffer.snapshot()["count"] > 0
+        # A scoped caller does NOT see the unattributed trace.
+        assert buffer.snapshot(project_id="proj-alpha")["count"] == 0
+
+    @pytest.mark.asyncio
     async def test_event_loop_claims_runnable_todos(self):
         loop, mocks = _make_loop()
         queued = Todo(title="queued", status=TodoStatus.QUEUED)
