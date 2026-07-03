@@ -891,10 +891,13 @@ sections:
 
       - id: tool-call-auditor
         title: "ToolCallAuditor + PromptEnhancer + BadCallSituationStore (#35 SLICE 3)"
-        pct: 80
+        pct: 100
         evidence_refs:
           - "file:src/general_ludd/execution/tool_auditor.py::ToolCallAuditor"
-        notes: "29+9 tests; BadCallSituationStore with MAC verification; `[e1c2d41a]` `[c273a408]`; test file not committed"
+          - "test:tests/unit/test_tool_auditor.py"
+          - "test:tests/unit/test_situation_store.py"
+          - "test:tests/unit/test_prompt_enhancer.py"
+        notes: "21+10+8 tests passed; all green; `[e1c2d41a]` `[c273a408]`"
 
       - id: session-start-plugin
         title: "Session-start orchestration plugin: parallel-reads-then-dispatch contract enforced (Q2.1-Q2.3)"

@@ -146,7 +146,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Model routing roles + weights (`routing_roles/`) | ✓ 25% | **PASS** *(file-refs only)*: worktree-only; `model_weights/` absent; 7/10 weight pairs diverge; `[audit]` |
 | BenchmarkResult `task_role` field (P1) | ✓ 100% | **PASS** *(file-refs only)*: `task_role` field added to BenchmarkResult; `[audit resolved]` |
 | BERT/embeddings search verb (similar / compare / search) | ✓ 85% | **PASS** *(file-refs only)*: `[79a84d1]`/`[c4613eb]`/`[ad14a8a]`; −15% v1-only corpora; NEW 2026-06-25 |
-| `model_weights/` package (seed_data.json, schema, store, loader) | ✗ 100% | **PENDING** *(file-refs only)*: package landed with seed_data.json, schema, store, loader; `[audit resolved]` |
+| `model_weights/` package (seed_data.json, schema, store, loader) | ~ 100% | **PARTIAL** *(file-refs only)*: package landed with seed_data.json, schema, store, loader; `[audit resolved]` |
 
 ### Connectors / Observability
 
@@ -231,7 +231,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | PauseController: wired into ModelGateway + EventLoop + daemon (#35 SLICE 2-4) | ~ 100% | **PARTIAL** *(file-refs only)*: ModelPausedError gate in ModelGateway; EventLoop claim gate skips paused projects; quiesce_project dehydrates in-flight agents; pause/resume API router; `[97c89082]` `[2fa2d919]` `[8a5ebe57]` |
 | AgentDispatcher pause gate: blocked dispatch for paused projects (#51) | ✓ 100% | **PASS** *(file-refs only)*: pause_controller.is_paused → dispatch denied with 'blocked' reason; 8 tests; `[2fa2d919]` |
 | Push livelock escape: retry counter + exponential backoff (#53) | ✓ 100% | **PASS** *(file-refs only)*: MAX_PUSH_RETRIES=5, independent per-todo counters, BLOCKED transition; 2 tests; `[2fa2d919]` |
-| ToolCallAuditor + PromptEnhancer + BadCallSituationStore (#35 SLICE 3) | ✓ 80% | **PASS** *(file-refs only)*: 29+9 tests; BadCallSituationStore with MAC verification; `[e1c2d41a]` `[c273a408]`; test file not committed |
+| ToolCallAuditor + PromptEnhancer + BadCallSituationStore (#35 SLICE 3) | ✓ 100% | **PASS** *(file-refs only)*: 21+10+8 tests passed; all green; `[e1c2d41a]` `[c273a408]` |
 | Session-start orchestration plugin: parallel-reads-then-dispatch contract enforced (Q2.1-Q2.3) | ✓ 100% | **PASS** *(file-refs only)*: 🚨 SESSION-START DIRECTIVE injected as first system-prompt block; opt-in hard gate via GLUDD_SESSION_START_ENFORCE; 21 tests; opencode.json registered |
 | Queue-lease concurrency fixes: double-dispatch prevention, priority ordering, orphan-lease cleanup, expires_at index (Q.F1-F4) | ✓ 100% | **PASS** *(file-refs only)*: F1 reclaim skip on live lease, F2 priority DESC ordering, F3 lease-row delete on PID-cap release, F4 alembic migration 011; `[4e13936]` `[6e684b4]` `[bba8c92]` `[14ee691]` |
 | gludd_stream module + /admin/stream/dispatch + 3 operator playbooks + molecule scenarios (S.1-S.7) | ✓ 100% | **PASS** *(file-refs only)*: stream_audio_to_tasks, stream_video_feature_detection, stream_text_log_tail; 3 molecule scenarios; max_dispatches bounded; `[ea2cc7bc]` |
@@ -309,7 +309,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | `resolve()` leaks secret material via `str(exc)` in logs | ✓ 100% | **PASS** *(file-refs only)*: 5 tests: secret values redacted in error logs; `[5cf54f70]` |
 | `SecretAlias` path/mount injection — arbitrary backend path read | ✓ 100% | **PASS** *(file-refs only)*: 33 tests: traversal, command injection, null byte blocked; `[23e167cd]` |
 | Worker workspace leak on failure (no cleanup) | ✓ 100% | **PASS** *(file-refs only)*: already fixed: try/finally with shutil.rmtree in worker/app.py; `[audit]` |
-| `CosignKey.__repr__` leaks private_key + password to logs | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; redacts private key + password; verified 2026-06-25 |
+| `CosignKey.__repr__` leaks private_key + password to logs | ✓ 100% | **PASS** *(file-refs only)*: FIXED on master: `field(repr=False)` on private_key + password; 14 tests across 2 files |
 | `call_model_with_fallback` never checks circuit-breaker health | ✓ 100% | **PASS** *(file-refs only)*: circuit-breaker health check before each fallback model; `[912cfcc3]` |
 | `AgentDispatcher.dispatch_one` never calls `registry.can_invoke` — permission matrix dead | ✓ 100% | **PASS** *(file-refs only)*: FIXED `[a4a2e1a]`; both dispatch sites stamp `invoker_name=build` (`pipeline/daemon_adapters.py:48,82` + `daemon_wiring.py:153`); verified 2026-06-25 |
 | Alembic migration drift: 9 tables created, ORM defines 16+ | ✓ 100% | **PASS** *(file-refs only)*: 4 tests: all 26 ORM tables in migrations, column parity verified; `[9a0d8dd5]` |
