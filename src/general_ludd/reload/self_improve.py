@@ -35,6 +35,12 @@ class SelfImprovementWorkflow:
         # anti-clobber 3-way merge in reload_code_module so a concurrent edit to
         # the live file is never silently reverted.
         self._base_source_path: str | None = None
+        # The sha256 of the exact candidate bytes this workflow produced and
+        # validated. When set, reload_code_module verifies the candidate on disk
+        # hashes to this value BEFORE the swap+reload (fail-closed authenticity
+        # gate, task #20); a tampered/unexpected candidate is refused. None keeps
+        # the legacy verbatim-swap behavior.
+        self._expected_sha256: str | None = None
 
     def set_code_target(
         self,
@@ -42,6 +48,7 @@ class SelfImprovementWorkflow:
         candidate_source_path: str,
         health_check: Callable[[], bool] | None = None,
         base_source_path: str | None = None,
+        expected_sha256: str | None = None,
     ) -> None:
         """Arm a real leaf-module hot-rotation for the next reload_if_needed.
 
@@ -49,10 +56,18 @@ class SelfImprovementWorkflow:
         supplied it activates the anti-clobber 3-way merge so an OVERLAPPING
         concurrent edit refuses the reload (fail-closed) instead of being
         clobbered. Without it the candidate is swapped verbatim (unchanged API).
+
+        ``expected_sha256`` is the digest of the exact candidate bytes this
+        workflow produced/validated; when supplied, reload_code_module verifies
+        the candidate on disk matches it BEFORE any swap or importlib.reload and
+        REFUSES (fail-closed) on mismatch, so a tampered or wrong candidate is
+        never loaded and executed. Without it the candidate is not hash-checked
+        (unchanged API).
         """
         self._code_target = (module_name, candidate_source_path)
         self._health_check = health_check
         self._base_source_path = base_source_path
+        self._expected_sha256 = expected_sha256
 
     def create_improvement_todo(self, title: str, description: str) -> dict[str, Any]:
         todo_id = f"SI-{uuid.uuid4().hex[:8]}"
@@ -129,6 +144,7 @@ class SelfImprovementWorkflow:
                     candidate_source_path=candidate_path,
                     health_check=self._health_check,
                     base_source_path=self._base_source_path,
+                    expected_sha256=self._expected_sha256,
                 )
             except Exception as exc:
                 # reload_code_module rolls back on all of its KNOWN failure

@@ -9,6 +9,7 @@ up exactly as it started.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import sys
 import textwrap
@@ -282,8 +283,10 @@ def test_set_code_target_threads_base_source_path(tmp_path: Path) -> None:
             candidate_source_path: str,
             health_check: object = None,
             base_source_path: object = None,
+            expected_sha256: object = None,
         ) -> object:
             captured["base"] = base_source_path
+            captured["expected_sha256"] = expected_sha256
             return _Verdict()
 
     wf = SelfImprovementWorkflow(config_dir=str(tmp_path / "config"))
@@ -297,3 +300,145 @@ def test_set_code_target_threads_base_source_path(tmp_path: Path) -> None:
 
     assert result.status == "success"
     assert captured["base"] == "/tmp/base.py"
+
+
+# --- Authenticity gate (task #20): candidate hash verification before swap ---
+
+
+def test_reload_verifies_matching_expected_sha256(tmp_path: Path, reloader: HotReloader) -> None:
+    """When the caller pins the correct sha256 of the candidate, the swap +
+    importlib.reload proceed exactly as the unpinned path (regression)."""
+    mod_path, fqmn, mod = _install_live_module(
+        tmp_path,
+        "leafhashok",
+        """
+        def value():
+            return 1
+        """,
+    )
+    assert mod.value() == 1  # type: ignore[attr-defined]
+
+    candidate = tmp_path / "candidate_leafhashok.py"
+    candidate.write_bytes(b"def value():\n    return 2\n")
+    good_hash = hashlib.sha256(candidate.read_bytes()).hexdigest()
+
+    result = reloader.reload_code_module(
+        module_name=fqmn,
+        candidate_source_path=str(candidate),
+        health_check=lambda: True,
+        expected_sha256=good_hash,
+    )
+
+    assert result.success is True
+    assert result.details.get("integrity_verified") is True
+    reloaded = importlib.import_module(fqmn)
+    assert reloaded.value() == 2  # type: ignore[attr-defined]
+    assert mod_path.read_bytes() == candidate.read_bytes()
+
+
+def test_reload_rejects_wrong_expected_sha256_without_touching_live(
+    tmp_path: Path, reloader: HotReloader
+) -> None:
+    """A mismatching expected_sha256 REJECTS the reload fail-closed: no
+    os.replace, no importlib.reload, the live file left byte-for-byte intact."""
+    mod_path, fqmn, _mod = _install_live_module(
+        tmp_path,
+        "leafhashbad",
+        """
+        def value():
+            return 1
+        """,
+    )
+    original_bytes = mod_path.read_bytes()
+
+    # A candidate the attacker/racer swapped in — its real hash does NOT match
+    # the hash the caller expected (the approved candidate).
+    candidate = tmp_path / "candidate_leafhashbad.py"
+    candidate.write_bytes(b"def value():\n    return 999\n")
+    wrong_hash = hashlib.sha256(b"def value():\n    return 2\n").hexdigest()
+
+    result = reloader.reload_code_module(
+        module_name=fqmn,
+        candidate_source_path=str(candidate),
+        health_check=lambda: True,
+        expected_sha256=wrong_hash,
+    )
+
+    assert result.success is False
+    assert "integrity" in (result.error or "").lower()
+    # Fail-closed: nothing swapped, nothing rolled back (never written).
+    assert result.details.get("rolled_back") is False
+    assert result.details.get("integrity_verified") is not True
+    # Live file untouched — the tampered candidate was never loaded/executed.
+    assert mod_path.read_bytes() == original_bytes
+    reloaded = importlib.import_module(fqmn)
+    assert reloaded.value() == 1  # type: ignore[attr-defined]
+
+
+def test_reload_none_expected_sha256_is_backward_compatible(
+    tmp_path: Path, reloader: HotReloader
+) -> None:
+    """expected_sha256=None (the default) preserves the legacy verbatim-swap
+    behavior — no hash check is performed and the candidate is applied."""
+    mod_path, fqmn, mod = _install_live_module(
+        tmp_path,
+        "leafhashnone",
+        """
+        def value():
+            return 1
+        """,
+    )
+    assert mod.value() == 1  # type: ignore[attr-defined]
+
+    candidate = tmp_path / "candidate_leafhashnone.py"
+    candidate.write_bytes(b"def value():\n    return 3\n")
+
+    result = reloader.reload_code_module(
+        module_name=fqmn,
+        candidate_source_path=str(candidate),
+        health_check=lambda: True,
+        expected_sha256=None,
+    )
+
+    assert result.success is True
+    assert "integrity_verified" not in result.details
+    reloaded = importlib.import_module(fqmn)
+    assert reloaded.value() == 3  # type: ignore[attr-defined]
+    assert mod_path.read_bytes() == candidate.read_bytes()
+
+
+def test_workflow_threads_expected_sha256_to_reloader(tmp_path: Path) -> None:
+    """set_code_target(expected_sha256=...) reaches reload_code_module so the
+    self-improve workflow can pin the approved candidate hash."""
+    from general_ludd.reload.self_improve import ApplyResult, SelfImprovementWorkflow
+
+    captured: dict[str, object] = {}
+
+    class _Verdict:
+        def __init__(self) -> None:
+            self.success = True
+            self.error = None
+            self.details: dict[str, object] = {}
+
+    class _SpyReloader:
+        def reload_code_module(
+            self,
+            *,
+            module_name: str,
+            candidate_source_path: str,
+            health_check: object = None,
+            base_source_path: object = None,
+            expected_sha256: object = None,
+        ) -> object:
+            captured["expected_sha256"] = expected_sha256
+            return _Verdict()
+
+    wf = SelfImprovementWorkflow(config_dir=str(tmp_path / "config"))
+    wf._hot_reloader = _SpyReloader()  # type: ignore[assignment]
+    wf.set_code_target("m", "/tmp/cand.py", health_check=lambda: True, expected_sha256="abc123")
+    ar = ApplyResult(todo_id="SI-h", applied=True, reload_needed=True, validation_passed=True)
+
+    result = wf.reload_if_needed(ar)
+
+    assert result.status == "success"
+    assert captured["expected_sha256"] == "abc123"

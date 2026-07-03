@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import enum
+import hashlib
+import hmac
 import importlib
 import logging
 import os
@@ -119,6 +121,7 @@ class HotReloader:
         health_check: Callable[[], bool] | None = None,
         role: str | None = None,
         base_source_path: str | None = None,
+        expected_sha256: str | None = None,
     ) -> ReloadResult:
         """Hot-rotate a single leaf module's source over the live file.
 
@@ -132,6 +135,15 @@ class HotReloader:
              already-imported, file-backed module is eligible (a leaf with no
              in-flight state — the caller is responsible for that contract).
           2. Snapshot the live file bytes into a rollback buffer.
+          2b. AUTHENTICITY (task #20): when the caller supplies
+             ``expected_sha256`` — the digest of the exact candidate bytes it
+             produced/approved — VERIFY the candidate's on-disk bytes hash to
+             that value BEFORE any swap or ``importlib.reload``. A tampered,
+             swapped, wrong-path, or corrupted candidate is REJECTED fail-closed
+             here, so untrusted code is never written over the live file nor
+             executed. Constant-time hex compare (no timing oracle). When
+             ``expected_sha256`` is ``None`` the check is skipped and behavior
+             is unchanged (backward compatible).
           2a. ANTI-CLOBBER (issue #70): when ``base_source_path`` — the snapshot
              the candidate was generated against — is supplied, route the
              file-application through :mod:`integration.safe_merge` instead of a
@@ -213,6 +225,27 @@ class HotReloader:
             return self._code_reload_failure(
                 scope, details, f"cannot read candidate bytes: {exc}"
             )
+
+        # Authenticity gate (task #20). When the caller pins the expected sha256
+        # of the candidate it generated, VERIFY the candidate's actual on-disk
+        # bytes match BEFORE writing anything or reloading. This runs on the
+        # candidate as-read — a race that rewrote the temp candidate, a wrong
+        # candidate path, or a corrupted generation is caught here and REFUSED
+        # rather than swapped in and executed. Constant-time compare over the
+        # normalized hex digest avoids leaking a partial-match timing oracle.
+        # No expected hash supplied -> skipped (unchanged legacy behavior).
+        if expected_sha256 is not None:
+            actual_sha256 = hashlib.sha256(candidate_bytes).hexdigest()
+            details["candidate_sha256"] = actual_sha256
+            if not hmac.compare_digest(actual_sha256, expected_sha256.strip().lower()):
+                return self._code_reload_failure(
+                    scope,
+                    details,
+                    "candidate integrity check failed: sha256 mismatch "
+                    f"(expected {expected_sha256}, got {actual_sha256}) — "
+                    "refusing to swap or reload an unverified candidate",
+                )
+            details["integrity_verified"] = True
 
         resolved_bytes = self._resolve_apply_bytes(
             scope,
