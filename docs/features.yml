@@ -1312,7 +1312,9 @@ sections:
         pct: 100
         evidence_refs:
           - "file:src/general_ludd/secrets/cosign.py::CosignKey"
-        notes: "FIXED on `feature/alpha4-green-the-gate`; redacts private key + password; verified 2026-06-25"
+          - "test:tests/unit/test_cosign_key_repr.py"
+          - "test:tests/unit/test_cosign_repr_security.py"
+        notes: "FIXED on master: `field(repr=False)` on private_key + password; 14 tests across 2 files"
 
       - id: sf-circuit-breaker-health
         title: "`call_model_with_fallback` never checks circuit-breaker health"
