@@ -123,15 +123,25 @@ class TestContractSurface:
             GraylogSource({"base_url": "https://graylog.example.com"}, transport=_make_transport(), env={})
 
     def test_no_imports_from_general_ludd_base(self) -> None:
-        """The module must be self-contained (no base/__init__/sibling imports)."""
+        """No base-class / __init__ / sibling-connector imports.
+
+        The connector stays self-contained EXCEPT for the one canonical shared
+        SSRF guard (``general_ludd.security.ssrf``) — the single source of truth
+        every guard must funnel through so blocklists cannot drift. Any other
+        ``general_ludd`` import (a base class or a sibling connector) is still
+        forbidden.
+        """
         import general_ludd.connectors.graylog as mod
 
         src = mod.__file__ or ""
         with open(src, encoding="utf-8") as fh:
             text = fh.read()
-        # Only stdlib + lazy httpx; no cross-connector / base-class imports.
-        assert "import general_ludd" not in text
-        assert "from general_ludd" not in text
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(("import general_ludd", "from general_ludd")):
+                assert "general_ludd.security.ssrf" in stripped, (
+                    f"unexpected general_ludd import: {stripped!r}"
+                )
 
 
 # --------------------------------------------------------------------------- #
@@ -344,9 +354,12 @@ class TestSSRFGuard:
             "http://10.0.0.5",
             "http://172.16.0.1",
             "http://192.168.1.10",
-            "http://169.254.169.254",  # cloud metadata
+            "http://169.254.169.254",  # cloud metadata IP
             "http://169.254.0.1",  # link-local
             "http://0.0.0.0",
+            # Metadata NAME coverage added by the canonical shared guard.
+            "http://metadata.google.internal/",
+            "http://metadata/",
         ],
     )
     def test_internal_base_url_rejected(self, base_url: str) -> None:

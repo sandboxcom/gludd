@@ -149,9 +149,16 @@ def test_no_auth_header_when_env_missing() -> None:
     [
         "http://127.0.0.1",
         "https://10.1.2.3",
-        "http://169.254.169.254",
+        "http://169.254.169.254",  # cloud metadata IP (regression)
         "https://172.16.0.1",
         "http://[fe80::1]",
+        # Named-host holes now closed by routing through the canonical guard —
+        # the old IP-literal-only check let these through (real SSRF hole).
+        "http://localhost/",
+        "https://localhost:8080/",
+        "http://metadata.google.internal/",
+        "http://metadata/",
+        "http://instance-data/",
     ],
 )
 def test_internal_base_url_rejected(bad_url: str) -> None:

@@ -23,13 +23,14 @@ record is emitted per dps point.
 from __future__ import annotations
 
 import base64
-import ipaddress
 import json
 import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Protocol, runtime_checkable
+
+from general_ludd.security.ssrf import is_url_blocked
 
 KIND = "metrics"
 
@@ -81,32 +82,22 @@ class SSRFError(ValueError):
     """Raised when ``base_url`` resolves to a private/loopback host."""
 
 
-def _is_private_host(host: str) -> bool:
-    """True if ``host`` is a literal private/loopback/link-local/reserved IP."""
-    candidate = host.strip("[]")
-    try:
-        ip = ipaddress.ip_address(candidate)
-    except ValueError:
-        return host.lower() in {"localhost", "localhost.localdomain"}
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-        or ip.is_multicast
-    )
-
-
 def _guard_base_url(base_url: str, allow_private: bool) -> str:
-    """Validate scheme + SSRF policy; return a normalized base_url (no trailing /)."""
+    """Validate scheme + SSRF policy; return a normalized base_url (no trailing /).
+
+    The private/loopback + cloud-metadata NAME decision (localhost,
+    metadata.google.internal, ...) is delegated to the canonical shared guard
+    :func:`general_ludd.security.ssrf.is_url_blocked` so this connector cannot
+    drift weaker than the single source of truth. Private hosts remain opt-in
+    via ``allow_private``.
+    """
     parsed = urllib.parse.urlparse(base_url)
     if parsed.scheme not in {"http", "https"}:
         raise SSRFError(f"unsupported scheme: {parsed.scheme!r}")
     host = parsed.hostname or ""
     if not host:
         raise SSRFError("base_url has no host")
-    if not allow_private and _is_private_host(host):
+    if not allow_private and is_url_blocked(base_url):
         raise SSRFError(f"refusing private/loopback host: {host!r} (set allow_private=True)")
     return base_url.rstrip("/")
 

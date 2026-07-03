@@ -22,11 +22,12 @@ Contract
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 KIND = "metrics"
 
@@ -57,26 +58,16 @@ class SSRFError(ValueError):
     """Raised when ``base_url`` points at a blocked internal literal host."""
 
 
-def _is_blocked_ip(host: str) -> bool:
-    candidate = host.strip()
-    if candidate.startswith("[") and candidate.endswith("]"):
-        candidate = candidate[1:-1]
-    try:
-        ip = ipaddress.ip_address(candidate)
-    except ValueError:
-        return False
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
-
 def _validate_base_url(base_url: str) -> str:
-    """Fail-closed SSRF guard on a base URL's literal host."""
+    """Fail-closed SSRF guard on a base URL's literal host.
+
+    Delegates the private/loopback/link-local/reserved *and* the cloud-metadata
+    NAME decision (localhost, metadata.google.internal, ...) to the canonical
+    shared guard :func:`general_ludd.security.ssrf.is_url_blocked`, so this
+    connector can never drift weaker than the single source of truth. Zabbix has
+    no ``allow_private`` opt-in — internal literals and metadata names are always
+    rejected.
+    """
     if not isinstance(base_url, str) or not base_url:
         raise SSRFError("base_url must be a non-empty string")
     parts = urlsplit(base_url)
@@ -85,7 +76,7 @@ def _validate_base_url(base_url: str) -> str:
     host = parts.hostname
     if not host:
         raise SSRFError(f"base_url has no host: {base_url!r}")
-    if _is_blocked_ip(host):
+    if is_url_blocked(base_url):
         raise SSRFError(f"base_url host {host!r} is a blocked internal address")
     return base_url.rstrip("/")
 

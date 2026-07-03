@@ -89,8 +89,10 @@ def test_has_name_attr() -> None:
         "http://10.1.2.3:9100",
         "http://192.168.1.1/metrics",
         "http://172.16.0.9:9100",
-        "http://169.254.169.254/latest/meta-data",  # cloud metadata
+        "http://169.254.169.254/latest/meta-data",  # cloud metadata IP
         "http://[::1]:9100",
+        # Metadata NAME coverage added by routing through the canonical guard.
+        "http://metadata.google.internal/metrics",
     ],
 )
 def test_private_base_rejected_without_optin(url: str) -> None:
@@ -102,6 +104,15 @@ def test_private_base_allowed_with_optin() -> None:
     # allow_private=True opts into internal exporters (the common case).
     src = PromScrapeSource(
         {"base_url": "http://10.0.0.5:9100", "allow_private": True},
+        transport=_FakeTransport(_Resp(200, "")),
+    )
+    assert src is not None
+
+
+def test_localhost_allowed_with_optin() -> None:
+    # allow_private=True must also permit a named loopback host (localhost).
+    src = PromScrapeSource(
+        {"base_url": "http://localhost:9100", "allow_private": True},
         transport=_FakeTransport(_Resp(200, "")),
     )
     assert src is not None

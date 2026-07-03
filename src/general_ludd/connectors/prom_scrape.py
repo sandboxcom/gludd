@@ -21,7 +21,6 @@ Design constraints (see connector contract):
 
 from __future__ import annotations
 
-import ipaddress
 import math
 import os
 import time
@@ -30,10 +29,11 @@ import urllib.request
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.security.ssrf import is_url_blocked
+
 __all__ = ["PromScrapeSource"]
 
 _DEFAULT_TIMEOUT = 10.0
-_METADATA_IPS = frozenset({"169.254.169.254", "fd00:ec2::254"})
 
 
 @runtime_checkable
@@ -79,35 +79,6 @@ class _UrllibTransport:
             return _UrllibResponse(exc.code, body, dict(exc.headers or {}))
 
 
-def _host_is_private(host: str) -> bool:
-    """True if ``host`` is a *literal* private/loopback/metadata address.
-
-    No DNS resolution is performed (a DNS lookup would itself be an SSRF
-    vector). A bare hostname like ``localhost`` is treated as private; any
-    non-literal hostname is treated as public (it cannot be a literal RFC-1918
-    address). This is deliberately conservative for the addresses we can judge
-    without resolving names.
-    """
-    host = host.strip().strip("[]").lower()
-    if not host:
-        return True
-    if host == "localhost" or host.endswith(".localhost"):
-        return True
-    if host in _METADATA_IPS:
-        return True
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return False  # not a literal IP -> cannot classify as private here
-    return bool(
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
-
-
 def _guard_base_url(base_url: str, allow_private: bool) -> str:
     parts = urlsplit(base_url)
     if parts.scheme not in ("http", "https"):
@@ -115,7 +86,12 @@ def _guard_base_url(base_url: str, allow_private: bool) -> str:
     host = parts.hostname or ""
     if not host:
         raise ValueError("base_url has no host")
-    if not allow_private and _host_is_private(host):
+    # Delegate the private/loopback + cloud-metadata NAME decision (localhost,
+    # metadata.google.internal, ...) to the canonical shared guard so this
+    # connector can never drift weaker than the single source of truth.
+    # Exporters are usually internal, so private hosts are opt-in via
+    # ``allow_private``.
+    if not allow_private and is_url_blocked(base_url):
         raise ValueError(
             f"refusing private/loopback/metadata host {host!r} "
             "(set allow_private=True to opt in for internal exporters)"

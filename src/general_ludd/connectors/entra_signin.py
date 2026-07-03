@@ -21,10 +21,11 @@ Security posture:
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import parse_qs, urlparse, urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 _DEFAULT_BASE = "https://graph.microsoft.com/v1.0/auditLogs/signIns"
 
@@ -55,11 +56,6 @@ class Transport(Protocol):
         ...
 
 
-_PRIVATE_HOSTNAMES = frozenset(
-    {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}
-)
-
-
 def _default_transport(
     method: str,
     url: str,
@@ -80,26 +76,6 @@ def _default_transport(
         follow_redirects=False,
     )
     return resp
-
-
-def _is_private_host(host: str) -> bool:
-    """Return True if ``host`` is a literal private/loopback/link-local target."""
-    bare = host.strip().strip("[]").lower()
-    if not bare:
-        return True
-    if bare in _PRIVATE_HOSTNAMES:
-        return True
-    try:
-        ip = ipaddress.ip_address(bare)
-    except ValueError:
-        return False
-    return bool(
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
 
 
 class EntraSignInSource:
@@ -160,7 +136,11 @@ class EntraSignInSource:
                 f"entra_signin: unsupported URL scheme: {parsed.scheme!r}"
             )
         host = parsed.hostname or ""
-        if not self.allow_private and _is_private_host(host):
+        # Delegate the private/loopback + cloud-metadata NAME decision to the
+        # canonical shared guard so this connector (and its @odata.nextLink
+        # re-guard) can never drift weaker than the single source of truth.
+        # Private hosts remain opt-in via ``allow_private``.
+        if not self.allow_private and is_url_blocked(url):
             raise ValueError(
                 f"entra_signin: refusing private/loopback host {host!r} "
                 "(set allow_private=True to override)"

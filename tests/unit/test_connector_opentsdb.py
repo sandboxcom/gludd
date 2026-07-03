@@ -74,7 +74,15 @@ def test_name_attr() -> None:
 
 @pytest.mark.parametrize(
     "url",
-    ["http://127.0.0.1:4242", "http://172.16.0.1", "http://localhost:4242", "http://[::1]"],
+    [
+        "http://127.0.0.1:4242",
+        "http://172.16.0.1",
+        "http://localhost:4242",
+        "http://[::1]",
+        "http://169.254.169.254/",  # cloud metadata IP (regression)
+        # Metadata NAME coverage added by routing through the canonical guard.
+        "http://metadata.google.internal/",
+    ],
 )
 def test_private_host_rejected(url: str) -> None:
     with pytest.raises(SSRFError):

@@ -111,6 +111,13 @@ def host_is_blocked(host: str) -> bool:
     # Strip an IPv6 bracket wrapper, e.g. "[::1]" -> "::1".
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
+    # RFC 6761 reserves the entire ".localhost" TLD for loopback, so ANY
+    # subdomain (e.g. "foo.localhost", "api.svc.localhost") resolves to loopback
+    # and must be denied, not just the bare "localhost" name in
+    # BLOCKED_HOST_NAMES. This restores the ".localhost" suffix coverage the
+    # prom_scrape connector had before it delegated to this canonical guard.
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
     if host in BLOCKED_HOST_NAMES:
         return True
     if host in BLOCKED_METADATA_IPS:

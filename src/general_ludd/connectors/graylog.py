@@ -2,9 +2,11 @@
 
 Self-contained, dependency-light connector that runs a Graylog *universal*
 search via the REST API and normalizes each returned message into a flat,
-uniform record. It is deliberately standalone — it imports nothing from
-``general_ludd`` (no base class, no package ``__init__``, no sibling
-connectors) so it can be vendored or audited in isolation.
+uniform record. It is deliberately standalone — its only ``general_ludd``
+dependency is the canonical shared SSRF guard
+(``general_ludd.security.ssrf``), the single source of truth every guard must
+funnel through; it imports no base class, no package ``__init__`` and no sibling
+connectors, so it can be vendored or audited in near-isolation.
 
 CONTRACT
 ========
@@ -38,13 +40,14 @@ SECURITY
 from __future__ import annotations
 
 import base64
-import ipaddress
 import logging
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
 
@@ -369,43 +372,21 @@ def _parse_timestamp(value: Any) -> str | None:
 
 # ------------------------------------------------------------------- SSRF guard
 
-# The cloud-metadata service IP (AWS/GCP/Azure IMDS) — always blocked.
-_METADATA_IP = ipaddress.ip_address("169.254.169.254")
-
 
 def _reject_internal_url(url: str) -> None:
     """Raise ValueError if ``url``'s literal host is internal/SSRF-prone.
 
-    LITERAL host only — NO DNS resolution is performed. We block:
-      - the metadata IP (169.254.169.254),
-      - loopback (127.0.0.0/8, ::1),
-      - link-local (169.254.0.0/16, fe80::/10),
-      - private (10/8, 172.16/12, 192.168/16) and unique-local (fc00::/7),
-      - unspecified (0.0.0.0, ::),
-      - the literal hostname 'localhost'.
-    A non-IP-literal hostname is allowed through (resolving it would itself be
-    an SSRF vector and is intentionally out of scope for a literal-host guard).
+    Delegates the deny decision to the canonical shared guard
+    :func:`general_ludd.security.ssrf.is_url_blocked` so this connector can never
+    drift weaker than the single source of truth. That guard is LITERAL-host
+    only (NO DNS resolution) and blocks: the cloud-metadata IPs and metadata
+    host NAMES (localhost, metadata, metadata.google.internal, ...), loopback,
+    link-local, private/unique-local, reserved, multicast, and unspecified. A
+    non-IP-literal, non-metadata hostname is allowed through (resolving it would
+    itself be an SSRF vector and is intentionally out of scope).
     """
     host = (urlsplit(url).hostname or "").strip()
     if not host:
         raise ValueError("GraylogSource: base_url has no host")
-
-    if host.lower() == "localhost":
-        raise ValueError("GraylogSource: refusing internal host 'localhost'")
-
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        # Not an IP literal — a real hostname. Allowed (no DNS by design).
-        return
-
-    if (
-        ip == _METADATA_IP
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_private
-        or ip.is_unspecified
-        or ip.is_reserved
-        or ip.is_multicast
-    ):
+    if is_url_blocked(url):
         raise ValueError(f"GraylogSource: refusing internal/SSRF host {host!r}")

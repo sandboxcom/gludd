@@ -214,9 +214,33 @@ def test_loopback_host_blocked_by_default() -> None:
         src.query({"what": "thermal"})
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://localhost",  # named loopback (blocked by the canonical guard)
+        "http://metadata.google.internal/",  # cloud metadata NAME (new coverage)
+        "http://169.254.169.254/",  # cloud metadata IP (regression)
+    ],
+)
+def test_internal_named_host_blocked_by_default(base_url: str) -> None:
+    src = RedfishSource(
+        {"base_url": base_url},  # allow_private defaults False
+        transport=_transport(),
+        env=_env(),
+    )
+    with pytest.raises(ValueError, match="internal/private host"):
+        src.query({"what": "thermal"})
+
+
 def test_private_host_allowed_with_opt_in() -> None:
     recs = _src(base_url="https://192.168.1.10").query({"what": "thermal"})
     assert recs, "private host should be reachable when allow_private=True"
+
+
+def test_localhost_allowed_with_opt_in() -> None:
+    # allow_private=True must also permit a named loopback host (localhost).
+    recs = _src(base_url="https://localhost").query({"what": "thermal"})
+    assert recs, "localhost should be reachable when allow_private=True"
 
 
 def test_public_host_allowed_without_opt_in() -> None:

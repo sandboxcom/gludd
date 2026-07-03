@@ -221,8 +221,10 @@ def test_pagination_bounded_by_max_pages(token: str) -> None:
         "http://127.0.0.1/v1.0/auditLogs/signIns",
         "https://localhost/signIns",
         "http://10.0.0.1/signIns",
-        "http://169.254.169.254/metadata",
+        "http://169.254.169.254/metadata",  # cloud metadata IP (regression)
         "http://[::1]/signIns",
+        # Metadata NAME coverage added by the canonical shared guard.
+        "http://metadata.google.internal/signIns",
     ],
 )
 def test_ssrf_rejects_private_base_url(bad: str) -> None:

@@ -28,7 +28,6 @@ raw``.
 from __future__ import annotations
 
 import base64
-import ipaddress
 import json
 import os
 from collections.abc import Callable
@@ -36,6 +35,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 
 @dataclass
@@ -148,23 +149,15 @@ class RedfishSource:
         host = parts.hostname
         if not host:
             raise ValueError(f"base_url has no host: {self.config.base_url!r}")
-        try:
-            ip = ipaddress.ip_address(host)
-        except ValueError:
-            ip = None
-        if ip is not None:
-            is_internal = (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-                or ip.is_unspecified
+        # Delegate the internal/private + cloud-metadata NAME decision to the
+        # canonical shared guard so this connector cannot drift weaker than the
+        # single source of truth. BMCs are internal, so private/loopback hosts
+        # are opt-in via ``allow_private`` (metadata names too, when opted in).
+        if not self.config.allow_private and is_url_blocked(self.config.base_url):
+            raise ValueError(
+                f"refusing internal/private host {host} (set allow_private "
+                f"for internal BMCs)"
             )
-            if is_internal and not self.config.allow_private:
-                raise ValueError(
-                    f"refusing internal/private host {host} (set allow_private "
-                    f"for internal BMCs)"
-                )
         return self.config.base_url.rstrip("/")
 
     # ---- transport ---------------------------------------------------------

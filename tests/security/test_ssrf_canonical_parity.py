@@ -21,7 +21,7 @@ import pytest
 from general_ludd.connectors.base import is_safe_endpoint
 from general_ludd.security.auth import is_safe_fetch_url
 from general_ludd.security.sanitize import validate_fetch_url
-from general_ludd.security.ssrf import host_is_blocked
+from general_ludd.security.ssrf import host_is_blocked, is_url_blocked
 
 # The canonical hostile host/IP set every entrypoint MUST deny. Includes the
 # names/IPs that used to be missing from the connector + sanitize blocklists.
@@ -105,6 +105,49 @@ def test_host_is_blocked_denies_trailing_dot_and_nul_bypasses(host: str) -> None
 def test_host_is_blocked_allows_public_host_with_trailing_dot() -> None:
     # A trailing FQDN dot on a legitimately-public host must NOT be over-blocked.
     assert host_is_blocked("api.public.example.com.") is False
+
+
+# --------------------------------------------------------------------------- #
+# RFC-6761 reserves the ENTIRE ``.localhost`` TLD for loopback, so any
+# subdomain must be denied — not just the bare ``localhost`` name. This closes
+# the regression where prom_scrape's bespoke guard blocked ``*.localhost`` but
+# the canonical guard (which every connector now delegates to) only blocked the
+# exact name ``localhost``.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "host",
+    [
+        "foo.localhost",
+        "api.svc.localhost",
+        "FOO.LOCALHOST",  # case-insensitive
+        "app.localhost.",  # trailing FQDN dot
+        "sub.foo.localhost",
+    ],
+)
+def test_host_is_blocked_denies_dot_localhost_subdomains(host: str) -> None:
+    assert host_is_blocked(host) is True
+
+
+def test_is_url_blocked_denies_dot_localhost_subdomain() -> None:
+    # The scheme-aware wrapper every connector guard funnels through must also
+    # deny a ``.localhost`` subdomain over http.
+    assert is_url_blocked("http://foo.localhost") is True
+    assert is_url_blocked("https://api.svc.localhost/path") is True
+
+
+def test_all_entrypoints_deny_dot_localhost_subdomain() -> None:
+    # Parity across all three public entrypoints for the ``.localhost`` TLD.
+    assert is_safe_fetch_url(_https("foo.localhost")) is False
+    assert validate_fetch_url(_https("foo.localhost")) is None
+    assert is_safe_endpoint(_http("foo.localhost")) is False
+    assert is_safe_endpoint(_https("foo.localhost")) is False
+
+
+def test_host_is_blocked_allows_public_host_ending_in_localhost_label() -> None:
+    # A public host whose final label merely CONTAINS "localhost" (but is not
+    # the ".localhost" TLD) must NOT be over-blocked.
+    assert host_is_blocked("notlocalhost.example.com") is False
+    assert host_is_blocked("mylocalhost.com") is False
 
 
 # --------------------------------------------------------------------------- #
