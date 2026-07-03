@@ -3,8 +3,10 @@
 The pricing catalog is wired into the daemon (``app.state._pricing_catalog``)
 but needs an HTTP surface. These tests cover:
 
-- ``GET /api/pricing``         -> ``catalog.all_model_prices()`` as JSON, count.
-- ``GET /api/pricing/compute`` -> ``catalog.all_compute_prices()`` as JSON, count.
+- ``GET /api/pricing``          -> ``catalog.all_model_prices()`` as JSON, count.
+- ``GET /api/pricing/compute``  -> ``catalog.all_compute_prices()`` as JSON, count.
+- ``GET /api/pricing/catalog``  -> the WHOLE live catalog (model + compute +
+  billing + provider slugs) in one JSON facet, with a ``counts`` summary.
 - graceful degradation: no catalog on app.state -> empty list + count 0 (a
   daemon running without pricing intel is a valid, safe state).
 
@@ -148,6 +150,43 @@ class TestPricingCompute:
         }
 
 
+class TestPricingCatalog:
+    """The consolidated ``/api/pricing/catalog`` facet: whole catalog in one JSON."""
+
+    def test_returns_model_and_compute_together(self, client: TestClient) -> None:
+        resp = client.get("/api/pricing/catalog")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Both slices are present in a single response.
+        ids = {p["model_id"] for p in data["model_prices"]}
+        assert ids == {"stub-1", "stub-2"}
+        assert [p["sku"] for p in data["compute_prices"]] == ["gpu-1x"]
+
+    def test_known_prices_surface(self, client: TestClient) -> None:
+        data = client.get("/api/pricing/catalog").json()
+        by_id = {p["model_id"]: p for p in data["model_prices"]}
+        assert by_id["stub-1"]["input_usd_per_1k"] == 0.001
+        assert data["compute_prices"][0]["usd_per_unit"] == 1.5
+
+    def test_billing_and_providers_and_counts(self, client: TestClient) -> None:
+        data = client.get("/api/pricing/catalog").json()
+        assert data["providers"] == ["stub"]
+        assert [b["provider"] for b in data["billing"]] == ["stub"]
+        assert data["counts"] == {
+            "model_prices": 2,
+            "compute_prices": 1,
+            "billing": 1,
+            "providers": 1,
+        }
+
+    def test_provider_filter_narrows_price_lists(self, client: TestClient) -> None:
+        data = client.get(
+            "/api/pricing/catalog", params={"provider": "nope"}
+        ).json()
+        assert data["counts"]["model_prices"] == 0
+        assert data["counts"]["compute_prices"] == 0
+
+
 class TestPricingDegraded:
     def test_models_empty_when_no_catalog(self) -> None:
         app = FastAPI()
@@ -164,3 +203,22 @@ class TestPricingDegraded:
         resp = client.get("/api/pricing/compute")
         assert resp.status_code == 200
         assert resp.json() == {"prices": [], "count": 0}
+
+    def test_catalog_empty_when_no_catalog(self) -> None:
+        app = FastAPI()
+        register(app, {})
+        client = TestClient(app)
+        resp = client.get("/api/pricing/catalog")
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "model_prices": [],
+            "compute_prices": [],
+            "billing": [],
+            "providers": [],
+            "counts": {
+                "model_prices": 0,
+                "compute_prices": 0,
+                "billing": 0,
+                "providers": 0,
+            },
+        }

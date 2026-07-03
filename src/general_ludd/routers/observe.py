@@ -181,6 +181,55 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "count": len(prices),
         }
 
+    @app.get("/api/pricing/catalog")
+    async def pricing_catalog(provider: str | None = None) -> dict[str, Any]:
+        """Return the WHOLE live :class:`PricingCatalog` as one JSON facet.
+
+        This is the consolidated view the daemon's computed catalog was missing:
+        model token prices + compute instance prices + provider billing
+        semantics + the registered provider slugs, all in a single response with
+        a ``counts`` summary. The split ``/api/pricing`` and
+        ``/api/pricing/compute`` routes remain for callers that only want one
+        slice. An optional ``?provider=`` slug narrows the model + compute
+        lists (billing/providers are always the full set — they are cheap,
+        static facts).
+
+        PSK-gated by the daemon middleware (NOT in ``_PUBLIC_PATHS``), exactly
+        like the other ``/api/`` routes. Degrades to a fully-empty catalog
+        (all lists empty, all counts 0) when no catalog is wired, rather than
+        erroring — a daemon running without pricing intel is a valid state.
+        """
+        cat = _get_pricing_catalog(app)
+        if cat is None:
+            return {
+                "model_prices": [],
+                "compute_prices": [],
+                "billing": [],
+                "providers": [],
+                "counts": {
+                    "model_prices": 0,
+                    "compute_prices": 0,
+                    "billing": 0,
+                    "providers": 0,
+                },
+            }
+        model_prices = cat.all_model_prices(provider=provider)
+        compute_prices = cat.all_compute_prices(provider=provider)
+        billing = cat.all_billing()
+        providers = cat.provider_slugs()
+        return {
+            "model_prices": [asdict(p) for p in model_prices],
+            "compute_prices": [asdict(p) for p in compute_prices],
+            "billing": [asdict(b) for b in billing],
+            "providers": providers,
+            "counts": {
+                "model_prices": len(model_prices),
+                "compute_prices": len(compute_prices),
+                "billing": len(billing),
+                "providers": len(providers),
+            },
+        }
+
 
 def wire_observability(
     app: FastAPI,

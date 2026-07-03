@@ -14,8 +14,14 @@ Cache behavior:
 #          model_id) as the primary source with the static PRICING table in
 #          infra/pricing.py as fallback. See src/general_ludd/controllers/
 #          spend_limiter.py and the daemon wiring in src/general_ludd/daemon.py.
-#   [TODO] Wire an /api/pricing router facet that returns live catalog data as
-#          JSON.
+#   [DONE] The /api/pricing router facet serves live catalog data as JSON. See
+#          src/general_ludd/routers/observe.py: GET /api/pricing (model token
+#          prices), GET /api/pricing/compute (compute instance prices), and
+#          GET /api/pricing/catalog (the consolidated whole-catalog view:
+#          model + compute + billing + provider slugs). All read the shared
+#          instance published on app.state._pricing_catalog by daemon.py, and
+#          degrade to empty results when no catalog is wired. Covered by
+#          tests/unit/test_pricing_router.py.
 #   [DONE] InfraTracker.gpu_cost_usd() -> use catalog.compute_price("runpod", sku)
 #          to replace the static INFRA_PRICING dict. See src/general_ludd/infra/pricing.py
 #          (InfraTracker.gpu_cost_usd at line 152, routing through
