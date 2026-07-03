@@ -496,6 +496,21 @@ sections:
           - "file:src/general_ludd/skills/renderer.py::SandboxedEnvironment"
         notes: "`renderer.py:68`; `[audit BUG-1 DONE-VERIFIED]`"
 
+      - id: ssrf-connector-consolidation
+        title: "SSRF connector consolidation: 18 connectors onto canonical is_url_blocked (tranche-3 + tranche-4)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/connectors/is_url_blocked.py::is_url_blocked"
+        notes: "grafana_loki signoz nats kafka_exporter splunk_observability rabbitmq elastic_apm tempo_zipkin travis appdynamics k8s_events gcp_observability gcp_asset_inventory bugsnag graphite rollbar cloudflare cilium_hubble; _ssrf_guard.py deleted; `[9f935551]` `[2d775c2a]`"
+
+      - id: pause-store-hardening
+        title: "pause_store fail-closed hardening: MAC verification, keyfile checks, size cap (#60)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_pause_store.py"
+          - "file:src/general_ludd/pause/store.py::PauseStore"
+        notes: "10+11 tests passed; .keyed marker + MAC-sidecar; `[3597559a]`"
+
       - id: base-url-ssrf
         title: "base_url SSRF guard (#61)"
         pct: 100
@@ -824,6 +839,38 @@ sections:
           - "test:tests/integration/test_ornith_e2e.py"
         notes: "9 test files; `ornith_self_improve` role with `improve-one` task; training data repo + MCP server; `[audit]`"
 
+      - id: pause-controller
+        title: "PauseController: wired into ModelGateway + EventLoop + daemon (#35 SLICE 2-4)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_pause_slice2_wiring.py"
+          - "file:src/general_ludd/pause/controller.py::PauseController"
+        notes: "ModelPausedError gate in ModelGateway; EventLoop claim gate skips paused projects; quiesce_project dehydrates in-flight agents; pause/resume API router; `[97c89082]` `[2fa2d919]` `[8a5ebe57]`"
+
+      - id: agent-dispatcher-pause-gate
+        title: "AgentDispatcher pause gate: blocked dispatch for paused projects (#51)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_dispatch_permission_gate.py"
+          - "file:src/general_ludd/agents/dispatcher.py::AgentDispatcher"
+        notes: "pause_controller.is_paused → dispatch denied with 'blocked' reason; 8 tests; `[2fa2d919]`"
+
+      - id: push-livelock-escape
+        title: "Push livelock escape: retry counter + exponential backoff (#53)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_push_livelock_escape.py"
+          - "file:src/general_ludd/event_loop/loop.py::MAX_PUSH_RETRIES"
+        notes: "MAX_PUSH_RETRIES=5, independent per-todo counters, BLOCKED transition; 7 tests; `[2fa2d919]`"
+
+      - id: tool-call-auditor
+        title: "ToolCallAuditor + PromptEnhancer + BadCallSituationStore (#35 SLICE 3)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_tool_call_auditor.py"
+          - "file:src/general_ludd/pause/auditor.py::ToolCallAuditor"
+        notes: "29+9 tests; BadCallSituationStore with MAC verification; `[e1c2d41a]` `[c273a408]`"
+
       - id: g1-persistent-agent-memory
         title: "Persistent agent memory (G1)"
         pct: 0
@@ -1022,6 +1069,21 @@ sections:
         pct: 75
         evidence_refs: []
         notes: "branch tip `6063e51`; gate was RUNNING per SESSION.md; not confirmed merged"
+
+      - id: ci-fix-wave
+        title: "CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_commit_gate_freshness.py"
+          - "file:.github/workflows/build.yml::fail-fast"
+        notes: "15+ fixes across Q3.1–Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]`"
+
+      - id: unit-1-ci-rebalance
+        title: "Unit-1 CI shard rebalance: --ignore-glob test_connector (#62)"
+        pct: 100
+        evidence_refs:
+          - "file:.github/workflows/build.yml::ignore-glob"
+        notes: "unit-1 drops from 20+min toward ~10-12min; `[43083168]`"
 
       - id: gate-background-targets
         title: "Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill)"

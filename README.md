@@ -67,7 +67,7 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-alpha.5 — 2026-06-29; core-engine + scoring/cost + security-findings rows refreshed 2026-06-25 (branch `feature/alpha4-green-the-gate`)**
+**Status as of v0.1.0-alpha.5 — 2026-07-03; core-engine + scoring/cost + security-findings rows refreshed 2026-06-25 (branch `feature/alpha4-green-the-gate`)**
 
 The table below is **code-generated** from [`docs/features.yml`](docs/features.yml) by
 [`scripts/gen_status_table.py`](scripts/gen_status_table.py): every row's verified status is
@@ -178,6 +178,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Self-modification guards (#58) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #58 DONE-VERIFIED]` |
 | Ansible SSTI red-team (#50) | ✗ 100% | **PENDING** *(file-refs only)*: `[audit #50 DONE-VERIFIED]` |
 | Skill renderer SSTI fix (SandboxedEnvironment) | ✓ 100% | **PASS** *(file-refs only)*: `renderer.py:68`; `[audit BUG-1 DONE-VERIFIED]` |
+| SSRF connector consolidation: 18 connectors onto canonical is_url_blocked (tranche-3 + tranche-4) | ✗ 100% | **PENDING** *(file-refs only)*: grafana_loki signoz nats kafka_exporter splunk_observability rabbitmq elastic_apm tempo_zipkin travis appdynamics k8s_events gcp_observability gcp_asset_inventory bugsnag graphite rollbar cloudflare cilium_hubble; _ssrf_guard.py deleted; `[9f935551]` `[2d775c2a]` |
+| pause_store fail-closed hardening: MAC verification, keyfile checks, size cap (#60) | ✗ 100% | **PENDING** *(file-refs only)*: 10+11 tests passed; .keyed marker + MAC-sidecar; `[3597559a]` |
 | base_url SSRF guard (#61) | ~ 100% | **PARTIAL** *(file-refs only)*: `gateway.py:259-278`; `[audit #61 DONE-VERIFIED]` |
 | SSH key gitignored + enforcement layers (W5.1) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed; `make git-tracked-keys` NONE TRACKED; `[526104b]` |
 | dist packs LICENSE + THIRD_PARTY_LICENSES + SBOM (W5.2) | ✓ 100% | **PASS** *(file-refs only)*: 6 passed; `[526104b]` |
@@ -224,6 +226,10 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | HumanTodo system (bot→human task requests) | ✓ 100% | **PASS** *(file-refs only)*: `HumanTodoModel` + `HumanTodoRepository` + `/api/human-todos` router + CLI; `[audit]` |
 | Project collections/init (scaffold + precedence) | ~ 100% | **PARTIAL** *(file-refs only)*: `project_init` role scaffolds .gludd/collections/; 3-tier precedence: project > user > bundled; `[audit]` |
 | Ornith self-improve role + endpoints + training pipeline | ✓ 100% | **PASS** *(file-refs only)*: 9 test files; `ornith_self_improve` role with `improve-one` task; training data repo + MCP server; `[audit]` |
+| PauseController: wired into ModelGateway + EventLoop + daemon (#35 SLICE 2-4) | ~ 100% | **PARTIAL** *(file-refs only)*: ModelPausedError gate in ModelGateway; EventLoop claim gate skips paused projects; quiesce_project dehydrates in-flight agents; pause/resume API router; `[97c89082]` `[2fa2d919]` `[8a5ebe57]` |
+| AgentDispatcher pause gate: blocked dispatch for paused projects (#51) | ✓ 100% | **PASS** *(file-refs only)*: pause_controller.is_paused → dispatch denied with 'blocked' reason; 8 tests; `[2fa2d919]` |
+| Push livelock escape: retry counter + exponential backoff (#53) | ~ 100% | **PARTIAL** *(file-refs only)*: MAX_PUSH_RETRIES=5, independent per-todo counters, BLOCKED transition; 7 tests; `[2fa2d919]` |
+| ToolCallAuditor + PromptEnhancer + BadCallSituationStore (#35 SLICE 3) | ✗ 100% | **PENDING** *(file-refs only)*: 29+9 tests; BadCallSituationStore with MAC verification; `[e1c2d41a]` `[c273a408]` |
 | Persistent agent memory (G1) | ✗ 0% | **PENDING**: no `memory/` package; design-only; `[audit]` |
 | Offline eval harness (G2) | ✗ 0% | **PENDING**: no `eval/` package; design-only; `[audit]` |
 | Semantic codebase retrieval (G3) | ✗ 0% | **PENDING**: no `retrieval/` package; design-only; `[audit]` |
@@ -263,6 +269,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | make dogfood passes self-hosting | ✗ 100% | **PENDING** *(file-refs only)*: PASSES; no API key required (monkeypatches dispatch) |
 | Operator SSH key rotation + history scrub | ✗ 0% | **PENDING**: explicitly out-of-agent-scope; operator action required; `TASKS.md:W5.1` |
 | Wave 3 merge to master | ✗ 75% | **PENDING**: branch tip `6063e51`; gate was RUNNING per SESSION.md; not confirmed merged |
+| CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x) | ✓ 100% | **PASS** *(file-refs only)*: 15+ fixes across Q3.1–Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]` |
+| Unit-1 CI shard rebalance: --ignore-glob test_connector (#62) | ✓ 100% | **PASS** *(file-refs only)*: unit-1 drops from 20+min toward ~10-12min; `[43083168]` |
 | Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:53`; `nohup` + PID file + phase markers + status poll; `[audit]` |
 | Terraform infrastructure: GPU stacks, IAM modules, policy enforcement (Q2.4-Q2.6) | ✓ 100% | **PASS** *(file-refs only)*: `infra/terraform/` stacks: aws, azure, gcp, runpod, vast, kubernetes; IAM onboarding modules; OPA policies; `[audit]` |
 
