@@ -8,7 +8,6 @@ import httpx
 
 from general_ludd.events.hooks import HookSystem
 
-
 # ---------------------------------------------------------------------------
 # Helpers — fake httpx.AsyncClient for use in tests
 # ---------------------------------------------------------------------------

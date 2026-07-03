@@ -74,7 +74,6 @@ class TestFireWebhookNoRedirect:
         hs = HookSystem()
         hs.register_webhook("job.complete", "https://hooks.example.com/notify")
 
-        from unittest.mock import patch
 
         with patch(
             "general_ludd.events.hooks.httpx.AsyncClient",
