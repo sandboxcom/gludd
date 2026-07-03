@@ -132,8 +132,8 @@ class GcpObservabilitySource:
         }
 
     def _check_status(self, resp: HttpResponse) -> None:
-        if resp.status < 200 or resp.status >= 300:
-            raise RuntimeError(f"GCP API returned HTTP {resp.status}")
+        if resp.status_code < 200 or resp.status_code >= 300:
+            raise RuntimeError(f"GCP API returned HTTP {resp.status_code}")
 
     # ------------------------------------------------------------------ #
     # health

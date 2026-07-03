@@ -63,6 +63,11 @@ class _UrllibResponse:
         self.status_code = status_code
         self.text = text
 
+    def json(self) -> Any:
+        import json
+
+        return json.loads(self.text) if self.text else None
+
 
 def _urllib_transport(
     method: str,

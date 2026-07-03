@@ -27,5 +27,9 @@ class HttpResponse(Protocol):
 
     status_code: int
 
+    @property
+    def text(self) -> str:
+        ...
+
     def json(self) -> Any:  # pragma: no cover - structural typing only
         ...
