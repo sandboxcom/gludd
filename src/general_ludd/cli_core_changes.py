@@ -28,16 +28,24 @@ from typing import Any, Literal
 
 from general_ludd.git_automation.repo import GitAutomation
 from general_ludd.integrity.change_log import ChangeLogEntry, ChangeRecordStore
+from general_ludd.integrity.fim_excludes import FIM_EXCLUDE_PATTERNS
 from general_ludd.self_update.safe_writer import AtomicSafeWriter
 
-# Canonical FIM exclude set (mirrors cli.py ``_scan_local_integrity``): never
-# surface compiled artefacts, VCS internals, or on-disk databases as "changes".
-_EXCLUDES = [r"\.pyc$", r"__pycache__", r"\.git/", r"\.db$"]
+# Canonical FIM exclude set — the SINGLE shared constant imported by both this
+# module and cli.py ``_scan_local_integrity`` (was a copy-pasted literal that
+# could drift). Backward-compatible alias kept for callers/tests.
+_EXCLUDES = FIM_EXCLUDE_PATTERNS
 
 
 def _excluded(path: str) -> bool:
-    """Return True if ``path`` matches any canonical FIM exclude pattern."""
-    return any(re.search(p, path) for p in _EXCLUDES)
+    """Return True if ``path`` matches any canonical FIM exclude pattern.
+
+    The path is separator-normalised (``\\`` -> ``/``) and case-folded before
+    the (lower-case, ``/``-anchored) exclude regexes are applied, so a Windows
+    backslash path or a case variant like ``X.PYC`` is still recognised.
+    """
+    norm = path.replace("\\", "/").casefold()
+    return any(re.search(p, norm) for p in FIM_EXCLUDE_PATTERNS)
 
 
 def _package_dir() -> Path | None:
@@ -72,15 +80,21 @@ def classify(file_path: str) -> Literal["core", "user"]:
         resolved = str(Path(file_path).expanduser().resolve())
     except (OSError, RuntimeError, ValueError):
         resolved = file_path
-    norm = resolved.replace(os.sep, "/")
+    # Normalise separators, collapse ``.``/``..``/redundant slashes, and
+    # case-fold so comparisons are robust on case-insensitive filesystems
+    # (macOS/Windows) without over-classifying real core paths.
+    norm = os.path.normpath(resolved).replace(os.sep, "/").casefold()
 
-    # Source-checkout heuristic: a change to gludd's own tree.
-    if "src/general_ludd/" in norm or norm.endswith("src/general_ludd"):
+    # Source-checkout heuristic: match ``src/general_ludd`` ONLY as whole path
+    # COMPONENTS (anchored on ``/`` or start/end), so a sibling path that merely
+    # *contains* the literal — e.g. ``.../src/general_ludd_notes/x`` — is NOT
+    # misclassified as core.
+    if re.search(r"(^|/)src/general_ludd(/|$)", norm):
         return "core"
 
     pkg_dir = _package_dir()
     if pkg_dir is not None:
-        pkg_norm = str(pkg_dir).replace(os.sep, "/").rstrip("/")
+        pkg_norm = os.path.normpath(str(pkg_dir)).replace(os.sep, "/").casefold().rstrip("/")
         if norm == pkg_norm or norm.startswith(pkg_norm + "/"):
             return "core"
     return "user"

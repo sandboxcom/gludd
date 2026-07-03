@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.config.binary_paths import BinaryPathResolver
+from general_ludd.integrity.fim_excludes import FIM_EXCLUDE_PATTERNS
 from general_ludd.integrity.scanner import (
     FileIntegrityScanner,
     IntegrityKeyError,
@@ -83,7 +84,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             # so the endpoint can't be used to hash/exfiltrate arbitrary files.
             paths = _confine_scan_paths(app, paths)
         scanner = FileIntegrityScanner()
-        exclude_patterns = [r"\.pyc$", r"__pycache__", r"\.git/", r"\.db$"]
+        # Shared canonical exclude set (see integrity.fim_excludes); one source
+        # of truth so the scan sites cannot drift apart.
+        exclude_patterns = list(FIM_EXCLUDE_PATTERNS)
 
         # Safety: if self-improve is enabled but a config OVERLAY (project
         # .gludd/ or user ~/.config/gludd) falls outside the scan scope,

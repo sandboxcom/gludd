@@ -19,6 +19,7 @@ from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.db.session import get_default_db_url, is_sqlite_url
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore
+from general_ludd.integrity.fim_excludes import FIM_EXCLUDE_PATTERNS
 from general_ludd.integrity.scanner import FileIntegrityScanner
 from general_ludd.models.performance_router import DEFAULT_STRATEGIES
 from general_ludd.tui.config_editor import ConfigEditor
@@ -3335,7 +3336,9 @@ def _scan_local_integrity(info: dict[str, Any]) -> dict[str, Any]:
         os.path.expanduser("~/.local/share/general-ludd"),
     ]
     paths = [p for p in paths if p and os.path.isdir(p)]
-    exclude_patterns = [r"\.pyc$", r"__pycache__", r"\.git/", r"\.db$"]
+    # Shared canonical exclude set (see cli_core_changes._excluded); imported
+    # from one place so the two scan sites cannot drift apart.
+    exclude_patterns = list(FIM_EXCLUDE_PATTERNS)
 
     # Safety: if self-improve is enabled but a config OVERLAY (project .gludd/
     # or user ~/.config/gludd) is outside FIM's scope, agent-authored changes

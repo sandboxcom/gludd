@@ -265,3 +265,70 @@ def test_diff_modified_has_both_headers():
     assert "+++ " in d
     assert "-one" in d
     assert "+two" in d
+
+
+# --------------------------------------------------------------------------
+# classify: anchored on path COMPONENTS (not an unanchored substring)
+# --------------------------------------------------------------------------
+
+def test_classify_src_general_ludd_component_is_core():
+    # A genuine ``src/general_ludd/`` checkout path is core.
+    assert classify("/x/src/general_ludd/a.py") == "core"
+
+
+def test_classify_sibling_containing_literal_is_user():
+    # A sibling path that merely *contains* the literal must NOT match: the
+    # anchor requires ``src/general_ludd`` as whole components, so
+    # ``general_ludd_notes`` is user, not core.
+    assert classify("/x/src/general_ludd_notes/a.py") == "user"
+
+
+def test_classify_config_overlay_is_user():
+    import os
+
+    assert classify(os.path.expanduser("~/.config/gludd/x.py")) == "user"
+
+
+def test_classify_case_variant_core_path_is_core():
+    # Case-insensitive filesystems (macOS/Windows): an upper/mixed-case variant
+    # of a core path still classifies as core (compare is case-folded).
+    assert classify("/x/SRC/General_Ludd/A.py") == "core"
+
+
+# --------------------------------------------------------------------------
+# _excluded: separator + case normalisation
+# --------------------------------------------------------------------------
+
+def test_excluded_normalises_backslash_paths():
+    # A Windows-style backslash path is separator-normalised before matching.
+    assert _excluded("a\\__pycache__\\b.pyc") is True
+
+
+def test_excluded_is_case_insensitive():
+    # An upper-case compiled-artefact extension is still excluded.
+    assert _excluded("pkg/module.PYC") is True
+    assert _excluded("A\\.GIT/config") is True
+
+
+# --------------------------------------------------------------------------
+# the FIM exclude set is ONE shared constant used by every scan site
+# --------------------------------------------------------------------------
+
+def test_exclude_constant_is_shared_across_call_sites():
+    from general_ludd import cli, cli_core_changes
+    from general_ludd.integrity.fim_excludes import FIM_EXCLUDE_PATTERNS
+
+    # Both the change-export module and the CLI scan site reference the SAME
+    # object — they cannot drift apart.
+    assert cli_core_changes.FIM_EXCLUDE_PATTERNS is FIM_EXCLUDE_PATTERNS
+    assert cli.FIM_EXCLUDE_PATTERNS is FIM_EXCLUDE_PATTERNS
+    # Backward-compatible alias still points at the shared constant.
+    assert cli_core_changes._EXCLUDES is FIM_EXCLUDE_PATTERNS
+    # The shared set is unchanged from the historical literal (scan behaviour
+    # preserved — this was a de-duplication, not a policy change).
+    assert list(FIM_EXCLUDE_PATTERNS) == [
+        r"\.pyc$",
+        r"__pycache__",
+        r"\.git/",
+        r"\.db$",
+    ]
