@@ -217,7 +217,11 @@ def test_non_200_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         "http://192.168.1.10",
         "http://172.16.0.1",
         "http://169.254.169.254",
+        "http://100.100.100.200",  # Alibaba/Azure metadata (canonical guard catches it)
         "https://metadata.google.internal",
+        "https://metadata.azure.com",  # Azure metadata name (connector-specific extra)
+        "http://metadata.goog/",  # GCP alias missed by the old per-connector blocklist
+        "http://foo.localhost/",  # RFC 6761 .localhost TLD missed by the old guard
         "http://internalhost",  # single-label, no dots
     ],
 )

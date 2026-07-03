@@ -23,11 +23,12 @@ canned response and no network is touched.
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 # Injectable transport contract: (method, url, headers, json_body, timeout) -> response.
 # The response only needs ``.status_code: int`` and ``.json() -> Any`` (httpx.Response
@@ -50,58 +51,34 @@ class HTTPResponse:
 
 # --- literal-host SSRF block (NO DNS) -------------------------------------------------
 
-_FORBIDDEN_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "ip6-localhost",
-        "ip6-loopback",
-        "metadata",
-        "metadata.google.internal",
-        "metadata.azure.com",
-        "instance-data",
-    }
-)
+# Azure metadata host NOT covered by the canonical shared blocklist
+# (general_ludd.security.ssrf.BLOCKED_HOST_NAMES). Kept here so this connector's
+# coverage is never weaker than before the consolidation onto ``is_url_blocked``.
+_EXTRA_BLOCKED_HOST_NAMES = frozenset({"metadata.azure.com"})
 
 
 def _reject_if_internal(base_url: str) -> None:
     """Raise ``ValueError`` if ``base_url``'s literal host is internal/metadata.
 
-    Pure literal inspection — performs NO DNS resolution. A bare IP literal is
-    range-checked; a hostname is matched against a small metadata/loopback
-    denylist and rejected if it has no dots (single-label internal name).
+    Pure literal inspection — performs NO DNS resolution. The private / loopback
+    / link-local / reserved + cloud-metadata decision (localhost, the
+    ``.localhost`` TLD, metadata.google.internal, 169.254.169.254,
+    100.100.100.200, ...) is delegated to the canonical shared guard
+    :func:`general_ludd.security.ssrf.is_url_blocked` so it can never drift
+    weaker than the single source of truth. Two connector-specific rules are
+    layered on top: the Azure metadata name and any single-label (dot-less) host,
+    which cannot be a public FQDN.
     """
-    parts = urlsplit(base_url)
-    if parts.scheme not in ("http", "https"):
-        raise ValueError(f"unsupported url scheme: {parts.scheme!r}")
-    host = parts.hostname
-    if not host:
-        raise ValueError(f"url has no host: {base_url!r}")
+    if is_url_blocked(base_url):
+        raise ValueError(f"refusing internal/metadata host: {base_url!r}")
+    host = urlsplit(base_url).hostname or ""
     host_l = host.lower()
-
-    if host_l in _FORBIDDEN_HOSTNAMES:
+    if host_l in _EXTRA_BLOCKED_HOST_NAMES:
         raise ValueError(f"refusing internal/metadata host: {host!r}")
-
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        # Not an IP literal. Reject the well-known metadata IP spelled as a name
-        # and any single-label (dot-less) hostname, which cannot be a public FQDN.
-        if "." not in host_l and ":" not in host_l:
-            raise ValueError(f"refusing single-label/internal host: {host!r}") from None
-        return
-
-    if (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-        or ip.is_multicast
-    ):
-        raise ValueError(f"refusing internal IP host: {host!r}")
-    # Explicit metadata address (also caught by is_link_local, kept for clarity).
-    if str(ip) == "169.254.169.254":
-        raise ValueError("refusing cloud metadata IP 169.254.169.254")
+    # Single-label (dot-less, non-IP) hostnames cannot be a public FQDN; any IP
+    # literal that reached here already passed the canonical guard (public).
+    if "." not in host_l and ":" not in host_l:
+        raise ValueError(f"refusing single-label/internal host: {host!r}")
 
 
 def _parse_ts(value: Any) -> float | None:

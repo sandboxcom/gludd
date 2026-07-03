@@ -276,6 +276,42 @@ def test_non_http_scheme_rejected() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://localhost/",
+        "http://metadata.google.internal/",
+        "http://169.254.169.254/",
+        "http://100.100.100.200/",  # Alibaba/Azure metadata (canonical guard catches it)
+        "http://metadata.goog/",  # GCP alias missed by the old per-connector blocklist
+        "http://foo.localhost/",  # RFC 6761 .localhost TLD missed by the old guard
+    ],
+)
+def test_canonical_guard_refuses_internal_hosts(bad_url: str) -> None:
+    """Default config refuses every loopback/metadata alias via is_url_blocked."""
+    with pytest.raises(ValueError):
+        PyroscopeSource(
+            {"name": "p", "base_url": bad_url, "query": "x"},
+            transport=_MockTransport(_Resp(200, _CANNED_FLAMEBEARER)),
+        )
+
+
+def test_public_base_url_constructs() -> None:
+    src = PyroscopeSource(
+        {"name": "p", "base_url": "https://pyroscope.example.com", "query": "x"},
+        transport=_MockTransport(_Resp(200, _CANNED_FLAMEBEARER)),
+    )
+    assert src.name == "p"
+
+
+def test_localhost_allowed_with_opt_in() -> None:
+    src = PyroscopeSource(
+        {"name": "p", "base_url": "http://localhost:4040", "query": "x", "allow_private": True},
+        transport=_MockTransport(_Resp(200, _CANNED_FLAMEBEARER)),
+    )
+    assert src.name == "p"
+
+
 # --------------------------------------------------------------------------- #
 # health()
 # --------------------------------------------------------------------------- #

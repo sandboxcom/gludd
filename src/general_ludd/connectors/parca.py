@@ -36,10 +36,11 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 import httpx
 
-from general_ludd.connectors._ssrf_guard import _assert_safe_base_url
+from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,17 @@ class ParcaSource:
         if not base_url:
             raise ValueError("ParcaSource requires a base_url")
         self._allow_private = bool(config.get("allow_private", False))
-        _assert_safe_base_url(base_url, allow_private=self._allow_private)
+        # SSRF: enforce the http(s) scheme + a present host always; delegate the
+        # private/loopback + cloud-metadata host decision to the canonical shared
+        # guard so it can never drift weaker than the single source of truth.
+        # Private hosts remain opt-in via ``allow_private``.
+        parts = urlsplit(base_url)
+        if parts.scheme.lower() not in ("http", "https"):
+            raise ValueError(f"base_url scheme must be http/https: {base_url!r}")
+        if not parts.hostname:
+            raise ValueError(f"base_url has no host: {base_url!r}")
+        if not self._allow_private and is_url_blocked(base_url):
+            raise ValueError(f"base_url host is blocked: {base_url!r}")
         self._base_url = base_url
 
         self._token_env = config.get("token_env")
