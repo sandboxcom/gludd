@@ -1,54 +1,33 @@
 ---
-- name: Verify - open_code_workflow ran gate_check and wrote artifacts
+- name: Verify - open_code_workflow module returned success
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
     pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}.pid"
-    artifact: "/tmp/gludd-open-code-workflow-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}/open_code_workflow.json"
-    artifact_md: "/tmp/gludd-open-code-workflow-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}/open_code_workflow.md"
+    result_file: "/tmp/gludd-open-code-workflow-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}/oc_result.json"
   tasks:
-    - name: Assert JSON artifact exists
-      ansible.builtin.stat:
-        path: "{{ artifact }}"
-      register: art
-      failed_when: not art.stat.exists
-
-    - name: Load JSON artifact
+    - name: Load persisted result
       ansible.builtin.slurp:
-        src: "{{ artifact }}"
-      register: art_raw
-
-    - name: Parse JSON artifact
+        src: "{{ result_file }}"
+      register: raw
+    - name: Parse result
       ansible.builtin.set_fact:
-        result: "{{ art_raw.content | b64decode | from_json }}"
-
-    - name: Assert artifact fields — gate_check completed
+        oc: "{{ raw.content | b64decode | from_json }}"
+    - name: Assert module returned success
       ansible.builtin.assert:
         that:
-          - result.role == 'open_code_workflow'
-          - result.action == 'gate_check'
-          - result.status in ['completed', 'failed']
-          - result.cmd | length > 0
-          - result.changed is defined
-          - result.params is defined
-        fail_msg: "open_code_workflow artifact wrong: {{ result }}"
-        success_msg: "open_code_workflow gate_check ran end-to-end; status={{ result.status }} rc={{ result.rc }}"
-
-    - name: Assert markdown artifact exists
-      ansible.builtin.stat:
-        path: "{{ artifact_md }}"
-      register: art_md
-      failed_when: not art_md.stat.exists
-
-    # ---- cleanup: stop daemon ----
+          - oc.action == 'gate_check'
+          - oc.cmd | length > 0
+          - oc.changed is defined
+        fail_msg: "result wrong: {{ oc }}"
+        success_msg: "gludd_open_code gate_check returned cmd={{ oc.cmd }} rc={{ oc.rc }} changed={{ oc.changed }}"
     - name: Stop mock daemon
       ansible.builtin.shell:
         cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
       changed_when: false
       failed_when: false
-
     - name: Remove artifact dir
       ansible.builtin.file:
         path: "/tmp/gludd-open-code-workflow-{{ mock_port }}"

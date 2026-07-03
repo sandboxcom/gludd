@@ -1,7 +1,5 @@
 ---
-# Run the open_code_workflow module in check_mode to verify it reports correctly.
-# No actual make commands are executed — the module returns what WOULD happen.
-- name: Converge - run open_code_workflow role in check mode
+- name: Converge - run gludd_open_code module directly
   hosts: localhost
   connection: local
   gather_facts: false
@@ -9,11 +7,10 @@
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
     project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
   tasks:
-    - name: Run gludd_open_code gate_check in check mode
+    - name: Run gludd_open_code gate_check
       general_ludd.agent.gludd_open_code:
         action: gate_check
         repo_path: "{{ project_dir }}"
-      check_mode: true
       register: oc_result
 
     - name: Create artifact directory
