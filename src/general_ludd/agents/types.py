@@ -46,3 +46,4 @@ class AgentTask:
     prompt: str
     parent_task_id: str | None = None
     invoker_name: str = ""
+    project_id: str | None = None  # #51: enables pause-gate on dispatch
