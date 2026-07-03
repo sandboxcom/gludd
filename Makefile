@@ -134,7 +134,50 @@ ps-pytest:
 troubleshoot:
 	@uv run python scripts/troubleshoot.py
 
-# Prune stray pytest / xdist processes (SIGTERM, then SIGKILL survivors).
+# Agent watchog — background daemon that monitors the mainthread-streak
+# file and resets it when the agent gets jammed (streak ≥ 3). Prevents
+# the compulsive git-log/ci-verdict deadlock that requires manual unjamming.
+# Launched via `make watchdog-start`; check `make watchdog-status`.
+WATCHDOG_PID := .watchdog.pid
+watchdog-start:
+	@if [ -f $(WATCHDOG_PID) ] && kill -0 $$(cat $(WATCHDOG_PID)) 2>/dev/null; then \
+		echo "watchdog already running (PID $$(cat $(WATCHDOG_PID)))"; \
+	else \
+		nohup uv run python scripts/agent_watchdog.py > .gate-logs/watchdog-$$(date +%Y%m%d-%H%M%S).log 2>&1 & \
+		echo $$! > $(WATCHDOG_PID); \
+		echo "watchdog started (PID $$!)"; \
+	fi
+
+watchdog-status:
+	@if [ -f $(WATCHDOG_PID) ]; then \
+		PID=$$(cat $(WATCHDOG_PID)); \
+		if kill -0 $$PID 2>/dev/null; then \
+			echo "watchdog RUNNING (PID $$PID)"; \
+			echo "--- last 15 reset-log lines ---"; \
+			tail -15 /tmp/gludd-auto-reset.log 2>/dev/null || echo "(no reset log yet)"; \
+			echo "--- streak state ---"; \
+			cat /tmp/gludd-mainthread-streak.json 2>/dev/null || echo "(no streak file)"; \
+		else \
+			echo "watchdog STOPPED (PID $$PID is dead)"; \
+		fi; \
+	else \
+		echo "watchdog not running (no PID file)"; \
+	fi
+
+watchdog-stop:
+	@if [ -f $(WATCHDOG_PID) ]; then \
+		PID=$$(cat $(WATCHDOG_PID)); \
+		kill $$PID 2>/dev/null && echo "watchdog stopped (PID $$PID)" || echo "watchdog already stopped"; \
+		rm -f $(WATCHDOG_PID); \
+	else \
+		echo "watchdog not running"; \
+	fi
+
+watchdog-log:
+	@cat /tmp/gludd-auto-reset.log 2>/dev/null || echo "(no reset log yet)"
+
+watchdog-check:
+	@uv run python scripts/agent_watchdog.py --once# Prune stray pytest / xdist processes (SIGTERM, then SIGKILL survivors).
 kill-pytest:
 	@echo "pytest processes before:"; ps -Ao pid,command | grep -E '[p]ytest|execnet' | grep -v grep | wc -l | tr -d ' '
 	@pkill -TERM -f 'pytest' 2>/dev/null && echo "SIGTERM sent" || echo "none matched pytest"
