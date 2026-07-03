@@ -22,10 +22,13 @@ Storage model (mirrors ``agents/hibernation.HibernationStore`` and
     by a previous process: restart survival with tamper detection intact.
   * Fail-closed posture (mirrors the secret scanner / hibernation hydrate): when
     a key exists, a missing or mismatching MAC on load raises
-    :class:`IntegrityError` rather than returning possibly-tampered state.  Only
-    when no durable key could be established (degraded mode) does the store
-    operate without integrity verification, tolerating the loss the way
-    hibernation tolerates an absent snapshot.
+    :class:`IntegrityError` rather than returning possibly-tampered state.  A
+    ``.keyed`` marker (written the instant a key is first minted) records that
+    the store was ever keyed: once it — or a signed state file — exists, a later
+    inability to load the key (deleted/insecure/unreadable keyfile) raises
+    :class:`IntegrityError` rather than silently degrading or re-minting a key
+    over signed state.  Degraded (unverified) operation is therefore reachable
+    ONLY on a genuinely fresh store that has never held a key.
 """
 
 from __future__ import annotations
@@ -80,6 +83,16 @@ class PauseStore:
 
     _STATE_NAME = "pause_state.json"
     _KEY_NAME = "pause_mac.key"
+    # Sentinel proving this store was once keyed.  Written the moment a durable
+    # key is first minted; its (or a MAC sidecar's) presence forbids a later
+    # silent degrade / key re-mint over previously-signed state (fail closed).
+    _MARKER_NAME = ".keyed"
+    # Domain-separation label mixed into every signed message so a pause blob
+    # can never be replayed as (or forged from) some other HMAC context.
+    _MAC_CONTEXT = b"general_ludd.pause_store.v1\x00"
+    # Hard cap on the state payload we will read before json.loads (DoS guard).
+    # Pause records are a handful of small dicts; 1 MiB is already absurdly big.
+    _MAX_STATE_BYTES = 1_048_576
 
     def __init__(self, base_dir: str | Path = "") -> None:
         # An empty base_dir means "use the default"; ``Path("")`` would resolve
@@ -94,6 +107,7 @@ class PauseStore:
         self._mac_path = self._base / f"{self._STATE_NAME}.mac"
         self._secrets_dir = self._base / "secrets"
         self._key_path = self._secrets_dir / self._KEY_NAME
+        self._keyed_marker = self._base / self._MARKER_NAME
         self._lock = threading.Lock()
         # A durable key -> integrity is ENFORCED on load.  None (degraded mode,
         # e.g. an unwritable secrets dir) -> operate without verification.
@@ -112,35 +126,123 @@ class PauseStore:
     # Durable MAC key
     # ------------------------------------------------------------------
 
-    def _load_or_create_key(self) -> bytes | None:
-        """Read the durable MAC key, minting one on first use.
+    def _prior_signing_evidence(self) -> bool:
+        """True when this store was PREVIOUSLY keyed / signed.
 
-        The key is written atomically ``0o600`` under an owner-only ``secrets/``
-        dir.  If the key can neither be read nor created (permission/OS error),
-        return ``None`` so the store degrades to unverified operation rather
-        than crashing — mirroring hibernation's tolerance of missing snapshots.
+        The ``.keyed`` marker is written the instant a durable key is first
+        minted; a MAC sidecar is a backstop signal that state was signed even if
+        the marker was removed.  Unsigned degraded-mode state (no marker, no
+        MAC) is deliberately *not* counted, so a store that has genuinely never
+        held a key can still start cleanly in degraded mode.
         """
+        return self._keyed_marker.exists() or self._mac_path.exists()
+
+    def _assert_keyfile_secure(self) -> None:
+        """Refuse a group/world-accessible or wrong-owner keyfile (M-a).
+
+        A MAC key readable by other users is no longer a secret; loading state
+        signed with it would be security theatre.  Fail closed instead.
+        """
+        st = os.stat(self._key_path)
+        mode = st.st_mode & 0o777
+        if mode & 0o077:
+            raise IntegrityError(
+                f"pause MAC keyfile {self._key_path} is group/world accessible "
+                f"(mode {oct(mode)}); refusing to use it (fail closed)."
+            )
+        getuid = getattr(os, "getuid", None)
+        if getuid is not None and st.st_uid != getuid():
+            raise IntegrityError(
+                f"pause MAC keyfile {self._key_path} is owned by uid "
+                f"{st.st_uid}, not the current user {getuid()}; refusing "
+                "(fail closed)."
+            )
+
+    def _read_keyfile_bytes(self) -> bytes:
+        """Read the raw key bytes (a seam so tests can inject an OSError)."""
+        return self._key_path.read_bytes()
+
+    def _ensure_marker(self) -> None:
+        """Best-effort create the ``.keyed`` sentinel (idempotent)."""
+        if self._keyed_marker.exists():
+            return
+        with contextlib.suppress(OSError):
+            tmp = self._keyed_marker.with_name(self._keyed_marker.name + ".tmp")
+            tmp.write_text("keyed\n", encoding="utf-8")
+            with contextlib.suppress(OSError):
+                os.chmod(tmp, 0o600)
+            tmp.replace(self._keyed_marker)
+
+    def _mint_key(self) -> bytes:
+        """Mint, atomically persist (0o600), and mark a fresh durable key."""
+        self._secrets_dir.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(OSError):
+            os.chmod(self._secrets_dir, 0o700)
+        key = secrets.token_bytes(32)
+        tmp = self._key_path.with_name(self._key_path.name + ".tmp")
+        tmp.write_bytes(key)
+        with contextlib.suppress(OSError):
+            os.chmod(tmp, 0o600)
+        tmp.replace(self._key_path)
+        self._ensure_marker()
+        return key
+
+    def _load_or_create_key(self) -> bytes | None:
+        """Read the durable MAC key, minting one only on a truly fresh store.
+
+        Fail-closed rules (SLICE 1 audit H1/H2):
+
+          * If the store was previously keyed/signed
+            (:meth:`_prior_signing_evidence`) but the keyfile is missing, empty,
+            insecure, or unreadable, raise :class:`IntegrityError` — NEVER
+            silently degrade or mint a replacement key over signed state.  A
+            silent re-mint would rotate the key underneath existing signatures
+            (false-tamper) or launder attacker-supplied state on the next save.
+          * Degraded mode (return ``None``, operate without verification) is
+            reachable ONLY when there is no prior signing evidence, i.e. a store
+            that has genuinely never held a key and whose ``secrets/`` dir
+            cannot be established.
+        """
+        prior_signed = self._prior_signing_evidence()
         try:
             if self._key_path.exists():
-                data = self._key_path.read_bytes()
+                self._assert_keyfile_secure()  # M-a
+                data = self._read_keyfile_bytes()
                 if data:
+                    self._ensure_marker()  # forward-fill for pre-marker stores
                     return data
-                # An empty keyfile is corrupt; fall through to mint a new one.
+                # An empty keyfile is corrupt.  Re-minting would invalidate any
+                # state the real (now-lost) key signed -> fail closed.
+                if prior_signed:
+                    raise IntegrityError(
+                        f"pause MAC keyfile {self._key_path} is empty/corrupt "
+                        "but prior signed state exists; refusing to re-mint "
+                        "(fail closed)."
+                    )
                 logger.warning(
                     "PauseStore: empty MAC keyfile at %s; regenerating.",
                     self._key_path,
                 )
-            self._secrets_dir.mkdir(parents=True, exist_ok=True)
-            with contextlib.suppress(OSError):
-                os.chmod(self._secrets_dir, 0o700)
-            key = secrets.token_bytes(32)
-            tmp = self._key_path.with_name(self._key_path.name + ".tmp")
-            tmp.write_bytes(key)
-            with contextlib.suppress(OSError):
-                os.chmod(tmp, 0o600)
-            tmp.replace(self._key_path)
-            return key
+            elif prior_signed:
+                # H2: keyfile gone but a keyed marker / MAC sidecar remains.
+                raise IntegrityError(
+                    f"pause MAC keyfile {self._key_path} is missing but a "
+                    "prior keyed/signed state exists; refusing to mint a "
+                    "replacement key (fail closed)."
+                )
+            # No prior signing evidence: a genuinely fresh store -> mint a key.
+            return self._mint_key()
+        except IntegrityError:
+            raise
         except OSError as exc:
+            # H1: an OSError establishing the key for a PREVIOUSLY-keyed store
+            # must not silently degrade into unverified operation.
+            if prior_signed:
+                raise IntegrityError(
+                    "PauseStore: could not load the durable MAC key for a "
+                    f"previously-keyed store ({exc}); refusing to operate "
+                    "without integrity verification (fail closed)."
+                ) from exc
             logger.warning(
                 "PauseStore: could not establish a durable MAC key (%s); "
                 "operating in DEGRADED mode without integrity verification.",
@@ -150,7 +252,10 @@ class PauseStore:
 
     def _mac(self, payload: str) -> str:
         assert self._mac_key is not None  # only called when a key exists
-        return hmac.new(self._mac_key, payload.encode("utf-8"), sha256).hexdigest()
+        # Domain-separate the signed message (M-c) so a pause payload can never
+        # be replayed as some other context's HMAC input.
+        msg = self._MAC_CONTEXT + payload.encode("utf-8")
+        return hmac.new(self._mac_key, msg, sha256).hexdigest()
 
     @staticmethod
     def _atomic_write(path: Path, text: str) -> None:
@@ -197,6 +302,18 @@ class PauseStore:
         with self._lock:
             if not self._state_path.exists():
                 return []
+            # M-b: bound the read BEFORE parsing so an oversized (possibly
+            # hostile) file cannot exhaust memory in read_text / json.loads.
+            try:
+                size = self._state_path.stat().st_size
+            except OSError as exc:
+                raise PauseStoreError(f"pause state unreadable: {exc}") from exc
+            if size > self._MAX_STATE_BYTES:
+                raise IntegrityError(
+                    f"pause state file is {size} bytes, exceeding the "
+                    f"{self._MAX_STATE_BYTES}-byte cap; refusing to parse "
+                    "(DoS guard)."
+                )
             try:
                 payload = self._state_path.read_text(encoding="utf-8")
             except OSError as exc:
