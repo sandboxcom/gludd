@@ -33,6 +33,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from general_ludd.security.ssrf import is_url_blocked
+
 __all__ = ["HttpResponse", "HttpTransport", "OpenShiftSource"]
 
 
@@ -100,44 +102,38 @@ class OpenShiftConfigError(ValueError):
     """Raised for invalid / unsafe connector configuration."""
 
 
-def _host_is_private(host: str) -> bool:
-    """True if ``host`` is a literal internal/private address or local name.
+def _host_is_internal_name(host: str) -> bool:
+    """Connector-specific *extra* deny for non-IP internal hostnames (no DNS).
 
-    No DNS resolution is performed. A bare hostname that is *not* an IP literal
-    is treated as private when it has no dot (e.g. ``openshift``,
-    ``localhost``) or ends in a known internal-cluster suffix
-    (``.local``, ``.internal``, ``.cluster.local``, ``.svc``). IP literals are
-    classified with :mod:`ipaddress`.
+    The canonical :func:`general_ludd.security.ssrf.is_url_blocked` already covers
+    every IP literal (private/loopback/link-local/reserved/etc.) and the
+    localhost/metadata NAMES. This adds only OpenShift's extra heuristic for
+    hostnames that ``is_url_blocked`` intentionally does not resolve: a
+    single-label name (e.g. ``openshift``) or a known internal-cluster DNS
+    suffix (``.local``, ``.internal``, ``.cluster.local``, ``.svc``). IP literals
+    return ``False`` here — they are classified by ``is_url_blocked``.
     """
     host = host.strip().lower()
     if not host:
         return True
 
-    # Strip IPv6 brackets if present (urlsplit leaves them on .hostname? no —
-    # .hostname strips them, but be defensive for direct callers).
+    # Strip IPv6 brackets if present (urlsplit strips them off .hostname, but be
+    # defensive for direct callers).
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
 
     try:
-        ip = ipaddress.ip_address(host)
+        ipaddress.ip_address(host)
     except ValueError:
         # Not an IP literal — apply hostname heuristics.
-        if host in {"localhost"}:
-            return True
         internal_suffixes = (".local", ".internal", ".cluster.local", ".svc")
         if any(host.endswith(suffix) for suffix in internal_suffixes):
             return True
         # A single-label name (no dot) cannot be a public FQDN.
         return "." not in host
 
-    return bool(
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-        or ip.is_multicast
-    )
+    # IP literals are handled by the canonical guard, not here.
+    return False
 
 
 class OpenShiftSource:
@@ -177,12 +173,20 @@ class OpenShiftSource:
         if not api_server or not isinstance(api_server, str):
             raise OpenShiftConfigError("config requires 'api_server' (or 'base_url')")
 
-        parts = urlsplit(api_server.rstrip("/"))
+        normalized = api_server.rstrip("/")
+        parts = urlsplit(normalized)
+        # Always-on scheme + present-host check: rejected even when allow_private.
         if parts.scheme not in {"http", "https"} or not parts.hostname:
             raise OpenShiftConfigError(f"invalid api_server URL: {api_server!r}")
 
         self.allow_private: bool = bool(config.get("allow_private", False))
-        if _host_is_private(parts.hostname) and not self.allow_private:
+        # Private/loopback/metadata literal decision delegates to the canonical
+        # SSRF guard; the connector-specific internal-name heuristic is layered
+        # on top (single-label / .svc / .cluster.local names it does not resolve).
+        if not self.allow_private and (
+            is_url_blocked(normalized, scheme_allowlist=("http", "https"))
+            or _host_is_internal_name(parts.hostname)
+        ):
             raise OpenShiftConfigError(
                 f"api_server host {parts.hostname!r} is internal/private; "
                 "set allow_private=True to permit it (OpenShift API servers are "

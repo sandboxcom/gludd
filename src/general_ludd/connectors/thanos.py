@@ -38,7 +38,6 @@ Record shape (one dict per sample)::
 
 from __future__ import annotations
 
-import ipaddress
 import json as _json
 import os
 import time
@@ -47,21 +46,12 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
+from general_ludd.security.ssrf import is_url_blocked
+
 # Injectable transport signature: (url, params, headers, timeout) -> (status, json)
 HttpGet = Callable[..., "tuple[int, Any]"]
 
 KIND = "metrics"
-
-# Hostnames that must never be reached, regardless of IP resolution.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "metadata",
-        "metadata.google.internal",
-        "metadata.goog",
-    }
-)
 
 _DEFAULT_TIMEOUT = 10.0
 
@@ -92,29 +82,6 @@ def _default_http_get(
     return status, parsed_body
 
 
-def _strip_brackets(host: str) -> str:
-    # IPv6 literals arrive as "[::1]"
-    if host.startswith("[") and host.endswith("]"):
-        return host[1:-1]
-    return host
-
-
-def _is_blocked_ip(host: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(_strip_brackets(host))
-    except ValueError:
-        return False
-    return (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-        or not ip.is_global
-    )
-
-
 def _validate_base_url(base_url: str) -> str:
     """Reject SSRF-prone literal hosts; return a normalized base_url.
 
@@ -124,6 +91,8 @@ def _validate_base_url(base_url: str) -> str:
         raise ValueError("base_url is required")
 
     parts = urlsplit(base_url)
+    # Always-on scheme + present-host check (explicit message; also independent
+    # of the SSRF host decision below).
     if parts.scheme not in ("http", "https"):
         raise ValueError(f"unsupported scheme: {parts.scheme!r} (only http/https)")
 
@@ -131,10 +100,9 @@ def _validate_base_url(base_url: str) -> str:
     if not host:
         raise ValueError("base_url has no host")
 
-    if host in _BLOCKED_HOSTNAMES:
-        raise ValueError(f"blocked host: {host!r}")
-
-    if _is_blocked_ip(host):
+    # Private/loopback/metadata literal decision delegates to the canonical
+    # SSRF guard so this connector's blocklist can never drift.
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
         raise ValueError(f"blocked internal/metadata address: {host!r}")
 
     # Normalize: drop trailing slash so endpoint joins are clean.

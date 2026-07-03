@@ -210,6 +210,24 @@ def test_public_host_allowed_without_opt_in() -> None:
     assert src.api_server == PUBLIC_API
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "https://localhost:6443",
+        "https://metadata.google.internal",
+        "https://169.254.169.254",
+        "https://100.100.100.200",  # Alibaba metadata IP — canonical guard catches it
+    ],
+)
+def test_canonical_metadata_hosts_rejected(host: str) -> None:
+    # Regression for task #40 (SSRF-guard consolidation): the literal
+    # private/metadata decision delegates to security.ssrf.is_url_blocked. The
+    # connector-specific internal-name heuristic (single-label / .svc /
+    # .cluster.local) is layered on top and still covered above.
+    with pytest.raises(OpenShiftConfigError):
+        make_source(api_server=host)
+
+
 def test_no_dns_resolution_for_literal_host() -> None:
     # A public-looking name that *would* resolve to a private IP is still
     # accepted, proving we block on the literal string only (no DNS lookup).

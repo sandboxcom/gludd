@@ -174,6 +174,23 @@ def test_ssrf_rejects_non_http_scheme():
         NagiosSource({"base_url": "ftp://nagios.example.com"}, http_get=RecordingTransport([]))
 
 
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://localhost/",
+        "http://metadata.google.internal/",
+        "http://169.254.169.254/",
+        "http://100.100.100.200/",  # Alibaba metadata IP — canonical guard catches it
+    ],
+)
+def test_canonical_metadata_hosts_rejected(bad_url):
+    # Regression for task #40 (SSRF-guard consolidation): the private/metadata
+    # decision delegates to security.ssrf.is_url_blocked, which adds the
+    # Alibaba metadata IP the bespoke literal guard used to miss.
+    with pytest.raises(ValueError):
+        NagiosSource({"base_url": bad_url}, http_get=RecordingTransport([]))
+
+
 # ---------------------------------------------------------------------------
 # query() normalization — servicelist
 # ---------------------------------------------------------------------------

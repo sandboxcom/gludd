@@ -167,6 +167,29 @@ def test_public_base_url_accepted_without_opt_in() -> None:
     assert src.base_url == "https://argo.example.com"
 
 
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://localhost/",
+        "http://metadata.google.internal/",
+        "http://169.254.169.254/",
+        "http://100.100.100.200/",  # Alibaba metadata IP — canonical guard catches it
+    ],
+)
+def test_canonical_metadata_hosts_rejected(bad_url: str) -> None:
+    # Regression for task #40 (SSRF-guard consolidation): the private/metadata
+    # decision now delegates to security.ssrf.is_url_blocked, which blocks the
+    # full canonical set — including the Alibaba metadata IP the bespoke
+    # literal guard used to miss.
+    with pytest.raises(ConnectorError):
+        ArgoWorkflowsSource(_config(base_url=bad_url))
+
+
+def test_allow_private_permits_localhost() -> None:
+    src = ArgoWorkflowsSource(_config(base_url="http://localhost:2746", allow_private=True))
+    assert src.base_url == "http://localhost:2746"
+
+
 def test_health_ok() -> None:
     src = ArgoWorkflowsSource(_config(), transport=_FakeTransport(200, b'{"items": []}'))
     assert src.health() == {"ok": True, "detail": "HTTP 200"}
