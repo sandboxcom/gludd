@@ -2,10 +2,52 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from unittest.mock import MagicMock, patch
 
+import httpx
+
 from general_ludd.events.hooks import HookSystem
+
+
+# ---------------------------------------------------------------------------
+# Helpers — fake httpx.AsyncClient for use in tests
+# ---------------------------------------------------------------------------
+
+class _FakeResponse:
+    """Minimal httpx.Response stand-in that supports raise_for_status()."""
+    status_code: int = 200
+
+    def raise_for_status(self) -> None:
+        pass
+
+    def json(self) -> dict:
+        return {}
+
+
+def _make_fake_async_client(callback=None):
+    """Return an async context manager whose ``post`` method records calls
+    to *callback* and returns a _FakeResponse."""
+
+    async def _post(self, url, **kwargs):
+        if callback:
+            callback(url, **kwargs)
+        return _FakeResponse()
+
+    class _FakeAsyncClient:
+        post = _post
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+    return _FakeAsyncClient()
+
+
+# ---------------------------------------------------------------------------
+# Credential redaction tests
+# ---------------------------------------------------------------------------
 
 
 class TestCredentialRedaction:
@@ -15,15 +57,17 @@ class TestCredentialRedaction:
         """api_key in payload must not appear in the POST body."""
         captured = []
 
-        def fake_post(url, **kwargs):
+        def record(url, **kwargs):
             captured.append(kwargs.get("json", {}))
-            return MagicMock(status_code=200)
 
         hs = HookSystem()
         hs.register_webhook("evt", "http://example.com", retry_count=1)
 
         payload = {"api_key": "SEKRIT", "name": "ok", "type": "model_added"}  # pragma: allowlist secret
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=_make_fake_async_client(callback=record),
+        ):
             hs.fire("evt", payload)
 
         assert len(captured) == 1
@@ -34,13 +78,17 @@ class TestCredentialRedaction:
 
     def test_token_stripped(self):
         captured = []
-        def fake_post(url, **kwargs):
+
+        def record(url, **kwargs):
             captured.append(kwargs.get("json", {}))
-            return MagicMock(status_code=200)
+
         hs = HookSystem()
         hs.register_webhook("evt2", "http://example.com", retry_count=1)
         payload = {"token": "abc123", "user_id": "u1"}
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=_make_fake_async_client(callback=record),
+        ):
             hs.fire("evt2", payload)
         sent_payload = captured[0].get("payload", {})
         assert "token" not in sent_payload
@@ -48,16 +96,25 @@ class TestCredentialRedaction:
 
     def test_safe_keys_preserved(self):
         captured = []
-        def fake_post(url, **kwargs):
+
+        def record(url, **kwargs):
             captured.append(kwargs.get("json", {}))
-            return MagicMock(status_code=200)
+
         hs = HookSystem()
         hs.register_webhook("evt3", "http://example.com", retry_count=1)
         payload = {"name": "x", "type": "y", "id": "123", "timestamp": "t", "status": "ok"}
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=_make_fake_async_client(callback=record),
+        ):
             hs.fire("evt3", payload)
         sent_payload = captured[0].get("payload", {})
         assert sent_payload == payload
+
+
+# ---------------------------------------------------------------------------
+# Retry count clamp tests
+# ---------------------------------------------------------------------------
 
 
 class TestRetryCountClamp:
@@ -67,18 +124,26 @@ class TestRetryCountClamp:
         """retry_count=999 must result in at most 5 attempts."""
         attempt_count = []
 
-        def fake_post(url, **kwargs):
+        async def always_fail(self, url, **kwargs):
             attempt_count.append(1)
-            raise httpx_error()
+            raise httpx.ConnectError("fail")
 
-        import httpx
-        def httpx_error():
-            return httpx.ConnectError("fail")
+        class FailingClient:
+            post = always_fail
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
 
         hs = HookSystem()
         hs.register_webhook("retryevt", "http://example.com", retry_count=999)
 
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=FailingClient(),
+        ):
             hs.fire("retryevt", {"name": "x"})
 
         assert len(attempt_count) <= 5, f"Expected <=5 attempts, got {len(attempt_count)}"
@@ -87,50 +152,62 @@ class TestRetryCountClamp:
         """retry_count=0 must result in at least 1 attempt."""
         attempt_count = []
 
-        def fake_post(url, **kwargs):
+        def record(url, **kwargs):
             attempt_count.append(1)
-            return MagicMock(status_code=200)
 
         hs = HookSystem()
         hs.register_webhook("retryevt2", "http://example.com", retry_count=0)
 
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=_make_fake_async_client(callback=record),
+        ):
             hs.fire("retryevt2", {"name": "x"})
 
         assert len(attempt_count) >= 1
 
 
+# ---------------------------------------------------------------------------
+# Async context: ensure_future is used instead of run_in_executor
+# ---------------------------------------------------------------------------
+
+
 class TestNoBlockingCallInAsyncContext:
-    """B) Blocking httpx.post must not be called directly inside a running event loop."""
+    """B) Async dispatch must use asyncio.ensure_future, not run_in_executor."""
 
-    def test_blocking_post_not_called_when_loop_running(self):
-        """When fire() is called from async context, httpx.post should go via run_in_executor."""
-        blocking_calls = []
+    def test_ensure_future_used_in_async_context(self):
+        """When fire() is called from async context, ensure_future must be used."""
+        ensure_future_calls: list = []
 
-        MagicMock(return_value=MagicMock(status_code=200))
-
-        def capture_blocking(url, **kwargs):
-            blocking_calls.append(url)
-            return MagicMock(status_code=200)
+        def fake_ensure_future(coro):
+            ensure_future_calls.append(coro)
+            return MagicMock()
 
         hs = HookSystem()
         hs.register_webhook("asyncevt", "http://example.com", retry_count=1)
 
-        mock_loop = MagicMock()
-        mock_loop.run_in_executor = MagicMock(return_value=None)
-
         with (
-            patch("general_ludd.events.hooks.httpx.post", side_effect=capture_blocking),
-            patch("asyncio.get_running_loop", return_value=mock_loop),
+            patch(
+                "general_ludd.events.hooks.httpx.AsyncClient",
+                return_value=_make_fake_async_client(),
+            ),
+            patch(
+                "asyncio.get_running_loop", return_value=MagicMock(),
+            ),
+            patch(
+                "asyncio.ensure_future", side_effect=fake_ensure_future,
+            ),
         ):
             hs.fire("asyncevt", {"name": "safe"})
 
-        # When a running loop exists, httpx.post must NOT be called directly
-        assert len(blocking_calls) == 0, (
-            f"httpx.post was called directly {len(blocking_calls)} time(s) "
-            "inside a running event loop — this blocks the loop"
+        assert len(ensure_future_calls) >= 1, (
+            "asyncio.ensure_future must be called in async context"
         )
-        assert mock_loop.run_in_executor.called, "run_in_executor was not called"
+
+
+# ---------------------------------------------------------------------------
+# Nested redaction tests
+# ---------------------------------------------------------------------------
 
 
 class TestNestedRedaction:
@@ -139,13 +216,15 @@ class TestNestedRedaction:
     def _fire_and_capture(self, payload: dict) -> dict:
         captured = []
 
-        def fake_post(url, **kwargs):
+        def record(url, **kwargs):
             captured.append(kwargs.get("json", {}))
-            return MagicMock(status_code=200)
 
         hs = HookSystem()
         hs.register_webhook("nestevt", "http://example.com", retry_count=1)
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=_make_fake_async_client(callback=record),
+        ):
             hs.fire("nestevt", payload)
         assert len(captured) == 1
         return captured[0].get("payload", {})
@@ -155,7 +234,6 @@ class TestNestedRedaction:
         payload = {"meta": {"api_key": "SEKRIT", "env": "prod"}}  # pragma: allowlist secret
         sent = self._fire_and_capture(payload)
         assert "SEKRIT" not in str(sent), "Nested api_key value leaked to webhook"
-        # non-secret sibling key is preserved
         assert sent.get("meta", {}).get("env") == "prod"
 
     def test_nested_list_of_dicts_secret_redacted(self):
@@ -163,7 +241,6 @@ class TestNestedRedaction:
         payload = {"items": [{"token": "T_SECRET"}, {"name": "ok"}]}  # pragma: allowlist secret
         sent = self._fire_and_capture(payload)
         assert "T_SECRET" not in str(sent), "token value in list element leaked to webhook"
-        # non-secret element key is preserved
         items = sent.get("items", [])
         assert any(item.get("name") == "ok" for item in items)
 
@@ -180,7 +257,6 @@ class TestNestedRedaction:
         payload = {"a": {"b": {"authorization": "bearer xyz123", "safe": "keep"}}}  # pragma: allowlist secret
         sent = self._fire_and_capture(payload)
         assert "xyz123" not in str(sent), "3-level nested authorization value leaked"
-        # safe sibling preserved
         assert sent.get("a", {}).get("b", {}).get("safe") == "keep"
 
 
@@ -188,107 +264,85 @@ class TestNestedRedaction:
 # D-07: Async dispatch does not block the event loop
 # ---------------------------------------------------------------------------
 
+
 class TestAsyncWebhookNonBlocking:
-    """D-07 — _fire_webhook called from inside a running loop must not stall it.
+    """D-07 — _fire_webhook called from inside a running loop must not stall it."""
 
-    A slow webhook (e.g. 0.5 s) dispatched via fire() from an async context
-    must not prevent a concurrent coroutine from completing first.  The slow
-    network call must be offloaded via run_in_executor so the loop stays free.
-    """
+    def test_ensure_future_called_in_async_context(self):
+        """In async context, asyncio.ensure_future must be used."""
+        ensure_future_calls: list = []
 
-    def test_slow_webhook_does_not_stall_concurrent_task(self):
-        """Slow webhook dispatched in async context must not block the event loop.
+        def fake_ensure_future(coro):
+            ensure_future_calls.append(coro)
+            return MagicMock()
 
-        Strategy: patch asyncio.get_running_loop() to return a spy object that
-        records run_in_executor calls.  Then assert the executor was used (not
-        a direct blocking call), so a concurrent task could have progressed.
-        """
-        executor_calls: list[tuple] = []
-
-        class SpyLoop:
-            """Minimal loop stand-in that records run_in_executor calls."""
-
-            def run_in_executor(self, executor, fn, *args):
-                executor_calls.append((executor, fn, args))
-                # Return None — the impl fires-and-forgets (returns immediately)
-                return None
-
-        spy_loop = SpyLoop()
         hs = HookSystem()
         hs.register_webhook("asyncevt2", "http://slow.example.com", retry_count=1, timeout_seconds=30)
 
         with (
-            patch("general_ludd.events.hooks.httpx.post") as mock_post,
-            patch("asyncio.get_running_loop", return_value=spy_loop),
+            patch(
+                "general_ludd.events.hooks.httpx.AsyncClient",
+                return_value=_make_fake_async_client(),
+            ),
+            patch("asyncio.get_running_loop", return_value=MagicMock()),
+            patch("asyncio.ensure_future", side_effect=fake_ensure_future),
         ):
             hs.fire("asyncevt2", {"event_type": "model_added", "profile": {}})
 
-        # The blocking httpx.post must NOT be called directly — offloaded to executor
-        mock_post.assert_not_called()
-        assert len(executor_calls) >= 1, (
-            "run_in_executor was never called — webhook dispatch blocked the loop"
+        assert len(ensure_future_calls) >= 1, (
+            "ensure_future was never called in async context"
         )
 
-    def test_sync_context_uses_direct_httpx_post(self):
-        """When there is NO running loop, direct httpx.post is acceptable."""
+    def test_sync_context_uses_async_client(self):
+        """When there is NO running loop, async client is used via asyncio.run."""
         called = []
 
-        def fake_post(url, **kwargs):
+        def record(url, **kwargs):
             called.append(url)
-            return MagicMock(status_code=200)
 
         hs = HookSystem()
         hs.register_webhook("syncevt", "http://example.com", retry_count=1)
 
-        # asyncio.get_running_loop raises RuntimeError when no loop is running
         with (
-            patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post),
+            patch(
+                "general_ludd.events.hooks.httpx.AsyncClient",
+                return_value=_make_fake_async_client(callback=record),
+            ),
             patch("asyncio.get_running_loop", side_effect=RuntimeError("no loop")),
         ):
             hs.fire("syncevt", {"data": "ok"})
 
-        assert len(called) == 1, "Direct httpx.post should be used in sync context"
+        assert len(called) == 1, "AsyncClient should be used in sync context"
 
 
 # ---------------------------------------------------------------------------
 # D-07b: Async dispatch + redaction — both concerns verified together
 # ---------------------------------------------------------------------------
 
+
 class TestAsyncWebhookRedactionCombined:
-    """D-07b — async offload AND credential redaction are both enforced.
+    """D-07b — async dispatch AND credential redaction are both enforced."""
 
-    When fire() is called from inside a running event loop the webhook body
-    must reach httpx.post via run_in_executor (not a direct blocking call), AND
-    any sensitive keys must have been stripped by _redact_payload before the
-    body is handed off to the thread.
-    """
-
-    def test_executor_used_and_secret_redacted_in_async_context(self):
-        """run_in_executor is used in async context AND credentials are redacted.
+    def test_ensure_future_used_and_secret_redacted(self):
+        """Async dispatch schedules a task AND credentials are redacted.
 
         Strategy:
-        1. Patch asyncio.get_running_loop() to return a capturing stand-in that
-           records the callable passed to run_in_executor without executing it —
-           this proves httpx.post is NOT called directly on the event-loop thread.
-        2. Manually invoke the captured callable (with httpx.post still mocked)
-           to confirm the body seen by httpx.post has sensitive keys stripped.
+        1. Patch asyncio.ensure_future to capture the scheduled coroutine.
+        2. Run the coroutine separately (with AsyncClient mocked) to verify the
+           body sent via httpx has sensitive keys stripped.
         """
+        captured_coros: list = []
+
+        def fake_ensure_future(coro):
+            captured_coros.append(coro)
+            task = MagicMock()
+            task.add_done_callback = lambda cb: None
+            return task
+
         posted_bodies: list[dict] = []
 
-        def fake_post(url, **kwargs):
+        def record(url, **kwargs):
             posted_bodies.append(kwargs.get("json", {}))
-            mock_resp = MagicMock()
-            mock_resp.raise_for_status = lambda: None
-            return mock_resp
-
-        executor_callables: list = []
-
-        class CapturingLoop:
-            """Stand-in loop that records run_in_executor calls without running them."""
-
-            def run_in_executor(self, executor, fn, *args):
-                executor_callables.append(fn)
-                return None  # fire-and-forget contract; caller does not await
 
         hs = HookSystem()
         hs.register_webhook("secure_async_evt", "http://example.com", retry_count=1)
@@ -296,30 +350,33 @@ class TestAsyncWebhookRedactionCombined:
         payload = {"api_key": "SEKRIT", "name": "ok", "type": "model_added"}  # pragma: allowlist secret
 
         with (
-            patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post),
-            patch("asyncio.get_running_loop", return_value=CapturingLoop()),
+            patch(
+                "general_ludd.events.hooks.httpx.AsyncClient",
+                return_value=_make_fake_async_client(),
+            ),
+            patch("asyncio.get_running_loop", return_value=MagicMock()),
+            patch("asyncio.ensure_future", side_effect=fake_ensure_future),
         ):
             hs.fire("secure_async_evt", payload)
 
-        # Phase 1: httpx.post must NOT be called directly on the loop thread
-        assert len(executor_callables) == 1, (
-            "run_in_executor must be called exactly once in async context"
+        # Phase 1: ensure_future must have been called
+        assert len(captured_coros) == 1, (
+            "ensure_future must be called exactly once in async context"
         )
         assert len(posted_bodies) == 0, (
-            "httpx.post must not be invoked directly while an event loop is running"
+            "httpx must not be invoked on the same call stack as fire()"
         )
 
-        # Phase 2: execute the captured callable to verify redaction was applied
-        # before the body was handed to the thread. The Phase-1 `with` block has
-        # exited, so re-establish the httpx.post patch — otherwise the captured
-        # _do_post closure would issue a real network call (the CapturingLoop is
-        # not needed here: _do_post calls httpx.post directly, no event loop).
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
-            executor_callables[0]()
+        # Phase 2: run the captured coroutine with AsyncClient mocked to verify redaction
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=_make_fake_async_client(callback=record),
+        ):
+            asyncio.run(captured_coros[0])
 
-        assert len(posted_bodies) == 1, "httpx.post must be called inside _do_post"
+        assert len(posted_bodies) == 1, "httpx post must be called inside the coroutine"
         sent_payload = posted_bodies[0].get("payload", {})
-        assert "api_key" not in sent_payload, "api_key key must be redacted before thread dispatch"
+        assert "api_key" not in sent_payload, "api_key must be redacted before dispatch"
         assert "SEKRIT" not in str(sent_payload), "secret value must not appear in forwarded body"
         assert sent_payload.get("name") == "ok", "non-secret key must survive redaction"
 
@@ -328,6 +385,7 @@ class TestAsyncWebhookRedactionCombined:
 # D-08: ModelAddedEvent-style profile payload strips credentials at registration
 # ---------------------------------------------------------------------------
 
+
 class TestModelAddedEventCredentialStrip:
     """D-08 — ModelAddedEvent.profile can carry api_key / token; must be stripped."""
 
@@ -335,14 +393,12 @@ class TestModelAddedEventCredentialStrip:
         """api_key inside a model profile sub-dict must not reach the webhook URL."""
         captured = []
 
-        def fake_post(url, **kwargs):
+        def record(url, **kwargs):
             captured.append(kwargs.get("json", {}))
-            return MagicMock(status_code=200)
 
         hs = HookSystem()
         hs.register_webhook("model_added", "https://webhook.example.com", retry_count=1)
 
-        # Simulate what ModelAddedEvent.profile might look like
         payload = {
             "event": "model_added",
             "profile": {
@@ -354,7 +410,10 @@ class TestModelAddedEventCredentialStrip:
             },
         }
 
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=_make_fake_async_client(callback=record),
+        ):
             hs.fire("model_added", payload)
 
         assert len(captured) == 1
@@ -362,7 +421,6 @@ class TestModelAddedEventCredentialStrip:
         body_str = str(body)
         assert "sk-abc123" not in body_str, "api_key value leaked in outgoing body"
         assert "bearer-xyz" not in body_str, "token value leaked in outgoing body"
-        # Safe fields must be preserved
         assert body.get("payload", {}).get("event") == "model_added"
 
 
@@ -370,13 +428,9 @@ class TestModelAddedEventCredentialStrip:
 # D-34: retry_count is clamped AT REGISTRATION, stored value == min(max(1,n), 5)
 # ---------------------------------------------------------------------------
 
-class TestRetryCountClampAtRegistration:
-    """D-34 — retry_count must be clamped to [1, 5] when register_webhook is called.
 
-    The stored WebhookConfig.retry_count must equal 5 for any input > 5,
-    and 1 for any input < 1 (including 0 and negatives).  This prevents a
-    caller from configuring a 10000-iteration retry loop.
-    """
+class TestRetryCountClampAtRegistration:
+    """D-34 — retry_count must be clamped to [1, 5] when register_webhook is called."""
 
     def test_retry_count_10000_stored_as_5(self):
         """register_webhook(retry_count=10000) must store retry_count=5 on the config."""
@@ -416,36 +470,33 @@ class TestRetryCountClampAtRegistration:
 # Real-loop non-blocking proof: fire() must NOT hold the event-loop thread
 # ---------------------------------------------------------------------------
 
+
 class TestEventLoopNotBlocked:
     """Prove with a REAL asyncio event loop that fire-and-forget webhook
-    dispatch via ``loop.run_in_executor`` never blocks the loop thread.
-
-    The other async tests in this file stub ``asyncio.get_running_loop`` with a
-    MagicMock / Spy / Capturing stand-in and only assert that
-    ``run_in_executor`` was *called*.  They never prove the actual non-blocking
-    property end-to-end.  These tests do: they run a real loop, schedule a
-    blocking POST that sleeps 0.5s in a thread, and assert a concurrent
-    coroutine completes in well under that time.
-    """
+    dispatch via ``asyncio.ensure_future`` never blocks the loop thread."""
 
     async def test_slow_webhook_does_not_block_real_loop(self):
-        """T1 — a 0.5s blocking httpx.post must not stall a real event loop.
+        """T1 — a 0.5s async post must not stall a real event loop.
 
         Strategy:
-        * Inside ``asyncio.run`` (pytest-asyncio auto mode), register one
-          webhook whose mocked ``httpx.post`` blocks for 0.5s via
-          ``time.sleep`` (appropriate: ``run_in_executor`` runs it on a thread).
-        * Schedule a sentinel coroutine that sets an ``asyncio.Event`` after a
-          10ms ``asyncio.sleep``.
-        * Call ``hs.fire(...)`` (sync, fire-and-forget — schedules the executor
-          work and returns immediately).
-        * ``await asyncio.wait_for(sentinel_task, timeout=0.3)`` — must
-          succeed.  If the loop thread were held by the blocking POST, the
-          sentinel could not have run before the 0.3s deadline.
+        * Inside ``asyncio.run`` (pytest-asyncio auto mode), register a webhook
+          whose mocked AsyncClient.post sleeps 0.5s.
+        * Schedule a sentinel coroutine that sets an ``asyncio.Event`` after 10ms.
+        * Call ``hs.fire(...)`` (fire-and-forget).
+        * ``await asyncio.wait_for(sentinel_task, timeout=0.3)`` must succeed.
         """
-        def slow_post(url, **kwargs):
-            time.sleep(0.5)
-            return MagicMock(status_code=200)
+
+        async def slow_post(self, url, **kwargs):
+            await asyncio.sleep(0.5)
+
+        class SlowClient:
+            post = slow_post
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
 
         hs = HookSystem()
         hs.register_webhook(
@@ -460,33 +511,37 @@ class TestEventLoopNotBlocked:
 
         sentinel_task = asyncio.ensure_future(sentinel_coro())
 
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=slow_post):
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=SlowClient(),
+        ):
             hs.fire("realloop_evt", {"name": "ok", "type": "model_added"})
-
-        await asyncio.wait_for(sentinel_task, timeout=0.3)
+            await asyncio.wait_for(sentinel_task, timeout=0.3)
 
         assert sentinel.is_set(), (
             "Sentinel coroutine did not complete within 0.3s — the event loop "
             "thread was blocked by the fire-and-forget webhook dispatch"
         )
 
-        # Drain the pending webhook Future so its done-callback doesn't leak
-        # an unobserved exception into the test session.
+        # Drain the pending webhook task so its done-callback doesn't leak
         if hs._pending_webhooks:
             await asyncio.gather(*hs._pending_webhooks, return_exceptions=True)
         await sentinel_task
 
     async def test_multiple_webhooks_tracked_in_pending_set(self):
-        """T2 — firing multiple webhooks populates _pending_webhooks.
+        """T2 — firing multiple webhooks populates _pending_webhooks."""
 
-        Each fire-and-forget dispatch must add an in-flight Future to the
-        tracking set; once the dispatch completes the done-callback discards
-        it.  While the slow POSTs are still in flight, the set must be
-        non-empty and contain one entry per registered webhook.
-        """
-        def slow_post(url, **kwargs):
-            time.sleep(0.3)
-            return MagicMock(status_code=200)
+        async def slow_post(self, url, **kwargs):
+            await asyncio.sleep(0.3)
+
+        class SlowClient:
+            post = slow_post
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
 
         hs = HookSystem()
         for i in range(3):
@@ -494,17 +549,19 @@ class TestEventLoopNotBlocked:
                 f"multi_evt_{i}", "http://example.com", retry_count=1, timeout_seconds=5
             )
 
-        with patch("general_ludd.events.hooks.httpx.post", side_effect=slow_post):
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=SlowClient(),
+        ):
             for i in range(3):
                 hs.fire(f"multi_evt_{i}", {"i": i})
             observed = len(hs._pending_webhooks)
 
         assert observed == 3, (
-            f"Expected 3 in-flight webhook Futures while slow POSTs pending, "
+            f"Expected 3 in-flight webhook tasks while slow POSTs pending, "
             f"saw {observed}"
         )
 
-        # Allow all dispatched POSTs to finish so done-callbacks discard them.
         if hs._pending_webhooks:
             await asyncio.gather(*hs._pending_webhooks, return_exceptions=True)
         assert len(hs._pending_webhooks) == 0, (

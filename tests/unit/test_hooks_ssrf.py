@@ -9,7 +9,8 @@ SSRFBlockedError; these tests pin both defences at the register_webhook seam.
 """
 from __future__ import annotations
 
-import httpx
+from unittest.mock import patch
+
 import pytest
 
 from general_ludd.events.hooks import HookSystem, SSRFBlockedError
@@ -53,27 +54,35 @@ class TestRegisterWebhookSSRF:
 
 
 class TestFireWebhookNoRedirect:
-    def test_follow_redirects_false(self, monkeypatch):
+    def test_follow_redirects_false(self):
         """_fire_webhook must pass follow_redirects=False so a 30x can't bounce
         the request into an internal address after the registration-time check."""
-        captured: dict = {}
+        captured: list[dict] = []
 
-        def fake_post(url, **kwargs):
-            captured["url"] = url
-            captured["kwargs"] = kwargs
+        async def fake_post(self, url, **kwargs):
+            captured.append({"url": url, "kwargs": kwargs})
 
-            class _Resp:
-                status_code = 200
+        class FakeClient:
+            post = fake_post
 
-            return _Resp()
+            async def __aenter__(self):
+                return self
 
-        monkeypatch.setattr(httpx, "post", fake_post)
+            async def __aexit__(self, *args):
+                pass
 
         hs = HookSystem()
         hs.register_webhook("job.complete", "https://hooks.example.com/notify")
-        hs.fire("job.complete", {"result": "ok"})
 
-        assert captured, "httpx.post was never called"
-        assert captured["kwargs"].get("follow_redirects") is False, (
+        from unittest.mock import patch
+
+        with patch(
+            "general_ludd.events.hooks.httpx.AsyncClient",
+            return_value=FakeClient(),
+        ):
+            hs.fire("job.complete", {"result": "ok"})
+
+        assert captured, "AsyncClient.post was never called"
+        assert captured[0]["kwargs"].get("follow_redirects") is False, (
             "follow_redirects must be explicitly False to block redirect-based SSRF"
         )

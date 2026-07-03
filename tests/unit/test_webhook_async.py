@@ -34,7 +34,7 @@ def _make_fake_client(callback=None):
     manager used inside a ``patch``-wrapped call.
     """
 
-    async def _post(url, **kwargs):
+    async def _post(self, url, **kwargs):
         if callback:
             callback(url, **kwargs)
         return _FakeResponse()
@@ -85,6 +85,9 @@ class TestAsyncClientUsed:
             "evt_async", "http://example.com", retry_count=1, timeout_seconds=5
         )
 
+        # Keep patches alive across the full async lifecycle: fire() schedules
+        # the coroutine, and the subsequent awaits yield to the loop so the
+        # coroutine actually executes — all inside the with block.
         with (
             patch(
                 "general_ludd.events.hooks.httpx.AsyncClient",
@@ -97,12 +100,12 @@ class TestAsyncClientUsed:
         ):
             hs.fire("evt_async", {"name": "test", "type": "model_added"})
 
-        # Give the async task time to schedule and run
-        await asyncio.sleep(0.3)
+            # Give the async task time to schedule and run
+            await asyncio.sleep(0.3)
 
-        # Drain pending tasks so the async webhook completes
-        if hs._pending_webhooks:
-            await asyncio.gather(*hs._pending_webhooks, return_exceptions=True)
+            # Drain pending tasks so the async webhook completes
+            if hs._pending_webhooks:
+                await asyncio.gather(*hs._pending_webhooks, return_exceptions=True)
 
         assert len(async_post_calls) >= 1, (
             f"httpx.AsyncClient.post must be called in async context; "
@@ -134,7 +137,7 @@ class TestAsyncWebhookNonBlocking:
           not have completed before the 0.3 s deadline.
         """
 
-        async def slow_post(url, **kwargs):
+        async def slow_post(self, url, **kwargs):
             await asyncio.sleep(0.5)
 
         fake_client = _make_fake_client()
@@ -158,8 +161,8 @@ class TestAsyncWebhookNonBlocking:
             return_value=fake_client,
         ):
             hs.fire("slow_evt", {"name": "ok", "type": "model_added"})
+            await asyncio.wait_for(sentinel_task, timeout=0.3)
 
-        await asyncio.wait_for(sentinel_task, timeout=0.3)
         assert sentinel.is_set(), (
             "Sentinel coroutine did not complete within 0.3 s — the event loop "
             "thread was blocked by the webhook dispatch"
