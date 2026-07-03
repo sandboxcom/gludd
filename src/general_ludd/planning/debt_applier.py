@@ -23,6 +23,7 @@ correctly.
 from __future__ import annotations
 
 import inspect
+import json
 import logging
 from typing import Any
 
@@ -169,7 +170,12 @@ async def _create_deferred_todo(
         "created_by": "debt_evaluator",
         "project_id": project_id,
         "parent_todo_id": parent_id,
-        "tags": [tag],
+        # ``TodoModel.tags`` is a Text column holding a JSON array (the
+        # "JSON-in-Text" convention shared by every other create path, e.g.
+        # HumanTodoRepository.create). A raw Python list is rejected by the
+        # SQLite driver ("type 'list' is not supported") AND poisons the job
+        # session's transaction, so serialise to a JSON string here.
+        "tags": json.dumps([tag]),
     }
     try:
         created = await _maybe_await(todo_repo.create(payload))

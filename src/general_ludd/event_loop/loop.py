@@ -33,6 +33,10 @@ from general_ludd.models.job_invocation import (
     is_generation_work_type,
 )
 from general_ludd.observability.timing import default_tracker
+from general_ludd.planning.debt_evaluator import (
+    DebtEvaluator,
+    make_debt_evaluate_fn,
+)
 from general_ludd.reload.self_improve import SelfImprovementWorkflow
 from general_ludd.rules.engine import Rule, apply_rule_actions, evaluate_rules
 from general_ludd.schemas.benchmark import TaskType
@@ -340,6 +344,15 @@ class EventLoop:
         self._model_perf_repo: Any = model_perf_repo
         self._model_performance_interval: int = model_performance_interval
         self._deployment_health_router: Any = deployment_health_router
+        # Task #48: plan-time technical-debt evaluator (config-gated at the
+        # dispatch seam; default OFF). Wired to the model gateway when present;
+        # a None gateway leaves the evaluator on its deterministic structural
+        # fallback so this is never a hard dependency.
+        self._debt_evaluator = DebtEvaluator(
+            make_debt_evaluate_fn(self._model_gateway)
+            if self._model_gateway
+            else None
+        )
 
     def _track_background_task(self, task: asyncio.Task[Any]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -1592,6 +1605,49 @@ class EventLoop:
         prompt_text = await self._append_message_queue_section(
             prompt_text, todo, project_id_val,
         )
+        # Task #48: plan-time technical-debt evaluation (config-gated, default
+        # OFF, NON-FATAL). When ``debt_eval.enabled`` is truthy, evaluate the
+        # planned change for forward-looking scope gaps: ``fold_in`` gaps are
+        # appended to the prompt so THIS task closes them; ``defer`` gaps become
+        # BACKLOG child todos on the job session. The default-OFF path is a
+        # no-op — dispatch is byte-for-byte unchanged when the flag is absent —
+        # and any failure here is swallowed so execution always proceeds.
+        debt_cfg = self.config.get("debt_eval", {}) if isinstance(self.config, dict) else {}
+        if isinstance(debt_cfg, dict) and debt_cfg.get("enabled", False):
+            try:
+                from general_ludd.planning.artifact import PlanArtifact
+                from general_ludd.planning.debt_applier import apply_debt_findings
+
+                plan = PlanArtifact.from_todo(todo)
+                goal = (
+                    _safe_str(todo, "title")
+                    or _safe_str(todo, "description")
+                    or plan.todo_id
+                )
+                findings = await asyncio.to_thread(
+                    self._debt_evaluator.evaluate, plan, goal
+                )
+                repo = (
+                    TodoRepository(eff_session)
+                    if eff_session is not None
+                    else self._todo_repo
+                )
+                if repo is not None:
+                    result = await apply_debt_findings(
+                        findings, plan, todo, repo, project_id=project_id_val
+                    )
+                    if result.prompt_addendum:
+                        prompt_text = (
+                            f"{prompt_text}\n\n{result.prompt_addendum}"
+                            if prompt_text
+                            else result.prompt_addendum
+                        )
+            except Exception:
+                logger.warning(
+                    "debt-eval hook failed for todo %s; proceeding with dispatch",
+                    getattr(todo, "todo_id", "?"),
+                    exc_info=True,
+                )
         skill_body = self._resolve_skill_body(todo)
         # Load shared vars via the effective (possibly per-job) repo.
         shared_vars: dict[str, str] | None = None

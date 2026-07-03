@@ -12,6 +12,7 @@ can assert the exact mirrored shape without a database.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -117,7 +118,8 @@ async def test_defer_creates_one_backlog_todo() -> None:
     assert payload["created_by"] == "debt_evaluator"
     assert payload["parent_todo_id"] == "TODO-PARENT"
     assert payload["project_id"] == "proj-1"
-    assert payload["tags"] == ["tech-debt"]
+    # tags is serialised to a JSON string for the Text column (see debt_applier).
+    assert json.loads(payload["tags"]) == ["tech-debt"]
     assert payload["title"].startswith("[tech-debt]")
     assert "repeated fetches are wasteful" in payload["description"]
     assert result.deferred_todo_ids == ["TODO-DEBT-1"]
