@@ -816,6 +816,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_ornith_subparser(sub)
     ornith_parser = sub.choices["ornith"]
 
+    # `gludd deploy-check` — static model-deployment misconfig detector.
+    from general_ludd.cli_deploy_check import add_deploy_check_subparser
+
+    add_deploy_check_subparser(sub)
+    deploy_check_parser = sub.choices["deploy-check"]
+
     subcommand_map = {
         "models": models_parser,
         "mcp": mcp_parser,
@@ -839,6 +845,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "self-improve": self_improve_parser,
         "remediation": remediation_parser,
         "ornith": ornith_parser,
+        "deploy-check": deploy_check_parser,
     }
 
     return parser, subcommand_map

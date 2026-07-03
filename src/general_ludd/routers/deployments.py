@@ -16,8 +16,10 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from general_ludd.infra.gpu_info_adapter import gpu_info_from_gpu_type
+from general_ludd.infra.model_deploy_check import Finding, MisconfigDetector
 from general_ludd.models.deployment_health import (
     DeploymentHealthChecker,
     DeploymentHealthIncident,
@@ -52,6 +54,55 @@ class IncidentResponse(BaseModel):
 class IncidentListResponse(BaseModel):
     incidents: list[IncidentResponse]
     total: int
+
+
+class MisconfigCheckRequest(BaseModel):
+    """Body for the static misconfig check.
+
+    ``deployment`` is the serving config to lint. GPU context can be supplied
+    either directly (``gpu_info``) or resolved from the static GPU tables via
+    ``gpu_type`` (+ optional ``gpu_count``). When neither is given the detector
+    runs config-only rules.
+    """
+
+    deployment: Any
+    gpu_info: dict[str, Any] | None = None
+    gpu_type: str | None = None
+    gpu_count: int = Field(default=1, ge=1)
+
+
+class FindingResponse(BaseModel):
+    rule_id: str
+    severity: str
+    engine: str
+    message: str
+    remediation: str
+    evidence: dict[str, Any]
+
+
+class RemediationResponse(BaseModel):
+    rule_id: str
+    format: str
+    config_patch: dict[str, Any]
+    requires_restart: bool
+    notes: str
+
+
+class MisconfigCheckResponse(BaseModel):
+    findings: list[FindingResponse]
+    remediations: list[RemediationResponse]
+    has_critical: bool
+
+
+def _finding_to_dict(f: Finding) -> dict[str, Any]:
+    return {
+        "rule_id": f.rule_id,
+        "severity": f.severity,
+        "engine": f.engine,
+        "message": f.message,
+        "remediation": f.remediation,
+        "evidence": f.evidence,
+    }
 
 
 def _get_health_checker(app: FastAPI) -> DeploymentHealthChecker | None:
@@ -143,4 +194,28 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
                 _incident_to_dict(i) for i in incidents
             ],
             "total": len(incidents),
+        }
+
+    @app.post(
+        "/admin/deployments/misconfig-check",
+        response_model=None,
+    )
+    async def post_misconfig_check(body: MisconfigCheckRequest) -> dict[str, Any]:
+        """Statically lint a serving config for misconfigurations.
+
+        Never returns 500 on a malformed ``deployment``: the detector surfaces
+        that as a ``critical`` finding (HTTP 200).
+        """
+        detector = MisconfigDetector()
+        if body.gpu_info is not None:
+            gpu_info: dict[str, Any] = body.gpu_info
+        elif body.gpu_type:
+            gpu_info = gpu_info_from_gpu_type(body.gpu_type, body.gpu_count)
+        else:
+            gpu_info = {}
+        findings = detector.check(body.deployment, gpu_info)
+        return {
+            "findings": [_finding_to_dict(f) for f in findings],
+            "remediations": [detector.remediate(f) for f in findings],
+            "has_critical": any(f.severity == "critical" for f in findings),
         }
