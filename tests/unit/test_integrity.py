@@ -571,7 +571,7 @@ class TestHashStoreDeletedStore:
 
         with tempfile.TemporaryDirectory() as tmp:
             scanner, store = self._scanner(tmp)
-            scanner._save_hashes({"/etc/passwd": "good-hash"})
+            scanner._save_hashes({"/etc/passwd": "good-hash"})  # pragma: allowlist secret
             # Attacker deletes only the store, leaving the signed sidecar behind.
             (store / "integrity_db.json").unlink()
             assert (store / "integrity_db.mac").exists()
