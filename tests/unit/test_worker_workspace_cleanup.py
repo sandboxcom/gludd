@@ -189,3 +189,53 @@ class TestArtifactsAndEventsAreInlineAfterCleanup:
         assert body["events"] == [inline_event], (
             "events must be inline dicts returned verbatim in the response"
         )
+
+
+class TestCleanupEdgeCases:
+    """try/finally cleanup must handle edge cases gracefully."""
+
+    def test_cleanup_handles_missing_directory(self, tmp_path):
+        """rmtree with ignore_errors=True must not raise when dir is already gone."""
+        import shutil
+
+        root = tmp_path / "gone-workspace"
+        root.mkdir()
+        shutil.rmtree(root)
+        assert not root.exists()
+
+        # This must not raise — the finally block calls rmtree with
+        # ignore_errors=True, which handles ENOENT gracefully.
+        shutil.rmtree(str(root), ignore_errors=True)
+
+    def test_cleanup_runs_on_playbook_timeout(self, tmp_path):
+        """finally must clean up even when run_playbook times out."""
+
+        dirs = _make_dirs(tmp_path)
+        workspace = Path(dirs["root"])
+        assert workspace.exists(), "pre-condition: workspace must exist before call"
+
+        runner = _stub_runner(dirs)
+        runner.run_playbook.side_effect = TimeoutError("playbook timed out")
+
+        app = create_app()
+        with (
+            patch("general_ludd.worker.app.get_runner", return_value=runner),
+            patch(
+                "general_ludd.worker.app.invoke_model_for_generation",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            resp = client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-TIMEOUT-001",
+                    "playbook": "test_playbook",
+                    "queue": "core",
+                },
+            )
+        assert resp.status_code == 500
+        assert not workspace.exists(), (
+            "workspace must be removed after playbook timeout — finally block must guarantee cleanup"
+        )

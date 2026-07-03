@@ -98,7 +98,8 @@ class TestMigrationChainSingleHead:
     def test_single_head(self):
         script = self._script_dir()
         heads = script.get_heads()
-        assert heads == ["016"], f"expected single head '016', got {heads}"
+        assert "018" in heads, f"expected head to include '018', got {heads}"
+        assert len(heads) == 1, f"expected single head, got {heads}"
 
     def test_ornith_014_migrations_are_distinct(self):
         script = self._script_dir()
@@ -107,6 +108,8 @@ class TestMigrationChainSingleHead:
         assert "014a" in rev_ids
         assert "015" in rev_ids
         assert "016" in rev_ids
+        assert "017" in rev_ids
+        assert "018" in rev_ids
 
     def test_chain_is_linear(self):
         script = self._script_dir()

@@ -472,60 +472,32 @@ def create_app(
                     playbook_name=job.playbook,
                     private_data_dir=dirs["root"],
                     extravars={"model_response": model_response} if model_response is not None else None,
-                    # Enforce the resolved bound at the INNER (forked, killable)
-                    # layer. Without this, run_playbook fell back to its own
-                    # GLUDD_PLAYBOOK_TIMEOUT default (300s), silently capping a
-                    # job's requested timeout (up to 600s) at 300s.
                     timeout=_timeout,
                 ),
-                # Outer backstop runs LONGER than the inner timeout so the inner
-                # enforcement fires first and returns a result dict (no exception)
-                # — closing the rmtree-during-live-run race where the outer
-                # wait_for cancelled while run_playbook was still writing into
-                # dirs["root"]. The outer only trips if the worker thread itself
-                # wedges past the inner bound.
                 timeout=_timeout + 30.0,
             )
-        except Exception:
-            # Blocking rmtree — offload to keep the worker's asyncio loop free
-            # (consistent with the prepare_job_dirs/write_vars offloads above).
+            # Build the response dict from runner_result *before* removing the
+            # workspace.  finally block below guarantees cleanup on every path.
+            response_payload = {
+                "status": "created",
+                "return_id": f"RET-{job.job_id}",
+                "todo_id": job.todo_id,
+                "job_id": job.job_id,
+                "playbook": job.playbook,
+                "model_response": model_response,
+                "tool_calls_detected": tool_calls_detected,
+                "tool_dispatch_results": tool_dispatch_results,
+                "exit_code": runner_result.get("rc", runner_result.get("exit_code", 0)),
+                "result_summary": runner_result.get("output", runner_result.get("result_summary", "")),
+                "artifacts": runner_result.get("artifacts", []),
+                "events": runner_result.get("events", []),
+            }
+            return response_payload
+        finally:
+            # Guaranteed cleanup on ALL paths — success, failure, cancellation.
+            # ignore_errors=True handles missing directory, permission errors,
+            # and thread-pool shutdown.  Offloaded to keep asyncio loop free.
             await asyncio.to_thread(shutil.rmtree, dirs["root"], ignore_errors=True)
-            raise
-        # Build the response dict from runner_result *before* removing the
-        # workspace.
-        #
-        # SAFETY NOTE — rmtree is safe here: AnsibleResult (core_runner.py)
-        # has no "artifacts" field.  runner_result.get("artifacts", []) always
-        # returns [] (the default), and runner_result["events"] is a
-        # list[dict[str,Any]] of inline task-event dicts collected by
-        # _EventCollectorCallback — they contain host/task/result strings, NOT
-        # file paths under dirs["root"].  The on-disk artifacts/ sub-dir exists
-        # but nothing populates it into runner_result, so deleting the workspace
-        # after capturing the payload is safe and cannot lose any referenced
-        # file.  If a future playbook runner ever puts real file-paths into
-        # runner_result["artifacts"], that runner MUST copy those files out to
-        # the filestore BEFORE returning its result dict so this cleanup remains
-        # safe.
-        response_payload = {
-            "status": "created",
-            "return_id": f"RET-{job.job_id}",
-            "todo_id": job.todo_id,
-            "job_id": job.job_id,
-            "playbook": job.playbook,
-            "model_response": model_response,
-            "tool_calls_detected": tool_calls_detected,
-            "tool_dispatch_results": tool_dispatch_results,
-            "exit_code": runner_result.get("rc", runner_result.get("exit_code", 0)),
-            "result_summary": runner_result.get("output", runner_result.get("result_summary", "")),
-            "artifacts": runner_result.get("artifacts", []),
-            "events": runner_result.get("events", []),
-        }
-        # Successful jobs must clean up their workspace to prevent disk
-        # accumulation of prompt/model-output data (failure path already does
-        # this via the except branch above).  All payload data is inline (see
-        # SAFETY NOTE above), so cleanup cannot lose referenced content.
-        await asyncio.to_thread(shutil.rmtree, dirs["root"], ignore_errors=True)
-        return response_payload
 
     @application.post("/jobs/return-review")
     async def return_review_job(job: JobSpec) -> dict[str, Any]:

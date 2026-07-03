@@ -320,7 +320,7 @@ class TaskDecisionModel(Base):
         String(64),
         ForeignKey("task_returns.return_id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
+        unique=True,
     )
     project_id: Mapped[str | None] = mapped_column(
         String(32),

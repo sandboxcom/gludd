@@ -229,6 +229,49 @@ def test_rule_c_silent_on_good_multi_gpu_nvlink() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Rule d: CPU offload / swap thrash — any offload on a GPU box is warned.
+# ---------------------------------------------------------------------------
+
+
+def test_rule_d_cpu_offload_fires() -> None:
+    cfg = _good_vllm()
+    cfg["cpu_offload_gb"] = 40
+    findings = MisconfigDetector().check(cfg, _good_vllm_gpu())
+    assert "d" in _rule_ids(findings)
+
+
+def test_rule_d_swap_space_fires() -> None:
+    cfg = _good_vllm()
+    cfg["swap_space"] = 16
+    findings = MisconfigDetector().check(cfg, _good_vllm_gpu())
+    assert "d" in _rule_ids(findings)
+
+
+def test_rule_d_zero_offload_silent() -> None:
+    cfg = _good_vllm()
+    cfg["cpu_offload_gb"] = 0
+    cfg["swap_space"] = 0
+    findings = MisconfigDetector().check(cfg, _good_vllm_gpu())
+    assert "d" not in _rule_ids(findings)
+
+
+def test_rule_d_no_offload_silent() -> None:
+    findings = MisconfigDetector().check(_good_vllm(), _good_vllm_gpu())
+    assert "d" not in _rule_ids(findings)
+
+
+def test_rule_d_remediation_drops_all_offload() -> None:
+    cfg = _good_vllm()
+    cfg["cpu_offload_gb"] = 20
+    det = MisconfigDetector()
+    findings = det.check(cfg, _good_vllm_gpu())
+    finding = next(f for f in findings if f.rule_id == "d")
+    patch = det.remediate(finding)
+    assert patch["config_patch"] == {"cpu_offload_gb": 0, "swap_space": 0}
+    assert patch["requires_restart"] is True
+
+
+# ---------------------------------------------------------------------------
 # Rule e: quant/dtype unsupported on arch (fp8 on pre-Hopper).
 # ---------------------------------------------------------------------------
 

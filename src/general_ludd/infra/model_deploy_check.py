@@ -5,10 +5,11 @@ dict plus an optional ``gpu_info`` dict (or an injected provider callable),
 so it performs **no** network or hardware access of its own.
 
 The ruleset implements the ``MisconfigDetector`` spec in
-``docs/MODEL_DEPLOYMENT.md`` (rules a-g) and adds the sensible superset the
-issue calls for (rules h-l): llama.cpp ``n_gpu_layers == 0`` on a GPU box,
-``n_ctx`` vs VRAM, dtype vs compute-capability, missing parallelism on a
-multi-GPU box, and batch/parallel slots vs memory.
+``docs/MODEL_DEPLOYMENT.md`` (rules a-l): gpu-mem-util (a), KV-cache budget (b),
+tensor-parallel (c), CPU-offload thrash (d), unsupported quant (e), llama.cpp
+-ngl (f), flash-attn/CUDA-graphs (g), zero n_gpu_layers on GPU box (h),
+n_ctx vs VRAM (i), dtype vs compute-capability (j), missing parallelism (k),
+and batch slots vs memory (l).
 
 Design invariants:
 
@@ -344,6 +345,31 @@ class MisconfigDetector:
                     )
                 )
 
+        # Rule d: CPU offload / swap thrash — any offload or swap on a GPU box
+        # causes PCIe thrash that collapses tok/s.
+        cpu_offload = dep.get("cpu_offload_gb")
+        swap_space = dep.get("swap_space")
+        if (
+            isinstance(cpu_offload, (int, float)) and float(cpu_offload) > 0
+        ) or (
+            isinstance(swap_space, (int, float)) and float(swap_space) > 0
+        ):
+            findings.append(
+                Finding(
+                    rule_id="d",
+                    severity="warn",
+                    engine="vllm",
+                    message=f"CPU offload/swap space configured (cpu_offload_gb={cpu_offload}, "
+                    f"swap_space={swap_space}); tokens/sec will collapse via PCIe thrash",
+                    remediation="set cpu_offload_gb=0 and swap_space=0; use a smaller quant "
+                    "that fits VRAM (fp8 / AWQ)",
+                    evidence={
+                        "cpu_offload_gb": cpu_offload,
+                        "swap_space": swap_space,
+                    },
+                )
+            )
+
         # Rule e: quant/dtype unsupported on arch (fp8 pre-Hopper/Ada).
         if quant in {"fp8", "float8"} and not supports_fp8:
             findings.append(
@@ -548,6 +574,10 @@ def _patch_c(f: Finding) -> tuple[dict[str, Any], bool]:
     return {"tensor_parallel_size": 1}, True
 
 
+def _patch_d(f: Finding) -> tuple[dict[str, Any], bool]:
+    return {"cpu_offload_gb": 0, "swap_space": 0}, True
+
+
 def _patch_e(f: Finding) -> tuple[dict[str, Any], bool]:
     return {"quantization": "awq"}, True
 
@@ -586,6 +616,7 @@ _REMEDIATIONS: dict[str, Callable[[Finding], tuple[dict[str, Any], bool]]] = {
     "a": _patch_a,
     "b": _patch_b,
     "c": _patch_c,
+    "d": _patch_d,
     "e": _patch_e,
     "f": _patch_f,
     "g": _patch_g,

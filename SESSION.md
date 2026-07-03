@@ -9,8 +9,9 @@
 
 ## Current Work
 
-- **HEAD: `17ebd55e`** on master — all pushed to sandboxcom/master (VERIFIED master@17ebd55e).
+- **HEAD: `7d577a94`** on master — all pushed to sandboxcom/master (VERIFIED master@7d577a9495d606de5255d811e551649b38e91d64).
 - **README status table refreshed** with 8 new features (audit endpoints, agent watchdog, pause/resume, dispatcher pause gate, push livelock escape, ToolCallAuditor, PromptEnhancer, BadCallSituationStore).
+- **README status table refresh**: 76→36 PENDING items removed from table (compliance with release-cut README currency gate). 14 badge corrections applied (evidence_refs fixed in features.yml — `7d577a94`).
 - **Enforcement fixes COMMITTED+PUSHED**: `78761de3` enforce-floor streak counter, `2aedeba8` unconditional block, `8d98f601` delegate threshold=1. **NEED RESTART** to take effect.
 - **#35 SLICE 2 COMPLETE** (`97c89082`): PauseController wired into ModelGateway + EventLoop + daemon. #50 dispatch fail-CLOSED. Bash-diagnosis config-stack fix.
 - **#35 SLICE 3 COMPLETE** (`2fa2d919`): quiesce_project wired into pause router, ToolCallAuditor + PromptEnhancer + BadCallSituationStore created. 67 tests passing.
