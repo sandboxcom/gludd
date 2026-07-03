@@ -22,6 +22,31 @@ def transport(app):
     return ASGITransport(app=app)
 
 
+async def _attach_inmemory_db(app):
+    """Give ``app`` a real in-memory session factory on ``app.state`` and return
+    ``(engine, factory)``. The self-improve admin routes read
+    ``app.state._session_factory``; ASGITransport does not run lifespan, so the
+    factory must be attached explicitly. Caller must ``await engine.dispose()``.
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import StaticPool
+
+    from general_ludd.db.session import (
+        create_async_session_factory,
+        ensure_tables,
+    )
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    await ensure_tables(engine)
+    factory = create_async_session_factory(engine)
+    app.state._session_factory = factory
+    return engine, factory
+
+
 class TestSelfImproveAnalyzeEndpoint:
     @pytest.mark.asyncio
     async def test_analyze_returns_findings(self, transport):
@@ -68,24 +93,215 @@ class TestSelfImproveRunEndpoint:
                 assert data["findings_count"] == 2
                 assert data["todos_enqueued"] == 2
 
+    @pytest.mark.asyncio
+    async def test_run_persists_todos_behind_human_approval_gate(self, app):
+        """Task #22: harness todos persisted by /run must land APPROVAL_REQUIRED
+        with work_type=self_improve (subject to the human gate + visible to
+        /approvals), NOT plain BACKLOG / auto-executing."""
+        from general_ludd.db.repository import TodoRepository
+        from general_ludd.schemas.todo import TodoStatus
 
-class TestSelfImproveApplyConfigTier:
-    """Config-tier plans route through UpdateApplier + AtomicSafeWriter."""
+        engine, factory = await _attach_inmemory_db(app)
+        try:
+            with patch(
+                "general_ludd.routers.self_improve.SelfImprovementHarness"
+            ) as MockHarness:
+                MockHarness.return_value.run_full_cycle.return_value = {
+                    "findings_count": 1,
+                    "todos_generated": 1,
+                    "todos_enqueued": 1,
+                    "findings": [
+                        {"type": "missing_tests", "file": "a.py",
+                         "severity": "high", "message": "no tests"},
+                    ],
+                    "todos": [
+                        {"title": "Add tests for a.py", "work_type": "test",
+                         "priority": "high"},
+                    ],
+                }
+                async with AsyncClient(
+                    transport=ASGITransport(app=app), base_url="http://test"
+                ) as client:
+                    resp = await client.post("/admin/self-improve/run")
+                    assert resp.status_code == 200
+                    assert len(resp.json()["persisted_todo_ids"]) == 1
+
+            async with factory() as session:
+                rows = await TodoRepository(session).list_all()
+                persisted = [r for r in rows if r.title == "Add tests for a.py"]
+                assert len(persisted) == 1
+                # Gated, not silently BACKLOG / auto-executing.
+                assert persisted[0].work_type == "self_improve"
+                assert persisted[0].status == TodoStatus.APPROVAL_REQUIRED.value
+                assert persisted[0].status != TodoStatus.BACKLOG.value
+
+            # Visible to the human approve/reject surface.
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.get("/admin/self-improve/approvals")
+                assert resp.status_code == 200
+                assert resp.json()["count"] == 1
+        finally:
+            await engine.dispose()
+
+
+class TestSelfImproveApplyConfigTierApprovalGate:
+    """Task #22: config-tier apply must NOT write on the bare authenticated
+    request; it is interposed by the self-improve human-approval gate."""
 
     @pytest.mark.asyncio
-    async def test_config_kind_routes_through_update_applier(self, transport):
-        from general_ludd.self_update.applier import ApplyResult
-        from general_ludd.self_update.safe_writer import AtomicSafeWriter
+    async def test_apply_without_approval_does_not_write(
+        self, app, tmp_path, monkeypatch
+    ):
+        from general_ludd.db.repository import TodoRepository
+        from general_ludd.schemas.todo import TodoStatus
 
+        engine, factory = await _attach_inmemory_db(app)
+        target = tmp_path / "cfg.yml"
+        target.write_text("key: original\n")
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-improve/apply",
+                    json={
+                        "kind": "config",
+                        "capability_required": "config_write",
+                        "target_paths": [str(target)],
+                        "change_content": "key: changed\n",
+                    },
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["status"] == "approval_required"
+                assert data["approval_id"]
+
+            # No file mutation: the write path was never reached.
+            assert target.read_text() == "key: original\n"
+
+            # A held record exists for a human to review.
+            async with factory() as session:
+                rows = await TodoRepository(session).list_all()
+                held = [
+                    r for r in rows
+                    if r.work_type == "self_improve"
+                    and r.status == TodoStatus.APPROVAL_REQUIRED.value
+                ]
+                assert len(held) == 1
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_apply_after_release_writes_recorded_change(
+        self, app, tmp_path, monkeypatch
+    ):
+        """Regression: the legitimate operator flow (enqueue -> approve -> apply)
+        performs the on-disk write, using the RECORDED spec (not the apply
+        request body -> no approve-A / apply-B bait-and-switch)."""
+        from general_ludd.db.repository import TodoRepository
+        from general_ludd.schemas.todo import TodoStatus
+
+        engine, factory = await _attach_inmemory_db(app)
+        # Real write, confined to tmp_path (patch the router's cwd).
+        monkeypatch.setattr(
+            "general_ludd.routers.self_improve.Path.cwd", lambda: tmp_path
+        )
+        target = tmp_path / "cfg.yml"
+        target.write_text("key: original\n")
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                # 1. enqueue -> APPROVAL_REQUIRED, no write yet.
+                resp = await client.post(
+                    "/admin/self-improve/apply",
+                    json={
+                        "kind": "config",
+                        "capability_required": "config_write",
+                        "target_paths": [str(target)],
+                        "change_content": "key: changed\n",
+                    },
+                )
+                approval_id = resp.json()["approval_id"]
+                assert target.read_text() == "key: original\n"
+
+                # 2. human releases the held record.
+                resp = await client.post(
+                    f"/admin/self-improve/approvals/{approval_id}/approve"
+                )
+                assert resp.status_code == 200
+                assert resp.json()["approved"] is True
+
+                # 3. apply with the approval id -> the write proceeds. The bogus
+                #    body target/content is IGNORED; the recorded spec is used.
+                resp = await client.post(
+                    "/admin/self-improve/apply",
+                    json={
+                        "kind": "config",
+                        "approval_id": approval_id,
+                        "target_paths": ["should-be-ignored.yml"],
+                        "change_content": "key: EVIL\n",
+                    },
+                )
+                assert resp.status_code == 200
+                assert resp.json()["status"] == "applied"
+
+            # Recorded change landed on disk (not the bait content).
+            assert target.read_text() == "key: changed\n"
+
+            # The approval record is consumed so it cannot be replayed.
+            async with factory() as session:
+                todo = await TodoRepository(session).get_by_id(approval_id)
+                assert todo.status == TodoStatus.COMPLETE.value
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_apply_with_unreleased_approval_is_refused(
+        self, app, tmp_path, monkeypatch
+    ):
+        """An approval id that a human has NOT released (still APPROVAL_REQUIRED)
+        must not drive a write."""
+        engine, _factory = await _attach_inmemory_db(app)
+        monkeypatch.setattr(
+            "general_ludd.routers.self_improve.Path.cwd", lambda: tmp_path
+        )
+        target = tmp_path / "cfg.yml"
+        target.write_text("key: original\n")
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-improve/apply",
+                    json={
+                        "kind": "config",
+                        "capability_required": "config_write",
+                        "target_paths": [str(target)],
+                        "change_content": "key: changed\n",
+                    },
+                )
+                approval_id = resp.json()["approval_id"]
+
+                # Apply BEFORE approving -> refused, no write.
+                resp = await client.post(
+                    "/admin/self-improve/apply",
+                    json={"kind": "config", "approval_id": approval_id},
+                )
+                assert resp.status_code == 409
+            assert target.read_text() == "key: original\n"
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_config_apply_without_db_is_refused(self, transport):
+        """Fail-closed: with no approval database the config-tier apply must
+        refuse rather than perform an unreviewed write."""
         with patch(
             "general_ludd.routers.self_improve.UpdateApplier"
         ) as MockApplier:
-            instance = MockApplier.return_value
-            instance.apply.return_value = ApplyResult(
-                status="applied",
-                target_paths=["config/foo.yml"],
-                evidence="applied config change to 1 path(s)",
-            )
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
@@ -98,16 +314,12 @@ class TestSelfImproveApplyConfigTier:
                         "change_content": "key: value\n",
                     },
                 )
-                assert resp.status_code == 200
-                data = resp.json()
-                assert data["tier"] == "config"
-                assert data["status"] == "applied"
-                assert data["target_paths"] == ["config/foo.yml"]
+                assert resp.status_code == 503
+                MockApplier.assert_not_called()
 
-                MockApplier.assert_called_once()
-                instance.apply.assert_called_once()
-                kwargs = MockApplier.call_args.kwargs
-                assert isinstance(kwargs["writer"], AtomicSafeWriter)
+
+class TestSelfImproveApplyConfigTier:
+    """Config-tier plans route through UpdateApplier + AtomicSafeWriter."""
 
     @pytest.mark.asyncio
     async def test_non_config_kind_skips_update_applier(self, transport):
