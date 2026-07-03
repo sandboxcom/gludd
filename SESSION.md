@@ -9,7 +9,8 @@
 
 ## Current Work
 
-- **HEAD: `429e4428`** on master — all pushed to sandboxcom/master (VERIFIED master@429e4428).
+- **HEAD: `17ebd55e`** on master — all pushed to sandboxcom/master (VERIFIED master@17ebd55e).
+- **README status table refreshed** with 8 new features (audit endpoints, agent watchdog, pause/resume, dispatcher pause gate, push livelock escape, ToolCallAuditor, PromptEnhancer, BadCallSituationStore).
 - **Enforcement fixes COMMITTED+PUSHED**: `78761de3` enforce-floor streak counter, `2aedeba8` unconditional block, `8d98f601` delegate threshold=1. **NEED RESTART** to take effect.
 - **#35 SLICE 2 COMPLETE** (`97c89082`): PauseController wired into ModelGateway + EventLoop + daemon. #50 dispatch fail-CLOSED. Bash-diagnosis config-stack fix.
 - **#35 SLICE 3 COMPLETE** (`2fa2d919`): quiesce_project wired into pause router, ToolCallAuditor + PromptEnhancer + BadCallSituationStore created. 67 tests passing.
@@ -22,6 +23,7 @@
 
 | Hash | Message |
 |------|---------|
+| `17ebd55e` | docs: refresh README status table with 8 new features |
 | `429e4428` | fix(watchdog): restore classification API — classify_tail, State, scan_tasks_dir |
 | `06d2d48a` | feat(#35): wire quiesce_project into POST /api/pause/project |
 | `cfceb0dc` | fix(#51): type annotation — object→Any for pause_controller is_paused access |
@@ -51,7 +53,7 @@
 - **Lint**: 0 errors
 - **Typecheck**: 0 errors (Success: no issues found in 501 source files)
 - **Collect-check**: 2 pre-existing collection errors (test_agent_watchdog.py, test_floor_controller.py — not from this session)
-- **Push**: VERIFIED master@429e4428e6def630c4bca23a6339d71aae17e57c via sandboxcom
+- **Push**: VERIFIED master@17ebd55e via sandboxcom
 
 <!-- gate:end -->
 
@@ -60,7 +62,7 @@
 
 ## Historical State
 
-- **2026-07-03 (current)**: HEAD `429e4428`. 17 commits ahead of sandboxcom/master (pushed and VERIFIED). #35 SLICE 3 COMPLETE: BadCallSituationStore (c273a40, 10 tests), ToolCallAuditor + PromptEnhancer (e1c2d41, 29 tests), quiesce_project wired into pause router (06d2d48). #51 COMPLETE: pause gate wired into AgentDispatcher with pause_controller → is_paused → "blocked" (2fa2d919 + cfceb0d). #53 COMPLETE: push livelock escape with retry counter, exponential backoff, MAX_PUSH_RETRIES=5, BLOCKED transition (2fa2d919, 7 tests). Enforcement fixes committed but NEED RESTART (78761de3, 2aedeba8, 8d98f601). All targeted tests: 89 passed, lint 0, typecheck 0.
+- **2026-07-03 (current)**: HEAD `17ebd55e`. README status table refreshed with 8 new features. Prior: 17 commits ahead of sandboxcom/master (pushed and VERIFIED). #35 SLICE 3 COMPLETE: BadCallSituationStore, ToolCallAuditor + PromptEnhancer, quiesce_project wired into pause router. #51 COMPLETE: pause gate wired into AgentDispatcher. #53 COMPLETE: push livelock escape. Enforcement fixes committed but NEED RESTART.
 - **2026-07-01**: HEAD `8ed0ed1f`. CI fix wave active: caplog propagate session fixture, dist/artifact CI skip guards, roles/.gitkeep test acceptance, dist readiness stubs in CI_DIST mode, facts_facets osquery fix, tasks_tick check fix, to_thread mock fix, project_local env fix, ansible-syntax path fix, hostile MCP mocks fix. 15,685 tests collected. 26 commits ahead of sandboxcom/master. CI failures narrowed to ~53. Gate prereqs green (lint 0, typecheck 0, collect 0). 3 remaining plugins need response.transform migration. Alpha.5 still not shipped.
 - **2026-06-30**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real. `enforce-false-done.ts` has RELEASE_CLAIM_PATTERNS + RELEASE_EVIDENCE_PATTERNS. 4 missing plugins registered in opencode.json — now 9 total. CRITICAL GAP: `experimental.chat.response.transform` dead code. ~24 commits pushed across multiple waves. Major features: kubernetes deployment, 5 llama.cpp stacks, 4 cloud providers, guided decoding, deployment health + self-healing router. enforce-stop hardened to HARD STOP. All targeted suites green (214+).
 - **2026-06-29**: Recovery wave landed 11+ commits. Phase MP committed. CI RED.
