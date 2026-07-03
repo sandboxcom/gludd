@@ -1816,6 +1816,13 @@ class EventLoop:
                         model_gateway=self._model_gateway,
                         mcp_client=self._mcp_client,
                         mcp_registry=self._mcp_tool_registry,
+                        # Per-role capability gate: the event-loop turn handler
+                        # drives MCP tool use under the built-in "event_loop"
+                        # role, which grants the "mcp" dispatch kind (see
+                        # capability_lattice._BUILTIN) so normal operation is
+                        # unaffected. Supplying the role activates the fail-closed
+                        # gate in run_with_tools instead of leaving it ungated.
+                        role="event_loop",
                     )
                     # Use the Phase-1 generated text as additional context so the
                     # tool-driven phase REFINES the analysis rather than starting

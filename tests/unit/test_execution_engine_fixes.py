@@ -26,6 +26,7 @@ from general_ludd.git_automation.repo import (
     GitAutomation,
 )
 from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
+from general_ludd.security.capability_lattice import CapabilityError
 
 
 # --------------------------------------------------------------------------- #
@@ -211,6 +212,98 @@ class TestToolLoopMaxIterationExhaustion:
             )
         # The cap must have been honoured exactly (no infinite loop).
         assert gateway.call_model.call_count == 3
+
+
+# --------------------------------------------------------------------------- #
+# Per-role capability gate — ToolCallLoop refuses MCP tool use fail-closed for a
+# role that lacks the "mcp" dispatch capability (issue #58 lattice wiring).
+# --------------------------------------------------------------------------- #
+class TestToolLoopRoleCapabilityGate:
+    """ToolCallLoop(role=...) gates MCP tool use through check_dispatch.
+
+    A role WITHOUT the "mcp" dispatch kind (e.g. built-in "report_status", which
+    grants only {"skill"}) must be refused fail-closed BEFORE any tool is called.
+    A role WITH "mcp" (e.g. built-in "event_loop", grants {"role","mcp","skill"})
+    permits the tool call. role=None preserves the pre-existing ungated behaviour.
+    """
+
+    @staticmethod
+    def _wiring():
+        """A registry + mcp_client + gateway that would drive one tool call."""
+        registry = MCPToolRegistry()
+        registry.register_tool("fs", MCPTool(name="read_file", server_id="fs"))
+
+        mcp_client = MagicMock()
+        mcp_client.list_tools = AsyncMock(
+            return_value=[MCPTool(name="read_file", server_id="fs")]
+        )
+        mcp_client.call_tool = AsyncMock(return_value={"ok": True})
+
+        gateway = MagicMock()
+        # Turn 1: request the tool. Turn 2: final content (only reached if the
+        # gate permits the call and the tool result is fed back).
+        gateway.call_model = MagicMock(
+            side_effect=[
+                _Resp(tool_calls=[_tc("read_file", {"path": "x"})]),
+                _Resp(content="done"),
+            ]
+        )
+        job = MagicMock()
+        job.job_id = "JOB-ROLE"
+        return registry, mcp_client, gateway, job
+
+    @pytest.mark.asyncio
+    async def test_role_without_mcp_is_refused_before_call_tool(self):
+        """A role lacking "mcp" (report_status) raises and never calls a tool."""
+        registry, mcp_client, gateway, job = self._wiring()
+        loop = ToolCallLoop(
+            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            role="report_status",
+        )
+
+        with pytest.raises(CapabilityError):
+            await asyncio.wait_for(
+                loop.run_with_tools(job, "sys", "user"), timeout=5
+            )
+
+        # Fail-closed: the tool was never invoked, and the gate fired BEFORE the
+        # loop even asked the model or listed tools.
+        mcp_client.call_tool.assert_not_called()
+        mcp_client.list_tools.assert_not_called()
+        gateway.call_model.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_event_loop_role_permits_the_tool_call(self):
+        """The built-in "event_loop" role grants "mcp" -> the tool runs (regression)."""
+        registry, mcp_client, gateway, job = self._wiring()
+        loop = ToolCallLoop(
+            gateway, mcp_client=mcp_client, mcp_registry=registry,
+            role="event_loop",
+        )
+
+        result = await asyncio.wait_for(
+            loop.run_with_tools(job, "sys", "user"), timeout=5
+        )
+
+        assert result == "done"
+        mcp_client.call_tool.assert_awaited_once()
+        assert mcp_client.call_tool.call_args.args[1] == "read_file"
+
+    @pytest.mark.asyncio
+    async def test_role_none_is_backward_compatible_ungated(self):
+        """role=None (default) skips the gate entirely -> unchanged behaviour."""
+        registry, mcp_client, gateway, job = self._wiring()
+        loop = ToolCallLoop(
+            gateway, mcp_client=mcp_client, mcp_registry=registry,
+        )
+        assert loop._role is None
+
+        result = await asyncio.wait_for(
+            loop.run_with_tools(job, "sys", "user"), timeout=5
+        )
+
+        assert result == "done"
+        mcp_client.call_tool.assert_awaited_once()
 
 
 # --------------------------------------------------------------------------- #

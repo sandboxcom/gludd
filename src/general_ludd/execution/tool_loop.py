@@ -14,6 +14,7 @@ from typing import Any, cast
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.mcp.transport import MCPTransportError
 from general_ludd.schemas.job import JobSpec
+from general_ludd.security.capability_lattice import check_dispatch
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +40,19 @@ class ToolCallLoop:
         max_iterations: int = MAX_TOOL_ITERATIONS,
         per_tool_timeout: float = PER_TOOL_TIMEOUT_SECONDS,
         mcp_registry: MCPToolRegistry | None = None,
+        role: str | None = None,
     ) -> None:
         self._gateway = model_gateway
         self._mcp_client = mcp_client
         self._max_iterations = max_iterations
         self._per_tool_timeout = per_tool_timeout
+        # Per-role capability gate (issue #58 lattice): when a role is supplied,
+        # MCP tool use is gated through ``check_dispatch(role, "mcp")`` before any
+        # tool is invoked. A role without the "mcp" dispatch capability is
+        # refused fail-closed (CapabilityError) and no tool call is made. When
+        # ``role`` is None the gate is skipped entirely, preserving the
+        # pre-existing behaviour for callers that don't supply one.
+        self._role = role
         # Finding 3 (capability gate): the registry of tools the MCP layer
         # actually advertises. Model-chosen tool names are resolved against it
         # to (a) reject any name the model invented / smuggled and (b) pin the
@@ -97,6 +106,14 @@ class ToolCallLoop:
     ) -> str:
         if self._mcp_client is None:
             return cast(str, await self._call_model(job, system_prompt, user_prompt))
+
+        # Per-role capability gate (fail-closed): if a role was supplied, it must
+        # hold the "mcp" dispatch capability to drive MCP tool use at all. A role
+        # that lacks it is refused HERE — before list_tools / any call_tool — so
+        # the model can never reach a tool through an unauthorised role. A None
+        # role skips the gate (backward compatible with callers that pass none).
+        if self._role is not None:
+            check_dispatch(self._role, "mcp")
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
