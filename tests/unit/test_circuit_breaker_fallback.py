@@ -217,3 +217,56 @@ class TestCircuitBreakerFallbackChain:
             )
 
         assert _FakeChatModel.call_count == 2
+
+
+class TestCallModelCircuitBreaker:
+    """Direct ``call_model`` must honour ``is_healthy`` before dispatch (defence-in-depth)."""
+
+    def test_call_model_refuses_when_circuit_open(self):
+        """When circuit is open, a direct call_model() raises CircuitBreakerOpenError."""
+        tracker = ModelHealthTracker(
+            failure_threshold=3, cooldown_seconds=60.0
+        )
+        primary = _make_profile("primary")
+        gw = _make_gateway([primary], tracker)
+
+        _prime_open(tracker, "primary")
+
+        _FakeChatModel.script = ["should never be invoked"]
+
+        with pytest.raises(CircuitBreakerOpenError, match="circuit is open"):
+            gw.call_model("primary", [{"role": "user", "content": "hi"}])
+
+        assert _FakeChatModel.call_count == 0
+
+    def test_call_model_proceeds_when_healthy(self):
+        """A healthy (closed) circuit allows dispatch."""
+        tracker = ModelHealthTracker(
+            failure_threshold=3, cooldown_seconds=60.0
+        )
+        primary = _make_profile("primary")
+        gw = _make_gateway([primary], tracker)
+
+        _FakeChatModel.script = ["healthy response"]
+
+        result = gw.call_model("primary", [{"role": "user", "content": "hi"}])
+
+        assert result.content == "healthy response"
+        assert _FakeChatModel.call_count == 1
+
+    def test_call_model_refuses_when_chain_all_open(self):
+        """When every model including primary is open, direct call_model raises."""
+        tracker = ModelHealthTracker(
+            failure_threshold=1, cooldown_seconds=60.0
+        )
+        primary = _make_profile("primary", fallback=["fb1"])
+        fb1 = _make_profile("fb1")
+        gw = _make_gateway([primary, fb1], tracker)
+
+        _prime_open(tracker, "primary")
+        _prime_open(tracker, "fb1")
+
+        with pytest.raises(CircuitBreakerOpenError):
+            gw.call_model("primary", [{"role": "user", "content": "hi"}])
+
+        assert _FakeChatModel.call_count == 0

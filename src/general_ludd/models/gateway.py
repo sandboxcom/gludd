@@ -473,6 +473,11 @@ class ModelGateway:
                 f"Model profile '{profile_id}' is paused — call refused"
             )
 
+        if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id, admit_probe=False):
+            raise CircuitBreakerOpenError(
+                f"Profile '{profile_id}' circuit is open; refusing call"
+            )
+
         # requested_max_output_tokens (D-21 over-conservatism fix): when a caller
         # knows it will cap the model's output (e.g. the /admin/models/call
         # `max_tokens` field), thread it into the budget gate so the call is
