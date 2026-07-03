@@ -69,12 +69,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         controller = _get_controller(app)
         if controller is None:
             return {"error": "pause controller not available", "paused": False}
+        dispatcher = getattr(app.state, "_agent_dispatcher", None)
+        hibernation = getattr(app.state, "_hibernation_controller", None)
+        handles = await controller.quiesce_project(
+            req.target_id, dispatcher=dispatcher, hibernation=hibernation,
+        )
         record = controller.pause(
             "project",
             req.target_id,
             reason=req.reason,
             resources=req.resources or None,
             last_state=req.last_state or None,
+            agent_handles=handles,
         )
         return {
             "paused": True,
