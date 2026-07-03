@@ -695,15 +695,76 @@ export default (async ({ }) => {
       }
     },
 
-    // --- Stop-pattern injection REMOVED (2026-07-03) ---
-    // The HARD STOP / YOU ARE STOPPING PREMATURELY / IMMEDIATELY DISPATCH
-    // text injections were pure noise — they never prevented stopping, just
-    // replaced response text with loud messages. Replaced by mechanical
-    // enforcement in enforce-floor.ts (streak counter blocks non-dispatch
-    // calls) and enforce-delegate.ts (threshold=1 blocks immediately).
-    // This handler is now a transparent pass-through.
+    // --- Stop-pattern BLOCKING (RESTORED 2026-07-03) ---
+    // The 2026-07-03 removal replaced ALL text-blocking with pass-through,
+    // claiming mechanical enforcement by enforce-floor/delegate was sufficient.
+    // It was NOT — the agent continues to send "done" / "complete" / status
+    // summaries while work remains. This handler RESTORES the state-based
+    // blocking: when pending work exists AND the text looks terminal, the
+    // response text is REPLACED with a block directive. The persistent-block
+    // mechanism then suppresses ALL subsequent text responses until a tool
+    // call clears it (see tool.execute.before above).
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
-      return output
+      try {
+        const text = output.text
+        if (!text || text.trim().length === 0) return
+
+        // Short text that is clearly not a completion report — allow.
+        if (text.length < 60) return
+
+        // State checks: any pending work?
+        const ratchet = ratchetHasEntries()
+        const hasUnchecked = tasksMdHasUnchecked()
+        const ciRed = ciIsPendingOrRed()
+        const gateRed = gateStatusIsRed()
+        const repoPending = repoHasPendingWork()
+
+        const anyPendingWork = ratchet > 0 || hasUnchecked || ciRed || gateRed || repoPending
+
+        // If nothing is pending, don't block — the agent might be genuinely
+        // reporting completion of a clean project.
+        if (!anyPendingWork) return
+
+        // Check if the text looks terminal
+        const looksTerminal = responseLooksTerminal(text)
+        const hasNoWait = detectNoWaitPattern(text)
+        const hasConstraint = detectConstraintAsStop(text)
+        const mentionsCiRed = responseMentionsCiRed(text)
+
+        if (looksTerminal || hasNoWait || hasConstraint || mentionsCiRed) {
+          let reason = ""
+          if (ratchet > 0) reason += `ratchet: ${ratchet} entries. `
+          if (hasUnchecked) reason += "TASKS.md: unchecked items. "
+          if (ciRed) reason += "CI: RED/PENDING. "
+          if (gateRed) reason += "gate: RED. "
+          if (repoPending) reason += "repo: unpushed/uncommitted. "
+
+          output.text = [
+            "⛔ TERMINAL RESPONSE BLOCKED — PENDING WORK EXISTS:",
+            reason,
+            "",
+            "You are sending a completion/status summary while the project has",
+            "known-unfinished work. This is the exact premature-stop pattern",
+            "that BUGS.md records 20+ times. DO NOT summarize — CONTINUE WORK.",
+            "",
+            "Resume now: fix the pending ratchet entries, complete the unchecked",
+            "TASKS.md items, get CI green, and push uncommitted work.  Any",
+            "text-only response while work remains will be suppressed.",
+            "The next tool call clears this block.",
+          ].join("\n")
+
+          if (hasNoWait) {
+            output.text += "\n\n" + noWaitBlockResponse()
+          }
+          if (hasConstraint) {
+            output.text += "\n\n" + constraintBlockResponse()
+          }
+
+          turnState.blocked = true
+        }
+      } catch {
+        return // fail open
+      }
     },
   }
 }) satisfies Plugin

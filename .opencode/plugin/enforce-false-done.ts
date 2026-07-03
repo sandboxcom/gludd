@@ -90,6 +90,11 @@ const CLAIM_PATTERNS: RegExp[] = [
   /\bgood to go\b/i,
   /\ball green\b/i,
   /\bgreen\b.*\bpipeline\b/i,
+  /\bcommitted\b/i,
+  /\bpushed\b/i,
+  /\ball done\b/i,
+  /\beverything is\b/i,
+  /\bno issues\b/i,
 ]
 
 // ============================================================================
