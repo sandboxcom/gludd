@@ -25,8 +25,8 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
-from general_ludd.security.ssrf import is_url_blocked
 from general_ludd.connectors._errors import ConnectorConfigError
+from general_ludd.security.ssrf import is_url_blocked
 
 Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
 

@@ -17,9 +17,9 @@ import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
-from general_ludd.security.ssrf import is_url_blocked
 from general_ludd.connectors._errors import ConnectorConfigError
 from general_ludd.connectors._protocols import HttpResponse
+from general_ludd.security.ssrf import is_url_blocked
 
 
 @runtime_checkable

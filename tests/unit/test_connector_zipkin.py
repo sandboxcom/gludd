@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from general_ludd.connectors.zipkin import _ZipkinResponse, SSRFError, ZipkinSource
+from general_ludd.connectors.zipkin import SSRFError, ZipkinSource, _ZipkinResponse
 
 
 class FakeTransport:

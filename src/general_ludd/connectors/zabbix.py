@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import SSRFError

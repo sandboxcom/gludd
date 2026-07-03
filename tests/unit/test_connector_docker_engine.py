@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from general_ludd.connectors.docker_engine import DockerEngineSource, _DockerResponse as Response
+from general_ludd.connectors.docker_engine import DockerEngineSource
+from general_ludd.connectors.docker_engine import _DockerResponse as Response
 
 
 # --------------------------------------------------------------------------- #

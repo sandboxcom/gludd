@@ -33,8 +33,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Protocol, runtime_checkable
 
-from general_ludd.security.ssrf import is_url_blocked
 from general_ludd.connectors._errors import SSRFError
+from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["TempoSource"]
 

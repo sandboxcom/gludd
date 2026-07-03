@@ -48,7 +48,6 @@ from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
-
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)

@@ -257,7 +257,7 @@ def _default_transport(
     headers: Mapping[str, str],
     json_body: Any,
     timeout: float,
-) -> HTTPResponse:
+) -> HttpResponse:
     """Default httpx-backed transport (no shell, time-bound). Imported lazily."""
     import httpx
 
@@ -269,4 +269,4 @@ def _default_transport(
         timeout=timeout,
         follow_redirects=False,
     )
-    return resp  # type: ignore[return-value]  # httpx.Response is structurally compatible
+    return resp

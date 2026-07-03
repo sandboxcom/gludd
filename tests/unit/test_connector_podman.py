@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from general_ludd.connectors.podman import PodmanSource, _PodmanResponse as Response
+from general_ludd.connectors.podman import PodmanSource
+from general_ludd.connectors.podman import _PodmanResponse as Response
 
 
 # --------------------------------------------------------------------------- #
