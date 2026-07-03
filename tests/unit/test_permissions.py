@@ -309,6 +309,251 @@ class TestSubset:
         assert PermissionSpecParser.is_subset(subject, issuer) is True
 
 
+class TestSubsetConstraintContainment:
+    """``is_subset`` constraint dominance (``_constraints_narrower``) is
+    containment-aware per dimension.
+
+    Regression guard for a privilege-widening bug where the file: predicate used
+    a bare string ``startswith`` so a DISJOINT longer path (``/etc/passwd2``)
+    looked narrower than (dominated by) a shorter one (``/etc/pass``), letting an
+    over-broad requested spec pass the subset check and escalate. Mirrors the
+    segment-boundary containment fix already applied to ``_intersect_constraints``.
+    """
+
+    @staticmethod
+    def _spec(caps: list[Capability]) -> PermissionSpec:
+        return PermissionSpec(
+            version=1,
+            agent_type="x",
+            parent_agent_id=None,
+            capabilities=caps,
+            denied=[],
+            max_sts_ttl_seconds=3600,
+            max_subagent_permissions="same_or_fewer",
+        )
+
+    def _file_cap(self, prefix: str | None) -> Capability:
+        constraints: dict[str, str] = {}
+        if prefix is not None:
+            constraints["path_prefix"] = prefix
+        return Capability(
+            resource="file:repo", actions=["read"], constraints=constraints
+        )
+
+    def _is_subset(self, narrow: str | None, wide: str | None) -> bool:
+        requested = self._spec([self._file_cap(narrow)])
+        issuer = self._spec([self._file_cap(wide)])
+        return PermissionSpecParser.is_subset(requested, issuer)
+
+    def test_disjoint_prefixes_not_narrower(self) -> None:
+        # /etc/passwd2 is NOT under /etc/pass (segment-disjoint) -> requested is
+        # NOT a subset of issuer; the bare-startswith bug wrongly returned True.
+        assert self._is_subset("/etc/passwd2", "/etc/pass") is False
+
+    def test_shared_fragment_not_narrower(self) -> None:
+        # /a/bc is not nested under /a/b.
+        assert self._is_subset("/a/bc", "/a/b") is False
+
+    def test_true_containment_is_narrower(self) -> None:
+        # /etc/ssl/certs IS under /etc/ssl -> genuine subset.
+        assert self._is_subset("/etc/ssl/certs", "/etc/ssl") is True
+
+    def test_equal_prefix_is_narrower_or_equal(self) -> None:
+        assert self._is_subset("/repo/", "/repo/") is True
+
+    def test_trailing_slash_insensitive(self) -> None:
+        # "/repo" and "/repo/" denote the same scope (segment-aware).
+        assert self._is_subset("/repo", "/repo/") is True
+
+    def test_wider_narrow_side_is_not_subset(self) -> None:
+        # requested /tmp/ is WIDER than issuer /tmp/gludd/ -> not a subset.
+        assert self._is_subset("/tmp/", "/tmp/gludd/") is False
+
+    def test_root_wide_contains_any(self) -> None:
+        # issuer "/" is the whole tree; any narrower request is a subset.
+        assert self._is_subset("/etc/ssl", "/") is True
+
+    def test_present_constraint_narrower_than_absent(self) -> None:
+        # issuer has NO path_prefix (unconstrained == all files); a requested
+        # cap WITH a constraint is narrower -> subset. (absent == WIDER)
+        assert self._is_subset("/repo/x", None) is True
+
+    def test_absent_narrow_side_is_wider_not_subset(self) -> None:
+        # issuer restricts /repo/ but requested has NO path_prefix
+        # (unconstrained == WIDER) -> NOT a subset. Fail-safe direction.
+        assert self._is_subset(None, "/repo/") is False
+
+
+class TestSubsetNetConstraintDirection:
+    """``is_subset`` net: dominance treats an ABSENT/empty allow-list as the
+    WIDEST scope (matching the Seatbelt/AppArmor enforcers that emit
+    ``allow network-outbound`` for an empty host list).
+
+    Regression guard for an inversion where the predicate SKIPPED an empty
+    narrow-side key, so a requested cap with NO ``allowed_hosts`` (== all hosts)
+    passed the subset check against an issuer that restricted hosts — an egress
+    escalation. Fail-safe direction: when the narrow side is unconstrained on a
+    dimension the wide side restricts, it is NOT narrower.
+    """
+
+    @staticmethod
+    def _spec(caps: list[Capability]) -> PermissionSpec:
+        return PermissionSpec(
+            version=1,
+            agent_type="x",
+            parent_agent_id=None,
+            capabilities=caps,
+            denied=[],
+            max_sts_ttl_seconds=3600,
+            max_subagent_permissions="same_or_fewer",
+        )
+
+    def _net_cap(self, constraints: dict[str, object]) -> Capability:
+        return Capability(
+            resource="net:egress", actions=["connect"], constraints=constraints
+        )
+
+    def _is_subset(
+        self, narrow: dict[str, object], wide: dict[str, object]
+    ) -> bool:
+        requested = self._spec([self._net_cap(narrow)])
+        issuer = self._spec([self._net_cap(wide)])
+        return PermissionSpecParser.is_subset(requested, issuer)
+
+    def test_absent_hosts_narrow_side_is_not_subset_of_restricted(self) -> None:
+        # requested has NO allowed_hosts (== all hosts, widest) while issuer
+        # restricts to one host -> requested is WIDER -> NOT a subset.
+        assert (
+            self._is_subset(
+                {"allowed_ports": [443]},
+                {"allowed_hosts": ["api.z.ai"], "allowed_ports": [443]},
+            )
+            is False
+        )
+
+    def test_absent_ports_narrow_side_is_not_subset_of_restricted(self) -> None:
+        # requested constrains hosts but omits ports; issuer restricts ports ->
+        # requested is unconstrained (wider) on ports -> NOT a subset.
+        assert (
+            self._is_subset(
+                {"allowed_hosts": ["api.z.ai"]},
+                {"allowed_hosts": ["api.z.ai"], "allowed_ports": [443]},
+            )
+            is False
+        )
+
+    def test_hosts_subset_is_narrower(self) -> None:
+        assert (
+            self._is_subset(
+                {"allowed_hosts": ["api.z.ai"]},
+                {"allowed_hosts": ["api.z.ai", "api.openai.com"]},
+            )
+            is True
+        )
+
+    def test_wide_unconstrained_dimension_allows_any_narrow(self) -> None:
+        # issuer does not restrict ports (unconstrained == widest); requested
+        # narrowing to one port is a subset.
+        assert (
+            self._is_subset(
+                {"allowed_hosts": ["api.z.ai"], "allowed_ports": [443]},
+                {"allowed_hosts": ["api.z.ai"]},
+            )
+            is True
+        )
+
+
+class TestSubsetSecretPathsDirection:
+    """secret:openbao empty ``openbao_paths`` == DENY-all == narrowest.
+
+    The enforcer (``SecretsManager._enforce_permission``) denies every path when
+    the glob-list is empty, so an empty narrow set is genuinely the narrowest and
+    IS a subset of any issuer set. Locks the correct (non-inverted) direction.
+    """
+
+    @staticmethod
+    def _spec(caps: list[Capability]) -> PermissionSpec:
+        return PermissionSpec(
+            version=1,
+            agent_type="x",
+            parent_agent_id=None,
+            capabilities=caps,
+            denied=[],
+            max_sts_ttl_seconds=3600,
+            max_subagent_permissions="same_or_fewer",
+        )
+
+    def _cap(self, paths: list[str]) -> Capability:
+        return Capability(
+            resource="secret:openbao",
+            actions=["read"],
+            constraints={"openbao_paths": paths},
+        )
+
+    def _is_subset(self, narrow: list[str], wide: list[str]) -> bool:
+        requested = self._spec([self._cap(narrow)])
+        issuer = self._spec([self._cap(wide)])
+        return PermissionSpecParser.is_subset(requested, issuer)
+
+    def test_empty_paths_narrow_side_is_subset(self) -> None:
+        # empty == deny-all == narrowest -> subset of anything.
+        assert self._is_subset([], ["secret/data/gludd/*"]) is True
+
+    def test_wider_paths_narrow_side_is_not_subset(self) -> None:
+        assert (
+            self._is_subset(
+                ["secret/data/gludd/*"], ["secret/data/gludd/build/*"]
+            )
+            is False
+        )
+
+
+class TestSubsetDeniedNotDropped:
+    """``intersection`` unions ``denied`` and never lets a narrower/dominant cap
+    drop a STRICTER deny.
+
+    Guards the enforcement invariant: an STS token derived from two specs must
+    carry EVERY deny either parent declared (union, not intersection), so a
+    stricter deny is never silently weakened.
+    """
+
+    @staticmethod
+    def _spec(denied: list[Capability]) -> PermissionSpec:
+        return PermissionSpec(
+            version=1,
+            agent_type="x",
+            parent_agent_id=None,
+            capabilities=[],
+            denied=denied,
+            max_sts_ttl_seconds=3600,
+            max_subagent_permissions="same_or_fewer",
+        )
+
+    def test_distinct_denies_are_unioned(self) -> None:
+        a = self._spec(
+            [Capability(resource="file:repo", actions=["write"], constraints={})]
+        )
+        b = self._spec(
+            [Capability(resource="secret:openbao", actions=["delete"], constraints={})]
+        )
+        out = PermissionSpecParser.intersection(a, b)
+        resources = {(d.resource, tuple(d.actions)) for d in out.denied}
+        assert ("file:repo", ("write",)) in resources
+        assert ("secret:openbao", ("delete",)) in resources
+        assert len(out.denied) == 2
+
+    def test_denies_survive_when_only_one_side_declares(self) -> None:
+        a = self._spec(
+            [Capability(resource="net:egress", actions=["connect"], constraints={})]
+        )
+        b = self._spec([])
+        out = PermissionSpecParser.intersection(a, b)
+        assert any(
+            d.resource == "net:egress" and d.actions == ["connect"]
+            for d in out.denied
+        )
+
+
 class TestIntersectFilePrefix:
     """``intersection`` of two ``file:`` path_prefix scopes is containment-aware.
 

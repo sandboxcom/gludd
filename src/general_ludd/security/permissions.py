@@ -572,14 +572,41 @@ class PermissionSpecParser:
         if resource == "file:":
             np = narrow.get("path_prefix")
             wp = wide.get("path_prefix")
-            if not isinstance(wp, str) or not wp:
+            wide_present = isinstance(wp, str) and bool(wp)
+            narrow_present = isinstance(np, str) and bool(np)
+            if not wide_present:
+                # ABSENT path_prefix on the wide side == UNCONSTRAINED == the
+                # whole filesystem, which contains any scope. A capability WITH
+                # a constraint is therefore narrower than one WITHOUT (and two
+                # unconstrained caps are equal == narrower-or-equal).
+                return True
+            if not narrow_present:
+                # The wide side restricts a subtree but the narrow side is
+                # UNCONSTRAINED == WIDER -> it is NOT narrower. Fail safe.
                 return False
-            return isinstance(np, str) and np.startswith(wp)
+            # Both constrained: ``narrow`` is narrower-or-equal iff ``wide``'s
+            # prefix truly CONTAINS ``narrow``'s. Compare on path SEGMENTS (not
+            # bare string ``startswith``) so "/etc/passwd2" is not mistaken for
+            # a child of "/etc/pass" -- those are DISJOINT and neither dominates
+            # (mirrors the containment fix in ``_intersect_constraints``).
+            assert isinstance(np, str) and isinstance(wp, str)
+            n_segs = [s for s in np.split("/") if s]
+            w_segs = [s for s in wp.split("/") if s]
+            return n_segs[: len(w_segs)] == w_segs
         if resource == "net:":
             for key in ("allowed_hosts", "allowed_ports"):
                 ns = set(narrow.get(key, []) or [])
                 ws = set(wide.get(key, []) or [])
-                if ns and not ns.issubset(ws):
+                if not ws:
+                    # ABSENT/empty on the wide side == UNCONSTRAINED on this
+                    # dimension (the enforcers emit ``(allow network-outbound)``
+                    # for an empty host list) == the widest scope, so any narrow
+                    # value is narrower-or-equal. Nothing to check.
+                    continue
+                # The wide side RESTRICTS this dimension. An ABSENT/empty narrow
+                # set is UNCONSTRAINED == WIDER (allows everything), so it is NOT
+                # narrower -> reject. Otherwise the narrow set must be a subset.
+                if not ns or not ns.issubset(ws):
                     return False
             return True
         if resource == "secret:openbao":
