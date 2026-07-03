@@ -5,7 +5,7 @@
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
-    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    project_dir: "{{ lookup('env', 'GLUDD_PROJECT_ROOT') }}"
   tasks:
     - name: Run gludd_open_code gate_check
       general_ludd.agent.gludd_open_code:

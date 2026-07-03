@@ -150,7 +150,8 @@ ACTION_MAKE_TARGETS: dict[str, str] = {
 
 def _build_cmd(action: str, params: dict) -> str:
     target = ACTION_MAKE_TARGETS[action]
-    cmd_parts = ["make", target]
+    repo_path = params.get("repo_path", ".")
+    cmd_parts = ["make", "-C", repo_path, target]
 
     if action == "commit_ship":
         msg = (params.get("commit_msg") or "").strip()
@@ -223,7 +224,6 @@ def run_module() -> dict[str, Any]:
     t0 = time.monotonic()
     rc, stdout, stderr = module.run_command(
         cmd,
-        cwd=repo_path,
         environ_update={
             "BRANCH": branch,
             "CI_POLL_SECS": str(max(15, min(ci_timeout // 20, 60))),

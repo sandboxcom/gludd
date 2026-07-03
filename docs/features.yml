@@ -851,7 +851,7 @@ sections:
         pct: 100
         evidence_refs:
           - "role:project_init"
-          - "file:src/general_ludd/ansible/paths.py"
+          - "file:src/general_ludd/ansible/paths.py::resolve_collections_paths"
         notes: "`project_init` role scaffolds .gludd/collections/; 3-tier precedence: project > user > bundled; `[audit]`"
 
       - id: ornith-self-improve-role
@@ -869,7 +869,7 @@ sections:
         evidence_refs:
           - "test:tests/unit/test_pause_slice2_wiring.py"
           - "test:tests/unit/test_pause_router.py"
-          - "file:src/general_ludd/pause/controller.py::PauseController"
+          - "file:src/general_ludd/controllers/pause_controller.py::PauseController"
         notes: "ModelPausedError gate in ModelGateway; EventLoop claim gate skips paused projects; quiesce_project dehydrates in-flight agents; pause/resume API router; `[97c89082]` `[2fa2d919]` `[8a5ebe57]`"
 
       - id: agent-dispatcher-pause-gate

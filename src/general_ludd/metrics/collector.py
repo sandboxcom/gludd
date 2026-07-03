@@ -123,6 +123,8 @@ class MetricsCollector:
         # _global_model_usage). Each deque is capped at _FAILURE_RING_MAXLEN so
         # total memory stays bounded no matter how many calls occur.
         self._recent_failures: dict[str, deque[str]] = {}
+        self._task_times: dict[str, list[float]] = {}
+        self._task_loc: dict[str, list[int]] = {}
         # Model calls are recorded from worker threads (gateway model calls run
         # off the event loop via asyncio.to_thread), so concurrent
         # record_model_call invocations race on the shared dicts above
@@ -149,6 +151,18 @@ class MetricsCollector:
         with self._lock:
             if agent_id in self._agents:
                 self._agents[agent_id].status = "stopped"
+
+    def record_task_time(self, project_id: str, elapsed_seconds: float) -> None:
+        if project_id:
+            with self._lock:
+                self._task_times.setdefault(project_id, []).append(
+                    float(elapsed_seconds)
+                )
+
+    def record_task_loc(self, project_id: str, loc_changed: int) -> None:
+        if project_id:
+            with self._lock:
+                self._task_loc.setdefault(project_id, []).append(int(loc_changed))
 
     def get_agent(self, agent_id: str) -> AgentMetrics | None:
         with self._lock:
@@ -332,3 +346,43 @@ class MetricsCollector:
                         + agent.total_cost_usd
                     )
         return project_costs
+
+    def get_time_by_project(self) -> dict[str, float]:
+        with self._lock:
+            return {
+                pid: sum(times) for pid, times in self._task_times.items()
+            }
+
+    def get_loc_by_project(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                pid: sum(locs) for pid, locs in self._task_loc.items()
+            }
+
+    def get_project_accounting_summary(
+        self,
+    ) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            cost = {
+                agent.project: agent.total_cost_usd
+                for agent in self._agents.values()
+                if agent.project
+            }
+            _merge_cost: dict[str, float] = {}
+            for pid, c in cost.items():
+                _merge_cost[pid] = _merge_cost.get(pid, 0.0) + c
+            time_: dict[str, float] = {
+                pid: sum(times) for pid, times in self._task_times.items()
+            }
+            loc: dict[str, int] = {
+                pid: sum(locs) for pid, locs in self._task_loc.items()
+            }
+            all_projects: set[str] = set(_merge_cost) | set(time_) | set(loc)
+            return {
+                pid: {
+                    "cost_usd": _merge_cost.get(pid, 0.0),
+                    "elapsed_seconds": time_.get(pid, 0.0),
+                    "loc_changed": loc.get(pid, 0),
+                }
+                for pid in all_projects
+            }
