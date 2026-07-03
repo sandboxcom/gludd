@@ -93,6 +93,20 @@ git-ffcheck:
 audit-grep:
 	@grep -rln "$(Q)" src/general_ludd/ 2>/dev/null || echo "no matches"
 
+# Read-only tests search helper (port use). Q=pattern.
+tests-grep:
+	@grep -rln "$(Q)" tests/ 2>/dev/null || echo "no matches"
+
+# Show name-only changed files in a git worktree vs HEAD. WT=path.
+wt-diff-names:
+	@test -n "$(WT)" || (echo "Usage: make wt-diff-names WT=<worktree>"; exit 1)
+	@git -C "$(WT)" status --porcelain
+
+# Show the diff of one file in a git worktree vs HEAD. WT=path F=file.
+wt-diff-file:
+	@test -n "$(WT)" || (echo "Usage: make wt-diff-file WT=<worktree> F=<file>"; exit 1)
+	@git -C "$(WT)" diff -- "$(F)"
+
 # List running pytest / xdist worker processes (resource hygiene).
 ps-pytest:
 	@ps -Ao pid,ppid,pcpu,pmem,etime,command | grep -E '[p]ytest|execnet|[x]dist' | grep -v 'grep' || echo "no pytest processes running"
