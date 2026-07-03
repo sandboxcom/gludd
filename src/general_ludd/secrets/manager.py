@@ -176,7 +176,7 @@ class SecretsManager:
 
     @staticmethod
     def _sanitize_error(exc: BaseException) -> str:
-        return type(exc).__name__
+        return SecretsManager._redact(f"{type(exc).__name__}: {exc}")
 
     @staticmethod
     def _redact(message: str) -> str:
@@ -489,7 +489,8 @@ class SecretsManager:
             if _is_genuine_not_found(exc):
                 return None
             raise SecretsUnavailableError(
-                f"secrets backend unavailable scanning image pins for {image_ref!r}: {type(exc).__name__}"
+                f"secrets backend unavailable scanning image pins for {image_ref!r}: "
+                f"{SecretsManager._sanitize_error(exc)}"
             ) from exc
         if stored is None:
             return None
