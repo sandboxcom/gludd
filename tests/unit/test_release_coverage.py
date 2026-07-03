@@ -168,3 +168,135 @@ class TestReleaseMissingManifestForManifestCheck:
 
         assert result.manifest_valid is False
         assert result.pip_bundle_valid is False
+
+
+class TestReleaseManifestListedFileMissing:
+    """A manifest-listed file that is absent from the bundle must be an error.
+
+    Regression for the weak check that silently skipped missing files
+    (``if fpath.exists()``), letting an incomplete bundle validate.
+    """
+
+    def test_manifest_lists_absent_file_is_invalid(self, tmp_path: Path) -> None:
+        present = b"present-bytes"
+        present_sum = _sha256_of(present)
+        (tmp_path / "present.whl").write_bytes(present)
+
+        # "ghost.whl" is listed in the manifest + checksums but never written.
+        ghost_sum = _sha256_of(b"ghost-bytes")
+        manifest = {
+            "version": "1.0.0",
+            "checksums": {"present.whl": present_sum, "ghost.whl": ghost_sum},
+        }
+        _write_file(tmp_path / "MANIFEST.json", json.dumps(manifest))
+        _write_file(
+            tmp_path / "CHECKSUMS.sha256",
+            f"{present_sum}  present.whl\n{ghost_sum}  ghost.whl\n",
+        )
+
+        result = ReleaseArtifactValidator().validate_release("1.0.0", str(tmp_path))
+
+        assert result.pip_bundle_valid is False
+        assert result.valid is False
+        assert any("missing" in e.lower() and "ghost.whl" in e for e in result.errors)
+
+
+class TestReleaseChecksumsDisagreeWithManifest:
+    """CHECKSUMS.sha256 and MANIFEST.json must agree on every file's hash."""
+
+    def test_checksums_file_disagrees_with_manifest(self, tmp_path: Path) -> None:
+        artifact = b"artifact-bytes"
+        real_sum = _sha256_of(artifact)
+        (tmp_path / "artifact.whl").write_bytes(artifact)
+
+        # Manifest holds the correct hash; CHECKSUMS.sha256 holds a different one.
+        wrong_sum = _sha256_of(b"different-bytes")
+        manifest = {
+            "version": "1.0.0",
+            "checksums": {"artifact.whl": real_sum},
+        }
+        _write_file(tmp_path / "MANIFEST.json", json.dumps(manifest))
+        _write_file(tmp_path / "CHECKSUMS.sha256", f"{wrong_sum}  artifact.whl\n")
+
+        result = ReleaseArtifactValidator().validate_release("1.0.0", str(tmp_path))
+
+        assert result.pip_bundle_valid is False
+        assert result.valid is False
+        assert any("disagree" in e.lower() and "artifact.whl" in e for e in result.errors)
+
+
+class TestReleaseChecksumsMissingFileEntry:
+    """A file in MANIFEST.json but absent from CHECKSUMS.sha256 is an error."""
+
+    def test_manifest_file_absent_from_checksums(self, tmp_path: Path) -> None:
+        artifact = b"artifact-bytes"
+        real_sum = _sha256_of(artifact)
+        (tmp_path / "artifact.whl").write_bytes(artifact)
+
+        manifest = {
+            "version": "1.0.0",
+            "checksums": {"artifact.whl": real_sum},
+        }
+        _write_file(tmp_path / "MANIFEST.json", json.dumps(manifest))
+        # CHECKSUMS.sha256 omits artifact.whl entirely.
+        _write_file(tmp_path / "CHECKSUMS.sha256", "")
+
+        result = ReleaseArtifactValidator().validate_release("1.0.0", str(tmp_path))
+
+        assert result.pip_bundle_valid is False
+        assert result.valid is False
+        assert any("artifact.whl" in e for e in result.errors)
+
+
+class TestReleaseChecksumsHasExtraFileEntry:
+    """A file in CHECKSUMS.sha256 but absent from MANIFEST.json is an error."""
+
+    def test_checksums_has_file_not_in_manifest(self, tmp_path: Path) -> None:
+        artifact = b"artifact-bytes"
+        real_sum = _sha256_of(artifact)
+        extra_sum = _sha256_of(b"extra-bytes")
+        (tmp_path / "artifact.whl").write_bytes(artifact)
+
+        manifest = {
+            "version": "1.0.0",
+            "checksums": {"artifact.whl": real_sum},
+        }
+        _write_file(tmp_path / "MANIFEST.json", json.dumps(manifest))
+        _write_file(
+            tmp_path / "CHECKSUMS.sha256",
+            f"{real_sum}  artifact.whl\n{extra_sum}  rogue.whl\n",
+        )
+
+        result = ReleaseArtifactValidator().validate_release("1.0.0", str(tmp_path))
+
+        assert result.pip_bundle_valid is False
+        assert result.valid is False
+        assert any("rogue.whl" in e for e in result.errors)
+
+
+class TestReleaseCompleteBundleStillValid:
+    """Regression: a well-formed, complete multi-file bundle validates."""
+
+    def test_complete_bundle_all_present_and_agreeing(self, tmp_path: Path) -> None:
+        wheel = b"wheel-a"
+        sdist = b"sdist-b"
+        wheel_sum = _sha256_of(wheel)
+        sdist_sum = _sha256_of(sdist)
+        (tmp_path / "pkg-a.whl").write_bytes(wheel)
+        (tmp_path / "pkg-b.tar.gz").write_bytes(sdist)
+
+        manifest = {
+            "version": "1.0.0",
+            "checksums": {"pkg-a.whl": wheel_sum, "pkg-b.tar.gz": sdist_sum},
+        }
+        _write_file(tmp_path / "MANIFEST.json", json.dumps(manifest))
+        _write_file(
+            tmp_path / "CHECKSUMS.sha256",
+            f"{wheel_sum}  pkg-a.whl\n{sdist_sum}  pkg-b.tar.gz\n",
+        )
+
+        result = ReleaseArtifactValidator().validate_release("1.0.0", str(tmp_path))
+
+        assert result.pip_bundle_valid is True
+        assert result.valid is True
+        assert result.errors == []
