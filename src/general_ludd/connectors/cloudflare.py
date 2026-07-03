@@ -53,7 +53,17 @@ class Transport(Protocol):
 
 
 _PRIVATE_HOSTNAMES = frozenset(
-    {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}
+    {
+        "localhost",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "ip6-loopback",
+        # Cloud metadata endpoint by DNS name (the 169.254.169.254 IP literal is
+        # caught by the ip_address branch below). Exact-match only so a benign
+        # host like ``metadata.example.com`` is not over-blocked.
+        "metadata.google.internal",
+        "metadata",
+    }
 )
 
 

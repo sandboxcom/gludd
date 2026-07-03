@@ -149,6 +149,43 @@ def test_internal_base_url_rejected(bad: str) -> None:
         GraphiteSource({**CONFIG, "base_url": bad}, _MockTransport(_Resp(200, CANNED)), environ={})
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "http://metadata.google.internal/",
+        "http://metadata.google.internal/computeMetadata/v1/",
+        "https://METADATA.GOOGLE.INTERNAL/",
+        "http://metadata/",
+        "http://metadata",
+    ],
+)
+def test_metadata_hostname_rejected(bad: str) -> None:
+    # DNS name for the cloud metadata endpoint must be refused even though no
+    # DNS resolution is performed (the 169.254.169.254 IP literal is covered by
+    # test_internal_base_url_rejected).
+    with pytest.raises(ConnectorConfigError):
+        GraphiteSource({**CONFIG, "base_url": bad}, _MockTransport(_Resp(200, CANNED)), environ={})
+
+
+def test_metadata_lookalike_hostname_allowed() -> None:
+    # Exact-match only: a benign host that merely contains "metadata" is fine.
+    src = GraphiteSource(
+        {**CONFIG, "base_url": "https://metadata.example.com"},
+        _MockTransport(_Resp(200, CANNED)),
+        environ={},
+    )
+    assert src.base_url == "https://metadata.example.com"
+
+
+def test_public_base_url_allowed() -> None:
+    src = GraphiteSource(
+        {**CONFIG, "base_url": "https://graphite.example.com"},
+        _MockTransport(_Resp(200, CANNED)),
+        environ={},
+    )
+    assert src.base_url == "https://graphite.example.com"
+
+
 def test_health_ok() -> None:
     src = GraphiteSource(CONFIG, _MockTransport(_Resp(200, [])), environ={})
     assert src.health()["ok"] is True

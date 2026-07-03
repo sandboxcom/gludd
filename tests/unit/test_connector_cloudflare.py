@@ -258,6 +258,35 @@ def test_ssrf_allow_private_opt_in(token: str) -> None:
     assert src.query({}) == []
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "http://metadata.google.internal/audit_logs",
+        "http://metadata.google.internal/computeMetadata/v1/",
+        "https://METADATA.GOOGLE.INTERNAL/audit_logs",
+        "http://metadata/audit_logs",
+        "http://metadata",
+    ],
+)
+def test_ssrf_rejects_metadata_hostname(bad: str) -> None:
+    # DNS name for the cloud metadata endpoint must be refused (the
+    # 169.254.169.254 IP literal is covered by test_ssrf_rejects_private_base_url).
+    with pytest.raises(ValueError, match=r"private|loopback"):
+        CloudflareSource(
+            {"base_url": bad, "token_env": TOKEN_ENV},
+            transport=lambda *a, **k: None,
+        )
+
+
+def test_ssrf_metadata_lookalike_hostname_allowed() -> None:
+    # Exact-match only: a benign host that merely contains "metadata" is fine.
+    src = CloudflareSource(
+        {"base_url": "https://metadata.example.com/audit_logs", "token_env": TOKEN_ENV},
+        transport=lambda *a, **k: None,
+    )
+    assert src.base_url == "https://metadata.example.com/audit_logs"
+
+
 # -- health ---------------------------------------------------------------
 
 

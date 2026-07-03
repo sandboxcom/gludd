@@ -128,6 +128,44 @@ def test_internal_base_url_rejected(bad: str) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "http://metadata.google.internal/",
+        "http://metadata.google.internal/computeMetadata/v1/",
+        "https://METADATA.GOOGLE.INTERNAL/",
+        "http://metadata/",
+        "http://metadata",
+    ],
+)
+def test_metadata_hostname_rejected(bad: str) -> None:
+    # DNS name for the cloud metadata endpoint must be refused even without DNS
+    # resolution (the 169.254.169.254 IP literal is covered above).
+    with pytest.raises(ConnectorConfigError):
+        BugsnagSource(
+            {**CONFIG, "base_url": bad}, _MockTransport(_Resp(200, CANNED)), environ={"BUGSNAG_TOKEN": "t"}
+        )
+
+
+def test_metadata_lookalike_hostname_allowed() -> None:
+    # Exact-match only: a benign host that merely contains "metadata" is fine.
+    src = BugsnagSource(
+        {**CONFIG, "base_url": "https://metadata.example.com"},
+        _MockTransport(_Resp(200, CANNED)),
+        environ={"BUGSNAG_TOKEN": "t"},
+    )
+    assert src.base_url == "https://metadata.example.com"
+
+
+def test_public_base_url_allowed() -> None:
+    src = BugsnagSource(
+        {**CONFIG, "base_url": "https://api.bugsnag.com"},
+        _MockTransport(_Resp(200, CANNED)),
+        environ={"BUGSNAG_TOKEN": "t"},
+    )
+    assert src.base_url == "https://api.bugsnag.com"
+
+
 def test_health_ok() -> None:
     src = BugsnagSource(CONFIG, _MockTransport(_Resp(200, CANNED)), environ={"BUGSNAG_TOKEN": "t"})
     assert src.health()["ok"] is True

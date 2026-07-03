@@ -57,6 +57,8 @@ def _assert_public_base_url(base_url: str) -> None:
     lowered = host.lower()
     if lowered == "localhost" or lowered.endswith(".localhost"):
         raise ConnectorConfigError("base_url host is loopback (localhost)")
+    if lowered in ("metadata.google.internal", "metadata"):
+        raise ConnectorConfigError("base_url host is the cloud metadata hostname")
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
