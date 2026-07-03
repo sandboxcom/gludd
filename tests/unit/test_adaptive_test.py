@@ -1,13 +1,23 @@
-"""Tests for scripts/adaptive_test.py — the memory-bounded pytest runner.
+"""Tests for scripts/adaptive_test.py — the LOAD-AVERAGE-AWARE, memory-bounded
+pytest runner.
 
-Fast + coreutils-free: the NPROC formula, env-override precedence, OOM-exit
-detection, the pytest-cmd builder, and the halving-retry loop are all pure
-functions / injectable, so no real pytest subprocess is spawned here.
+``scripts/adaptive_test.py`` is a standalone script (not an installed module), so
+it is loaded here by file path via importlib. The sizing logic is pure/injectable,
+so no real pytest subprocess is spawned.
+
+``compute_nproc`` now folds THREE independent caps and takes the smallest:
+  * by_mem  — one worker per PER_WORKER_GB of available RAM
+  * by_load — load headroom: 2.5*cores - load5 (5-minute load average)
+  * cpu_count
+Because ``by_load`` reads the *live* machine load, every ``compute_nproc`` test
+here pins ``general_ludd.system.monitor.get_load_average`` so results are
+deterministic regardless of the load on the machine running the suite.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -17,7 +27,7 @@ _SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "adaptive_test.py"
 
 
 def _load() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("adaptive_test", _SCRIPT)
+    spec = importlib.util.spec_from_file_location("adaptive_test_under_test", _SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -27,34 +37,85 @@ def _load() -> ModuleType:
 at = _load()
 
 
-# ---- NPROC formula -------------------------------------------------------
+def _pin_load(monkeypatch: pytest.MonkeyPatch, load5: float) -> None:
+    """Pin the 5-minute load average so the load cap is deterministic."""
+    import general_ludd.system.monitor as monitor_mod
+
+    monkeypatch.setattr(monitor_mod, "get_load_average", lambda: (0.0, load5, 0.0))
+
+
+@pytest.fixture
+def idle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default fixture: zero load, so the load cap never dominates."""
+    _pin_load(monkeypatch, 0.0)
+
+
+# ---- compute_nproc: the three caps ---------------------------------------
+
+
+def test_compute_nproc_caps_by_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A high 5-minute load collapses the worker count toward 1 (load dominates)."""
+    cores = 8
+    # load5 = 2.4*cores -> by_load = int(2.5*cores - 2.4*cores) = int(0.1*cores) = 0 -> floored to 1.
+    _pin_load(monkeypatch, 2.4 * cores)
+    # RAM is abundant so only the load cap can be responsible for the drop to 1.
+    assert at.compute_nproc(avail_gb=1000.0, cpu_count=cores, gb_per_worker=1.5) == 1
+
+
+def test_compute_nproc_caps_by_mem(idle: None) -> None:
+    """Low available RAM bounds the worker count (mem cap dominates)."""
+    # 3 GiB / 1.5 GiB-per-worker = 2, below 8 cores and below the idle load cap.
+    assert at.compute_nproc(avail_gb=3.0, cpu_count=8, gb_per_worker=1.5) == 2
+
+
+def test_compute_nproc_caps_by_cores(idle: None) -> None:
+    """Plenty of RAM + zero load -> exactly the core count, never more."""
+    assert at.compute_nproc(avail_gb=1000.0, cpu_count=4, gb_per_worker=1.5) == 4
+
 
 @pytest.mark.parametrize(
     "avail_gb, cpu_count, per_worker, expected",
     [
-        (16.0, 8, 1.5, 8),    # RAM-rich: capped by cpu_count
-        (6.0, 8, 1.5, 4),     # 6 // 1.5 == 4 workers, under cpu cap
-        (1.4, 8, 1.5, 1),     # < one worker's budget -> floor of 1
-        (0.0, 8, 1.5, 1),     # zero available -> floor of 1
-        (100.0, 4, 1.5, 4),   # capped by cpu_count
-        (12.0, 8, 3.0, 4),    # bigger per-worker budget -> fewer workers
+        (6.0, 8, 1.5, 4),    # 6 // 1.5 == 4 workers, under cpu + load caps
+        (1.4, 8, 1.5, 1),    # < one worker's budget -> floor of 1
+        (0.0, 8, 1.5, 1),    # zero available -> floor of 1
+        (12.0, 8, 3.0, 4),   # bigger per-worker budget -> fewer workers
     ],
 )
-def test_compute_nproc_formula(avail_gb, cpu_count, per_worker, expected) -> None:
+def test_compute_nproc_mem_formula_when_idle(
+    idle: None, avail_gb, cpu_count, per_worker, expected
+) -> None:
     assert at.compute_nproc(avail_gb, cpu_count, per_worker) == expected
 
 
-def test_compute_nproc_no_psutil_falls_back_to_cpu() -> None:
-    # avail_gb None (psutil missing) -> cpu-only count.
-    assert at.compute_nproc(None, 6, 1.5) == 6
-    assert at.compute_nproc(None, 0, 1.5) == 1  # cpu floor
+def test_compute_nproc_never_below_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Extreme starvation (1 core, tiny RAM, huge load) still returns >= 1."""
+    _pin_load(monkeypatch, 999.0)
+    n = at.compute_nproc(avail_gb=0.1, cpu_count=1, gb_per_worker=1.5)
+    assert n == 1
 
 
-def test_compute_nproc_zero_per_worker_is_cpu_only() -> None:
-    assert at.compute_nproc(8.0, 5, 0.0) == 5
+def test_compute_nproc_none_avail_gb_uses_cpu_for_mem(idle: None) -> None:
+    """No psutil reading (avail_gb=None) falls back to cores for the RAM cap."""
+    assert at.compute_nproc(avail_gb=None, cpu_count=3, gb_per_worker=1.5) == 3
 
 
-# ---- env override precedence --------------------------------------------
+def test_compute_nproc_zero_per_worker_is_cpu_only(idle: None) -> None:
+    assert at.compute_nproc(avail_gb=8.0, cpu_count=5, gb_per_worker=0.0) == 5
+
+
+def test_compute_nproc_import_error_falls_back_to_ram_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the system monitor cannot be imported, sizing falls back to RAM-only (no crash)."""
+    # Poison the import so `from general_ludd.system.monitor import ...` raises ImportError.
+    monkeypatch.setitem(sys.modules, "general_ludd.system.monitor", None)
+    # 6 GiB / 1.5 = 4 workers, capped at 8 cores -> 4. The load cap is skipped entirely.
+    assert at.compute_nproc(avail_gb=6.0, cpu_count=8, gb_per_worker=1.5) == 4
+
+
+# ---- env override precedence ---------------------------------------------
+
 
 def test_env_override_nproc_wins() -> None:
     assert at.env_override({"NPROC": "2"}) == 2
@@ -75,8 +136,9 @@ def test_env_override_absent_or_nonpositive() -> None:
     assert at.env_override({"NPROC": "garbage"}) is None
 
 
-def test_decide_nproc_override_beats_ram(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(at, "available_gb", lambda: 0.5)  # would force n=1
+def test_decide_nproc_override_beats_adaptive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit positive-int override short-circuits the RAM+load computation."""
+    monkeypatch.setattr(at, "available_gb", lambda: 0.5)  # would otherwise force n=1
     assert at.decide_nproc({"NPROC": "7"}) == 7
 
 
@@ -88,6 +150,7 @@ def test_per_worker_gb_env_tunable() -> None:
 
 # ---- OOM-exit detection --------------------------------------------------
 
+
 @pytest.mark.parametrize("rc", [-9, 137])
 def test_is_oom_exit_signal_codes(rc) -> None:
     assert at.is_oom_exit(rc, "") is True
@@ -95,8 +158,11 @@ def test_is_oom_exit_signal_codes(rc) -> None:
 
 @pytest.mark.parametrize(
     "output",
-    ["... node down: Not properly terminated", "replacing crashed worker gw3",
-     "worker CRASHED while running test"],
+    [
+        "... node down: Not properly terminated",
+        "replacing crashed worker gw3",
+        "worker CRASHED while running test",
+    ],
 )
 def test_is_oom_exit_output_markers(output) -> None:
     assert at.is_oom_exit(1, output) is True
@@ -107,32 +173,39 @@ def test_is_oom_exit_clean_failure_is_not_oom() -> None:
     assert at.is_oom_exit(0, "") is False
 
 
-# ---- pytest command builder ---------------------------------------------
+# ---- pytest command builder (now bounds via --maxprocesses) --------------
 
-def test_build_pytest_cmd_adds_n_and_dist() -> None:
+
+def test_build_pytest_cmd_adds_n_maxprocesses_and_dist() -> None:
     cmd = at.build_pytest_cmd(["tests/unit", "-q"], 4)
-    assert "-n" in cmd and "4" in cmd
-    assert "--dist" in cmd and "loadgroup" in cmd
+    assert "-n" in cmd
+    assert cmd[cmd.index("-n") + 1] == "4"
+    assert "--maxprocesses" in cmd
+    assert cmd[cmd.index("--maxprocesses") + 1] == "4"
+    assert "--dist" in cmd
+    assert cmd[cmd.index("--dist") + 1] == "loadgroup"
 
 
 def test_build_pytest_cmd_no_dup_when_caller_sets_them() -> None:
-    cmd = at.build_pytest_cmd(["tests/unit", "-n", "2", "--dist", "no"], 8)
+    cmd = at.build_pytest_cmd(
+        ["tests/unit", "-n", "2", "--maxprocesses", "2", "--dist", "no"], 8
+    )
     assert cmd.count("-n") == 1
+    assert cmd.count("--maxprocesses") == 1
     assert cmd.count("--dist") == 1
-    assert "8" not in cmd  # our count was not appended
+    assert "8" not in cmd  # our computed count was not appended anywhere
 
 
 # ---- retry / halving loop ------------------------------------------------
+
 
 def test_run_retries_halving_on_oom(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 8)
     seen: list[int] = []
 
     def fake_runner(cmd):
-        # cmd is [python, -m, pytest, ..., -n, <N>, --dist, loadgroup]
         n = int(cmd[cmd.index("-n") + 1])
         seen.append(n)
-        # OOM until we get down to 1 worker, then succeed.
         if n > 1:
             return 137, "worker crashed"
         return 0, "ok"

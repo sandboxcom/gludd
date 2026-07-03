@@ -168,10 +168,20 @@ jobs:
         # fail_under=70 gate, which only applies to a FULL test run.
         run: |
           TESTPATHS="${{ matrix.testpaths }}"
-          uv run python -m pytest $TESTPATHS \
+          # Route through the adaptive runner (single source of truth for worker
+          # sizing) instead of a raw `-n auto`. On the 2-core / 7 GB ubuntu-latest
+          # runner it bounds workers by BOTH available RAM and load headroom
+          # (2.5*cores - load5) -> -n 2, and appends `--maxprocesses 2 --dist
+          # loadgroup` itself, so a worker crash/respawn loop cannot exceed the
+          # bounded count and OOM the runner. `-n auto` previously spawned one
+          # ~1.2-1.5 GB worker PER CORE. Test SCOPE is unchanged: TESTPATHS and the
+          # coverage flags are forwarded verbatim; an OOM-shaped exit auto-retries
+          # at a halved worker count. GLUDD_XDIST=auto (below) is not a positive
+          # int so the runner ignores it and the adaptive computation applies.
+          uv run python scripts/adaptive_test.py $TESTPATHS \
             --cov=general_ludd --cov-report= \
             --cov-fail-under=0 \
-            -n auto --dist loadgroup -v \
+            -v \
             || { RC=$?; [ $RC -eq 5 ] && exit 0 || exit $RC; }
           # pytest-cov under xdist can leave parallel-named .coverage.<host>.<pid>
           # data files instead of a single combined .coverage; merge them first
@@ -184,6 +194,15 @@ jobs:
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
+          # Per-xdist-worker RLIMIT_AS backstop (conftest.py pytest_configure).
+          # RLIMIT_AS caps VIRTUAL address space, which for this dependency set
+          # (eager tree_sitter C-ext, OpenSSL via cryptography, psycopg binary,
+          # glibc per-thread arenas) runs well above RSS — so the local default
+          # of 1600 MiB would clip HEALTHY workers on Linux. The real CI-OOM
+          # protection is the bounded worker count above (-n 2 on the 7 GB
+          # runner); this cap is only a runaway catcher, so give it VSZ headroom
+          # here to keep it from red-flagging the pipeline.
+          GLUDD_TEST_WORKER_MEM_MB: "6144"
       - name: Upload coverage data (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         # Upload the shard-unique .coverage.* data file so the `coverage` job
         # can download and combine all shards into one merged report.

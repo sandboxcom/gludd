@@ -41,6 +41,44 @@ def _load_ratchet() -> dict[str, str]:
     return _RATCHET
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Cap each xdist WORKER's address space so a runaway worker is RLIMIT_AS-
+    bounded (its own allocations start failing with MemoryError) instead of the
+    kernel OOM-killing the whole box and taking the run — and the operator's
+    laptop — down with it.
+
+    Applied ONLY inside an xdist worker (``PYTEST_XDIST_WORKER`` is set on
+    workers, absent on the controller and on a plain single-process ``pytest``
+    run) so an isolated ``make test-iso`` run is never capped.
+
+    FAIL-OPEN by construction:
+      * ``rlimit.apply_limits`` is a no-op where ``RLIMIT_AS`` is unsupported —
+        notably macOS, where the local-OOM problem is mitigated instead by the
+        load-aware worker sizing in ``scripts/adaptive_test.py`` — and swallows
+        the ``ValueError``/``OSError`` a sandbox raises; and
+      * the whole block is wrapped in ``try/except Exception`` so a resource
+        limit can NEVER break test collection.
+
+    The cap defaults to 1600 MiB per worker (env-tunable via
+    ``GLUDD_TEST_WORKER_MEM_MB``); CPU-time is left unbounded because the
+    project-wide ``pytest-timeout`` (180s) already backstops a hung test.
+    """
+    if not os.environ.get("PYTEST_XDIST_WORKER"):
+        return
+    try:
+        from general_ludd.system.rlimit import apply_limits
+
+        raw = os.environ.get("GLUDD_TEST_WORKER_MEM_MB", "1600")
+        try:
+            mem_mb = int(raw)
+        except ValueError:
+            mem_mb = 1600
+        apply_limits(mem_mb=mem_mb, cpu_s=0)
+    except Exception:
+        # Never let a best-effort resource limit break collection.
+        pass
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     ratchet = _load_ratchet()
     if not ratchet:

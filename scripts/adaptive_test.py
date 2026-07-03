@@ -5,11 +5,17 @@ The default ``make test`` used ``pytest -n auto`` which spawns one worker PER CP
 CORE. Each gludd worker resident set is ~1.2-1.5 GiB, so ``cores x RSS`` routinely
 exceeds physical memory and the kernel OOM-kills the run (SIGKILL / exit 137).
 
-This runner instead computes the worker count from *available* memory:
+This runner instead computes the worker count from *available* memory AND the
+current system LOAD, so a run never over-commits RAM and never drives the box's
+5-minute load average above ~2.5x the core count:
 
-    n = max(1, min(cpu_count, available_gb // PER_WORKER_GB))
+    by_mem  = available_gb // PER_WORKER_GB
+    by_load = 2.5 * cores - load5          # load headroom
+    n       = max(1, min(cores, by_mem, by_load))
 
-so the total working set stays within RAM. It also DETECTS an OOM-shaped exit
+so the total working set stays within RAM and the machine stays responsive
+(this is the local-OOM fix — a heavily-loaded laptop no longer piles a full
+``-n auto`` fan-out on top of existing load). It also DETECTS an OOM-shaped exit
 (negative signal -9, exit 137, or an xdist "worker crashed / node down" line) and
 RETRIES with the worker count HALVED, down to ``-n 1``, before giving up. This
 keeps the local ``make test`` / ``make ci-test`` runs (which Claude Code drives)
@@ -35,6 +41,10 @@ import sys
 from collections.abc import Mapping, Sequence
 
 DEFAULT_PER_WORKER_GB = 1.5
+# Load headroom: never let the run drive the 5-minute load average above this
+# multiple of the core count. Matches system.monitor.can_start_process's default
+# ``threshold_multiplier`` so the two capacity guards agree.
+LOAD_HEADROOM_MULTIPLIER = 2.5
 # Exit codes that indicate the OS killed the process (or a worker) — OOM-shaped.
 _OOM_EXIT_CODES = frozenset({-9, 137})
 _OOM_OUTPUT_MARKERS = (
@@ -103,16 +113,42 @@ def compute_nproc(
     cpu_count: int,
     gb_per_worker: float = DEFAULT_PER_WORKER_GB,
 ) -> int:
-    """Worker count sized by available RAM, floored at 1, capped at cpu_count.
+    """Worker count sized by available RAM AND system load, floored at 1, capped at cpu_count.
 
-    When ``avail_gb`` is None (no psutil) or ``gb_per_worker`` is non-positive,
-    fall back to a CPU-only count (still floored at 1).
+    Three independent caps are taken, and the smallest wins:
+
+    * ``by_mem``  — one worker per ``gb_per_worker`` GiB of *available* RAM (the
+      original behaviour). When ``avail_gb`` is None (no psutil) or
+      ``gb_per_worker`` is non-positive this cap falls back to ``cpu_count``.
+    * ``by_load`` — load headroom: ``LOAD_HEADROOM_MULTIPLIER * cores - load5``,
+      so the run does not push the 5-minute load average past ~2.5x cores. This
+      is read from ``general_ludd.system.monitor``; if that package is not
+      importable (e.g. the script is run standalone outside the venv) the load
+      cap is simply skipped (fail-open to RAM-only sizing) rather than crashing.
+    * ``cpu_count`` — never more workers than cores.
+
+    The result is always ``>= 1``.
     """
     cpu_count = max(1, cpu_count)
+
+    # RAM cap (original behaviour).
     if avail_gb is None or gb_per_worker <= 0:
-        return cpu_count
-    by_mem = int(avail_gb // gb_per_worker)
-    return max(1, min(cpu_count, by_mem))
+        by_mem = cpu_count
+    else:
+        by_mem = max(1, int(avail_gb // gb_per_worker))
+
+    # Load cap. Fail-open (no load cap) if the system monitor is unavailable so
+    # the script still runs standalone / outside the general_ludd venv.
+    by_load = cpu_count
+    try:
+        from general_ludd.system.monitor import get_load_average
+    except ImportError:
+        pass
+    else:
+        load5 = get_load_average()[1]  # 5-minute load average
+        by_load = max(1, int(LOAD_HEADROOM_MULTIPLIER * cpu_count - load5))
+
+    return max(1, min(cpu_count, by_mem, by_load))
 
 
 def decide_nproc(env: Mapping[str, str] | None = None) -> int:
@@ -152,11 +188,19 @@ def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
 
 
 def build_pytest_cmd(pytest_args: Sequence[str], nproc: int) -> list[str]:
-    """``python -m pytest <args> -n <nproc> --dist loadgroup`` (no dup -n/--dist)."""
+    """``python -m pytest <args> -n <nproc> --maxprocesses <nproc> --dist loadgroup``.
+
+    ``--maxprocesses`` bounds the number of live xdist worker processes even
+    across respawns (xdist replaces a crashed worker), so an OOM/crash loop can
+    never exceed the RAM/load-sized worker count. Existing ``-n`` / ``--maxprocesses``
+    / ``--dist`` in ``pytest_args`` are respected (no duplicates appended).
+    """
     args = list(pytest_args)
     cmd = [sys.executable, "-m", "pytest", *args]
     if not any(a == "-n" or a.startswith("-n") for a in args):
         cmd += ["-n", str(nproc)]
+    if not any(a == "--maxprocesses" or a.startswith("--maxprocesses") for a in args):
+        cmd += ["--maxprocesses", str(nproc)]
     if "--dist" not in args and not any(a.startswith("--dist") for a in args):
         cmd += ["--dist", "loadgroup"]
     return cmd
