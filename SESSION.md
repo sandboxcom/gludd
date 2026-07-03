@@ -9,17 +9,26 @@
 
 ## Current Work
 
-- **HEAD: `8a5ebe57`** on master — all pushed to sandboxcom/master.
+- **HEAD: `06d2d48a`** on master — all pushed to sandboxcom/master.
 - **Enforcement fixes COMMITTED+PUSHED**: `78761de3` enforce-floor streak counter, `2aedeba8` unconditional block, `8d98f601` delegate threshold=1. **NEED RESTART** to take effect.
 - **#35 SLICE 2 COMPLETE** (`97c89082`): PauseController wired into ModelGateway + EventLoop + daemon. #50 dispatch fail-CLOSED. Bash-diagnosis config-stack fix.
+- **#35 SLICE 3 COMPLETE** (`2fa2d919`): quiesce_project wired into pause router, ToolCallAuditor + PromptEnhancer + BadCallSituationStore created. 67 tests passing.
 - **#35 SLICE 4 COMPLETE** (`8a5ebe57`): pause/resume API router + daemon wiring. 7 tests passing.
+- **#51 COMPLETE** (`2fa2d919`): pause gate wired into AgentDispatcher (pause_controller → is_paused → "blocked" for paused projects), daemon.py passes pause_controller.
+- **#53 COMPLETE** (`2fa2d919`): push livelock escape with retry counter, exponential backoff, MAX_PUSH_RETRIES=5, BLOCKED transition, independent per-todo counters.
 - **#61 SSRF tranche-5**: issue_sources already have local SSRF guards. Canonical consolidation deferred.
-- **Open issues:** #35 SLICE 3, #51, #53.
 
 ## Last Commits
 
 | Hash | Message |
 |------|---------|
+| `06d2d48a` | feat(#35): wire quiesce_project into POST /api/pause/project |
+| `cfceb0dc` | fix(#51): type annotation — object→Any for pause_controller is_paused access |
+| `2fa2d919` | fix(#35,#51,#53): SLICE 3 quiesce + pause gate dispatcher + push livelock escape — 67 tests |
+| `e1c2d41a` | feat(#35): ToolCallAuditor + PromptEnhancer — 29 tests |
+| `c273a408` | feat(#35): BadCallSituationStore with MAC verification — 9 tests |
+| `c86a8532` | feat(#51): add project_id to AgentTask |
+| `c8b654ae` | feat(#35): SLICE 3 resource capture |
 | `8a5ebe57` | feat(#35): SLICE 4 pause/resume router + CLI endpoints + daemon wiring — 7 tests passing |
 | `8d98f601` | fix(delegate): lower MAINTHREAD_THRESHOLD from 4 to 1 |
 | `2aedeba8` | fix(floor): remove openWorkExists dependency from block |
@@ -29,16 +38,11 @@
 ## Known Gaps
 
 1. **enforce-floor/delegate fixes NEED RESTART** — plugins don't hot-reload. In this session the Python-shell-out silently fails, threshold=4, causing compulsive git-log/ci-verdict loop.
-2. **#35 SLICE 3** — quiesce in-flight agents not started.
-3. **#51/#53** — hibernation dispatch + file-claim livelock not started.
-4. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
+2. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
 
 ## Next Steps
 
 1. **RESTART OPENCODE** for enforcement fixes to take effect.
-2. **#35 SLICE 3**: quiesce in-flight agents + resource listing into PauseRecord.
-3. **#51**: wire HibernationController into AgentDispatcher.
-4. **#53**: audit and fix commit-path file-claim livelock.
 
 ## Current Gate Status (2026-07-03)
 <!-- gate:begin -->

@@ -9,6 +9,13 @@ Polled by a background Makefile target (`make watchdog-start`). Every check cycl
 When a reset fires, it also writes /tmp/gludd-auto-reset.log with timestamp so
 the orchestrator can see how often the agent gets jammed.
 
+Also provides a tail-classification API used by floor_controller.py and tested
+in tests/unit/test_agent_watchdog.py:
+- State enum: ACTIVE, LIKELY_STALLED_INCOMPLETE, DONE
+- classify_tail(tail, age_seconds, window_seconds) -> (State, reason)
+- scan_tasks_dir(tasks_dir, window_seconds) -> [(name, State, reason), ...]
+- DEFAULT_WINDOW_SECS = 90.0
+
 Usage:
     make watchdog-start    — launch in background (nohup, PID tracked)
     make watchdog-status   — last 20 lines of log + PID status
@@ -16,6 +23,9 @@ Usage:
     make watchdog-log      — full auto-reset log
 """
 
+from __future__ import annotations
+
+import enum
 import json
 import os
 import sys
@@ -23,13 +33,83 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# ── Classification API ────────────────────────────────────────────────────────
+
+DEFAULT_WINDOW_SECS: float = 90.0
+
+DONE_MARKERS = ("result:", "summary:", "complete", "finished", "passed", "failed:")
+STALL_MARKERS = ("continuing", "let me", "next",)
+
+
+class State(enum.Enum):
+    ACTIVE = "ACTIVE"
+    LIKELY_STALLED_INCOMPLETE = "LIKELY_STALLED_INCOMPLETE"
+    DONE = "DONE"
+
+
+def classify_tail(
+    tail: str,
+    age_seconds: float,
+    window_seconds: float = DEFAULT_WINDOW_SECS,
+) -> tuple[State, str]:
+    if age_seconds < window_seconds:
+        return State.ACTIVE, f"age {age_seconds:.1f}s < window {window_seconds}s"
+
+    tail_lower = tail.lower()
+
+    for marker in DONE_MARKERS:
+        if marker in tail_lower:
+            return State.DONE, f"result: found '{marker}' in tail"
+
+    stripped = tail.strip()
+    if not stripped:
+        return State.LIKELY_STALLED_INCOMPLETE, "empty tail"
+    if stripped.isspace():
+        return State.LIKELY_STALLED_INCOMPLETE, "whitespace-only tail"
+
+    for marker in STALL_MARKERS:
+        if tail_lower.startswith(marker):
+            return State.LIKELY_STALLED_INCOMPLETE, f"let me / continuing: '{marker}' prefix"
+
+    last_line = stripped.splitlines()[-1].rstrip()
+    if last_line.endswith(":"):
+        return State.LIKELY_STALLED_INCOMPLETE, "last line ends with ':'"
+
+    return State.LIKELY_STALLED_INCOMPLETE, "no completion marker"
+
+
+def scan_tasks_dir(
+    tasks_dir: Path,
+    window_seconds: float = DEFAULT_WINDOW_SECS,
+) -> list[tuple[str, State, str]]:
+    if not tasks_dir.is_dir():
+        return []
+
+    results: list[tuple[str, State, str]] = []
+    for entry in sorted(tasks_dir.iterdir()):
+        if not entry.is_file() or not entry.name.endswith(".output"):
+            continue
+        try:
+            tail = entry.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        mtime = entry.stat().st_mtime
+        age = time.time() - mtime
+        state, reason = classify_tail(tail, age, window_seconds)
+        name = entry.name.removesuffix(".output")
+        results.append((name, state, reason))
+    return results
+
+
+# ── Streak-reset watchdog ─────────────────────────────────────────────────────
+
 STREAK_FILE = "/tmp/gludd-mainthread-streak.json"
 TODOWRITE_STATE = os.environ.get("GLUDD_TODOWRITE_STATE", "/tmp/gludd-todowrite-state.json")
 RESET_LOG = "/tmp/gludd-auto-reset.log"
 HIBERNATION_MARKER = Path("/tmp/gludd-watchdog-hibernating")
 POLL_SECS = 60
 
-STREAK_THRESHOLD = 3  # reset streak when ≥ this many consecutive non-dispatch calls
+STREAK_THRESHOLD = 3
 
 
 def _now() -> str:
@@ -90,7 +170,6 @@ def check_and_reset() -> dict:
         else:
             _log(f"UNJAMMED: streak={streak}, no pending todos detected but resetting anyway")
     elif streak is not None:
-        # low streak, nothing to do
         pass
     else:
         _log("streak file missing — enforcement may not be tracking")
@@ -98,11 +177,44 @@ def check_and_reset() -> dict:
     return result
 
 
-def main():
-    if "--once" in sys.argv:
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+
+def _cli_classification(argv: list[str]) -> int:
+    """Handle --once, --count-stalled, --list-stalled, --all flags."""
+    tasks_dir = Path(argv[0]) if argv and not argv[0].startswith("--") else Path("/tmp/gludd-tasks")
+    results = scan_tasks_dir(tasks_dir)
+
+    if "--once" in argv:
         result = check_and_reset()
         print(json.dumps(result, indent=2))
-        return
+        return 0
+
+    if "--count-stalled" in argv:
+        count = sum(1 for _, s, _ in results if s == State.LIKELY_STALLED_INCOMPLETE)
+        print(count)
+        return 0
+
+    if "--list-stalled" in argv:
+        for name, state, _reason in results:
+            if state == State.LIKELY_STALLED_INCOMPLETE:
+                print(f"{name}  {state.value}")
+        return 0
+
+    if "--all" in argv:
+        for name, state, reason in results:
+            print(f"{name}  {state.value}  ({reason})")
+        return 0
+
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+
+    if argv and any(a.startswith("--") or not a.startswith("-") for a in argv):
+        return _cli_classification(argv)
 
     _log(f"watchdog started — poll={POLL_SECS}s, threshold={STREAK_THRESHOLD}")
     while True:
@@ -118,4 +230,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
