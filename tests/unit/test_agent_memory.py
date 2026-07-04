@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base, MemoryRecordModel
+from general_ludd.db.models import Base
 from general_ludd.db.repository import MemoryRepository
 
 

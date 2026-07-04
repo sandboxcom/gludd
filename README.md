@@ -236,8 +236,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Queue-lease concurrency fixes: double-dispatch prevention, priority ordering, orphan-lease cleanup, expires_at index (Q.F1-F4) | ✓ 100% | **PASS** *(file-refs only)*: F1 reclaim skip on live lease, F2 priority DESC ordering, F3 lease-row delete on PID-cap release, F4 alembic migration 011; `[4e13936]` `[6e684b4]` `[bba8c92]` `[14ee691]` |
 | gludd_stream module + /admin/stream/dispatch + 3 operator playbooks + molecule scenarios (S.1-S.7) | ✓ 100% | **PASS** *(file-refs only)*: stream_audio_to_tasks, stream_video_feature_detection, stream_text_log_tail; 3 molecule scenarios; max_dispatches bounded; `[ea2cc7bc]` |
 | Persistent agent memory (G1) | ✓ 20% | **PASS** *(file-refs only)*: `MemoryRecordModel` (models.py:687-731) + `memory_records` table in alembic 005; scope/scope_key isolation; additive table via `Base.metadata`; embedding column for future semantic search; no dedicated MemoryRecordRepository yet |
-| Offline eval harness (G2) | ✗ 0% | **PENDING**: no `eval/` package; design-only; `[audit]` |
-| Semantic codebase retrieval (G3) | ✗ 0% | **PENDING**: no `retrieval/` package; design-only; `[audit]` |
+| Offline eval harness (G2) | ~ 15% | **PARTIAL** *(file-refs only)*: compaction evaluate.py + debt_evaluator.py exist; early scaffolding; `[audit]` |
+| Semantic codebase retrieval (G3) | ✓ 15% | **PASS** *(file-refs only)*: embeddings router with search/compare/similar verbs exists; early scaffolding; `[audit]` |
 | Sandboxed code execution (G4) | ✗ 0% | **PENDING**: no `sandbox/` package; design-only; `[audit]` |
 | HITL approval gates (G7) | ✗ 0% | **PENDING**: no `approvals/` package; design-only; `[audit]` |
 | Multi-agent debate / consensus (G11) | ✗ 0% | **PENDING**: no `review/consensus.py`; design-only; `[audit]` |

@@ -947,15 +947,20 @@ sections:
 
       - id: g2-offline-eval
         title: "Offline eval harness (G2)"
-        pct: 0
-        evidence_refs: []
-        notes: "no `eval/` package; design-only; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/compaction/evaluate.py"
+          - "file:src/general_ludd/planning/debt_evaluator.py::DebtEvaluator"
+          - "test:tests/unit/test_task48_debt_eval_seam.py"
+        notes: "compaction evaluate.py + debt_evaluator.py exist; early scaffolding; `[audit]`"
 
       - id: g3-semantic-retrieval
         title: "Semantic codebase retrieval (G3)"
-        pct: 0
-        evidence_refs: []
-        notes: "no `retrieval/` package; design-only; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/routers/embeddings.py::router"
+          - "test:tests/unit/test_embeddings_router.py"
+        notes: "embeddings router with search/compare/similar verbs exists; early scaffolding; `[audit]`"
 
       - id: g4-sandboxed-execution
         title: "Sandboxed code execution (G4)"
