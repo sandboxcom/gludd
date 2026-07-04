@@ -6,6 +6,9 @@ real temp directory.  No network, no subprocess, no I/O in the core tests.
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -37,8 +40,7 @@ POLL_SECS = aw.POLL_SECS
 STOP_STATE = aw.STOP_STATE
 FALSE_DONE_BLOCKS = aw.FALSE_DONE_BLOCKS
 CONTINUE_DIRECTIVE = aw.CONTINUE_DIRECTIVE
-
-
+check_and_reset = aw.check_and_reset
 # ── script exists ─────────────────────────────────────────────────────────────
 
 
@@ -458,5 +460,156 @@ def test_watchdog_not_stalled_when_clean(tmp_path: Path, monkeypatch: pytest.Mon
     assert check_agent_stalled() is False
 
 
+def test_task_anomaly_elapsed_5x_expected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    deadlines_file = tmp_path / "deadlines.json"
+    old_ts = time.time() - 2000
+    deadlines_file.write_text(json.dumps({
+        "task-general-1": old_ts,
+    }))
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_file))
+    monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "anomalies.json"))
+    monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
+    monkeypatch.setattr(aw, "GATE_PID_FILE", tmp_path / "nonexistent-gate-pid")
+    result = aw.check_task_anomalies()
+    assert len(result["anomalies"]) + len(result.get("stalled", [])) >= 1
+
+
+def test_task_anomaly_normal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    deadlines_file = tmp_path / "deadlines.json"
+    recent_ts = time.time() - 5
+    deadlines_file.write_text(json.dumps({
+        "task-commit-1": recent_ts,
+    }))
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_file))
+    monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "anomalies.json"))
+    monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
+    monkeypatch.setattr(aw, "GATE_PID_FILE", tmp_path / "nonexistent-gate-pid")
+    result = aw.check_task_anomalies()
+    assert result["anomalies"] == []
+    assert len(result.get("stalled", [])) == 0
+
+
+def test_task_anomaly_gate_stalled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    gate_pid_file = tmp_path / "gate.pid"
+    gate_pid_file.write_text("12345")
+    os.utime(gate_pid_file, (time.time() - 3000, time.time() - 3000))
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(tmp_path / "nonexistent-deadlines.json"))
+    monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "anomalies.json"))
+    monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
+    monkeypatch.setattr(aw, "GATE_PID_FILE", gate_pid_file)
+    result = aw.check_task_anomalies()
+    stalled = result.get("stalled", [])
+    stalled_ids = [s.get("task_id") for s in stalled]
+    assert "gate-process" in stalled_ids
+
+
+def test_push_stalled_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    deadlines_file = tmp_path / "deadlines.json"
+    old_ts = time.time() - 120
+    deadlines_file.write_text(json.dumps({
+        "task-git-push-main": old_ts,
+    }))
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_file))
+    monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "anomalies.json"))
+    monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
+    monkeypatch.setattr(aw, "GATE_PID_FILE", tmp_path / "nonexistent-gate-pid")
+    result = aw.check_task_anomalies()
+    assert len(result["anomalies"]) + len(result.get("stalled", [])) >= 1
+
+
 def test_watchdog_10s_poll_interval():
     assert POLL_SECS == 10
+
+
+def _setup_no_reset(monkeypatch, tmp_path):
+    monkeypatch.setattr(aw, "STREAK_FILE", str(tmp_path / "streak-nonexistent.json"))
+    monkeypatch.setattr(aw, "TODOWRITE_STATE", str(tmp_path / "todos-nonexistent.json"))
+    monkeypatch.setattr(aw, "STOP_STATE", str(tmp_path / "stop-nonexistent.json"))
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "blocks-nonexistent.json"))
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(tmp_path / "deadlines-nonexistent.json"))
+    monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count-nonexistent.json"))
+    monkeypatch.setattr(aw, "STALLED_TASKS_FILE", str(tmp_path / "stalled-nonexistent.json"))
+    monkeypatch.setattr(aw, "EX_STALLED_TASKS_FILE", str(tmp_path / "ex-stalled-nonexistent.json"))
+
+
+def test_watchdog_detects_push_stalled_via_ps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _setup_no_reset(monkeypatch, tmp_path)
+
+    logs: list[str] = []
+    monkeypatch.setattr(aw, "_log", lambda msg: logs.append(msg))
+
+    def _mock_run(cmd, **_kwargs):
+        if isinstance(cmd, list) and len(cmd) >= 2 and cmd[:2] == ["ps", "-eo"]:
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0,
+                stdout="  PID ETIME COMMAND\n12345  01:05:30  git push origin master\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(
+            args=cmd if isinstance(cmd, list) else [cmd],
+            returncode=0, stdout="", stderr="",
+        )
+
+    monkeypatch.setattr(aw.subprocess, "run", _mock_run)
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    directive_p = tmp_path / "continue.txt"
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(directive_p))
+
+    check_and_reset()
+
+    assert any("PUSH STALLED" in msg for msg in logs), f"logs: {logs}"
+    assert directive_p.exists()
+    assert "PUSH STALLED" in directive_p.read_text()
+
+
+def test_watchdog_detects_task_anomaly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _setup_no_reset(monkeypatch, tmp_path)
+
+    logs: list[str] = []
+    monkeypatch.setattr(aw, "_log", lambda msg: logs.append(msg))
+
+    now = time.time()
+    deadlines_p = tmp_path / "deadlines.json"
+    deadlines_p.write_text(json.dumps({
+        "tasks": [
+            {"task_id": "task-slow", "start_ts": now - 400},
+        ]
+    }))
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_p))
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    directive_p = tmp_path / "continue.txt"
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(directive_p))
+
+    check_and_reset()
+
+    assert any("TASK ANOMALY" in msg and "task-slow" in msg for msg in logs), f"logs: {logs}"
+    assert directive_p.exists()
+    assert "TASK ANOMALY" in directive_p.read_text()
+
+
+def test_watchdog_ignores_normal_tasks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _setup_no_reset(monkeypatch, tmp_path)
+
+    logs: list[str] = []
+    monkeypatch.setattr(aw, "_log", lambda msg: logs.append(msg))
+
+    now = time.time()
+    deadlines_p = tmp_path / "deadlines.json"
+    deadlines_p.write_text(json.dumps({
+        "tasks": [
+            {"task_id": "task-fast", "start_ts": now - 60},
+        ]
+    }))
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_p))
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    directive_p = tmp_path / "continue.txt"
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(directive_p))
+
+    check_and_reset()
+
+    anomaly_msgs = [m for m in logs if "TASK ANOMALY" in m]
+    assert len(anomaly_msgs) == 0, f"unexpected anomaly: {anomaly_msgs}"
+    assert not directive_p.exists() or "TASK ANOMALY" not in directive_p.read_text()
