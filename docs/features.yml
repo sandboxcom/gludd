@@ -959,9 +959,11 @@ sections:
         title: "Semantic codebase retrieval (G3)"
         pct: 15
         evidence_refs:
-          - "file:src/general_ludd/routers/embeddings.py::router"
-          - "test:tests/unit/test_embeddings_router.py"
-        notes: "embeddings router with search/compare/similar verbs exists; early scaffolding; `[audit]`"
+          - "file:src/general_ludd/retrieval/__init__.py"
+          - "file:src/general_ludd/retrieval/indexer.py"
+          - "file:src/general_ludd/retrieval/searcher.py"
+          - "test:tests/unit/test_retrieval.py"
+        notes: "retrieval/ package scaffolded; indexer + searcher modules; `[audit]`"
 
       - id: g4-sandboxed-execution
         title: "Sandboxed code execution (G4)"
