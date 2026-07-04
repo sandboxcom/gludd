@@ -970,15 +970,21 @@ sections:
 
       - id: g4-sandboxed-execution
         title: "Sandboxed code execution (G4)"
-        pct: 0
-        evidence_refs: []
-        notes: "no `sandbox/` package; design-only; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/security/sandboxes/__init__.py"
+          - "file:src/general_ludd/security/sandboxes/linux_landlock.py::LandlockBackend"
+          - "file:src/general_ludd/security/sandboxes/linux_bubblewrap.py::BubblewrapBackend"
+          - "file:src/general_ludd/security/sandboxes/legacy.py::MacSandboxBackend"
+        notes: "Landlock+Bubblewrap backends exist; macOS deprecated; design-only for G4-specific execution sandbox; `[audit]`"
 
       - id: g7-hitl-approval
         title: "HITL approval gates (G7)"
-        pct: 0
-        evidence_refs: []
-        notes: "no `approvals/` package; design-only; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/routers/human_todos.py::router"
+          - "file:src/general_ludd/db/models.py::HumanTodoModel"
+        notes: "HumanTodo system exists (bot→human); no dedicated approvals/ package; `[audit]`"
 
       - id: g11-multi-agent-debate
         title: "Multi-agent debate / consensus (G11)"
@@ -994,15 +1000,20 @@ sections:
 
       - id: g6-prompt-versioning
         title: "Prompt/skill versioning A/B (G6)"
-        pct: 0
-        evidence_refs: []
-        notes: "`PromptRegistry` has no version/hash/history; design-only; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/skills/registry.py::PromptRegistry"
+          - "file:src/general_ludd/skills/models.py::SkillModel"
+        notes: "PromptRegistry + SkillModel exist; no version/hash/history yet; `[audit]`"
 
       - id: g5-outcome-self-improve
         title: "Outcome-driven self-improve (G5)"
-        pct: 0
-        evidence_refs: []
-        notes: "no `OutcomeAnalyzer`; blocked on G2 (eval harness); `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/eval/harness.py::EvalHarness"
+          - "file:src/general_ludd/eval/schema.py::EvalResult"
+          - "file:src/general_ludd/daemon.py::self_update"
+        notes: "eval harness + self_update wired; blocked on G2 (eval harness completion); `[audit]`"
 
       - id: g8-cost-quality-pareto
         title: "Cost/quality Pareto router (G8)"

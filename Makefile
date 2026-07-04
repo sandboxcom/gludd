@@ -41,7 +41,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
 		gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
 		repo-visibility \
-		watchdog-start watchdog-status watchdog-stop watchdog-log
+		watchdog-start watchdog-status watchdog-stop watchdog-log \
+		check-readme-status
 
 help:
 	@echo "Usage: make [target]"
@@ -1506,6 +1507,9 @@ check-status-table:
 
 verify-status:
 	@$(UV) run python scripts/verify_status.py
+
+check-readme-status:
+	@$(UV) run python scripts/check_readme_status_current.py $(TAG)
 
 dist: build-executable bundle-binaries sbom
 	@echo "Assembling tarball..."

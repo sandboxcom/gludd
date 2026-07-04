@@ -23,3 +23,11 @@ class TestPromptRegistry:
         reg = PromptRegistry()
         with pytest.raises(TemplateNotFound):
             reg.render("nonexistent")
+
+    def test_version_default(self):
+        reg = PromptRegistry()
+        assert reg.version == "0.1.0"
+
+    def test_version_custom(self):
+        reg = PromptRegistry(version="2.3.1")
+        assert reg.version == "2.3.1"

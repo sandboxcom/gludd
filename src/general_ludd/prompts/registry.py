@@ -24,6 +24,7 @@ class PromptRegistry:
         template_dir: str | None = None,
         event_bus: Any | None = None,
         extra_template_dirs: list[str] | None = None,
+        version: str = "0.1.0",
     ) -> None:
         self._templates: dict[str, str] = {}
         self._in_memory: set[str] = set()
@@ -32,6 +33,7 @@ class PromptRegistry:
         self._loader: BaseLoader = self._make_loader()
         self._env = Environment(loader=self._loader, autoescape=select_autoescape())
         self._event_bus = event_bus
+        self.version = version
 
     def _make_loader(self) -> BaseLoader:
         """Build a Jinja2 FileSystemLoader with extras-first then default ordering.

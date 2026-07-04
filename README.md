@@ -238,12 +238,12 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Persistent agent memory (G1) | ~ 55% | **PARTIAL** *(file-refs only)*: persistence layer complete: MemoryRecordModel + MemoryRepository (repository.py:2584) + migrations 005/022 + 3 unit tests; scope/scope_key isolation; embedding column for semantic search; TODO: wire into daemon/event loop, MCP tooling, semantic search |
 | Offline eval harness (G2) | ~ 15% | **PARTIAL** *(file-refs only)*: eval/ package scaffolded; harness + schema modules; `[audit]` |
 | Semantic codebase retrieval (G3) | ~ 15% | **PARTIAL** *(file-refs only)*: retrieval/ package scaffolded; indexer + searcher modules; `[audit]` |
-| Sandboxed code execution (G4) | ✗ 0% | **PENDING**: no `sandbox/` package; design-only; `[audit]` |
-| HITL approval gates (G7) | ✗ 0% | **PENDING**: no `approvals/` package; design-only; `[audit]` |
+| Sandboxed code execution (G4) | ~ 15% | **PARTIAL** *(file-refs only)*: Landlock+Bubblewrap backends exist; macOS deprecated; design-only for G4-specific execution sandbox; `[audit]` |
+| HITL approval gates (G7) | ✓ 15% | **PASS** *(file-refs only)*: HumanTodo system exists (bot→human); no dedicated approvals/ package; `[audit]` |
 | Multi-agent debate / consensus (G11) | ✗ 0% | **PENDING**: no `review/consensus.py`; design-only; `[audit]` |
 | Plan/critique layer (G9) | ✗ 0% | **PENDING**: no `planning/` package; design-only; `[audit]` |
-| Prompt/skill versioning A/B (G6) | ✗ 0% | **PENDING**: `PromptRegistry` has no version/hash/history; design-only; `[audit]` |
-| Outcome-driven self-improve (G5) | ✗ 0% | **PENDING**: no `OutcomeAnalyzer`; blocked on G2 (eval harness); `[audit]` |
+| Prompt/skill versioning A/B (G6) | ✗ 15% | **PENDING** *(file-refs only)*: PromptRegistry + SkillModel exist; no version/hash/history yet; `[audit]` |
+| Outcome-driven self-improve (G5) | ✓ 15% | **PASS** *(file-refs only)*: eval harness + self_update wired; blocked on G2 (eval harness completion); `[audit]` |
 | Cost/quality Pareto router (G8) | ✗ 0% | **PENDING**: no implementation; blocked on avg_cost DB fix; `[audit]` |
 | Per-run replay (G10) | ✗ 0% | **PENDING**: no `replay/` package; design-only; `[audit]` |
 | Live web retrieval MCP tool (G12) | ✗ 0% | **PENDING**: no implementation; design-only; `[audit]` |
