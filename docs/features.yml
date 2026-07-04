@@ -1134,7 +1134,10 @@ sections:
       - id: wave3-merge
         title: "Wave 3 merge to master"
         pct: 100
-        evidence_refs: ["branch:feature/wave3-ship-final"]
+        evidence_refs:
+          - "file:src/general_ludd/connectors/normalize.py::sanitize_metric_value"
+          - "file:src/general_ludd/connectors/registry.py::ConnectorRegistry"
+          - "file:src/general_ludd/models/gateway.py::ModelGateway"
         notes: "feature/wave3-ship-final merged to master. 72c31576"
 
       - id: ci-fix-wave
