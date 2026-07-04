@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from general_ludd.retrieval.web import WebRetriever, WebPageResult
+from general_ludd.retrieval.web import WebPageResult, WebRetriever
 
 
 class TestWebRetriever:
