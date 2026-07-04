@@ -9,49 +9,53 @@
 
 ## Current Work
 
-- **HEAD: `575344e7`** on master — evidence verifier: confirm G1-G13 scaffold/wire all landed.
+- **HEAD: `0ee32612`** on master — TASKS.md evidence updates.
 
 - **G1-G13 scaffold/wire**: All landed in the commit wave:
   - `fe257052` — G1 daemon wiring, G2 eval model+scorers, G3 semantic retrieval, G8 Pareto router, G10 RunRecorder, G11 ConsensusEngine, G12 WebRetriever MCP
   - `5b44bc3e` — G13 definition_of_done
-  - `7267ac34` — README regenerated
-  - `575344e7` — evidence verified (current HEAD)
 
-- **README PENDING count**: 13 items (G1–G13) — percentages need bumping after the landing wave.
+- **G6 prompt-versioning**: SHA-256 content-hash tracking with bounded 5-entry history added to PromptRegistry. `get_template_version_info()` exposed.
 
-## Last Commits
+- **README G1-G13 percentages**: Audited actual source code state and bumped all 13 percentages:
+  G1 35→85%, G2 15→35%, G3 15→45%, G4 15→35%, G5 15→25%, G6 15→45%, G7 15→40%,
+  G8 15→55%, G9 15→35%, G10 15→25%, G11 15→35%, G12 15→45%, G13 40→60%.
+
+- **Wiring gaps identified**: G4 SandboxExecutor (class exists, not wired), G11 ConsensusEngine (class exists, not wired), G10 RunRecorder (not wired).
+
+- **Gate green**: lint 0, typecheck 0, collect 0, test 0 (16941 collected), smoke PASS.
+
+## Last Commits (this session)
 
 | Hash | Message |
 |------|---------|
-| `575344e7` | evidence: verify G1-G13 scaffold/wire all landed |
-| `7267ac34` | docs: regenerate README with G1-G13 landing wave |
-| `5b44bc3e` | feat(G13): definition_of_done structured task spec |
-| `fe257052` | feat(G1-G3,G8,G10-G12): scaffold+wire eval, retrieval, pareto, recorder, consensus, web-retriever |
-| `0117024f` | fix(watchdog): self-sufficient idle detection with own activity tracking |
-| `a7e1bbfe` | fix(watchdog): max out false-done blocks every cycle to unjam agent |
-| `4bedc187` | docs: bump g4/g5/g6/g7 pct 0->15 with evidence_refs |
-| `60560394` | scaffold sandbox_exec module with SandboxExecutor.execute stub |
-| `1c480bb0` | docs: bump G1 persistent memory to 55% after MemoryRepository+migration 022+tests landed |
-| `ca847792` | fix: resolve typecheck errors in MemoryRepository |
+| `0ee32612` | docs: add G6a evidence entry to TASKS.md |
+| `b4bae0c5` | feat(G6): add SHA-256 content-hash tracking with bounded history to PromptRegistry (5 tests) |
+| `fadcf808` | docs: bump G4+G8 README percentages (SandboxExecutor class found, AdaptiveRouter wired in daemon+routers) |
+| `e21def86` | docs: add G14 evidence entry to TASKS.md |
+| `76f72d75` | docs: bump G1-G13 README percentages, update SESSION.md to reflect HEAD 575344e7 |
+| `575344e7` | evidence: verify G1-G13 scaffold/wire all landed (pre-session) |
 
 ## Known Gaps
 
-1. **G4/G5/G6/G7/G9 wiring gaps** — scaffold may exist but actual daemon/event-loop wiring TBD.
-2. **README percentages stale** — G1-G13 all have code landed, percentages should be bumped.
-3. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
+1. **G4 SandboxExecutor**: Class exists (`sandbox_exec/executor.py:6`) but NOT wired into daemon or event loop. Zero imports anywhere in src/.
+2. **G11 ConsensusEngine**: Class exists (`review/consensus.py:9`) but NOT wired into dispatch path.
+3. **G10 RunRecorder**: Module exists (`replay/recorder.py`) but NOT wired into dispatch.
+4. **G6 A/B testing**: Hash tracking done; no A/B test dispatch integration.
+5. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
 
 ## Next Steps
 
-1. **Bump README percentages** for G1-G13 to reflect landed scaffold/wire code.
-2. **Poll CI**: `make ci-verdict BRANCH=master` until green (run 28701995760).
-3. **Audit G4/G5/G6/G7/G9** for actual daemon/event-loop wiring gaps.
-4. **Wire any unconnected scaffolds** into daemon and event loop.
+1. **Wire ConsensusEngine (G11)** into event loop review phase.
+2. **Wire SandboxExecutor (G4)** into dispatch path.
+3. **Wire RunRecorder (G10)** into dispatch/completion hooks.
+4. **Poll CI** until green (`make ci-verdict BRANCH=master`).
 
 ## Current Gate Status (2026-07-04)
 <!-- gate:begin -->
 - **Last full PASS**: 2026-07-04 — lint 0, typecheck 0, collect 0, test 0 (16941 collected)
-- **Push**: VERIFIED master@575344e7
-- **CI**: PENDING (run 28701995760)
+- **Push**: VERIFIED master@0ee32612
+- **CI**: PENDING (run 28702547421)
 
 <!-- gate:end -->
 
@@ -60,11 +64,11 @@
 
 ## Historical State
 
-- **2026-07-04 session 3 (current)**: HEAD `575344e7`. All G1-G13 scaffold/wire landed in commit wave (`fe257052`, `5b44bc3e`, `7267ac34`, `575344e7`). Gate green (lint 0, typecheck 0, collect 0, test 0, 16941 collected). Remote VERIFIED master@575344e7. CI PENDING (run 28701995760). Next: bump README percentages, poll CI, audit G4/G5/G6/G7/G9 wiring.
-- **2026-07-04 session 2**: HEAD `0117024f`. SESSION.md staleness fixed (was at `fcdf9b92`, 12 commits behind). G1 at 55% (MemoryRepository + migration + tests). G2/G3/G8/G11/G12 scaffolded. G4-G7 docs bumped. Watchdog fixes: false-done blocks maxed, self-sufficient idle detection.
-- **2026-07-04 session 1**: HEAD `fcdf9b92`. G1 persistent agent memory schema (agent_id/key/value/namespace/ttl). G13 structured task spec (acceptance_criteria + definition_of_done). Watchdog anomaly multiplier relaxed 2.0→5.0.
-- **2026-07-01**: HEAD `8ed0ed1f`. CI fix wave active. 15,685 tests collected. 26 commits ahead of sandboxcom/master.
-- **2026-06-30**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real. ~24 commits pushed across multiple waves.
-- **2026-06-29**: Recovery wave landed 11+ commits. Phase MP committed. CI RED.
+- **2026-07-04 session 3 (current)**: HEAD `0ee32612`. 5 commits: G1-G13 README percentages bumped (76f72d75), G14 evidence (e21def86), G4+G8 README corrections (fadcf808), G6 content-hash tracking (b4bae0c5), G6a evidence (0ee32612). Gate green. CI PENDING run 28702547421.
+- **2026-07-04 session 2**: HEAD `0117024f`. SESSION.md staleness fixed. G1 at 55%. G2/G3/G8/G11/G12 scaffolded. Watchdog fixes.
+- **2026-07-04 session 1**: HEAD `fcdf9b92`. G1 persistent agent memory schema. G13 structured task spec.
+- **2026-07-01**: HEAD `8ed0ed1f`. CI fix wave active. 15,685 tests collected.
+- **2026-06-30**: HEAD `2ed2ea08`. Makefile release targets real.
+- **2026-06-29**: Recovery wave landed 11+ commits.
 - **2026-06-28**: Orchestrator collapsed — nothing-dropped guardrail strengthened.
 - **2026-06-24**: Ratchet cleared 93→0. Gate green (284+ tests).
