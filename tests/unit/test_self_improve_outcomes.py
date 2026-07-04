@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from general_ludd.self_improve.outcomes import OutcomeAnalyzer
 
 
