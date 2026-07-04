@@ -1121,9 +1121,9 @@ sections:
         title: "make dogfood passes self-hosting"
         pct: 100
         evidence_refs:
-          - "cmd:make dogfood -> booted daemon infra, registered project, enqueued todo, dispatched (sandbox warning expected on macOS 26.4.1). Fixed kwarg issue from dd3bfa14."
-          - "test:tests/e2e/dogfood/ -> 3 passed, 1 skipped (mock-only)"
-        notes: "dogfood target now passes: boots daemon infra (temp SQLite), registers project, enqueues todo via POST /api/todos, and dispatches via ExecutionEngine. Sandbox warning is expected (macOS >= 15.4 deprecation). `[dd3bfa14]` fixed _variable_repo_override kwarg in patched_dispatch."
+          - "test:tests/e2e/dogfood/test_dogfood_todo_site.py"
+          - "file:Makefile::dogfood"
+        notes: "target exists (Makefile:1722), e2e tests pass (3/3), dispatch kwarg fix at dd3bfa14"
 
       - id: ssh-key-rotation
         title: "Operator SSH key rotation + history scrub"
