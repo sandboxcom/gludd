@@ -8,6 +8,7 @@ import logging
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from general_ludd.agents.registry import AgentRegistry
@@ -17,6 +18,7 @@ from general_ludd.observability.timing import (
     StallWatchdog,
     default_tracker,
 )
+from general_ludd.replay.recorder import RunRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,7 @@ class AgentDispatcher:
         tracker: DurationTracker | None = None,
         watchdog: StallWatchdog | None = None,
         pause_controller: Any | None = None,
+        run_recorder: RunRecorder | None = None,
     ) -> None:
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
@@ -58,6 +61,7 @@ class AgentDispatcher:
         self._active_tasks: dict[str, AgentTask] = {}
         self._lock = asyncio.Lock()
         self._pause_controller = pause_controller
+        self._run_recorder = run_recorder
         # Per-task duration-anomaly + hung-task detection. The tracker learns a
         # per-agent baseline from completed/failed runs; the (optional) watchdog
         # registers each in-flight task so the daemon's stall sweeper can flag a
@@ -87,9 +91,20 @@ class AgentDispatcher:
             self._semaphores.setdefault(agent_name, asyncio.Semaphore(limit))
         return self._semaphores[agent_name]
 
+    def _record_if_wired(self, run_id: str, event: dict[str, Any]) -> None:
+        if self._run_recorder is not None:
+            with contextlib.suppress(Exception):
+                self._run_recorder.record(run_id, event)
+
     async def dispatch_one(self, task: AgentTask) -> AgentTaskResult:
         config = self._registry.get(task.agent_name)
         if config is None:
+            self._record_if_wired(task.task_id, {
+                "type": "task_failed",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "agent_name": task.agent_name,
+                "reason": f"Agent '{task.agent_name}' not found in registry",
+            })
             return AgentTaskResult(
                 task_id=task.task_id,
                 agent_name=task.agent_name,
@@ -98,6 +113,12 @@ class AgentDispatcher:
             )
 
         if not config.enabled:
+            self._record_if_wired(task.task_id, {
+                "type": "task_failed",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "agent_name": task.agent_name,
+                "reason": f"Agent '{task.agent_name}' is disabled",
+            })
             return AgentTaskResult(
                 task_id=task.task_id,
                 agent_name=task.agent_name,
@@ -108,6 +129,12 @@ class AgentDispatcher:
         if self._pause_controller is not None and task.project_id:
             silenced = self._pause_controller.is_paused("project", task.project_id)
             if silenced:
+                self._record_if_wired(task.task_id, {
+                    "type": "task_blocked",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "agent_name": task.agent_name,
+                    "reason": "Project is paused",
+                })
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
@@ -115,23 +142,15 @@ class AgentDispatcher:
                     output="Project is paused",
                 )
 
-        # Capability gate: fail CLOSED. An empty / None / whitespace-only
-        # invoker_name is an UNTRUSTED (un-named) invoker, NOT a privileged one —
-        # it must be DENIED, never allowed to bypass the can_invoke matrix. (The
-        # historic `if task.invoker_name and ...` guard short-circuited on a falsy
-        # invoker, so an unnamed caller silently skipped the permission check and
-        # could dispatch anything — a fail-OPEN security hole.) A named invoker is
-        # still gated by can_invoke exactly as before: valid capability dispatches,
-        # missing capability is denied. can_invoke("", target) already returns
-        # False (empty is not a registered agent), so an empty invoker is denied
-        # by the same predicate rather than skipping it.
         invoker = (task.invoker_name or "").strip()
         if not invoker or not self._registry.can_invoke(invoker, task.agent_name):
-            # Return a failed result (do NOT raise) so the denial flows through the
-            # same AgentTaskResult contract as the not-found/disabled branches above
-            # — dispatch_one's caller (and dispatch_many's gather) expect a result,
-            # and the message must reach result.output.
             denied = invoker or "<empty>"
+            self._record_if_wired(task.task_id, {
+                "type": "task_failed",
+                "timestamp": datetime.now(UTC).isoformat(),
+                "agent_name": task.agent_name,
+                "reason": f"Permission denied: '{denied}' is not permitted to dispatch '{task.agent_name}'",
+            })
             return AgentTaskResult(
                 task_id=task.task_id,
                 agent_name=task.agent_name,
@@ -150,6 +169,15 @@ class AgentDispatcher:
                 self._active_count += 1
                 self._active_tasks[task.task_id] = task
             try:
+                if self._run_recorder is not None:
+                    with contextlib.suppress(Exception):
+                        self._run_recorder.record(task.task_id, {
+                            "type": "task_started",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "agent_name": task.agent_name,
+                            "description": task.description,
+                            "project_id": task.project_id,
+                        })
                 # Watch the in-flight task so the StallWatchdog's sweeper can flag
                 # it if it hangs past its expected time; nullcontext when no
                 # watchdog is injected. watch() auto-finishes on block exit.
@@ -164,6 +192,15 @@ class AgentDispatcher:
                 # Record the completed duration so the per-agent baseline learns
                 # (and an anomalously-slow run is judged against the prior window).
                 self._tracker.check_then_record(task.agent_name, duration)
+                if self._run_recorder is not None:
+                    with contextlib.suppress(Exception):
+                        self._run_recorder.record(task.task_id, {
+                            "type": "task_completed",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "agent_name": task.agent_name,
+                            "output": output,
+                            "duration_seconds": duration,
+                        })
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
@@ -187,6 +224,15 @@ class AgentDispatcher:
                 # CancelledError branch above which re-raises, is excluded).
                 self._tracker.check_then_record(task.agent_name, duration)
                 logger.exception("Task %s failed", task.task_id)
+                if self._run_recorder is not None:
+                    with contextlib.suppress(Exception):
+                        self._run_recorder.record(task.task_id, {
+                            "type": "task_failed",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "agent_name": task.agent_name,
+                            "error": str(exc),
+                            "duration_seconds": duration,
+                        })
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,

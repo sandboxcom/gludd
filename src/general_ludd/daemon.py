@@ -66,6 +66,7 @@ from general_ludd.projects.workspace import ProjectWorkspace
 from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.quality.preflight import run_preflight
 from general_ludd.reload.worker_broadcast import WorkerBroadcaster
+from general_ludd.sandbox_exec.executor import SandboxExecutor
 from general_ludd.scoring.router import AdaptiveRouter
 from general_ludd.scoring.task_embeddings import TaskEmbeddingStore
 from general_ludd.secrets.config import OpenBaoConfig
@@ -1267,6 +1268,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory_repo = MemoryRepository(session_factory=session_factory)
         app.state._memory_repo = memory_repo
 
+        sandbox_executor = SandboxExecutor(timeout=30)
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -1320,6 +1323,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             deployment_health_router=deployment_health_router,
             pause_controller=getattr(app.state, "_pause_controller", None),
             memory_repo=memory_repo,
+            sandbox_executor=sandbox_executor,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner

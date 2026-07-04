@@ -240,6 +240,7 @@ class EventLoop:
         project_workspace: Any | None = None,
         self_improve_interval: int = 0,
         reviewer: Any | None = None,
+        consensus_reviewer: Any | None = None,
         model_gateway: Any | None = None,
         dispatcher: Any | None = None,
         loc_ledger: Any | None = None,
@@ -251,14 +252,18 @@ class EventLoop:
         model_performance_interval: int = 10,
         deployment_health_router: Any | None = None,
         memory_repo: Any = None,
+        sandbox_executor: Any | None = None,
+        run_recorder: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
         self._daemon_state = daemon_state
+        self._run_recorder = run_recorder
         self._project_secrets_manager = project_secrets_manager
         self._project_workspace = project_workspace
         self._self_improve_interval = self_improve_interval
         self._reviewer = reviewer
+        self._consensus_reviewer = consensus_reviewer
         self._model_gateway = model_gateway
         self._dispatcher = dispatcher
         self._spend_limiter = spend_limiter  # may be overwritten post-construction by the daemon
@@ -344,6 +349,7 @@ class EventLoop:
         self._model_performance_interval: int = model_performance_interval
         self._deployment_health_router: Any = deployment_health_router
         self._memory_repo: Any = memory_repo
+        self._sandbox_executor = sandbox_executor
         # Task #48: plan-time technical-debt evaluator (config-gated at the
         # dispatch seam; default OFF). Wired to the model gateway when present;
         # a None gateway leaves the evaluator on its deterministic structural
@@ -793,8 +799,19 @@ class EventLoop:
         # H4 (W3.2): when a gateway-backed reviewer is wired, review in-process
         # and route the decision through apply_decision. Failure escalates the
         # todo — it is never silently marked complete / passed through.
+        #
+        # G11: consensus review is an alternative path gated behind the
+        # ``consensus_review.enabled`` config flag. When enabled AND a
+        # ConsensusReviewer is wired, the multi-agent debate replaces the
+        # single-model reviewer for this tick.
+        _has_standard = self._reviewer is not None
+        _has_consensus = (
+            isinstance(self.config, dict)
+            and bool(self.config.get("consensus_review", {}).get("enabled", False))
+            and self._consensus_reviewer is not None
+        )
         if (
-            self._reviewer is not None
+            (_has_standard or _has_consensus)
             and self._active_session is not None
             and self._todo_repo is not None
         ):
@@ -865,7 +882,17 @@ class EventLoop:
     async def _review_in_process(self, tr: Any) -> None:
         from general_ludd.review.decision_applier import apply_decision
 
-        assert self._reviewer is not None
+        consensus_cfg = (
+            self.config.get("consensus_review", {})
+            if isinstance(self.config, dict)
+            else {}
+        )
+        if consensus_cfg.get("enabled", False) and self._consensus_reviewer is not None:
+            effective_reviewer = self._consensus_reviewer
+        else:
+            assert self._reviewer is not None
+            effective_reviewer = self._reviewer
+
         return_id = getattr(tr, "return_id", "")
         todo_id = getattr(tr, "todo_id", None)
         task_return = TaskReturn(
@@ -880,7 +907,7 @@ class EventLoop:
         )
         try:
             decision = await asyncio.to_thread(
-                self._reviewer.review_return,
+                effective_reviewer.review_return,
                 task_return,
                 candidate_todos=[],
                 artifacts=[],
@@ -1302,7 +1329,11 @@ class EventLoop:
         sandbox_handle = await self._sandbox_apply_for_todo(todo)
         try:
             async with self._session_factory() as job_session:
-                # Build a per-job variable_repo bound to this session.
+                if sandbox_handle is not None and self._sandbox_executor is not None:
+                    self._sandbox_executor.execute(
+                        f"dispatch:{getattr(todo, 'todo_id', '?')}:{_safe_str(todo, 'work_type', 'unknown')}",
+                        workdir=self._resolve_repo_root(getattr(todo, "project_id", None)),
+                    )
                 job_variable_repo = VariableNamespaceRepository(job_session)
                 job_task_return_repo = TaskReturnRepository(job_session)
                 await self._dispatch_execute_job(
@@ -1689,8 +1720,19 @@ class EventLoop:
                 shared_vars = await eff_variable_repo.load_vars_for_project(project_id_val)
             except Exception as exc:
                 logger.warning("load_shared_vars failed for todo %s: %s", getattr(todo, "todo_id", "?"), exc)
+        job_id = f"EXEC-{todo.todo_id}"
+        if self._run_recorder is not None:
+            with contextlib.suppress(Exception):
+                self._run_recorder.record(job_id, {
+                    "type": "dispatch_started",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "todo_id": todo.todo_id,
+                    "work_type": work_type,
+                    "model_profile": resolved_model_profile,
+                    "prompt_profile": resolved_prompt_profile,
+                    "project_id": project_id_val,
+                })
         if self._runner is not None:
-            job_id = f"EXEC-{todo.todo_id}"
             if ws is not None and hasattr(ws, "private_data_dir"):
                 import os as _os
                 job_dir = _os.path.join(str(ws.private_data_dir), job_id)
@@ -1763,6 +1805,16 @@ class EventLoop:
                         compaction_level=_compaction_level,
                     )
                     _model_call_success = model_response is not None
+                    if self._run_recorder is not None:
+                        with contextlib.suppress(Exception):
+                            self._run_recorder.record(job_id, {
+                                "type": "model_generation",
+                                "timestamp": datetime.now(UTC).isoformat(),
+                                "success": _model_call_success,
+                                "model_profile": resolved_model_profile,
+                                "input_tokens": len(prompt_text or "") // 4,
+                                "output_tokens": len(model_response or "") // 4,
+                            })
                 except Exception as _exc:
                     model_response = None
                     model_tool_calls = None
@@ -1900,6 +1952,16 @@ class EventLoop:
                                             job_id,
                                             exc_info=True,
                                         )
+                        if self._run_recorder is not None:
+                            with contextlib.suppress(Exception):
+                                self._run_recorder.record(job_id, {
+                                    "type": "tool_calls_dispatched",
+                                    "timestamp": datetime.now(UTC).isoformat(),
+                                    "total": len(results),
+                                    "ok": ok_count,
+                                    "error_count": err_count,
+                                    "calls": [r.to_dict() for r in results],
+                                })
             # Phase 2 (keystone): autonomous tool use via the ToolCallLoop.
             #
             # Phase 1 above is tool-free by design (CA-T9): it produces text and,
@@ -2003,6 +2065,13 @@ class EventLoop:
                         job_id,
                         work_type,
                     )
+                    if self._run_recorder is not None:
+                        with contextlib.suppress(Exception):
+                            self._run_recorder.record(job_id, {
+                                "type": "tool_loop_completed",
+                                "timestamp": datetime.now(UTC).isoformat(),
+                                "output": str(tool_result) if tool_result else None,
+                            })
                     # Persist the tool-loop output alongside the Phase-1 dispatch
                     # results so the autonomous tool action is recorded on the job
                     # trace (mirrors how dispatch_all results are persisted above).
@@ -2138,6 +2207,14 @@ class EventLoop:
                 private_data_dir=pdd,
                 env=runner_env,
             )
+            if self._run_recorder is not None:
+                with contextlib.suppress(Exception):
+                    self._run_recorder.record(job_id, {
+                        "type": "dispatch_completed",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "success": True,
+                        "playbook": playbook,
+                    })
             return
         if self._http_client is None:
             return
@@ -2175,6 +2252,14 @@ class EventLoop:
             _task_return_repo_override=eff_task_return_repo,
             _session_override=eff_session,
         )
+        if self._run_recorder is not None:
+            with contextlib.suppress(Exception):
+                self._run_recorder.record(job_id, {
+                    "type": "dispatch_completed",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "success": True,
+                    "playbook": playbook,
+                })
 
     def _make_daemon_health_probe(self) -> Callable[[], bool]:
         """Build an in-process health probe for a code-tier hot-rotation.

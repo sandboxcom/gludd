@@ -645,3 +645,11 @@ Targeted fixes for CI failures surfaced in the gate pipeline. Each row covers a 
 - [x] G14 — README G1-G13 percentages bumped to reflect actual implementation state (G1 35→85%, G2 15→35%, G3 15→45%, G4 15→30%, G5 15→25%, G6 15→30%, G7 15→40%, G8 15→30%, G9 15→35%, G10 15→25%, G11 15→35%, G12 15→45%, G13 40→60%) | evidence: make gate green (lint 0, typecheck 0, collect 0, test 0), VERIFIED master@76f72d75
 - [x] G6a — PromptRegistry SHA-256 content-hash tracking with bounded 5-entry history | evidence: tests/unit/test_prompts.py 10 passed (5 new: hash-on-register, history-tracks-changes, unknown-empty, content-only-same-hash, bounded-history); lint 0; typecheck 0 b4bae0c5
 - [x] G11a — ConsensusReviewer adapter: wraps ConsensusEngine as ReturnReviewer-compatible interface for multi-agent debate review (consensus→complete, reject→needs_more_work, tie→manual_hold) | evidence: tests/unit/test_consensus_reviewer.py 8 passed; lint 0; typecheck 0 0fcbb31d
+
+## Phase G-wire — Dead-class wiring (2026-07-04)
+
+SESSION.md gaps G4/G10/G11: three classes existed but were never imported in production code. All now wired into EventLoop/daemon dispatch paths with TDD proofs.
+
+- [x] G4-wire — SandboxExecutor wired into EventLoop._dispatch_execute_job_isolated + daemon startup: when sandbox handle is applied AND executor is wired, execute() is called before normal dispatch; safe fallback when not wired or no handle | evidence: tests/unit/test_sandbox_executor_dispatch.py 5 passed; lint 0; typecheck 0
+- [x] G10-wire — RunRecorder wired into EventLoop (dispatch lifecycle events: started/model_generation/tool_calls/tool_loop/completed) + AgentDispatcher (task_started/completed/failed pre-flight) | evidence: tests/unit/test_run_recorder_dispatch.py 7 passed; lint 0; typecheck 0
+- [x] G11-wire — ConsensusEngine + ConsensusReviewer wired into EventLoop review phase: _dispatch_review_job enters with consensus-only (no standard reviewer needed); _review_in_process selects effective_reviewer (consensus when config-gated); config flag consensus_review.enabled activates; safe fallback to standard reviewer | evidence: tests/unit/test_consensus_review_wiring.py 9 passed; lint 0; typecheck 0
