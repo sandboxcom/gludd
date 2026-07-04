@@ -178,13 +178,25 @@ EXPECTED_DURATIONS: dict[str, int] = {
     "general": 300,
 }
 
+TASK_TIMEOUTS: dict[str, int] = {
+    "git-push": 10,
+    "git-commit": 5,
+    "git-add": 3,
+    "lint": 15,
+    "typecheck": 30,
+    "test-iso": 60,
+    "test-specific": 120,
+    "gate": 2400,
+    "default": 60,
+}
+
 _alerted_anomalies: set[str] = set()
 
-TASK_DEADLINES_FILE = os.environ.get("GLUDD_TASK_DEADLINES", "/tmp/gludd-task-deadlines.json")
-TASK_ANOMALIES_FILE = "/tmp/gludd-task-anomalies.json"
-ANOMALY_COUNT_FILE = "/tmp/gludd-watchdog-anomaly-count.json"
-ANOMALY_DIRECTIVE = os.environ.get("GLUDD_ANOMALY_DIRECTIVE", "/tmp/gludd-anomaly-directive.txt")
 GATE_PID_FILE = Path("/tmp/gludd-gate-background.pid")
+
+ANOMALY_COUNT_FILE = "/tmp/gludd-watchdog-anomaly-count.json"
+TASK_ANOMALIES_FILE = "/tmp/gludd-task-anomalies.json"
+ANOMALY_ESCALATE_THRESHOLD = 5
 
 TASK_TIMING_FILE = "/tmp/gludd-task-timings.json"
 ANOMALY_MULTIPLIER = 3.0
@@ -194,14 +206,19 @@ TASK_STALL_TIMEOUT = 120
 TASK_STATE_FILE = "/tmp/gludd-task-state.json"
 TASK_STATE_SNAPSHOT = "/tmp/gludd-task-state-snapshot.json"
 
-ANOMALY_ESCALATE_THRESHOLD = 5
-
 CI_CACHE_FILE = "/tmp/gludd-watchdog-ci.json"
 DURATIONS_FILE = "/tmp/gludd-watchdog-durations.json"
 CI_CHECK_INTERVAL = 300
 CI_STALL_MINUTES = 10
 CI_VERDICT_TIMEOUT = 15
 VERIFY_REMOTE_TIMEOUT = 10
+
+TIMING_DATA_FILE = "/tmp/gludd-task-timing-data.json"
+PUSH_FLAG = "/tmp/gludd-push-flag"
+EX_TASKS_DIR = "/tmp/gludd-tasks"
+EX_ANOMALIES_FILE = "/tmp/gludd-ex-anomalies.json"
+EX_STALLED_TASKS_FILE = "/tmp/gludd-ex-stalled-tasks.json"
+PUSH_STALL_THRESHOLD = 60
 
 _WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd()))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
@@ -757,6 +774,71 @@ def track_task_duration(task_name: str, duration_seconds: float) -> None:
         _log(f"ANOMALY: {task_name} took {duration_seconds:.1f}s (avg {avg:.1f}s)")
 
 
+def _read_timing_data() -> dict:
+    try:
+        p = Path(TIMING_DATA_FILE)
+        if not p.exists():
+            return {}
+        return json.loads(p.read_text())
+    except Exception:
+        return {}
+
+
+def _write_timing_data(data: dict) -> None:
+    Path(TIMING_DATA_FILE).write_text(json.dumps(data))
+
+
+def _detect_operations() -> dict:
+    ops: dict = {}
+    if Path(PUSH_FLAG).exists():
+        ops["git-push"] = {"type": "push", "key": "git-push"}
+    if GATE_PID_FILE.exists():
+        ops["gate-run"] = {"type": "gate", "key": "gate-run"}
+    tasks_dir = Path(EX_TASKS_DIR)
+    if tasks_dir.is_dir():
+        for entry in sorted(tasks_dir.glob("*.output")):
+            if entry.is_file():
+                age = time.time() - entry.stat().st_mtime
+                if age < 300:
+                    ops["subagent-task"] = {"type": "subagent", "key": "subagent-task"}
+                    break
+    return ops
+
+
+def _check_timing_anomalies() -> list:
+    anomalies: list = []
+    timing = _read_timing_data()
+    if not timing:
+        _detect_operations()
+        return anomalies
+
+    now = time.time()
+
+    for op_key, op_data in list(timing.items()):
+        if not isinstance(op_data, dict):
+            continue
+        expected = EXPECTED_DURATIONS.get(op_key, 300)
+        started_at = float(op_data.get("started_at", 0))
+        elapsed = now - started_at
+
+        if elapsed > expected * 2:
+            anomalies.append(op_key)
+            _log(f"TIMING ANOMALY: {op_key} running {elapsed:.0f}s (expected {expected}s)")
+
+    return anomalies
+
+
+def _detect_stalled_push() -> dict | None:
+    p = Path(PUSH_FLAG)
+    if not p.exists():
+        return None
+    age = time.time() - p.stat().st_mtime
+    if age < PUSH_STALL_THRESHOLD:
+        return None
+    _log(f"TIMING ANOMALY: git-push stalled {age:.0f}s > {PUSH_STALL_THRESHOLD}s")
+    return {"git-push": {"elapsed": age, "key": "git-push"}}
+
+
 def _read_last_flag_time() -> float:
     try:
         p = Path(LAST_FLAG_FILE)
@@ -958,42 +1040,6 @@ def kill_stalled_task(pid: int) -> None:
         _log(f"TASK KILL: pid={pid} already gone")
     except Exception as exc:
         _log(f"TASK KILL: error killing pid={pid}: {exc}")
-
-
-def check_task_anomalies() -> None:
-    global _alerted_anomalies
-    tasks = _read_task_deadlines()
-    if not tasks:
-        return
-    now = time.time()
-    stalled = _load_stalled_tasks()
-
-    for task_id in tasks:
-        info = tasks[task_id]
-        if not isinstance(info, dict):
-            continue
-        start_ts = info.get("start_ts")
-        if not start_ts:
-            continue
-        command = info.get("command", "")
-        pid = info.get("pid")
-
-        elapsed = now - start_ts
-        expected = _find_expected_duration(command)
-
-        if expected is None:
-            continue
-
-        if elapsed > expected * 5:
-            if task_id not in stalled:
-                _log(f"TASK STALLED: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
-                _record_stalled(task_id)
-            continue
-
-        if elapsed > expected * 2:
-            if task_id not in _alerted_anomalies:
-                _log(f"TASK ANOMALY: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
-                _alerted_anomalies.add(task_id)
 
 
 # -- Task timing anomaly detection --------------------------------------------
@@ -1228,12 +1274,16 @@ EX_STALLED_TASKS_FILE = os.environ.get("GLUDD_STALLED_TASKS", "/tmp/gludd-stalle
 
 
 def check_task_anomalies() -> dict:
-    """Read task deadlines (plugin format: {task_id: epoch_ms}), detect anomalies.
+    """Read task deadlines, detect duration anomalies against EXPECTED_DURATIONS.
 
-    Thresholds: >150% of expected = ANOMALY, >300% of expected = STALLED.
-    Writes findings to /tmp/gludd-task-anomalies.json.
+    Supports two file formats:
+      - {task_id: epoch_ms}  (plugin format, command deduced from task_id)
+      - {task_id: {start_ts, command, pid}}  (enforce-deadline format)
+
+    Thresholds: >2x expected = ANOMALY, >5x expected = STALLED.
     Returns findings dict for integration by check_and_reset().
     """
+    global _alerted_anomalies
     findings: dict = {"tasks": [], "anomalies": [], "stalled": [], "ts": _now()}
 
     try:
@@ -1248,35 +1298,86 @@ def check_task_anomalies() -> dict:
         return findings
 
     now_epoch = time.time()
-    tasks_dir = Path(EX_TASKS_DIR)
+    stalled_set = _load_stalled_tasks()
 
-    for task_id, start_ms in raw.items():
-        if not isinstance(start_ms, (int, float)):
+    for task_id, value in raw.items():
+        if isinstance(value, (int, float)):
+            start_ts = value / 1000.0 if value > 1e11 else value
+            command = ""
+        elif isinstance(value, dict):
+            start_ts = value.get("start_ts", 0)
+            if not start_ts:
+                continue
+            command = value.get("command", "")
+        else:
             continue
 
-        elapsed = now_epoch - (start_ms / 1000.0)
-        task_type = _detect_task_type(task_id, tasks_dir)
-        expected = EX_TASK_DURATIONS.get(task_type, EX_TASK_DURATIONS["default"])
+        elapsed = now_epoch - start_ts
+
+        if command:
+            expected = _find_expected_duration(command)
+        else:
+            task_type = _detect_task_type(task_id)
+            expected = EX_TASK_DURATIONS.get(task_type, EX_TASK_DURATIONS["default"])
+
+        if expected is None:
+            continue
 
         entry: dict = {
             "task_id": task_id,
             "elapsed_s": round(elapsed, 1),
             "expected_s": expected,
-            "type": task_type,
         }
         findings["tasks"].append(entry)
 
-        if elapsed > expected * 3.0:
+        if elapsed > expected * 5:
             findings["stalled"].append(entry)
-            _log(f"STALLED: task {task_id} running {elapsed:.0f}s (expected {expected:.0f}s)")
-        elif elapsed > expected * 1.5:
+            if task_id not in stalled_set:
+                _log(f"TASK STALLED: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
+                _record_stalled(task_id)
+        elif elapsed > expected * 2:
             findings["anomalies"].append(entry)
-            _log(f"ANOMALY: task {task_id} running {elapsed:.0f}s (expected {expected:.0f}s)")
+            if task_id not in _alerted_anomalies:
+                _log(f"TASK ANOMALY: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
+                _alerted_anomalies.add(task_id)
 
     try:
         Path(EX_ANOMALIES_FILE).write_text(json.dumps(findings, indent=2))
     except Exception:
         pass
+
+    # Check gate background process
+    try:
+        gp = GATE_PID_FILE
+        if gp.exists():
+            gate_elapsed = time.time() - gp.stat().st_mtime
+            if gate_elapsed > 45 * 60:
+                _log(f"GATE STALLED: background gate running {gate_elapsed:.0f}s (>45min)")
+                findings.setdefault("stalled", []).append({
+                    "task_id": "gate-process",
+                    "elapsed_s": round(gate_elapsed, 1),
+                    "expected_s": 2700,
+                    "type": "gate",
+                })
+    except Exception:
+        pass
+
+    # Detect push stalled
+    for t in findings.get("tasks", []):
+        if "push" in t.get("task_id", "").lower() and t.get("elapsed_s", 0) > 60:
+            _log(f"PUSH STALLED — possible network issue: {t['task_id']} elapsed={t['elapsed_s']:.0f}s")
+
+    total_anomalies = len(findings.get("anomalies", [])) + len(findings.get("stalled", []))
+    if total_anomalies > 0:
+        try:
+            counts = json.loads(Path(ANOMALY_COUNT_FILE).read_text()) if Path(ANOMALY_COUNT_FILE).exists() else {"count": 0}
+            new_count = counts.get("count", 0) + 1
+            Path(ANOMALY_COUNT_FILE).write_text(json.dumps({"count": new_count}))
+            if new_count > ANOMALY_ESCALATE_THRESHOLD:
+                _log(f"ANOMALY ESCALATION: {new_count} anomalies in session")
+                findings["escalated"] = True
+        except Exception:
+            pass
 
     return findings
 
@@ -1356,14 +1457,7 @@ def _check_timing_anomalies() -> list[str]:
             timing[op_type]["last_check"] = now
             timing[op_type]["duration"] = now - timing[op_type]["started_at"]
 
-    for op_type in list(timing.keys()):
-        entry = timing[op_type]
-        if entry.get("status") == "running" and op_type not in detected:
-            entry["status"] = "completed"
-            entry["duration"] = now - entry["started_at"]
-            entry["last_check"] = now
-
-    for op_type, entry in timing.items():
+    for op_type, entry in list(timing.items()):
         if entry.get("status") != "running":
             continue
         duration = now - entry["started_at"]
@@ -1374,6 +1468,13 @@ def _check_timing_anomalies() -> list[str]:
             msg = f"TIMING ANOMALY: {op_type} expected {expected}s, running for {duration:.0f}s"
             _log(msg)
             anomalies.append(op_type)
+
+    for op_type in list(timing.keys()):
+        entry = timing[op_type]
+        if entry.get("status") == "running" and op_type not in detected:
+            entry["status"] = "completed"
+            entry["duration"] = now - entry["started_at"]
+            entry["last_check"] = now
 
     _write_timing_data(timing)
     return anomalies
