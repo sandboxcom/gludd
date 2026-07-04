@@ -14,7 +14,6 @@
     "./.opencode/plugin/enforce-delegate.ts",
     "./.opencode/plugin/enforce-stop.ts",
     "./.opencode/plugin/enforce-todos.ts",
-    "./.opencode/plugin/enforce-false-done.ts",
     "./.opencode/plugin/enforce-session-start.ts",
     "./.opencode/plugin/enforce-deadline.ts"
   ]

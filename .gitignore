@@ -59,6 +59,8 @@ zai.api
 .zai.key
 zai.key
 
+/tmp/
+
 # ── Claude Code harness: transient / machine-local items ─────────────────────
 # Committed (safe to track): .claude/hooks/  .claude/settings.json  .claude/workflows/
 # Ignored (transient or machine-local):
