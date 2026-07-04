@@ -844,6 +844,12 @@ git-fetch-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom
 	@echo "Fetched from sandboxcom/gludd"
 
+verify-remote:
+	@SHA=$$(git rev-parse HEAD); BR=$${BRANCH:-master}; \
+	REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom $$BR | awk '{print $$1}'); \
+	echo "remote=$$REMOTE expected=$$SHA"; \
+	if [ "$$REMOTE" = "$$SHA" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
+
 # Create an annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
 #   make git-tag-push TAG=v0.1.0-alpha.1 MSG='alpha release'

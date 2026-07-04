@@ -267,7 +267,7 @@ def _pending_todos() -> list[str]:
 # -- Task duration anomaly detection ------------------------------------------
 
 DEFAULT_STALL_MINUTES = 5.0
-DEFAULT_ANOMALY_MULTIPLIER = 2.0
+DEFAULT_ANOMALY_MULTIPLIER = 5.0
 ANOMALY_DIRECTIVE = "/tmp/gludd-continue.txt"
 
 
