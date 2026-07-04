@@ -29,6 +29,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 **The FIRST actions of every session, in strict order:**
 
+0. **START WATCHDOG.** Run `make watchdog-auto` to ensure the background watchdog daemon is running. It polls at 10s intervals to detect and unjam agent stops. If the watchdog is already running, this is a no-op.
 1. **LOCATE work.** In ONE tool-call message, read `TASKS.md`, `BUGS.md`, `config/ratchet.yml`, `SESSION.md`, and run `make git-status` + `make git-log`. These 6 calls go in ONE message — never serial.
 2. **FAN OUT.** Immediately dispatch a ≥10-wide subagent wave in ONE message on disjoint work units. Do NOT write any prose between session start and the first dispatch wave. No introductions, no status reports, no "here's what I'll do" — just tool calls.
 
