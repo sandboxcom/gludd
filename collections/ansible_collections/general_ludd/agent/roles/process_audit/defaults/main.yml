@@ -1,0 +1,21 @@
+---
+# process_audit role defaults — thresholds for over-fitting detection
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Process audit thresholds
+process_audit_max_patterns: 60
+process_audit_max_plugin_lines: 3000
+process_audit_max_false_positive_blocks: 5
+process_audit_state_file_max_age_seconds: 120
+
+# Project root for local filesystem checks
+project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(lookup('env', 'PWD'), true) }}"
+
+# Artifact output
+artifact_dir: "/tmp/gludd-process-audit"
+
+# Fail the play when over-fitting is detected
+process_audit_fail_on_overfitted: false

@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current status-update git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-batch test-iso smoke gate gate-fast precommit push-verify gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold ci-test test-safe test-dir test-adaptive submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo check-run-gate-syntax ship reset-false-done unguard _require-venv
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current status-update git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-batch test-iso smoke gate gate-fast precommit process-health process-audit push-verify gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold ci-test test-safe test-dir test-adaptive submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot ci-verdict-capture test-echo check-run-gate-syntax ship reset-false-done unguard _require-venv
 
 # --- TEMP release-verification targets (alpha.5) ---
 tag-run:
@@ -142,6 +142,38 @@ ps-pytest:
 # ≤2 turns instead of 10+ turns of manual analysis.
 troubleshoot:
 	@uv run python scripts/troubleshoot.py
+
+# Process-health: run process-overhead tests + check state-file existence/freshness.
+# Exit 0 if healthy, exit 1 if any check fails.
+process-health:
+	@$(MAKE) test-specific TESTFILE='tests/unit/test_process_overhead.py'
+	@echo "=== PROCESS-HEALTH: state file checks ==="
+	@ok=0
+	@for f in /tmp/gludd-stop-state.json /tmp/gludd-false-done-blocks.json /tmp/gludd-mainthread-streak.json; do \
+		if [ -f "$$f" ]; then \
+			echo "  $$f: EXISTS (mtime: $$(stat -f '%Sm' "$$f" 2>/dev/null || stat -c '%y' "$$f" 2>/dev/null))"; \
+		else \
+			echo "  $$f: MISSING"; ok=1; \
+		fi; \
+	done; \
+	plugin_dir=.opencode/plugin; \
+	for p in "$$plugin_dir"/enforce-*.ts; do \
+		[ -f "$$p" ] || continue; \
+		lines=$$(wc -l < "$$p" | tr -d ' '); \
+		echo "  $$p: $$lines lines"; \
+	done; \
+	echo "=== PROCESS-HEALTH: pattern list sizes ==="; \
+	for p in "$$plugin_dir"/enforce-stop.ts "$$plugin_dir"/enforce-false-done.ts "$$plugin_dir"/enforce-make.ts; do \
+		[ -f "$$p" ] || continue; \
+		count=$$(grep -cE '^\s*(/[^/]|\")' "$$p" 2>/dev/null || echo 0); \
+		echo "  $$p: ~$$count pattern entries"; \
+	done; \
+	if [ "$$ok" -eq 0 ]; then echo "=== PROCESS-HEALTH: PASS ==="; else echo "=== PROCESS-HEALTH: FAIL ==="; exit 1; fi
+
+# Process-audit: process-health + molecule test for test_gludd_process
+process-audit: process-health
+	@echo "=== PROCESS-AUDIT: running molecule test_gludd_process ==="
+	ANSIBLE_COLLECTIONS_PATH=/Users/shawnwilson/gludd/collections MOLECULE_PROJECT_DIRECTORY=/Users/shawnwilson/gludd cd /Users/shawnwilson/gludd/molecule/playbooks/test_gludd_process && uv run molecule test -s default
 
 # Agent watchog — background daemon that monitors the mainthread-streak
 # file and resets it when the agent gets jammed (streak ≥ 3). Prevents

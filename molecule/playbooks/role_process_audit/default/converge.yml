@@ -1,0 +1,16 @@
+---
+- name: Converge - run process_audit role against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8846', true) }}"
+  tasks:
+    - name: Invoke process_audit
+      ansible.builtin.include_role:
+        name: general_ludd.agent.process_audit
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-process-audit-8846"
+        process_audit_fail_on_overfitted: false

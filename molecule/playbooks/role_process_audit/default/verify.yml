@@ -1,0 +1,55 @@
+---
+- name: Verify - process_audit wrote its report artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8846', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8846', true) }}.pid"
+    artifact: "/tmp/gludd-process-audit-8846/process_audit.json"
+  tasks:
+    - name: Assert process_audit_report fact exists
+      ansible.builtin.assert:
+        that:
+          - process_audit_report is defined
+          - process_audit_report.role == 'process_audit'
+        fail_msg: "process_audit_report fact is missing or wrong role"
+        success_msg: "process_audit_report fact present and correct"
+
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact required keys
+      ansible.builtin.assert:
+        that:
+          - result.role == 'process_audit'
+          - result.health_score is defined
+          - result.overfitted is defined
+          - result.plugin_total_lines is defined
+          - result.total_patterns is defined
+        fail_msg: "process_audit artifact missing required keys: {{ result }}"
+        success_msg: "process_audit artifact has all required keys; health_score={{ result.health_score }} overfitted={{ result.overfitted }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-process-audit-8846"
+        state: absent
+      failed_when: false

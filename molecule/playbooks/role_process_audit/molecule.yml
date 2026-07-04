@@ -1,0 +1,29 @@
+---
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "/Users/shawnwilson/gludd/collections"
+    GLUDD_PROJECT_ROOT: "/Users/shawnwilson/gludd"
+    GLUDD_MOCK_PORT: "8846"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

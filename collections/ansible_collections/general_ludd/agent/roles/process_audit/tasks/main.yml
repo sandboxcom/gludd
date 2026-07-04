@@ -1,0 +1,300 @@
+---
+# process_audit role — audit codified processes for over-fitting
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Step 1: Gather daemon state via gludd_facts ───────────────────────────
+
+- name: Fetch daemon state via gludd_facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _pa_facts
+  ignore_errors: true
+  no_log: "{{ psk | length > 0 }}"
+
+# ── Step 2: Run make lint, capture output, count errors ───────────────────
+
+- name: Run make lint and capture output
+  ansible.builtin.command:
+    cmd: "make lint"
+    chdir: "{{ project_root }}"
+  register: _pa_lint_out
+  ignore_errors: true
+  changed_when: false
+
+- name: Count lint errors from output
+  ansible.builtin.set_fact:
+    _pa_lint_errors: >-
+      {{ _pa_lint_out.stdout_lines | select('search', 'Found [[:digit:]]+ error') | map('regex_replace', '.*Found ([[:digit:]]+) error.*', '\1') | map('int') | first | default(0) }}
+
+# ── Step 3: Run the process overhead test ────────────────────────────────
+
+- name: Run make test-specific for process_overhead
+  ansible.builtin.command:
+    cmd: "make test-specific TESTFILE='tests/unit/test_process_overhead.py'"
+    chdir: "{{ project_root }}"
+  register: _pa_test_out
+  ignore_errors: true
+  changed_when: false
+
+- name: Check test pass/fail from exit code
+  ansible.builtin.set_fact:
+    _pa_test_passed: "{{ _pa_test_out.rc == 0 }}"
+    _pa_test_output: "{{ _pa_test_out.stdout_lines[-5:] | default(['(no output)']) if _pa_test_out.stdout_lines else ['(no output)'] }}"
+
+# ── Step 4: Check anti-stop state files ──────────────────────────────────
+
+- name: Check stop state file exists and age
+  ansible.builtin.stat:
+    path: /tmp/gludd-stop-state.json
+  register: _pa_stop_state
+
+- name: Check false-done blocks state file
+  ansible.builtin.stat:
+    path: /tmp/gludd-false-done-blocks.json
+  register: _pa_false_done_state
+
+- name: Check session-start state file
+  ansible.builtin.stat:
+    path: /tmp/gludd-session-start.json
+  register: _pa_session_start_state
+
+- name: Check floor force-delegate state file
+  ansible.builtin.stat:
+    path: /tmp/gludd-force-delegate.json
+  register: _pa_force_delegate_state
+
+- name: Check mainthread streak state file
+  ansible.builtin.stat:
+    path: /tmp/gludd-mainthread-streak.json
+  register: _pa_mainthread_streak
+
+- name: Compute state file timestamp health
+  ansible.builtin.set_fact:
+    _pa_stale_state_files: >-
+      {{ [
+        _pa_stop_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_stop_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_false_done_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_false_done_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_session_start_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_session_start_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_force_delegate_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_force_delegate_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_mainthread_streak.stat.exists and ((ansible_date_time.epoch | int) - (_pa_mainthread_streak.stat.mtime | int) > process_audit_state_file_max_age_seconds | int)
+      ] | select | list | length }}
+
+- name: Count how many state files exist
+  ansible.builtin.set_fact:
+    _pa_state_files_present: >-
+      {{ [
+        _pa_stop_state.stat.exists,
+        _pa_false_done_state.stat.exists,
+        _pa_session_start_state.stat.exists,
+        _pa_force_delegate_state.stat.exists,
+        _pa_mainthread_streak.stat.exists
+      ] | select | list | length }}
+
+# ── Step 5: Count plugin file sizes (lines of code) ──────────────────────
+
+- name: Count enforce-make.ts lines
+  ansible.builtin.shell:
+    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-make.ts || echo 0"
+  register: _pa_make_lines
+  changed_when: false
+
+- name: Count enforce-stop.ts lines
+  ansible.builtin.shell:
+    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-stop.ts || echo 0"
+  register: _pa_stop_lines
+  changed_when: false
+
+- name: Count enforce-false-done.ts lines
+  ansible.builtin.shell:
+    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-false-done.ts || echo 0"
+  register: _pa_false_done_lines
+  changed_when: false
+
+- name: Count enforce-floor.ts lines
+  ansible.builtin.shell:
+    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-floor.ts || echo 0"
+  register: _pa_floor_lines
+  changed_when: false
+
+- name: Count enforce-delegate.ts lines
+  ansible.builtin.shell:
+    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-delegate.ts || echo 0"
+  register: _pa_delegate_lines
+  changed_when: false
+
+- name: Count enforce-todos.ts lines
+  ansible.builtin.shell:
+    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-todos.ts || echo 0"
+  register: _pa_todos_lines
+  changed_when: false
+
+- name: Count enforce-session-start.ts lines
+  ansible.builtin.shell:
+    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-session-start.ts || echo 0"
+  register: _pa_session_start_lines
+  changed_when: false
+
+- name: Count enforce-deadline.ts lines
+  ansible.builtin.shell:
+    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-deadline.ts || echo 0"
+  register: _pa_deadline_lines
+  changed_when: false
+
+- name: Sum plugin line counts
+  ansible.builtin.set_fact:
+    _pa_plugin_lines_make: "{{ _pa_make_lines.stdout | trim | int }}"
+    _pa_plugin_lines_stop: "{{ _pa_stop_lines.stdout | trim | int }}"
+    _pa_plugin_lines_false_done: "{{ _pa_false_done_lines.stdout | trim | int }}"
+    _pa_plugin_lines_floor: "{{ _pa_floor_lines.stdout | trim | int }}"
+    _pa_plugin_lines_delegate: "{{ _pa_delegate_lines.stdout | trim | int }}"
+    _pa_plugin_lines_todos: "{{ _pa_todos_lines.stdout | trim | int }}"
+    _pa_plugin_lines_session_start: "{{ _pa_session_start_lines.stdout | trim | int }}"
+    _pa_plugin_lines_deadline: "{{ _pa_deadline_lines.stdout | trim | int }}"
+
+- name: Compute total plugin lines
+  ansible.builtin.set_fact:
+    _pa_plugin_total_lines: >-
+      {{ _pa_plugin_lines_make + _pa_plugin_lines_stop + _pa_plugin_lines_false_done +
+         _pa_plugin_lines_floor + _pa_plugin_lines_delegate + _pa_plugin_lines_todos +
+         _pa_plugin_lines_session_start + _pa_plugin_lines_deadline }}
+
+# ── Step 6: Count pattern list sizes ─────────────────────────────────────
+
+- name: Count NO_WAIT_PATTERNS entries in enforce-stop.ts
+  ansible.builtin.shell:
+    cmd: "grep -cE '/\\b' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null || echo 0"
+  register: _pa_no_wait_patterns
+  changed_when: false
+
+- name: Count CLAIM_PATTERNS entries in enforce-false-done.ts
+  ansible.builtin.shell:
+    cmd: "grep -cE '/\\b' {{ project_root }}/.opencode/plugin/enforce-false-done.ts 2>/dev/null || echo 0"
+  register: _pa_claim_patterns
+  changed_when: false
+
+- name: Count COMPLETION_SOUNDING entries in enforce-make.ts
+  ansible.builtin.shell:
+    cmd: "grep -cE '\"[a-z]' {{ project_root }}/.opencode/plugin/enforce-make.ts 2>/dev/null || echo 0"
+  register: _pa_completion_sounding
+  changed_when: false
+
+- name: Count CI_RED_PATTERNS entries in enforce-stop.ts
+  ansible.builtin.shell:
+    cmd: "grep -c 'CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null; grep -A 30 'const CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null | grep -cE '/\\b' || echo 0"
+  register: _pa_ci_red_patterns
+  changed_when: false
+
+- name: Total pattern count (approximate)
+  ansible.builtin.set_fact:
+    _pa_total_patterns: >-
+      {{ (_pa_no_wait_patterns.stdout | trim | int) +
+         (_pa_claim_patterns.stdout | trim | int) +
+         (_pa_completion_sounding.stdout | trim | int) +
+         (_pa_ci_red_patterns.stdout | trim | int) }}
+
+# ── Step 7: Compute guardrail health score ───────────────────────────────
+
+- name: Count state-based checks
+  ansible.builtin.set_fact:
+    _pa_state_based_checks: "{{ _pa_state_files_present | int }}"
+
+- name: Count pattern-list checks
+  ansible.builtin.set_fact:
+    _pa_pattern_checks: >-
+      {{ (_pa_total_patterns | int) // 10 | int }}
+
+- name: Compute guardrail health score
+  ansible.builtin.set_fact:
+    _pa_health_score: >-
+      {% set sb = _pa_state_based_checks | float %}
+      {% set pl = _pa_pattern_checks | float %}
+      {% set total = sb + pl %}
+      {{ 0.5 if total == 0 else (sb / total) | round(2) }}
+
+- name: Detect over-fitting
+  ansible.builtin.set_fact:
+    process_audit_overfitted: "{{ _pa_health_score | float < 0.5 }}"
+
+# ── Step 8: Build report ─────────────────────────────────────────────────
+
+- name: Assemble process_audit_report
+  ansible.builtin.set_fact:
+    process_audit_report:
+      role: process_audit
+      lint_errors: "{{ _pa_lint_errors | int }}"
+      lint_exit_code: "{{ _pa_lint_out.rc }}"
+      process_overhead_test_passed: "{{ _pa_test_passed }}"
+      state_files_present: "{{ _pa_state_files_present }}"
+      stale_state_files: "{{ _pa_stale_state_files }}"
+      plugin_total_lines: "{{ _pa_plugin_total_lines }}"
+      plugin_lines_exceeded: "{{ _pa_plugin_total_lines > process_audit_max_plugin_lines }}"
+      total_patterns: "{{ _pa_total_patterns }}"
+      patterns_exceeded: "{{ _pa_total_patterns > process_audit_max_patterns }}"
+      health_score: "{{ _pa_health_score }}"
+      overfitted: "{{ process_audit_overfitted }}"
+      daemon_reachable: "{{ _pa_facts is not failed }}"
+
+# ── Write artifact ───────────────────────────────────────────────────────
+
+- name: Write process audit report as JSON
+  ansible.builtin.copy:
+    content: "{{ process_audit_report | to_nice_json }}"
+    dest: "{{ artifact_dir }}/process_audit.json"
+    mode: "0644"
+
+- name: Write process audit report as markdown
+  ansible.builtin.copy:
+    content: |
+      # Process Audit Report
+
+      **Over-fitted:** {{ process_audit_overfitted }}
+      **Health Score:** {{ _pa_health_score }} (state-based / pattern-list ratio)
+
+      ## Guardrail Health
+      | Metric | Value |
+      |--------|-------|
+      | State files present | {{ _pa_state_files_present }} |
+      | Stale state files | {{ _pa_stale_state_files }} |
+      | Pattern total | {{ _pa_total_patterns }} |
+      | Patterns exceeded | {{ _pa_total_patterns > process_audit_max_patterns }} |
+
+      ## Plugin Footprint
+      | Plugin | Lines |
+      |--------|-------|
+      | enforce-make | {{ _pa_plugin_lines_make }} |
+      | enforce-stop | {{ _pa_plugin_lines_stop }} |
+      | enforce-false-done | {{ _pa_plugin_lines_false_done }} |
+      | enforce-floor | {{ _pa_plugin_lines_floor }} |
+      | enforce-delegate | {{ _pa_plugin_lines_delegate }} |
+      | enforce-todos | {{ _pa_plugin_lines_todos }} |
+      | enforce-session-start | {{ _pa_plugin_lines_session_start }} |
+      | enforce-deadline | {{ _pa_plugin_lines_deadline }} |
+      | **Total** | **{{ _pa_plugin_total_lines }}** |
+
+      ## Code Quality
+      | Metric | Value |
+      |--------|-------|
+      | Lint errors | {{ _pa_lint_errors }} |
+      | Process overhead test | {{ 'PASS' if _pa_test_passed else 'FAIL' }} |
+      | Daemon reachable | {{ 'yes' if _pa_facts is not failed else 'no' }} |
+
+      {% if process_audit_overfitted %}
+      ## WARNING: Over-fitted
+      Guardrail health score ({{ _pa_health_score }}) is below 0.5 — enforcement machinery depends
+      far more on pattern lists than state-based checks. This is a structural over-fitting signal.
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.process_audit*
+    dest: "{{ artifact_dir }}/process_audit.md"
+    mode: "0644"
+
+- name: Report process audit findings
+  ansible.builtin.debug:
+    msg: "Process audit: health_score={{ _pa_health_score }} overfitted={{ process_audit_overfitted }} plugins={{ _pa_plugin_total_lines }} LOC patterns={{ _pa_total_patterns }}"
