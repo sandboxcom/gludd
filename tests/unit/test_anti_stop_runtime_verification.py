@@ -21,6 +21,7 @@ EXPECTED_PLUGINS = [
     "enforce-stop.ts",
     "enforce-session-start.ts",
     "enforce-deadline.ts",
+    "enforce-false-done.ts",
 ]
 
 
@@ -113,7 +114,7 @@ class TestAllPluginsOnDisk:
         config = json.loads(raw)
         plugins = config["plugin"]
 
-        assert len(plugins) == 7, f"Expected 7 plugins, got {len(plugins)}"
+        assert len(plugins) == 8, f"Expected 8 plugins, got {len(plugins)}"
 
         for plugin_path in plugins:
             relative = plugin_path.removeprefix("./")
