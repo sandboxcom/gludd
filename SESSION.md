@@ -9,7 +9,7 @@
 
 ## Current Work
 
-- **HEAD: `01698f8e`** on master — fix verify-remote to use git log, reduce anomaly sensitivity.
+- **HEAD: `fcdf9b92`** on master — feat(G1): replace MemoryRecordModel with agent_id/key/value/namespace/ttl schema.
 
 - **README PENDING count**: 13 items (G1–G13 in Feature & Task Completion Status table).
 - **Agent watchdog enhanced** (commits `276838f7` through `01698f8e`):
@@ -30,18 +30,16 @@
 
 | Hash | Message |
 |------|---------|
-| `01698f8e` | fix(watchdog): fix verify-remote to use git log, reduce anomaly sensitivity |
-| `e72e0219` | docs: regenerate README after watchdog anomaly detection |
-| `3e7f9185` | fix(watchdog): kill stalled tasks running >60s |
-| `9f9ce2de` | fix(watchdog): CI anomaly detection, 49/49 tests pass |
-| `ccfc7de9` | fix(test): repair F821 undefined name errors in watchdog tests |
-| `1618d19f` | fix(test): remove duplicate test definitions in watchdog tests |
-| `12be174c` | fix(watchdog): task timing anomaly detection — kill stalled ops, track durations |
-| `da4a6078` | fix(watchdog): task anomaly detection — add tests for slow/stalled/normal tasks |
-| `ef090e55` | fix(watchdog): task duration anomaly detection — flag stalled tasks >5min or >3x avg history |
-| `276838f7` | fix(watchdog): task duration tracking, anomaly detection, stalled task alerts |
-| `ff973603` | docs: fix remaining PENDING evidence_refs |
-| `17ebd55e` | docs: refresh README status table with 8 new features |
+| `fcdf9b92` | feat(G1): replace MemoryRecordModel with agent_id/key/value/namespace/ttl schema |
+| `b2883127` | docs: G1 persistent agent memory pct 0 to 20, add evidence_refs |
+| `d55c8329` | docs: G13 structured task spec 0 to 40pct |
+| `477bfa24` | feat: add acceptance_criteria + definition_of_done to POST /api/todos |
+| `ca1a3af7` | test: structured task spec acceptance tests |
+| `b377c207` | fix: trailing whitespace in features.yml |
+| `d21503ad` | docs: g13-structured-task-spec pct 0->20; note from audit |
+| `e1369ae7` | fix: watchdog anomaly multiplier 2.0 to 5.0, add verify-remote target |
+| `d0a2dd10` | docs: regenerate README after all fixes |
+| `c8b0f303` | docs: add Phase AS anti-stop fixes to TASKS.md |
 
 ## Known Gaps
 
@@ -50,12 +48,13 @@
 
 ## Next Steps
 
-1. **RESTART OPENCODE** for enforcement fixes to take effect.
+1. **Commit staged G1 work**: `022_recreate_memory_records_g1.py` migration + `repository.py` changes (staged). Also stage `tests/unit/test_agent_memory.py` (untracked).
+2. **Push**: HEAD `fcdf9b92` needs `verify-remote` after push.
 
 ## Current Gate Status (2026-07-04)
 <!-- gate:begin -->
 - **Last full PASS**: 2026-07-04T06:30 — lint 0, typecheck 0, collect 0
-- **Push**: pending verify for HEAD `01698f8e`
+- **Push**: pending verify for HEAD `fcdf9b92`
 
 <!-- gate:end -->
 
@@ -64,7 +63,7 @@
 
 ## Historical State
 
-- **2026-07-04 (current)**: HEAD `01698f8e`. Watchdog enhanced: 10s polling, session.created auto-start, idle detection, task anomaly detection with stalled-task kill (>60s) and duration tracking. README has 13 PENDING items (G1–G13).
+- **2026-07-04 (current)**: HEAD `fcdf9b92`. G1 persistent agent memory schema (agent_id/key/value/namespace/ttl). G13 structured task spec (acceptance_criteria + definition_of_done). Watchdog anomaly multiplier relaxed 2.0→5.0. README has 13 PENDING items (G1–G13). Uncommitted: G1 alembic migration + repository changes (staged), test_agent_memory.py (untracked).
 - **2026-07-01**: HEAD `8ed0ed1f`. CI fix wave active. 15,685 tests collected. 26 commits ahead of sandboxcom/master. CI failures narrowed to ~53.
 - **2026-06-30**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real. ~24 commits pushed across multiple waves.
 - **2026-06-29**: Recovery wave landed 11+ commits. Phase MP committed. CI RED.
