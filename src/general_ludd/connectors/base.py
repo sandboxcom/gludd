@@ -35,9 +35,18 @@ from general_ludd.security.ssrf import is_url_blocked
 logger = logging.getLogger(__name__)
 
 # D-30: per-source and global fan-out caps to prevent OOM from a runaway source.
-_PER_SOURCE_CAP = 10_000
 _GLOBAL_CAP = 50_000
+_PER_SOURCE_CAP = _GLOBAL_CAP  # per-source cap mirrors the global cap
 _BYTE_BUDGET = 50 * 1024 * 1024  # 50 MB
+
+
+def _finite_or_none(value: float | None) -> float | None:
+    """Return ``value`` if it is finite, else ``None``."""
+    if value is None:
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
 
 # Valid KIND values for the four marker source subtypes.
 PIPELINE_KIND = "pipeline"
@@ -110,9 +119,11 @@ def normalized_record(
     """
     # D-31: sanitize ts
     if ts is not None and not math.isfinite(ts):
+        logger.warning("non-finite ts %r coerced to None", ts)
         ts = None
     # D-31: sanitize value
     if value is not None and isinstance(value, float) and not math.isfinite(value):
+        logger.warning("non-finite value %r coerced to None", value)
         value = None
     return NormalizedRecord(
         ts=ts,
@@ -210,6 +221,8 @@ class Observability:
     facade can fan a query across whatever backends an operator has wired up.
     """
 
+    MAX_FIND_RESULTS: int = _GLOBAL_CAP
+
     def __init__(self, registry: SourceRegistry) -> None:
         self._registry = registry
 
@@ -241,7 +254,7 @@ class Observability:
                 break
             try:
                 raw_records = source.query(spec)
-            except Exception as exc:
+            except Exception:
                 # Resilience is the whole point: a single source blowing up must
                 # never abort the fan-out — capture it as an error record.
                 error_rec: dict[str, Any] = dict(
@@ -249,8 +262,8 @@ class Observability:
                         source=getattr(source, "name", "<unknown>"),
                         kind=getattr(source, "KIND", "unknown"),
                         level_or_status="error",
-                        message=f"query failed: {exc}",
-                        raw=exc,
+                        message="query failed",
+                        raw=None,
                     )
                 )
                 merged.append(error_rec)
@@ -259,7 +272,7 @@ class Observability:
             # D-30: per-source cap
             if len(raw_records) > _PER_SOURCE_CAP:
                 logger.warning(
-                    "find(): source %r returned %d records, truncating to %d (per-source cap)",
+                    "find(): source %r returned %d records, truncated to %d (per-source cap)",
                     getattr(source, "name", "<unknown>"),
                     len(raw_records),
                     _PER_SOURCE_CAP,
@@ -267,11 +280,21 @@ class Observability:
                 raw_records = raw_records[:_PER_SOURCE_CAP]
             for rec in raw_records:
                 if _global_count >= _GLOBAL_CAP or _byte_count >= _BYTE_BUDGET:
+                    logger.warning(
+                        "find(): global cap reached, results truncated to %d",
+                        _GLOBAL_CAP,
+                    )
                     break
                 merged.append(rec)
                 _global_count += 1
                 with contextlib.suppress(Exception):
                     _byte_count += sys.getsizeof(rec)
+
+        if _global_count >= _GLOBAL_CAP:
+            logger.warning(
+                "find(): total results truncated to %d (global cap)",
+                _GLOBAL_CAP,
+            )
 
         return self._sort_by_ts(merged)
 
