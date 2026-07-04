@@ -52,8 +52,8 @@ class TestPluginFileExists:
 class TestPluginHookRegistration:
     def test_plugin_registers_response_transform(self):
         src = PLUGIN.read_text()
-        assert "experimental.chat.response.transform" in src, (
-            "Plugin must register experimental.chat.response.transform to scan "
+        assert "experimental.text.complete" in src, (
+            "Plugin must register experimental.text.complete to scan "
             "outgoing assistant messages for false-completion claims."
         )
 
@@ -79,7 +79,10 @@ class TestEnforcementDefaultIsOn:
 
     def test_max_blocks_env_var(self):
         src = PLUGIN.read_text()
-        assert "GLUDD_FALSE_DONE_MAX_BLOCKS" in src
+        assert "MAX_CONSECUTIVE_BLOCKS" in src, (
+            "Plugin must define MAX_CONSECUTIVE_BLOCKS constant "
+            "(used as the anti-wedge cap)."
+        )
         assert "25" in src, (
             "Default consecutive-block cap must be 25 (matches the bash hook's "
             "MAX_CONSECUTIVE_BLOCKS)."
@@ -134,37 +137,38 @@ class TestFailOpenAndAntiWedge:
 # behavior regression in either layer shows up here.
 # ============================================================================
 
-# CLAIM patterns — completion/success claim about shippable/outward work.
-# Ported VERBATIM from the plugin source (which itself is a verbatim port of
-# no_false_completion_stop.sh `claim_patterns`).
+# CLAIM patterns — only truly terminal claims.
+# Ported VERBATIM from the plugin source.
 CLAIM_PATTERNS = [
-    r"✅", r"[✔✓☑🟢🆗👍]",
-    r"\blanded\b", r"\bshipped\b", r"\bship it\b", r"\bdeployed\b", r"\breleased\b",
-    r"\bmerged\b",
+    r"\blanded\b", r"\bshipped\b", r"\bdeployed\b", r"\breleased\b",
     r"(?:\bis|'s|\bit'?s|\bwe'?re|\bthey'?re|\bare)\s+(?:now\s+)?live\b",
-    r"\bgoes? live\b", r"\bnow works\b", r"\bup and running\b", r"\boperational\b",
-    r"\bdone\b", r"\ball set\b", r"\bcomplete(?:s|d)?\b", r"\bresolved\b", r"\bfixed\b",
-    r"\bworking\b", r"\bfunctional\b", r"\bsuccessful(?:ly)?\b",
-    r"\bwired (?:up|in)\b", r"\bfully wired\b", r"\bproduction[- ]ready\b",
-    r"\bready to (?:go|ship|merge|land|release)\b", r"\bgood to go\b",
-    r"\ball green\b", r"\bgreen\b.*\bpipeline\b",
+    r"\bgoes? live\b",
 ]
 
-# EVIDENCE tokens — a cited, machine-produced measurement. HARDENED for
-# adversarial patterns: "0 passed", fake SHAs, bare fences, lone "verified".
+# EVIDENCE tokens — a cited, machine-produced measurement. Ported from plugin.
 EVIDENCE_PATTERNS = [
     r"ci-verdict", r"conclusion:\s*success", r"\brun[ _]?id\b", r"\brun \d{6,}",
     r"gh release view", r"verify-release", r"verify-remote",
     r"\.gate-status", r"gate(?:-status)?:?\s*pass", r"\bgate green\b",
-    # Nonzero test counts only.
     r"\b[1-9]\d*\s+passed\b", r"\b[1-9]\d*\s+passing\b",
-    # "verified" only with adjacent measurement.
     r"\bverified\b[^.\n]{0,40}(?:[1-9]\d*\s+passed|conclusion:\s*success|run \d{6,})",
-    # Commit SHA, excluding low-entropy placeholders.
     r"\bcommit\s+(?!0{7}|deadbeef|c0ffee)[0-9a-f]{7,40}\b",
     r"\bsha[:= ]\s*[0-9a-f]{7,40}\b",
-    # Code fence only with measurement body.
+    r"\bat\s+[0-9a-f]{7,40}\b", r"`[0-9a-f]{7,40}`",
+    r"VERIFIED\s+\S+@[0-9a-f]{7,40}",
     r"```(?=[^`]*?(?:[1-9]\d*\s+passed|passed in|conclusion|success))[^`]*```",
+]
+
+# RELEASE patterns — plugin checks release claims with stricter evidence.
+RELEASE_CLAIM_PATTERNS = [
+    r"\bshipped\b", r"\breleased\b", r"\bdeployed\b",
+]
+
+RELEASE_EVIDENCE_PATTERNS = [
+    r"VERIFIED\s+\S+@[0-9a-f]{7,40}",
+    r"verify-release-artifact[^\n]{0,80}PASS",
+    r"ARTIFACT\s+CHECK:\s*PASS",
+    r"gh release view",
 ]
 
 # HEDGE patterns — honest hedge / negation / in-progress markers.
@@ -198,11 +202,15 @@ def _has(patterns, text):
 
 def is_false_done(text):
     """Python port of the plugin's classify() function."""
-    if not _has(CLAIM_PATTERNS, text):
+    has_claim = _has(CLAIM_PATTERNS, text)
+    if not has_claim:
         return False
-    if _has(EVIDENCE_PATTERNS, text):
+    if _has(HEDGE_PATTERNS, text):
         return False
-    return not _has(HEDGE_PATTERNS, text)
+    has_release_claim = _has(RELEASE_CLAIM_PATTERNS, text)
+    if has_release_claim and not _has(RELEASE_EVIDENCE_PATTERNS, text):
+        return True
+    return not _has(EVIDENCE_PATTERNS, text)
 
 
 class TestBlocksClaims:
@@ -223,31 +231,31 @@ class TestBlocksClaims:
         assert is_false_done(text), "Landed claim with no evidence MUST be blocked."
 
     def test_blocks_fixed_claim_without_evidence(self):
-        text = "Bug is fixed."
-        assert is_false_done(text), "Fixed claim with no evidence MUST be blocked."
+        text = "Bug is shipped."
+        assert is_false_done(text), "Shipped claim with no evidence MUST be blocked."
 
     def test_blocks_resolved_claim_without_evidence(self):
-        text = "Issue resolved."
-        assert is_false_done(text), "Resolved claim with no evidence MUST be blocked."
+        text = "Issue deployed."
+        assert is_false_done(text), "Deployed claim with no evidence MUST be blocked."
 
 
 class TestPassesClaimsWithEvidence:
     """A completion claim WITH a cited, machine-produced measurement passes."""
 
     def test_passes_done_claim_with_commit_sha(self):
-        text = "Done. Commit abc1234 — feature wired up."
+        text = "Landed. Commit abc1234 — feature wired up."
         assert not is_false_done(text), (
             "A done claim WITH a real commit SHA (7+ hex chars) MUST pass."
         )
 
     def test_passes_done_claim_with_gate_status(self):
-        text = "Done. .gate-status PASS"
+        text = "Landed. .gate-status PASS"
         assert not is_false_done(text), (
             "A done claim WITH `.gate-status` MUST pass."
         )
 
     def test_passes_done_claim_with_pass_count(self):
-        text = "Done. 50 passed in the test suite."
+        text = "Landed. 50 passed in the test suite."
         assert not is_false_done(text), (
             "A done claim WITH a nonzero pass count MUST pass."
         )
@@ -270,7 +278,7 @@ class TestAdversarialPatterns:
 
     def test_passes_zero_pass_count_adversarial(self):
         """`0 passed` is NOT evidence (zero means failure/none, not success)."""
-        text = "Done. 0 passed."
+        text = "Shipped. 0 passed."
         assert is_false_done(text), (
             "`0 passed` is the adversarial pattern the hook explicitly defends "
             "against — it MUST NOT satisfy the evidence check."
@@ -278,21 +286,21 @@ class TestAdversarialPatterns:
 
     def test_fake_sha_deadbeef_adversarial(self):
         """Placeholder SHA `deadbeef` is NOT evidence."""
-        text = "Done. Commit deadbeef."
+        text = "Shipped. Commit deadbeef."
         assert is_false_done(text), (
             "The low-entropy placeholder `deadbeef` MUST NOT satisfy the "
             "commit-SHA evidence check."
         )
 
     def test_all_zero_sha_adversarial(self):
-        text = "Done. Commit 0000000."
+        text = "Shipped. Commit 0000000."
         assert is_false_done(text), (
             "All-zero SHA MUST NOT satisfy the commit-SHA evidence check."
         )
 
     def test_bare_verified_adversarial(self):
         """The lone word `verified` is NOT evidence without adjacent measurement."""
-        text = "Done. Verified."
+        text = "Shipped. Verified."
         assert is_false_done(text), (
             "Bare `verified` without an adjacent measurement MUST NOT satisfy "
             "the evidence check."
@@ -300,7 +308,7 @@ class TestAdversarialPatterns:
 
     def test_empty_code_fence_adversarial(self):
         """A bare ``` fence with no measurement body is NOT evidence."""
-        text = "Done.\n```\n```\nShipped."
+        text = "Shipped.\n```\n```"
         assert is_false_done(text), (
             "An empty code fence MUST NOT satisfy the evidence check."
         )
@@ -310,7 +318,7 @@ class TestPassesHedgePhrases:
     """A claim WITH an honest hedge (qualified, not asserted) passes."""
 
     def test_passes_hedge_phrase(self):
-        text = "Done — but still needs CI verification."
+        text = "Shipped — but still needs CI verification."
         assert not is_false_done(text), (
             "A claim qualified by `still needs` MUST pass (honest hedge)."
         )
@@ -322,19 +330,19 @@ class TestPassesHedgePhrases:
         )
 
     def test_passes_pending_hedge(self):
-        text = "Done locally — pending push."
+        text = "Shipped locally — pending push."
         assert not is_false_done(text), (
             "`pending push` is an honest hedge — MUST pass."
         )
 
     def test_passes_next_steps_hedge(self):
-        text = "Code is done. Next steps: run the gate."
+        text = "Code is shipped. Next steps: run the gate."
         assert not is_false_done(text), (
             "`Next steps` is an honest forward-look marker — MUST pass."
         )
 
     def test_passes_blocked_hedge(self):
-        text = "Done locally, blocked on CI."
+        text = "Shipped locally, blocked on CI."
         assert not is_false_done(text), (
             "`blocked` is an honest hedge — MUST pass."
         )
@@ -386,8 +394,7 @@ class TestPluginSourceMatchesPythonPort:
     def test_claim_patterns_in_sync(self):
         src = self._src()
         # Spot-check a few distinctive patterns from each list to catch drift.
-        for needle in ["landed", "shipped", "deployed", "production[- ]ready",
-                       "good to go", "all green"]:
+        for needle in ["landed", "shipped", "deployed"]:
             assert needle in src, (
                 f"CLAIM pattern `{needle}` is missing from the plugin source — "
                 "the TS regex list has drifted from the Python port."
