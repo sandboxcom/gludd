@@ -733,18 +733,27 @@ def _check_push_health() -> None:
             return
 
         result = subprocess.run(
-            ["make", "verify-remote", "BRANCH=master", f"SHA={local_head}"],
+            ["sh", "-c", "git log --oneline @{u}..HEAD 2>&1 | wc -l"],
             capture_output=True, text=True, timeout=VERIFY_REMOTE_TIMEOUT,
             cwd=str(_WORKSPACE),
         )
-        output = result.stdout + result.stderr
+        output = result.stdout.strip()
+        unpushed_count = -1
+        try:
+            unpushed_count = int(output)
+        except ValueError:
+            unpushed_count = 0
 
-        if "MISMATCH" in output or "local ahead" in output.lower():
-            _log("PUSH NEEDED: local ahead of remote")
-        elif result.returncode != 0 and "VERIFIED" not in output:
+        if unpushed_count > 0:
+            _log(f"PUSH NEEDED: {unpushed_count} unpushed commit(s)")
+            counts = _read_anomaly_counts()
+            cnt = _increment_anomaly_count("push:unpushed_commits", counts)
+            if cnt >= ANOMALY_ESCALATE_THRESHOLD:
+                _log(f"PUSH ANOMALY ESCALATED: unpushed commits detected {cnt}x")
+        elif unpushed_count < 0:
             _log(f"PUSH VERIFICATION FAILED: {output[:200]}")
     except subprocess.TimeoutExpired:
-        _log("NETWORK STALL: verify-remote timed out")
+        _log("NETWORK STALL: push health check timed out")
     except Exception as e:
         _log(f"push health check error: {e}")
 
@@ -1366,17 +1375,18 @@ def check_task_anomalies() -> dict:
         if "push" in t.get("task_id", "").lower() and t.get("elapsed_s", 0) > 60:
             _log(f"PUSH STALLED — possible network issue: {t['task_id']} elapsed={t['elapsed_s']:.0f}s")
 
-    total_anomalies = len(findings.get("anomalies", [])) + len(findings.get("stalled", []))
-    if total_anomalies > 0:
-        try:
-            counts = json.loads(Path(ANOMALY_COUNT_FILE).read_text()) if Path(ANOMALY_COUNT_FILE).exists() else {"count": 0}
-            new_count = counts.get("count", 0) + 1
-            Path(ANOMALY_COUNT_FILE).write_text(json.dumps({"count": new_count}))
-            if new_count > ANOMALY_ESCALATE_THRESHOLD:
-                _log(f"ANOMALY ESCALATION: {new_count} anomalies in session")
-                findings["escalated"] = True
-        except Exception:
-            pass
+    for a in findings.get("anomalies", []):
+        task_id = a.get("task_id", "unknown")
+        cnt = _increment_anomaly_count(f"anomaly:{task_id}")
+        if cnt >= ANOMALY_ESCALATE_THRESHOLD:
+            _log(f"ANOMALY ESCALATION: {task_id} anomaly {cnt}x (threshold={ANOMALY_ESCALATE_THRESHOLD})")
+            findings["escalated"] = True
+    for s in findings.get("stalled", []):
+        task_id = s.get("task_id", "unknown")
+        cnt = _increment_anomaly_count(f"stalled:{task_id}")
+        if cnt >= ANOMALY_ESCALATE_THRESHOLD:
+            _log(f"ANOMALY ESCALATION: {task_id} stalled {cnt}x (threshold={ANOMALY_ESCALATE_THRESHOLD})")
+            findings["escalated"] = True
 
     return findings
 

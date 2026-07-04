@@ -9,10 +9,11 @@
 
 ## Current Work
 
-- **HEAD: `7d577a94`** on master — all pushed to sandboxcom/master (VERIFIED master@7d577a9495d606de5255d811e551649b38e91d64).
+- **HEAD: `e72e0219`** on master — regenerate README after watchdog anomaly detection. Prior: `7d577a94`.
+
 - **README PENDING count**: 13 items (G1–G13 in Feature & Task Completion Status table).
-- **README status table refreshed** with 8 new features (audit endpoints, agent watchdog, pause/resume, dispatcher pause gate, push livelock escape, ToolCallAuditor, PromptEnhancer, BadCallSituationStore).
-- **Agent watchdog enhanced** (commits `276838f7` through `12be174c`):
+- **README status table refreshed** with 8 new features.
+- **Agent watchdog enhanced** (commits `276838f7` through `3e7f9185`):
   - 10s polling interval for task liveness detection
   - Auto-start on `session.created` lifecycle event
   - Idle detection: flags sessions with no events > idle threshold
@@ -31,6 +32,10 @@
 
 | Hash | Message |
 |------|---------|
+| `3e7f9185` | fix(watchdog): kill stalled tasks running >60s |
+| `9f9ce2de` | fix(watchdog): CI anomaly detection, 49/49 tests pass |
+| `ccfc7de9` | fix(test): repair F821 undefined name errors in watchdog tests |
+| `1618d19f` | fix(test): remove duplicate test definitions in watchdog tests |
 | `12be174c` | fix(watchdog): task timing anomaly detection — kill stalled ops, track durations |
 | `da4a6078` | fix(watchdog): task anomaly detection — add tests for slow/stalled/normal tasks |
 | `ef090e55` | fix(watchdog): task duration anomaly detection — flag stalled tasks >5min or >3x avg history |
@@ -60,13 +65,10 @@
 
 1. **RESTART OPENCODE** for enforcement fixes to take effect.
 
-## Current Gate Status (2026-07-03)
+## Current Gate Status (2026-07-04)
 <!-- gate:begin -->
-- **Targeted tests**: 89 passed, 0 failed
-- **Lint**: 0 errors
-- **Typecheck**: 0 errors (Success: no issues found in 501 source files)
-- **Collect-check**: 2 pre-existing collection errors (test_agent_watchdog.py, test_floor_controller.py — not from this session)
-- **Push**: VERIFIED master@17ebd55e via sandboxcom
+- **Last full PASS**: 2026-07-04T06:30 — lint 0, typecheck 0, collect 0
+- **Push**: pending verify for HEAD `3e7f9185`
 
 <!-- gate:end -->
 
@@ -75,7 +77,7 @@
 
 ## Historical State
 
-- **2026-07-04 (current)**: HEAD `12be174c`. Watchdog enhanced: 10s polling, session.created auto-start, idle detection, task anomaly detection with stalled-task kill and duration tracking. README has 13 PENDING items (G1–G13). Gate RUNNING, ~39% phase 4/5.
+- **2026-07-04 (current)**: HEAD `3e7f9185`. Watchdog enhanced: 10s polling, session.created auto-start, idle detection, task anomaly detection with stalled-task kill (>60s) and duration tracking. README has 13 PENDING items (G1–G13). Gate RUNNING.
 - **2026-07-01**: HEAD `8ed0ed1f`. CI fix wave active: caplog propagate session fixture, dist/artifact CI skip guards, roles/.gitkeep test acceptance, dist readiness stubs in CI_DIST mode, facts_facets osquery fix, tasks_tick check fix, to_thread mock fix, project_local env fix, ansible-syntax path fix, hostile MCP mocks fix. 15,685 tests collected. 26 commits ahead of sandboxcom/master. CI failures narrowed to ~53. Gate prereqs green (lint 0, typecheck 0, collect 0). 3 remaining plugins need response.transform migration. Alpha.5 still not shipped.
 - **2026-06-30**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real. `enforce-false-done.ts` has RELEASE_CLAIM_PATTERNS + RELEASE_EVIDENCE_PATTERNS. 4 missing plugins registered in opencode.json — now 9 total. CRITICAL GAP: `experimental.chat.response.transform` dead code. ~24 commits pushed across multiple waves. Major features: kubernetes deployment, 5 llama.cpp stacks, 4 cloud providers, guided decoding, deployment health + self-healing router. enforce-stop hardened to HARD STOP. All targeted suites green (214+).
 - **2026-06-29**: Recovery wave landed 11+ commits. Phase MP committed. CI RED.
