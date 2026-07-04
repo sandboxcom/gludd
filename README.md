@@ -176,7 +176,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Secrets lifecycle red-team (#53) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #53 DONE-VERIFIED]` |
 | Gateway concurrency red-team (#54) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #54 DONE-VERIFIED]` |
 | Self-modification guards (#58) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #58 DONE-VERIFIED]` |
-| Ansible SSTI red-team (#50) | ✗ 100% | **PENDING** *(file-refs only)*: `[audit #50 DONE-VERIFIED]` |
+| Ansible SSTI red-team (#50) | ✓ 100% | **PASS** *(file-refs only)*: 14 passed; `[514bce93]` |
 | Skill renderer SSTI fix (SandboxedEnvironment) | ✓ 100% | **PASS** *(file-refs only)*: `renderer.py:68`; `[audit BUG-1 DONE-VERIFIED]` |
 | SSRF connector consolidation: 18 connectors onto canonical is_url_blocked (tranche-3 + tranche-4) | ✓ 100% | **PASS** *(file-refs only)*: grafana_loki signoz nats kafka_exporter splunk_observability rabbitmq elastic_apm tempo_zipkin travis appdynamics k8s_events gcp_observability gcp_asset_inventory bugsnag graphite rollbar cloudflare cilium_hubble; _ssrf_guard.py deleted; `[9f935551]` `[2d775c2a]` |
 | pause_store fail-closed hardening: MAC verification, keyfile checks, size cap (#60) | ✓ 100% | **PASS** *(file-refs only)*: 10+11 tests passed; .keyed marker + MAC-sidecar; `[3597559a]` |
@@ -271,7 +271,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Molecule CI job | ✓ 75%(local) | **PASS** *(file-refs only)*: locally 49/49; CI-green unverified; `[audit]` |
 | dist packs LICENSE + SBOM + no build-machine paths | ✓ 100% | **PASS** *(file-refs only)*: 6 passed; `[526104b]` |
 | Pre-commit hooks (detect-secrets, ruff, no-tracked-keys, etc.) | ✓ 100% | **PASS** *(file-refs only)*: `make install-hooks`; enforcing since `[7035e8c]` |
-| make dogfood passes self-hosting | ✗ 50% | **PENDING**: PASSES; no API key required (monkeypatches dispatch); dogfood Makefile target removed — src/general_ludd/dogfood/orchestrator.py still exists |
+| make dogfood passes self-hosting | ✗ 50% | **PENDING** *(file-refs only)*: dogfood target EXISTS (Makefile:1672, calls scripts/dogfood.py) but FAILS: patched_dispatch() monkeypatch on _dispatch_execute_job is stale — missing _variable_repo_override param added in EventLoop._dispatch_execute_job (loop.py:1496). e2e tests pass but only exercise mock/offline paths; live todo-website scenario skipped. src/general_ludd/dogfood/orchestrator.py still exists. |
 | Operator SSH key rotation + history scrub | ✗ 0% | **PENDING**: explicitly out-of-agent-scope; operator action required; `TASKS.md:W5.1` |
 | Wave 3 merge to master | ✗ 100% | **PENDING** *(file-refs only)*: feature/wave3-ship-final already merged to master 72c31576 |
 | CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x) | ✓ 100% | **PASS** *(file-refs only)*: 15+ fixes across Q3.1–Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]` |
@@ -296,7 +296,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | W3.6 per-item proof table (50 G/S/F/M proofs, 0 GAP) | ✓ 100% | **PASS** *(file-refs only)*: `TASKS.md:167-246`; 50 named tests; `[6915362]`; caveat: ~5-6 pass tests of partially-inert prod code |
 | pydantic-settings UserConfig + GLUDD_ env prefix (W4.4) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed; `[15db868]` |
 | Watchdog FileWatcher in integrity scanner (W4.3) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed + 3 xpassed; `[15db868]` |
-| deptry installed; langchain/langgraph deferred (W4.5) | ✗ 0% | **PENDING**: `[15db868]`; test file not committed |
+| deptry installed; langchain/langgraph deferred (W4.5) | ✓ 80% | **PASS** *(file-refs only)*: `make deps-audit` runs deptry successfully (79 findings); langchain/langgraph deferred by design; no dedicated test file; `[15db868]` |
 | README claims measured / no hardcoded numbers (W5.5) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed; `[526104b]` |
 | `make release-cut` target exists and runs (enforcement of this table) | ~ 100% | **PARTIAL** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
 

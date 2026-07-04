@@ -490,8 +490,8 @@ sections:
         title: "Ansible SSTI red-team (#50)"
         pct: 100
         evidence_refs:
-          - "test:tests/security/test_ansible_ssti_redteam.py"
-        notes: "`[audit #50 DONE-VERIFIED]`"
+          - "test:tests/unit/test_ansible_ssti_guard.py"
+        notes: "14 passed; `[514bce93]`"
 
       - id: skill-renderer-ssti
         title: "Skill renderer SSTI fix (SandboxedEnvironment)"
@@ -1028,6 +1028,7 @@ sections:
         pct: 100
         evidence_refs:
           - "file:Makefile::typecheck"
+          - "test:tests/unit/test_type_safety_guardrails.py"
         notes: "`.gate-status typecheck PASS 0`; `MYPY_MAX=0`; `[526104b]`"
 
       - id: alembic-stamp-head
@@ -1118,8 +1119,10 @@ sections:
       - id: dogfood-passes
         title: "make dogfood passes self-hosting"
         pct: 50
-        evidence_refs: []
-        notes: "PASSES; no API key required (monkeypatches dispatch); dogfood Makefile target removed — src/general_ludd/dogfood/orchestrator.py still exists"
+        evidence_refs:
+          - "cmd:make dogfood -> FAILS (patched_dispatch missing _variable_repo_override kwarg; scripts/dogfood.py:190)"
+          - "test:tests/e2e/dogfood/ -> 3 passed, 1 skipped (mock-only)"
+        notes: "dogfood target EXISTS (Makefile:1672, calls scripts/dogfood.py) but FAILS: patched_dispatch() monkeypatch on _dispatch_execute_job is stale — missing _variable_repo_override param added in EventLoop._dispatch_execute_job (loop.py:1496). e2e tests pass but only exercise mock/offline paths; live todo-website scenario skipped. src/general_ludd/dogfood/orchestrator.py still exists."
 
       - id: ssh-key-rotation
         title: "Operator SSH key rotation + history scrub"
@@ -1265,9 +1268,11 @@ sections:
 
       - id: w4-5-deptry
         title: "deptry installed; langchain/langgraph deferred (W4.5)"
-        pct: 0
-        evidence_refs: []
-        notes: "`[15db868]`; test file not committed"
+        pct: 80
+        evidence_refs:
+          - "file:Makefile::deps-audit"
+          - "file:pyproject.toml::deptry"
+        notes: "`make deps-audit` runs deptry successfully (79 findings); langchain/langgraph deferred by design; no dedicated test file; `[15db868]`"
 
       - id: w5-5-readme-no-hardcoded
         title: "README claims measured / no hardcoded numbers (W5.5)"
