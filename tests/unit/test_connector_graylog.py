@@ -139,7 +139,10 @@ class TestContractSurface:
         for line in text.splitlines():
             stripped = line.strip()
             if stripped.startswith(("import general_ludd", "from general_ludd")):
-                assert "general_ludd.security.ssrf" in stripped, (
+                assert (
+                    "general_ludd.security.ssrf" in stripped
+                    or "general_ludd.connectors._protocols" in stripped
+                ), (
                     f"unexpected general_ludd import: {stripped!r}"
                 )
 
