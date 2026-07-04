@@ -1258,6 +1258,8 @@ def _detect_task_type(task_id: str, tasks_dir: Path | None = None) -> str:
         return "test"
     if any(kw in tid for kw in ("research", "read", "audit", "review", "explore", "find", "scan")):
         return "research"
+    if any(kw in tid for kw in ("push", "ship")):
+        return "push"
     return "default"
 
 
@@ -1266,6 +1268,7 @@ EX_TASK_DURATIONS: dict[str, float] = {
     "gate": 2400.0,
     "test": 1800.0,
     "research": 120.0,
+    "push": 10.0,
 }
 
 EX_TASKS_DIR = os.environ.get("GLUDD_TASKS_DIR", "/tmp/gludd-tasks")
@@ -1286,65 +1289,61 @@ def check_task_anomalies() -> dict:
     global _alerted_anomalies
     findings: dict = {"tasks": [], "anomalies": [], "stalled": [], "ts": _now()}
 
-    try:
-        dl_path = Path(TASK_DEADLINES_FILE)
-        if not dl_path.exists():
-            return findings
-        raw = json.loads(dl_path.read_text())
-    except Exception:
-        return findings
+    dl_path = Path(TASK_DEADLINES_FILE)
+    if dl_path.exists():
+        try:
+            raw = json.loads(dl_path.read_text())
+            if isinstance(raw, dict):
+                now_epoch = time.time()
+                stalled_set = _load_stalled_tasks()
 
-    if not isinstance(raw, dict):
-        return findings
+                for task_id, value in raw.items():
+                    if isinstance(value, (int, float)):
+                        start_ts = value / 1000.0 if value > 1e11 else value
+                        command = ""
+                    elif isinstance(value, dict):
+                        start_ts = value.get("start_ts", 0)
+                        if not start_ts:
+                            continue
+                        command = value.get("command", "")
+                    else:
+                        continue
 
-    now_epoch = time.time()
-    stalled_set = _load_stalled_tasks()
+                    elapsed = now_epoch - start_ts
 
-    for task_id, value in raw.items():
-        if isinstance(value, (int, float)):
-            start_ts = value / 1000.0 if value > 1e11 else value
-            command = ""
-        elif isinstance(value, dict):
-            start_ts = value.get("start_ts", 0)
-            if not start_ts:
-                continue
-            command = value.get("command", "")
-        else:
-            continue
+                    if command:
+                        expected = _find_expected_duration(command)
+                    else:
+                        task_type = _detect_task_type(task_id)
+                        expected = EX_TASK_DURATIONS.get(task_type, EX_TASK_DURATIONS["default"])
 
-        elapsed = now_epoch - start_ts
+                    if expected is None:
+                        continue
 
-        if command:
-            expected = _find_expected_duration(command)
-        else:
-            task_type = _detect_task_type(task_id)
-            expected = EX_TASK_DURATIONS.get(task_type, EX_TASK_DURATIONS["default"])
+                    entry: dict = {
+                        "task_id": task_id,
+                        "elapsed_s": round(elapsed, 1),
+                        "expected_s": expected,
+                    }
+                    findings["tasks"].append(entry)
 
-        if expected is None:
-            continue
+                    if elapsed > expected * 5:
+                        findings["stalled"].append(entry)
+                        if task_id not in stalled_set:
+                            _log(f"TASK STALLED: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
+                            _record_stalled(task_id)
+                    elif elapsed > expected * 2:
+                        findings["anomalies"].append(entry)
+                        if task_id not in _alerted_anomalies:
+                            _log(f"TASK ANOMALY: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
+                            _alerted_anomalies.add(task_id)
 
-        entry: dict = {
-            "task_id": task_id,
-            "elapsed_s": round(elapsed, 1),
-            "expected_s": expected,
-        }
-        findings["tasks"].append(entry)
-
-        if elapsed > expected * 5:
-            findings["stalled"].append(entry)
-            if task_id not in stalled_set:
-                _log(f"TASK STALLED: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
-                _record_stalled(task_id)
-        elif elapsed > expected * 2:
-            findings["anomalies"].append(entry)
-            if task_id not in _alerted_anomalies:
-                _log(f"TASK ANOMALY: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
-                _alerted_anomalies.add(task_id)
-
-    try:
-        Path(EX_ANOMALIES_FILE).write_text(json.dumps(findings, indent=2))
-    except Exception:
-        pass
+                try:
+                    Path(EX_ANOMALIES_FILE).write_text(json.dumps(findings, indent=2))
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # Check gate background process
     try:

@@ -223,8 +223,6 @@ def _write_output(tmp_path: Path, name: str, body: str, age_secs: float = 300.0)
     p.write_text(body, encoding="utf-8")
     # Backdate mtime so the file is older than the default window
     target_mtime = time.time() - age_secs
-    import os
-
     os.utime(p, (target_mtime, target_mtime))
     return p
 
@@ -519,6 +517,60 @@ def test_push_stalled_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
 def test_watchdog_10s_poll_interval():
     assert POLL_SECS == 10
+
+
+# ── check_task_anomalies: gate stalled ──────────────────────────────────────
+
+
+def test_task_anomaly_gate_stalled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
+    deadlines_file = tmp_path / "deadlines.json"
+    deadlines_file.write_text("{}")
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_file))
+
+    gate_pid_file = tmp_path / "gate-pid"
+    gate_pid_file.write_text("12345\n")
+    old_mtime = time.time() - 3000  # 50 min ago, >45 min threshold
+    import os as _os
+    _os.utime(gate_pid_file, (old_mtime, old_mtime))
+    monkeypatch.setattr(aw, "GATE_PID_FILE", gate_pid_file)
+
+    monkeypatch.setattr(aw, "STALLED_TASKS_FILE", str(tmp_path / "stalled.txt"))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+    monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "anomalies.json"))
+    monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
+    monkeypatch.setattr(aw, "_alerted_anomalies", set())
+
+    result = aw.check_task_anomalies()
+
+    stalled_ids = [e["task_id"] for e in result.get("stalled", [])]
+    assert "gate-process" in stalled_ids
+
+
+# ── check_task_anomalies: push stalled log ──────────────────────────────────
+
+
+def test_push_stalled_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
+    start_epoch = time.time() - 120  # 120s ago — triggers push stall (elapsed>60)
+
+    deadlines_file = tmp_path / "deadlines.json"
+    deadlines_file.write_text(
+        json.dumps({"task-git-push-main": {"start_ts": start_epoch, "command": "make git-push-main"}})
+    )
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_file))
+
+    monkeypatch.setattr(aw, "GATE_PID_FILE", tmp_path / "nonexistent-gate-pid")
+    monkeypatch.setattr(aw, "STALLED_TASKS_FILE", str(tmp_path / "stalled.txt"))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+    monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "anomalies.json"))
+    monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
+    monkeypatch.setattr(aw, "_alerted_anomalies", set())
+
+    result = aw.check_task_anomalies()
+
+    assert len(result.get("stalled", [])) == 0
+
+    captured = capsys.readouterr()
+    assert "PUSH STALLED" in captured.out
 
 
 def _setup_no_reset(monkeypatch, tmp_path):
