@@ -1,0 +1,6 @@
+---
+gha_billing_repo: "sandboxcom/gludd"
+gha_billing_owner: "sandboxcom"
+gha_billing_critical_threshold_percent: 90
+gha_billing_critical_threshold_minutes: 100
+gha_billing_token_source: "env"

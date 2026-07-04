@@ -1,0 +1,9 @@
+---
+- name: Prepare — no-op (mock data is inline in role)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: No preparation needed for mock mode
+      ansible.builtin.debug:
+        msg: "gha_billing role uses inline mock data — no external mock daemon needed"

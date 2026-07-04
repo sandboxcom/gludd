@@ -1,0 +1,122 @@
+---
+- name: MOCK — use canned billing data
+  ansible.builtin.set_fact:
+    _gha_billing:
+      total_minutes_used: 350
+      included_minutes: 2000
+      total_paid_minutes_used: 0
+      minutes_used_breakdown:
+        UBUNTU: 200
+        MACOS: 100
+        WINDOWS: 50
+    _gha_account_plan:
+      plan:
+        name: free
+    _gha_billing_ready: true
+  when: gha_billing_token_source == 'mock'
+
+- name: env — fetch billing usage via GITHUB_TOKEN
+  ansible.builtin.command:
+    argv:
+      - gh
+      - api
+      - "/orgs/{{ gha_billing_owner }}/settings/billing/actions"
+  environment:
+    GITHUB_TOKEN: "{{ lookup('env', 'GITHUB_TOKEN') }}"
+  register: _gha_billing_result
+  changed_when: false
+  failed_when: false
+  when: gha_billing_token_source == 'env'
+
+- name: gh_cli — fetch billing usage
+  ansible.builtin.command:
+    argv:
+      - gh
+      - api
+      - "/orgs/{{ gha_billing_owner }}/settings/billing/actions"
+  register: _gha_billing_result
+  changed_when: false
+  failed_when: false
+  when: gha_billing_token_source == 'gh_cli'
+
+- name: Parse billing JSON
+  ansible.builtin.set_fact:
+    _gha_billing: "{{ _gha_billing_result.stdout | from_json }}"
+    _gha_billing_ready: true
+  when:
+    - gha_billing_token_source != 'mock'
+    - _gha_billing_result.rc == 0
+    - _gha_billing_result.stdout | length > 0
+
+- name: Fetch account plan (non-mock)
+  ansible.builtin.command:
+    argv:
+      - gh
+      - api
+      - "/users/{{ gha_billing_owner }}/settings/billing/actions"
+  register: _gha_account_plan_raw
+  changed_when: false
+  failed_when: false
+  when: gha_billing_token_source != 'mock'
+
+- name: Parse plan JSON
+  ansible.builtin.set_fact:
+    _gha_account_plan: "{{ _gha_account_plan_raw.stdout | from_json }}"
+  when:
+    - gha_billing_token_source != 'mock'
+    - _gha_account_plan_raw.rc == 0
+    - _gha_account_plan_raw.stdout | length > 0
+
+- name: Set billing fallback
+  ansible.builtin.set_fact:
+    _gha_billing: {}
+  when: _gha_billing is not defined
+
+- name: Set plan fallback
+  ansible.builtin.set_fact:
+    _gha_account_plan:
+      plan:
+        name: unknown
+  when: _gha_account_plan is not defined
+
+- name: Extract billing fields
+  ansible.builtin.set_fact:
+    _billing_total_used: "{{ _gha_billing.total_minutes_used | default(0) | int }}"
+    _billing_included: "{{ _gha_billing.included_minutes | default(0) | int }}"
+    _billing_paid_used: "{{ _gha_billing.total_paid_minutes_used | default(0) | int }}"
+    _plan_name: "{{ _gha_account_plan.plan.name | default('unknown') }}"
+
+- name: Compute remaining and percent
+  ansible.builtin.set_fact:
+    _billing_remaining: "{{ _billing_included | int - _billing_total_used | int }}"
+    _billing_percent_used: >-
+      {{ (_billing_total_used | float / _billing_included | float * 100) | round(1)
+         if _billing_included | int > 0 else 0.0 }}
+
+- name: Determine critical status
+  ansible.builtin.set_fact:
+    _billing_critical: >-
+      {{ _billing_remaining | int < gha_billing_critical_threshold_minutes | int
+         or _billing_percent_used | float > gha_billing_critical_threshold_percent | float }}
+
+- name: Set gha_billing facts
+  ansible.builtin.set_fact:
+    gha_billing:
+      plan: "{{ _plan_name }}"
+      used_minutes: "{{ _billing_total_used | int }}"
+      included_minutes: "{{ _billing_included | int }}"
+      remaining_minutes: "{{ _billing_remaining | int }}"
+      percent_used: "{{ _billing_percent_used | float }}"
+      paid_minutes_used: "{{ _billing_paid_used | int }}"
+      critical: "{{ _billing_critical | bool }}"
+      breakdown: "{{ _gha_billing.minutes_used_breakdown | default({}) }}"
+
+- name: Display billing summary
+  ansible.builtin.debug:
+    msg: >-
+      GitHub Actions billing for {{ gha_billing_owner }}:
+      Plan: {{ _plan_name }},
+      Used: {{ _billing_total_used }} / {{ _billing_included }} min
+      ({{ _billing_percent_used }}%),
+      Remaining: {{ _billing_remaining }} min
+      {% if _billing_critical %}CRITICAL: usage exceeds threshold{% endif %}

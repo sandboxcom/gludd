@@ -1,0 +1,51 @@
+---
+- name: Verify — gha_billing fact structure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run role to populate facts
+      ansible.builtin.include_role:
+        name: general_ludd.agent.gha_billing
+      vars:
+        gha_billing_token_source: "mock"
+
+    - name: Assert gha_billing fact exists and has required fields
+      ansible.builtin.assert:
+        that:
+          - gha_billing is defined
+          - gha_billing.plan is defined
+          - gha_billing.plan == "free"
+          - gha_billing.used_minutes is defined
+          - gha_billing.used_minutes | int == 350
+          - gha_billing.included_minutes is defined
+          - gha_billing.included_minutes | int == 2000
+          - gha_billing.remaining_minutes is defined
+          - gha_billing.remaining_minutes | int == 1650
+          - gha_billing.percent_used is defined
+          - gha_billing.percent_used | float == 17.5
+          - gha_billing.paid_minutes_used is defined
+          - gha_billing.paid_minutes_used | int == 0
+          - gha_billing.critical is defined
+          - gha_billing.critical | bool == false
+          - gha_billing.breakdown is defined
+          - gha_billing.breakdown.UBUNTU | int == 200
+          - gha_billing.breakdown.MACOS | int == 100
+          - gha_billing.breakdown.WINDOWS | int == 50
+        fail_msg: "gha_billing fact structure mismatch: {{ gha_billing | default('undefined') }}"
+        success_msg: "gha_billing fact structure correct"
+
+    - name: Assert remaining minutes are positive
+      ansible.builtin.assert:
+        that:
+          - gha_billing.remaining_minutes | int >= 0
+        fail_msg: "remaining minutes should be >= 0: {{ gha_billing.remaining_minutes }}"
+        success_msg: "remaining minutes positive: {{ gha_billing.remaining_minutes }}"
+
+    - name: Assert percent is within valid range
+      ansible.builtin.assert:
+        that:
+          - gha_billing.percent_used | float >= 0
+          - gha_billing.percent_used | float <= 100
+        fail_msg: "percent out of range: {{ gha_billing.percent_used }}"
+        success_msg: "percent valid: {{ gha_billing.percent_used }}%"
