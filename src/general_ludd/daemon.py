@@ -30,6 +30,7 @@ from general_ludd.controllers.budget import RunBudgetGuard
 from general_ludd.db.repository import (
     AuditEventRepository,
     BenchmarkRepository,
+    MemoryRepository,
     ModelPerformanceRepository,
 )
 from general_ludd.db.session import (
@@ -1263,6 +1264,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
         app.state._spend_limiter = spend_limiter
 
+        memory_repo = MemoryRepository(session_factory=session_factory)
+        app.state._memory_repo = memory_repo
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -1315,6 +1319,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             ansible_env_updater=getattr(app.state, "_ansible_env_updater", None),
             deployment_health_router=deployment_health_router,
             pause_controller=getattr(app.state, "_pause_controller", None),
+            memory_repo=memory_repo,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner

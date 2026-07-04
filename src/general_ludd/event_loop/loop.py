@@ -250,6 +250,7 @@ class EventLoop:
         model_perf_repo: Any | None = None,
         model_performance_interval: int = 10,
         deployment_health_router: Any | None = None,
+        memory_repo: Any = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -342,6 +343,7 @@ class EventLoop:
         self._model_perf_repo: Any = model_perf_repo
         self._model_performance_interval: int = model_performance_interval
         self._deployment_health_router: Any = deployment_health_router
+        self._memory_repo: Any = memory_repo
         # Task #48: plan-time technical-debt evaluator (config-gated at the
         # dispatch seam; default OFF). Wired to the model gateway when present;
         # a None gateway leaves the evaluator on its deterministic structural
@@ -427,6 +429,30 @@ class EventLoop:
         )
         if not section:
             return prompt_text
+        return f"{prompt_text}\n\n{section}" if prompt_text else section
+
+    async def _build_memory_section(
+        self, prompt_text: str | None, todo: Any
+    ) -> str | None:
+        if self._memory_repo is None:
+            return prompt_text
+        assigned_agent = _safe_str(todo, "assigned_agent") or _safe_str(todo, "work_type") or "agent"
+        try:
+            records = await self._memory_repo.list_by_namespace(
+                agent_id=assigned_agent, namespace="default", limit=50,
+            )
+        except Exception:
+            logger.warning(
+                "Memory lookup failed for agent %r; skipping memory section",
+                assigned_agent, exc_info=True,
+            )
+            return prompt_text
+        if not records:
+            return prompt_text
+        lines = ["## Agent Memory"]
+        for r in records:
+            lines.append(f"- **{r.key}**: {r.value}")
+        section = "\n".join(lines)
         return f"{prompt_text}\n\n{section}" if prompt_text else section
 
     async def _resolve_adaptive_prompt(
@@ -1655,6 +1681,7 @@ class EventLoop:
                     exc_info=True,
                 )
         skill_body = self._resolve_skill_body(todo)
+        prompt_text = await self._build_memory_section(prompt_text, todo)
         # Load shared vars via the effective (possibly per-job) repo.
         shared_vars: dict[str, str] | None = None
         if eff_variable_repo is not None:

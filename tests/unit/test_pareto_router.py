@@ -1,9 +1,18 @@
 """Unit tests for G8: ParetoRouter — cost/quality Pareto frontier routing."""
 
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from general_ludd.schemas.benchmark import TaskType
 from general_ludd.scoring.pareto import ParetoRouter
+from general_ludd.scoring.router import AdaptiveRouter
 
 
-class TestParetoRouter:
+class TestParetoRouterConstruction:
     def test_constructor_defaults(self) -> None:
         router = ParetoRouter()
         assert router._cost_weight == 0.5
@@ -14,15 +23,369 @@ class TestParetoRouter:
         assert router._cost_weight == 0.3
         assert router._quality_weight == 0.7
 
-    def test_route_by_pareto_frontier_returns_candidates(self) -> None:
+
+class TestParetoFrontierDomination:
+    def test_clear_domination_one_dominates_others(self) -> None:
         router = ParetoRouter()
-        candidates = [
-            {"model": "a", "cost": 0.01, "quality": 0.9},
-            {"model": "b", "cost": 0.02, "quality": 0.8},
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.01, "quality": 0.95},
+            {"model": "b", "cost": 0.02, "quality": 0.80},
+            {"model": "c", "cost": 0.03, "quality": 0.70},
         ]
         result = router.route_by_pareto_frontier(candidates)
-        assert result == candidates
+        assert len(result) == 1
+        assert result[0]["model"] == "a"
 
-    def test_route_by_pareto_frontier_empty_list(self) -> None:
+    def test_no_domination_all_frontier(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.01, "quality": 0.80},
+            {"model": "b", "cost": 0.05, "quality": 0.95},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 2
+        models = {r["model"] for r in result}
+        assert models == {"a", "b"}
+
+    def test_dominated_model_excluded(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "cheap_good", "cost": 0.10, "quality": 0.90},
+            {"model": "expensive_bad", "cost": 0.50, "quality": 0.50},
+            {"model": "cheap_best", "cost": 0.05, "quality": 0.95},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        models = {r["model"] for r in result}
+        assert "expensive_bad" not in models
+        assert "cheap_good" not in models
+        assert models == {"cheap_best"}
+
+    def test_partial_domination_three_candidates(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "b", "cost": 0.20, "quality": 0.85},
+            {"model": "c", "cost": 0.15, "quality": 0.95},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        models = {r["model"] for r in result}
+        assert "b" not in models
+        assert models == {"a", "c"}
+
+    def test_tie_on_one_axis_same_cost(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "b", "cost": 0.10, "quality": 0.70},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "a"
+
+    def test_tie_on_quality_different_cost(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "b", "cost": 0.05, "quality": 0.90},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "b"
+
+
+class TestParetoFrontierEdgeCases:
+    def test_empty_list(self) -> None:
         router = ParetoRouter()
         assert router.route_by_pareto_frontier([]) == []
+
+    def test_single_candidate(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "only", "cost": 0.01, "quality": 0.90},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "only"
+
+    def test_all_equal_candidates_all_frontier(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.05, "quality": 0.90},
+            {"model": "b", "cost": 0.05, "quality": 0.90},
+            {"model": "c", "cost": 0.05, "quality": 0.90},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 3
+
+    def test_nan_cost_excluded(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "nan_cost", "cost": float("nan"), "quality": 0.95},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "a"
+
+    def test_nan_quality_excluded(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "nan_qual", "cost": 0.05, "quality": float("nan")},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "a"
+
+    def test_inf_cost_excluded(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "inf_cost", "cost": float("inf"), "quality": 0.95},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "a"
+
+    def test_neg_inf_cost_excluded(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "neginf_cost", "cost": float("-inf"), "quality": 0.95},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "a"
+
+    def test_inf_quality_excluded(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "inf_qual", "cost": 0.05, "quality": float("inf")},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "a"
+
+    def test_all_nan_or_inf_returns_empty(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "nan", "cost": float("nan"), "quality": 0.90},
+            {"model": "inf", "cost": 0.10, "quality": float("inf")},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert result == []
+
+    def test_missing_cost_excluded(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "no_cost", "quality": 0.95},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "a"
+
+
+class TestParetoFrontierOrdering:
+    def test_quality_descending_order(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "low_cost", "cost": 0.01, "quality": 0.70},
+            {"model": "high_cost", "cost": 0.50, "quality": 0.99},
+            {"model": "mid", "cost": 0.10, "quality": 0.85},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        qualities = [float(r["quality"]) for r in result]
+        assert qualities == sorted(qualities, reverse=True)
+
+    def test_cheapest_and_best_quality_always_frontier(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "cheapest", "cost": 0.01, "quality": 0.60},
+            {"model": "best_qual", "cost": 0.10, "quality": 0.99},
+            {"model": "mid", "cost": 0.05, "quality": 0.80},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        models = {r["model"] for r in result}
+        assert "cheapest" in models
+        assert "best_qual" in models
+
+
+class TestPickWinner:
+    def test_single_candidate_wins(self) -> None:
+        router = ParetoRouter(cost_weight=0.5, quality_weight=0.5)
+        frontier: list[dict[str, Any]] = [
+            {"model": "only", "cost": 0.10, "quality": 0.90},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        assert winner["model"] == "only"
+
+    def test_empty_frontier_returns_none(self) -> None:
+        router = ParetoRouter()
+        assert router.pick_winner([]) is None
+
+    def test_higher_composite_score_wins(self) -> None:
+        router = ParetoRouter(cost_weight=0.5, quality_weight=0.5)
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap", "cost": 0.01, "quality": 0.70},
+            {"model": "expensive", "cost": 0.10, "quality": 0.95},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        assert winner["model"] in ("cheap", "expensive")
+
+    def test_quality_weight_dominant(self) -> None:
+        router = ParetoRouter(cost_weight=0.01, quality_weight=0.99)
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap_lowq", "cost": 0.01, "quality": 0.50},
+            {"model": "expensive_highq", "cost": 0.10, "quality": 0.99},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        assert winner["model"] == "expensive_highq"
+
+    def test_cost_weight_dominant(self) -> None:
+        router = ParetoRouter(cost_weight=0.99, quality_weight=0.01)
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap_lowq", "cost": 0.01, "quality": 0.50},
+            {"model": "expensive_highq", "cost": 0.10, "quality": 0.99},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        assert winner["model"] == "cheap_lowq"
+
+    def test_all_equal_composite_picks_first(self) -> None:
+        router = ParetoRouter(cost_weight=0.5, quality_weight=0.5)
+        frontier: list[dict[str, Any]] = [
+            {"model": "first", "cost": 0.05, "quality": 0.80},
+            {"model": "second", "cost": 0.05, "quality": 0.80},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        assert winner["model"] == "first"
+
+
+class TestAdaptiveRouterParetoIntegration:
+    @staticmethod
+    def _make_agg(
+        model: str,
+        sample_count: int = 10,
+        composite: float = 0.85,
+        avg_cost: float = 0.01,
+    ) -> dict[str, Any]:
+        return {
+            "model_profile_id": model,
+            "prompt_profile_id": "default",
+            "sample_count": sample_count,
+            "composite_score": composite,
+            "avg_cost": avg_cost,
+            "task_type": "bug_fix",
+        }
+
+    @pytest.mark.asyncio
+    async def test_pareto_excludes_dominated_before_ranking(self) -> None:
+        pareto = ParetoRouter()
+        repo = AsyncMock()
+        repo.get_aggregate_scores.return_value = [
+            self._make_agg("model_a", avg_cost=0.01, composite=0.95),
+            self._make_agg("model_b", avg_cost=0.05, composite=0.70),
+        ]
+        router = AdaptiveRouter(
+            benchmark_repo=repo,
+            min_samples=1,
+            pareto_router=pareto,
+        )
+        result = await router.route(TaskType("bug_fix"))
+        assert not result.fallback
+        assert result.selected_model_profile_id == "model_a"
+
+    @pytest.mark.asyncio
+    async def test_no_pareto_router_no_change(self) -> None:
+        repo = AsyncMock()
+        repo.get_aggregate_scores.return_value = [
+            self._make_agg("model_a", avg_cost=0.01, composite=0.95),
+            self._make_agg("model_b", avg_cost=0.05, composite=0.70),
+        ]
+        router = AdaptiveRouter(benchmark_repo=repo, min_samples=1)
+        result = await router.route(TaskType("bug_fix"))
+        assert not result.fallback
+        assert result.selected_model_profile_id == "model_a"
+
+    @pytest.mark.asyncio
+    async def test_pareto_keeps_all_on_frontier(self) -> None:
+        pareto = ParetoRouter()
+        repo = AsyncMock()
+        repo.get_aggregate_scores.return_value = [
+            self._make_agg("model_a", avg_cost=0.01, composite=0.80),
+            self._make_agg("model_b", avg_cost=0.10, composite=0.99),
+        ]
+        router = AdaptiveRouter(
+            benchmark_repo=repo,
+            min_samples=1,
+            pareto_router=pareto,
+        )
+        result = await router.route(TaskType("bug_fix"))
+        assert not result.fallback
+        assert result.selected_model_profile_id == "model_b"
+
+    @pytest.mark.asyncio
+    async def test_pareto_skips_when_single_candidate(self) -> None:
+        pareto = ParetoRouter()
+        repo = AsyncMock()
+        repo.get_aggregate_scores.return_value = [
+            self._make_agg("only", avg_cost=0.01, composite=0.85),
+        ]
+        router = AdaptiveRouter(
+            benchmark_repo=repo,
+            min_samples=1,
+            pareto_router=pareto,
+        )
+        result = await router.route(TaskType("bug_fix"))
+        assert not result.fallback
+        assert result.selected_model_profile_id == "only"
+
+    @pytest.mark.asyncio
+    async def test_pareto_with_embeddings_path(self) -> None:
+        pareto = ParetoRouter()
+        repo = AsyncMock()
+        repo.get_aggregate_scores.return_value = [
+            self._make_agg("model_a", avg_cost=0.01, composite=0.95),
+            self._make_agg("model_b", avg_cost=0.05, composite=0.70),
+        ]
+        emb_store = MagicMock()
+        emb_store.similarity_to = AsyncMock(
+            return_value={"code_generation": 0.8, "code_review": 0.5}
+        )
+        router = AdaptiveRouter(
+            benchmark_repo=repo,
+            min_samples=1,
+            pareto_router=pareto,
+            embedding_store=emb_store,
+        )
+        result = await router.route(TaskType("bug_fix"))
+        assert not result.fallback
+        assert result.selected_model_profile_id == "model_a"
+
+    @pytest.mark.asyncio
+    async def test_pareto_with_unhealthy_model(self) -> None:
+        pareto = ParetoRouter()
+        repo = AsyncMock()
+        health = MagicMock()
+        health.is_healthy = lambda model_id, admit_probe=False: (
+            model_id != "sick_model"
+        )
+        repo.get_aggregate_scores.return_value = [
+            self._make_agg("healthy_best", avg_cost=0.01, composite=0.95),
+            self._make_agg("sick_model", avg_cost=0.02, composite=0.70),
+        ]
+        router = AdaptiveRouter(
+            benchmark_repo=repo,
+            min_samples=1,
+            pareto_router=pareto,
+            health_tracker=health,
+        )
+        result = await router.route(TaskType("bug_fix"))
+        assert not result.fallback
+        assert result.selected_model_profile_id == "healthy_best"

@@ -12,6 +12,7 @@ class EvalCase:
     input_files: dict[str, str]
     expected_patch: str
     task_type: str = ""
+    assertions: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

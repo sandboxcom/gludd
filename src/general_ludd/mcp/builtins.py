@@ -27,6 +27,7 @@ from general_ludd.project_runner import (
     ProjectProfileError,
     load_project_profile,
 )
+from general_ludd.retrieval.web import WebRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,38 @@ RUN_PROJECT_CHECK_TOOL = MCPTool(
 )
 
 
+# ---------------------------------------------------------------------------
+# web_retrieve
+# ---------------------------------------------------------------------------
+
+WEB_RETRIEVE_TOOL = MCPTool(
+    name="web_retrieve",
+    description=(
+        "Fetch a live web page by URL and return its status code, text "
+        "content, page title, and response headers. Results are cached "
+        "for 1 hour. The domain must be in the GLUDD_WEB_FETCH_ALLOWED_DOMAINS "
+        "allowlist (comma-separated env var) when that variable is set."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "The full URL of the web page to fetch.",
+            },
+            "timeout_seconds": {
+                "type": "integer",
+                "description": (
+                    "Override the default fetch timeout in seconds "
+                    "(default 30)."
+                ),
+            },
+        },
+        "required": ["url"],
+    },
+)
+
+
 class BuiltinToolHandler:
     """Coroutine dispatcher backing the ``gludd-builtin`` synthetic server."""
 
@@ -74,6 +107,8 @@ class BuiltinToolHandler:
     async def __call__(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if tool_name == RUN_PROJECT_CHECK_TOOL.name:
             return await self._run_project_check(arguments)
+        if tool_name == WEB_RETRIEVE_TOOL.name:
+            return await self._web_retrieve(arguments)
         return {"error": f"unknown builtin tool: {tool_name!r}"}
 
     def _jail_root(self) -> Path:
@@ -159,6 +194,32 @@ class BuiltinToolHandler:
 
         return dataclasses.asdict(result)
 
+    async def _web_retrieve(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        url = arguments.get("url")
+        if not isinstance(url, str) or not url.strip():
+            return {"error": "web_retrieve requires a non-empty 'url' string"}
+        url = url.strip()
+
+        timeout_seconds = arguments.get("timeout_seconds", 30)
+        try:
+            timeout = int(timeout_seconds)
+        except (TypeError, ValueError):
+            timeout = 30
+
+        retriever = WebRetriever(timeout_seconds=timeout)
+        try:
+            result = retriever.fetch_web_page(url)
+        except ValueError as exc:
+            return {"error": str(exc), "url": url}
+
+        return {
+            "url": result.url,
+            "status_code": result.status_code,
+            "content": result.content,
+            "title": result.title,
+            "headers": result.headers,
+        }
+
 
 def register_builtins(client: Any, default_workspace: str | Path | None = None) -> None:
     """Register the ``gludd-builtin`` server + its tools on ``client``.
@@ -171,7 +232,7 @@ def register_builtins(client: Any, default_workspace: str | Path | None = None) 
     handler = BuiltinToolHandler(default_workspace=default_workspace)
     client.register_builtin(
         BUILTIN_SERVER_ID,
-        [RUN_PROJECT_CHECK_TOOL],
+        [RUN_PROJECT_CHECK_TOOL, WEB_RETRIEVE_TOOL],
         handler,
     )
     logger.debug(

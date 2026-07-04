@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -2588,24 +2588,45 @@ class MemoryRepository:
     ``key``. TTL support allows automatic expiry of transient entries.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession | None = None,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+    ) -> None:
         self._session = session
+        self._session_factory = session_factory
 
-    async def get(
-        self, agent_id: str, key: str, namespace: str = "default"
+    @contextlib.asynccontextmanager
+    async def _resolve_session(self) -> AsyncGenerator[AsyncSession, None]:
+        if self._session is not None:
+            yield self._session
+        elif self._session_factory is not None:
+            async with self._session_factory() as session, session.begin():
+                yield session
+        else:
+            raise RuntimeError("MemoryRepository: no session or session_factory")
+
+    async def _get_with_session(
+        self, session: AsyncSession, agent_id: str, key: str, namespace: str
     ) -> MemoryRecordModel | None:
         stmt = select(MemoryRecordModel).where(
             MemoryRecordModel.agent_id == agent_id,
             MemoryRecordModel.key == key,
             MemoryRecordModel.namespace == namespace,
         )
-        result = await self._session.execute(stmt)
+        result = await session.execute(stmt)
         row = result.scalar_one_or_none()
         if row is not None and self._is_expired(row):
-            await self._session.delete(row)
-            await self._session.flush()
+            await session.delete(row)
+            await session.flush()
             return None
         return row
+
+    async def get(
+        self, agent_id: str, key: str, namespace: str = "default"
+    ) -> MemoryRecordModel | None:
+        async with self._resolve_session() as session:
+            return await self._get_with_session(session, agent_id, key, namespace)
 
     async def set(
         self,
@@ -2617,39 +2638,41 @@ class MemoryRepository:
     ) -> MemoryRecordModel:
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-        now = datetime.now(UTC)
-        stmt = (
-            sqlite_insert(MemoryRecordModel)
-            .values(
-                agent_id=agent_id,
-                key=key,
-                value=value,
-                namespace=namespace,
-                ttl_seconds=ttl_seconds,
-                created_at=now,
-                updated_at=now,
+        async with self._resolve_session() as session:
+            now = datetime.now(UTC)
+            stmt = (
+                sqlite_insert(MemoryRecordModel)
+                .values(
+                    agent_id=agent_id,
+                    key=key,
+                    value=value,
+                    namespace=namespace,
+                    ttl_seconds=ttl_seconds,
+                    created_at=now,
+                    updated_at=now,
+                )
+                .on_conflict_do_update(
+                    index_elements=["agent_id", "key", "namespace"],
+                    set_={"value": value, "ttl_seconds": ttl_seconds, "updated_at": now},
+                )
             )
-            .on_conflict_do_update(
-                index_elements=["agent_id", "key", "namespace"],
-                set_={"value": value, "ttl_seconds": ttl_seconds, "updated_at": now},
-            )
-        )
-        await self._session.execute(stmt)
-        await self._session.flush()
-        row = await self.get(agent_id, key, namespace)
-        assert row is not None
-        await self._session.refresh(row)
-        return row
+            await session.execute(stmt)
+            await session.flush()
+            row = await self._get_with_session(session, agent_id, key, namespace)
+            assert row is not None
+            await session.refresh(row)
+            return row
 
     async def delete(
         self, agent_id: str, key: str, namespace: str = "default"
     ) -> bool:
-        row = await self.get(agent_id, key, namespace)
-        if row is None:
-            return False
-        await self._session.delete(row)
-        await self._session.flush()
-        return True
+        async with self._resolve_session() as session:
+            row = await self._get_with_session(session, agent_id, key, namespace)
+            if row is None:
+                return False
+            await session.delete(row)
+            await session.flush()
+            return True
 
     async def list_by_namespace(
         self,
@@ -2657,34 +2680,36 @@ class MemoryRepository:
         namespace: str = "default",
         limit: int = 100,
     ) -> list[MemoryRecordModel]:
-        stmt = (
-            select(MemoryRecordModel)
-            .where(
-                MemoryRecordModel.agent_id == agent_id,
-                MemoryRecordModel.namespace == namespace,
+        async with self._resolve_session() as session:
+            stmt = (
+                select(MemoryRecordModel)
+                .where(
+                    MemoryRecordModel.agent_id == agent_id,
+                    MemoryRecordModel.namespace == namespace,
+                )
+                .order_by(MemoryRecordModel.key)
+                .limit(min(limit, _DEFAULT_LIST_LIMIT))
             )
-            .order_by(MemoryRecordModel.key)
-            .limit(min(limit, _DEFAULT_LIST_LIMIT))
-        )
-        result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        return [r for r in rows if not self._is_expired(r)]
+            result = await session.execute(stmt)
+            rows = list(result.scalars().all())
+            return [r for r in rows if not self._is_expired(r)]
 
     async def purge_expired(self) -> int:
         from sqlalchemy import delete, func
 
-        elapsed_seconds = (
-            func.julianday("now") - func.julianday(MemoryRecordModel.created_at)
-        ) * 86400.0
-        stmt = delete(MemoryRecordModel).where(
-            MemoryRecordModel.ttl_seconds.isnot(None),
-            elapsed_seconds > MemoryRecordModel.ttl_seconds,
-        )
-        result = await self._session.execute(stmt)
-        purged = int(result.rowcount or 0)  # type: ignore[attr-defined]  # CursorResult at runtime
-        if purged:
-            await self._session.flush()
-        return purged
+        async with self._resolve_session() as session:
+            elapsed_seconds = (
+                func.julianday("now") - func.julianday(MemoryRecordModel.created_at)
+            ) * 86400.0
+            stmt = delete(MemoryRecordModel).where(
+                MemoryRecordModel.ttl_seconds.isnot(None),
+                elapsed_seconds > MemoryRecordModel.ttl_seconds,
+            )
+            result = await session.execute(stmt)
+            purged = int(result.rowcount or 0)  # type: ignore[attr-defined]
+            if purged:
+                await session.flush()
+            return purged
 
     @staticmethod
     def _is_expired(row: MemoryRecordModel | None) -> bool:

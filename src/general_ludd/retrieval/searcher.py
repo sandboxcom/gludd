@@ -33,7 +33,7 @@ class SemanticSearcher:
         query_tokens = _tokenize(query)
         if not query_tokens:
             return []
-        query_vector = dict(Counter(query_tokens))
+        query_vector: dict[str, float] = {k: float(v) for k, v in Counter(query_tokens).items()}
 
         scored: list[tuple[float, dict[str, Any]]] = []
         for key in self._cache.iterkeys():

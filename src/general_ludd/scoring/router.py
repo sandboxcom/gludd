@@ -13,6 +13,7 @@ from general_ludd.schemas.benchmark import (
     RoutingDecision,
     TaskType,
 )
+from general_ludd.scoring.pareto import ParetoRouter
 from general_ludd.scoring.task_embeddings import TaskEmbeddingStore
 
 log = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class AdaptiveRouter:
         external_penalty: float = 0.5,
         min_borrow_weight: float = 0.05,
         adequacy_margin: float = 0.02,
+        pareto_router: ParetoRouter | None = None,
     ) -> None:
         self._repo = benchmark_repo
         self._min_samples = min_samples
@@ -77,6 +79,7 @@ class AdaptiveRouter:
         # rank-based. A margin of 0.0 DISABLES the tie-break, reproducing
         # pre-feature behaviour exactly.
         self._adequacy_margin = adequacy_margin
+        self._pareto_router = pareto_router
         self._cache: dict[str, RoutingDecision] = {}
         self._cache_time: datetime | None = None
         self._cache_ttl_seconds: float = 300.0
@@ -281,6 +284,7 @@ class AdaptiveRouter:
                         )
                     )
 
+        weighted = self._apply_pareto_filter(weighted)
         if not weighted:
             return None
         max_cost = max((c.avg_cost_usd for c, _, _ in weighted), default=0.0)
@@ -578,6 +582,7 @@ class AdaptiveRouter:
                 borrow_reason = f"inherited_{relationship_map[cand_project][0]}_history"
             quality = self._apply_quantization_penalty(candidate) * weight
             weighted.append((candidate, quality, borrow_reason))
+        weighted = self._apply_pareto_filter(weighted)
         if not weighted:
             return None
         max_cost = max((c.avg_cost_usd for c, _, _ in weighted), default=0.0)
@@ -669,6 +674,25 @@ class AdaptiveRouter:
             elif confidence < 0.7:
                 score *= 0.8
         return score
+
+    def _apply_pareto_filter(
+        self,
+        weighted: list[tuple[RoutingCandidate, float, str | None]],
+    ) -> list[tuple[RoutingCandidate, float, str | None]]:
+        """Filter *weighted* to non-dominated candidates via the Pareto frontier.
+
+        When no ``ParetoRouter`` is configured or fewer than 2 candidates exist,
+        returns *weighted* unchanged (backward-compatible no-op).
+        """
+        if self._pareto_router is None or len(weighted) < 2:
+            return weighted
+        pareto_input: list[dict[str, float | int]] = [
+            {"cost": c.avg_cost_usd, "quality": q, "_idx": idx}
+            for idx, (c, q, _) in enumerate(weighted)
+        ]
+        frontier = self._pareto_router.route_by_pareto_frontier(pareto_input)
+        frontier_indices: set[int] = {int(entry["_idx"]) for entry in frontier}
+        return [w for idx, w in enumerate(weighted) if idx in frontier_indices]
 
     async def _get_cheapest_for_task(
         self, task_type: TaskType, max_cost: float

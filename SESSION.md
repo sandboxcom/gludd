@@ -5,56 +5,56 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-04 (opencode session — deepseek-v4-pro)
+- 2026-07-04 (opencode session — deepseek-v4-pro, session 2)
 
 ## Current Work
 
-- **HEAD: `fcdf9b92`** on master — feat(G1): replace MemoryRecordModel with agent_id/key/value/namespace/ttl schema.
+- **HEAD: `0117024f`** on master — fix(watchdog): self-sufficient idle detection with own activity tracking.
 
 - **README PENDING count**: 13 items (G1–G13 in Feature & Task Completion Status table).
-- **Agent watchdog enhanced** (commits `276838f7` through `01698f8e`):
-  - 10s polling interval for task liveness detection
-  - Auto-start on `session.created` lifecycle event
-  - Idle detection: flags sessions with no events > idle threshold
-  - Task anomaly detection: flags stalled tasks >5min or >3x avg history, kills stalled ops, tracks per-task durations
-  - `GeneralLudd.agent_watchdog` daemon with classifier, anomaly scoring, and `/api/watchdog/status` endpoint
-- **README status table refresh**: 76→36 PENDING items removed from table (compliance with release-cut README currency gate).
-- **Enforcement fixes COMMITTED+PUSHED**: `78761de3` enforce-floor streak counter, `2aedeba8` unconditional block, `8d98f601` delegate threshold=1. **NEED RESTART** to take effect.
-- **#35 SLICE 2 COMPLETE** (`97c89082`): PauseController wired into ModelGateway + EventLoop + daemon.
-- **#35 SLICE 3 COMPLETE** (`2fa2d919`): quiesce_project wired into pause router, ToolCallAuditor + PromptEnhancer + BadCallSituationStore.
-- **#35 SLICE 4 COMPLETE** (`8a5ebe57`): pause/resume API router + daemon wiring.
-- **#51 COMPLETE** (`2fa2d919`): pause gate wired into AgentDispatcher.
-- **#53 COMPLETE** (`2fa2d919`): push livelock escape.
+- **G1 persistent agent memory**: MemoryRepository + migration 022 + tests landed (`6f971bba`), bumped to 55% (`1c480bb0`).
+- **G2 offline eval harness**: scaffolded (`e0006f07`).
+- **G3 semantic codebase retrieval**: module scaffolded (`5ab61e4d`).
+- **G4/G5/G6/G7**: docs bumped 0→15% with evidence_refs (`4bedc187`).
+- **G8 sandbox_exec**: SandboxExecutor.execute stub scaffolded (`60560394`).
+- **G11/G12 consensus engine + web retriever**: scaffolded with 5 tests (`da5113b1`).
+- **Watchdog fixes**: false-done blocks maxed out (`a7e1bbfe`), self-sufficient idle detection (`0117024f`).
+- **Staged scaffold files**: planning/critique, replay/recorder, scoring/pareto, test_pareto_router, test_plan_critique, test_run_recorder.
+- **Unstaged edits**: planning/__init__.py, retrieval/web.py, scoring/__init__.py, tests/unit/test_web_retriever.py.
 
 ## Last Commits
 
 | Hash | Message |
 |------|---------|
-| `fcdf9b92` | feat(G1): replace MemoryRecordModel with agent_id/key/value/namespace/ttl schema |
-| `b2883127` | docs: G1 persistent agent memory pct 0 to 20, add evidence_refs |
-| `d55c8329` | docs: G13 structured task spec 0 to 40pct |
-| `477bfa24` | feat: add acceptance_criteria + definition_of_done to POST /api/todos |
-| `ca1a3af7` | test: structured task spec acceptance tests |
-| `b377c207` | fix: trailing whitespace in features.yml |
-| `d21503ad` | docs: g13-structured-task-spec pct 0->20; note from audit |
-| `e1369ae7` | fix: watchdog anomaly multiplier 2.0 to 5.0, add verify-remote target |
-| `d0a2dd10` | docs: regenerate README after all fixes |
-| `c8b0f303` | docs: add Phase AS anti-stop fixes to TASKS.md |
+| `da5113b1` | feat(G11,G12): scaffold consensus engine and web retriever with 5 tests |
+| `0117024f` | fix(watchdog): self-sufficient idle detection with own activity tracking |
+| `a7e1bbfe` | fix(watchdog): max out false-done blocks every cycle to unjam agent |
+| `4bedc187` | docs: bump g4/g5/g6/g7 pct 0->15 with evidence_refs |
+| `60560394` | scaffold sandbox_exec module with SandboxExecutor.execute stub |
+| `1c480bb0` | docs: bump G1 persistent memory to 55% after MemoryRepository+migration 022+tests landed |
+| `ca847792` | fix: resolve typecheck errors in MemoryRepository |
+| `e0006f07` | feat(G2): scaffold offline eval harness (2 tests) |
+| `5ab61e4d` | scaffold G3 semantic codebase retrieval module |
+| `6f971bba` | feat(G1): add MemoryRepository, migration 022, and 3 unit tests for agent memory |
 
 ## Known Gaps
 
-1. **enforce-floor/delegate fixes NEED RESTART** — plugins don't hot-reload.
-2. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
+1. **SESSION.md was stale** — prior version claimed HEAD `fcdf9b92` but actual HEAD was `0117024f`. 12 commits not reflected.
+2. **enforce-floor/delegate fixes NEED RESTART** — plugins don't hot-reload.
+3. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
 
 ## Next Steps
 
-1. **Commit staged G1 work**: `022_recreate_memory_records_g1.py` migration + `repository.py` changes (staged). Also stage `tests/unit/test_agent_memory.py` (untracked).
-2. **Push**: HEAD `fcdf9b92` needs `verify-remote` after push.
+1. **Land untracked/staged scaffold files**: planning/critique.py, replay/recorder.py, scoring/pareto.py, test_pareto_router.py, test_plan_critique.py, test_run_recorder.py — stage unstaged edits, commit, push.
+2. **CI observation**: poll `make ci-verdict BRANCH=master` until green.
+3. **G1 wiring**: wire MemoryRepository into daemon/event loop, add API endpoints.
+4. **G2-G13 progression**: continue scaffold→wire→test cycle for remaining features.
 
 ## Current Gate Status (2026-07-04)
 <!-- gate:begin -->
 - **Last full PASS**: 2026-07-04T06:30 — lint 0, typecheck 0, collect 0
-- **Push**: pending verify for HEAD `fcdf9b92`
+- **Push**: VERIFIED master@0117024f
+- **CI**: PENDING
 
 <!-- gate:end -->
 
@@ -63,7 +63,8 @@
 
 ## Historical State
 
-- **2026-07-04 (current)**: HEAD `fcdf9b92`. G1 persistent agent memory schema (agent_id/key/value/namespace/ttl). G13 structured task spec (acceptance_criteria + definition_of_done). Watchdog anomaly multiplier relaxed 2.0→5.0. README has 13 PENDING items (G1–G13). Uncommitted: G1 alembic migration + repository changes (staged), test_agent_memory.py (untracked).
+- **2026-07-04 session 2 (current)**: HEAD `0117024f`. SESSION.md staleness fixed (was at `fcdf9b92`, 12 commits behind). G1 at 55% (MemoryRepository + migration + tests). G2/G3/G8/G11/G12 scaffolded. G4-G7 docs bumped. Watchdog fixes: false-done blocks maxed, self-sufficient idle detection. Staged scaffold files (planning/critique, replay/recorder, scoring/pareto + tests) awaiting commit.
+- **2026-07-04 session 1**: HEAD `fcdf9b92`. G1 persistent agent memory schema (agent_id/key/value/namespace/ttl). G13 structured task spec (acceptance_criteria + definition_of_done). Watchdog anomaly multiplier relaxed 2.0→5.0. README has 13 PENDING items (G1–G13). Uncommitted: G1 alembic migration + repository changes (staged), test_agent_memory.py (untracked).
 - **2026-07-01**: HEAD `8ed0ed1f`. CI fix wave active. 15,685 tests collected. 26 commits ahead of sandboxcom/master. CI failures narrowed to ~53.
 - **2026-06-30**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real. ~24 commits pushed across multiple waves.
 - **2026-06-29**: Recovery wave landed 11+ commits. Phase MP committed. CI RED.

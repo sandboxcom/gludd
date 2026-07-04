@@ -60,6 +60,7 @@ zai.api
 zai.key
 
 /tmp/
+web_retriever/
 
 # ── Claude Code harness: transient / machine-local items ─────────────────────
 # Committed (safe to track): .claude/hooks/  .claude/settings.json  .claude/workflows/
@@ -70,6 +71,8 @@ zai.key
 .claude/shell-snapshots/    # machine-local shell history snapshots
 .claude/projects/           # machine-local project memory
 .claude/settings.local.json # machine-local permission overrides (keep settings.json)
+web_retriever/
+
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Terraform — never check in runtime state or real tfvars ──────────────────
