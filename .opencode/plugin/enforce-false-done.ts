@@ -1,5 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
+// ⛔ PERMANENTLY DISABLED — re-register in opencode.json to re-enable
+process.env.GLUDD_FALSE_DONE_ENFORCE = "0"
 
 // enforce-false-done.ts — opencode-native port of
 // `.claude/hooks/no_false_completion_stop.sh`.
