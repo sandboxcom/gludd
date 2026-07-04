@@ -53,19 +53,23 @@ class TestSecurityBatch4Gateway:
                 gw.call_model_with_fallback("primary", [])
 
     def test_budget_rejection_not_swallowed(self):
-        """'over budget' ValueError propagates through _try_call_model."""
+        """BudgetExceededError propagates through _try_call_model."""
         from unittest.mock import patch
+
+        from general_ludd.models.gateway import BudgetExceededError
         gw = self._make_gw()
-        with patch.object(gw, 'call_model', side_effect=ValueError("over budget limit reached")):
+        with patch.object(gw, 'call_model', side_effect=BudgetExceededError("over budget limit reached")):
             import pytest
-            with pytest.raises(ValueError, match="over budget"):
+            with pytest.raises(BudgetExceededError, match="over budget"):
                 gw._try_call_model("primary", [])
 
     def test_budget_rejection_stops_fallback_walk(self):
-        """'over budget' propagates out of call_model_with_fallback."""
+        """BudgetExceededError propagates out of call_model_with_fallback."""
         from unittest.mock import patch
+
+        from general_ludd.models.gateway import BudgetExceededError
         gw = self._make_gw()
-        with patch.object(gw, 'call_model', side_effect=ValueError("over budget limit reached")):
+        with patch.object(gw, 'call_model', side_effect=BudgetExceededError("over budget limit reached")):
             import pytest
-            with pytest.raises(ValueError, match="over budget"):
+            with pytest.raises(BudgetExceededError, match="over budget"):
                 gw.call_model_with_fallback("primary", [])

@@ -1817,9 +1817,7 @@ write-gate-safe-hook:
 # --- Agent watchdog daemon (10s poll, resets streak counter) ---
 watchdog-start:
 	@echo "Starting agent watchdog (10s poll)..."
-	@nohup $(UV) run python3 scripts/agent_watchdog.py > /tmp/gludd-watchdog.log 2>&1 &
-	@echo $$! > /tmp/gludd-watchdog.pid
-	@echo "watchdog PID=$$(cat /tmp/gludd-watchdog.pid)"
+	@nohup $(UV) run python3 scripts/agent_watchdog.py > /tmp/gludd-watchdog.log 2>&1 & echo $$! > /tmp/gludd-watchdog.pid; echo "watchdog PID=$$(cat /tmp/gludd-watchdog.pid)"
 
 watchdog-status:
 	@echo "=== Watchdog status ==="

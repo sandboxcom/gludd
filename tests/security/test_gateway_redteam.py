@@ -19,7 +19,6 @@ import pytest
 from general_ludd.controllers.budget import RunBudgetGuard
 from general_ludd.models.failover import ModelFailoverChain
 from general_ludd.models.gateway import (
-    CircuitBreakerOpenError,
     ModelGateway,
     ModelProfile,
 )
@@ -200,7 +199,10 @@ def test_router_unknown_role_silently_uses_default():
 # ==========================================================================
 def test_fallback_does_not_loop_holds():
     """HOLDS: fallback chains are finite lists and a fallback's own
-    fallback_profiles are not traversed, so no cycle/infinite loop occurs."""
+    fallback_profiles are not traversed, so no cycle/infinite loop occurs.
+    When every profile in the chain fails, call_model_with_fallback re-raises
+    the last exception (not a CircuitBreakerOpenError — that is reserved for
+    an actual open circuit)."""
 
     def chat(**kw):
         return _FakeChatModel(raise_exc=ValueError("boom"))
@@ -208,7 +210,7 @@ def test_fallback_does_not_loop_holds():
     pa = _profile("a", fallback_profiles=["b"])
     pb = _profile("b", fallback_profiles=["a"])
     gw = _gateway_with(chat, [pa, pb])
-    with pytest.raises(CircuitBreakerOpenError, match="All profiles in fallback chain failed"):
+    with pytest.raises(ValueError, match="boom"):
         gw.call_model_with_fallback("a", [{"role": "user", "content": "hi"}])
 
 
