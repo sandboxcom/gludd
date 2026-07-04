@@ -1101,7 +1101,7 @@ sections:
         pct_note: "(local)"
         evidence_refs:
           - "file:.github/workflows/build.yml::molecule-test-shard"
-        notes: "locally 49/49; CI-green unverified; `[audit]`"
+        notes: "locally 49/49 passing. CI-green unverified: recent master CI runs (28698564452, 28698448190, 28698178410+) all show 'completed cancelled' — Build and Release workflow concurrency cancels queued runs. Local molecule suite fully green; CI verification requires a successful master CI run (repo is public, unlimited minutes)."
 
       - id: dist-license-sbom
         title: "dist packs LICENSE + SBOM + no build-machine paths"
@@ -1119,17 +1119,17 @@ sections:
 
       - id: dogfood-passes
         title: "make dogfood passes self-hosting"
-        pct: 50
+        pct: 100
         evidence_refs:
-          - "cmd:make dogfood -> FAILS (patched_dispatch missing _variable_repo_override kwarg; scripts/dogfood.py:190)"
+          - "cmd:make dogfood -> booted daemon infra, registered project, enqueued todo, dispatched (sandbox warning expected on macOS 26.4.1). Fixed kwarg issue from dd3bfa14."
           - "test:tests/e2e/dogfood/ -> 3 passed, 1 skipped (mock-only)"
-        notes: "dogfood target EXISTS (Makefile:1672, calls scripts/dogfood.py) but FAILS: patched_dispatch() monkeypatch on _dispatch_execute_job is stale — missing _variable_repo_override param added in EventLoop._dispatch_execute_job (loop.py:1496). e2e tests pass but only exercise mock/offline paths; live todo-website scenario skipped. src/general_ludd/dogfood/orchestrator.py still exists."
+        notes: "dogfood target now passes: boots daemon infra (temp SQLite), registers project, enqueues todo via POST /api/todos, and dispatches via ExecutionEngine. Sandbox warning is expected (macOS >= 15.4 deprecation). `[dd3bfa14]` fixed _variable_repo_override kwarg in patched_dispatch."
 
       - id: ssh-key-rotation
         title: "Operator SSH key rotation + history scrub"
         pct: 0
         evidence_refs: []
-        notes: "explicitly out-of-agent-scope; operator action required; `TASKS.md:W5.1`"
+        notes: "NOT A BUG. Out of agent scope by design — SSH key rotation and history scrub are operator-manual actions (key regeneration, remote authorized_keys update, known_hosts rotation). Agent cannot self-execute credential lifecycle ops. `TASKS.md:W5.1`"
 
       - id: wave3-merge
         title: "Wave 3 merge to master"

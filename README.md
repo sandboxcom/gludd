@@ -268,11 +268,11 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 |---|---|---|
 | CI gate job Python 3.11/3.12 matrix (V1.7/W16.1) | ✓ 75% | **PASS** *(file-refs only)*: matrix exists; prior CI had 10x event-loop-closed; `[11d3060]` |
 | CI version PEP 440 fix (W11.1) | ✓ 100% | **PASS** *(file-refs only)*: 7 passed; `[11d3060]` |
-| Molecule CI job | ✓ 75%(local) | **PASS** *(file-refs only)*: locally 49/49; CI-green unverified; `[audit]` |
+| Molecule CI job | ✓ 75%(local) | **PASS** *(file-refs only)*: locally 49/49 passing. CI-green unverified: recent master CI runs (28698564452, 28698448190, 28698178410+) all show 'completed cancelled' — Build and Release workflow concurrency cancels queued runs. Local molecule suite fully green; CI verification requires a successful master CI run (repo is public, unlimited minutes). |
 | dist packs LICENSE + SBOM + no build-machine paths | ✓ 100% | **PASS** *(file-refs only)*: 6 passed; `[526104b]` |
 | Pre-commit hooks (detect-secrets, ruff, no-tracked-keys, etc.) | ✓ 100% | **PASS** *(file-refs only)*: `make install-hooks`; enforcing since `[7035e8c]` |
-| make dogfood passes self-hosting | ✗ 50% | **PENDING** *(file-refs only)*: dogfood target EXISTS (Makefile:1672, calls scripts/dogfood.py) but FAILS: patched_dispatch() monkeypatch on _dispatch_execute_job is stale — missing _variable_repo_override param added in EventLoop._dispatch_execute_job (loop.py:1496). e2e tests pass but only exercise mock/offline paths; live todo-website scenario skipped. src/general_ludd/dogfood/orchestrator.py still exists. |
-| Operator SSH key rotation + history scrub | ✗ 0% | **PENDING**: explicitly out-of-agent-scope; operator action required; `TASKS.md:W5.1` |
+| make dogfood passes self-hosting | ✗ 100% | **PENDING** *(file-refs only)*: dogfood target now passes: boots daemon infra (temp SQLite), registers project, enqueues todo via POST /api/todos, and dispatches via ExecutionEngine. Sandbox warning is expected (macOS >= 15.4 deprecation). `[dd3bfa14]` fixed _variable_repo_override kwarg in patched_dispatch. |
+| Operator SSH key rotation + history scrub | ✗ 0% | **PENDING**: NOT A BUG. Out of agent scope by design — SSH key rotation and history scrub are operator-manual actions (key regeneration, remote authorized_keys update, known_hosts rotation). Agent cannot self-execute credential lifecycle ops. `TASKS.md:W5.1` |
 | Wave 3 merge to master | ✗ 100% | **PENDING** *(file-refs only)*: feature/wave3-ship-final merged to master. 72c31576 |
 | CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x) | ✓ 100% | **PASS** *(file-refs only)*: 15+ fixes across Q3.1–Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]` |
 | Unit-1 CI shard rebalance: --ignore-glob test_connector (#62) | ✓ 100% | **PASS** *(file-refs only)*: unit-1 drops from 20+min toward ~10-12min; `[43083168]` |
@@ -308,8 +308,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | `TodoModel.version` optimistic lock is no-op | ✓ 100% | **PASS** *(file-refs only)*: 3 tests: stale-version reject, concurrent-race, correct-version succeeds; `[cd3e8e9a]` |
 | `resolve()` leaks secret material via `str(exc)` in logs | ✓ 100% | **PASS** *(file-refs only)*: 5 tests: secret values redacted in error logs; `[5cf54f70]` |
 | `SecretAlias` path/mount injection — arbitrary backend path read | ✓ 100% | **PASS** *(file-refs only)*: 33 tests: traversal, command injection, null byte blocked; `[23e167cd]` |
-| Worker workspace leak on failure (no cleanup) | ✓ 100% | **PASS** *(file-refs only)*: already fixed: try/finally with shutil.rmtree in worker/app.py; `[audit]` |
-| `CosignKey.__repr__` leaks private_key + password to logs | ✓ 100% | **PASS** *(file-refs only)*: FIXED on master: `field(repr=False)` on private_key + password; 14 tests across 2 files |
+| Worker workspace leak on failure (no cleanup) | ✓ 100% | **PASS** *(file-refs only)*: FIXED: try/finally with shutil.rmtree(ignore_errors=True) in worker/app.py:500; `[audit]` |
+| `CosignKey.__repr__` leaks private_key + password to logs | ✓ 100% | **PASS** *(file-refs only)*: FIXED on master: `field(repr=False)` on private_key + password; 14 tests across 2 files; `[6e2bc057]` |
 | `call_model_with_fallback` never checks circuit-breaker health | ✓ 100% | **PASS** *(file-refs only)*: circuit-breaker health check before each fallback model; `[912cfcc3]` |
 | `AgentDispatcher.dispatch_one` never calls `registry.can_invoke` — permission matrix dead | ✓ 100% | **PASS** *(file-refs only)*: FIXED `[a4a2e1a]`; both dispatch sites stamp `invoker_name=build` (`pipeline/daemon_adapters.py:48,82` + `daemon_wiring.py:153`); verified 2026-06-25 |
 | Alembic migration drift: 9 tables created, ORM defines 16+ | ✓ 100% | **PASS** *(file-refs only)*: 4 tests: all 26 ORM tables in migrations, column parity verified; `[9a0d8dd5]` |
