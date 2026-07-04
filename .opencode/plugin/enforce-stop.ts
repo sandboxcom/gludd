@@ -45,6 +45,7 @@ interface StopStateCache {
   backlogOpen: number
   backlogItems: string[]
   hasPendingWork: boolean
+  ciVerdictPendingOrRed: boolean
 }
 
 const turnState: { accumulatedText: string; blocked: boolean } = {
@@ -593,6 +594,18 @@ function buildOrchestrationContext(): string {
   ].join("\n")
 }
 
+// PENDING-WORK AUDIT BLOCK — generates detailed audit message showing all
+// pending-work state for display in stop-block directive and separately.
+function pendingWorkAuditText(cache: StopStateCache): string {
+  return [
+    "HARD STOP — PENDING-WORK AUDIT:",
+    "TASKS.md unchecked: " + (cache.tasksMdUnchecked ? "yes" : "no"),
+    "gate-status red: " + (cache.gateStatusRed ? "yes" : "no"),
+    "ratchet entries: " + cache.ratchetEntries,
+    "repo pending: " + (cache.repoPending ? "yes" : "no"),
+  ].join("\n")
+}
+
 // ============================================================================
 // PLUGIN
 // ============================================================================
@@ -605,48 +618,43 @@ export default (async ({ }) => {
     // the agent sees the block message and then sends ANOTHER text-only response
     // explaining its analysis — every text-only response after a block is also
     // suppressed. The block is cleared in tool.execute.before (any tool call).
-    "session.idle": async () => {
-      try {
-        turnState.accumulatedText = ""
-
-        // Warm the CI verdict cache (Deficiency A+B)
-        ciIsPendingOrRed()
-
-        const ratchetCount = ratchetHasEntries()
-        const tasksMdUnchecked = tasksMdHasUnchecked()
-        const gateRed = gateStatusIsRed()
-        let repoPending = false
+    //
+    // Uses the `event` + `event.type === "session.idle"` pattern (proven to
+    // work in enforce-false-done.ts). The top-level `"session.idle"` key does
+    // NOT work (/tmp/gludd-stop-state.json was never written under that key).
+    event: async ({ event }: { event: { type: string } }) => {
+      if (event.type === "session.idle") {
         try {
-          if (fs.existsSync(STATE_FILE)) {
-            const raw = fs.readFileSync(STATE_FILE, "utf8")
-            const cache = JSON.parse(raw)
-            repoPending = cache?.repoPending ?? repoHasPendingWork()
-          } else {
-            repoPending = repoHasPendingWork()
+          turnState.accumulatedText = ""
+
+          // Warm the CI verdict cache (Deficiency A+B)
+          ciIsPendingOrRed()
+
+          const ratchetCount = ratchetHasEntries()
+          const tasksMdUnchecked = tasksMdHasUnchecked()
+          const gateRed = gateStatusIsRed()
+          const repoPending = repoHasPendingWork()
+          const ciVerdictPendingOrRed = ciIsPendingOrRed()
+          const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed || ciVerdictPendingOrRed
+
+          const backlog = multitaskingBacklogOpen()
+
+          const state: StopStateCache = {
+            ts: Date.now(),
+            ratchetEntries: ratchetCount,
+            tasksMdUnchecked,
+            gateStatusRed: gateRed,
+            repoPending,
+            backlogOpen: backlog ? backlog.open.length : 0,
+            backlogItems: backlog ? backlog.open : [],
+            hasPendingWork,
+            ciVerdictPendingOrRed,
           }
+
+          fs.writeFileSync(STATE_FILE, JSON.stringify(state), "utf8")
         } catch {
-          repoPending = repoHasPendingWork()
+          // fail open — skip cache write
         }
-        const ciRed = gateRed
-        const ciVerdictPendingOrRed = ciIsPendingOrRed()
-        const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed
-
-        const backlog = multitaskingBacklogOpen()
-
-        const state: StopStateCache = {
-          ts: Date.now(),
-          ratchetEntries: ratchetCount,
-          tasksMdUnchecked,
-          gateStatusRed: gateRed,
-          repoPending,
-          backlogOpen: backlog ? backlog.open.length : 0,
-          backlogItems: backlog ? backlog.open : [],
-          hasPendingWork,
-        }
-
-        fs.writeFileSync(STATE_FILE, JSON.stringify(state), "utf8")
-      } catch {
-        // fail open — skip cache write
       }
     },
 
@@ -721,6 +729,10 @@ export default (async ({ }) => {
     // response text is REPLACED with a block directive. The persistent-block
     // mechanism then suppresses ALL subsequent text responses until a tool
     // call clears it (see tool.execute.before above).
+    //
+    // State is read from the file written by the event handler (session.idle).
+    // If the state file is missing or unreadable, all checks are computed
+    // fresh inline so the block can never be bypassed by a missing cache.
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       try {
         const text = output.text
@@ -729,19 +741,67 @@ export default (async ({ }) => {
 
         turnState.accumulatedText += text
 
-        let hasPendingWork = false
+        let cache: StopStateCache | null = null
         try {
           if (fs.existsSync(STATE_FILE)) {
             const raw = fs.readFileSync(STATE_FILE, "utf8")
-            const cache = JSON.parse(raw)
-            hasPendingWork = cache?.hasPendingWork ?? false
+            cache = JSON.parse(raw)
           }
         } catch {
           // fail open
         }
 
+        if (!cache) {
+          const ratchetCount = ratchetHasEntries()
+          const tasksMdUnchecked = tasksMdHasUnchecked()
+          const gateRed = gateStatusIsRed()
+          const repoPending = repoHasPendingWork()
+          const ciVerdictPendingOrRed = ciIsPendingOrRed()
+          const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed || ciVerdictPendingOrRed
+          cache = {
+            ts: Date.now(),
+            ratchetEntries: ratchetCount,
+            tasksMdUnchecked,
+            gateStatusRed: gateRed,
+            repoPending,
+            backlogOpen: 0,
+            backlogItems: [],
+            hasPendingWork,
+            ciVerdictPendingOrRed,
+          }
+        }
+
+        const repoPending = cache?.repoPending ?? repoHasPendingWork()
+        const ratchetCount = cache.ratchetEntries
+        const tasksMdUnchecked = cache?.tasksMdUnchecked ?? tasksMdHasUnchecked()
+        const gateRed = cache?.gateStatusRed ?? gateStatusIsRed()
+        const ciRed = gateRed || responseMentionsCiRed(turnState.accumulatedText)
+        const ciVerdictPendingOrRed = cache?.ciVerdictPendingOrRed ?? ciIsPendingOrRed()
+        const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed
+
+        if (turnState.blocked) {
+          output.text = ""
+          return
+        }
+
         if (hasPendingWork && responseLooksTerminal(turnState.accumulatedText)) {
-          output.text = "⛔ TERMINAL RESPONSE BLOCKED — PENDING WORK EXISTS. Resume work. Text-only responses suppressed until a tool call clears this block."
+          output.text = [
+            "HARD STOP — STATE-BASED BLOCK: your final response looks terminal",
+            "(markdown table / DONE banner / long body / commit hash / Q&A recap /",
+            "session summary / item-count / all-checked checkboxes) while the",
+            "project state reports known-unfinished work.",
+            "",
+            "TASKS.md unchecked: " + (cache.tasksMdUnchecked ? "yes" : "no"),
+            "gate-status red: " + (gateRed ? "yes" : "no"),
+            "CI mentioned in response: yes",
+            "CI verdict: pending or red",
+            "CI pending or red: " + (ciVerdictPendingOrRed ? "yes" : "no"),
+            "ratchet entries remaining: " + cache.ratchetEntries,
+            "repo pending (unpushed/uncommitted): " + (cache.repoPending ? "yes" : "no"),
+            "",
+            "YOU ARE STOPPING PREMATURELY. Dispatch ≥5 subagents to continue",
+            "fixing the pending items above. Do NOT rephrase — work.",
+          ].join("\n")
           turnState.blocked = true
           return
         }
@@ -750,7 +810,8 @@ export default (async ({ }) => {
           const noWait = detectNoWaitPattern(turnState.accumulatedText)
           const constraint = detectConstraintAsStop(turnState.accumulatedText)
           if (noWait || constraint || responseMentionsCiRed(turnState.accumulatedText)) {
-            output.text = "⛔ STOP BLOCKED — pending work + deferral/constraint/CI-red detected"
+            const auditDetail = pendingWorkAuditText(cache)
+            output.text = "HARD STOP — STATE-BASED BLOCK\n\n" + auditDetail + "\n\nSTOP BLOCKED — pending work + deferral/constraint/CI-red detected"
             turnState.blocked = true
             return
           }
