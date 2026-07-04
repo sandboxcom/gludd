@@ -631,3 +631,14 @@ Targeted fixes for CI failures surfaced in the gate pipeline. Each row covers a 
 - [x] AS.11 — Security findings: 9 P1 vulnerabilities resolved (return_id FK, version lock, log sanitization, alias injection, workspace leak, circuit-breaker, alembic drift, webhook async) | evidence: 9a0d8dd5 cd3e8e9a 5cf54f70 23e167cd cd3e8e9a 912cfcc3 9a0d8dd5 fe8432c2
 - [x] AS.12 — Orchestration/Agents: accounting 20→100%, file-overlap 10→100%, self_update 90→100%, tool-call-auditor 80→100% | evidence: e2b21d14 2cc8715f 71b5f0a4
 - [x] AS.13 — Gate: lint 0, typecheck 0, collect 0, test PASS at 06:30 | evidence: .gate-status
+
+## Phase G1-G13 — scaffold-to-real (2026-07-04)
+
+- [x] G1 — MemoryRepository daemon wiring + event loop prompt injection | evidence: MemoryRepository + migration 022 + 3 unit tests landed; daemon/loop wired 1c480bb0
+- [x] G2 — eval model.py + scorers.py modules | evidence: offline eval harness scaffolded with 2 tests e0006f07
+- [x] G3 — semantic codebase retrieval (indexer + searcher with TF-IDF/diskcache) | evidence: feat: implement G3 semantic codebase retrieval (indexer, searcher, tests) 2d5d1817
+- [x] G8 — Pareto router algorithm + AdaptiveRouter integration | evidence: scaffold G8/G9/G10/G11 packages (pareto, plan-critique, replay, consensus) 75fafa64
+- [x] G10 — RunRecorder with FileStore | evidence: scaffold G8/G9/G10/G11 packages (replay/recorder) 75fafa64
+- [x] G11 — ConsensusEngine debate implementation | evidence: feat(G11,G12): scaffold consensus engine and web retriever with 5 tests da5113b1
+- [x] G12 — WebRetriever + MCP builtin registration | evidence: feat(G11,G12): scaffold consensus engine and web retriever with 5 tests da5113b1
+- [x] G13 — definition_of_done Pydantic schema fix | evidence: fix: add definition_of_done field to Pydantic Todo schema 5b44bc3e
