@@ -1843,5 +1843,15 @@ watchdog-stop:
 		echo "No watchdog running"; \
 	fi
 
+watchdog-auto:
+	@echo "Starting auto-watchdog (persists across sessions)..."
+	@if [ -f /tmp/gludd-watchdog.pid ] && kill -0 $$(cat /tmp/gludd-watchdog.pid) 2>/dev/null; then \
+		echo "Watchdog already running PID=$$(cat /tmp/gludd-watchdog.pid)"; \
+	else \
+		nohup $(UV) run python3 scripts/agent_watchdog.py > /tmp/gludd-watchdog.log 2>&1 & \
+		echo $$! > /tmp/gludd-watchdog.pid; \
+		echo "Watchdog started PID=$$!"; \
+	fi
+
 watchdog-log:
 	@tail -50 /tmp/gludd-watchdog.log 2>/dev/null || echo "No log yet"
