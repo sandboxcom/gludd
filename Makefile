@@ -833,9 +833,39 @@ git-remote-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
 	@echo "Remote sandboxcom configured"
 
-git-push-sandboxcom:
+# Item 16: CI loop guard — warn and gate when CI is already pending
+_ci-pending-guard:
+	@CI_STATUS=$$(make ci-verdict BRANCH=master 2>&1 || true); \
+	if echo "$$CI_STATUS" | grep -qi 'PENDING\|IN_PROGRESS\|QUEUED'; then \
+		RUN=$$(echo "$$CI_STATUS" | grep -o '[0-9]\{8,\}' | head -1); \
+		echo "WARNING: CI run $$RUN is still pending on master. Pushing will restart it."; \
+		if [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
+			echo "Set GLUDD_FORCE_PUSH=1 to push anyway, or use 'make ci-wait' to wait for CI."; \
+			exit 1; \
+		fi; \
+		echo "GLUDD_FORCE_PUSH=1: forcing push despite pending CI."; \
+	fi
+
+git-push-sandboxcom: _ci-pending-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
+	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
+
+# Item 17: Poll CI until green with periodic heartbeat
+ci-wait:
+	@INTERVAL=$${CI_WAIT_INTERVAL:-60}; MAX_WAIT=$${CI_WAIT_MAX:-3600}; ELAPSED=0; \
+	echo "=== CI-WAIT: polling ci-verdict every $$INTERVAL seconds (max $$MAX_WAIT seconds) ==="; \
+	while [ $$ELAPSED -lt $$MAX_WAIT ]; do \
+		RESULT=$$(make ci-verdict BRANCH=master 2>&1 || true); \
+		if echo "$$RESULT" | grep -q '^CI GREEN:'; then \
+			echo "$$RESULT"; echo "=== CI GREEN after $$ELAPSED seconds ==="; exit 0; \
+		fi; \
+		STATUS=$$(echo "$$RESULT" | grep -oP "status='\K[^']+" || echo "unknown"); \
+		echo "[$$ELAPSED s] CI status: $$STATUS"; \
+		sleep $$INTERVAL; \
+		ELAPSED=$$((ELAPSED + INTERVAL)); \
+	done; \
+	echo "=== CI-WAIT: timed out after $$MAX_WAIT seconds ==="; exit 1
 
 git-pull-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master

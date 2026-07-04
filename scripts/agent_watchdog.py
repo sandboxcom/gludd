@@ -214,6 +214,15 @@ CI_STALL_MINUTES = 10
 CI_VERDICT_TIMEOUT = 15
 VERIFY_REMOTE_TIMEOUT = 10
 
+ORCHESTRATOR_STATE_FILE = "/tmp/gludd-orchestrator-state.json"
+DISENGAGE_FILE = "/tmp/gludd-watchdog-disengage.json"
+HEALTH_SCORE_FILE = "/tmp/gludd-health-score.json"
+PUSH_LOOP_FILE = "/tmp/gludd-watchdog-push-timestamps.json"
+CI_LOOP_THRESHOLD_PUSHES = 3
+CI_LOOP_THRESHOLD_MINUTES = 10
+CI_TRUE_STALL_MINUTES = 45
+CI_TRUE_STALL_NO_PUSH_MINUTES = 15
+
 TIMING_DATA_FILE = "/tmp/gludd-task-timing-data.json"
 PUSH_FLAG = "/tmp/gludd-push-flag"
 EX_TASKS_DIR = "/tmp/gludd-tasks"
@@ -1608,6 +1617,142 @@ def _detect_stalled_push() -> str | None:
     return msg
 
 
+# -- Items 9-13: CI loop detection, health score, unified state, disengage ------
+
+
+def _compute_health_score(
+    tasks_unchecked: bool, ratchet_count: int, gate_red: bool,
+    ci_pending: bool, repo_pending: bool, agent_active: bool,
+) -> int:
+    score = 100
+    if tasks_unchecked:
+        score -= 30
+    if ratchet_count > 0:
+        score -= 20
+    if gate_red:
+        score -= 40
+    if ci_pending:
+        score -= 15
+    if repo_pending:
+        score -= 10
+    if not agent_active:
+        score -= 10
+    return max(0, score)
+
+
+def _record_push_timestamp() -> None:
+    try:
+        p = Path(PUSH_LOOP_FILE)
+        data: list[float] = []
+        if p.exists():
+            data = json.loads(p.read_text())
+        data.append(time.time())
+        cutoff = time.time() - (CI_LOOP_THRESHOLD_MINUTES + 5) * 60
+        data = [ts for ts in data if ts > cutoff]
+        if len(data) > 50:
+            data = data[-50:]
+        p.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
+def _detect_ci_loop() -> bool:
+    try:
+        p = Path(PUSH_LOOP_FILE)
+        if not p.exists():
+            return False
+        timestamps: list[float] = json.loads(p.read_text())
+        cutoff = time.time() - CI_LOOP_THRESHOLD_MINUTES * 60
+        recent = [ts for ts in timestamps if ts > cutoff]
+        return len(recent) >= CI_LOOP_THRESHOLD_PUSHES
+    except Exception:
+        return False
+
+
+def _detect_ci_true_stall() -> bool:
+    ci_minutes = _ci_pending_for_too_long_minutes()
+    if ci_minutes is None or ci_minutes < CI_TRUE_STALL_MINUTES:
+        return False
+    try:
+        p = Path(PUSH_LOOP_FILE)
+        if not p.exists():
+            return True
+        timestamps: list[float] = json.loads(p.read_text())
+        cutoff = time.time() - CI_TRUE_STALL_NO_PUSH_MINUTES * 60
+        recent = [ts for ts in timestamps if ts > cutoff]
+        return len(recent) == 0
+    except Exception:
+        return True
+
+
+def _write_orchestrator_state(
+    tasks_unchecked: bool, ratchet_count: int, gate_red: bool,
+    ci_pending: bool, repo_pending: bool, agent_active: bool,
+    ci_run_id: str | None = None, stop_detected: bool = False,
+) -> None:
+    try:
+        health = _compute_health_score(
+            tasks_unchecked, ratchet_count, gate_red,
+            ci_pending, repo_pending, agent_active,
+        )
+        ci_loop = _detect_ci_loop()
+        ci_stall = _detect_ci_true_stall()
+        state = {
+            "ts": _now(),
+            "epoch": time.time(),
+            "health_score": health,
+            "tasks_md_unchecked": tasks_unchecked,
+            "ratchet_entries": ratchet_count,
+            "gate_status_red": gate_red,
+            "ci_pending_or_red": ci_pending,
+            "ci_run_id": ci_run_id,
+            "repo_pending": repo_pending,
+            "agent_active": agent_active,
+            "ci_loop_detected": ci_loop,
+            "ci_true_stall": ci_stall,
+            "stop_detected": stop_detected,
+        }
+        Path(ORCHESTRATOR_STATE_FILE).write_text(json.dumps(state, indent=2))
+        Path(HEALTH_SCORE_FILE).write_text(json.dumps({"score": health, "ts": _now()}))
+    except Exception:
+        pass
+
+
+def _write_disengage_signal(minutes: int = 5, reason: str = "") -> None:
+    try:
+        disengage_until = time.time() + minutes * 60
+        Path(DISENGAGE_FILE).write_text(json.dumps({
+            "disengage_until": disengage_until,
+            "reason": reason,
+            "ts": _now(),
+        }))
+        _log(f"DISENGAGE: sent signal for {minutes}min — {reason}")
+    except Exception:
+        pass
+
+
+def _clear_disengage_signal() -> None:
+    try:
+        p = Path(DISENGAGE_FILE)
+        if p.exists():
+            data = json.loads(p.read_text())
+            if data.get("disengage_until", 0) < time.time():
+                p.unlink()
+    except Exception:
+        pass
+
+
+def _is_disengage_active() -> bool:
+    try:
+        p = Path(DISENGAGE_FILE)
+        if not p.exists():
+            return False
+        data = json.loads(p.read_text())
+        return data.get("disengage_until", 0) > time.time()
+    except Exception:
+        return False
+
+
 def check_and_reset() -> dict:
     result = {
         "ts": _now(),
@@ -1715,7 +1860,12 @@ def check_and_reset() -> dict:
     _check_ci_pending_stall()
 
     # ── ALWAYS: Max out false-done block counter to unjam agent ──────────
-    _max_out_false_done()
+    # Item 11: Smart false-done maxout — only when CI-only pending + agent active
+    if ci_pending and not has_pending_work and mtime_age is not None and mtime_age < PURE_IDLE_SECS:
+        _max_out_false_done()
+    elif has_pending_work:
+        _max_out_false_done()
+    # else: leave false-done blocks alone (agent may be genuinely stopped)
     # ── NEW: Pure idle detection (ANY idle >20s, regardless of pending work) ──
     if not reset_needed and mtime_age is not None and mtime_age > PURE_IDLE_SECS:
         last_flag = _read_last_flag_time()
@@ -1843,6 +1993,29 @@ def check_and_reset() -> dict:
                             result["stop_detected"] = True
             except Exception:
                 pass
+
+    # ── Items 9-10: CI loop and true stall detection ─────────────────────
+    ci_loop = _detect_ci_loop()
+    ci_true_stall = _detect_ci_true_stall()
+    if ci_loop:
+        _log(f"CI LOOP DETECTED: >{CI_LOOP_THRESHOLD_PUSHES} pushes in <{CI_LOOP_THRESHOLD_MINUTES}min while CI pending. STOP PUSHING.")
+        _write_disengage_signal(minutes=10, reason="ci_loop")
+    if ci_true_stall:
+        _log(f"CI TRUE STALL: pending >{CI_TRUE_STALL_MINUTES}min with no pushes for {CI_TRUE_STALL_NO_PUSH_MINUTES}min. CI may be broken.")
+
+    # ── Item 13: Write unified orchestrator state ────────────────────────
+    agent_active = mtime_age is not None and mtime_age < PURE_IDLE_SECS
+    _write_orchestrator_state(
+        tasks_unchecked=_tasks_md_has_unchecked(),
+        ratchet_count=_ratchet_has_entries(),
+        gate_red=_gate_status_is_red(),
+        ci_pending=ci_pending,
+        repo_pending=False,  # computed elsewhere
+        agent_active=agent_active,
+        ci_run_id=ci_run_id,
+        stop_detected=result.get("stop_detected", False),
+    )
+    _clear_disengage_signal()
 
     return result
 

@@ -851,3 +851,180 @@ def test_check_and_reset_with_ci_only_pending(tmp_path: Path, monkeypatch: pytes
     # Should detect that CI-pending is pending work but should NOT
     # flag a stop since the agent is actively polling CI
     assert "stop_detected" in result
+
+
+# ── Item 12: Health score tests ──────────────────────────────────────────────
+
+
+def test_health_score_perfect():
+    score = aw._compute_health_score(False, 0, False, False, False, True)
+    assert score == 100
+
+
+def test_health_score_ci_only_slight_penalty():
+    score = aw._compute_health_score(False, 0, False, True, False, True)
+    assert score == 85  # 100 - 15 for CI
+
+
+def test_health_score_gate_red_heavy_penalty():
+    score = aw._compute_health_score(False, 0, True, False, False, True)
+    assert score == 60  # 100 - 40
+
+
+def test_health_score_everything_broken():
+    score = aw._compute_health_score(True, 5, True, True, True, False)
+    assert score == 0  # floor
+
+
+# ── Item 9: CI loop detection tests ─────────────────────────────────────────
+
+
+def test_ci_loop_no_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(tmp_path / "push-ts.json"))
+    assert aw._detect_ci_loop() is False
+
+
+def test_ci_loop_three_pushes_in_10_min(tmp_path, monkeypatch):
+    push_file = tmp_path / "push-ts.json"
+    monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(push_file))
+    now = time.time()
+    push_file.write_text(json.dumps([now - 60, now - 120, now - 180]))
+    assert aw._detect_ci_loop() is True
+
+
+def test_ci_loop_two_pushes_not_enough(tmp_path, monkeypatch):
+    push_file = tmp_path / "push-ts.json"
+    monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(push_file))
+    now = time.time()
+    push_file.write_text(json.dumps([now - 60, now - 120]))
+    assert aw._detect_ci_loop() is False
+
+
+def test_ci_loop_old_pushes_expired(tmp_path, monkeypatch):
+    push_file = tmp_path / "push-ts.json"
+    monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(push_file))
+    now = time.time()
+    push_file.write_text(json.dumps([now - 700, now - 800, now - 900]))
+    assert aw._detect_ci_loop() is False
+
+
+# ── Item 10: CI true stall tests ────────────────────────────────────────────
+
+
+def test_ci_true_stall_no_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(tmp_path / "ci-cache.json"))
+    assert aw._detect_ci_true_stall() is False
+
+
+def test_ci_true_stall_over_45_min_no_pushes(tmp_path, monkeypatch):
+    ci_cache = tmp_path / "ci-cache.json"
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(ci_cache))
+    ci_cache.write_text(json.dumps({"pending_first_seen": time.time() - 3000}))
+    push_file = tmp_path / "push-ts.json"
+    monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(push_file))
+    push_file.write_text(json.dumps([time.time() - 1000]))
+    assert aw._detect_ci_true_stall() is True
+
+
+# ── Item 13: Orchestrator state test ────────────────────────────────────────
+
+
+def test_orchestrator_state_written(tmp_path, monkeypatch):
+    monkeypatch.setattr(aw, "ORCHESTRATOR_STATE_FILE", str(tmp_path / "orchestrator.json"))
+    monkeypatch.setattr(aw, "HEALTH_SCORE_FILE", str(tmp_path / "health.json"))
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(tmp_path / "ci-cache.json"))
+    monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(tmp_path / "push-ts.json"))
+
+    aw._write_orchestrator_state(False, 0, False, True, False, True, ci_run_id="12345")
+
+    state_path = tmp_path / "orchestrator.json"
+    assert state_path.exists()
+    state = json.loads(state_path.read_text())
+    assert state["health_score"] == 85
+    assert state["ci_pending_or_red"] is True
+    assert state["agent_active"] is True
+
+
+# ── Item 15: Disengage signal tests ─────────────────────────────────────────
+
+
+def test_disengage_signal_written_and_active(tmp_path, monkeypatch):
+    disengage_file = tmp_path / "disengage.json"
+    monkeypatch.setattr(aw, "DISENGAGE_FILE", str(disengage_file))
+
+    aw._write_disengage_signal(minutes=5, reason="test")
+    assert disengage_file.exists()
+    assert aw._is_disengage_active() is True
+
+
+def test_disengage_signal_expired(tmp_path, monkeypatch):
+    disengage_file = tmp_path / "disengage.json"
+    monkeypatch.setattr(aw, "DISENGAGE_FILE", str(disengage_file))
+    disengage_file.write_text(json.dumps({
+        "disengage_until": time.time() - 60,
+        "reason": "expired",
+    }))
+    assert aw._is_disengage_active() is False
+    aw._clear_disengage_signal()
+    assert not disengage_file.exists()
+
+
+# ── Item 19: CI-only-pending should not flag stop (integration-style) ────────
+
+
+def test_check_and_reset_ci_only_pending_no_stop_flag(tmp_path, monkeypatch):
+    _setup_full(monkeypatch, tmp_path)
+    streak_path = tmp_path / "streak.json"
+    streak_path.write_text('{"count":2,"last_tool":"ci-verdict"}')
+    monkeypatch.setattr(aw, "STREAK_FILE", str(streak_path))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(tmp_path / "ci-cache.json"))
+    monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(tmp_path / "push-ts.json"))
+    monkeypatch.setattr(aw, "ORCHESTRATOR_STATE_FILE", str(tmp_path / "orchestrator.json"))
+    monkeypatch.setattr(aw, "HEALTH_SCORE_FILE", str(tmp_path / "health.json"))
+    monkeypatch.setattr(aw, "DISENGAGE_FILE", str(tmp_path / "disengage.json"))
+    monkeypatch.setattr(aw, "_TASKS_MD", tmp_path / "TASKS.md")
+    monkeypatch.setattr(aw, "_RATCHET_YML", tmp_path / "ratchet.yml")
+    monkeypatch.setattr(aw, "_GATE_STATUS", tmp_path / ".gate-status")
+    monkeypatch.setattr(aw, "STOP_COUNT_FILE", str(tmp_path / "stop-count.json"))
+    monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(tmp_path / "activity.json"))
+    monkeypatch.setattr(aw, "STOP_STATE", str(tmp_path / "stop-state.json"))
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "false-done.json"))
+    monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(tmp_path / "continue.txt"))
+    monkeypatch.setattr(aw, "STALLED_TASKS_FILE", str(tmp_path / "stalled.json"))
+    monkeypatch.setattr(aw, "EX_STALLED_TASKS_FILE", str(tmp_path / "ex-stalled.json"))
+    monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
+    monkeypatch.setattr(aw, "_CHECK_COOLDOWN_FILE", str(tmp_path / "cooldowns.json"))
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    # Local state: all clean
+    (tmp_path / "TASKS.md").write_text("- [x] all done\n")
+    (tmp_path / "ratchet.yml").write_text("# empty\n")
+    (tmp_path / ".gate-status").write_text("lint PASS 0\ntypecheck PASS 0\n")
+
+    # CI is pending
+    def mock_run(cmd, **_kwargs):
+        if isinstance(cmd, list) and "ci-verdict" in str(cmd):
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=1,
+                stdout="CI PENDING: abc run 99999 status='pending'\n",
+                stderr="",
+            )
+        if isinstance(cmd, list) and "git log" in str(cmd):
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        if isinstance(cmd, list) and "git status" in str(cmd):
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    result = aw.check_and_reset()
+
+    # When only CI is pending and agent is active, stop_detected should be
+    # false (or null/absent). The orchestrator state should reflect health.
+    assert result.get("stop_detected") is False or result.get("stop_detected") is None
+
+    orchestrator = tmp_path / "orchestrator.json"
+    if orchestrator.exists():
+        state = json.loads(orchestrator.read_text())
+        assert state["health_score"] >= 70  # CI penalty but otherwise healthy
