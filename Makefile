@@ -850,6 +850,13 @@ git-tag-push:
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
 
+gha-usage:
+	@echo "=== GitHub Actions Usage ==="
+	@gh api /repos/sandboxcom/gludd/actions/runs?per_page=20 --jq '.workflow_runs | group_by(.conclusion) | map({conclusion: .[0].conclusion, count: length}) | .[] | "\(.conclusion): \(.count)"' 2>/dev/null || echo "No runs found or gh not configured"
+	@echo ""
+	@echo "Billing (requires admin):"
+	@gh api /orgs/sandboxcom/settings/billing/actions --jq '{total_minutes_used: .total_minutes_used, total_paid_minutes_used: .total_paid_minutes_used, included_minutes: .included_minutes}' 2>/dev/null || echo "Billing not accessible (requires admin)"
+
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-view TAG=v0.1.0-alpha.1"; exit 1; }
@@ -1080,6 +1087,23 @@ ci-status-anon:
 		"https://api.github.com/repos/sandboxcom/gludd/actions/runs?per_page=8" 2>&1 | \
 		$(PYTHON) -c "import sys,json; d=json.load(sys.stdin); \
 		print('MESSAGE:', d.get('message')) if 'workflow_runs' not in d else [print(r.get('id'), r.get('created_at'), r.get('head_branch'), r.get('status'), r.get('conclusion'), r.get('html_url')) for r in d['workflow_runs']]" 2>&1 || echo "ci-status-anon-failed"
+
+# List workflows (unauthenticated).
+gh-actions-workflows:
+	@echo "--- workflows ---"
+	@gh api /repos/sandboxcom/gludd/actions/workflows 2>&1 | head -20 || echo "gh-api-failed"
+
+# Recent runs with jq (unauthenticated, gh CLI auth).
+gh-actions-runs:
+	@gh api /repos/sandboxcom/gludd/actions/runs --jq '.workflow_runs[:3] | .[] | {id, conclusion, status, created_at}' 2>&1 || echo "gh-api-failed"
+
+# Org billing (needs org admin).
+gh-actions-billing-org:
+	@gh api /orgs/sandboxcom/settings/billing/actions 2>&1 || echo "gh-api-failed (likely needs admin)"
+
+# User billing (needs admin).
+gh-actions-billing-user:
+	@gh api /users/sandboxcom/settings/billing/actions 2>&1 || echo "gh-api-failed (likely needs admin)"
 
 # Show jobs (name + conclusion + step that failed) for a run id, unauthenticated.
 ci-jobs-anon:
