@@ -949,10 +949,11 @@ sections:
         title: "Offline eval harness (G2)"
         pct: 15
         evidence_refs:
-          - "file:src/general_ludd/compaction/evaluate.py"
-          - "file:src/general_ludd/planning/debt_evaluator.py::DebtEvaluator"
-          - "test:tests/unit/test_task48_debt_eval_seam.py"
-        notes: "compaction evaluate.py + debt_evaluator.py exist; early scaffolding; `[audit]`"
+          - "file:src/general_ludd/eval/__init__.py"
+          - "file:src/general_ludd/eval/harness.py"
+          - "file:src/general_ludd/eval/schema.py"
+          - "test:tests/unit/test_eval_harness.py"
+        notes: "eval/ package scaffolded; harness + schema modules; `[audit]`"
 
       - id: g3-semantic-retrieval
         title: "Semantic codebase retrieval (G3)"
