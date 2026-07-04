@@ -19,8 +19,6 @@ EXPECTED_PLUGINS = [
     "enforce-floor.ts",
     "enforce-delegate.ts",
     "enforce-stop.ts",
-    "enforce-todos.ts",
-    "enforce-false-done.ts",
     "enforce-session-start.ts",
     "enforce-deadline.ts",
 ]
@@ -97,79 +95,7 @@ class TestEnforceStopTextCompleteNotPassthrough:
 
 
 # ---------------------------------------------------------------------------
-# 3. enforce-false-done.ts — CLAIM_PATTERNS coverage + text.complete usage
-# ---------------------------------------------------------------------------
-
-class TestEnforceFalseDonePatterns:
-    def test_claim_patterns_include_committed(self):
-        content = _read_plugin("enforce-false-done.ts")
-        assert 'committed' in content, (
-            "CLAIM_PATTERNS must include 'committed'"
-        )
-
-    def test_claim_patterns_include_pushed(self):
-        content = _read_plugin("enforce-false-done.ts")
-        assert 'pushed' in content, (
-            "CLAIM_PATTERNS must include 'pushed'"
-        )
-
-    def test_claim_patterns_include_all_done(self):
-        content = _read_plugin("enforce-false-done.ts")
-        assert 'all done' in content, (
-            "CLAIM_PATTERNS must include 'all done'"
-        )
-
-    def test_claim_patterns_include_everything_is(self):
-        content = _read_plugin("enforce-false-done.ts")
-        assert 'everything is' in content, (
-            "CLAIM_PATTERNS must include 'everything is'"
-        )
-
-    def test_claim_patterns_include_no_issues(self):
-        content = _read_plugin("enforce-false-done.ts")
-        assert 'no issues' in content, (
-            "CLAIM_PATTERNS must include 'no issues'"
-        )
-
-    def test_uses_text_complete_not_response_transform(self):
-        content = _read_plugin("enforce-false-done.ts")
-        assert '"experimental.text.complete"' in content, (
-            "enforce-false-done.ts must use experimental.text.complete"
-        )
-        # Must NOT contain the older response.transform pattern
-        assert '"experimental.chat.response.transform"' not in content, (
-            "enforce-false-done.ts must NOT use experimental.chat.response.transform"
-        )
-
-
-# ---------------------------------------------------------------------------
-# 4. enforce-todos.ts — uses text.complete + has SUMMARY_KEYWORDS
-# ---------------------------------------------------------------------------
-
-class TestEnforceTodos:
-    def test_uses_text_complete(self):
-        content = _read_plugin("enforce-todos.ts")
-        assert '"experimental.text.complete"' in content, (
-            "enforce-todos.ts must use experimental.text.complete"
-        )
-        assert '"experimental.chat.response.transform"' not in content, (
-            "enforce-todos.ts must NOT use experimental.chat.response.transform"
-        )
-
-    def test_summary_keywords_exist(self):
-        content = _read_plugin("enforce-todos.ts")
-        assert "SUMMARY_KEYWORDS" in content, (
-            "enforce-todos.ts must define SUMMARY_KEYWORDS"
-        )
-        # Verify at least some of the known keywords are present
-        for kw in ["summary", "completed", "done", "results"]:
-            assert kw in content, (
-                f"SUMMARY_KEYWORDS must contain '{kw}'"
-            )
-
-
-# ---------------------------------------------------------------------------
-# 5. All 9 registered plugins exist on disk
+# 3. All 7 registered plugins exist on disk
 # ---------------------------------------------------------------------------
 
 class TestAllPluginsOnDisk:
@@ -182,12 +108,12 @@ class TestAllPluginsOnDisk:
             f"Expected {len(EXPECTED_PLUGINS)} plugins, found {len(config['plugin'])}"
         )
 
-    def test_all_nine_plugins_exist(self):
+    def test_all_seven_plugins_exist(self):
         raw = OPENCODE_JSON.read_text()
         config = json.loads(raw)
         plugins = config["plugin"]
 
-        assert len(plugins) == 9, f"Expected 9 plugins, got {len(plugins)}"
+        assert len(plugins) == 7, f"Expected 7 plugins, got {len(plugins)}"
 
         for plugin_path in plugins:
             relative = plugin_path.removeprefix("./")
@@ -214,7 +140,7 @@ class TestAllPluginsOnDisk:
 
 
 # ---------------------------------------------------------------------------
-# 6. State-file smoke test — /tmp/gludd-stop-state.json
+# 4. State-file smoke test — /tmp/gludd-stop-state.json
 # ---------------------------------------------------------------------------
 
 class TestStopStateFile:
@@ -234,7 +160,7 @@ class TestStopStateFile:
 
 
 # ---------------------------------------------------------------------------
-# 7. Persistent block state file — /tmp/gludd-false-done-blocks.json
+# 5. Persistent block state file — /tmp/gludd-false-done-blocks.json
 # ---------------------------------------------------------------------------
 
 class TestFalseDoneBlockStateFile:
