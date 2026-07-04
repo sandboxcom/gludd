@@ -90,11 +90,9 @@ const CLAIM_PATTERNS: RegExp[] = [
   /\bgood to go\b/i,
   /\ball green\b/i,
   /\bgreen\b.*\bpipeline\b/i,
-  /\bcommitted\b/i,
-  /\bpushed\b/i,
-  /\ball done\b/i,
-  /\beverything is\b/i,
-  /\bno issues\b/i,
+  // NOTE (2026-07-03): "committed" and "pushed" are NOT claim patterns —
+  // they are normal git operations, not completion statements. The evidence-
+  // pattern expansion below catches real completion claims with evidence.
 ]
 
 // ============================================================================
@@ -127,9 +125,10 @@ const EVIDENCE_PATTERNS: RegExp[] = [
   // Commit SHA, excluding low-entropy placeholders (deadbeef / c0ffee / all-zero).
   /\bcommit\s+(?!0{7}|deadbeef|c0ffee)[0-9a-f]{7,40}\b/i,
   /\bsha[:= ]\s*[0-9a-f]{7,40}\b/i,
-  // A code fence counts ONLY if its body contains a measurement token. Uses a
-  // lookahead + single greedy sweep (NOT two lazy unbounded [^`]*? spans, which
-  // are O(N^2) on an adversarial unclosed fence and could hang this hook).
+  /\bat\s+[0-9a-f]{7,40}\b/i,
+  /`[0-9a-f]{7,40}`/i,
+  /VERIFIED\s+\S+@[0-9a-f]{7,40}/i,
+  // A code fence counts ONLY if its body contains a measurement token.
   /```(?=[^`]*?(?:[1-9]\d*\s+passed|passed in|conclusion|success))[^`]*```/i,
 ]
 
