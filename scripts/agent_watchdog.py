@@ -1243,7 +1243,15 @@ def _write_anomaly_count(count: int) -> None:
     Path(ANOMALY_COUNT_FILE).write_text(json.dumps({"count": count}))
 
 
-def _increment_anomaly_count() -> int:
+def _increment_anomaly_count(key: str | None = None,
+                           counts: dict[str, int] | None = None) -> int:
+    if key is not None:
+        if counts is None:
+            counts = _read_anomaly_counts()
+        new_val = counts.get(key, 0) + 1
+        counts[key] = new_val
+        Path(ANOMALY_COUNT_FILE).write_text(json.dumps(counts))
+        return new_val
     new_count = _read_anomaly_count() + 1
     _write_anomaly_count(new_count)
     return new_count
