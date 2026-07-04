@@ -581,9 +581,12 @@ sections:
 
       - id: batch3-security
         title: "F5b/F6a/F6b security features (fast-follow branch)"
-        pct: 50
-        evidence_refs: []
-        notes: "branch `85158c2`; 14/14 tests local; NOT merged to master; `[SESSION.md]`"
+        pct: 100
+        evidence_refs:
+          - "commit:85158c28 (GET /api/todos pagination F6b)"
+          - "commit:a4b3b7f0 (strip /api/status info leak F6a)"
+          - "commit:6c633ecc (close /docs prefix auth bypass F5b)"
+        notes: "merged into master (ancestor of HEAD); fast-follow branch never existed as named ref"
 
       - id: batch4-security
         title: "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)"
@@ -1126,9 +1129,9 @@ sections:
 
       - id: wave3-merge
         title: "Wave 3 merge to master"
-        pct: 75
-        evidence_refs: []
-        notes: "branch tip `6063e51`; gate was RUNNING per SESSION.md; not confirmed merged"
+        pct: 100
+        evidence_refs: ["branch:feature/wave3-ship-final"]
+        notes: "feature/wave3-ship-final already merged to master (verified 2026-07-03); [6063e51]"
 
       - id: ci-fix-wave
         title: "CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x)"
@@ -1403,12 +1406,15 @@ sections:
 
       - id: sf-batch3-security
         title: "F5b/F6a/F6b security features (batch3-security, 14 tests)"
-        pct: 50
-        evidence_refs: []
-        notes: "branch `85158c2`; gate-clean; not merged; `[SESSION.md]`"
+        pct: 100
+        evidence_refs:
+          - "commit:85158c28"
+          - "commit:a4b3b7f0"
+          - "commit:6c633ecc"
+        notes: "merged into master (ancestor of HEAD); fast-follow branch never existed as named ref"
 
       - id: sf-batch4-security
         title: "D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch)"
-        pct: 10
+        pct: 0
         evidence_refs: []
-        notes: "building; not merged; `[SESSION.md]`"
+        notes: "branch abandoned — batch-4 no longer exists; `[branch abandoned]`"

@@ -495,10 +495,19 @@ def bundle_credentials(configs: list[dict[str, Any]]) -> dict[str, list[str]]:
 
 
 def _config_family(config: dict[str, Any]) -> str:
-    """Resolve a config's auth family: explicit key wins, else infer from its name."""
+    """Resolve a config's auth family: explicit key wins (if valid), else infer from its name.
+
+    D-29: validate explicit family/auth_family against AUTH_FAMILY_PREFIXES; if
+    the value doesn't match any known family, fall through to name-based inference
+    rather than blindly accepting an attacker-controlled string.
+    """
     explicit = _as_str(config.get("family") or config.get("auth_family"))
     if explicit is not None:
-        return explicit.lower()
+        lowered = explicit.lower()
+        # D-29: only accept known family slugs — reject attacker-controlled strings
+        if lowered in AUTH_FAMILY_PREFIXES:
+            return lowered
+        # Unknown explicit family: fall through to name-based inference
     for field in ("source", "name", "kind", "connector"):
         inferred = auth_family(config.get(field, ""))
         if inferred != "unknown":

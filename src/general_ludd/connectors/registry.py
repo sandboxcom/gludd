@@ -61,6 +61,18 @@ from general_ludd.connectors.normalize import auth_family
 logger = logging.getLogger(__name__)
 
 _CONNECTORS_PKG = "general_ludd.connectors"
+_ALLOWED_MODULE_PREFIXES = ("general_ludd.connectors.",)
+
+
+def _assert_allowed_module(mod_path: str) -> None:
+    """Guard against arbitrary module imports (RCE prevention).
+
+    Only modules under ``general_ludd.connectors.*`` are allowed.
+    """
+    if not any(mod_path.startswith(p) for p in _ALLOWED_MODULE_PREFIXES):
+        raise ImportError(
+            f"Module '{mod_path}' not in allowed prefixes {_ALLOWED_MODULE_PREFIXES}"
+        )
 
 
 @runtime_checkable
@@ -185,11 +197,7 @@ class ConnectorRegistry:
         module = config.get("module")
         if isinstance(module, str) and module:
             mod_path = module if "." in module else f"{_CONNECTORS_PKG}.{module}"
-            # Allowlist: reject any module path that doesn't live inside the
-            # connectors package.  A bare name (no dot) already gets the prefix
-            # prepended above, so it always passes; a dotted name like "os" or
-            # "os.path" would not get the prefix and is rejected here.
-            _check_module_allowlist(mod_path, selector="module")
+            _assert_allowed_module(mod_path)
             mod = importlib.import_module(mod_path)
             class_name = config.get("class_name")
             if isinstance(class_name, str) and class_name:
@@ -443,6 +451,7 @@ def _import_dotted(dotted: str) -> SourceFactory:
         mod_path, _, class_name = dotted.rpartition(".")
     if not mod_path or not class_name:
         raise ValueError(f"malformed class path {dotted!r}")
+    _assert_allowed_module(mod_path)
     mod = importlib.import_module(mod_path)
     return getattr(mod, class_name)
 

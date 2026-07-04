@@ -1256,22 +1256,13 @@ class ModelGateway:
     ) -> ModelResponse | None:
         try:
             return self.call_model(profile_id, messages, **kwargs)
-        except BudgetExceededError:
-            # D-24: a budget rejection MUST propagate. Previously this was
-            # caught by the bare ``except (ValueError, ImportError)`` below and
-            # silently returned None, which call_model_with_fallback treated as
-            # a non-failure — so a profile whose own run_budget_usd was exceeded
-            # simply routed to a fallback with a larger budget cap, bypassing
-            # the per-profile ceiling. Re-raise so the caller sees the rejection.
-            raise
-        except SSRFRejectionError:
-            # F-E: an SSRF egress rejection MUST propagate. Previously it was a
-            # bare ValueError caught by the ``except (ValueError, ImportError)``
-            # below and silently returned None, falling open to the next
-            # fallback profile and masking the egress block. Re-raise so the
-            # SSRF guard is enforced rather than bypassed via fallback.
-            raise
-        except (ValueError, ImportError):
+        except ValueError as exc:
+            # D-05: budget rejections must not be silently swallowed — re-raise
+            # so the caller (call_model_with_fallback) can propagate them.
+            if "over budget" in str(exc):
+                raise
+            return None
+        except ImportError:
             return None
 
     def call_model_with_fallback(
@@ -1284,19 +1275,15 @@ class ModelGateway:
         budget_remaining: float = float("inf"),
         **kwargs: Any,
     ) -> ModelResponse:
-        # Thread the run-budget context through so fallback attempts share the
-        # same budget ceiling as the primary call. Without this, call_model's
-        # check_budget gate (which reads estimated_cost/budget_remaining) was
-        # never reached with a real budget on the fallback path — every fallback
-        # saw budget_remaining=inf and could spend past the run budget.
-        kwargs.setdefault("estimated_cost", estimated_cost)
-        kwargs.setdefault("budget_remaining", budget_remaining)
-
-        # Health gate: skip circuit-open profiles rather than attempting them.
-        # The primary is only tried when no tracker is configured (open by
-        # default) or its circuit is healthy; each fallback below is likewise
-        # gated on is_healthy before it is attempted.
-        tracker = self._health_tracker
+        # D-04: gate primary on health tracker before attempting call
+        primary_healthy = (
+            self._health_tracker is None
+            or self._health_tracker.is_healthy(profile_id)
+        )
+        if primary_healthy:
+            result = self._try_call_model(profile_id, messages, **kwargs)
+            if result is not None:
+                return result
 
         fallback_ids: list[str] = fallback_profiles or []
         if not fallback_ids:
@@ -1304,87 +1291,19 @@ class ModelGateway:
             if profile is not None:
                 fallback_ids = list(profile.fallback_profiles)
 
-        # D-22: if every model in the chain (primary + fallbacks) is circuit-open,
-        # raise immediately instead of walking the loop and continuing past each
-        # unhealthy entry only to raise at the end. Walking an all-unhealthy chain
-        # amplifies retry storms because the caller sees a ValueError after a full
-        # no-op sweep and re-invokes, repeating the same useless walk.
-        #
-        # admit_probe=False: the pre-check is a pure status poll — it must NOT
-        # consume the single half-open probe slot that the loop-level is_healthy()
-        # call at line 1342 expects to admit. Without this, a model whose cooldown
-        # has elapsed would have its probe consumed here, and the loop-level check
-        # would see it as unhealthy, so the model is NEVER actually tried.
-        if tracker is not None:
-            primary_healthy = tracker.is_healthy(profile_id, admit_probe=False)
-            any_healthy = primary_healthy or any(
-                tracker.is_healthy(fb, admit_probe=False) for fb in fallback_ids
+        # D-04: route fallback walk through _walk_fallbacks (health-gated)
+        result, last_exc = self._walk_fallbacks(fallback_ids, messages, **kwargs)
+        if result is not None:
+            return result
+
+        # If primary was tripped AND all fallbacks open/failed → clear error
+        if not primary_healthy:
+            raise ValueError(
+                f"All circuits open for fallback chain '{profile_id}'"
             )
-            if not any_healthy:
-                raise CircuitBreakerOpenError(
-                    f"All profiles in fallback chain for '{profile_id}' are "
-                    f"circuit-open; not attempting any"
-                )
 
-        if tracker is None or tracker.is_healthy(profile_id):
-            try:
-                result = self._try_call_model(profile_id, messages, **kwargs)
-            except BudgetExceededError:
-                raise
-            except SSRFRejectionError:
-                # F-E: an SSRF egress rejection on the primary MUST propagate.
-                # _try_call_model re-raises it, but the bare ``except Exception``
-                # below would re-swallow it into the fallback chain, silently
-                # routing the blocked egress onward to the next profile. Re-raise
-                # (mirrors BudgetExceededError) so the SSRF guard hard-stops.
-                raise
-            except ModelPausedError:
-                raise
-            except Exception:
-                # D-22: see below — a provider-level failure on the primary must
-                # fall through to the fallback chain, not abort the whole call.
-                result = None
-            if result is not None:
-                return result
-
-        for fb_id in fallback_ids:
-            if tracker is not None and not tracker.is_healthy(fb_id):
-                continue
-            try:
-                result = self._try_call_model(fb_id, messages, **kwargs)
-            except BudgetExceededError:
-                # D-24: budget rejection is a hard fail — do not continue the
-                # fallback chain (would bypass the per-profile spending cap).
-                raise
-            except SSRFRejectionError:
-                # F-E: an SSRF egress rejection is a hard security fail — do not
-                # continue the fallback chain. Without this the bare ``except
-                # Exception`` below re-swallows the rejection re-raised by
-                # _try_call_model and routes onward to the next profile, masking
-                # the egress block. Re-raise (mirrors BudgetExceededError).
-                raise
-            except ModelPausedError:
-                raise
-            except Exception:
-                # D-22: a provider-level failure from one fallback must NOT abort
-                # the whole chain. call_model already recorded the failure on the
-                # health tracker (record_timeout_on_failure), so the next
-                # iteration's is_healthy check will honour the freshly-opened
-                # circuit. Swallow here and continue to the next fallback so the
-                # is_healthy gate gets to skip the now-unhealthy model instead of
-                # the caller retrying the whole chain (retry-storm amplifier).
-                continue
-            if result is not None:
-                return result
-
-        # After the D-22 fix every provider-level exception is swallowed with
-        # ``continue`` in the fallback loop, so by the time we reach this point
-        # every model was either skipped (unhealthy) or tried-and-failed (breaker
-        # now open). There is no useful case for re-raising the raw last_exc — it
-        # masks the circuit-breaker state and amplifies retry storms.
-        raise CircuitBreakerOpenError(
-            f"All profiles in fallback chain failed for '{profile_id}'"
-        )
+        if last_exc is not None:
+            raise last_exc from None
 
     def _notify_profile_change(
         self,
