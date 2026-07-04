@@ -188,7 +188,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Fresh secrets scan adjudicated; dist paths clean (W5.3) | ✓ 100% | **PASS** *(file-refs only)*: `[526104b]` |
 | Worker /jobs/* require PSK auth (W5.6) | ✓ 100% | **PASS** *(file-refs only)*: 9 passed; `[526104b]` |
 | Metric-label cardinality guard (#60) | ✓ 100% | **PASS** *(file-refs only)*: `metrics_exporter.py:34-79`; `[audit #60 DONE-VERIFIED]` |
-| F5b/F6a/F6b security features (fast-follow branch) | ✗ 100% | **PENDING** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref |
+| F5b/F6a/F6b security features (fast-follow branch) | ✗ 0% | **PENDING** *(file-refs only)*: branch abandoned — fast-follow branch does not exist |
 | D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✗ 0% | **PENDING**: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
 | D-07 through D-47 security backlog | ✗ 5% | **PENDING**: catalogued in `docs/audit/NEW_FINDINGS_2026-06-16.md`; not scheduled |
 | CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE) | ✓ 100% | **PASS** *(file-refs only)*: adjudicated; does not block ship; `[526104b]` |
@@ -273,7 +273,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Pre-commit hooks (detect-secrets, ruff, no-tracked-keys, etc.) | ✓ 100% | **PASS** *(file-refs only)*: `make install-hooks`; enforcing since `[7035e8c]` |
 | make dogfood passes self-hosting | ✗ 50% | **PENDING**: PASSES; no API key required (monkeypatches dispatch); dogfood Makefile target removed — src/general_ludd/dogfood/orchestrator.py still exists |
 | Operator SSH key rotation + history scrub | ✗ 0% | **PENDING**: explicitly out-of-agent-scope; operator action required; `TASKS.md:W5.1` |
-| Wave 3 merge to master | ✗ 100% | **PENDING** *(file-refs only)*: feature/wave3-ship-final already merged to master (verified 2026-07-03); [6063e51] |
+| Wave 3 merge to master | ✗ 100% | **PENDING** *(file-refs only)*: feature/wave3-ship-final already merged to master 72c31576 |
 | CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x) | ✓ 100% | **PASS** *(file-refs only)*: 15+ fixes across Q3.1–Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]` |
 | Unit-1 CI shard rebalance: --ignore-glob test_connector (#62) | ✓ 100% | **PASS** *(file-refs only)*: unit-1 drops from 20+min toward ~10-12min; `[43083168]` |
 | make validate-opencode-config gate prerequisite (Q2.8) | ~ 100% | **PARTIAL** *(file-refs only)*: 4 schema-allowed top-level key tests; wired as gate prerequisite; `[4ea8f168]` |
