@@ -516,7 +516,7 @@ def test_push_stalled_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     monkeypatch.setattr(aw, "_alerted_anomalies", set())
 
     result = aw.check_task_anomalies()
-    assert len(result.get("stalled", [])) == 0
+    assert len(result.get("stalled", [])) >= 1
 
     captured = capsys.readouterr()
     assert "PUSH STALLED" in captured.out

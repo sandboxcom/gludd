@@ -1490,14 +1490,32 @@ def _detect_stalled_push() -> str | None:
         return None
 
     duration = time.time() - mtime
-    if duration > STALLED_PUSH_SECS:
-        msg = (
-            f"\u26d4 TIMING ANOMALY: git-push running for {duration:.0f}s "
-            f"(expected 30s). Check for network issues."
+    if duration <= STALLED_PUSH_SECS:
+        return None
+
+    unpushed_count = -1
+    try:
+        result = subprocess.run(
+            ["sh", "-c", "git log --oneline @{u}..HEAD 2>&1 | wc -l"],
+            capture_output=True, text=True, timeout=VERIFY_REMOTE_TIMEOUT,
+            cwd=str(_WORKSPACE),
         )
-        _log(msg)
-        return msg
-    return None
+        unpushed = result.stdout.strip()
+        try:
+            unpushed_count = int(unpushed)
+        except ValueError:
+            unpushed_count = 0
+        if unpushed_count == 0:
+            return None
+    except Exception:
+        pass
+
+    msg = (
+        f"\u26d4 TIMING ANOMALY: git-push running for {duration:.0f}s "
+        f"(expected 30s, {unpushed_count} unpushed). Check for network issues."
+    )
+    _log(msg)
+    return msg
 
 
 def check_and_reset() -> dict:
@@ -1671,6 +1689,35 @@ def check_and_reset() -> dict:
         pass
     else:
         _log("streak file missing — enforcement may not be tracking")
+
+    # ── Stalled task detection: idle streak + long-running task ──────────
+    if mtime_age is not None and mtime_age > 20:
+        task_state_path = Path(TASK_STATE_FILE)
+        if task_state_path.exists():
+            try:
+                tasks = json.loads(task_state_path.read_text())
+                if isinstance(tasks, dict):
+                    tasks = [tasks]
+                if isinstance(tasks, list):
+                    now = time.time()
+                    for task in tasks:
+                        if not isinstance(task, dict):
+                            continue
+                        started = task.get("started", 0)
+                        name = task.get("name", "unknown")
+                        pid = task.get("pid")
+                        if not started:
+                            continue
+                        elapsed = now - started
+                        if elapsed > 60:
+                            _log(f"STALLED TASK: {name} running {elapsed:.0f}s")
+                            if pid:
+                                kill_stalled_task(pid)
+                            _reset_streak()
+                            result["reset_applied"] = True
+                            result["stop_detected"] = True
+            except Exception:
+                pass
 
     return result
 
