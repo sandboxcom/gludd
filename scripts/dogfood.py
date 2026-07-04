@@ -159,7 +159,7 @@ async def run_dogfood() -> int:
 
         loop = EventLoop(session=factory, daemon_state={})
 
-        async def patched_dispatch(todo_item: object) -> None:
+        async def patched_dispatch(todo_item: object, **kwargs: object) -> None:
             job = JobSpec(
                 job_id=f"EXEC-{todo_item.todo_id}",  # type: ignore[attr-defined]
                 todo_id=todo_item.todo_id,  # type: ignore[attr-defined]
