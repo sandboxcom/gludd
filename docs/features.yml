@@ -1135,7 +1135,7 @@ sections:
         title: "Wave 3 merge to master"
         pct: 100
         evidence_refs: ["branch:feature/wave3-ship-final"]
-        notes: "feature/wave3-ship-final already merged to master 72c31576"
+        notes: "feature/wave3-ship-final merged to master. 72c31576"
 
       - id: ci-fix-wave
         title: "CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x)"
@@ -1326,7 +1326,8 @@ sections:
         pct: 100
         evidence_refs:
           - "test:tests/unit/test_worker_workspace_cleanup.py"
-        notes: "already fixed: try/finally with shutil.rmtree in worker/app.py; `[audit]`"
+          - "file:src/general_ludd/worker/app.py::rmtree"
+        notes: "FIXED: try/finally with shutil.rmtree(ignore_errors=True) in worker/app.py:500; `[audit]`"
 
       - id: sf-cosign-key-repr
         title: "`CosignKey.__repr__` leaks private_key + password to logs"
@@ -1335,7 +1336,7 @@ sections:
           - "file:src/general_ludd/secrets/cosign.py::CosignKey"
           - "test:tests/unit/test_cosign_key_repr.py"
           - "test:tests/unit/test_cosign_repr_security.py"
-        notes: "FIXED on master: `field(repr=False)` on private_key + password; 14 tests across 2 files"
+        notes: "FIXED on master: `field(repr=False)` on private_key + password; 14 tests across 2 files; `[6e2bc057]`"
 
       - id: sf-circuit-breaker-health
         title: "`call_model_with_fallback` never checks circuit-breaker health"

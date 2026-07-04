@@ -273,7 +273,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Pre-commit hooks (detect-secrets, ruff, no-tracked-keys, etc.) | ✓ 100% | **PASS** *(file-refs only)*: `make install-hooks`; enforcing since `[7035e8c]` |
 | make dogfood passes self-hosting | ✗ 50% | **PENDING** *(file-refs only)*: dogfood target EXISTS (Makefile:1672, calls scripts/dogfood.py) but FAILS: patched_dispatch() monkeypatch on _dispatch_execute_job is stale — missing _variable_repo_override param added in EventLoop._dispatch_execute_job (loop.py:1496). e2e tests pass but only exercise mock/offline paths; live todo-website scenario skipped. src/general_ludd/dogfood/orchestrator.py still exists. |
 | Operator SSH key rotation + history scrub | ✗ 0% | **PENDING**: explicitly out-of-agent-scope; operator action required; `TASKS.md:W5.1` |
-| Wave 3 merge to master | ✗ 100% | **PENDING** *(file-refs only)*: feature/wave3-ship-final already merged to master 72c31576 |
+| Wave 3 merge to master | ✗ 100% | **PENDING** *(file-refs only)*: feature/wave3-ship-final merged to master. 72c31576 |
 | CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x) | ✓ 100% | **PASS** *(file-refs only)*: 15+ fixes across Q3.1–Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]` |
 | Unit-1 CI shard rebalance: --ignore-glob test_connector (#62) | ✓ 100% | **PASS** *(file-refs only)*: unit-1 drops from 20+min toward ~10-12min; `[43083168]` |
 | make validate-opencode-config gate prerequisite (Q2.8) | ~ 100% | **PARTIAL** *(file-refs only)*: 4 schema-allowed top-level key tests; wired as gate prerequisite; `[4ea8f168]` |
