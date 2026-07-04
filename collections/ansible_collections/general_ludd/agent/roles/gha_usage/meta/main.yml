@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: gha_usage
+  author: Agentic Harness Agent
+  description: >
+    Query GitHub Actions usage and billing for a repository;
+    compute run statistics, estimated minutes used, and free-tier warning.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

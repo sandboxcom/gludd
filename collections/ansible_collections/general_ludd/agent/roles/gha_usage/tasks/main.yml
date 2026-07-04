@@ -1,0 +1,124 @@
+---
+- name: Fetch recent workflow runs
+  ansible.builtin.command:
+    argv:
+      - "{{ gha_cli_path }}"
+      - api
+      - "/repos/{{ gha_repo }}/actions/runs?per_page=5"
+  register: _gha_runs_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse recent runs JSON
+  ansible.builtin.set_fact:
+    _gha_runs: "{{ _gha_runs_raw.stdout | from_json }}"
+  when:
+    - _gha_runs_raw.rc == 0
+    - _gha_runs_raw.stdout | length > 0
+
+- name: Fetch workflow list
+  ansible.builtin.command:
+    argv:
+      - "{{ gha_cli_path }}"
+      - api
+      - "/repos/{{ gha_repo }}/actions/workflows"
+  register: _gha_workflows_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse workflow list JSON
+  ansible.builtin.set_fact:
+    _gha_workflows: "{{ _gha_workflows_raw.stdout | from_json }}"
+  when:
+    - _gha_workflows_raw.rc == 0
+    - _gha_workflows_raw.stdout | length > 0
+
+- name: Fetch org billing
+  ansible.builtin.command:
+    argv:
+      - "{{ gha_cli_path }}"
+      - api
+      - "/orgs/{{ gha_org }}/settings/billing/actions"
+  register: _gha_billing_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse billing JSON
+  ansible.builtin.set_fact:
+    _gha_billing: "{{ _gha_billing_raw.stdout | from_json }}"
+  when:
+    - _gha_billing_raw.rc == 0
+    - _gha_billing_raw.stdout | length > 0
+
+- name: Set billing fallback
+  ansible.builtin.set_fact:
+    _gha_billing: {}
+  when: _gha_billing is not defined
+
+- name: Set runs fallback
+  ansible.builtin.set_fact:
+    _gha_runs:
+      workflow_runs: []
+  when: _gha_runs is not defined
+
+- name: Set workflows fallback
+  ansible.builtin.set_fact:
+    _gha_workflows:
+      total_count: 0
+  when: _gha_workflows is not defined
+
+- name: Count runs by conclusion
+  ansible.builtin.set_fact:
+    _gha_runs_count: "{{ _gha_runs.workflow_runs | length }}"
+    _gha_runs_success: "{{ _gha_runs.workflow_runs | selectattr('conclusion', 'equalto', 'success') | list | length }}"
+    _gha_runs_failure: "{{ _gha_runs.workflow_runs | selectattr('conclusion', 'equalto', 'failure') | list | length }}"
+    _gha_runs_pending: "{{ _gha_runs.workflow_runs | rejectattr('conclusion', 'in', ['success', 'failure', 'cancelled', 'skipped', 'timed_out']) | list | length }}"
+
+- name: Compute success rate
+  ansible.builtin.set_fact:
+    _gha_success_rate: >-
+      {{ (_gha_runs_success | int / _gha_runs_count | int * 100) | round(1)
+         if _gha_runs_count | int > 0 else 0.0 }}
+
+- name: Compute estimated minutes
+  ansible.builtin.set_fact:
+    _gha_estimated_minutes: "{{ _gha_runs_count | int * gha_avg_minutes_per_run | int }}"
+
+- name: Compute usage percentage and warning
+  ansible.builtin.set_fact:
+    _gha_pct_used: >-
+      {{ (_gha_estimated_minutes | int / gha_free_minutes | int * 100) | round(1)
+         if gha_free_minutes | int > 0 else 0.0 }}
+    _gha_warning: >-
+      {{ _gha_estimated_minutes | int > (gha_free_minutes | int * gha_warn_threshold_pct / 100)
+         if gha_free_minutes | int > 0 else false }}
+
+- name: Build usage report
+  ansible.builtin.set_fact:
+    gha_usage_report:
+      repo: "{{ gha_repo }}"
+      org: "{{ gha_org }}"
+      runs_last_24h: "{{ _gha_runs_count | int }}"
+      runs_succeeded: "{{ _gha_runs_success | int }}"
+      runs_failed: "{{ _gha_runs_failure | int }}"
+      runs_pending: "{{ _gha_runs_pending | int }}"
+      success_rate_pct: "{{ _gha_success_rate | float }}"
+      estimated_minutes: "{{ _gha_estimated_minutes | int }}"
+      free_minutes: "{{ gha_free_minutes | int }}"
+      pct_used: "{{ _gha_pct_used | float }}"
+      usage_warning: "{{ _gha_warning | bool }}"
+      workflow_count: "{{ _gha_workflows.total_count | default(0) | int }}"
+      billing_available: "{{ _gha_billing | length > 0 }}"
+      billing: "{{ _gha_billing }}"
+
+- name: Report usage summary
+  ansible.builtin.debug:
+    msg: >-
+      GHA usage for {{ gha_repo }}:
+      {{ _gha_runs_count }} runs in 24h,
+      {{ _gha_runs_success }} succeeded, {{ _gha_runs_failure }} failed,
+      {{ _gha_success_rate }}% success rate,
+      {{ _gha_estimated_minutes }} est. minutes used
+      of {{ gha_free_minutes }} free-tier limit
+      ({{ _gha_pct_used }}%).
+      {% if _gha_warning %}WARNING: usage exceeds {{ gha_warn_threshold_pct }}% threshold.{% endif %}

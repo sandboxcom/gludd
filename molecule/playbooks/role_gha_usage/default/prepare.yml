@@ -1,0 +1,52 @@
+---
+- name: Prepare - mock gh CLI for gha_usage
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "8854"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}.pid"
+    mock_gh_dir: "/tmp/gludd-gha-usage-mock"
+  tasks:
+    - name: Create mock gh directory
+      ansible.builtin.file:
+        path: "{{ mock_gh_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Launch mock daemon
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Create mock gh script
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          set -e
+          PORT={{ mock_port }}
+          if [ "$1" = "api" ]; then
+            shift
+            ENDPOINT="$1"
+            shift 2>/dev/null || true
+            curl -sf "http://127.0.0.1:${PORT}${ENDPOINT}"
+          else
+            echo '{"error":"mock gh only supports api subcommand"}'
+          fi
+        dest: "{{ mock_gh_dir }}/gh"
+        mode: "0755"

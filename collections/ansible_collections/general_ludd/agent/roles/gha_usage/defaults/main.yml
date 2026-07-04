@@ -1,0 +1,8 @@
+---
+gha_repo: "sandboxcom/gludd"
+gha_org: "sandboxcom"
+gha_free_minutes: 2000
+gha_avg_minutes_per_run: 20
+gha_warn_threshold_pct: 80
+gha_api_base: "https://api.github.com"
+gha_cli_path: "gh"

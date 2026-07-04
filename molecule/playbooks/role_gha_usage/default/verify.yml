@@ -1,0 +1,88 @@
+---
+- name: Verify - gha_usage report matches expectations
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "8854"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}.pid"
+    mock_gh_dir: "/tmp/gludd-gha-usage-mock"
+  environment:
+    PATH: "{{ mock_gh_dir }}:/usr/bin:/bin:/usr/local/bin"
+  tasks:
+    - name: Regenerate gha_usage report
+      ansible.builtin.include_role:
+        name: general_ludd.agent.gha_usage
+      vars:
+        gha_repo: "mock-org/mock-repo"
+        gha_org: "mock-org"
+        gha_api_base: "http://127.0.0.1:{{ mock_port }}"
+
+    - name: Assert gha_usage_report is defined
+      ansible.builtin.assert:
+        that:
+          - gha_usage_report is defined
+          - gha_usage_report.repo == "mock-org/mock-repo"
+          - gha_usage_report.org == "mock-org"
+          - gha_usage_report.runs_last_24h is defined
+          - gha_usage_report.runs_succeeded is defined
+          - gha_usage_report.runs_failed is defined
+          - gha_usage_report.runs_pending is defined
+          - gha_usage_report.success_rate_pct is defined
+          - gha_usage_report.estimated_minutes is defined
+          - gha_usage_report.free_minutes is defined
+          - gha_usage_report.pct_used is defined
+          - gha_usage_report.usage_warning is defined
+          - gha_usage_report.workflow_count is defined
+          - gha_usage_report.billing_available is defined
+          - gha_usage_report.billing is defined
+        fail_msg: "gha_usage_report missing fields: {{ gha_usage_report }}"
+        success_msg: "gha_usage_report shape correct: {{ gha_usage_report.repo }}"
+
+    - name: Assert run counts are plausible
+      ansible.builtin.assert:
+        that:
+          - gha_usage_report.runs_last_24h | int >= 0
+          - gha_usage_report.runs_succeeded | int >= 0
+          - gha_usage_report.runs_failed | int >= 0
+          - gha_usage_report.success_rate_pct | float >= 0
+          - gha_usage_report.success_rate_pct | float <= 100
+          - gha_usage_report.estimated_minutes | int >= 0
+        fail_msg: "run counts out of range: {{ gha_usage_report }}"
+        success_msg: "run counts plausible"
+
+    - name: Assert workflow count is positive
+      ansible.builtin.assert:
+        that:
+          - gha_usage_report.workflow_count | int > 0
+        fail_msg: "workflow_count should be > 0: {{ gha_usage_report.workflow_count }}"
+        success_msg: "{{ gha_usage_report.workflow_count }} workflows found"
+
+    - name: Assert billing populated
+      ansible.builtin.assert:
+        that:
+          - gha_usage_report.billing_available | bool
+          - gha_usage_report.billing.total_minutes_used is defined
+          - gha_usage_report.billing.included_minutes is defined
+        fail_msg: "billing missing: {{ gha_usage_report.billing }}"
+        success_msg: "billing available: {{ gha_usage_report.billing.total_minutes_used }} minutes"
+
+    - name: Assert usage computed
+      ansible.builtin.assert:
+        that:
+          - gha_usage_report.estimated_minutes | int == (gha_usage_report.runs_last_24h | int * 20)
+          - gha_usage_report.usage_warning == (gha_usage_report.pct_used > 80)
+        fail_msg: "usage computation wrong: est={{ gha_usage_report.estimated_minutes }} runs={{ gha_usage_report.runs_last_24h }}"
+        success_msg: "usage computed: {{ gha_usage_report.estimated_minutes }} min, {{ gha_usage_report.pct_used }}%"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove mock gh dir
+      ansible.builtin.file:
+        path: "{{ mock_gh_dir }}"
+        state: absent
+      failed_when: false
