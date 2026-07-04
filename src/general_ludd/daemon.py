@@ -1034,10 +1034,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             _proj_tmpl_dir = Path(_proj_for_prompts) / "templates"
             if _proj_tmpl_dir.is_dir():
                 _extra_tmpl_dirs = [str(_proj_tmpl_dir)]
+        hub_registry = None
+        _use_hub = bool(getattr(uc, "use_hub", False)) if uc else False
+        if _use_hub:
+            from general_ludd.prompts.hub_registry import LangChainHubRegistry
+
+            hub_registry = LangChainHubRegistry(use_hub=True)
+            logger.info("LangChainHubRegistry enabled for prompt resolution")
         prompt_registry = PromptRegistry(
             template_dir=templates_dir,
             event_bus=subsys["bus"],
             extra_template_dirs=_extra_tmpl_dirs or None,
+            hub_registry=hub_registry,
         )
         # P2 (perf): refresh() globs the template dir and read_text()s each *.j2
         # file — blocking filesystem IO. Offload it so the daemon-boot coroutine
@@ -1077,6 +1085,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             CompactionAggressivenessController,
         )
         app.state._compaction_aggressiveness_controller = CompactionAggressivenessController()
+
+        from general_ludd.approval.gate import ApprovalGate
+        app.state._approval_gate = ApprovalGate()
 
         model_gateway = None
         deployment_health_router = None
@@ -1158,6 +1169,23 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         if getattr(app.state, "eval_harness", None) is None:
             app.state.eval_harness = EvalHarness(model="sonnet")
 
+        # LangChain/LangGraph integration: feature-flag-gated construction of
+        # LangChainModelRouter and LangChainRetryGateway. Both default OFF.
+        _use_langchain_routing = bool(getattr(uc, "use_langchain_routing", False)) if uc else False
+        _use_langchain_retry = bool(getattr(uc, "use_langchain_retry", False)) if uc else False
+        app.state._langchain_router = None
+        app.state._langchain_retry_gateway = None
+        if _use_langchain_routing:
+            from general_ludd.models.langchain_router import LangChainModelRouter
+
+            app.state._langchain_router = LangChainModelRouter()
+            logger.info("LangChainModelRouter enabled for model routing")
+        if _use_langchain_retry and model_gateway is not None:
+            from general_ludd.models.langchain_retry import LangChainRetryGateway
+
+            app.state._langchain_retry_gateway = LangChainRetryGateway(model_gateway)
+            logger.info("LangChainRetryGateway enabled for retry/fallback orchestration")
+
         # H4 (W3.2): wire a real ReturnReviewer into the review phase when a
         # gateway exists. Review failure escalates the todo; it is never a
         # silent pass.
@@ -1173,13 +1201,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
         langgraph_reviewer = None
-        review_cfg = {}
+        review_cfg: dict[str, Any] = {}
+        if uc is not None:
+            hitl = getattr(uc, "human_in_the_loop", None)
+            review_cfg["human_in_the_loop"] = bool(getattr(hitl, "enabled", False))
+            review_cfg["confidence_threshold"] = float(getattr(hitl, "confidence_threshold", 0.7))
         if model_gateway is not None:
             review_use_langgraph = False
             if uc is not None:
                 with contextlib.suppress(Exception):
                     review_use_langgraph = bool(
-                        getattr(uc.agent, "use_langgraph_review", False)
+                        getattr(uc, "use_langgraph_review", False)
                         or startup_config.get("review", {}).get("use_langgraph", False)
                     )
             if review_use_langgraph:
@@ -1369,9 +1401,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         sandbox_executor = SandboxExecutor(timeout=30)
 
-        app.state.checkpointer = get_checkpointer(
-            db_url=str(engine.url) if engine and str(engine.url).startswith("sqlite") else None
+        _checkpointing_cfg = getattr(uc, "checkpointing", {}) if uc else {}
+        _checkpointing_enabled = (
+            bool(_checkpointing_cfg.get("enabled", False))
+            if isinstance(_checkpointing_cfg, dict)
+            else False
         )
+        if _checkpointing_enabled:
+            app.state.checkpointer = get_checkpointer(
+                db_url=str(engine.url) if engine and str(engine.url).startswith("sqlite") else None
+            )
+        else:
+            from general_ludd.execution.graph_checkpointer import TickCheckpointer
+            app.state.checkpointer = TickCheckpointer(saver=None)
 
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
@@ -1407,6 +1449,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # per-project workspace.repo_dir when available.
                 "repo_root": os.getcwd(),
                 "review": review_cfg,
+                "use_langgraph_tool_loop": bool(getattr(uc, "use_langgraph_tool_loop", False)) if uc else False,
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,
@@ -2438,6 +2481,8 @@ def create_daemon_app(
     )
     spend.register(app, daemon_state)
     pause.register(app, daemon_state)
+    from general_ludd.routers import approval as _approval_router
+    _approval_router.register(app, daemon_state)
     from general_ludd.routers import compaction_aggressiveness as _compaction_aggr_router
     _compaction_aggr_router.register(app, daemon_state)
     from general_ludd.routers import coordination as _coord_router

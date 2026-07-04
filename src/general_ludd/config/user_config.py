@@ -100,6 +100,11 @@ class _YamlSettingsSource(PydanticBaseSettingsSource):
         return {k: v for k, v in self._data.items()}
 
 
+class HumanInTheLoopConfig(BaseModel):
+    enabled: bool = False
+    confidence_threshold: float = 0.7
+
+
 class UserConfig(BaseSettings):
     """User configuration with pydantic-settings (W4.4).
 
@@ -155,6 +160,14 @@ class UserConfig(BaseSettings):
     # Deletion gate: threshold for lines removed before requiring DELETION_REASON env var.
     # Set to 0 to disable the gate. Override via GLUDD_DELETION_GATE_THRESHOLD.
     deletion_gate_threshold: int = 5
+    # LangChain/LangGraph integration feature flags. All default OFF so existing
+    # behaviour is unchanged unless explicitly enabled.
+    use_langgraph_tool_loop: bool = False
+    use_langchain_routing: bool = False
+    use_langchain_retry: bool = False
+    use_hub: bool = False
+    checkpointing: dict[str, Any] = {"enabled": False}
+    human_in_the_loop: HumanInTheLoopConfig = HumanInTheLoopConfig()
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> UserConfig:

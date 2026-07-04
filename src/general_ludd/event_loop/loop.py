@@ -2042,51 +2042,73 @@ class EventLoop:
                 and self._model_gateway is not None
             ):
                 try:
-                    from general_ludd.execution.tool_loop import ToolCallLoop
-
-                    # SLICE 2 (task #56): opt-in SLM context-compaction on the
-                    # ITERATIVE tool loop. Read the SAME "compaction" config the
-                    # Phase-1 generation path reads (enable flag + aggression
-                    # level); default OFF so the tool loop is unchanged unless the
-                    # operator enables it. When on, a small local ``compactor``
-                    # model summarizes the older middle of the tool history before
-                    # each model call (fail-soft; the open tool round is preserved
-                    # verbatim inside ToolCallLoop).
-                    _tl_compaction_cfg = (
-                        self.config.get("compaction", {})
+                    _use_langgraph = (
+                        self.config.get("use_langgraph_tool_loop", False)
                         if isinstance(self.config, dict)
-                        else {}
+                        else False
                     )
-                    _tl_level = None
-                    _tl_summarize_fn = None
-                    if bool(_tl_compaction_cfg.get("enabled", False)):
-                        from general_ludd.compaction.slm import (
-                            make_slm_summarize_fn,
-                        )
 
-                        _tl_level = _level_at(_tl_compaction_cfg.get("level", 1))
-                        _tl_summarize_fn = make_slm_summarize_fn(
-                            self._model_gateway, "compactor"
-                        )
+                    tool_loop: Any = None
+                    if _use_langgraph:
+                        from general_ludd.execution.langgraph_agent import LangGraphAgentLoop
 
-                    auditor = ToolCallAuditor()
-                    store = BadCallSituationStore()
-                    tool_loop = ToolCallLoop(
-                        model_gateway=self._model_gateway,
-                        mcp_client=self._mcp_client,
-                        mcp_registry=self._mcp_tool_registry,
-                        # Per-role capability gate: the event-loop turn handler
-                        # drives MCP tool use under the built-in "event_loop"
-                        # role, which grants the "mcp" dispatch kind (see
-                        # capability_lattice._BUILTIN) so normal operation is
-                        # unaffected. Supplying the role activates the fail-closed
-                        # gate in run_with_tools instead of leaving it ungated.
-                        role="event_loop",
-                        compaction_level=_tl_level,
-                        summarize_fn=_tl_summarize_fn,
-                        tool_auditor=auditor,
-                        situation_store=store,
-                    )
+                        auditor = ToolCallAuditor()
+                        tool_loop = LangGraphAgentLoop(
+                            model_gateway=self._model_gateway,
+                            mcp_client=self._mcp_client,
+                            mcp_registry=self._mcp_tool_registry,
+                            role="event_loop",
+                            tool_auditor=auditor,
+                        )
+                        logger.debug(
+                            "EventLoop: using LangGraphAgentLoop for Phase-2"
+                        )
+                    else:
+                        from general_ludd.execution.tool_loop import ToolCallLoop
+
+                        # SLICE 2 (task #56): opt-in SLM context-compaction on the
+                        # ITERATIVE tool loop. Read the SAME "compaction" config the
+                        # Phase-1 generation path reads (enable flag + aggression
+                        # level); default OFF so the tool loop is unchanged unless the
+                        # operator enables it. When on, a small local ``compactor``
+                        # model summarizes the older middle of the tool history before
+                        # each model call (fail-soft; the open tool round is preserved
+                        # verbatim inside ToolCallLoop).
+                        _tl_compaction_cfg = (
+                            self.config.get("compaction", {})
+                            if isinstance(self.config, dict)
+                            else {}
+                        )
+                        _tl_level = None
+                        _tl_summarize_fn = None
+                        if bool(_tl_compaction_cfg.get("enabled", False)):
+                            from general_ludd.compaction.slm import (
+                                make_slm_summarize_fn,
+                            )
+
+                            _tl_level = _level_at(_tl_compaction_cfg.get("level", 1))
+                            _tl_summarize_fn = make_slm_summarize_fn(
+                                self._model_gateway, "compactor"
+                            )
+
+                        auditor = ToolCallAuditor()
+                        store = BadCallSituationStore()
+                        tool_loop = ToolCallLoop(
+                            model_gateway=self._model_gateway,
+                            mcp_client=self._mcp_client,
+                            mcp_registry=self._mcp_tool_registry,
+                            # Per-role capability gate: the event-loop turn handler
+                            # drives MCP tool use under the built-in "event_loop"
+                            # role, which grants the "mcp" dispatch kind (see
+                            # capability_lattice._BUILTIN) so normal operation is
+                            # unaffected. Supplying the role activates the fail-closed
+                            # gate in run_with_tools instead of leaving it ungated.
+                            role="event_loop",
+                            compaction_level=_tl_level,
+                            summarize_fn=_tl_summarize_fn,
+                            tool_auditor=auditor,
+                            situation_store=store,
+                        )
                     # Use the Phase-1 generated text as additional context so the
                     # tool-driven phase REFINES the analysis rather than starting
                     # blind; fall back to the raw prompt when Phase 1 produced

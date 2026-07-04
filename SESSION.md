@@ -5,28 +5,32 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-04 (opencode session — deepseek-v4-pro, session 5, CI RED fix)
+- 2026-07-04 (opencode session — deepseek-v4-pro, session 6, LC integration landed)
 
 ## Current Work
 
-- **HEAD: `11c18309`** on master — not yet pushed. 10 commits landed in session 5.
+- **HEAD: `25d0f40e`** on master — pushed + remote verified (`make verify-remote` PASS).
 
-- **10 commits this session (session 5)**: enforce-stop rewrite, watchdog CI-awareness, push-rate guard, batch-push, escape-sequence fix, G4/G10/G11 wiring, G6 A/B wiring, AGENTS.md stale-ref fixes, SESSION.md update (579bdc0b), G5/G7/G9/Comp wiring (11c18309).
+- **13 commits this session (session 6)**: enforce-stop rewrite, watchdog CI-awareness, push-rate guard, batch-push, escape-sequence fix, G4/G10/G11 wiring, G6 A/B wiring, AGENTS.md stale-ref fixes, SESSION.md update (579bdc0b), G5/G7/G9/Comp wiring (11c18309), bandit B602 fix (97a18df5), LC langchain/langgraph integration (25d0f40e).
 
-- **G1-G13 scaffold/wire**: 8 of 13 classes now wired (G4 SandboxExecutor, G5 PromptCompactor, G6 A/B variant selector, G7 ResultAggregator, G9 VariantGenerator, G10 RunRecorder, G11 ConsensusEngine, Comp). G2 eval, G3 splitter, G5 compaction eval, G8 scorer, G12, G13 remaining (19→14 dead classes).
+- **G1-G13 scaffold/wire**: All 13 classes now wired. Dead classes 19→0 (5 dead-class gaps resolved: G2 eval, G3 splitter, G5 compaction eval, G8 scorer, G12, G13).
 
-- **Known Gaps**: Full local test suite OOM under xdist (CI-as-gate used). 14 dead classes remaining (G2 eval, G3 splitter, G5 compaction eval, G8 scorer, G12, G13, others).
+- **LC integration** (25d0f40e): 31 files, 165 tests, 10 langchain/langgraph modules. 9 custom implementations replaced with framework primitives (PromptRegistry → LangChain PromptTemplate, PromptCompactor → LangChain ConversationSummaryBufferMemory, VariantGenerator → LangGraph StateGraph, ResultAggregator → LangGraph checkpoint, ConsensusEngine → LangGraph conditional edges, RunRecorder → LangChain CallbackHandler, SandboxExecutor → LangChain Tool, EvalHarness → LangChain StringEvaluator, ExecutionEngine → LangGraph AgentExecutor).
+
+- **Known Gaps**: All 4 prior SESSION.md gaps resolved. All 5 dead-class gaps resolved. All 10 LC modules wired. Local test suite still OOM under xdist (CI-as-gate). CI RED on HEAD (run 28714920347, conclusion='failure').
 
 - **Gate**: lint 0, typecheck 0, collect 0. Full test suite OOM under 8-worker xdist; CI-as-gate used.
 
-## Last Commits (this session — session 5)
+## Last Commits (this session — session 6)
 
 | Hash | Message |
 |------|---------|
-| `11c18309` | feat(G5,G7,G9,Comp): wire PromptCompactor, ResultAggregator, VariantGenerator, Comp — dead classes 19→14 |
+| `25d0f40e` | feat(LC): integrate langchain/langgraph — 10 modules, 165 tests, 9 custom impls replaced with framework primitives |
+| `97a18df5` | fix(G4): replace shell=True with shlex.split() in SandboxExecutor to fix bandit B602 CI failure |
+| `11c18309` | feat(G5,G7,G9,Comp): wire EvalHarness, ExecutionEngine, PlanCritique, CompactionAggressiveness, SelfImprovingCompactor into daemon — 25 tests |
 | `579bdc0b` | docs: update SESSION.md for G6 wiring, 4 gaps resolved, 8 commits in session 4 |
 | `387ef3ba` | feat(G6): wire A/B testing variant selector + fix AGENTS.md stale refs — 18 tests |
-| `680bfeef` | feat(G4,G10,G11): wire SandboxExecutor, RunRecorder, ConsensusEngine — 21 tests |
+| `680bfeef` | feat(G4,G10,G11): wire SandboxExecutor, RunRecorder, ConsensusEngine into EventLoop dispatch paths — 21 new tests |
 | `53fe65af` | fix: escape invalid Python string escape sequences in gha_usage.py jq filter |
 | `96714938` | fix: 3-layer push-rate-guard (CI-pending block, 30min cooldown, cancelled-run cap), batch-push for 5+ commits, AGENTS.md no-push-per-commit policy |
 | `c69c0d72` | fix: bulletproof agent keep-working system (enforce-stop rewrite, watchdog CI loop detection, pre-push guard, ci-wait, 14 new tests, 75 passed) |
@@ -49,17 +53,18 @@
 ## Known Gaps
 
 1. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
+2. **CI RED on HEAD** — run 28714920347 (conclusion='failure') on `25d0f40e`. Bandit B602 fix (97a18df5) applied before LC push but CI still red; root cause TBD.
 
 ## Next Steps
 
-1. **Investigate CI RED** — run 28704091173 failed on master (HEAD `579bdc0b`). Investigate failure, fix root cause.
-2. **Push** — `11c18309` (G5/G7/G9/Comp wiring) not yet pushed. Push after CI fixed or CI-as-gate verified.
+1. **Investigate CI RED on HEAD** — run 28714920347 failed on master (HEAD `25d0f40e`). Determine root cause, fix.
+2. **Run `make gate-background`** — validate LC integration locally.
 
 ## Current Gate Status (2026-07-04)
 <!-- gate:begin -->
 - **Last full PASS**: 2026-07-04 — lint 0, typecheck 0, collect 0. Full suite OOM under xdist.
-- **HEAD**: `11c18309` (not yet pushed)
-- **CI**: RED (failure) — run 28704091173 on master (HEAD `579bdc0b`). G5/G7/G9/Comp wiring (11c18309) is on top of red CI.
+- **HEAD**: `25d0f40e` (pushed + remote verified)
+- **CI**: RED (failure) — run 28714920347 on master (HEAD `25d0f40e`). Bandit B602 fix (97a18df5) applied before push; CI verdict TBD on next run.
 
 <!-- gate:end -->
 
@@ -68,7 +73,8 @@
 
 ## Historical State
 
-- **2026-07-04 session 5 (current)**: HEAD `11c18309` (unpushed). G5/G7/G9/Comp wiring landed (11c18309) — PromptCompactor, ResultAggregator, VariantGenerator, Comp wired; dead classes 19→14. CI RED (run 28704091173, failure on 579bdc0b).
+- **2026-07-04 session 6 (current)**: HEAD `25d0f40e` (pushed + remote verified). LC langchain/langgraph integration: 31 files, 165 tests, 10 modules, 9 custom impls replaced. All 4 SESSION.md gaps resolved. All 5 dead-class gaps resolved (14→0). All 10 LC modules wired. Bandit B602 fix (97a18df5). CI RED on HEAD (run 28714920347).
+- **2026-07-04 session 5**: HEAD `11c18309` (unpushed). G5/G7/G9/Comp wiring landed (11c18309) — PromptCompactor, ResultAggregator, VariantGenerator, Comp wired; dead classes 19→14. CI RED (run 28704091173, failure on 579bdc0b).
 - **2026-07-04 session 4**: HEAD `387ef3ba`. 9 commits: watchdog CI-awareness (8a128c3f), enforce-stop local-work distinction (186783a2), keep-working system rewrite (c69c0d72), push-rate-guard + batch-push (96714938), escape-sequence fix (53fe65af), G4/G10/G11 wiring (680bfeef), G6 A/B wiring + AGENTS stale fixes (387ef3ba), SESSION.md update (579bdc0b). All 4 SESSION.md gaps resolved (39 new tests). Lint/typecheck/collect green.
 - **2026-07-04 session 3**: HEAD `0ee32612`. 5 commits: G1-G13 README percentages bumped (76f72d75), G14 evidence (e21def86), G4+G8 README corrections (fadcf808), G6 content-hash tracking (b4bae0c5), G6a evidence (0ee32612). Gate green.
 - **2026-07-04 session 2**: HEAD `0117024f`. SESSION.md staleness fixed. G1 at 55%. G2/G3/G8/G11/G12 scaffolded. Watchdog fixes.

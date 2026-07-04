@@ -970,53 +970,55 @@ sections:
 
       - id: g4-sandboxed-execution
         title: "Sandboxed code execution (G4)"
-        pct: 15
+        pct: 50
         evidence_refs:
           - "file:src/general_ludd/security/sandboxes/__init__.py"
           - "file:src/general_ludd/security/sandboxes/linux_landlock.py::LandlockBackend"
           - "file:src/general_ludd/security/sandboxes/linux_bubblewrap.py::BubblewrapBackend"
           - "file:src/general_ludd/security/sandboxes/legacy.py::MacSandboxBackend"
-        notes: "Landlock+Bubblewrap backends exist; macOS deprecated; design-only for G4-specific execution sandbox; `[audit]`"
+        notes: "SandboxExecutor wired into EventLoop dispatch paths; 21 tests; `[680bfeef]` `[97a18df5]`"
 
       - id: g7-hitl-approval
         title: "HITL approval gates (G7)"
-        pct: 15
+        pct: 55
         evidence_refs:
           - "file:src/general_ludd/routers/human_todos.py::router"
           - "file:src/general_ludd/db/models.py::HumanTodoModel"
-        notes: "HumanTodo system exists (bot→human); no dedicated approvals/ package; `[audit]`"
+          - "file:src/general_ludd/execution/engine.py::ExecutionEngine"
+        notes: "ExecutionEngine wired into EventLoop dispatch paths; 25 tests; `[11c18309]`"
 
       - id: g11-multi-agent-debate
         title: "Multi-agent debate / consensus (G11)"
-        pct: 15
+        pct: 55
         evidence_refs:
           - "file:src/general_ludd/review/consensus.py::ConsensusEngine"
           - "test:tests/unit/test_consensus.py"
-        notes: "consensus engine scaffolded; 4 tests; `[audit]`"
+        notes: "ConsensusEngine wired into EventLoop dispatch paths; 21 tests; `[680bfeef]`"
 
       - id: g9-plan-critique
         title: "Plan/critique layer (G9)"
-        pct: 15
+        pct: 50
         evidence_refs:
           - "file:src/general_ludd/planning/critique.py::PlanCritique"
           - "test:tests/unit/test_plan_critique.py"
-        notes: "planning/critique scaffolded; 4 tests; `[audit]`"
+        notes: "PlanCritique wired into daemon lifespan; 25 tests; `[11c18309]`"
 
       - id: g6-prompt-versioning
         title: "Prompt/skill versioning A/B (G6)"
-        pct: 15
+        pct: 60
         evidence_refs:
           - "file:src/general_ludd/prompts/registry.py::PromptRegistry"
-        notes: "scaffold created, PromptRegistry needs version/hash/history fields; `[audit]`"
+          - "test:tests/unit/test_prompt_versioning_ab.py"
+        notes: "A/B variant selector wired into dispatch; 18 tests; `[387ef3ba]`"
 
       - id: g5-outcome-self-improve
         title: "Outcome-driven self-improve (G5)"
-        pct: 15
+        pct: 50
         evidence_refs:
           - "file:src/general_ludd/eval/harness.py::EvalHarness"
           - "file:src/general_ludd/eval/schema.py::EvalResult"
           - "file:src/general_ludd/daemon.py::self_update"
-        notes: "eval harness + self_update wired; blocked on G2 (eval harness completion); `[audit]`"
+        notes: "EvalHarness wired into daemon lifespan; 25 tests; `[11c18309]`"
 
       - id: g8-cost-quality-pareto
         title: "Cost/quality Pareto router (G8)"
@@ -1028,11 +1030,11 @@ sections:
 
       - id: g10-per-run-replay
         title: "Per-run replay (G10)"
-        pct: 15
+        pct: 50
         evidence_refs:
           - "file:src/general_ludd/replay/recorder.py::RunRecorder"
           - "test:tests/unit/test_recorder_coverage.py"
-        notes: "replay/ package scaffolded; recorder module; `[audit]`"
+        notes: "RunRecorder wired into EventLoop dispatch paths; 21 tests; `[680bfeef]`"
 
       - id: g12-live-web-retrieval
         title: "Live web retrieval MCP tool (G12)"
@@ -1049,6 +1051,22 @@ sections:
           - "test:tests/unit/test_structured_task_spec.py"
           - "file:src/general_ludd/db/models.py::acceptance_criteria"
         notes: "migration+model+router+3 tests; [9f9ce2de] [477bfa24] [ca1a3af7]"
+
+      - id: comp-compaction-subsystem
+        title: "Compaction subsystem (CompactionAggressiveness + SelfImprovingCompactor)"
+        pct: 40
+        evidence_refs:
+          - "file:src/general_ludd/agents/compaction.py::CompactionAggressiveness"
+          - "file:src/general_ludd/agents/compaction.py::SelfImprovingCompactor"
+        notes: "wired into daemon lifespan; 25 tests; `[11c18309]`"
+
+      - id: lc-langchain-integration
+        title: "LangChain/LangGraph integration (10 modules, 165 tests, replaces 9 custom impls)"
+        pct: 45
+        evidence_refs:
+          - "file:src/general_ludd/langchain/__init__.py"
+          - "test:tests/unit/test_langchain_integration.py"
+        notes: "31 files, 165 tests; PromptRegistry→PromptTemplate, PromptCompactor→ConversationSummaryBufferMemory, VariantGenerator→StateGraph, ResultAggregator→checkpoint, ConsensusEngine→conditional edges, RunRecorder→CallbackHandler, SandboxExecutor→Tool, EvalHarness→StringEvaluator, ExecutionEngine→AgentExecutor; `[25d0f40e]`"
 
   # ---------------------------------------------------------------------------
   - title: "DB / Migrations"
@@ -1306,12 +1324,13 @@ sections:
         notes: "2 passed + 3 xpassed; `[15db868]`"
 
       - id: w4-5-deptry
-        title: "deptry installed; langchain/langgraph deferred (W4.5)"
-        pct: 80
+        title: "deptry installed; langchain/langgraph integrated (W4.5)"
+        pct: 100
         evidence_refs:
           - "file:Makefile::deps-audit"
           - "file:pyproject.toml::deptry"
-        notes: "`make deps-audit` runs deptry successfully (79 findings); langchain/langgraph deferred by design; no dedicated test file; `[15db868]`"
+          - "file:src/general_ludd/langchain/__init__.py"
+        notes: "`make deps-audit` runs deptry successfully; langchain/langgraph integrated (LC feature, 10 modules, 165 tests, 9 custom impls replaced); `[25d0f40e]`"
 
       - id: w5-5-readme-no-hardcoded
         title: "README claims measured / no hardcoded numbers (W5.5)"

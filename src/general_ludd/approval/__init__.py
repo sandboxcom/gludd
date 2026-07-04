@@ -1,5 +1,10 @@
 """G7 HITL approval gates — human-in-the-loop approval workflows."""
 
-__all__ = ("ApprovalGate",)
+__all__ = ("ApprovalDecision", "ApprovalGate", "ApprovalRequest", "ApprovalResponse")
 
-from general_ludd.approval.gate import ApprovalGate
+from general_ludd.approval.gate import (
+    ApprovalDecision,
+    ApprovalGate,
+    ApprovalRequest,
+    ApprovalResponse,
+)
