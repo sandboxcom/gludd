@@ -63,6 +63,7 @@ import json
 import os
 import sys
 import threading
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -1036,6 +1037,36 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
                     "files": 8,
                 },
                 "recent_false_positive_blocks": 3,
+            })
+        # ---- GitHub API mock routes (gha_usage role) ------------------------
+        elif path == "/repos/mock-org/mock-repo/actions/runs":
+            now = datetime.now(timezone.utc)
+            self._send_json(200, {
+                "total_count": 5,
+                "workflow_runs": [
+                    {"id": 1, "name": "gate", "conclusion": "success", "status": "completed", "created_at": now.isoformat()},
+                    {"id": 2, "name": "pytest", "conclusion": "success", "status": "completed", "created_at": now.isoformat()},
+                    {"id": 3, "name": "lint", "conclusion": "success", "status": "completed", "created_at": (now - timedelta(hours=2)).isoformat()},
+                    {"id": 4, "name": "typecheck", "conclusion": "failure", "status": "completed", "created_at": (now - timedelta(hours=6)).isoformat()},
+                    {"id": 5, "name": "deploy", "conclusion": "success", "status": "completed", "created_at": (now - timedelta(hours=22)).isoformat()},
+                ],
+            })
+        elif path == "/repos/mock-org/mock-repo/actions/workflows":
+            self._send_json(200, {
+                "total_count": 3,
+                "workflows": [
+                    {"id": 1, "name": "gate", "path": ".github/workflows/gate.yml", "state": "active"},
+                    {"id": 2, "name": "build", "path": ".github/workflows/build.yml", "state": "active"},
+                    {"id": 3, "name": "release", "path": ".github/workflows/release.yml", "state": "active"},
+                ],
+            })
+        elif path == "/orgs/mock-org/settings/billing/actions":
+            self._send_json(200, {
+                "total_minutes_used": 320,
+                "total_paid_minutes_used": 0,
+                "included_minutes": 2000,
+                "usable_minutes": 1680,
+                "pending_cancellation_minutes": 0,
             })
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
