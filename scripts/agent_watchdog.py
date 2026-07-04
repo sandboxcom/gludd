@@ -504,6 +504,48 @@ def _pending_work_exists() -> bool:
     return _tasks_md_has_unchecked() or _ratchet_has_entries() > 0 or _gate_status_is_red()
 
 
+def _ci_is_pending_or_red() -> tuple[bool, str | None]:
+    """Check if CI is pending (in-flight work) or red (broken work).
+
+    Returns (has_ci_work, run_id_or_None).
+    CI-pending means the agent has work waiting on external validation.
+    CI-red means the agent has broken work that needs fixing.
+    """
+    try:
+        result = subprocess.run(
+            ["make", "ci-verdict", "BRANCH=master"],
+            capture_output=True, text=True, timeout=CI_VERDICT_TIMEOUT,
+            cwd=str(_WORKSPACE),
+        )
+        output = (result.stdout + result.stderr).upper()
+        if "SUCCESS" in output:
+            return False, None
+        run_id_match = re.search(r"run[_\s]?[\s:=]?\s*(\d+)", output, re.IGNORECASE)
+        run_id = run_id_match.group(1) if run_id_match else None
+        if any(status in output for status in ("PENDING", "IN_PROGRESS", "QUEUED", "WAITING")):
+            return True, run_id
+        if "RED" in output or "FAILURE" in output:
+            return True, run_id
+        return False, run_id
+    except Exception:
+        return False, None
+
+
+def _ci_pending_for_too_long_minutes() -> float | None:
+    """Return how many minutes CI has been pending, or None if CI is not pending."""
+    try:
+        p = Path(CI_CACHE_FILE)
+        if not p.exists():
+            return None
+        data = json.loads(p.read_text())
+        first_seen = data.get("pending_first_seen", 0)
+        if first_seen <= 0:
+            return None
+        return (time.time() - first_seen) / 60.0
+    except Exception:
+        return None
+
+
 def _write_watchdog_activity(ts: float | None = None) -> None:
     ts_value = ts if ts is not None else time.time()
     Path(WATCHDOG_ACTIVITY_FILE).write_text(
@@ -1586,14 +1628,21 @@ def check_and_reset() -> dict:
 
     # ── NEW: Stop detection via pending-work + streak mtime ──────────────
     has_pending_work = _pending_work_exists()
+    ci_pending, ci_run_id = _ci_is_pending_or_red()
+    has_any_work = has_pending_work or ci_pending
     mtime_age = _streak_mtime_age_seconds()
 
     if mtime_age is not None and mtime_age < PURE_IDLE_SECS:
         _write_watchdog_activity()
 
-    if has_pending_work and (streak == 0 or streak is None) and mtime_age is not None and mtime_age > STOP_IDLE_SECS:
+    if has_any_work and (streak == 0 or streak is None) and mtime_age is not None and mtime_age > STOP_IDLE_SECS:
         reset_needed = True
-        reason = f"STOP DETECTED: agent idle with pending work ({mtime_age:.0f}s since last tool)"
+        work_sources = []
+        if has_pending_work:
+            work_sources.append("local")
+        if ci_pending:
+            work_sources.append(f"CI (run {ci_run_id})")
+        reason = f"STOP DETECTED: agent idle with pending work ({', '.join(work_sources)}) — {mtime_age:.0f}s since last tool"
         result["stop_detected"] = True
         _log(reason)
 
@@ -1603,8 +1652,23 @@ def check_and_reset() -> dict:
                 f"[{_now()}] REPEATED STOP DETECTED ({stop_count}x) — WORK OR FACE RESTART\n"
             )
         else:
+            work_hint = ""
+            if ci_pending and not has_pending_work:
+                ci_minutes = _ci_pending_for_too_long_minutes()
+                if ci_minutes and ci_minutes > 10:
+                    work_hint = (
+                        f" CI pending >{ci_minutes:.0f}min. "
+                        "Stop pushing new commits — they reset CI. "
+                        "Work on wiring/coding gaps while waiting.\n"
+                    )
+                else:
+                    work_hint = (
+                        " CI pending. Work on wiring/coding gaps while waiting. "
+                        "Do NOT push new commits until CI is green.\n"
+                    )
             directive = (
-                f"[{_now()}] STOP DETECTED: pending work exists. "
+                f"[{_now()}] STOP DETECTED: pending work exists ({', '.join(work_sources)}). "
+                f"{work_hint}"
                 "Text-only responses suppressed. DISPATCH SUBAGENTS NOW.\n"
             )
         Path(CONTINUE_DIRECTIVE).write_text(directive)
@@ -1736,8 +1800,16 @@ def check_and_reset() -> dict:
             _log(f"UNJAMMED: {reason}, no pending todos detected but resetting anyway")
 
     # ── No reset: stop count decays if agent is active ───────────────────
-    elif not has_pending_work and mtime_age is not None and mtime_age < POLL_SECS:
+    elif not has_any_work and mtime_age is not None and mtime_age < POLL_SECS:
         _clear_stop_count()
+    elif ci_pending and not has_pending_work:
+        ci_minutes = _ci_pending_for_too_long_minutes()
+        if ci_minutes is not None and ci_minutes > 30:
+            _log(f"CI STALLED: pending >30min (run {ci_run_id}) — may need investigation")
+        elif ci_minutes is not None and ci_minutes > 10:
+            _log(f"CI NOTE: pending {ci_minutes:.0f}min (run {ci_run_id}) — stop pushing new commits")
+        else:
+            _log(f"CI pending (run {ci_run_id}) — work locally while waiting")
     elif streak is not None:
         pass
     else:

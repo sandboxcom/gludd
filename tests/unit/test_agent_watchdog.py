@@ -723,3 +723,131 @@ def test_watchdog_mtime_age_returns_none_for_missing_file(tmp_path, monkeypatch)
     monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(tmp_path / "nonexistent-watchdog-99999.json"))
     result = aw._streak_mtime_age_seconds()
     assert result is None
+
+
+# ── CI awareness tests ─────────────────────────────────────────────────────────
+
+
+def test_ci_is_pending_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "_WORKSPACE", tmp_path)
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(tmp_path / "ci-cache.json"))
+
+    def mock_ci_verdict(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=["make", "ci-verdict"],
+            returncode=0,
+            stdout="CI PENDING: abc123 run 12345 status='pending'\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", mock_ci_verdict)
+    ci_pending, run_id = aw._ci_is_pending_or_red()
+    assert ci_pending is True
+    assert run_id == "12345"
+
+
+def test_ci_is_success_not_pending(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "_WORKSPACE", tmp_path)
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(tmp_path / "ci-cache.json"))
+
+    def mock_ci_verdict(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=["make", "ci-verdict"],
+            returncode=0,
+            stdout="CI SUCCESS: abc123 run 12345 conclusion: success\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", mock_ci_verdict)
+    ci_pending, _run_id = aw._ci_is_pending_or_red()
+    assert ci_pending is False
+
+
+def test_ci_is_red_detected_as_pending(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "_WORKSPACE", tmp_path)
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(tmp_path / "ci-cache.json"))
+
+    def mock_ci_verdict(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=["make", "ci-verdict"],
+            returncode=0,
+            stdout="CI RED: abc123 run 12345 conclusion: failure\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", mock_ci_verdict)
+    ci_pending, run_id = aw._ci_is_pending_or_red()
+    assert ci_pending is True
+    assert run_id == "12345"
+
+
+def test_ci_subprocess_error_graceful(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "_WORKSPACE", tmp_path)
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(tmp_path / "ci-cache.json"))
+
+    def mock_error(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd="make", timeout=5.0)
+
+    monkeypatch.setattr(subprocess, "run", mock_error)
+    ci_pending, run_id = aw._ci_is_pending_or_red()
+    assert ci_pending is False
+    assert run_id is None
+
+
+def test_ci_pending_for_too_long(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    ci_cache = tmp_path / "ci-cache.json"
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(ci_cache))
+    ci_cache.write_text(json.dumps({"pending_first_seen": time.time() - 60 * 60}))
+
+    minutes = aw._ci_pending_for_too_long_minutes()
+    assert minutes is not None
+    assert minutes >= 59.0
+
+
+def test_ci_pending_not_stalled_when_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    ci_cache = tmp_path / "ci-cache.json"
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(ci_cache))
+    ci_cache.write_text(json.dumps({"pending_first_seen": time.time() - 30}))
+
+    minutes = aw._ci_pending_for_too_long_minutes()
+    assert minutes is not None
+    assert minutes < 2.0
+
+
+def test_check_and_reset_with_ci_only_pending(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _setup_full(monkeypatch, tmp_path)
+
+    streak_path = tmp_path / "streak.json"
+    streak_path.write_text('{"count":0,"last_tool":"ci-verdict"}')
+    monkeypatch.setattr(aw, "STREAK_FILE", str(streak_path))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+    monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(tmp_path / "continue.txt"))
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(tmp_path / "ci-cache.json"))
+    monkeypatch.setattr(aw, "_TASKS_MD", (tmp_path / "TASKS.md"))
+    monkeypatch.setattr(aw, "_RATCHET_YML", (tmp_path / "ratchet.yml"))
+    monkeypatch.setattr(aw, "_GATE_STATUS", (tmp_path / ".gate-status"))
+    monkeypatch.setattr(aw, "STOP_COUNT_FILE", str(tmp_path / "stop-count.json"))
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    # No local pending work
+    (tmp_path / "TASKS.md").write_text("- [x] all done\n")
+    (tmp_path / "ratchet.yml").write_text("# empty\n")
+    (tmp_path / ".gate-status").write_text("lint PASS 0\ntypecheck PASS 0\n")
+
+    # But CI is pending
+    def mock_subprocess_run(cmd, **_kwargs):
+        if isinstance(cmd, list) and cmd[1] == "ci-verdict":
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0,
+                stdout="CI PENDING: abc run 99999 status='pending'\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    result = aw.check_and_reset()
+
+    # Should detect that CI-pending is pending work but should NOT
+    # flag a stop since the agent is actively polling CI
+    assert "stop_detected" in result
