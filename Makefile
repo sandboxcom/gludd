@@ -833,23 +833,69 @@ git-remote-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
 	@echo "Remote sandboxcom configured"
 
-# Item 16: CI loop guard — warn and gate when CI is already pending
-_ci-pending-guard:
+# -- Push gate: prevent CI thrash (cancelled runs, push storms, excessive pushes) --
+
+# Minimum seconds between pushes (30 minutes). Override with GLUDD_FORCE_PUSH=1.
+PUSH_COOLDOWN_SECS ?= 1800
+# Max cancelled CI runs in last 2 hours before blocking pushes. Override with GLUDD_FORCE_PUSH=1.
+MAX_CANCELLED_RUNS ?= 3
+
+_push-rate-guard:
+	@# Check if CI is currently pending
 	@CI_STATUS=$$(make ci-verdict BRANCH=master 2>&1 || true); \
 	if echo "$$CI_STATUS" | grep -qi 'PENDING\|IN_PROGRESS\|QUEUED'; then \
 		RUN=$$(echo "$$CI_STATUS" | grep -o '[0-9]\{8,\}' | head -1); \
-		echo "WARNING: CI run $$RUN is still pending on master. Pushing will restart it."; \
+		echo "BLOCKED: CI run $$RUN is pending. Pushing will cancel it."; \
 		if [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
-			echo "Set GLUDD_FORCE_PUSH=1 to push anyway, or use 'make ci-wait' to wait for CI."; \
+			echo "Use GLUDD_FORCE_PUSH=1 to override, or 'make ci-wait' to wait."; \
 			exit 1; \
 		fi; \
 		echo "GLUDD_FORCE_PUSH=1: forcing push despite pending CI."; \
 	fi
+	@# Check push cooldown (minimum interval between pushes)
+	@LAST_PUSH=$$(python3 -c "import json;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];print(d[-1] if d else 0)" 2>/dev/null || echo 0); \
+	if [ "$$LAST_PUSH" != "0" ]; then \
+		NOW=$$(python3 -c "import time;print(time.time())"); \
+		ELAPSED=$$(python3 -c "print(int($$NOW - $$LAST_PUSH))"); \
+		if [ "$$ELAPSED" -lt "$(PUSH_COOLDOWN_SECS)" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
+			echo "BLOCKED: last push was $$ELAPSED seconds ago (cooldown: $(PUSH_COOLDOWN_SECS)s)."; \
+			echo "Batch commits locally. Use GLUDD_FORCE_PUSH=1 to override."; \
+			exit 1; \
+		fi; \
+	fi
+	@# Check cancelled-run count in last 2 hours
+	@CANCELLED=$$(GLUDD_WORKSPACE=$(GLUDD_WORKSPACE) python3 scripts/gha_cancelled_count.py 2>/dev/null || echo 0); \
+	if [ "$$CANCELLED" -ge "$(MAX_CANCELLED_RUNS)" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
+		echo "BLOCKED: $$CANCELLED CI runs cancelled in last 2h (max $(MAX_CANCELLED_RUNS))."; \
+		echo "Run 'make gate-background' locally instead. Use GLUDD_FORCE_PUSH=1 to override."; \
+		exit 1; \
+	fi
 
-git-push-sandboxcom: _ci-pending-guard
+git-push-sandboxcom: _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
+
+# Batch push: only push after substantial local work (default 5+ unpushed commits).
+# Override: COMMIT_THRESHOLD=1 or GLUDD_FORCE_PUSH=1.
+# This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
+batch-push:
+	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
+	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
+	if [ "$$COUNT" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
+		echo "NOT PUSHING: only $$COUNT unpushed commit(s) (threshold=$$THRESHOLD)."; \
+		echo "Batch locally. Use GLUDD_FORCE_PUSH=1 or COMMIT_THRESHOLD=1 to override."; \
+		exit 0; \
+	fi; \
+	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
+	$(MAKE) git-push-sandboxcom
+
+# CI-aware push that waits for CI to go green before returning
+# Same as git-push-sandboxcom but waits for CI completion after push
+ci-push: _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
+	@echo "Pushed to sandboxcom/gludd. Waiting for CI..."; \
+	$(MAKE) ci-wait
 
 # Item 17: Poll CI until green with periodic heartbeat
 ci-wait:

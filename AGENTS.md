@@ -946,6 +946,46 @@ This skips the local .gate-status freshness check (CI IS the gate) but STILL ski
 
 This is NOT a bypass for a red gate — if tests are failing, fix them first.
 
+## CRITICAL: Don't Push Every Commit — Batch Locally, Push Once
+
+**Pushing to master on every commit cancels every prior CI run. Zero validation occurs.**
+The GHA usage data proves this: 0/10 runs succeeded this session because every push
+cancelled the previous one. Nothing was ever tested by CI. This is not "using CI as
+a gate" — it is using CI as a cancellation daemon.
+
+### Rules (each is machine-enforced)
+
+1. **`make batch-push` is the sanctioned push.** Default threshold: 5+ unpushed commits
+   OR `COMMIT_THRESHOLD=1` to push immediately. `GLUDD_FORCE_PUSH=1` bypasses all guards.
+   Direct `make git-push-sandboxcom` is subject to the full rate guard (3-layer: CI-pending,
+   30-min cooldown, cancelled-run cap).
+
+2. **Validate locally before pushing.** Lint + typecheck + collect-check + targeted tests
+   is the real gate. CI is for final validation of batched work, not per-commit testing.
+   Run `make gate-background` locally and wait for it to complete before pushing.
+
+3. **When pushing, WAIT for CI.** Use `make ci-push` (push + ci-wait) so the pipeline
+   actually completes. Never push and immediately push again — that's the cancellation loop.
+
+4. **Maximum one CI run in flight at a time.** The `_push-rate-guard` enforces this:
+   - CI-pending? BLOCKED. Use `make ci-wait` first.
+   - <30 min since last push? BLOCKED (cooldown).
+   - >3 cancelled runs in last 2h? BLOCKED (thrash detection).
+
+5. **Prefer local validation.** `make gate-background` runs the full suite locally in
+   the background. It has phase markers, heartbeat, and writes `.gate-status`. This is
+   faster than CI (no queue wait) and doesn't consume shared resources.
+
+### What NOT to do
+
+| Forbidden | Why |
+|---|---|
+| `make git-push-sandboxcom` after every commit | Cancels prior CI, zero validation |
+| Push when CI is already running | Cancels the running CI |
+| Push <30 minutes after last push | Cooldown violation |
+| Push after 3+ cancelled runs in 2h | Thrash detection |
+| Treat CI as the only validation | Local gate is the real gate |
+
 ## CRITICAL: Evidence-Based Response Policy
 
 Every factual claim MUST have supporting evidence from a tool call, file read, URL fetch, or test result.
