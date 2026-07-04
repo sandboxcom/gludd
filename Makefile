@@ -1372,11 +1372,11 @@ commit-no-verify:
 	else \
 		echo "CI-is-gate mode: skipping local gate check."; \
 	fi
-	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 repo-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
-	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 delete-file:
 	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }
