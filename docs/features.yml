@@ -1011,11 +1011,11 @@ sections:
 
       - id: g13-structured-task-spec
         title: "Structured task-spec / acceptance_criteria (G13)"
-        pct: 20
-        evidence_refs: []
-        notes: "acceptance_criteria + definition_of_done added to TodoModel; migration created. Pending: router endpoint, validation, tests.
-
-        "
+        pct: 40
+        evidence_refs:
+          - "test:tests/unit/test_structured_task_spec.py"
+          - "file:src/general_ludd/db/models.py::acceptance_criteria"
+        notes: "migration+model+router+3 tests; [9f9ce2de] [477bfa24] [ca1a3af7]"
 
   # ---------------------------------------------------------------------------
   - title: "DB / Migrations"
