@@ -491,6 +491,7 @@ sections:
         pct: 100
         evidence_refs:
           - "test:tests/unit/test_ansible_ssti_guard.py"
+          - "file:src/general_ludd/execution/engine.py::validate_extra_vars_safe"
         notes: "14 passed; `[514bce93]`"
 
       - id: skill-renderer-ssti
