@@ -39,6 +39,7 @@ shape matches what each module parses:
   GET  /admin/processes/<pid>/stats   -> 200 psutil-shaped stats snapshot     (gludd_process status / gludd_proc_monitor)
   POST /admin/processes/<pid>/signal  -> 200 {"ok":true,"pid":..,"signal":..} (gludd_process signal)
   GET  /admin/ornith/pairs            -> 200 {"pairs":[...],"count":N}        (gludd_ornith pairs — rejected training pairs)
+  GET  /process-audit                  -> 200 guardrail_health/plugin_footprint/.. (gludd_audit)
   POST /api/human-todos               -> 201 created human-todo               (gludd_human_todo present)
 
 Plus an in-memory request-log introspection seam (NOT a daemon endpoint — a
@@ -1022,6 +1023,20 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             status_csv = (qs.get("status", [""]) or [""])[0]
             limit = int((qs.get("limit", ["10"]) or ["10"])[0])
             self._send_json(200, _ornith_pairs_response(status_csv, limit))
+        elif path == "/process-audit":
+            self._send_json(200, {
+                "guardrail_health": {
+                    "state_based_checks": 5,
+                    "pattern_list_checks": 35,
+                    "health_score": 0.125,
+                    "overfitted": True,
+                },
+                "plugin_footprint": {
+                    "total_lines": 4200,
+                    "files": 8,
+                },
+                "recent_false_positive_blocks": 3,
+            })
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 

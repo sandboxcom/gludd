@@ -1,0 +1,54 @@
+---
+- name: Verify - process_audit produced report
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "8846"
+    pidfile: "/tmp/gludd-mock-8846.pid"
+    artifact: "/tmp/gludd-process-audit-8846/process_audit.json"
+    artifact_md: "/tmp/gludd-process-audit-8846/process_audit.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'process_audit'
+          - result.health_score is defined
+          - result.overfitted is defined
+          - result.plugin_total_lines is defined
+          - result.total_patterns is defined
+        fail_msg: "process_audit artifact wrong: {{ result }}"
+        success_msg: "process_audit ran end-to-end; health_score={{ result.health_score }}, overfitted={{ result.overfitted }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-process-audit-{{ mock_port }}"
+        state: absent
+      failed_when: false
