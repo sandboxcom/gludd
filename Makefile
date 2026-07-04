@@ -1284,6 +1284,29 @@ git-commit:
 	@echo "Gate fresh and green. Committing..."
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
+commit-no-verify:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
+	@if [ "$(GLUDD_CI_IS_GATE)" != "1" ]; then \
+		echo "Running pre-commit collection check..."; \
+		$(MAKE) --no-print-directory collect-check; \
+		echo "Collection OK. Checking gate status..."; \
+		if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi; \
+		for check in lint typecheck collect test smoke; do \
+			if ! grep -q "^$${check} PASS" .gate-status; then \
+				echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
+			fi; \
+		done; \
+		EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
+		NOW=$$(date +%s); \
+		AGE=$$((NOW - EPOCH)); \
+		if [ $$AGE -gt 1800 ]; then \
+			echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
+		fi; \
+	else \
+		echo "CI-is-gate mode: skipping local gate check."; \
+	fi
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
+
 repo-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
