@@ -189,7 +189,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Worker /jobs/* require PSK auth (W5.6) | ✓ 100% | **PASS** *(file-refs only)*: 9 passed; `[526104b]` |
 | Metric-label cardinality guard (#60) | ✓ 100% | **PASS** *(file-refs only)*: `metrics_exporter.py:34-79`; `[audit #60 DONE-VERIFIED]` |
 | F5b/F6a/F6b security features (fast-follow branch) | ✗ 100% | **PENDING** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref |
-| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✗ 10% | **PENDING**: building; not merged; `[SESSION.md:56]` |
+| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✗ 0% | **PENDING**: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
 | D-07 through D-47 security backlog | ✗ 5% | **PENDING**: catalogued in `docs/audit/NEW_FINDINGS_2026-06-16.md`; not scheduled |
 | CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE) | ✓ 100% | **PASS** *(file-refs only)*: adjudicated; does not block ship; `[526104b]` |
 | Permission system + STS Issuer (spec, intersection, escalation) | ~ 100% | **PARTIAL** *(file-refs only)*: `PermissionSpec` + `STSIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]` |
@@ -276,8 +276,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Wave 3 merge to master | ✗ 100% | **PENDING** *(file-refs only)*: feature/wave3-ship-final already merged to master (verified 2026-07-03); [6063e51] |
 | CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x) | ✓ 100% | **PASS** *(file-refs only)*: 15+ fixes across Q3.1–Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]` |
 | Unit-1 CI shard rebalance: --ignore-glob test_connector (#62) | ✓ 100% | **PASS** *(file-refs only)*: unit-1 drops from 20+min toward ~10-12min; `[43083168]` |
-| make validate-opencode-config gate prerequisite (Q2.8) | ✓ 100% | **PASS** *(file-refs only)*: 4 schema-allowed top-level key tests; wired as gate prerequisite; `[4ea8f168]` |
-| Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:53`; `nohup` + PID file + phase markers + status poll; `[audit]` |
+| make validate-opencode-config gate prerequisite (Q2.8) | ~ 100% | **PARTIAL** *(file-refs only)*: 4 schema-allowed top-level key tests; wired as gate prerequisite; `[4ea8f168]` |
+| Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill) | ~ 100% | **PARTIAL** *(file-refs only)*: `Makefile:53`; `nohup` + PID file + phase markers + status poll; `[audit]` |
 | Terraform infrastructure: GPU stacks, IAM modules, policy enforcement (Q2.4-Q2.6) | ✓ 100% | **PASS** *(file-refs only)*: `infra/terraform/` stacks: aws, azure, gcp, runpod, vast, kubernetes; IAM onboarding modules; OPA policies; `[audit]` |
 
 ### Dev-Harness Guardrails
@@ -298,7 +298,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Watchdog FileWatcher in integrity scanner (W4.3) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed + 3 xpassed; `[15db868]` |
 | deptry installed; langchain/langgraph deferred (W4.5) | ✗ 0% | **PENDING**: `[15db868]`; test file not committed |
 | README claims measured / no hardcoded numbers (W5.5) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed; `[526104b]` |
-| `make release-cut` target exists and runs (enforcement of this table) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
+| `make release-cut` target exists and runs (enforcement of this table) | ~ 100% | **PARTIAL** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
 
 ### Security Findings Backlog (NEW_FINDINGS_2026-06-16.md)
 
@@ -321,7 +321,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | `/api/status` returns db_url (with credentials) to unauthenticated callers | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; db_url redacted/removed from response |
 | `SpendLimiter.restore()` accepts negative cost → cap evasion | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; guards against negative cost |
 | F5b/F6a/F6b security features (batch3-security, 14 tests) | ✗ 100% | **PENDING** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref |
-| D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch) | ✗ 0% | **PENDING**: branch abandoned — batch-4 no longer exists; `[branch abandoned]` |
+| D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch) | ✗ 0% | **PENDING**: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
 
 <!-- STATUS-TABLE:END -->
 ## Presentation

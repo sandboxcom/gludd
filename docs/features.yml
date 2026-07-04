@@ -590,9 +590,9 @@ sections:
 
       - id: batch4-security
         title: "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)"
-        pct: 10
+        pct: 0
         evidence_refs: []
-        notes: "building; not merged; `[SESSION.md:56]`"
+        notes: "ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
 
       - id: d07-d47-backlog
         title: "D-07 through D-47 security backlog"
@@ -1417,4 +1417,4 @@ sections:
         title: "D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch)"
         pct: 0
         evidence_refs: []
-        notes: "branch abandoned — batch-4 no longer exists; `[branch abandoned]`"
+        notes: "ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"

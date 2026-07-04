@@ -1305,6 +1305,10 @@ class ModelGateway:
         if last_exc is not None:
             raise last_exc from None
 
+        raise CircuitBreakerOpenError(
+            f"All profiles in fallback chain failed for '{profile_id}'"
+        )
+
     def _notify_profile_change(
         self,
         event: Any,

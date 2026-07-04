@@ -538,6 +538,18 @@ molecule-test:
 git-status:
 	@git status --short || echo "Not a git repo"
 
+git-show:
+	@test -n "$(SHA)" || (echo "Usage: make git-show SHA=<sha>"; exit 1)
+	git show --stat $(SHA)
+
+git-show-full:
+	@test -n "$(SHA)" || (echo "Usage: make git-show-full SHA=<sha>"; exit 1)
+	git show $(SHA)
+
+git-show-name-only:
+	@test -n "$(SHA)" || (echo "Usage: make git-show-name-only SHA=<sha>"; exit 1)
+	git show --name-only $(SHA)
+
 # Read-only diagnostic: current branch/HEAD, where master points, and the
 # worktree layout — to untangle which tree the shell is actually on.
 git-where:
@@ -1389,6 +1401,12 @@ TARBALL_DIR := dist/$(TARBALL_NAME)
 build-executable:
 	@$(UV) run pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
+
+gen-status-table:
+	@$(UV) run python scripts/gen_status_table.py --write --fast
+
+check-status-table:
+	@$(UV) run python scripts/gen_status_table.py --check --fast
 
 verify-status:
 	@$(UV) run python scripts/verify_status.py
