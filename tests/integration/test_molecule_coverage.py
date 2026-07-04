@@ -94,6 +94,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {
     "gludd_human_todo",
     "gludd_langchain_generate",
     "gludd_langgraph_decision",
+    "gludd_open_code",  # TODO: add molecule scenario
     "gludd_ornith",  # TODO: add molecule scenario
     "gludd_proc_monitor",
     "gludd_slurm_deploy",
@@ -123,6 +124,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {
 # the daemon — scenarios are TODO but the roles are wired via FQCN.
 _NOT_YET_COVERED_ROLES: set[str] = {
     "deploy_model_server_slurm",
+    "git_commit_push",  # TODO: add molecule scenario
     "gludd_update",
     "manage_processes",
     "observe_deploy_correlator",

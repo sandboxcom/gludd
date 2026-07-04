@@ -855,11 +855,10 @@ ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
 
 gha-usage:
-	@echo "=== GitHub Actions Usage ==="
-	@gh api /repos/sandboxcom/gludd/actions/runs?per_page=20 --jq '.workflow_runs | group_by(.conclusion) | map({conclusion: .[0].conclusion, count: length}) | .[] | "\(.conclusion): \(.count)"' 2>/dev/null || echo "No runs found or gh not configured"
+	@$(PYTHON) scripts/gha_usage.py
 	@echo ""
 	@echo "Billing (requires admin):"
-	@gh api /orgs/sandboxcom/settings/billing/actions --jq '{total_minutes_used: .total_minutes_used, total_paid_minutes_used: .total_paid_minutes_used, included_minutes: .included_minutes}' 2>/dev/null || echo "Billing not accessible (requires admin)"
+	@gh api /orgs/sandboxcom/settings/billing/actions --jq '{total_minutes_used: .total_minutes_used, total_paid_minutes_used: .total_paid_minutes_used, included_minutes: .included_minutes}' 2>/dev/null || echo "  Billing not accessible (requires admin)"
 
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
@@ -1740,6 +1739,67 @@ gate-async:
 # Print the current .gate-status file (RUNNING/PASS/FAIL).
 gate-status:
 	@if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status found)"; fi
+
+# Launch gate detached via nohup; returns PID immediately (<1s).
+# Writes output to .gate-logs/gate-<ts>.log, PID to .gate-background.pid.
+gate-background:
+	@mkdir -p .gate-logs
+	@nohup $(MAKE) gate > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-background.pid
+
+# Probe background gate: running/pass/fail + current phase + last 20 log lines + .gate-status.
+gate-status-check:
+	@PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
+	if [ -n "$$PID" ] && kill -0 "$$PID" 2>/dev/null; then \
+		echo "RUNNING (pid=$$PID)"; \
+		LOGF=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
+		if [ -n "$$LOGF" ]; then \
+			PHASE=$$(grep '\[gate .*\] phase ' "$$LOGF" 2>/dev/null | tail -1 || echo "(no phase marker yet)"); \
+			echo "Phase: $$PHASE"; \
+			echo "--- last 20 lines ---"; \
+			tail -20 "$$LOGF"; \
+		fi; \
+	elif [ -f .gate-status ]; then \
+		echo "FINISHED:"; cat .gate-status; \
+	else \
+		echo "(no background gate found)"; \
+	fi
+
+# Live tail of the latest gate log (Ctrl-C to stop).
+gate-tail:
+	@LOGF=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
+	if [ -n "$$LOGF" ]; then tail -f "$$LOGF"; else echo "(no gate log found)"; fi
+
+# List .gate-logs/*.log with mtime + PASS/FAIL/incomplete.
+gate-logs:
+	@mkdir -p .gate-logs
+	@for f in .gate-logs/gate-*.log; do \
+		if [ -f "$$f" ]; then \
+			MTIME=$$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$$f" 2>/dev/null || stat -c '%y' "$$f" 2>/dev/null | cut -d. -f1); \
+			if grep -q 'FAIL' "$$f" 2>/dev/null; then STATUS="FAIL"; \
+			elif grep -q '=== GATE: PASSED ===' "$$f" 2>/dev/null; then STATUS="PASS"; \
+			elif grep -q 'GATE:' "$$f" 2>/dev/null; then STATUS="FAIL"; \
+			else STATUS="incomplete"; fi; \
+			echo "$$MTIME  $$STATUS  $$f"; \
+		fi; \
+	done
+
+# Force-kill a running background gate: SIGTERM then SIGKILL after 5s.
+gate-kill:
+	@PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
+	if [ -n "$$PID" ] && kill -0 "$$PID" 2>/dev/null; then \
+		echo "[gate-kill] sending SIGTERM to pid=$$PID"; \
+		kill -TERM "$$PID" 2>/dev/null || true; \
+		ELAPSED=0; \
+		while [ $$ELAPSED -lt 5 ] && kill -0 "$$PID" 2>/dev/null; do sleep 1; ELAPSED=$$((ELAPSED+1)); done; \
+		if kill -0 "$$PID" 2>/dev/null; then \
+			echo "[gate-kill] sending SIGKILL to pid=$$PID"; \
+			kill -KILL "$$PID" 2>/dev/null || true; \
+		fi; \
+		rm -f .gate-background.pid; \
+		echo "[gate-kill] done"; \
+	else \
+		echo "(no running background gate found)"; \
+	fi
 
 # ---------------------------------------------------------------------------
 # Activate the BLOCKING gate-safe agent-floor Stop hook (#79/#78)
