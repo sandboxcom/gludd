@@ -153,9 +153,8 @@ class TestProcessChainLength:
         count = 0
         for line in array_block.splitlines():
             stripped = line.strip()
-            if stripped.startswith('"') and stripped.endswith('",'):
-                count += 1
-            elif stripped.startswith('"') and stripped.endswith('"'):
+            if ((stripped.startswith('"') and stripped.endswith('",'))
+                    or (stripped.startswith('"') and stripped.endswith('"'))):
                 count += 1
         return count
 
