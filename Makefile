@@ -18,7 +18,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
-        test-guardrails test-scripts test-db test-live-zai test-tui-daemon \
+         test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-bg \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
@@ -39,7 +39,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook
+		gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
+		repo-visibility
 
 help:
 	@echo "Usage: make [target]"
@@ -847,6 +848,9 @@ git-tag-push:
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
 # --- CI observability (W16) ---
+repo-visibility:
+	@gh api /repos/sandboxcom/gludd --jq '.private' 2>&1 || echo "gh-api-failed"
+
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
 
@@ -1019,6 +1023,12 @@ test-iso:
 test-xdist:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-xdist TESTFILE=path"; exit 1; fi
 	@BT="/tmp/gludd-xdist-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) -n 2 --dist loadgroup -p no:cacheprovider --basetemp="$$BT" -q; RC=$$?; rm -rf "$$BT"; exit $$RC
+
+test-bg:
+	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-bg TESTFILE='tests/unit/test_foo.py'"; exit 1; fi
+	@nohup $(UV) run python -m pytest $(TESTFILE) -v --tb=short > .gate-logs/test-bg-$$(date +%Y%m%d%H%M%S).log 2>&1 &
+	@echo "test-bg: PID=$$!"
+	@echo "test-bg: check with make gate-logs"
 
 # Full-suite xdist run with a THREAD-method per-test timeout so an uninterruptible
 # hang (which the gate's signal-method timeout can't catch) is force-failed and
