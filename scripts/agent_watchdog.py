@@ -2,12 +2,21 @@
 """gludd agent unjamming watchdog — detects compulsive-stop patterns and resets.
 
 Polled by a background Makefile target (`make watchdog-start`). Every check cycle:
-1. Reads /tmp/gludd-mainthread-streak.json — if streak ≥ 3, resets to 0
+1. Reads /tmp/gludd-mainthread-streak.json — if streak >= 3, resets to 0
 2. Reads /tmp/gludd-todowrite-state.json — reports pending items
 3. Reads .gludd-session-fix-needed.txt — confirms restart status
 
 When a reset fires, it also writes /tmp/gludd-auto-reset.log with timestamp so
 the orchestrator can see how often the agent gets jammed.
+
+STOP DETECTION (per direct user mandate):
+- Reads TASKS.md for `- [ ]` / `* [ ]` unchecked items (same pattern as enforce-stop.ts)
+- Reads config/ratchet.yml for non-comment, non-empty entries
+- Reads .gate-status for FAIL lines
+- If ANY pending work exists AND /tmp/gludd-mainthread-streak.json hasn't been
+  updated in >15 seconds, the agent is probably sending a text-only response
+- Logs "STOP DETECTED: agent idle with pending work", resets streak, writes directive
+- Tracks repeated stops in /tmp/gludd-watchdog-stop-count.json; escalates at 3+
 
 Also provides a tail-classification API used by floor_controller.py and tested
 in tests/unit/test_agent_watchdog.py:
@@ -28,12 +37,13 @@ from __future__ import annotations
 import enum
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-# ── Classification API ────────────────────────────────────────────────────────
+# -- Classification API -------------------------------------------------------
 
 DEFAULT_WINDOW_SECS: float = 90.0
 
@@ -102,7 +112,7 @@ def scan_tasks_dir(
     return results
 
 
-# ── Streak-reset watchdog ─────────────────────────────────────────────────────
+# -- Streak-reset watchdog ----------------------------------------------------
 
 STREAK_FILE = "/tmp/gludd-mainthread-streak.json"
 TODOWRITE_STATE = os.environ.get("GLUDD_TODOWRITE_STATE", "/tmp/gludd-todowrite-state.json")
@@ -111,6 +121,20 @@ HIBERNATION_MARKER = Path("/tmp/gludd-watchdog-hibernating")
 POLL_SECS = 10
 
 STREAK_THRESHOLD = 3  # with 10s polling, threshold is reached in ~30s of sustained grinding
+STOP_IDLE_SECS = 15  # streak file mtime older than this + pending work = text-only stop
+STOP_COUNT_FILE = "/tmp/gludd-watchdog-stop-count.json"
+STOP_ESCALATE_THRESHOLD = 3
+
+STOP_STATE = os.environ.get("GLUDD_STOP_STATE", "/tmp/gludd-stop-state.json")
+FALSE_DONE_BLOCKS = os.environ.get("GLUDD_FALSE_DONE_BLOCKS", "/tmp/gludd-false-done-blocks.json")
+CONTINUE_DIRECTIVE = os.environ.get("GLUDD_CONTINUE_DIRECTIVE", "/tmp/gludd-continue-directive.txt")
+
+_WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd()))
+_TASKS_MD = _WORKSPACE / "TASKS.md"
+_RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
+_GATE_STATUS = _WORKSPACE / ".gate-status"
+
+_UNCHECKED_PATTERN = re.compile(r"-\s+\[\s*\]|\*\s+\[\s*\]", re.IGNORECASE)
 
 
 def _now() -> str:
@@ -135,7 +159,6 @@ def _read_streak() -> int | None:
 
 def _reset_streak() -> None:
     Path(STREAK_FILE).write_text('{"count":0,"last_tool":"reset_by_watchdog"}')
-    _log("RESET streak → 0 (unjammed)")
 
 
 def _pending_todos() -> list[str]:
@@ -150,9 +173,91 @@ def _pending_todos() -> list[str]:
         return []
 
 
-STOP_STATE = os.environ.get("GLUDD_STOP_STATE", "/tmp/gludd-stop-state.json")
-FALSE_DONE_BLOCKS = os.environ.get("GLUDD_FALSE_DONE_BLOCKS", "/tmp/gludd-false-done-blocks.json")
-CONTINUE_DIRECTIVE = os.environ.get("GLUDD_CONTINUE_DIRECTIVE", "/tmp/gludd-continue-directive.txt")
+# -- Stop-detection helpers (mirror enforce-stop.ts logic) --------------------
+
+
+def _tasks_md_has_unchecked() -> bool:
+    try:
+        if not _TASKS_MD.exists():
+            return False
+        content = _TASKS_MD.read_text(encoding="utf-8")
+        return bool(_UNCHECKED_PATTERN.search(content))
+    except Exception:
+        return False
+
+
+def _ratchet_has_entries() -> int:
+    try:
+        if not _RATCHET_YML.exists():
+            return 0
+        content = _RATCHET_YML.read_text(encoding="utf-8")
+        count = 0
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if ":" in stripped:
+                count += 1
+        return count
+    except Exception:
+        return 0
+
+
+def _gate_status_is_red() -> bool:
+    try:
+        if not _GATE_STATUS.exists():
+            return False
+        content = _GATE_STATUS.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            if line.startswith("==="):
+                continue
+            if "FAIL" in line:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _pending_work_exists() -> bool:
+    return _tasks_md_has_unchecked() or _ratchet_has_entries() > 0 or _gate_status_is_red()
+
+
+def _streak_mtime_age_seconds() -> float | None:
+    streak_path = Path(STREAK_FILE)
+    if not streak_path.exists():
+        return None
+    return time.time() - streak_path.stat().st_mtime
+
+
+# -- Repeated stop escalation ------------------------------------------------
+
+
+def _read_stop_count() -> int:
+    try:
+        p = Path(STOP_COUNT_FILE)
+        if not p.exists():
+            return 0
+        data = json.loads(p.read_text())
+        return int(data.get("count", 0))
+    except Exception:
+        return 0
+
+
+def _write_stop_count(count: int) -> None:
+    Path(STOP_COUNT_FILE).write_text(json.dumps({"count": count}))
+
+
+def _increment_stop_count() -> int:
+    new_count = _read_stop_count() + 1
+    _write_stop_count(new_count)
+    return new_count
+
+
+def _clear_stop_count() -> None:
+    Path(STOP_COUNT_FILE).write_text('{"count":0}')
+
+
+# -- check_agent_stalled (existing) ------------------------------------------
 
 
 def check_agent_stalled(
@@ -181,6 +286,9 @@ def check_agent_stalled(
     return False
 
 
+# -- Main check loop ---------------------------------------------------------
+
+
 def check_and_reset() -> dict:
     result = {
         "ts": _now(),
@@ -188,6 +296,7 @@ def check_and_reset() -> dict:
         "pending_todos": [],
         "reset_applied": False,
         "hibernating": HIBERNATION_MARKER.exists(),
+        "stop_detected": False,
     }
 
     pending = _pending_todos()
@@ -198,32 +307,73 @@ def check_and_reset() -> dict:
     reset_needed = False
     reason = ""
 
-    if streak is not None and streak >= STREAK_THRESHOLD:
+    # ── NEW: Stop detection via pending-work + streak mtime ──────────────
+    has_pending_work = _pending_work_exists()
+    mtime_age = _streak_mtime_age_seconds()
+
+    if has_pending_work and streak == 0 and mtime_age is not None and mtime_age > STOP_IDLE_SECS:
+        reset_needed = True
+        reason = f"STOP DETECTED: agent idle with pending work ({mtime_age:.0f}s since last tool)"
+        result["stop_detected"] = True
+        _log(reason)
+
+        stop_count = _increment_stop_count()
+        if stop_count >= STOP_ESCALATE_THRESHOLD:
+            directive = (
+                f"[{_now()}] REPEATED STOP DETECTED ({stop_count}x) — WORK OR FACE RESTART\n"
+            )
+        else:
+            directive = (
+                f"[{_now()}] STOP DETECTED: pending work exists. "
+                "Text-only responses suppressed. DISPATCH SUBAGENTS NOW.\n"
+            )
+        Path(CONTINUE_DIRECTIVE).write_text(directive)
+        _log(f"directive written to {CONTINUE_DIRECTIVE} (stop_count={stop_count})")
+
+        # Clear stop-state file if it exists, so plugin doesn't double-block
+        sp = Path(STOP_STATE)
+        if sp.exists():
+            try:
+                sp.unlink()
+                _log(f"cleared stop-state: {sp}")
+            except Exception:
+                pass
+
+    # ── Existing: streak threshold ───────────────────────────────────────
+    elif streak is not None and streak >= STREAK_THRESHOLD:
         reset_needed = True
         reason = f"streak={streak} >= threshold={STREAK_THRESHOLD}"
+
+    # ── Existing: agent stalled on stop enforcement ──────────────────────
     elif check_agent_stalled():
         reset_needed = True
         reason = "agent stalled on stop enforcement"
-    elif pending and streak is not None and streak > 0:
-        streak_path = Path(STREAK_FILE)
-        if streak_path.exists():
-            mtime_age = time.time() - streak_path.stat().st_mtime
-            if mtime_age < POLL_SECS:
-                reset_needed = True
-                reason = "text-only response with pending todos"
 
+    # ── Existing: text-only response with pending todos ──────────────────
+    elif pending and streak is not None and streak > 0:
+        if mtime_age is not None and mtime_age < POLL_SECS:
+            reset_needed = True
+            reason = "text-only response with pending todos"
+
+    # ── Apply reset ──────────────────────────────────────────────────────
     if reset_needed:
         _reset_streak()
         result["reset_applied"] = True
 
-        if check_agent_stalled():
-            directive = f"[{_now()}] CONTINUE: agent stalled on stop enforcement, pending={len(pending)} todos.\n"
-            Path(CONTINUE_DIRECTIVE).write_text(directive)
+        # If the stop was NOT detected by our new logic, check and write directive
+        if not result.get("stop_detected"):
+            if check_agent_stalled():
+                directive = f"[{_now()}] CONTINUE: agent stalled on stop enforcement, pending={len(pending)} todos.\n"
+                Path(CONTINUE_DIRECTIVE).write_text(directive)
 
         if pending:
             _log(f"UNJAMMED: {reason}, pending={len(pending)} todos: {pending[:3]}")
         else:
             _log(f"UNJAMMED: {reason}, no pending todos detected but resetting anyway")
+
+    # ── No reset: stop count decays if agent is active ───────────────────
+    elif not has_pending_work and mtime_age is not None and mtime_age < POLL_SECS:
+        _clear_stop_count()
     elif streak is not None:
         pass
     else:
@@ -232,7 +382,7 @@ def check_and_reset() -> dict:
     return result
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# -- CLI ----------------------------------------------------------------------
 
 
 def _cli_classification(argv: list[str]) -> int:
