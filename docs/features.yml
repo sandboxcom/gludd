@@ -1006,9 +1006,8 @@ sections:
         title: "Prompt/skill versioning A/B (G6)"
         pct: 15
         evidence_refs:
-          - "file:src/general_ludd/skills/registry.py::PromptRegistry"
-          - "file:src/general_ludd/skills/models.py::SkillModel"
-        notes: "PromptRegistry + SkillModel exist; no version/hash/history yet; `[audit]`"
+          - "file:src/general_ludd/prompts/registry.py::PromptRegistry"
+        notes: "scaffold created, PromptRegistry needs version/hash/history fields; `[audit]`"
 
       - id: g5-outcome-self-improve
         title: "Outcome-driven self-improve (G5)"

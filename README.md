@@ -242,7 +242,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | HITL approval gates (G7) | ✓ 15% | **PASS** *(file-refs only)*: HumanTodo system exists (bot→human); no dedicated approvals/ package; `[audit]` |
 | Multi-agent debate / consensus (G11) | ✓ 15% | **PASS** *(file-refs only)*: consensus engine scaffolded; 4 tests; `[audit]` |
 | Plan/critique layer (G9) | ✓ 15% | **PASS** *(file-refs only)*: planning/critique scaffolded; 4 tests; `[audit]` |
-| Prompt/skill versioning A/B (G6) | ✗ 15% | **PENDING** *(file-refs only)*: PromptRegistry + SkillModel exist; no version/hash/history yet; `[audit]` |
+| Prompt/skill versioning A/B (G6) | ✓ 15% | **PASS** *(file-refs only)*: scaffold created, PromptRegistry needs version/hash/history fields; `[audit]` |
 | Outcome-driven self-improve (G5) | ✓ 15% | **PASS** *(file-refs only)*: eval harness + self_update wired; blocked on G2 (eval harness completion); `[audit]` |
 | Cost/quality Pareto router (G8) | ✓ 15% | **PASS** *(file-refs only)*: ParetoRouter scaffolded; 4 tests; `[audit]` |
 | Per-run replay (G10) | ✓ 15% | **PASS** *(file-refs only)*: replay/ package scaffolded; recorder module; `[audit]` |
