@@ -27,8 +27,8 @@ class AddTodoRequest(BaseModel):
     priority: str = Field(default="medium", pattern=r"^(low|medium|high|critical)$")
     work_type: str = Field(default="code", pattern=r"^[a-z_]+$")
     project_id: str | None = None
-    acceptance_criteria: list[object] | None = None
-    definition_of_done: str | None = None
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    definition_of_done: str = Field(default="")
 
 
 class AddScheduledTodoRequest(BaseModel):
@@ -91,6 +91,8 @@ def _todo_to_dict(todo: Any) -> dict[str, Any]:
         "project_id": todo.project_id,
         "version": todo.version,
         "created_at": str(todo.created_at) if todo.created_at else None,
+        "acceptance_criteria": todo.acceptance_criteria if todo.acceptance_criteria else [],
+        "definition_of_done": todo.definition_of_done if todo.definition_of_done else "",
     }
 
 
