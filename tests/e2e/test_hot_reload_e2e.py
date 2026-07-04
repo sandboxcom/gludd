@@ -16,7 +16,7 @@ Covers:
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.events.bus import Event, EventBus
@@ -210,12 +210,16 @@ class TestHookSystemE2E:
 
     def test_webhook_registration_and_fire(self):
         hooks = HookSystem()
-        with patch("httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=200)
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
             hooks.register_webhook("on_model_added", "https://example.com/hook")
             hooks.fire("on_model_added", {"model": "gpt-5"})
-            mock_post.assert_called_once()
-            call_args = mock_post.call_args
+            mock_client.post.assert_called_once()
+            call_args = mock_client.post.call_args
             assert call_args[0][0] == "https://example.com/hook"
             body = call_args[1]["json"]
             assert body["event"] == "on_model_added"
@@ -233,24 +237,32 @@ class TestHookSystemE2E:
 
     def test_webhook_custom_headers(self):
         hooks = HookSystem()
-        with patch("httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=200)
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
             hooks.register_webhook(
                 "on_reload",
                 "https://example.com/hook",
                 headers={"Authorization": "Bearer secret"},
             )
             hooks.fire("on_reload", {"scope": "full"})
-            call_args = mock_post.call_args
+            call_args = mock_client.post.call_args
             assert "Authorization" in call_args[1]["headers"]
 
     def test_webhook_retry_on_failure(self):
         hooks = HookSystem()
-        with patch("httpx.post") as mock_post:
-            mock_post.side_effect = [Exception("fail"), MagicMock(status_code=200)]
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=[Exception("fail"), MagicMock(status_code=200)])
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
             hooks.register_webhook("on_x", "https://example.com/hook", retry_count=2)
             hooks.fire("on_x", {})
-            assert mock_post.call_count == 2
+            assert mock_client.post.call_count == 2
 
     def test_list_registered_hooks(self):
         hooks = HookSystem()
@@ -282,11 +294,15 @@ class TestHookSystemE2E:
 
     def test_webhook_timeout(self):
         hooks = HookSystem()
-        with patch("httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=200)
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
             hooks.register_webhook("on_x", "https://example.com", timeout_seconds=5)
             hooks.fire("on_x", {})
-            call_kwargs = mock_post.call_args[1]
+            call_kwargs = mock_client.post.call_args[1]
             assert call_kwargs.get("timeout") == 5
 
     def test_fire_nonexistent_event_is_noop(self):
@@ -1213,11 +1229,15 @@ class TestHotReloadFullIntegration:
             hook_system=hooks,
         )
 
-        with patch("httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=200)
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
             gateway.add_profile("gpt-5", provider="openai", model="gpt-5", api_key_env="KEY")
 
-            webhook_calls = [c for c in mock_post.call_args_list if "hooks.example.com" in str(c)]
+            webhook_calls = [c for c in mock_client.post.call_args_list if "hooks.example.com" in str(c)]
             assert len(webhook_calls) >= 1
             body = webhook_calls[0][1]["json"]
             assert body["event"] == "on_model_added"
