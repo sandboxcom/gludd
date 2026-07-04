@@ -499,6 +499,8 @@ class AddTodoRequest(BaseModel):
     priority: str = Field(default="medium", pattern=r"^(low|medium|high|critical)$")
     work_type: str = Field(default="code", pattern=r"^[a-z_]+$")
     project_id: str | None = None
+    acceptance_criteria: list[object] | None = None
+    definition_of_done: str | None = None
 
 
 class LogLevelRequest(BaseModel):
