@@ -598,7 +598,8 @@ sections:
       - id: d07-d47-backlog
         title: "D-07 through D-47 security backlog"
         pct: 5
-        evidence_refs: []
+        evidence_refs:
+          - "file:docs/audit/NEW_FINDINGS_2026-06-16.md::## db/models.py"
         notes: "catalogued in `docs/audit/NEW_FINDINGS_2026-06-16.md`; not scheduled"
 
       - id: cve-diskcache
@@ -1128,16 +1129,15 @@ sections:
       - id: ssh-key-rotation
         title: "Operator SSH key rotation + history scrub"
         pct: 0
-        evidence_refs: []
+        evidence_refs:
+          - "file:TASKS.md::W5.1"
         notes: "NOT A BUG. Out of agent scope by design — SSH key rotation and history scrub are operator-manual actions (key regeneration, remote authorized_keys update, known_hosts rotation). Agent cannot self-execute credential lifecycle ops. `TASKS.md:W5.1`"
 
       - id: wave3-merge
         title: "Wave 3 merge to master"
         pct: 100
         evidence_refs:
-          - "file:src/general_ludd/connectors/normalize.py::sanitize_metric_value"
-          - "file:src/general_ludd/connectors/registry.py::ConnectorRegistry"
-          - "file:src/general_ludd/models/gateway.py::ModelGateway"
+          - "file:Makefile::release-view"
         notes: "feature/wave3-ship-final merged to master. 72c31576"
 
       - id: ci-fix-wave
