@@ -254,11 +254,13 @@ class EventLoop:
         memory_repo: Any = None,
         sandbox_executor: Any | None = None,
         run_recorder: Any | None = None,
+        prompt_variant_selector: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
         self._daemon_state = daemon_state
         self._run_recorder = run_recorder
+        self._prompt_variant_selector = prompt_variant_selector
         self._project_secrets_manager = project_secrets_manager
         self._project_workspace = project_workspace
         self._self_improve_interval = self_improve_interval
@@ -1721,9 +1723,28 @@ class EventLoop:
             except Exception as exc:
                 logger.warning("load_shared_vars failed for todo %s: %s", getattr(todo, "todo_id", "?"), exc)
         job_id = f"EXEC-{todo.todo_id}"
+        ab_variant: dict[str, Any] | None = None
+        if self._prompt_variant_selector is not None:
+            ab_cfg = self.config.get("prompt_ab_testing", {}) if isinstance(self.config, dict) else {}
+            if isinstance(ab_cfg, dict) and ab_cfg.get("enabled", False):
+                with contextlib.suppress(Exception):
+                    ab_variant = self._prompt_variant_selector.select(
+                        template_name=resolved_prompt_profile,
+                    )
+                    if ab_variant is not None:
+                        dispatched_profile = resolved_prompt_profile
+                        variant_letter = ab_variant["variant"]
+                        if dispatched_profile and variant_letter:
+                            suffix = f".variant_{variant_letter.lower()}"
+                            if not dispatched_profile.endswith(suffix):
+                                base, _sep, ext = dispatched_profile.rpartition(".")
+                                if base:
+                                    resolved_prompt_profile = f"{base}{suffix}.{ext}"
+                                else:
+                                    resolved_prompt_profile = dispatched_profile + suffix
         if self._run_recorder is not None:
             with contextlib.suppress(Exception):
-                self._run_recorder.record(job_id, {
+                event = {
                     "type": "dispatch_started",
                     "timestamp": datetime.now(UTC).isoformat(),
                     "todo_id": todo.todo_id,
@@ -1731,7 +1752,10 @@ class EventLoop:
                     "model_profile": resolved_model_profile,
                     "prompt_profile": resolved_prompt_profile,
                     "project_id": project_id_val,
-                })
+                }
+                if ab_variant is not None:
+                    event["ab_variant"] = ab_variant
+                self._run_recorder.record(job_id, event)
         if self._runner is not None:
             if ws is not None and hasattr(ws, "private_data_dir"):
                 import os as _os

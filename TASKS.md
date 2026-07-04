@@ -653,3 +653,11 @@ SESSION.md gaps G4/G10/G11: three classes existed but were never imported in pro
 - [x] G4-wire — SandboxExecutor wired into EventLoop._dispatch_execute_job_isolated + daemon startup: when sandbox handle is applied AND executor is wired, execute() is called before normal dispatch; safe fallback when not wired or no handle | evidence: tests/unit/test_sandbox_executor_dispatch.py 5 passed; lint 0; typecheck 0
 - [x] G10-wire — RunRecorder wired into EventLoop (dispatch lifecycle events: started/model_generation/tool_calls/tool_loop/completed) + AgentDispatcher (task_started/completed/failed pre-flight) | evidence: tests/unit/test_run_recorder_dispatch.py 7 passed; lint 0; typecheck 0
 - [x] G11-wire — ConsensusEngine + ConsensusReviewer wired into EventLoop review phase: _dispatch_review_job enters with consensus-only (no standard reviewer needed); _review_in_process selects effective_reviewer (consensus when config-gated); config flag consensus_review.enabled activates; safe fallback to standard reviewer | evidence: tests/unit/test_consensus_review_wiring.py 9 passed; lint 0; typecheck 0
+
+## Phase G6-wire — A/B testing dispatch (2026-07-04)
+
+- [x] G6-wire — PromptVariantSelector (A/B alternation, modulo-2 counter, hash tracking, template name propagation) wired into EventLoop._dispatch_execute_job: when config.prompt_ab_testing.enabled + selector wired, variant recorded in dispatch_started RunRecorder event + prompt_profile appended with .variant_a/.variant_b suffix | evidence: tests/unit/test_ab_test_dispatch.py 18 passed; lint 0; typecheck 0
+
+## Phase AGENTS-stale — AGENTS.md ref fixes (2026-07-04)
+
+- [x] AGENTS-stale — 6 stale-reference fixes: phantom enforce-todos.ts refs removed (merged into enforce-stop.ts), plugin count 4→9, hook count 20→23, 5 missing plugins + 3 missing hooks added to ports table, chat.response.transform noted as replaced by session.idle/text.complete per Q3.12 | evidence: lint 0; typecheck 0

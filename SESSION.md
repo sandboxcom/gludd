@@ -9,13 +9,13 @@
 
 ## Current Work
 
-- **HEAD: `53fe65af`** on master — fix: escape invalid Python string escape sequences in gha_usage.py.
+- **HEAD: `680bfeef`** on master — feat(G4,G10,G11): wire SandboxExecutor, RunRecorder, ConsensusEngine.
 
-- **5 commits this session (session 4)**: enforce-stop rewrite, watchdog CI-awareness, push-rate guard, batch-push, escape-sequence fix.
+- **6 commits this session (session 4)**: enforce-stop rewrite, watchdog CI-awareness, push-rate guard, batch-push, escape-sequence fix, G4/G10/G11 wiring.
 
-- **G1-G13 scaffold/wire**: All landed in prior sessions (see Historical State below).
+- **G1-G13 scaffold/wire**: All components now wired (G4, G10, G11 wired in `680bfeef`). G6 A/B integration remains as known gap.
 
-- **Known Gaps**: G4 SandboxExecutor (not wired), G10 RunRecorder (not wired), G11 ConsensusEngine (not wired), G6 A/B testing (hash tracking done, no dispatch integration).
+- **Known Gaps**: G6 A/B testing (hash tracking done, no dispatch integration). Full local test suite OOM under xdist.
 
 - **Gate**: lint 0, typecheck 0, collect 0. Full test suite OOM under 8-worker xdist; CI-as-gate used.
 
@@ -23,6 +23,7 @@
 
 | Hash | Message |
 |------|---------|
+| `680bfeef` | feat(G4,G10,G11): wire SandboxExecutor, RunRecorder, ConsensusEngine |
 | `53fe65af` | fix: escape invalid Python string escape sequences in gha_usage.py jq filter |
 | `96714938` | fix: 3-layer push-rate-guard (CI-pending block, 30min cooldown, cancelled-run cap), batch-push for 5+ commits, AGENTS.md no-push-per-commit policy |
 | `c69c0d72` | fix: bulletproof agent keep-working system (enforce-stop rewrite, watchdog CI loop detection, pre-push guard, ci-wait, 14 new tests, 75 passed) |
@@ -44,23 +45,18 @@
 
 ## Known Gaps
 
-1. **G4 SandboxExecutor**: Class exists (`sandbox_exec/executor.py:6`) but NOT wired into daemon or event loop. Zero imports anywhere in src/.
-2. **G11 ConsensusEngine**: Class exists (`review/consensus.py:9`) but NOT wired into dispatch path.
-3. **G10 RunRecorder**: Module exists (`replay/recorder.py`) but NOT wired into dispatch.
-4. **G6 A/B testing**: Hash tracking done; no A/B test dispatch integration.
-5. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
+1. **G6 A/B testing**: Hash tracking done; no A/B test dispatch integration.
+2. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
 
 ## Next Steps
 
-1. **Wire ConsensusEngine (G11)** into event loop review phase.
-2. **Wire SandboxExecutor (G4)** into dispatch path.
-3. **Wire RunRecorder (G10)** into dispatch/completion hooks.
-4. **Poll CI** until green (`make ci-verdict BRANCH=master`).
+1. **Poll CI** until green (`make ci-verdict BRANCH=master`).
+2. **Push commits** — 1 unpushed commit (`680bfeef` + prior session 3 batch) needs CI verification before push.
 
 ## Current Gate Status (2026-07-04)
 <!-- gate:begin -->
 - **Last full PASS**: 2026-07-04 — lint 0, typecheck 0, collect 0. Full suite OOM under xdist.
-- **HEAD**: `53fe65af`
+- **HEAD**: `680bfeef`
 - **CI**: not yet verified for current HEAD
 
 <!-- gate:end -->
@@ -70,7 +66,7 @@
 
 ## Historical State
 
-- **2026-07-04 session 4 (current)**: HEAD `53fe65af`. 5 commits: watchdog CI-awareness (8a128c3f), enforce-stop local-work distinction (186783a2), keep-working system rewrite (c69c0d72), push-rate-guard + batch-push (96714938), escape-sequence fix (53fe65af). Lint/typecheck/collect green; full suite OOM under xdist.
+- **2026-07-04 session 4 (current)**: HEAD `680bfeef`. 6 commits: watchdog CI-awareness (8a128c3f), enforce-stop local-work distinction (186783a2), keep-working system rewrite (c69c0d72), push-rate-guard + batch-push (96714938), escape-sequence fix (53fe65af), G4/G10/G11 wiring (680bfeef). Lint/typecheck/collect green; full suite OOM under xdist.
 - **2026-07-04 session 3**: HEAD `0ee32612`. 5 commits: G1-G13 README percentages bumped (76f72d75), G14 evidence (e21def86), G4+G8 README corrections (fadcf808), G6 content-hash tracking (b4bae0c5), G6a evidence (0ee32612). Gate green.
 - **2026-07-04 session 2**: HEAD `0117024f`. SESSION.md staleness fixed. G1 at 55%. G2/G3/G8/G11/G12 scaffolded. Watchdog fixes.
 - **2026-07-04 session 1**: HEAD `fcdf9b92`. G1 persistent agent memory schema. G13 structured task spec.

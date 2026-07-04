@@ -302,7 +302,7 @@ in code — they must be tracked, root-caused, and fixed before moving on.
 
 **This is enforced by:**
 - This AGENTS.md section — proactive instruction to audit on session start
-- `.opencode/plugin/enforce-make.ts` — `chat.response.transform` hook detects stop patterns
+- `.opencode/plugin/enforce-make.ts` — `session.idle` hook detects stop patterns (note: `chat.response.transform` surface was replaced by `session.idle` + `text.complete` per Q3.12)
 - `BUGS.md` — persistent bug tracking for process failures
 
 ## CRITICAL: Task Completion Policy
@@ -389,17 +389,10 @@ were committed, none were ticked in `todowrite`, none were cancelled — the
 work evaporated at session end. The user had to ask "are you codifying all of
 these efforts?" — that question is itself a bug report.
 
-**Enforced by `.opencode/plugin/enforce-todos.ts` at two layers:**
+**Enforced by `.opencode/plugin/enforce-stop.ts`** (previously documented as
+`enforce-todos.ts`, which was merged into `enforce-stop.ts`):
 
-1. **`experimental.chat.response.transform`** — when an active `todowrite`
-   list has `pending` or `in_progress` items AND the outgoing response looks
-   like a summary (heuristic: contains "summary"/"completed"/"done"/"results"
-   or has bullet points, AND has no `make` invocation), the plugin PREPENDS a
-   loud `⛔ NOTHING-DROPPED GUARDRAIL` directive telling the agent to resume
-   work. Advisory — the response still ships — but un-ignorable on the next
-   turn.
-
-2. **`tool.execute.before`** — the **commit block** (DEFAULT ON via
+1. **`tool.execute.before`** — the **commit block** (DEFAULT ON via
    `GLUDD_TODO_GUARD_ENFORCE !== "0"`). When a commit-shaped `make` target
    (`git-commit`, `commit-no-verify`, `repo-commit`, `ship-commit`,
    `git-commit-file`, `commit-bootstrap`, `test-and-commit`) runs while
@@ -408,6 +401,12 @@ these efforts?" — that question is itself a bug report.
    the commit is DENIED with guidance. The agent must either complete the
    items, cancel them with a reason, or stage a `TASKS.md` update referencing
    each one.
+
+2. **`session.idle`** — when an active `todowrite` list has `pending` or
+   `in_progress` items and the session goes idle, a loud `⛔ NOTHING-DROPPED
+   GUARDRAIL` directive is injected telling the agent to resume work.
+   (Note: the former `chat.response.transform` surface was replaced by
+   `session.idle` + `text.complete` per Q3.12.)
 
 **Opt-outs (never the default):**
 
@@ -422,8 +421,8 @@ recorded in `todowrite`). A summary message is never a substitute for
 codification.
 
 This is enforced by:
-- `.opencode/plugin/enforce-todos.ts` — response.transform directive +
-  tool.execute.before commit block
+- `.opencode/plugin/enforce-stop.ts` — tool.execute.before commit block +
+  session.idle guardrail (formerly enforce-todos.ts, merged into enforce-stop.ts)
 - `tests/unit/test_todo_guard_plugin.py` — structural + behavioral pin
 - This AGENTS.md section — proactive instruction
 
@@ -606,18 +605,23 @@ This is enforced by:
 
 ## Opencode Plugin Ports (Claude Hook Equivalents)
 
-The Claude Code layer (`.claude/hooks/*.sh`, 20 shell scripts registered in
-`.claude/settings.json`) and the opencode layer (`.opencode/plugin/*.ts`,
-4 TypeScript plugins registered in `opencode.json`) **enforce the same
-policies in parallel**. An opencode-only session gets the same guardrails as
-a Claude-only session. The port map:
+The Claude Code layer (`.claude/hooks/*.sh`, 23 shell scripts registered in
+`.claude/settings.json`) and the opencode layer (`.opencode/plugin/*.ts` +
+`.opencode/plugins/*.ts`, 9 TypeScript plugins registered in `opencode.json`)
+**enforce the same policies in parallel**. An opencode-only session gets the
+same guardrails as a Claude-only session. The port map:
 
 | Opencode plugin | Claude hook(s) ported |
 |---|---|
 | `enforce-make.ts` | `enforce_make_bash.sh`, `gate_concurrency_pretool.sh`, `guardrail_integrity_edit_pretool.sh`, `no_flag_file_write_pretool.sh` (Bash make-only, metachar deny, concurrent-gate block, guardrail-integrity across ALL hook/plugin files, `.gate-status` write block) |
-| `enforce-floor.ts` | `agent_floor_stop.sh`, `agent_floor_pretool.sh`, `agent_floor_posttool.sh`, `agent_ceiling_pretool.sh`, `agent_floor_userprompt.sh` (floor/ceiling bands via `agent_liveness.py`) |
+| `enforce-floor.ts` | `agent_floor_stop.sh`, `agent_floor_pretool.sh`, `agent_floor_posttool.sh`, `agent_ceiling_pretool.sh`, `agent_floor_userprompt.sh`, `agent_floor_inc.sh`, `agent_floor_dec.sh` (floor/ceiling bands via `agent_liveness.py`) |
 | `enforce-delegate.ts` | `model_utilization_pretool.sh`, `disk_discipline_pretool.sh`, `worktree_disk_guard_pretool.sh`, `force_delegate_pretool.sh`, `mainthread_budget.sh` (sonnet ratio, worktree disk guards, opt-in grind guard, main-thread delegation budget) |
-| `enforce-stop.ts` | `no_wait_stop.sh`, `multitasking_backlog_stop.sh`, `session_start_orchestrate.sh`, `no_blocking_questions_pretool.sh` (deferral-pattern block, open-backlog block, orchestration injection, question-tool deny) |
+| `enforce-stop.ts` | `no_wait_stop.sh`, `multitasking_backlog_stop.sh`, `session_start_orchestrate.sh`, `no_blocking_questions_pretool.sh`, `no_blocking_prompt_pretool.sh`, `api_error_resilience_stop.sh` (deferral-pattern block, open-backlog block, orchestration injection, question-tool deny, blocking-prompt guard, API error resilience) |
+| `enforce-session-start.ts` | (system.transform + tool.execute.before hooks; dispatches session-start directive at boot) |
+| `enforce-deadline.ts` | (deadline enforcement; no direct Claude hook equivalent) |
+| `enforce-false-done.ts` | `no_false_completion_stop.sh` (false-done claim block + anti-wedge counter) |
+| `enforce-deletion-gate.ts` | (file-deletion gate; no direct Claude hook equivalent) |
+| `watchdog.ts` | (background daemon watchdog; no direct Claude hook equivalent) |
 
 Both layers are registered and active by default. The env-var knobs are
 shared (`CLAUDE_AGENT_FLOOR`, `GLUDD_FORCE_DELEGATE`, `GLUDD_NO_WAIT_ENFORCE`,
