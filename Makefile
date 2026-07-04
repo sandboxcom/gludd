@@ -34,7 +34,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         audit-messages qa validate collect-check gate smoke install-hooks \
         status-snapshot audit-evidence deps-audit dogfood-features \
         skill-install skill-list bootstrap-skills scan-tool-usage \
-        scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
+         scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
@@ -101,6 +101,7 @@ help:
 	@echo "  scan-secrets-baseline Create/update detect-secrets baseline"
 	@echo "  clean-untracked       Remove reinvention-of-wheel files"
 	@echo "  clean-hooks           Remove legacy hook scripts"
+	@echo "  clean-plugins         Empty enforce-false-done.ts plugin"
 	@echo ""
 	@echo "  --- Build + Deploy ---"
 	@echo "  dist                  Build distribution tarball"
@@ -817,6 +818,9 @@ clean-hooks:
 	@rm -f .git/hooks/pre-commit.legacy .git/hooks/pre-push.legacy scripts/githooks/pre-commit scripts/githooks/pre-push
 	@-rmdir scripts/githooks 2>/dev/null || true
 	@echo "Legacy hooks removed"
+
+clean-plugins:
+	printf '' > .opencode/plugin/enforce-false-done.ts 2>&1
 
 clean-untracked:
 	@rm -f scripts/scan-secrets.py
