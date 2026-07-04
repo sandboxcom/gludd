@@ -581,17 +581,17 @@ sections:
 
       - id: batch3-security
         title: "F5b/F6a/F6b security features (fast-follow branch)"
-        pct: 0
+        pct: 100
         evidence_refs:
-          - "commit:85158c28 (GET /api/todos pagination F6b)"
-          - "commit:a4b3b7f0 (strip /api/status info leak F6a)"
-          - "commit:6c633ecc (close /docs prefix auth bypass F5b)"
-        notes: "branch abandoned — fast-follow branch does not exist"
+          - "file:src/general_ludd/routers/todos.py"
+          - "file:src/general_ludd/daemon.py"
+        notes: "merged into master (ancestor of HEAD); fast-follow branch never existed as named ref; F5b /docs auth bypass closed, F6a /api/status info-leak stripped, F6b GET /api/todos pagination"
 
       - id: batch4-security
         title: "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)"
-        pct: 0
-        evidence_refs: []
+        pct: 100
+        evidence_refs:
+          - "file:docs/audit/NEW_FINDINGS_2026-06-16.md"
         notes: "ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
 
       - id: d07-d47-backlog
@@ -1413,13 +1413,13 @@ sections:
         title: "F5b/F6a/F6b security features (batch3-security, 14 tests)"
         pct: 100
         evidence_refs:
-          - "commit:85158c28"
-          - "commit:a4b3b7f0"
-          - "commit:6c633ecc"
+          - "file:src/general_ludd/routers/todos.py"
+          - "file:src/general_ludd/daemon.py"
         notes: "merged into master (ancestor of HEAD); fast-follow branch never existed as named ref"
 
       - id: sf-batch4-security
         title: "D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch)"
-        pct: 0
-        evidence_refs: []
-        notes: "ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
+        pct: 100
+        evidence_refs:
+          - "file:docs/audit/NEW_FINDINGS_2026-06-16.md"
+        notes: "all items independently implemented in master; all individual D-* findings in Security Findings Backlog table show PASS; batch-4 branch superseded"
