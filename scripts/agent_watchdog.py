@@ -125,6 +125,11 @@ STOP_IDLE_SECS = 15  # streak file mtime older than this + pending work = text-o
 STOP_COUNT_FILE = "/tmp/gludd-watchdog-stop-count.json"
 STOP_ESCALATE_THRESHOLD = 3
 
+PURE_IDLE_SECS = 20
+LAST_FLAG_FILE = "/tmp/gludd-watchdog-last-flag.json"
+FLAG_COOLDOWN_SECS = 30
+PURE_IDLE_DIRECTIVE = "/tmp/gludd-continue.txt"
+
 STOP_STATE = os.environ.get("GLUDD_STOP_STATE", "/tmp/gludd-stop-state.json")
 FALSE_DONE_BLOCKS = os.environ.get("GLUDD_FALSE_DONE_BLOCKS", "/tmp/gludd-false-done-blocks.json")
 CONTINUE_DIRECTIVE = os.environ.get("GLUDD_CONTINUE_DIRECTIVE", "/tmp/gludd-continue-directive.txt")
@@ -257,6 +262,21 @@ def _clear_stop_count() -> None:
     Path(STOP_COUNT_FILE).write_text('{"count":0}')
 
 
+def _read_last_flag_time() -> float:
+    try:
+        p = Path(LAST_FLAG_FILE)
+        if not p.exists():
+            return 0.0
+        data = json.loads(p.read_text())
+        return float(data.get("last_flag_ts", 0))
+    except Exception:
+        return 0.0
+
+
+def _write_last_flag_time(ts: float) -> None:
+    Path(LAST_FLAG_FILE).write_text(json.dumps({"last_flag_ts": ts}))
+
+
 # -- check_agent_stalled (existing) ------------------------------------------
 
 
@@ -354,6 +374,22 @@ def check_and_reset() -> dict:
         if mtime_age is not None and mtime_age < POLL_SECS:
             reset_needed = True
             reason = "text-only response with pending todos"
+
+    # ── NEW: Pure idle detection (ANY idle >20s, regardless of pending work) ──
+    if not reset_needed and mtime_age is not None and mtime_age > PURE_IDLE_SECS:
+        last_flag = _read_last_flag_time()
+        now = time.time()
+        if now - last_flag > FLAG_COOLDOWN_SECS:
+            _log(f"IDLE DETECTED: agent idle >20s ({mtime_age:.0f}s since last tool)")
+            _write_last_flag_time(now)
+            directive = (
+                "⛔ AGENT IDLE >20s — DISPATCH SUBAGENTS OR RESPOND WITH TOOL CALLS. "
+                "Do not send text-only responses.\n"
+            )
+            Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+            reset_needed = True
+            reason = f"pure idle detected ({mtime_age:.0f}s)"
+            result["stop_detected"] = True
 
     # ── Apply reset ──────────────────────────────────────────────────────
     if reset_needed:
