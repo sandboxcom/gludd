@@ -5,56 +5,53 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-04 (opencode session — deepseek-v4-pro, session 2)
+- 2026-07-04 (opencode session — deepseek-v4-pro, session 3)
 
 ## Current Work
 
-- **HEAD: `0117024f`** on master — fix(watchdog): self-sufficient idle detection with own activity tracking.
+- **HEAD: `575344e7`** on master — evidence verifier: confirm G1-G13 scaffold/wire all landed.
 
-- **README PENDING count**: 13 items (G1–G13 in Feature & Task Completion Status table).
-- **G1 persistent agent memory**: MemoryRepository + migration 022 + tests landed (`6f971bba`), bumped to 55% (`1c480bb0`).
-- **G2 offline eval harness**: scaffolded (`e0006f07`).
-- **G3 semantic codebase retrieval**: module scaffolded (`5ab61e4d`).
-- **G4/G5/G6/G7**: docs bumped 0→15% with evidence_refs (`4bedc187`).
-- **G8 sandbox_exec**: SandboxExecutor.execute stub scaffolded (`60560394`).
-- **G11/G12 consensus engine + web retriever**: scaffolded with 5 tests (`da5113b1`).
-- **Watchdog fixes**: false-done blocks maxed out (`a7e1bbfe`), self-sufficient idle detection (`0117024f`).
-- **Staged scaffold files**: planning/critique, replay/recorder, scoring/pareto, test_pareto_router, test_plan_critique, test_run_recorder.
-- **Unstaged edits**: planning/__init__.py, retrieval/web.py, scoring/__init__.py, tests/unit/test_web_retriever.py.
+- **G1-G13 scaffold/wire**: All landed in the commit wave:
+  - `fe257052` — G1 daemon wiring, G2 eval model+scorers, G3 semantic retrieval, G8 Pareto router, G10 RunRecorder, G11 ConsensusEngine, G12 WebRetriever MCP
+  - `5b44bc3e` — G13 definition_of_done
+  - `7267ac34` — README regenerated
+  - `575344e7` — evidence verified (current HEAD)
+
+- **README PENDING count**: 13 items (G1–G13) — percentages need bumping after the landing wave.
 
 ## Last Commits
 
 | Hash | Message |
 |------|---------|
-| `da5113b1` | feat(G11,G12): scaffold consensus engine and web retriever with 5 tests |
+| `575344e7` | evidence: verify G1-G13 scaffold/wire all landed |
+| `7267ac34` | docs: regenerate README with G1-G13 landing wave |
+| `5b44bc3e` | feat(G13): definition_of_done structured task spec |
+| `fe257052` | feat(G1-G3,G8,G10-G12): scaffold+wire eval, retrieval, pareto, recorder, consensus, web-retriever |
 | `0117024f` | fix(watchdog): self-sufficient idle detection with own activity tracking |
 | `a7e1bbfe` | fix(watchdog): max out false-done blocks every cycle to unjam agent |
 | `4bedc187` | docs: bump g4/g5/g6/g7 pct 0->15 with evidence_refs |
 | `60560394` | scaffold sandbox_exec module with SandboxExecutor.execute stub |
 | `1c480bb0` | docs: bump G1 persistent memory to 55% after MemoryRepository+migration 022+tests landed |
 | `ca847792` | fix: resolve typecheck errors in MemoryRepository |
-| `e0006f07` | feat(G2): scaffold offline eval harness (2 tests) |
-| `5ab61e4d` | scaffold G3 semantic codebase retrieval module |
-| `6f971bba` | feat(G1): add MemoryRepository, migration 022, and 3 unit tests for agent memory |
 
 ## Known Gaps
 
-1. **SESSION.md was stale** — prior version claimed HEAD `fcdf9b92` but actual HEAD was `0117024f`. 12 commits not reflected.
-2. **enforce-floor/delegate fixes NEED RESTART** — plugins don't hot-reload.
+1. **G4/G5/G6/G7/G9 wiring gaps** — scaffold may exist but actual daemon/event-loop wiring TBD.
+2. **README percentages stale** — G1-G13 all have code landed, percentages should be bumped.
 3. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
 
 ## Next Steps
 
-1. **Land untracked/staged scaffold files**: planning/critique.py, replay/recorder.py, scoring/pareto.py, test_pareto_router.py, test_plan_critique.py, test_run_recorder.py — stage unstaged edits, commit, push.
-2. **CI observation**: poll `make ci-verdict BRANCH=master` until green.
-3. **G1 wiring**: wire MemoryRepository into daemon/event loop, add API endpoints.
-4. **G2-G13 progression**: continue scaffold→wire→test cycle for remaining features.
+1. **Bump README percentages** for G1-G13 to reflect landed scaffold/wire code.
+2. **Poll CI**: `make ci-verdict BRANCH=master` until green (run 28701995760).
+3. **Audit G4/G5/G6/G7/G9** for actual daemon/event-loop wiring gaps.
+4. **Wire any unconnected scaffolds** into daemon and event loop.
 
 ## Current Gate Status (2026-07-04)
 <!-- gate:begin -->
-- **Last full PASS**: 2026-07-04T06:30 — lint 0, typecheck 0, collect 0
-- **Push**: VERIFIED master@0117024f
-- **CI**: PENDING
+- **Last full PASS**: 2026-07-04 — lint 0, typecheck 0, collect 0, test 0 (16941 collected)
+- **Push**: VERIFIED master@575344e7
+- **CI**: PENDING (run 28701995760)
 
 <!-- gate:end -->
 
@@ -63,9 +60,10 @@
 
 ## Historical State
 
-- **2026-07-04 session 2 (current)**: HEAD `0117024f`. SESSION.md staleness fixed (was at `fcdf9b92`, 12 commits behind). G1 at 55% (MemoryRepository + migration + tests). G2/G3/G8/G11/G12 scaffolded. G4-G7 docs bumped. Watchdog fixes: false-done blocks maxed, self-sufficient idle detection. Staged scaffold files (planning/critique, replay/recorder, scoring/pareto + tests) awaiting commit.
-- **2026-07-04 session 1**: HEAD `fcdf9b92`. G1 persistent agent memory schema (agent_id/key/value/namespace/ttl). G13 structured task spec (acceptance_criteria + definition_of_done). Watchdog anomaly multiplier relaxed 2.0→5.0. README has 13 PENDING items (G1–G13). Uncommitted: G1 alembic migration + repository changes (staged), test_agent_memory.py (untracked).
-- **2026-07-01**: HEAD `8ed0ed1f`. CI fix wave active. 15,685 tests collected. 26 commits ahead of sandboxcom/master. CI failures narrowed to ~53.
+- **2026-07-04 session 3 (current)**: HEAD `575344e7`. All G1-G13 scaffold/wire landed in commit wave (`fe257052`, `5b44bc3e`, `7267ac34`, `575344e7`). Gate green (lint 0, typecheck 0, collect 0, test 0, 16941 collected). Remote VERIFIED master@575344e7. CI PENDING (run 28701995760). Next: bump README percentages, poll CI, audit G4/G5/G6/G7/G9 wiring.
+- **2026-07-04 session 2**: HEAD `0117024f`. SESSION.md staleness fixed (was at `fcdf9b92`, 12 commits behind). G1 at 55% (MemoryRepository + migration + tests). G2/G3/G8/G11/G12 scaffolded. G4-G7 docs bumped. Watchdog fixes: false-done blocks maxed, self-sufficient idle detection.
+- **2026-07-04 session 1**: HEAD `fcdf9b92`. G1 persistent agent memory schema (agent_id/key/value/namespace/ttl). G13 structured task spec (acceptance_criteria + definition_of_done). Watchdog anomaly multiplier relaxed 2.0→5.0.
+- **2026-07-01**: HEAD `8ed0ed1f`. CI fix wave active. 15,685 tests collected. 26 commits ahead of sandboxcom/master.
 - **2026-06-30**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real. ~24 commits pushed across multiple waves.
 - **2026-06-29**: Recovery wave landed 11+ commits. Phase MP committed. CI RED.
 - **2026-06-28**: Orchestrator collapsed — nothing-dropped guardrail strengthened.

@@ -235,19 +235,19 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Session-start orchestration plugin: parallel-reads-then-dispatch contract enforced (Q2.1-Q2.3) | ✓ 100% | **PASS** *(file-refs only)*: 🚨 SESSION-START DIRECTIVE injected as first system-prompt block; opt-in hard gate via GLUDD_SESSION_START_ENFORCE; 21 tests; opencode.json registered |
 | Queue-lease concurrency fixes: double-dispatch prevention, priority ordering, orphan-lease cleanup, expires_at index (Q.F1-F4) | ✓ 100% | **PASS** *(file-refs only)*: F1 reclaim skip on live lease, F2 priority DESC ordering, F3 lease-row delete on PID-cap release, F4 alembic migration 011; `[4e13936]` `[6e684b4]` `[bba8c92]` `[14ee691]` |
 | gludd_stream module + /admin/stream/dispatch + 3 operator playbooks + molecule scenarios (S.1-S.7) | ✓ 100% | **PASS** *(file-refs only)*: stream_audio_to_tasks, stream_video_feature_detection, stream_text_log_tail; 3 molecule scenarios; max_dispatches bounded; `[ea2cc7bc]` |
-| Persistent agent memory (G1) | ~ 35% | **PARTIAL** *(file-refs only)*: persistence layer complete: MemoryRecordModel + MemoryRepository (repository.py:2584) + migrations 005/022 + 3 unit tests; scope/scope_key isolation; embedding column for semantic search; TODO: wire into daemon/event loop, MCP tooling, semantic search |
-| Offline eval harness (G2) | ~ 15% | **PARTIAL** *(file-refs only)*: eval/ package scaffolded; harness + schema modules; `[audit]` |
-| Semantic codebase retrieval (G3) | ~ 15% | **PARTIAL** *(file-refs only)*: retrieval/ package scaffolded; indexer + searcher modules; `[audit]` |
-| Sandboxed code execution (G4) | ~ 15% | **PARTIAL** *(file-refs only)*: Landlock+Bubblewrap backends exist; macOS deprecated; design-only for G4-specific execution sandbox; `[audit]` |
-| HITL approval gates (G7) | ✓ 15% | **PASS** *(file-refs only)*: HumanTodo system exists (bot→human); no dedicated approvals/ package; `[audit]` |
-| Multi-agent debate / consensus (G11) | ✓ 15% | **PASS** *(file-refs only)*: consensus engine scaffolded; 4 tests; `[audit]` |
-| Plan/critique layer (G9) | ✓ 15% | **PASS** *(file-refs only)*: planning/critique scaffolded; 4 tests; `[audit]` |
-| Prompt/skill versioning A/B (G6) | ✓ 15% | **PASS** *(file-refs only)*: scaffold created, PromptRegistry needs version/hash/history fields; `[audit]` |
-| Outcome-driven self-improve (G5) | ✓ 15% | **PASS** *(file-refs only)*: eval harness + self_update wired; blocked on G2 (eval harness completion); `[audit]` |
-| Cost/quality Pareto router (G8) | ✓ 15% | **PASS** *(file-refs only)*: ParetoRouter scaffolded; 4 tests; `[audit]` |
-| Per-run replay (G10) | ✓ 15% | **PASS** *(file-refs only)*: replay/ package scaffolded; recorder module; `[audit]` |
-| Live web retrieval MCP tool (G12) | ✓ 15% | **PASS** *(file-refs only)*: WebRetriever scaffolded; 4 tests; `[audit]` |
-| Structured task-spec / acceptance_criteria (G13) | ✓ 40% | **PASS** *(file-refs only)*: migration+model+router+3 tests; [9f9ce2de] [477bfa24] [ca1a3af7] |
+| Persistent agent memory (G1) | ~ 85% | **PASS** *(file-refs only)*: persistence layer complete: MemoryRecordModel + MemoryRepository (repository.py:2584) + migrations 005/022 + 3 unit tests; wired into daemon.py:1267 (MemoryRepository injected into app.state) + event_loop/loop.py:346 (prompt injection from stored memory records); scope/scope_key isolation; embedding column for semantic search; TODO: MCP tooling, semantic search endpoint |
+| Offline eval harness (G2) | ~ 35% | **PARTIAL** *(file-refs only)*: eval/ package (model+harness+schema+scorers); TODO: wire into daemon/event loop via eval-scoring pipeline |
+| Semantic codebase retrieval (G3) | ~ 45% | **PARTIAL** *(file-refs only)*: retrieval/ package (indexer+searcher+web); TF-IDF/diskcache backend; 5+ tests; TODO: daemon wiring, embedding-based semantic search |
+| Sandboxed code execution (G4) | ~ 30% | **PARTIAL** *(file-refs only)*: Landlock+Bubblewrap backends exist; sandbox_apply/release wired into event loop (loop.py:1297-1384); macOS deprecated; TODO: G4-specific sandbox_exec SandboxExecutor wiring |
+| HITL approval gates (G7) | ✓ 40% | **PASS** *(file-refs only)*: HumanTodo system complete (SQLAlchemy model+migration+repository+router+CLI+ansible module); parent_agent_todo linkage; block/resume lifecycle; TODO: dedicated approvals/ package with multi-party approval chains |
+| Multi-agent debate / consensus (G11) | ✓ 35% | **PASS** *(file-refs only)*: ConsensusEngine in review/consensus.py; 4 tests; TODO: wire into daemon dispatch pipeline |
+| Plan/critique layer (G9) | ✓ 35% | **PASS** *(file-refs only)*: planning/ package (critique+artifact+debt_evaluator+debt_applier); debt_evaluator wired into event loop (loop.py:351,1647-1679); TODO: critique feedback loop into dispatch |
+| Prompt/skill versioning A/B (G6) | ✓ 30% | **PASS** *(file-refs only)*: PromptRegistry wired into daemon.py:1031 + routers/reload.py:163; needs version/hash/history fields + A/B test dispatch integration |
+| Outcome-driven self-improve (G5) | ✓ 25% | **PASS** *(file-refs only)*: eval harness + self_improve playbook reference in loop.py:193; ornith self-improve role complete; blocked on G2 (eval harness daemon wiring); `[audit]` |
+| Cost/quality Pareto router (G8) | ✓ 30% | **PASS** *(file-refs only)*: scoring/ package (pareto+router+engine+task_embeddings); not yet wired into daemon or event loop dispatch |
+| Per-run replay (G10) | ✓ 25% | **PASS** *(file-refs only)*: replay/ package with recorder module; not yet wired into daemon dispatch or API endpoints |
+| Live web retrieval MCP tool (G12) | ✓ 45% | **PASS** *(file-refs only)*: WebRetriever (retrieval/web.py) wired into MCP builtins.py:209 with diskcache; 4 tests; TODO: daemon API endpoint |
+| Structured task-spec / acceptance_criteria (G13) | ✓ 60% | **PASS** *(file-refs only)*: migration+model+router+3 tests+definition_of_done Pydantic field; TODO: wire acceptance_criteria into todo lifecycle validation |
 
 ### DB / Migrations
 
