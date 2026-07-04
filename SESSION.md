@@ -5,17 +5,17 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-04 (opencode session — deepseek-v4-pro, session 4)
+- 2026-07-04 (opencode session — deepseek-v4-pro, session 5, CI RED fix)
 
 ## Current Work
 
-- **HEAD: `387ef3ba`** on master — feat(G6): wire A/B testing variant selector + fix AGENTS.md stale refs.
+- **HEAD: `579bdc0b`** on master — pushed (remote matches). 9 commits landed in session 4.
 
-- **8 commits this session (session 4)**: enforce-stop rewrite, watchdog CI-awareness, push-rate guard, batch-push, escape-sequence fix, G4/G10/G11 wiring, G6 A/B wiring, AGENTS.md stale-ref fixes.
+- **9 commits this session (session 4)**: enforce-stop rewrite, watchdog CI-awareness, push-rate guard, batch-push, escape-sequence fix, G4/G10/G11 wiring, G6 A/B wiring, AGENTS.md stale-ref fixes, SESSION.md update (579bdc0b).
 
 - **G1-G13 scaffold/wire**: All 4 dead classes now wired (G4 SandboxExecutor, G6 A/B variant selector, G10 RunRecorder, G11 ConsensusEngine). 39 new tests across the 4 wiring phases.
 
-- **Known Gaps**: Full local test suite OOM under xdist (CI-as-gate used). 4 unpushed commits on master.
+- **Known Gaps**: Full local test suite OOM under xdist (CI-as-gate used).
 
 - **Gate**: lint 0, typecheck 0, collect 0. Full test suite OOM under 8-worker xdist; CI-as-gate used.
 
@@ -23,6 +23,7 @@
 
 | Hash | Message |
 |------|---------|
+| `579bdc0b` | docs: update SESSION.md for G6 wiring, 4 gaps resolved, 8 commits in session 4 |
 | `387ef3ba` | feat(G6): wire A/B testing variant selector + fix AGENTS.md stale refs — 18 tests |
 | `680bfeef` | feat(G4,G10,G11): wire SandboxExecutor, RunRecorder, ConsensusEngine — 21 tests |
 | `53fe65af` | fix: escape invalid Python string escape sequences in gha_usage.py jq filter |
@@ -50,14 +51,13 @@
 
 ## Next Steps
 
-1. **Push commits** — 4 unpushed on master (remote at c69c0d72, local at 387ef3ba).
-2. **Poll CI** until green after push.
+1. **Fix CI** — CI is RED (failure), run 28704091173 on master (HEAD `579bdc0b`). Investigate the failure and fix.
 
 ## Current Gate Status (2026-07-04)
 <!-- gate:begin -->
 - **Last full PASS**: 2026-07-04 — lint 0, typecheck 0, collect 0. Full suite OOM under xdist.
-- **HEAD**: `387ef3ba`
-- **CI**: not yet verified for current HEAD
+- **HEAD**: `579bdc0b` (pushed)
+- **CI**: RED (failure) — run 28704091173, conclusion: failure on master (HEAD `579bdc0b`)
 
 <!-- gate:end -->
 
@@ -66,7 +66,8 @@
 
 ## Historical State
 
-- **2026-07-04 session 4 (current)**: HEAD `387ef3ba`. 8 commits: watchdog CI-awareness (8a128c3f), enforce-stop local-work distinction (186783a2), keep-working system rewrite (c69c0d72), push-rate-guard + batch-push (96714938), escape-sequence fix (53fe65af), G4/G10/G11 wiring (680bfeef), G6 A/B wiring + AGENTS stale fixes (387ef3ba). All 4 SESSION.md gaps resolved (39 new tests). Lint/typecheck/collect green.
+- **2026-07-04 session 5 (current)**: HEAD `579bdc0b` (pushed). Session 4 landed 9 commits (watchdog CI-awareness through SESSION.md update). CI RED (run 28704091173, failure).
+- **2026-07-04 session 4**: HEAD `387ef3ba`. 9 commits: watchdog CI-awareness (8a128c3f), enforce-stop local-work distinction (186783a2), keep-working system rewrite (c69c0d72), push-rate-guard + batch-push (96714938), escape-sequence fix (53fe65af), G4/G10/G11 wiring (680bfeef), G6 A/B wiring + AGENTS stale fixes (387ef3ba), SESSION.md update (579bdc0b). All 4 SESSION.md gaps resolved (39 new tests). Lint/typecheck/collect green.
 - **2026-07-04 session 3**: HEAD `0ee32612`. 5 commits: G1-G13 README percentages bumped (76f72d75), G14 evidence (e21def86), G4+G8 README corrections (fadcf808), G6 content-hash tracking (b4bae0c5), G6a evidence (0ee32612). Gate green.
 - **2026-07-04 session 2**: HEAD `0117024f`. SESSION.md staleness fixed. G1 at 55%. G2/G3/G8/G11/G12 scaffolded. Watchdog fixes.
 - **2026-07-04 session 1**: HEAD `fcdf9b92`. G1 persistent agent memory schema. G13 structured task spec.

@@ -40,10 +40,13 @@ from general_ludd.db.session import (
     is_sqlite_url,
     seed_initial_queues,
 )
+from general_ludd.eval.harness import EvalHarness
+from general_ludd.eval.model import ModelEvaluator
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.events.bus import EventBus
 from general_ludd.events.hooks import HookSystem
 from general_ludd.events.types import StallDetectedEvent
+from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore as _FS
 from general_ludd.infra.utilization import UtilizationTracker
@@ -859,7 +862,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     }
     event_loop = None
     task = None
-    engine = None
+    execution_engine = None
 
     try:
         startup_config = getattr(app.state, "_startup_config", {}) or {}
@@ -1063,6 +1066,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from general_ludd.controllers.pause_controller import PauseController
         app.state._pause_controller = PauseController()
 
+        from general_ludd.controllers.compaction_aggressiveness import (
+            CompactionAggressivenessController,
+        )
+        app.state._compaction_aggressiveness_controller = CompactionAggressivenessController()
+
         model_gateway = None
         deployment_health_router = None
         if model_profiles:
@@ -1090,6 +1098,20 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 pause_controller=app.state._pause_controller,
             )
             app.state._model_gateway = model_gateway
+
+            execution_engine = ExecutionEngine(
+                model_gateway=model_gateway,
+                benchmark_recorder=None,
+                metrics_collector=ext.get("metrics_collector"),
+                budget_guard=budget_guard,
+            )
+            app.state._execution_engine = execution_engine
+
+            eval_harness = EvalHarness(
+                model="sonnet",
+                evaluator=ModelEvaluator(model_gateway, profile_id="sonnet"),
+            )
+            app.state.eval_harness = eval_harness
 
             # Deployment health: track per-model-deployment failures and
             # self-heal by routing away from unhealthy deployments.
@@ -1125,6 +1147,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         _p.model_name,
                     )
 
+        if getattr(app.state, "eval_harness", None) is None:
+            app.state.eval_harness = EvalHarness(model="sonnet")
+
         # H4 (W3.2): wire a real ReturnReviewer into the review phase when a
         # gateway exists. Review failure escalates the todo; it is never a
         # silent pass.
@@ -1151,6 +1176,33 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 self_improve_interval = int(
                     startup_config.get("self_improve_interval", 10)
                 )
+
+        # Compaction eval wiring: build a self-improving compactor with the
+        # default candidate pool. The arena can be re-run at runtime via the
+        # /admin/compaction/eval-status endpoint to re-evaluate the champion.
+        from general_ludd.compaction.arena import build_self_improving_compactor
+        from general_ludd.compaction.evaluate import CompactionMetrics as EvalMetrics
+
+        _summary_fn = None
+        if model_gateway is not None and hasattr(model_gateway, "_profiles"):
+            from general_ludd.compaction.slm import make_slm_summarize_fn
+            try:
+                _summary_fn = make_slm_summarize_fn(model_gateway, profile_id="compactor")
+            except Exception:
+                logger.info(
+                    "SLM summarizer unavailable for compaction eval — running "
+                    "with offline fallback (candidates use extractive truncation)"
+                )
+
+        _compaction_compactor = build_self_improving_compactor(
+            summarize_fn=_summary_fn,
+        )
+        app.state._compaction_compactor = _compaction_compactor
+        app.state._compaction_metrics = EvalMetrics(compactor="noop")
+        logger.info(
+            "Compaction eval wired: champion=%s",
+            _compaction_compactor.champion.name,
+        )
 
         # W3.9 MCP wiring: build MCPToolRegistry and conditionally start MCPClient
         from general_ludd.mcp.client import MCPClient
@@ -1812,7 +1864,10 @@ def create_daemon_app(
     app.state._skill_registry = None
     app.state._adaptive_router = None
     app.state._deployment_health_router = None
+    app.state._execution_engine = None
     app.state._self_update_audit_sink = None
+    app.state._compaction_compactor = None
+    app.state._compaction_metrics = None
     app.state._startup_config = load_startup_config(config_dir)
     app.state._project_gludd_dir = app.state._startup_config.get("project_gludd_dir")
     app.state._model_performance_router = None
@@ -1820,6 +1875,9 @@ def create_daemon_app(
     app.state._stats_start_time = time.monotonic()
     app.state._stats_requests = 0
     app.state._stats_responses = 0
+
+    from general_ludd.planning.critique import PlanCritique
+    app.state.plan_critique = PlanCritique()
 
     from general_ludd.hardware.probe import probe_hardware
     app.state._hardware = probe_hardware()
@@ -2103,6 +2161,61 @@ def create_daemon_app(
             "uptime_s": round(uptime, 2),
         }
 
+    @app.get("/admin/eval/status")
+    async def admin_eval_status() -> dict[str, Any]:
+        harness = getattr(app.state, "eval_harness", None)
+        if harness is None:
+            return {"status": "not_configured", "ready": False}
+        return {
+            "status": "configured",
+            "ready": harness.ready,
+            "model": harness.model,
+        }
+
+    @app.get("/admin/execution/engine-status")
+    async def admin_execution_engine_status() -> dict[str, Any]:
+        engine = getattr(app.state, "_execution_engine", None)
+        if engine is None:
+            return {"status": "not_configured", "reason": "No execution engine wired"}
+        return {
+            "status": "configured",
+            "workspace_path": engine.workspace_path,
+            "has_model_gateway": engine._model_gateway is not None,
+            "has_budget_guard": engine._budget_guard is not None,
+            "has_metrics_collector": engine._metrics_collector is not None,
+        }
+
+    @app.get(
+        "/admin/plan/critique-status",
+        summary="PlanCritique wiring status",
+        description="Returns whether PlanCritique is wired on app.state.",
+    )
+    async def admin_plan_critique_status() -> dict[str, Any]:
+        critique = getattr(app.state, "plan_critique", None)
+        return {
+            "wired": critique is not None,
+            "class": type(critique).__name__ if critique is not None else None,
+        }
+
+    @app.get(
+        "/admin/compaction/eval-status",
+        summary="Compaction evaluation status",
+        description=(
+            "Returns the current compaction evaluation state: the active champion "
+            "compactor, the latest aggregate metrics (score, fidelity, compression "
+            "ratio), and whether the self-improving compactor is wired."
+        ),
+    )
+    async def admin_compaction_eval_status() -> dict[str, Any]:
+        compactor = getattr(app.state, "_compaction_compactor", None)
+        metrics = getattr(app.state, "_compaction_metrics", None)
+        wired = compactor is not None
+        return {
+            "wired": wired,
+            "champion": compactor.champion.name if compactor is not None else None,
+            "metrics": metrics.model_dump() if metrics is not None else None,
+        }
+
     # Lazy to avoid circular import: routers/*.py import from daemon at module level
     from general_ludd.routers import (
         accounting,
@@ -2267,6 +2380,8 @@ def create_daemon_app(
     )
     spend.register(app, daemon_state)
     pause.register(app, daemon_state)
+    from general_ludd.routers import compaction_aggressiveness as _compaction_aggr_router
+    _compaction_aggr_router.register(app, daemon_state)
     from general_ludd.routers import coordination as _coord_router
     _coord_router.register(app, daemon_state)
 

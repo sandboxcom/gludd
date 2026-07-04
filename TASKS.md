@@ -661,3 +661,20 @@ SESSION.md gaps G4/G10/G11: three classes existed but were never imported in pro
 ## Phase AGENTS-stale — AGENTS.md ref fixes (2026-07-04)
 
 - [x] AGENTS-stale — 6 stale-reference fixes: phantom enforce-todos.ts refs removed (merged into enforce-stop.ts), plugin count 4→9, hook count 20→23, 5 missing plugins + 3 missing hooks added to ports table, chat.response.transform noted as replaced by session.idle/text.complete per Q3.12 | evidence: lint 0; typecheck 0
+
+## Phase G5-wire — Eval model wiring (2026-07-04)
+
+- [x] G5-wire — EvalHarness + ModelEvaluator wired into app.state.eval_harness at daemon startup; GET /admin/eval/status endpoint returns readiness; safe fallback to evaluator-less harness | evidence: tests/unit/test_eval_daemon_wiring.py 5 passed; lint 0; typecheck 0
+
+## Phase G7-wire — ExecutionEngine wiring (2026-07-04)
+
+- [x] G7-wire — ExecutionEngine wired into app.state._execution_engine with model_gateway + metrics_collector + budget_guard; GET /admin/execution/engine-status endpoint returns subcomponent status + workspace_path | evidence: tests/unit/test_execution_engine_wiring.py 6 passed; lint 0; typecheck 0
+
+## Phase G9-wire — PlanCritique wiring (2026-07-04)
+
+- [x] G9-wire — PlanCritique wired into app.state.plan_critique; GET /admin/plan/critique-status endpoint returns wired state | evidence: tests/unit/test_plan_critique_wiring.py 2 passed; lint 0; typecheck 0
+
+## Phase Comp-wire — Compaction subsystem wiring (2026-07-04)
+
+- [x] Comp-1 — CompactionAggressivenessController wired into app.state + router with GET /admin/compaction/aggressiveness-status (floor/min_samples/max_level/available) | evidence: tests/unit/test_compaction_aggressiveness_wiring.py 5 passed; lint 0; typecheck 0
+- [x] Comp-2 — SelfImprovingCompactor + CompactionMetrics wired into app.state; GET /admin/compaction/eval-status returns wired state + champion name + metrics | evidence: tests/unit/test_compaction_eval_wiring.py 7 passed; lint 0; typecheck 0
