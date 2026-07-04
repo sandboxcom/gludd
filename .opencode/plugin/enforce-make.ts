@@ -387,28 +387,65 @@ export default (async ({ }) => {
           const isQa = lrTarget === "qa"
           const isTestE2e = lrTarget === "test-e2e"
           const isValidate = lrTarget === "validate"
-          if (isGate || isTestUnit || isBareTest || isQa || isTestE2e || isValidate) {
+          const isAnsibleSyntax = lrTarget === "ansible-syntax"
+          if (isGate || isTestUnit || isBareTest || isQa || isTestE2e || isValidate || isAnsibleSyntax) {
             throw new Error([
               "BLOCKED: Long-running foreground command. Use `make gate-background`",
-              "instead, or dispatch to a subagent. Foreground blocking prevents",
-              "subagent dispatch and UI updates.",
+              "(gate), `make test-bg` (tests), or dispatch to a subagent instead.",
+              "Foreground blocking prevents subagent dispatch and UI updates.",
               "",
               "While this command runs, the bash tool blocks for the entire",
               "duration (make gate ~40 min, make test-unit ~27 min, make qa,",
               "make test-e2e, and make validate are equally long-running).",
               "During that time NO subagents can be dispatched and NO UI updates",
               "reach the user. Either:",
-              "  1. Run `make gate-background` (background variant), or",
+              "  1. Run `make gate-background` or `make test-bg` (background variants), or",
               "  2. Dispatch the gate/test to a subagent (preferred).",
               "",
               "Allowed in foreground:",
               "  make lint, make typecheck, make test-count, make collect-check,",
               "  make test TESTFILE=<path>, make test NO_XDIST=1",
               "",
-              "SUGGESTION: Run `make gate-background` instead, then `make gate-status-check`",
-              "to poll. Blocking the main thread on a 40-min gate is forbidden per",
-              "AGENTS.md (Main-thread command restriction / background-gate workflow).",
+              "Background alternatives for blocked tests:",
+              "  make test-bg FILES='...' — run targeted tests in background",
+              "  make test-bg TESTFILE=<path> — run test file in background",
+              "  make test-bg-* — all bg variants pollable via make test-bg-status",
+              "",
+              "SUGGESTION: Run `make gate-background` or `make test-bg` instead, then",
+              "poll status. Blocking the main thread on a long-running foreground",
+              "operation is forbidden per AGENTS.md (Main-thread command restriction /",
+              "background-gate workflow).",
             ].join("\n"))
+          }
+        }
+
+        // test-batch: block if >3 FILES — avoids 10+ files blocking the main thread
+        const isTestBatch = lrTarget === "test-batch"
+        if (isTestBatch) {
+          const filesMatch = trimmed.match(/FILES=['"]([^'"]*)['"]/)
+          const filesStr = filesMatch ? filesMatch[1] : ""
+          const fileCount = filesStr ? filesStr.split(/\s+/).filter(Boolean).length : 0
+          if (fileCount > 3) {
+            throw new Error(
+              `BLOCKED: Large test-batch (${fileCount} files). ` +
+              `Use \`make test-bg FILES='${filesStr}'\` to run in the background, ` +
+              `or batch into groups of 3 or fewer. Foreground blocking with >3 test ` +
+              `files prevents subagent dispatch.`
+            )
+          }
+        }
+
+        // test-specific: warn if TESTFILE matches slow patterns (e2e, integration, redteam)
+        const isTestSpecific = lrTarget === "test-specific"
+        if (isTestSpecific) {
+          const tfMatch = trimmed.match(/TESTFILE=['"]([^'"]*)['"]/) || trimmed.match(/TESTFILE=(\S+)/)
+          const testfilePath = tfMatch ? tfMatch[1] : ""
+          if (/e2e/i.test(testfilePath) || /integration/i.test(testfilePath) || /redteam/i.test(testfilePath)) {
+            console.warn(
+              `WARNING: test-specific on slow test (${testfilePath}). ` +
+              `Consider using \`make test-bg TESTFILE='${testfilePath}'\` ` +
+              `to run in the background instead.`
+            )
           }
         }
 
