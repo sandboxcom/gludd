@@ -1013,7 +1013,9 @@ sections:
         title: "Structured task-spec / acceptance_criteria (G13)"
         pct: 20
         evidence_refs: []
-        notes: "acceptance_criteria + definition_of_done added to TodoModel; migration created. Pending: router endpoint, validation, tests"
+        notes: "acceptance_criteria + definition_of_done added to TodoModel; migration created. Pending: router endpoint, validation, tests.
+        
+        "
 
   # ---------------------------------------------------------------------------
   - title: "DB / Migrations"
