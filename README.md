@@ -247,7 +247,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Cost/quality Pareto router (G8) | ✗ 0% | **PENDING**: no implementation; blocked on avg_cost DB fix; `[audit]` |
 | Per-run replay (G10) | ✗ 0% | **PENDING**: no `replay/` package; design-only; `[audit]` |
 | Live web retrieval MCP tool (G12) | ✗ 0% | **PENDING**: no implementation; design-only; `[audit]` |
-| Structured task-spec / acceptance_criteria (G13) | ✗ 0% | **PENDING**: todos are free-text; no schema field; design-only; `[audit]` |
+| Structured task-spec / acceptance_criteria (G13) | ✗ 20% | **PENDING**: acceptance_criteria + definition_of_done added to TodoModel; migration created. Pending: router endpoint, validation, tests |
 
 ### DB / Migrations
 

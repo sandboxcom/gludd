@@ -860,6 +860,23 @@ repo-visibility:
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
 
+ci-verdict:
+	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); \
+	RUN=$$(gh run list --commit=$$SHA --json databaseId,conclusion,headSha,status --jq '.[0]' 2>/dev/null || echo "{}"); \
+	HEAD_SHA=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('headSha',''))" 2>/dev/null); \
+	CONCLUSION=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null); \
+	STATUS=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null); \
+	RUN_ID=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('databaseId',''))" 2>/dev/null); \
+	if [ "$$CONCLUSION" = "success" ]; then \
+		echo "CI GREEN: $$HEAD_SHA run $$RUN_ID conclusion=$$CONCLUSION"; \
+	elif [ "$$STATUS" = "pending" ] || [ "$$STATUS" = "in_progress" ] || [ "$$STATUS" = "queued" ]; then \
+		echo "CI PENDING: $$HEAD_SHA run $$RUN_ID status='$$STATUS'"; exit 2; \
+	elif [ -n "$$CONCLUSION" ]; then \
+		echo "CI RED: $$HEAD_SHA run $$RUN_ID conclusion='$$CONCLUSION'"; exit 1; \
+	else \
+		echo "CI RED: no run found for SHA $$SHA"; exit 1; \
+	fi
+
 gha-usage:
 	@$(PYTHON) scripts/gha_usage.py
 	@echo ""

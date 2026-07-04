@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import collections
+import json
 import logging
 import os
 import uuid
@@ -35,6 +36,8 @@ class AddScheduledTodoRequest(BaseModel):
     priority: str = Field(default="medium", pattern=r"^(low|medium|high|critical)$")
     work_type: str = Field(default="code", pattern=r"^[a-z_]+$")
     project_id: str | None = None
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    definition_of_done: str = Field(default="")
     # One-shot: fire once at this UTC datetime.
     scheduled_at: datetime | None = None
     # Recurring: 5-field cron expression (e.g. "0 9 * * 1-5").
@@ -166,6 +169,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "work_type": req.work_type,
             "status": "queued",
             "project_id": req.project_id,
+            "acceptance_criteria": json.dumps(req.acceptance_criteria),
+            "definition_of_done": req.definition_of_done,
         }
         if factory is not None:
             async with factory() as session:
