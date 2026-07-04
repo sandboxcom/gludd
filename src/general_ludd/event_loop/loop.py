@@ -27,6 +27,8 @@ from general_ludd.db.repository import (
     VariableNamespaceRepository,
 )
 from general_ludd.event_loop.lease import reclaim_expired_leases
+from general_ludd.execution.graph_checkpointer import TickCheckpointer
+from general_ludd.execution.human_gate import HumanGate
 from general_ludd.execution.situation_store import BadCallSituationStore
 from general_ludd.execution.tool_auditor import ToolCallAuditor
 from general_ludd.mcp.client import MCPClient
@@ -241,6 +243,7 @@ class EventLoop:
         self_improve_interval: int = 0,
         reviewer: Any | None = None,
         consensus_reviewer: Any | None = None,
+        langgraph_reviewer: Any | None = None,
         model_gateway: Any | None = None,
         dispatcher: Any | None = None,
         loc_ledger: Any | None = None,
@@ -255,17 +258,20 @@ class EventLoop:
         sandbox_executor: Any | None = None,
         run_recorder: Any | None = None,
         prompt_variant_selector: Any | None = None,
+        checkpointer: TickCheckpointer | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
         self._daemon_state = daemon_state
         self._run_recorder = run_recorder
         self._prompt_variant_selector = prompt_variant_selector
+        self._checkpointer = checkpointer
         self._project_secrets_manager = project_secrets_manager
         self._project_workspace = project_workspace
         self._self_improve_interval = self_improve_interval
         self._reviewer = reviewer
         self._consensus_reviewer = consensus_reviewer
+        self._langgraph_reviewer = langgraph_reviewer
         self._model_gateway = model_gateway
         self._dispatcher = dispatcher
         self._spend_limiter = spend_limiter  # may be overwritten post-construction by the daemon
@@ -361,6 +367,7 @@ class EventLoop:
             if self._model_gateway
             else None
         )
+        self._human_gate = HumanGate(config=self.config)
 
     def _track_background_task(self, task: asyncio.Task[Any]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -569,12 +576,24 @@ class EventLoop:
     async def tick(self) -> dict[str, Any]:
         self._tick_state = {}
         self._total_ticks += 1
+        tick_id = f"tick_{self._total_ticks}"
         self._tick_metrics = {
             "total_ticks": self._total_ticks, "phases_completed": 0,
             "tick_duration_ms": 0.0, "returns_reviewed": 0,
             "todos_dispatched": 0, "decisions_applied": 0,
             "leases_reclaimed": 0,
         }
+        if self._checkpointer is not None:
+            previous = self._checkpointer.get("last_tick")
+            if previous:
+                self._tick_state = previous.get("_tick_state", {})
+                for key in previous.get("_applied_decision_keys", []):
+                    if key not in self._applied_decisions:
+                        self._applied_decisions[key] = None
+                for key in previous.get("_pushed_work_keys", []):
+                    if key not in self._pushed_work:
+                        self._pushed_work[key] = None
+                self._push_retry_count = previous.get("_push_retry_count", self._push_retry_count)
         # M14 (W3.14): select ONE project per tick before phases run; reset after.
         self._tick_project_id = self._select_tick_project_id()
         start = time.monotonic()
@@ -625,6 +644,15 @@ class EventLoop:
         self._tick_metrics["tick_duration_ms"] = elapsed * 1000
         if self._daemon_state is not None:
             self._daemon_state["tick_metrics"] = dict(self._tick_metrics)
+        if self._checkpointer is not None:
+            state = {
+                "_tick_state": dict(self._tick_state),
+                "_applied_decision_keys": list(self._applied_decisions.keys()),
+                "_pushed_work_keys": list(self._pushed_work.keys()),
+                "_push_retry_count": dict(self._push_retry_count),
+            }
+            self._checkpointer.put(tick_id, state)
+            self._checkpointer.put("last_tick", state)
         return self._tick_metrics
 
     async def _run_phases(self) -> None:
@@ -884,12 +912,19 @@ class EventLoop:
     async def _review_in_process(self, tr: Any) -> None:
         from general_ludd.review.decision_applier import apply_decision
 
+        review_cfg = (
+            self.config.get("review", {})
+            if isinstance(self.config, dict)
+            else {}
+        )
         consensus_cfg = (
             self.config.get("consensus_review", {})
             if isinstance(self.config, dict)
             else {}
         )
-        if consensus_cfg.get("enabled", False) and self._consensus_reviewer is not None:
+        if review_cfg.get("use_langgraph") and self._langgraph_reviewer is not None:
+            effective_reviewer = self._langgraph_reviewer
+        elif consensus_cfg.get("enabled", False) and self._consensus_reviewer is not None:
             effective_reviewer = self._consensus_reviewer
         else:
             assert self._reviewer is not None
@@ -2649,6 +2684,25 @@ class EventLoop:
                     new_status = self._decision_to_status(_verified.decision)
                     if new_status is None:
                         continue
+            # Human-in-the-loop gate: when config ``review.human_in_the_loop`` is
+            # enabled and the decision confidence is below the configured
+            # threshold, pause via LangGraph interrupt() for human approval.
+            # Falls back to existing HumanTodo polling when LangGraph is absent.
+            if d.decision == "complete" and self._human_gate.should_interrupt(
+                float(getattr(d, "confidence", 0.0) or 0.0)
+            ):
+                _gate_decision = await self._human_gate.await_approval(
+                    thread_id=decision_id,
+                    message=f"Review decision {decision_id} for todo {todo.todo_id}",
+                    decision_id=decision_id,
+                    todo_id=todo.todo_id,
+                    confidence=float(getattr(d, "confidence", 0.0) or 0.0),
+                )
+                if _gate_decision is not None:
+                    if _gate_decision.lower() in ("denied", "needs_more_work"):
+                        new_status = TodoStatus.NEEDS_MORE_WORK
+                    elif _gate_decision.lower() == "approved":
+                        pass  # Keep new_status as COMPLETE
             # F6: version race. We transition with the version we just read; the
             # repository performs a guarded compare-and-set on (version, status).
             # If a CONCURRENT reconcile already moved the row, the CAS affects

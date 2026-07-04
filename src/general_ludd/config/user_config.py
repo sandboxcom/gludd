@@ -192,6 +192,8 @@ class AgentConfig(BaseModel):
     preferred_agents: dict[str, Any] = {}
     task_preferences: dict[str, Any] = {}
     session_notes: str = ""
+    use_langgraph_tool_loop: bool = False
+    use_langgraph_review: bool = False
 
 
 class ConfigLayer(BaseModel):

@@ -47,6 +47,7 @@ from general_ludd.events.bus import EventBus
 from general_ludd.events.hooks import HookSystem
 from general_ludd.events.types import StallDetectedEvent
 from general_ludd.execution.engine import ExecutionEngine
+from general_ludd.execution.graph_checkpointer import get_checkpointer
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore as _FS
 from general_ludd.infra.utilization import UtilizationTracker
@@ -61,6 +62,7 @@ from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.model_registry import ModelRegistry
 from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.dashboard_data import DashboardDataProvider
+from general_ludd.observability.langsmith_tracer import LangSmithTracer
 from general_ludd.observability.otel_bridge import OTelBridge
 from general_ludd.observability.recorder import AutoBenchmarkRecorder
 from general_ludd.observability.timing import StallWatchdog, default_tracker
@@ -1063,6 +1065,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # construction so the AdaptiveRouter holds the live instance (not None).
         health_tracker = app.state._health_tracker
 
+        # LangSmith tracer: additive observability side-channel.
+        # Enabled when LANGSMITH_API_KEY + LANGSMITH_PROJECT env vars are set.
+        # Gracefully degrades — no-op when unconfigured or unavailable.
+        app.state.langsmith_tracer = LangSmithTracer()
+
         from general_ludd.controllers.pause_controller import PauseController
         app.state._pause_controller = PauseController()
 
@@ -1096,6 +1103,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # leaving budgets silently inert in the daemon.
                 budget_guard=budget_guard,
                 pause_controller=app.state._pause_controller,
+                langsmith_tracer=app.state.langsmith_tracer,
             )
             app.state._model_gateway = model_gateway
 
@@ -1163,6 +1171,45 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 router=ext.get("adaptive_router"),
                 budget_guard=budget_guard,
             )
+
+        langgraph_reviewer = None
+        review_cfg = {}
+        if model_gateway is not None:
+            review_use_langgraph = False
+            if uc is not None:
+                with contextlib.suppress(Exception):
+                    review_use_langgraph = bool(
+                        getattr(uc.agent, "use_langgraph_review", False)
+                        or startup_config.get("review", {}).get("use_langgraph", False)
+                    )
+            if review_use_langgraph:
+                from general_ludd.review.langgraph_reviewer import LangGraphReflexiveReviewer
+
+                review_cfg = {"use_langgraph": True}
+
+                def _langgraph_call_model(prompt: str) -> str | None:
+                    try:
+                        response = model_gateway.call_model(
+                            "default",
+                            messages=[{"role": "user", "content": prompt}],
+                            work_type="review",
+                        )
+                        return response.content
+                    except Exception:
+                        return None
+
+                langgraph_reviewer = LangGraphReflexiveReviewer(
+                    call_model=_langgraph_call_model,
+                    max_iterations=startup_config.get("review", {}).get("max_iterations", 3),
+                    confidence_threshold=startup_config.get("review", {}).get(
+                        "confidence_threshold", 0.8
+                    ),
+                )
+                logger.info(
+                    "LangGraphReflexiveReviewer enabled: max_iterations=%d confidence_threshold=%.2f",
+                    langgraph_reviewer._max_iterations,
+                    langgraph_reviewer._confidence_threshold,
+                )
 
         # H2 (W3.7): self-improvement interval comes from config; 0 disables it.
         # interval=0 → disabled; default is 10 minutes so the feature is on out-of-the-box.
@@ -1322,6 +1369,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         sandbox_executor = SandboxExecutor(timeout=30)
 
+        app.state.checkpointer = get_checkpointer(
+            db_url=str(engine.url) if engine and str(engine.url).startswith("sqlite") else None
+        )
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -1355,12 +1406,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # workspace. EventLoop._resolve_repo_root() overrides this with the
                 # per-project workspace.repo_dir when available.
                 "repo_root": os.getcwd(),
+                "review": review_cfg,
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,
             project_workspace=_init_project_workspaces(ext["projects"]),
             project_secrets_manager=secrets_resolver,
             reviewer=return_reviewer,
+            consensus_reviewer=None,
+            langgraph_reviewer=langgraph_reviewer,
             self_improve_interval=self_improve_interval,
             # H3: spend_limiter passed via constructor so _spend_limiter is set
             # before the run_forever task is scheduled — the first tick can never
@@ -1376,9 +1430,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             pause_controller=getattr(app.state, "_pause_controller", None),
             memory_repo=memory_repo,
             sandbox_executor=sandbox_executor,
+            checkpointer=app.state.checkpointer,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
+        daemon_state["human_gate"] = event_loop._human_gate
         app.state._runner = runner
         app.state._db_engine = engine
         app.state._session_factory = session_factory
@@ -2243,6 +2299,7 @@ def create_daemon_app(
         reload,
         remediation,
         render,
+        review,
         schedule,
         security,
         self_improve,
@@ -2291,6 +2348,7 @@ def create_daemon_app(
     self_update.register(app, daemon_state)
     maintenance.register(app, daemon_state)
     remediation.register(app, daemon_state)
+    review.register(app, daemon_state)
     ornith.register(app, daemon_state)
     # Playbook web renderer (Phase 1): /api/renderers (PSK) + /render/<name> (public).
     # Registry discovery is best-effort — a missing playbooks/renderers/ dir must

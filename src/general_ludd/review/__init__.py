@@ -5,6 +5,7 @@ __all__ = (
     "ConversationMessage",
     "EvidenceChecker",
     "EvidenceResult",
+    "LangGraphReflexiveReviewer",
     "ReturnReviewer",
     "apply_decision",
 )
@@ -12,4 +13,5 @@ __all__ = (
 from general_ludd.review.conversation import Conversation, ConversationMessage
 from general_ludd.review.decision_applier import apply_decision
 from general_ludd.review.evidence_checker import EvidenceChecker, EvidenceResult
+from general_ludd.review.langgraph_reviewer import LangGraphReflexiveReviewer
 from general_ludd.review.reviewer import ReturnReviewer

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.token_window import TokenWindowManager
 from general_ludd.agents.tool_adapter import AgentToolAdapter
+from general_ludd.execution.langgraph_agent import LangGraphAgentLoop
 from general_ludd.execution.tool_loop import ToolCallLoop
 from general_ludd.models.failover import ModelFailoverChain
 
@@ -180,6 +181,29 @@ class AgentCapabilities:
             mcp_registry=mcp_registry,
             compaction_level=tool_compaction_level,
             summarize_fn=tool_summarize_fn,
+        )
+
+    def make_langgraph_tool_loop(
+        self,
+        model_gateway: Any,
+        mcp_client: Any = None,
+        mcp_registry: Any = None,
+    ) -> LangGraphAgentLoop:
+        """Build a LangGraphAgentLoop backed by ``create_react_agent``.
+
+        Resolves the LangChain chat model from the gateway via
+        ``get_chat_model`` and returns a loop that delegates the
+        model→tool→model cycle to langgraph's native agent runtime.
+
+        Per-role capability gating and server_id resolution are preserved
+        inside the returned loop.  SLM compaction and tool auditing are
+        noted as follow-up items (see ``langgraph_agent.py``).
+        """
+        return LangGraphAgentLoop(
+            model_gateway=model_gateway,
+            chat_model=None,  # resolved per-run via _resolve_chat_model
+            mcp_client=mcp_client,
+            mcp_registry=mcp_registry,
         )
 
     def make_graph_gateway(

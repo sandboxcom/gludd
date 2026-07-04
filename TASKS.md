@@ -678,3 +678,27 @@ SESSION.md gaps G4/G10/G11: three classes existed but were never imported in pro
 
 - [x] Comp-1 — CompactionAggressivenessController wired into app.state + router with GET /admin/compaction/aggressiveness-status (floor/min_samples/max_level/available) | evidence: tests/unit/test_compaction_aggressiveness_wiring.py 5 passed; lint 0; typecheck 0
 - [x] Comp-2 — SelfImprovingCompactor + CompactionMetrics wired into app.state; GET /admin/compaction/eval-status returns wired state + champion name + metrics | evidence: tests/unit/test_compaction_eval_wiring.py 7 passed; lint 0; typecheck 0
+
+## Phase LC — langchain/langgraph integration (2026-07-04)
+
+Replaced 9 custom implementations with langchain/langgraph primitives behind config flags. Existing code preserved as fallback; langgraph now actually imported and used (not just declared in pyproject.toml).
+
+### Tool loop + agent orchestration
+- [x] LC-1 — `LangGraphAgentLoop` wrapping `create_react_agent` + `ToolNode` replaces hand-rolled `ToolCallLoop.run_with_tools()`; MCP tools bridged to LangChain structured tools with per-tool timeouts; plain call fallback when no MCP client; config flag `agent.use_langgraph_tool_loop` | evidence: tests/unit/test_langgraph_tool_loop.py 19 passed; lint 0; typecheck 0
+- [x] LC-2 — `LangGraphGateway._execute_graph_steps` manual while-loop replaced by real compiled `StateGraph` with classify→select_model→generate→review nodes + conditional retry; structured LLM-as-judge review via Pydantic model; fallback degrade chain preserved | evidence: tests/unit/test_langgraph_gateway_compiled.py 9 passed; lint 0; typecheck 0
+
+### Review + consensus
+- [x] LC-3 — `LangGraphConsensusEngine` StateGraph + parallel fan-out replaces serial `ConsensusEngine.run_debate()`; Pydantic `AgentVerdict` structured output eliminates raw string parsing; Send-style parallel model calls per round; config flag `use_langgraph` on ConsensusReviewer | evidence: tests/unit/test_langgraph_consensus.py 20 passed; lint 0; typecheck 0
+- [x] LC-4 — `LangGraphReflexiveReviewer` self-reflective loop (draft→critique→evidence→revise) replaces single-pass `ReturnReviewer`; Pydantic `ReviewWithReflection` structured output; confidence-threshold gating + max_iterations cap; config flag `review.use_langgraph_review` | evidence: tests/unit/test_langgraph_reviewer.py 14 passed; lint 0; typecheck 0
+
+### Model infrastructure
+- [x] LC-5 — `LangChainModelRouter` using `RunnableBranch` replaces dict-based `ModelRouter` for role/quality/latency routing; config flag `model.use_langchain_routing` | evidence: tests/unit/test_langchain_router.py 10 passed; lint 0; typecheck 0
+- [x] LC-6 — `LangChainRetryGateway` wrapping `with_retry()` + `with_fallbacks()` replaces tenacity-based retry loop; models still flow through gateway's circuit breaker/budget/SSRF/secrets guards; config flag `model.use_langchain_retry` | evidence: tests/unit/test_langchain_retry.py 5 passed; lint 0; typecheck 0
+
+### Observability + persistence
+- [x] LC-7 — `LangSmithTracer` side-channel tracing from gateway calls; env-var configured (LANGSMITH_API_KEY/PROJECT); graceful no-op when disabled; message/response trimming | evidence: tests/unit/test_langsmith_tracer.py 10 passed; lint 0; typecheck 0
+- [x] LC-8 — `TickCheckpointer` wrapping `InMemorySaver`/`SqliteSaver` for per-tick state persistence; save/load/prune/list operations; crash recovery path; config flag `checkpointing.enabled` | evidence: tests/unit/test_graph_checkpointer.py 20 passed; lint 0; typecheck 0
+
+### Prompt management
+- [x] LC-9 — `LangChainHubRegistry` wrapping `langchain.hub.pull` for commit-based prompt versioning; tag-based resolution; local file-system fallback; config flag `prompts.use_hub` | evidence: tests/unit/test_hub_registry.py 24 passed; lint 0; typecheck 0
+- [x] LC-10 — `HumanGate` using `langgraph.types.interrupt()` + `Command` for synchronous human-in-the-loop review pauses; config-gated confidence threshold; `POST /admin/review/approve/{thread_id}` resume endpoint; existing HumanTodo flow preserved as fallback | evidence: tests/unit/test_human_gate.py 34 passed; lint 0; typecheck 0

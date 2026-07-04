@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from jinja2 import BaseLoader, Environment, FileSystemLoader, select_autoescape
 
@@ -28,6 +28,7 @@ class PromptRegistry:
         event_bus: Any | None = None,
         extra_template_dirs: list[str] | None = None,
         version: str = "0.1.0",
+        hub_registry: Any | None = None,
     ) -> None:
         self._templates: dict[str, str] = {}
         self._in_memory: set[str] = set()
@@ -39,6 +40,7 @@ class PromptRegistry:
         self.version = version
         self._template_hashes: dict[str, str] = {}
         self._template_history: dict[str, list[str]] = {}
+        self._hub_registry = hub_registry
 
     def _make_loader(self) -> BaseLoader:
         """Build a Jinja2 FileSystemLoader with extras-first then default ordering.
@@ -57,7 +59,21 @@ class PromptRegistry:
         self._templates[name] = template_text
         self._in_memory.add(name)
 
+    def _try_hub(self, template_name: str) -> str | None:
+        if self._hub_registry is None:
+            return None
+        try:
+            return cast("str | None", self._hub_registry.load_template(template_name))
+        except Exception:
+            return None
+
     def render(self, template_name: str, **kwargs: object) -> str:
+        hub_text: str | None = None
+        if template_name not in self._templates:
+            hub_text = self._try_hub(template_name)
+        if hub_text is not None:
+            self._record_hash(template_name, hub_text)
+            self._templates[template_name] = hub_text
         if template_name in self._templates:
             template = self._env.from_string(self._templates[template_name])
             return template.render(**kwargs)
@@ -65,7 +81,11 @@ class PromptRegistry:
         return template.render(**kwargs)
 
     def list_templates(self) -> list[str]:
-        return list(self._templates.keys())
+        names = set(self._templates.keys())
+        if self._hub_registry is not None:
+            hub_names = self._hub_registry.list_hub_templates()
+            names.update(hub_names)
+        return sorted(names)
 
     def refresh(self) -> dict[str, Any]:
         # Build the ordered search list: extra dirs first (they shadow the default),
@@ -116,6 +136,11 @@ class PromptRegistry:
         self._template_hashes[name] = new_hash
 
     def get_template_version_info(self, name: str) -> dict[str, Any]:
+        if self._hub_registry is not None:
+            hub_info: dict[str, Any] = self._hub_registry.get_version_info(name) or {}
+            if hub_info:
+                return hub_info
+
         current_hash = self._template_hashes.get(name)
         if current_hash is None:
             return {"hash": None, "history": []}

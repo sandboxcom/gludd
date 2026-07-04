@@ -21,6 +21,7 @@ from general_ludd.models.timeout_detector import (
     TimeoutClassifier,
     TimeoutRetryPolicy,
 )
+from general_ludd.observability.langsmith_tracer import LangSmithTracer
 from general_ludd.observability.token_cost import default_token_tracker
 
 logger = logging.getLogger(__name__)
@@ -278,6 +279,7 @@ class ModelGateway:
         response_cache_ttl_seconds: int = DEFAULT_RESPONSE_CACHE_TTL_SECONDS,
         health_tracker: Any | None = None,
         pause_controller: Any | None = None,
+        langsmith_tracer: LangSmithTracer | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -297,6 +299,7 @@ class ModelGateway:
         self._response_cache_ttl_seconds = response_cache_ttl_seconds
         self._health_tracker = health_tracker
         self._pause_controller = pause_controller
+        self._langsmith_tracer = langsmith_tracer
         # Per-cache-key single-flight locks: under concurrency, N identical
         # cache misses would all call the provider (cache stampede). We serialize
         # identical misses on a per-key lock so only the first does the provider
@@ -346,6 +349,76 @@ class ModelGateway:
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
+
+    def get_chat_model(
+        self,
+        profile_id: str,
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        project_id: str | None = None,
+    ) -> Any:
+        """Return a LangChain chat model for use with langgraph agents.
+
+        Constructs the provider with the same credential + SSRF guards as
+        ``_invoke_and_bill``, optionally binds tools, and returns the raw
+        LangChain runnable so callers (e.g. ``create_react_agent``) can
+        invoke it directly.
+        """
+        profile = self._profiles.get(profile_id)
+        if profile is None:
+            raise ValueError(f"Profile '{profile_id}' not found")
+        provider_name = profile.provider
+        registry = self._registry
+        if registry is not None and not registry.is_installed(provider_name):
+            registry.install_provider(provider_name)
+            raise ImportError(
+                f"Provider '{provider_name}' is not installed. "
+                "A dependency update todo has been created."
+            )
+        job_secrets = self._resolver_for_project(
+            str(project_id) if project_id else None
+        )
+        api_key: str | None = None
+        if job_secrets and profile.credential_alias:
+            api_key = job_secrets.resolve(profile.credential_alias)
+        if registry is not None:
+            provider_cls = registry.get_provider_class(provider_name)
+        else:
+            raise ValueError(
+                f"No provider registry configured for '{profile_id}'"
+            )
+        init_kwargs: dict[str, Any] = {"model": profile.model_name}
+        if api_key:
+            init_kwargs["api_key"] = api_key
+        if profile.api_base_alias and job_secrets:
+            base_url = job_secrets.resolve(profile.api_base_alias)
+            if base_url:
+                from general_ludd.security.auth import is_safe_fetch_url
+
+                if not is_safe_fetch_url(base_url):
+                    raise SSRFRejectionError(
+                        f"SSRF guard: refusing blocked api_base_alias URL "
+                        f"{base_url!r} for profile '{profile_id}'"
+                    )
+                init_kwargs["base_url"] = base_url
+        chat_model = provider_cls(**init_kwargs)
+        if tools:
+            if hasattr(chat_model, "bind_tools"):
+                chat_model = chat_model.bind_tools(tools)
+                logger.debug(
+                    "Tools bound for profile=%s (%d tool(s))",
+                    profile_id,
+                    len(tools),
+                )
+            else:
+                logger.warning(
+                    "Provider class %s does not support bind_tools — "
+                    "tools=%r will be ignored for profile=%s",
+                    type(chat_model).__name__,
+                    tools,
+                    profile_id,
+                )
+        return chat_model
 
     def is_available(self, profile_id: str) -> bool:
         profile = self._profiles.get(profile_id)
@@ -805,6 +878,26 @@ class ModelGateway:
         # record above, so both correctly record nothing. Key on the BARE work_type
         # so environment_advisor.classify(work_type) can resolve what was recorded.
         default_token_tracker().record(work_type, input_tokens, output_tokens)
+
+        # LangSmith tracing: side-channel observability, additive and non-blocking.
+        # Only fires when the tracer is configured (LANGSMITH_API_KEY +
+        # LANGSMITH_PROJECT) and does not affect control flow on failure.
+        if self._langsmith_tracer is not None:
+            tracer = self._langsmith_tracer
+            if tracer.is_enabled():
+                tracer.trace_call(
+                    model_name=profile.model_name,
+                    messages=messages,
+                    response=str(content),
+                    tokens={"input": input_tokens, "output": output_tokens},
+                    cost=cost,
+                    metadata={
+                        "profile_id": profile_id,
+                        "provider": provider_name,
+                        "work_type": work_type,
+                        "project_id": str(_project_id) if _project_id else "",
+                    },
+                )
 
         response = ModelResponse(
             content=str(content),

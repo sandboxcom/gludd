@@ -12,6 +12,7 @@ from typing import Any
 
 from general_ludd.models.gateway import ModelGateway
 from general_ludd.review.consensus import ConsensusEngine
+from general_ludd.review.langgraph_consensus import LangGraphConsensusEngine
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn
 
@@ -34,11 +35,13 @@ class ConsensusReviewer:
         num_agents: int = 3,
         max_rounds: int = 3,
         model_profile_id: str = "default",
+        use_langgraph: bool = False,
     ) -> None:
         self._gateway = gateway
         self._num_agents = num_agents
         self._max_rounds = max_rounds
         self._model_profile_id = model_profile_id
+        self._use_langgraph = use_langgraph
 
         def _gateway_reviewer(prompt: str) -> str:
             try:
@@ -57,10 +60,16 @@ class ConsensusReviewer:
                 logger.warning("Consensus agent call failed: %s", exc)
                 return "needs_changes\nGateway call failed"
 
-        self._engine = ConsensusEngine(
-            reviewer=_gateway_reviewer,
-            judge=_gateway_reviewer,
-        )
+        if self._use_langgraph:
+            self._engine = LangGraphConsensusEngine(
+                reviewer_callable=_gateway_reviewer,
+                judge_callable=_gateway_reviewer,
+            )
+        else:
+            self._engine = ConsensusEngine(  # type: ignore[assignment]
+                reviewer=_gateway_reviewer,
+                judge=_gateway_reviewer,
+            )
 
     def review_return(
         self,
