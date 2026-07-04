@@ -7,6 +7,7 @@ discovery and profile-to-template mapping logic (15 LOC of domain code).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,8 @@ from jinja2 import BaseLoader, Environment, FileSystemLoader, select_autoescape
 from general_ludd.events.types import TemplateUpdatedEvent
 
 logger = logging.getLogger(__name__)
+
+_MAX_HISTORY = 5
 
 
 class PromptRegistry:
@@ -34,6 +37,8 @@ class PromptRegistry:
         self._env = Environment(loader=self._loader, autoescape=select_autoescape())
         self._event_bus = event_bus
         self.version = version
+        self._template_hashes: dict[str, str] = {}
+        self._template_history: dict[str, list[str]] = {}
 
     def _make_loader(self) -> BaseLoader:
         """Build a Jinja2 FileSystemLoader with extras-first then default ordering.
@@ -48,6 +53,7 @@ class PromptRegistry:
         return FileSystemLoader(dirs) if dirs else BaseLoader()
 
     def register(self, name: str, template_text: str) -> None:
+        self._record_hash(name, template_text)
         self._templates[name] = template_text
         self._in_memory.add(name)
 
@@ -78,7 +84,9 @@ class PromptRegistry:
                     name = f.name
                     if name not in seen_names:
                         seen_names.add(name)
-                        self._templates[name] = f.read_text()
+                        text = f.read_text()
+                        self._record_hash(name, text)
+                        self._templates[name] = text
                         discovered.append(name)
         disk_names = set(discovered)
         to_remove = [
@@ -92,6 +100,29 @@ class PromptRegistry:
         if self._event_bus:
             self._event_bus.publish(TemplateUpdatedEvent(templates=discovered))
         return {"templates": discovered, "refreshed": True}
+
+    @staticmethod
+    def _compute_hash(text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _record_hash(self, name: str, template_text: str) -> None:
+        new_hash = self._compute_hash(template_text)
+        old_hash = self._template_hashes.get(name)
+        if old_hash is not None and old_hash != new_hash:
+            history = self._template_history.setdefault(name, [])
+            history.append(old_hash)
+            if len(history) > _MAX_HISTORY:
+                self._template_history[name] = history[-_MAX_HISTORY:]
+        self._template_hashes[name] = new_hash
+
+    def get_template_version_info(self, name: str) -> dict[str, Any]:
+        current_hash = self._template_hashes.get(name)
+        if current_hash is None:
+            return {"hash": None, "history": []}
+        return {
+            "hash": current_hash,
+            "history": list(self._template_history.get(name, [])),
+        }
 
 
 _WORK_TYPE_TEMPLATE_MAP: dict[str, str] = {
