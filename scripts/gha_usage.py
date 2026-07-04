@@ -41,7 +41,7 @@ def main():
             "api",
             f"repos/{repo}/actions/runs?per_page=10",
             "--jq",
-            '.workflow_runs[] | "\(.conclusion // "RUNNING")|\(.id)|\(.created_at)|\(.updated_at)|\(.display_title)"',
+            '.workflow_runs[] | "\\(.conclusion // "RUNNING")|\\(.id)|\\(.created_at)|\\(.updated_at)|\\(.display_title)"',
         )
         if not raw:
             print("  No runs found or gh not configured")
