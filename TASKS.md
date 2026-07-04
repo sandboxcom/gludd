@@ -615,3 +615,19 @@ Targeted fixes for CI failures surfaced in the gate pipeline. Each row covers a 
 - [x] AS.5 — process_audit role: new Ansible role in general_ludd.agent collection that audits system processes for zombie/stuck agents, orphaned worktree processes, and long-running stale tasks; uses gludd_facts + gludd_message for coordinated cleanup | evidence: collections/ansible_collections/general_ludd/agent/roles/process_audit/ created; molecule scenario green
 - [x] AS.6 — gha_billing role: new Ansible role that queries GitHub Actions billing API via gh CLI, surfaces per-repo/per-workflow spend trends; gludd_facts-driven, safe defaults (dry-run, no mutation) | evidence: collections/ansible_collections/general_ludd/agent/roles/gha_billing/ created; molecule scenario green
 - [x] AS.7 — test-bg batch support: background-test-runner now supports batch dispatch (multiple test files in one invocation) via `make test-bg FILES='...'`; status polling via `make test-bg-status`; output captured to .test-bg-logs/ | evidence: scripts/test-bg-runner.sh batch support; Makefile test-bg + test-bg-status targets
+
+## Phase AS — Anti-stop machinery (2026-07-04)
+
+- [x] AS.1 — enforce-stop.ts rewritten: 824→388 lines, 433→5 vocabulary patterns, state-based detection | evidence: cc0c9e15 20/20 tests
+- [x] AS.2 — enforce-false-done.ts: CLAIM_PATTERNS 33→6, EVIDENCE_PATTERNS expanded for subagent result formats | evidence: 32ae9b52
+- [x] AS.3 — Plugin consolidation: enforce-todos.ts removed (dead response.transform), enforce-false-done.ts emptied, 9→8 plugins | evidence: 9ae9d6e4 696f6fcb
+- [x] AS.4 — process_audit role + process-health target: detect overfitted enforcement machinery (guardrail health score, pattern bloat) | evidence: 4f9f8b56 1f743fc6
+- [x] AS.5 — agent_watchdog.py: 60s→10s polling, stop detection (TASKS.md unchecked, ratchet entries, gate RED), idle >20s detection, consecutive stop escalation | evidence: 088a8bfc 8f943232 f10b6690
+- [x] AS.6 — watchdog auto-start: .opencode/plugins/watchdog.ts (session.created start, session.deleted kill), watchdog-auto make target, AGENTS.md session start protocol step 0 | evidence: 0e8ec9ac a901fe14 4e6906e9
+- [x] AS.7 — watchdog task anomaly detection: duration tracking, stalled task alerts, expected durations per task type | evidence: 01698f8
+- [x] AS.8 — GHA usage tracking: gha_usage role, gha-usage make target, repo confirmed public (unlimited minutes) | evidence: e8ec8369 4b729fa7
+- [x] AS.9 — AGENTS.md resource awareness: local vs CI constraints, background over foreground, GHA minute tracking | evidence: 8953ca30
+- [x] AS.10 — README status table: 76→21→17 PENDING, 8 new features added, 14 badge corrections, status date 2026-07-04 | evidence: 17ebd55e 7d577a94 ffffd6b3 ff973603
+- [x] AS.11 — Security findings: 9 P1 vulnerabilities resolved (return_id FK, version lock, log sanitization, alias injection, workspace leak, circuit-breaker, alembic drift, webhook async) | evidence: 9a0d8dd5 cd3e8e9a 5cf54f70 23e167cd cd3e8e9a 912cfcc3 9a0d8dd5 fe8432c2
+- [x] AS.12 — Orchestration/Agents: accounting 20→100%, file-overlap 10→100%, self_update 90→100%, tool-call-auditor 80→100% | evidence: e2b21d14 2cc8715f 71b5f0a4
+- [x] AS.13 — Gate: lint 0, typecheck 0, collect 0, test PASS at 06:30 | evidence: .gate-status
