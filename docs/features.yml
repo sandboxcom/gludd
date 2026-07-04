@@ -584,15 +584,15 @@ sections:
         title: "F5b/F6a/F6b security features (fast-follow branch)"
         pct: 100
         evidence_refs:
-          - "file:src/general_ludd/routers/todos.py"
-          - "file:src/general_ludd/daemon.py"
+          - "file:src/general_ludd/routers/todos.py::api_status"
+          - "file:src/general_ludd/daemon.py::create_daemon_app"
         notes: "merged into master (ancestor of HEAD); fast-follow branch never existed as named ref; F5b /docs auth bypass closed, F6a /api/status info-leak stripped, F6b GET /api/todos pagination"
 
       - id: batch4-security
         title: "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)"
         pct: 100
         evidence_refs:
-          - "file:docs/audit/NEW_FINDINGS_2026-06-16.md"
+          - "file:docs/audit/NEW_FINDINGS_2026-06-16.md::P1"
         notes: "ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
 
       - id: d07-d47-backlog
@@ -1414,13 +1414,13 @@ sections:
         title: "F5b/F6a/F6b security features (batch3-security, 14 tests)"
         pct: 100
         evidence_refs:
-          - "file:src/general_ludd/routers/todos.py"
-          - "file:src/general_ludd/daemon.py"
+          - "file:src/general_ludd/routers/todos.py::api_status"
+          - "file:src/general_ludd/daemon.py::create_daemon_app"
         notes: "merged into master (ancestor of HEAD); fast-follow branch never existed as named ref"
 
       - id: sf-batch4-security
         title: "D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch)"
         pct: 100
         evidence_refs:
-          - "file:docs/audit/NEW_FINDINGS_2026-06-16.md"
+          - "file:docs/audit/NEW_FINDINGS_2026-06-16.md::P1"
         notes: "all items independently implemented in master; all individual D-* findings in Security Findings Backlog table show PASS; batch-4 branch superseded"

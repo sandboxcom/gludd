@@ -188,8 +188,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Fresh secrets scan adjudicated; dist paths clean (W5.3) | ✓ 100% | **PASS** *(file-refs only)*: `[526104b]` |
 | Worker /jobs/* require PSK auth (W5.6) | ✓ 100% | **PASS** *(file-refs only)*: 9 passed; `[526104b]` |
 | Metric-label cardinality guard (#60) | ✓ 100% | **PASS** *(file-refs only)*: `metrics_exporter.py:34-79`; `[audit #60 DONE-VERIFIED]` |
-| F5b/F6a/F6b security features (fast-follow branch) | ✗ 100% | **PENDING** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref; F5b /docs auth bypass closed, F6a /api/status info-leak stripped, F6b GET /api/todos pagination |
-| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✗ 100% | **PENDING** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
+| F5b/F6a/F6b security features (fast-follow branch) | ✓ 100% | **PASS** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref; F5b /docs auth bypass closed, F6a /api/status info-leak stripped, F6b GET /api/todos pagination |
+| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 100% | **PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
 | D-07 through D-47 security backlog | ✗ 5% | **PENDING**: catalogued in `docs/audit/NEW_FINDINGS_2026-06-16.md`; not scheduled |
 | CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE) | ✓ 100% | **PASS** *(file-refs only)*: adjudicated; does not block ship; `[526104b]` |
 | Permission system + STS Issuer (spec, intersection, escalation) | ✓ 100% | **PASS** *(file-refs only)*: `PermissionSpec` + `StsIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]` |
@@ -320,8 +320,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | PSK fail-open: unset `GLUDD_PSK` + `GLUDD_REQUIRE_AUTH` → no auth on /admin | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; now fail-closed; verified 2026-06-25 |
 | `/api/status` returns db_url (with credentials) to unauthenticated callers | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; db_url redacted/removed from response |
 | `SpendLimiter.restore()` accepts negative cost → cap evasion | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; guards against negative cost |
-| F5b/F6a/F6b security features (batch3-security, 14 tests) | ✗ 100% | **PENDING** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref |
-| D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch) | ✗ 100% | **PENDING** *(file-refs only)*: all items independently implemented in master; all individual D-* findings in Security Findings Backlog table show PASS; batch-4 branch superseded |
+| F5b/F6a/F6b security features (batch3-security, 14 tests) | ✓ 100% | **PASS** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref |
+| D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch) | ✓ 100% | **PASS** *(file-refs only)*: all items independently implemented in master; all individual D-* findings in Security Findings Backlog table show PASS; batch-4 branch superseded |
 
 <!-- STATUS-TABLE:END -->
 ## Presentation
