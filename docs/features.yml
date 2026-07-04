@@ -939,9 +939,11 @@ sections:
 
       - id: g1-persistent-agent-memory
         title: "Persistent agent memory (G1)"
-        pct: 0
-        evidence_refs: []
-        notes: "no `memory/` package; design-only; `[audit]`"
+        pct: 20
+        evidence_refs:
+          - "file:src/general_ludd/db/models.py::MemoryRecordModel"
+          - "file:alembic/versions/005_add_runtime_tables.py::memory_records"
+        notes: "`MemoryRecordModel` (models.py:687-731) + `memory_records` table in alembic 005; scope/scope_key isolation; additive table via `Base.metadata`; embedding column for future semantic search; no dedicated MemoryRecordRepository yet"
 
       - id: g2-offline-eval
         title: "Offline eval harness (G2)"
