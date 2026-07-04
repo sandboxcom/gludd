@@ -98,8 +98,8 @@ def classify_tail(
 
     for line in tail_lower.splitlines():
         for marker in STALL_MARKERS:
-            if line.strip().startswith(marker):
-                return State.LIKELY_STALLED_INCOMPLETE, f"let me / continuing: '{marker}' prefix"
+            if marker in line.strip():
+                return State.LIKELY_STALLED_INCOMPLETE, f"let me / continuing: '{marker}' in tail"
 
     last_line = stripped.splitlines()[-1].rstrip()
     if last_line.endswith(":"):
@@ -134,6 +134,7 @@ def scan_tasks_dir(
 # -- Streak-reset watchdog ----------------------------------------------------
 
 STREAK_FILE = "/tmp/gludd-mainthread-streak.json"
+WATCHDOG_ACTIVITY_FILE = "/tmp/gludd-watchdog-last-activity.json"
 TODOWRITE_STATE = os.environ.get("GLUDD_TODOWRITE_STATE", "/tmp/gludd-todowrite-state.json")
 RESET_LOG = "/tmp/gludd-auto-reset.log"
 HIBERNATION_MARKER = Path("/tmp/gludd-watchdog-hibernating")
@@ -503,10 +504,31 @@ def _pending_work_exists() -> bool:
     return _tasks_md_has_unchecked() or _ratchet_has_entries() > 0 or _gate_status_is_red()
 
 
+def _write_watchdog_activity(ts: float | None = None) -> None:
+    ts_value = ts if ts is not None else time.time()
+    Path(WATCHDOG_ACTIVITY_FILE).write_text(
+        json.dumps({"last_activity_ts": ts_value})
+    )
+
+
+def _read_watchdog_activity_age() -> float | None:
+    p = Path(WATCHDOG_ACTIVITY_FILE)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text())
+        ts = float(data.get("last_activity_ts", 0))
+        if ts <= 0:
+            return None
+        return time.time() - ts
+    except Exception:
+        return None
+
+
 def _streak_mtime_age_seconds() -> float | None:
     streak_path = Path(STREAK_FILE)
     if not streak_path.exists():
-        return None
+        return _read_watchdog_activity_age()
     return time.time() - streak_path.stat().st_mtime
 
 
@@ -1566,7 +1588,10 @@ def check_and_reset() -> dict:
     has_pending_work = _pending_work_exists()
     mtime_age = _streak_mtime_age_seconds()
 
-    if has_pending_work and streak == 0 and mtime_age is not None and mtime_age > STOP_IDLE_SECS:
+    if mtime_age is not None and mtime_age < PURE_IDLE_SECS:
+        _write_watchdog_activity()
+
+    if has_pending_work and (streak == 0 or streak is None) and mtime_age is not None and mtime_age > STOP_IDLE_SECS:
         reset_needed = True
         reason = f"STOP DETECTED: agent idle with pending work ({mtime_age:.0f}s since last tool)"
         result["stop_detected"] = True

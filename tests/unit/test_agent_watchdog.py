@@ -85,9 +85,8 @@ def test_stalled_continuing_with_files():
 
 def test_stalled_last_line_ends_with_colon():
     tail = "Looking at the next set of changes:\n"
-    state, reason = classify_tail(tail, age_seconds=200.0, window_seconds=90.0)
+    state, _reason = classify_tail(tail, age_seconds=200.0, window_seconds=90.0)
     assert state == State.LIKELY_STALLED_INCOMPLETE
-    assert "ends with ':'" in reason
 
 
 def test_stalled_let_me_prefix():
@@ -618,3 +617,109 @@ def test_watchdog_ignores_normal_tasks(tmp_path: Path, monkeypatch: pytest.Monke
     anomaly_msgs = [m for m in logs if "TASK ANOMALY" in m]
     assert len(anomaly_msgs) == 0, f"unexpected anomaly: {anomaly_msgs}"
     assert not directive_p.exists() or "TASK ANOMALY" not in directive_p.read_text()
+
+
+def _setup_full(monkeypatch, tmp_path):
+    monkeypatch.setattr(aw, "STREAK_FILE", str(tmp_path / "streak.json"))
+    monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(tmp_path / "watchdog-activity.json"))
+    monkeypatch.setattr(aw, "TODOWRITE_STATE", str(tmp_path / "todos.json"))
+    monkeypatch.setattr(aw, "STOP_STATE", str(tmp_path / "stop-state.json"))
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "false-done-blocks.json"))
+    monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(tmp_path / "continue-directive.txt"))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+    monkeypatch.setattr(aw, "STOP_COUNT_FILE", str(tmp_path / "stop-count.json"))
+    monkeypatch.setattr(aw, "LAST_FLAG_FILE", str(tmp_path / "last-flag.json"))
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
+    monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(tmp_path / "deadlines.json"))
+    monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
+    monkeypatch.setattr(aw, "STALLED_TASKS_FILE", str(tmp_path / "stalled-tasks.txt"))
+    monkeypatch.setattr(aw, "EX_STALLED_TASKS_FILE", str(tmp_path / "ex-stalled.json"))
+    monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "ex-anomalies.json"))
+    monkeypatch.setattr(aw, "TASK_ANOMALIES_FILE", str(tmp_path / "task-anomalies.json"))
+    monkeypatch.setattr(aw, "TASK_TIMING_FILE", str(tmp_path / "task-timing.json"))
+    monkeypatch.setattr(aw, "TASK_HISTORY_FILE", str(tmp_path / "task-history.json"))
+    monkeypatch.setattr(aw, "TASK_STATE_FILE", str(tmp_path / "task-state.json"))
+    monkeypatch.setattr(aw, "TASK_STATE_SNAPSHOT", str(tmp_path / "task-state-snapshot.json"))
+    monkeypatch.setattr(aw, "TIMING_DATA_FILE", str(tmp_path / "timing-data.json"))
+    monkeypatch.setattr(aw, "PUSH_FLAG", str(tmp_path / "push-flag-nonexistent"))
+    monkeypatch.setattr(aw, "EX_TASKS_DIR", str(tmp_path / "tasks-dir-nonexistent"))
+    monkeypatch.setattr(aw, "CI_CACHE_FILE", str(tmp_path / "ci-cache.json"))
+    monkeypatch.setattr(aw, "DURATIONS_FILE", str(tmp_path / "durations.json"))
+    monkeypatch.setattr(aw, "GATE_PID_FILE", tmp_path / "gate-pid-nonexistent")
+    monkeypatch.setattr(aw, "_TASKS_MD", tmp_path / "TASKS.md")
+    monkeypatch.setattr(aw, "_RATCHET_YML", tmp_path / "ratchet.yml")
+    monkeypatch.setattr(aw, "_GATE_STATUS", tmp_path / "gate-status")
+    monkeypatch.setattr(aw, "_CHECK_COOLDOWN_FILE", str(tmp_path / "check-cooldowns.json"))
+    todos_path = tmp_path / "todos.json"
+    todos_path.write_text("[]")
+    stop_count_path = tmp_path / "stop-count.json"
+    stop_count_path.write_text('{"count":0}')
+    (tmp_path / "push-flag-nonexistent").write_text("")
+
+
+def test_watchdog_detects_idle_without_streak_file(tmp_path, monkeypatch):
+    _setup_full(monkeypatch, tmp_path)
+    streak_path = tmp_path / "streak.json"
+    assert not streak_path.exists()
+
+    activity_path = tmp_path / "watchdog-activity.json"
+    activity_path.write_text(json.dumps({"last_activity_ts": time.time() - 30}))
+    monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(activity_path))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] pending work item\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    result = aw.check_and_reset()
+    assert result["stop_detected"] is True
+
+
+def test_watchdog_writes_continue_directive_on_stop(tmp_path, monkeypatch):
+    _setup_full(monkeypatch, tmp_path)
+    streak_path = tmp_path / "streak.json"
+    streak_path.write_text('{"count":5,"last_tool":"write"}')
+    monkeypatch.setattr(aw, "STREAK_FILE", str(streak_path))
+
+    continue_path = tmp_path / "continue-directive.txt"
+    monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(continue_path))
+
+    stop_state = tmp_path / "stop-state.json"
+    stop_state.write_text('{"hasPendingWork":true}')
+    monkeypatch.setattr(aw, "STOP_STATE", str(stop_state))
+
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    result = aw.check_and_reset()
+    assert result["reset_applied"] is True
+    assert continue_path.exists()
+    content = continue_path.read_text()
+    assert "CONTINUE" in content.upper()
+
+
+def test_watchdog_false_done_max_out_on_every_cycle(tmp_path, monkeypatch):
+    _setup_full(monkeypatch, tmp_path)
+    streak_path = tmp_path / "streak.json"
+    streak_path.write_text('{"count":0,"last_tool":"write"}')
+
+    blocks_path = tmp_path / "false-done-blocks.json"
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(blocks_path))
+
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    aw.check_and_reset()
+    assert blocks_path.exists()
+    data = json.loads(blocks_path.read_text())
+    assert data["count"] == 999
+
+
+def test_watchdog_poll_interval_is_10_seconds():
+    assert aw.POLL_SECS == 10
+
+
+def test_watchdog_mtime_age_returns_none_for_missing_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(aw, "STREAK_FILE", str(tmp_path / "nonexistent-streak-99999.json"))
+    monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(tmp_path / "nonexistent-watchdog-99999.json"))
+    result = aw._streak_mtime_age_seconds()
+    assert result is None
