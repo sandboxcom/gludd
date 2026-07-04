@@ -125,6 +125,7 @@ class Todo(BaseModel):
     parent_todo_id: str | None = None
     child_todo_ids: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
+    definition_of_done: str = ""
     test_commands: list[str] = Field(default_factory=list)
     molecule_scenarios: list[str] = Field(default_factory=list)
     molecule_evidence_refs: list[str] = Field(default_factory=list)

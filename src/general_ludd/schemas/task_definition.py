@@ -22,6 +22,7 @@ class TaskDefinition(BaseModel):
     tags: list[str] = []
     dependencies: list[str] = []
     acceptance_criteria: list[str] = []
+    definition_of_done: str = ""
     test_commands: list[str] = []
     model_profile: str | None = None
     prompt_profile: str | None = None
@@ -50,6 +51,7 @@ class TaskDefinition(BaseModel):
             risk_level=RiskLevel(self.risk_level),
             resource_profile=ResourceProfile(self.resource_profile),
             acceptance_criteria=list(self.acceptance_criteria),
+            definition_of_done=self.definition_of_done,
             test_commands=list(self.test_commands),
             dependencies=list(self.dependencies),
             model_profile=self.model_profile,

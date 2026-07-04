@@ -46,6 +46,15 @@ class TestStructuredTaskSpec:
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Implement login"
+        assert data["definition_of_done"] == "All tests pass and code is reviewed"
+
+    def test_todo_pydantic_model_accepts_definition_of_done(self):
+        from general_ludd.schemas.todo import Todo
+        todo = Todo(
+            title="Implement login",
+            definition_of_done="All tests pass and code is reviewed",
+        )
+        assert todo.definition_of_done == "All tests pass and code is reviewed"
 
     def test_criteria_min_length(self):
         app = _make_app()
