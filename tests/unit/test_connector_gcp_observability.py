@@ -26,6 +26,7 @@ class FakeResponse:
 
     def __init__(self, status: int, payload: dict[str, Any]) -> None:
         self.status = status
+        self.status_code = status
         self._payload = payload
 
     def json(self) -> dict[str, Any]:
