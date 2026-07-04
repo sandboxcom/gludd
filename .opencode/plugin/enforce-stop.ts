@@ -17,6 +17,7 @@ interface StopStateCache {
   backlogOpen: number
   backlogItems: string[]
   hasPendingWork: boolean
+  hasLocalWork: boolean
   ciVerdictPendingOrRed: boolean
 }
 
@@ -223,7 +224,8 @@ export default (async ({ }) => {
           const gateRed = gateStatusIsRed()
           const repoPending = repoHasPendingWork()
           const ciVerdictPendingOrRed = ciIsPendingOrRed()
-          const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed || ciVerdictPendingOrRed
+          const hasLocalWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed
+          const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed
 
           const state: StopStateCache = {
             ts: Date.now(),
@@ -234,6 +236,7 @@ export default (async ({ }) => {
             backlogOpen: 0,
             backlogItems: [],
             hasPendingWork,
+            hasLocalWork,
             ciVerdictPendingOrRed,
           }
 
@@ -323,7 +326,8 @@ export default (async ({ }) => {
           const gateRed = gateStatusIsRed()
           const repoPending = repoHasPendingWork()
           const ciVerdictPendingOrRed = ciIsPendingOrRed()
-          const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed || ciVerdictPendingOrRed
+          const hasLocalWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed
+          const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed
           cache = {
             ts: Date.now(),
             ratchetEntries: ratchetCount,
@@ -333,6 +337,7 @@ export default (async ({ }) => {
             backlogOpen: 0,
             backlogItems: [],
             hasPendingWork,
+            hasLocalWork,
             ciVerdictPendingOrRed,
           }
         }
@@ -343,14 +348,18 @@ export default (async ({ }) => {
         const gateRed = cache?.gateStatusRed ?? gateStatusIsRed()
         const ciVerdictPendingOrRed = cache?.ciVerdictPendingOrRed ?? ciIsPendingOrRed()
         const ciRed = gateRed || responseMentionsCiRed(turnState.accumulatedText)
-        const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed
+        const hasLocalWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed
+        const hasAnyWork = hasLocalWork || ciVerdictPendingOrRed
 
         if (turnState.blocked) {
           output.text = ""
           return
         }
 
-        if (hasPendingWork && responseLooksTerminal(turnState.accumulatedText)) {
+        // Only block when there is LOCAL work pending. CI-pending alone
+        // (with no local work) is not a stop — the agent is waiting for
+        // external validation and should be allowed to communicate progress.
+        if (hasLocalWork && responseLooksTerminal(turnState.accumulatedText)) {
           output.text = [
             "HARD STOP — STATE-BASED BLOCK: your final response looks terminal",
             "(markdown table / DONE-COMPLETE banner / long body / all-checked checkboxes /",
@@ -369,15 +378,11 @@ export default (async ({ }) => {
           return
         }
 
-        if (hasPendingWork && responseMentionsCiRed(turnState.accumulatedText)) {
-          output.text = [
-            "HARD STOP — CI-RED DETECTED: your response mentions CI as red/failing",
-            "while the project has known-unfinished work. CI being red means the",
-            "project is not validated — this is never a legitimate stopping point.",
-            "",
-            "Fix the CI failures or continue with other pending work. Do NOT stop.",
-          ].join("\n")
-          turnState.blocked = true
+        // CI-pending-only case: don't block, but log awareness
+        if (!hasLocalWork && ciVerdictPendingOrRed && responseLooksTerminal(turnState.accumulatedText)) {
+          // CI is the only pending work — agent can communicate progress
+          // but should not treat CI-pending as "done"
+          turnState.blocked = false
           return
         }
       } catch {
