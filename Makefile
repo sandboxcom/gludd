@@ -18,7 +18,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
-         test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-bg \
+         test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
@@ -1028,11 +1028,22 @@ test-xdist:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-xdist TESTFILE=path"; exit 1; fi
 	@BT="/tmp/gludd-xdist-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) -n 2 --dist loadgroup -p no:cacheprovider --basetemp="$$BT" -q; RC=$$?; rm -rf "$$BT"; exit $$RC
 
+# Batch-run multiple test files in the foreground. Accepts FILES= (space-separated paths).
+test-batch:
+	@if [ -z "$(FILES)" ]; then echo "Usage: make test-batch FILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
+	@$(UV) run python -m pytest $(FILES) $(_XD) -v
+
+# Background a test run: accepts TESTFILE= (single) or FILES= (batch).
+# Writes log to .gate-logs/test-bg-<ts>.log, PID to .gate-logs/test-bg.pid.
 test-bg:
-	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-bg TESTFILE='tests/unit/test_foo.py'"; exit 1; fi
-	@nohup $(UV) run python -m pytest $(TESTFILE) -v --tb=short > .gate-logs/test-bg-$$(date +%Y%m%d%H%M%S).log 2>&1 &
-	@echo "test-bg: PID=$$!"
-	@echo "test-bg: check with make gate-logs"
+	@if [ -z "$(TESTFILE)" ] && [ -z "$(FILES)" ]; then echo "Usage: make test-bg TESTFILE='...' OR make test-bg FILES='...'"; exit 1; fi
+	@mkdir -p .gate-logs
+	@if [ -n "$(FILES)" ]; then \
+		nohup $(UV) run python -m pytest $(FILES) $(_XD) -v --tb=short > .gate-logs/test-bg-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-logs/test-bg.pid; \
+	else \
+		nohup $(UV) run python -m pytest $(TESTFILE) -v --tb=short > .gate-logs/test-bg-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-logs/test-bg.pid; \
+	fi
+	@echo "check with: make gate-logs   (or tail -f \$$(ls -t .gate-logs/test-bg-*.log | head -1))"
 
 # Full-suite xdist run with a THREAD-method per-test timeout so an uninterruptible
 # hang (which the gate's signal-method timeout can't catch) is force-failed and
