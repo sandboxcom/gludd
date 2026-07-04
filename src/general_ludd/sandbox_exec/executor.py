@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import subprocess
 
 
@@ -10,8 +11,7 @@ class SandboxExecutor:
 
     def execute(self, command: str, workdir: str | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            command,
-            shell=True,
+            shlex.split(command),
             cwd=workdir,
             capture_output=True,
             text=True,
