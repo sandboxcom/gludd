@@ -939,11 +939,14 @@ sections:
 
       - id: g1-persistent-agent-memory
         title: "Persistent agent memory (G1)"
-        pct: 20
+        pct: 55
         evidence_refs:
           - "file:src/general_ludd/db/models.py::MemoryRecordModel"
+          - "file:src/general_ludd/db/repository.py::MemoryRepository"
           - "file:alembic/versions/005_add_runtime_tables.py::memory_records"
-        notes: "`MemoryRecordModel` (models.py:687-731) + `memory_records` table in alembic 005; scope/scope_key isolation; additive table via `Base.metadata`; embedding column for future semantic search; no dedicated MemoryRecordRepository yet"
+          - "file:alembic/versions/022_recreate_memory_records_g1.py"
+          - "test:tests/unit/test_agent_memory.py"
+        notes: "persistence layer complete: MemoryRecordModel + MemoryRepository (repository.py:2584) + migrations 005/022 + 3 unit tests; scope/scope_key isolation; embedding column for semantic search; TODO: wire into daemon/event loop, MCP tooling, semantic search"
 
       - id: g2-offline-eval
         title: "Offline eval harness (G2)"
