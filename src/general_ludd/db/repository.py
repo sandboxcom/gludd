@@ -18,6 +18,7 @@ from general_ludd.db.models import (
     FeatureModel,
     FeatureStatus,
     HumanTodoModel,
+    MemoryRecordModel,
     LocationKind,
     ModelCallLogModel,
     ModelPerformanceModel,
@@ -2578,3 +2579,122 @@ class ModelPerformanceRepository:
                 "no session= override provided."
             )
         return self._session
+
+
+class MemoryRepository:
+    """Persistence for agent-memory key-value records (G1).
+
+    Each record is scoped to an (agent_id, namespace) pair and keyed by
+    ``key``. TTL support allows automatic expiry of transient entries.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(
+        self, agent_id: str, key: str, namespace: str = "default"
+    ) -> MemoryRecordModel | None:
+        stmt = select(MemoryRecordModel).where(
+            MemoryRecordModel.agent_id == agent_id,
+            MemoryRecordModel.key == key,
+            MemoryRecordModel.namespace == namespace,
+        )
+        result = await self._session.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row is not None and self._is_expired(row):
+            await self._session.delete(row)
+            await self._session.flush()
+            return None
+        return row
+
+    async def set(
+        self,
+        agent_id: str,
+        key: str,
+        value: str,
+        namespace: str = "default",
+        ttl_seconds: int | None = None,
+    ) -> MemoryRecordModel:
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        now = datetime.now(UTC)
+        stmt = (
+            sqlite_insert(MemoryRecordModel)
+            .values(
+                agent_id=agent_id,
+                key=key,
+                value=value,
+                namespace=namespace,
+                ttl_seconds=ttl_seconds,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=["agent_id", "key", "namespace"],
+                set_={"value": value, "ttl_seconds": ttl_seconds, "updated_at": now},
+            )
+        )
+        await self._session.execute(stmt)
+        await self._session.flush()
+        row = await self.get(agent_id, key, namespace)
+        assert row is not None
+        await self._session.refresh(row)
+        return row
+
+    async def delete(
+        self, agent_id: str, key: str, namespace: str = "default"
+    ) -> bool:
+        row = await self.get(agent_id, key, namespace)
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.flush()
+        return True
+
+    async def list_by_namespace(
+        self,
+        agent_id: str,
+        namespace: str = "default",
+        limit: int = 100,
+    ) -> list[MemoryRecordModel]:
+        stmt = (
+            select(MemoryRecordModel)
+            .where(
+                MemoryRecordModel.agent_id == agent_id,
+                MemoryRecordModel.namespace == namespace,
+            )
+            .order_by(MemoryRecordModel.key)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT))
+        )
+        result = await self._session.execute(stmt)
+        rows = list(result.scalars().all())
+        now = datetime.now(UTC)
+        return [r for r in rows if not self._is_expired(r, now)]
+
+    async def purge_expired(self) -> int:
+        from sqlalchemy import delete, func
+
+        elapsed_seconds = (
+            func.julianday("now") - func.julianday(MemoryRecordModel.created_at)
+        ) * 86400.0
+        stmt = delete(MemoryRecordModel).where(
+            MemoryRecordModel.ttl_seconds.isnot(None),
+            elapsed_seconds > MemoryRecordModel.ttl_seconds,
+        )
+        result = await self._session.execute(stmt)
+        purged = int(result.rowcount or 0)
+        if purged:
+            await self._session.flush()
+        return purged
+
+    @staticmethod
+    def _is_expired(row: MemoryRecordModel | None) -> bool:
+        if row is None or row.ttl_seconds is None:
+            return False
+        now = datetime.now(UTC)
+        created = row.created_at
+        if created is None:
+            return False
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+        return (now - created).total_seconds() > row.ttl_seconds
