@@ -262,6 +262,7 @@ class TestFallbackHealthGate:
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=FakeChatModel),
             patch.object(gw, "_try_call_model", wraps=gw._try_call_model) as spy,
+            patch.object(gw, "_call_fallback", wraps=gw._call_fallback) as fb_spy,
         ):
             resp = gw.call_model_with_fallback(
                 "primary_open",
@@ -269,10 +270,12 @@ class TestFallbackHealthGate:
             )
 
         assert resp.content == "from healthy fallback"
-        # The open primary must never have been attempted.
-        attempted = [c.args[0] for c in spy.call_args_list]
-        assert "primary_open" not in attempted
-        assert "healthy_fb" in attempted
+        # The open primary must never have been attempted via _try_call_model.
+        try_calls = [c.args[0] for c in spy.call_args_list]
+        assert "primary_open" not in try_calls
+        # The healthy fallback is routed through _call_fallback.
+        fallback_calls = [c.args[0] for c in fb_spy.call_args_list]
+        assert "healthy_fb" in fallback_calls
 
     def test_circuit_open_fallback_is_skipped(self):
         # A circuit-open fallback is skipped; a later healthy fallback serves.
@@ -291,6 +294,7 @@ class TestFallbackHealthGate:
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=FakeChatModel),
             patch.object(gw, "_try_call_model", wraps=gw._try_call_model) as spy,
+            patch.object(gw, "_call_fallback", wraps=gw._call_fallback) as fb_spy,
         ):
             resp = gw.call_model_with_fallback(
                 "primary_open",
@@ -298,7 +302,10 @@ class TestFallbackHealthGate:
             )
 
         assert resp.content == "from fb_ok"
-        attempted = [c.args[0] for c in spy.call_args_list]
-        assert "primary_open" not in attempted
-        assert "fb_open" not in attempted
-        assert "fb_ok" in attempted
+        # The open primary must never have been attempted via _try_call_model.
+        try_calls = [c.args[0] for c in spy.call_args_list]
+        assert "primary_open" not in try_calls
+        # Fallbacks are routed through _call_fallback.
+        fallback_calls = [c.args[0] for c in fb_spy.call_args_list]
+        assert "fb_open" not in fallback_calls
+        assert "fb_ok" in fallback_calls

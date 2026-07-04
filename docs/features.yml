@@ -455,7 +455,7 @@ sections:
         pct: 100
         evidence_refs:
           - "test:tests/unit/test_git_repo_clone_hardening.py"
-          - "file:src/general_ludd/security/auth.py::validate_repo_url"
+          - "file:src/general_ludd/git_automation/repo.py::reject_unsafe_repo_url"
         notes: "`[audit #56 DONE-VERIFIED]`"
 
       - id: db-races-redteam
@@ -614,8 +614,8 @@ sections:
           - "test:tests/unit/test_permissions.py"
           - "test:tests/unit/test_permission_intersection.py"
           - "file:src/general_ludd/security/permissions.py::PermissionSpec"
-          - "file:src/general_ludd/security/sts.py::STSIssuer"
-        notes: "`PermissionSpec` + `STSIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]`"
+          - "file:src/general_ludd/security/sts.py::StsIssuer"
+        notes: "`PermissionSpec` + `StsIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]`"
 
       - id: skill-renderer-system
         title: "Renderer system: Jinja2 SandboxedEnvironment for skill bodies"

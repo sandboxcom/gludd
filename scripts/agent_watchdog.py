@@ -67,9 +67,10 @@ def classify_tail(
     if stripped.isspace():
         return State.LIKELY_STALLED_INCOMPLETE, "whitespace-only tail"
 
-    for marker in STALL_MARKERS:
-        if tail_lower.startswith(marker):
-            return State.LIKELY_STALLED_INCOMPLETE, f"let me / continuing: '{marker}' prefix"
+    for line in tail_lower.splitlines():
+        for marker in STALL_MARKERS:
+            if line.strip().startswith(marker):
+                return State.LIKELY_STALLED_INCOMPLETE, f"let me / continuing: '{marker}' prefix"
 
     last_line = stripped.splitlines()[-1].rstrip()
     if last_line.endswith(":"):
@@ -107,9 +108,9 @@ STREAK_FILE = "/tmp/gludd-mainthread-streak.json"
 TODOWRITE_STATE = os.environ.get("GLUDD_TODOWRITE_STATE", "/tmp/gludd-todowrite-state.json")
 RESET_LOG = "/tmp/gludd-auto-reset.log"
 HIBERNATION_MARKER = Path("/tmp/gludd-watchdog-hibernating")
-POLL_SECS = 60
+POLL_SECS = 10
 
-STREAK_THRESHOLD = 3
+STREAK_THRESHOLD = 3  # with 10s polling, threshold is reached in ~30s of sustained grinding
 
 
 def _now() -> str:
@@ -149,6 +150,37 @@ def _pending_todos() -> list[str]:
         return []
 
 
+STOP_STATE = os.environ.get("GLUDD_STOP_STATE", "/tmp/gludd-stop-state.json")
+FALSE_DONE_BLOCKS = os.environ.get("GLUDD_FALSE_DONE_BLOCKS", "/tmp/gludd-false-done-blocks.json")
+CONTINUE_DIRECTIVE = os.environ.get("GLUDD_CONTINUE_DIRECTIVE", "/tmp/gludd-continue-directive.txt")
+
+
+def check_agent_stalled(
+    stop_state_path: Path | None = None,
+    false_done_path: Path | None = None,
+) -> bool:
+    sp = stop_state_path or Path(STOP_STATE)
+    fp = false_done_path or Path(FALSE_DONE_BLOCKS)
+
+    try:
+        if sp.exists():
+            data = json.loads(sp.read_text())
+            if data.get("hasPendingWork"):
+                return True
+    except Exception:
+        pass
+
+    try:
+        if fp.exists():
+            data = json.loads(fp.read_text())
+            if int(data.get("consecutive", 0)) > 0:
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
 def check_and_reset() -> dict:
     result = {
         "ts": _now(),
@@ -162,13 +194,36 @@ def check_and_reset() -> dict:
     result["pending_todos"] = pending
 
     streak = result["streak"]
+
+    reset_needed = False
+    reason = ""
+
     if streak is not None and streak >= STREAK_THRESHOLD:
+        reset_needed = True
+        reason = f"streak={streak} >= threshold={STREAK_THRESHOLD}"
+    elif check_agent_stalled():
+        reset_needed = True
+        reason = "agent stalled on stop enforcement"
+    elif pending and streak is not None and streak > 0:
+        streak_path = Path(STREAK_FILE)
+        if streak_path.exists():
+            mtime_age = time.time() - streak_path.stat().st_mtime
+            if mtime_age < POLL_SECS:
+                reset_needed = True
+                reason = "text-only response with pending todos"
+
+    if reset_needed:
         _reset_streak()
         result["reset_applied"] = True
+
+        if check_agent_stalled():
+            directive = f"[{_now()}] CONTINUE: agent stalled on stop enforcement, pending={len(pending)} todos.\n"
+            Path(CONTINUE_DIRECTIVE).write_text(directive)
+
         if pending:
-            _log(f"UNJAMMED: streak={streak}, pending={len(pending)} todos: {pending[:3]}")
+            _log(f"UNJAMMED: {reason}, pending={len(pending)} todos: {pending[:3]}")
         else:
-            _log(f"UNJAMMED: streak={streak}, no pending todos detected but resetting anyway")
+            _log(f"UNJAMMED: {reason}, no pending todos detected but resetting anyway")
     elif streak is not None:
         pass
     else:

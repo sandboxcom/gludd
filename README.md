@@ -171,7 +171,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | capability_policy default-DENY per-role (#44) | ✓ 100% | **PASS** *(file-refs only)*: `capability_lattice.py:211-235`; `[4314a6c]` |
 | Conflict scanner + pre-commit hook (#33) | ✓ 100% | **PASS** *(file-refs only)*: `make scan-conflicts`; `[9d487ab]` |
 | CI regression guards (#30) | ✓ 100% | **PASS** *(file-refs only)*: `[9d487ab]` |
-| Clone RCE/SSRF hardening (#56) | ~ 100% | **PARTIAL** *(file-refs only)*: `[audit #56 DONE-VERIFIED]` |
+| Clone RCE/SSRF hardening (#56) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #56 DONE-VERIFIED]` |
 | DB races red-team (#52) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #52 DONE-VERIFIED]` |
 | Secrets lifecycle red-team (#53) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #53 DONE-VERIFIED]` |
 | Gateway concurrency red-team (#54) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #54 DONE-VERIFIED]` |
@@ -192,7 +192,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✗ 0% | **PENDING**: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
 | D-07 through D-47 security backlog | ✗ 5% | **PENDING**: catalogued in `docs/audit/NEW_FINDINGS_2026-06-16.md`; not scheduled |
 | CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE) | ✓ 100% | **PASS** *(file-refs only)*: adjudicated; does not block ship; `[526104b]` |
-| Permission system + STS Issuer (spec, intersection, escalation) | ~ 100% | **PARTIAL** *(file-refs only)*: `PermissionSpec` + `STSIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]` |
+| Permission system + STS Issuer (spec, intersection, escalation) | ✓ 100% | **PASS** *(file-refs only)*: `PermissionSpec` + `StsIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]` |
 | Renderer system: Jinja2 SandboxedEnvironment for skill bodies | ✓ 100% | **PASS** *(file-refs only)*: `render_skill()` with `SandboxedEnvironment` + `StrictUndefined`; adversarial tests; `[audit]` |
 
 ### Orchestration / Agents
@@ -277,7 +277,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x) | ✓ 100% | **PASS** *(file-refs only)*: 15+ fixes across Q3.1–Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]` |
 | Unit-1 CI shard rebalance: --ignore-glob test_connector (#62) | ✓ 100% | **PASS** *(file-refs only)*: unit-1 drops from 20+min toward ~10-12min; `[43083168]` |
 | make validate-opencode-config gate prerequisite (Q2.8) | ~ 100% | **PARTIAL** *(file-refs only)*: 4 schema-allowed top-level key tests; wired as gate prerequisite; `[4ea8f168]` |
-| Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill) | ~ 100% | **PARTIAL** *(file-refs only)*: `Makefile:53`; `nohup` + PID file + phase markers + status poll; `[audit]` |
+| Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:53`; `nohup` + PID file + phase markers + status poll; `[audit]` |
 | Terraform infrastructure: GPU stacks, IAM modules, policy enforcement (Q2.4-Q2.6) | ✓ 100% | **PASS** *(file-refs only)*: `infra/terraform/` stacks: aws, azure, gcp, runpod, vast, kubernetes; IAM onboarding modules; OPA policies; `[audit]` |
 
 ### Dev-Harness Guardrails

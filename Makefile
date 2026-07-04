@@ -40,7 +40,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
 		gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
-		repo-visibility
+		repo-visibility \
+		watchdog-start watchdog-status watchdog-stop watchdog-log
 
 help:
 	@echo "Usage: make [target]"
@@ -1812,3 +1813,33 @@ write-gate-safe-hook:
 	@mkdir -p .claude/hooks
 	@python3 scripts/gen_gate_safe_hook.py .claude/hooks/agent_floor_stop.sh
 	@echo "write-gate-safe-hook done"
+
+# --- Agent watchdog daemon (10s poll, resets streak counter) ---
+watchdog-start:
+	@echo "Starting agent watchdog (10s poll)..."
+	@nohup $(UV) run python3 scripts/agent_watchdog.py > /tmp/gludd-watchdog.log 2>&1 &
+	@echo $$! > /tmp/gludd-watchdog.pid
+	@echo "watchdog PID=$$(cat /tmp/gludd-watchdog.pid)"
+
+watchdog-status:
+	@echo "=== Watchdog status ==="
+	@if [ -f /tmp/gludd-watchdog.pid ]; then \
+		echo "PID: $$(cat /tmp/gludd-watchdog.pid)"; \
+		ps -p $$(cat /tmp/gludd-watchdog.pid) > /dev/null 2>&1 && echo "Status: running" || echo "Status: stopped"; \
+	else \
+		echo "No PID file — watchdog not started"; \
+	fi
+	@echo "--- Last 15 log lines ---"
+	@tail -15 /tmp/gludd-watchdog.log 2>/dev/null || echo "No log yet"
+
+watchdog-stop:
+	@if [ -f /tmp/gludd-watchdog.pid ]; then \
+		kill $$(cat /tmp/gludd-watchdog.pid) 2>/dev/null || true; \
+		rm -f /tmp/gludd-watchdog.pid; \
+		echo "Watchdog stopped"; \
+	else \
+		echo "No watchdog running"; \
+	fi
+
+watchdog-log:
+	@tail -50 /tmp/gludd-watchdog.log 2>/dev/null || echo "No log yet"

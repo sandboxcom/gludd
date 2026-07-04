@@ -31,7 +31,12 @@ classify_tail = aw.classify_tail
 State = aw.State
 scan_tasks_dir = aw.scan_tasks_dir
 main = aw.main
+check_agent_stalled = aw.check_agent_stalled
 DEFAULT_WINDOW_SECS = aw.DEFAULT_WINDOW_SECS
+POLL_SECS = aw.POLL_SECS
+STOP_STATE = aw.STOP_STATE
+FALSE_DONE_BLOCKS = aw.FALSE_DONE_BLOCKS
+CONTINUE_DIRECTIVE = aw.CONTINUE_DIRECTIVE
 
 
 # ── script exists ─────────────────────────────────────────────────────────────
@@ -282,3 +287,176 @@ def test_cli_all_flag(tmp_path: Path, capsys: pytest.CaptureFixture):
     captured = capsys.readouterr()
     assert "LIKELY_STALLED_INCOMPLETE" in captured.out
     assert "DONE" in captured.out
+
+
+# ── check_agent_stalled ───────────────────────────────────────────────────────
+
+
+def test_check_agent_stalled_has_pending_work(tmp_path: Path):
+    """Returns True when stop state has hasPendingWork=true."""
+    stop_file = tmp_path / "stop-state.json"
+    stop_file.write_text('{"hasPendingWork": true}')
+
+    result = aw.check_agent_stalled(stop_state_path=stop_file)
+    assert result is True
+
+
+def test_check_agent_stalled_blocks_positive(tmp_path: Path):
+    """Returns True when false-done blocks > 0."""
+    blocks_file = tmp_path / "blocks.json"
+    blocks_file.write_text('{"consecutive": 3}')
+
+    result = aw.check_agent_stalled(false_done_path=blocks_file)
+    assert result is True
+
+
+def test_check_agent_stalled_neither(tmp_path: Path):
+    """Returns False when neither condition met."""
+    stop_file = tmp_path / "stop-state.json"
+    stop_file.write_text('{"hasPendingWork": false}')
+    blocks_file = tmp_path / "blocks.json"
+    blocks_file.write_text('{"consecutive": 0}')
+
+    result = aw.check_agent_stalled(stop_state_path=stop_file, false_done_path=blocks_file)
+    assert result is False
+
+
+def test_check_agent_stalled_no_files():
+    """Returns False when files don't exist."""
+    result = aw.check_agent_stalled(
+        stop_state_path=Path("/tmp/nonexistent-stop-state-99999.json"),
+        false_done_path=Path("/tmp/nonexistent-blocks-99999.json"),
+    )
+    assert result is False
+
+
+def test_check_agent_stalled_malformed_json(tmp_path: Path):
+    """Returns False on malformed JSON (fail-safe)."""
+    stop_file = tmp_path / "bad.json"
+    stop_file.write_text("not json")
+
+    result = aw.check_agent_stalled(stop_state_path=stop_file)
+    assert result is False
+
+
+def test_check_agent_stalled_hydrid(tmp_path: Path):
+    """Returns True when hasPendingWork=True even if blocks=0."""
+    stop_file = tmp_path / "stop-state.json"
+    stop_file.write_text('{"hasPendingWork": true}')
+    blocks_file = tmp_path / "blocks.json"
+    blocks_file.write_text('{"consecutive": 0}')
+
+    result = aw.check_agent_stalled(stop_state_path=stop_file, false_done_path=blocks_file)
+    assert result is True
+
+
+# ── POLL_SECS constant ────────────────────────────────────────────────────────
+
+
+def test_poll_secs_is_10():
+    assert aw.POLL_SECS == 10
+
+
+# ── check_and_reset: stalled / text-only ──────────────────────────────────────
+
+
+def test_check_and_reset_text_only_recent_streak_with_pending(tmp_path: Path, monkeypatch):
+    """Streak file recent + pending todos → reset applied."""
+    streak_file = tmp_path / "streak.json"
+    streak_file.write_text('{"count": 1, "last_tool": "write"}')
+    # Ensure file mtime is now
+    streak_file.touch()
+
+    monkeypatch.setattr(aw, "STREAK_FILE", str(streak_file))
+
+    todo_file = tmp_path / "todos.json"
+    todo_file.write_text('[{"content": "fix bug", "status": "pending"}]')
+    monkeypatch.setattr(aw, "TODOWRITE_STATE", str(todo_file))
+
+    result = aw.check_and_reset()
+    assert result["reset_applied"] is True
+
+    # Also stub out stop-state / false-done so check_agent_stalled doesn't interfere
+    monkeypatch.setattr(aw, "STOP_STATE", str(tmp_path / "nonexistent-stop.json"))
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "nonexistent-blocks.json"))
+
+
+def test_check_and_reset_no_pending_no_reset(tmp_path: Path, monkeypatch):
+    """No pending todos + streak below threshold → no reset."""
+    streak_file = tmp_path / "streak.json"
+    streak_file.write_text('{"count": 1, "last_tool": "write"}')
+
+    monkeypatch.setattr(aw, "STREAK_FILE", str(streak_file))
+
+    todo_file = tmp_path / "todos.json"
+    todo_file.write_text("[]")
+    monkeypatch.setattr(aw, "TODOWRITE_STATE", str(todo_file))
+
+    monkeypatch.setattr(aw, "STOP_STATE", str(tmp_path / "nonexistent-stop.json"))
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "nonexistent-blocks.json"))
+
+    result = aw.check_and_reset()
+    assert result["reset_applied"] is False
+
+
+def test_check_and_reset_stalled_state_resets(tmp_path: Path, monkeypatch):
+    """check_agent_stalled() True → reset applied + directive written."""
+    stop_file = tmp_path / "stop-state.json"
+    stop_file.write_text('{"hasPendingWork": true}')
+    monkeypatch.setattr(aw, "STOP_STATE", str(stop_file))
+
+    streak_file = tmp_path / "streak.json"
+    streak_file.write_text('{"count": 0}')
+    monkeypatch.setattr(aw, "STREAK_FILE", str(streak_file))
+
+    todo_file = tmp_path / "todos.json"
+    todo_file.write_text("[]")
+    monkeypatch.setattr(aw, "TODOWRITE_STATE", str(todo_file))
+
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "nonexistent-blocks.json"))
+
+    directive_file = tmp_path / "continue.txt"
+    monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(directive_file))
+
+    result = aw.check_and_reset()
+    assert result["reset_applied"] is True
+    assert directive_file.exists()
+    assert "CONTINUE" in directive_file.read_text()
+
+
+# ── check_agent_stalled ────────────────────────────────────────────────────────
+
+
+def test_watchdog_detects_stalled_on_pending_work(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    stop_path = tmp_path / "stop-state.json"
+    monkeypatch.setattr(aw, "STOP_STATE", str(stop_path))
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "nonexistent.json"))
+
+    stop_path.write_text('{"hasPendingWork": true}')
+
+    assert check_agent_stalled() is True
+
+
+def test_watchdog_detects_stalled_on_false_done_blocks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "STOP_STATE", str(tmp_path / "nonexistent-stop.json"))
+
+    blocks_path = tmp_path / "false-done-blocks.json"
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(blocks_path))
+
+    blocks_path.write_text('{"consecutive": 3}')
+
+    assert check_agent_stalled() is True
+
+
+def test_watchdog_not_stalled_when_clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "STOP_STATE", str(tmp_path / "stop-state.json"))
+    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "false-done-blocks.json"))
+
+    Path(tmp_path / "stop-state.json").write_text('{"hasPendingWork": false}')
+    Path(tmp_path / "false-done-blocks.json").write_text('{"consecutive": 0}')
+
+    assert check_agent_stalled() is False
+
+
+def test_watchdog_10s_poll_interval():
+    assert POLL_SECS == 10

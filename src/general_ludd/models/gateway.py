@@ -1256,13 +1256,13 @@ class ModelGateway:
     ) -> ModelResponse | None:
         try:
             return self.call_model(profile_id, messages, **kwargs)
-        except ValueError as exc:
-            # D-05: budget rejections must not be silently swallowed — re-raise
-            # so the caller (call_model_with_fallback) can propagate them.
-            if "over budget" in str(exc):
-                raise
-            return None
-        except ImportError:
+        except SSRFRejectionError:
+            raise
+        except BudgetExceededError:
+            raise
+        except ModelPausedError:
+            raise
+        except Exception:
             return None
 
     def call_model_with_fallback(
@@ -1280,8 +1280,16 @@ class ModelGateway:
             self._health_tracker is None
             or self._health_tracker.is_healthy(profile_id)
         )
+        # Thread budget params into kwargs so _try_call_model / _walk_fallbacks
+        # forward them to call_model (they are explicit keyword-only params of
+        # call_model_with_fallback, NOT in **kwargs).
+        _call_kwargs: dict[str, Any] = {
+            "estimated_cost": estimated_cost,
+            "budget_remaining": budget_remaining,
+            **kwargs,
+        }
         if primary_healthy:
-            result = self._try_call_model(profile_id, messages, **kwargs)
+            result = self._try_call_model(profile_id, messages, **_call_kwargs)
             if result is not None:
                 return result
 
@@ -1292,7 +1300,7 @@ class ModelGateway:
                 fallback_ids = list(profile.fallback_profiles)
 
         # D-04: route fallback walk through _walk_fallbacks (health-gated)
-        result, last_exc = self._walk_fallbacks(fallback_ids, messages, **kwargs)
+        result, last_exc = self._walk_fallbacks(fallback_ids, messages, **_call_kwargs)
         if result is not None:
             return result
 
