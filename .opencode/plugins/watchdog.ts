@@ -30,6 +30,16 @@ export default (async ({ $ }) => {
           const result = await $`python3 scripts/agent_watchdog.py --once 2>/dev/null || true`
         } catch {}
       }
+      if (event.type === "session.deleted") {
+        try {
+          const pidFile = "/tmp/gludd-watchdog.pid"
+          if (fs.existsSync(pidFile)) {
+            const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim())
+            process.kill(pid, "SIGTERM")
+            fs.unlinkSync(pidFile)
+          }
+        } catch {}
+      }
     },
   }
 }) satisfies Plugin
