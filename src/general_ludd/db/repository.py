@@ -2668,8 +2668,7 @@ class MemoryRepository:
         )
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
-        now = datetime.now(UTC)
-        return [r for r in rows if not self._is_expired(r, now)]
+        return [r for r in rows if not self._is_expired(r)]
 
     async def purge_expired(self) -> int:
         from sqlalchemy import delete, func
@@ -2682,7 +2681,7 @@ class MemoryRepository:
             elapsed_seconds > MemoryRecordModel.ttl_seconds,
         )
         result = await self._session.execute(stmt)
-        purged = int(result.rowcount or 0)
+        purged = int(result.rowcount or 0)  # type: ignore[attr-defined]  # CursorResult at runtime
         if purged:
             await self._session.flush()
         return purged
