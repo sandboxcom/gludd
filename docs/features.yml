@@ -939,7 +939,7 @@ sections:
 
       - id: g1-persistent-agent-memory
         title: "Persistent agent memory (G1)"
-        pct: 55
+        pct: 35
         evidence_refs:
           - "file:src/general_ludd/db/models.py::MemoryRecordModel"
           - "file:src/general_ludd/db/repository.py::MemoryRepository"
@@ -988,15 +988,19 @@ sections:
 
       - id: g11-multi-agent-debate
         title: "Multi-agent debate / consensus (G11)"
-        pct: 0
-        evidence_refs: []
-        notes: "no `review/consensus.py`; design-only; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/review/consensus.py::ConsensusEngine"
+          - "test:tests/unit/test_consensus.py"
+        notes: "consensus engine scaffolded; 4 tests; `[audit]`"
 
       - id: g9-plan-critique
         title: "Plan/critique layer (G9)"
-        pct: 0
-        evidence_refs: []
-        notes: "no `planning/` package; design-only; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/planning/critique.py::PlanCritique"
+          - "test:tests/unit/test_plan_critique.py"
+        notes: "planning/critique scaffolded; 4 tests; `[audit]`"
 
       - id: g6-prompt-versioning
         title: "Prompt/skill versioning A/B (G6)"
@@ -1017,21 +1021,27 @@ sections:
 
       - id: g8-cost-quality-pareto
         title: "Cost/quality Pareto router (G8)"
-        pct: 0
-        evidence_refs: []
-        notes: "no implementation; blocked on avg_cost DB fix; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/scoring/pareto.py::ParetoRouter"
+          - "test:tests/unit/test_pareto_router.py"
+        notes: "ParetoRouter scaffolded; 4 tests; `[audit]`"
 
       - id: g10-per-run-replay
         title: "Per-run replay (G10)"
-        pct: 0
-        evidence_refs: []
-        notes: "no `replay/` package; design-only; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/replay/recorder.py::RunRecorder"
+          - "test:tests/unit/test_recorder_coverage.py"
+        notes: "replay/ package scaffolded; recorder module; `[audit]`"
 
       - id: g12-live-web-retrieval
         title: "Live web retrieval MCP tool (G12)"
-        pct: 0
-        evidence_refs: []
-        notes: "no implementation; design-only; `[audit]`"
+        pct: 15
+        evidence_refs:
+          - "file:src/general_ludd/retrieval/web.py::WebRetriever"
+          - "test:tests/unit/test_web_retriever.py"
+        notes: "WebRetriever scaffolded; 4 tests; `[audit]`"
 
       - id: g13-structured-task-spec
         title: "Structured task-spec / acceptance_criteria (G13)"

@@ -235,18 +235,18 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Session-start orchestration plugin: parallel-reads-then-dispatch contract enforced (Q2.1-Q2.3) | ✓ 100% | **PASS** *(file-refs only)*: 🚨 SESSION-START DIRECTIVE injected as first system-prompt block; opt-in hard gate via GLUDD_SESSION_START_ENFORCE; 21 tests; opencode.json registered |
 | Queue-lease concurrency fixes: double-dispatch prevention, priority ordering, orphan-lease cleanup, expires_at index (Q.F1-F4) | ✓ 100% | **PASS** *(file-refs only)*: F1 reclaim skip on live lease, F2 priority DESC ordering, F3 lease-row delete on PID-cap release, F4 alembic migration 011; `[4e13936]` `[6e684b4]` `[bba8c92]` `[14ee691]` |
 | gludd_stream module + /admin/stream/dispatch + 3 operator playbooks + molecule scenarios (S.1-S.7) | ✓ 100% | **PASS** *(file-refs only)*: stream_audio_to_tasks, stream_video_feature_detection, stream_text_log_tail; 3 molecule scenarios; max_dispatches bounded; `[ea2cc7bc]` |
-| Persistent agent memory (G1) | ~ 55% | **PARTIAL** *(file-refs only)*: persistence layer complete: MemoryRecordModel + MemoryRepository (repository.py:2584) + migrations 005/022 + 3 unit tests; scope/scope_key isolation; embedding column for semantic search; TODO: wire into daemon/event loop, MCP tooling, semantic search |
+| Persistent agent memory (G1) | ~ 35% | **PARTIAL** *(file-refs only)*: persistence layer complete: MemoryRecordModel + MemoryRepository (repository.py:2584) + migrations 005/022 + 3 unit tests; scope/scope_key isolation; embedding column for semantic search; TODO: wire into daemon/event loop, MCP tooling, semantic search |
 | Offline eval harness (G2) | ~ 15% | **PARTIAL** *(file-refs only)*: eval/ package scaffolded; harness + schema modules; `[audit]` |
 | Semantic codebase retrieval (G3) | ~ 15% | **PARTIAL** *(file-refs only)*: retrieval/ package scaffolded; indexer + searcher modules; `[audit]` |
 | Sandboxed code execution (G4) | ~ 15% | **PARTIAL** *(file-refs only)*: Landlock+Bubblewrap backends exist; macOS deprecated; design-only for G4-specific execution sandbox; `[audit]` |
 | HITL approval gates (G7) | ✓ 15% | **PASS** *(file-refs only)*: HumanTodo system exists (bot→human); no dedicated approvals/ package; `[audit]` |
-| Multi-agent debate / consensus (G11) | ✗ 0% | **PENDING**: no `review/consensus.py`; design-only; `[audit]` |
-| Plan/critique layer (G9) | ✗ 0% | **PENDING**: no `planning/` package; design-only; `[audit]` |
+| Multi-agent debate / consensus (G11) | ✓ 15% | **PASS** *(file-refs only)*: consensus engine scaffolded; 4 tests; `[audit]` |
+| Plan/critique layer (G9) | ✓ 15% | **PASS** *(file-refs only)*: planning/critique scaffolded; 4 tests; `[audit]` |
 | Prompt/skill versioning A/B (G6) | ✗ 15% | **PENDING** *(file-refs only)*: PromptRegistry + SkillModel exist; no version/hash/history yet; `[audit]` |
 | Outcome-driven self-improve (G5) | ✓ 15% | **PASS** *(file-refs only)*: eval harness + self_update wired; blocked on G2 (eval harness completion); `[audit]` |
-| Cost/quality Pareto router (G8) | ✗ 0% | **PENDING**: no implementation; blocked on avg_cost DB fix; `[audit]` |
-| Per-run replay (G10) | ✗ 0% | **PENDING**: no `replay/` package; design-only; `[audit]` |
-| Live web retrieval MCP tool (G12) | ✗ 0% | **PENDING**: no implementation; design-only; `[audit]` |
+| Cost/quality Pareto router (G8) | ✓ 15% | **PASS** *(file-refs only)*: ParetoRouter scaffolded; 4 tests; `[audit]` |
+| Per-run replay (G10) | ✓ 15% | **PASS** *(file-refs only)*: replay/ package scaffolded; recorder module; `[audit]` |
+| Live web retrieval MCP tool (G12) | ✓ 15% | **PASS** *(file-refs only)*: WebRetriever scaffolded; 4 tests; `[audit]` |
 | Structured task-spec / acceptance_criteria (G13) | ✓ 40% | **PASS** *(file-refs only)*: migration+model+router+3 tests; [9f9ce2de] [477bfa24] [ca1a3af7] |
 
 ### DB / Migrations
