@@ -67,7 +67,7 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-alpha.5 — 2026-07-03; core-engine + scoring/cost + security-findings rows refreshed 2026-06-25 (branch `feature/alpha4-green-the-gate`)**
+**Status as of v0.1.0-alpha.5 — 2026-07-04; core-engine + scoring/cost + security-findings rows refreshed 2026-06-25 (branch `feature/alpha4-green-the-gate`)**
 
 The table below is **code-generated** from [`docs/features.yml`](docs/features.yml) by
 [`scripts/gen_status_table.py`](scripts/gen_status_table.py): every row's verified status is
