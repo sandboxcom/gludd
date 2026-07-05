@@ -370,10 +370,12 @@ sections:
 
       - id: obs-router-wired
         title: "Observability router (`routers/observe.py`) wired into daemon"
-        pct: 5
+        pct: 50
         evidence_refs:
-          - "file:src/general_ludd/routers/observe.py::register"
-        notes: "register() exists; never called; 1 daemon.py line needed; `[audit]`"
+          - "file:src/general_ludd/routers/observe.py::wire_observability"
+          - "file:src/general_ludd/daemon.py::wire_observability"
+          - "test:tests/unit/test_obs_router_wiring.py"
+        notes: "wire_observability() called at daemon.py:2557-2561 inside create_daemon_app; router wired (3 tests); remaining: e2e daemon integration, real-connector CI"
 
       - id: receiver
         title: "Receiver (buffer + parsers + OTLP/webhook/gelf)"
