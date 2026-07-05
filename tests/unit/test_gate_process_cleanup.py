@@ -8,8 +8,6 @@ Covers:
 
 from __future__ import annotations
 
-import importlib
-import json
 import os
 import time
 from pathlib import Path
@@ -100,12 +98,11 @@ def test_gate_background_timeout_default_3600():
 
 
 def test_watchdog_gate_max_runtime_is_one_hour():
-    import importlib
-    import scripts.agent_watchdog
-    importlib.reload(scripts.agent_watchdog)
-    assert scripts.agent_watchdog.GATE_MAX_RUNTIME_SECS == 3600, (
-        f"GATE_MAX_RUNTIME_SECS must be 3600 (1 hour), "
-        f"got {scripts.agent_watchdog.GATE_MAX_RUNTIME_SECS}"
+    import scripts.agent_watchdog as aw
+    importlib = __import__("importlib")
+    importlib.reload(aw)
+    assert aw.GATE_MAX_RUNTIME_SECS == 3600, (
+        f"GATE_MAX_RUNTIME_SECS must be 3600 (1 hour), got {aw.GATE_MAX_RUNTIME_SECS}"
     )
 
 
@@ -151,7 +148,7 @@ def test_watchdog_detects_stale_gate_status():
 
     status_file.unlink(missing_ok=True)
 
-    stale_logs = [l for l in logs if "STALE" in l or "stale" in l.lower()]
+    stale_logs = [entry for entry in logs if "STALE" in entry or "stale" in entry.lower()]
     assert len(stale_logs) >= 1, (
         "Watchdog must log when .gate-status is older than 1h with no gate running"
     )
