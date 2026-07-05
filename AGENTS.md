@@ -5,7 +5,7 @@
 **NEVER run `make git-log`, `make ci-verdict`, or `make git-diff` as a standalone single tool call.** These are the compulsive-check pattern. If you find yourself reaching for one, you are in the loop — break it by dispatching via the Task tool.
 
 The enforcement plugins mechanically prevent this:
-- **enforce-floor.ts**: blocks non-dispatch tool calls after 2 consecutive calls (streak counter, no Python dependency)
+- **enforce-floor.ts**: blocks bash calls to `make git-log`, `make ci-verdict`, and `make git-diff` when open work exists (ANTI-LOOP directive); also blocks non-dispatch tool calls via streak counter and message-shape (1-4 dispatch) enforcement
 - **enforce-delegate.ts**: blocks after 1 non-dispatch call (threshold lowered from 4 → 1)
 - **text.complete nag**: injects "DELEGATE-FIRST" into responses when streak exceeds 2
 - **agent_watchdog.py**: background daemon auto-resets streak every 60s as failsafe
@@ -15,8 +15,8 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 ## Mechanical Contract (READ FIRST — numbered priority)
 
 1. **Only `make <target>`.** Never bare commands, no metacharacters (`|`, `;`, `&&`, `$()`).
-2. **Pending todos ⇒ tool call.** If any item is `pending` or `in_progress`, your next output MUST be a tool call. Text-only responses with unfinished work are a hard violation. **BEFORE every text response: check `config/ratchet.yml` — if it has ANY entries, the project has known-unfixed work. Any response that is not a tool call while ratchet has entries is a premature stop.**
-3. **"Done" requires: `make gate` green + `TASKS.md` evidence.** Nothing else counts. No self-assessment, no assertion from memory. Every item ticked must have a gate output pasted.
+2. **Pending todos ⇒ tool call.** If any item is `pending` or `in_progress`, your next output MUST be a tool call. Text-only responses with unfinished work are a hard violation. **BEFORE every text response: check `config/ratchet.yml` — if it has ANY entries, the project has known-unfixed work. Any response that is not a tool call while ratchet has entries is a premature stop.** (ENFORCED: text.complete hooks in enforce-stop.ts and enforce-make.ts will blank text-only responses when TASKS.md has unchecked items or ratchet.yml has entries.)
+3. **"Done" requires: `make gate` green + `TASKS.md` evidence.** Nothing else counts. No self-assessment, no assertion from memory. Every item ticked must have a gate output pasted. (PROMPT-LEVEL expectation: the guardrail blocks commit targets when open work exists, but gate-output-as-evidence is a proactice instruction — it is not mechanically verified at response time.)
 4. **TDD:** write a failing test FIRST, run it, THEN write code. `make test-count` must show 0 collection errors before every commit.
 5. **When you find a gap:** fix it now, do not list it and ask. You own it. Fix it, test it, commit it, continue.
 6. **Trust gate output, not SESSION.md.** SESSION.md claims have been false. Gate exit codes are the single source of truth.
@@ -167,7 +167,7 @@ ENFORCED IN CODE: `.claude/hooks/no_false_completion_stop.sh` (Stop hook) blocks
 that ends on a completion claim carrying no evidence token and no honest hedge
 (`GLUDD_FALSE_DONE_ENFORCE=1`; proof: `make test-no-false-completion`). Mirrors
 Mechanical Contract rule 3 and "A Release is an Artifact, Not a Tag".
-Enforced in opencode by `.opencode/plugin/enforce-false-done.ts` (response.transform replacement + anti-wedge counter); mirrors `.claude/hooks/no_false_completion_stop.sh`.
+Enforced in opencode by `.opencode/plugin/enforce-stop.ts` (false-done claim detection + stop-pattern block); mirrors `.claude/hooks/no_false_completion_stop.sh`.
 
 ## No Unseen Events (observability invariant)
 
@@ -642,7 +642,7 @@ This is enforced by:
 
 The Claude Code layer (`.claude/hooks/*.sh`, 23 shell scripts registered in
 `.claude/settings.json`) and the opencode layer (`.opencode/plugin/*.ts` +
-`.opencode/plugins/*.ts`, 9 TypeScript plugins registered in `opencode.json`)
+`.opencode/plugins/*.ts`, 8 TypeScript plugins registered in `opencode.json`)
 **enforce the same policies in parallel**. An opencode-only session gets the
 same guardrails as a Claude-only session. The port map:
 
@@ -651,10 +651,9 @@ same guardrails as a Claude-only session. The port map:
 | `enforce-make.ts` | `enforce_make_bash.sh`, `gate_concurrency_pretool.sh`, `guardrail_integrity_edit_pretool.sh`, `no_flag_file_write_pretool.sh` (Bash make-only, metachar deny, concurrent-gate block, guardrail-integrity across ALL hook/plugin files, `.gate-status` write block) |
 | `enforce-floor.ts` | `agent_floor_stop.sh`, `agent_floor_pretool.sh`, `agent_floor_posttool.sh`, `agent_ceiling_pretool.sh`, `agent_floor_userprompt.sh`, `agent_floor_inc.sh`, `agent_floor_dec.sh` (floor/ceiling bands via `agent_liveness.py`) |
 | `enforce-delegate.ts` | `model_utilization_pretool.sh`, `disk_discipline_pretool.sh`, `worktree_disk_guard_pretool.sh`, `force_delegate_pretool.sh`, `mainthread_budget.sh` (sonnet ratio, worktree disk guards, opt-in grind guard, main-thread delegation budget) |
-| `enforce-stop.ts` | `no_wait_stop.sh`, `multitasking_backlog_stop.sh`, `session_start_orchestrate.sh`, `no_blocking_questions_pretool.sh`, `no_blocking_prompt_pretool.sh`, `api_error_resilience_stop.sh` (deferral-pattern block, open-backlog block, orchestration injection, question-tool deny, blocking-prompt guard, API error resilience) |
+| `enforce-stop.ts` | `no_wait_stop.sh`, `multitasking_backlog_stop.sh`, `session_start_orchestrate.sh`, `no_blocking_questions_pretool.sh`, `no_blocking_prompt_pretool.sh`, `api_error_resilience_stop.sh`, `no_false_completion_stop.sh` (deferral-pattern block, open-backlog block, orchestration injection, question-tool deny, blocking-prompt guard, API error resilience, false-done claim block + anti-wedge counter) |
 | `enforce-session-start.ts` | (system.transform + tool.execute.before hooks; dispatches session-start directive at boot) |
 | `enforce-deadline.ts` | (deadline enforcement; no direct Claude hook equivalent) |
-| `enforce-false-done.ts` | `no_false_completion_stop.sh` (false-done claim block + anti-wedge counter) |
 | `enforce-deletion-gate.ts` | (file-deletion gate; no direct Claude hook equivalent) |
 | `watchdog.ts` | (background daemon watchdog; no direct Claude hook equivalent) |
 
@@ -1403,7 +1402,15 @@ the machine-enforceable correction.
 
 **The floor was raised from 6 to 10 on 2026-06-22** by direct user mandate. The env var is `CLAUDE_AGENT_FLOOR=10`. The plugins (enforce-floor.ts, enforce-delegate.ts, enforce-stop.ts) all default to 10. The `.claude/settings.json` sets it to 10.
 
-**This is NOT optional.** Running with fewer than 10 subagents is a bug. The user will interrupt and ask why the floor isn't maintained. The enforce-floor.ts plugin will inject floor-breach directives if the count drops below 10.
+**Enforcement mechanism — streak-based, not live-counting.** The plugin cannot count live subagents (the harness exposes no live-count API). Instead, it uses:
+- A **streak counter**: 4 consecutive non-dispatch tool calls triggers a hard block on the next non-dispatch call when open work exists (TASKS.md unchecked, ratchet entries, gate red, etc.). Each dispatch resets the streak to 0. Read-only tools (read/grep/glob) do not increment the streak.
+- A **result-processing grace**: when subagent results arrive (detected via text markers), the agent gets a brief grace window to digest output without the streak counter restarting.
+- A **refill-need detector**: when the dispatch count falls below threshold after peaking at ≥5, an advisory refill nag is injected via text.complete — not a hard block, because the agent legitimately needs non-dispatch calls to survey results and prepare the next wave.
+- **Message-shape enforcement**: after a message with 1–4 dispatches, the next non-dispatch call is denied until the agent sends a 5+ dispatch wave, enforcing the batching rule structurally.
+
+The `scripts/agent_liveness.py` probe (Python-side live counting) informs the shell hooks but is not wired into the TypeScript plugins.
+
+**This is NOT optional.** Running with fewer than 10 subagents is a bug. The user will interrupt and ask why the floor isn't maintained. The enforce-floor.ts plugin will inject floor-breach directives if the streak-based heuristic detects the collapse.
 
 **See also:** the *Steady-state dispatch (the 10-agent floor)* subsection under Pipeline Orchestration Model below for the concrete behavioral rules (fast result processing, no long foreground ops, next-wave-ready, uniform-duration tasks, research as filler) that make maintaining this floor possible in practice.
 
@@ -1535,7 +1542,7 @@ A response with 1–4 task dispatches is a **policy violation** when ≥3 known 
 
 **Never**: make a single-task-dispatch message and wait for the result when ≥3 work items are known. Either fan out wider, or do non-blocking work inline while the wave runs.
 
-This rule exists because the agent repeatedly claimed "dispatching 10 parallel agents" but delivered 1-3 in sequence, serializing work that should have been concurrent. The floor plugin (enforce-floor.ts) blocks non-dispatch tool calls when live < 10 and GLUDD_FLOOR_ENFORCE=1; this prompt rule is the proactive layer that prevents the breach from happening in the first place.
+This rule exists because the agent repeatedly claimed "dispatching 10 parallel agents" but delivered 1-3 in sequence, serializing work that should have been concurrent. The floor plugin (enforce-floor.ts) tracks dispatch count per message; after a message with 1–4 dispatches, the next non-dispatch tool call is denied until the agent sends a 5+ dispatch wave.
 
 ## CRITICAL: Long-Running Operations MUST Be Backgrounded
 

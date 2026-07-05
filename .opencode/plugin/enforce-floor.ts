@@ -244,6 +244,18 @@ let _dispatchPeak = 0
 let _resultProcessingGrace = 0
 let _needsRefill = false
 
+// Gap 1: ANTI-LOOP — compulsive-check targets that must be dispatched via Task tool
+const COMPULSIVE_CHECK_RE = /^make\s+(git-log|ci-verdict|git-diff)(\s|\/|$)/
+
+// Gap 2: Message-shape dispatch tracking — counts dispatches per agent message
+// so we can enforce the 5+ dispatch-per-wave rule.  _thisMessage* accumulates
+// during the current message; on text.complete it is promoted to _prevMessage*
+// and reset.  The next non-dispatch call is blocked if _prevMessageDispatchCount
+// is 1–4 and open work exists.
+let _thisMessageDispatchCount = 0
+let _thisMessageTotalCalls = 0
+let _prevMessageDispatchCount = 0
+
 const RESULT_MARKERS = [
   "task result",
   "completed",
@@ -328,6 +340,8 @@ export default (async ({ }) => {
         if (isDispatchTool(tool)) {
           _streakCount = 0
           _dispatchCount++
+          _thisMessageDispatchCount++
+          _thisMessageTotalCalls++
           if (_dispatchCount > _dispatchPeak) {
             _dispatchPeak = _dispatchCount
           }
@@ -336,7 +350,61 @@ export default (async ({ }) => {
         }
 
         if (isReadTool(tool)) {
+          _thisMessageTotalCalls++
           return
+        }
+
+        _thisMessageTotalCalls++
+
+        // Gap 1: ANTI-LOOP — block standalone compulsive-check make targets
+        // (git-log, ci-verdict, git-diff). These never produce productive
+        // output; they are the looping pattern. The agent MUST dispatch via
+        // Task tool instead.
+        if (tool === "bash") {
+          const outArgs = (_output as Record<string, unknown> | undefined)?.args as { command?: string } | undefined
+          const cmd = typeof outArgs?.command === "string" ? outArgs.command.trim() : ""
+          if (COMPULSIVE_CHECK_RE.test(cmd) && openWorkExists()) {
+            return {
+              permissionDecision: "deny" as const,
+              message: [
+                "⛔ COMPULSIVE-CHECK LOOP BLOCKED",
+                `Command: ${cmd}`,
+                "",
+                "make git-log / make ci-verdict / make git-diff as a standalone",
+                "bash call is the compulsive-check loop pattern. If you are reaching",
+                "for one of these, you are in the loop.",
+                "",
+                "REQUIRED: Dispatch the check to a Task/agent subagent instead.",
+                "The main thread must only dispatch, not run status probes.",
+                "",
+                "BREAK THE LOOP: dispatch ≥5 subagents on pending work now.",
+              ].join("\n"),
+            }
+          }
+        }
+
+        // Gap 2: Message-shape enforcement — after a message that dispatched
+        // only 1–4 subagents, the very next non-dispatch tool call is blocked.
+        // This forces the agent to batch 5+ dispatches per wave rather than
+        // dribbling 1–3 at a time.  Reset when the agent sends a 0-dispatch or
+        // 5+-dispatch response (set on text.complete boundary).
+        if (_prevMessageDispatchCount > 0 && _prevMessageDispatchCount < 5 && openWorkExists()) {
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              "⛔ MESSAGE-SHAPE VIOLATION — MUST DISPATCH ≥5 PER WAVE",
+              "",
+              `Previous message dispatched only ${_prevMessageDispatchCount} subagent(s).`,
+              "The message-shape rule (AGENTS.md) requires ZERO or ≥5 dispatches per",
+              "agent response.  1–4 dispatches is the dribbling anti-pattern.",
+              "",
+              "Your next message MUST contain ≥5 parallel task/agent dispatches.",
+              "Do not proceed with serial tool calls.  BATCH YOUR DISPATCHES.",
+              "",
+              "CORRECT: send one message with 5+ Task tool calls in parallel.",
+              "INCORRECT: send one dispatch, wait, send another.",
+            ].join("\n"),
+          }
         }
 
         // Result-processing grace: after results arrive the agent gets a brief
@@ -411,6 +479,10 @@ export default (async ({ }) => {
       // flag decay so a new turn doesn't inherit a stale pass.
       _resultProcessingGrace = 0
       _updateRefillState()
+      // Gap 2: message-shape tracking — reset per-message counters on idle
+      _thisMessageDispatchCount = 0
+      _thisMessageTotalCalls = 0
+      _prevMessageDispatchCount = 0
     },
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
@@ -424,6 +496,14 @@ export default (async ({ }) => {
           }
           fs.writeFileSync(cPath, JSON.stringify({ count, last_fired: new Date().toISOString(), ts: Date.now() }), "utf8")
         } catch {}
+
+        // Gap 2: Promote this message's dispatch count to the "previous" slot
+        // so the NEXT tool.execute.before can check it.  If the current message
+        // dispatched 0 or ≥5, the block lifts; if 1–4, the next non-dispatch
+        // tool call will be denied with the message-shape violation directive.
+        _prevMessageDispatchCount = _thisMessageDispatchCount
+        _thisMessageDispatchCount = 0
+        _thisMessageTotalCalls = 0
 
         if (!output || typeof output.text !== "string") return output
         floorTurnState.accumulatedText += output.text

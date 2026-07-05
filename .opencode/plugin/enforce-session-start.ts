@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
+import * as path from "node:path"
 
 // enforce-session-start.ts — guarantees the FIRST actions of every session are:
 //   1. LOCATE work: read TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md
@@ -50,6 +51,16 @@ const FRESH_SECS = parseInt(
   process.env.GLUDD_SESSION_START_FRESH_SECS || "600",
   10,
 )
+
+// Gap 8: TASKS.md staleness check — if the session has been active for >5 min
+// and TASKS.md hasn't been read, inject a nag directive.  Configurable via
+// GLUDD_TASKS_STALE_MINUTES (default 5).
+const TASKS_STALE_MINUTES = parseInt(
+  process.env.GLUDD_TASKS_STALE_MINUTES || "5",
+  10,
+)
+
+let _lastTasksReadMtime = 0
 
 const TASK_FILES = ["TASKS.md", "BUGS.md", "config/ratchet.yml", "SESSION.md"]
 
@@ -157,9 +168,34 @@ export default (async () => {
       try {
         // Initialize per-session state so the tool.execute.before gate knows
         // this is a fresh session.
-        loadState()
+        const state = loadState()
         if (typeof output === "string") {
-          return SESSION_START_DIRECTIVE + "\n\n" + output
+          // Gap 8: Mechanical Contract rule 7 — TASKS.md staleness nag.
+          // If the session has been active for >5 minutes and TASKS.md
+          // hasn't been read recently, inject a directive to re-read it.
+          const sessionAgeMs = Date.now() - state.started_at
+          const tasksStaleMs = TASKS_STALE_MINUTES * 60_000
+          const needsTasksNag = sessionAgeMs > tasksStaleMs && _lastTasksReadMtime === 0
+          const tasksNagText = needsTasksNag
+            ? [
+                "",
+                "══════════════════════════════════════════════════════════════",
+                "⛔  RULE 7: Read TASKS.md for current work — STALE SESSION",
+                "══════════════════════════════════════════════════════════════",
+                "",
+                `Session active for ${Math.round(sessionAgeMs / 60_000)} minutes.`,
+                "TASKS.md has NOT been read recently.",
+                "",
+                "Before generating any status claim or completion report:",
+                "  1. Read TASKS.md — what items are unchecked?",
+                "  2. Read BUGS.md — are there open incidents?",
+                "  3. Update them before claiming anything is done.",
+                "",
+                "See AGENTS.md Mechanical Contract rule 7.",
+                "",
+              ].join("\n")
+            : ""
+          return tasksNagText + SESSION_START_DIRECTIVE + "\n\n" + output
         }
         return output
       } catch {
@@ -191,6 +227,14 @@ export default (async () => {
             state.readsDone = true
             saveState(state)
           }
+          // Gap 8: record TASKS.md read mtime for staleness check
+          try {
+            const blob = JSON.stringify(input ?? {}).toLowerCase()
+            if (blob.includes("tasks.md")) {
+              const tasksPath = path.join(process.cwd(), "TASKS.md")
+              _lastTasksReadMtime = fs.statSync(tasksPath).mtimeMs
+            }
+          } catch { /* ignore */ }
           return
         }
 
