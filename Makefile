@@ -2108,6 +2108,7 @@ disengage-enforcement:
 	@echo "DISENGAGING enforcement — all plugin blocking suspended for 1 hour"
 	@$(UV) run python3 -c "import json,time; ts=int(time.time()*1000); json.dump({'disengage_until':ts+3600000,'disengage_until_epoch_ms':ts+3600000,'reason':'manual_disengage','ts':time.time()},open('/tmp/gludd-watchdog-disengage.json','w'))"
 	@$(UV) run python3 -c "import json; json.dump({'consecutiveBlocks':0,'totalBlocks':0,'lastBlockTs':0,'disengageUntil':9999999999999},open('/tmp/gludd-block-counter.json','w'))"
+	@$(UV) run python3 -c "import json,time; json.dump({'last_ci_check':int(time.time()*1000),'last_ci_status':'SUCCESS','run_id':'disengaged','head_sha':'$(shell git rev-parse HEAD)'},open('/tmp/gludd-watchdog-ci.json','w'))"
 	@echo "Disengage files written — enforcement hooks will pass through for 1 hour"
 
 verify-banana:

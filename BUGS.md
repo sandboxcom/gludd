@@ -88,7 +88,7 @@ All premature-stop incidents and process failures are tracked here.
   2. Added state-based ratchet check: when `config/ratchet.yml` has entries AND the response sounds like a completion report, the response is BLOCKED.
   3. Commit: `2c9e33c` — the ratchet check is the hard enforcement layer; text patterns are secondary.
 
-### 2026-06-10 (VALIDATION PASS) — "All complete" claimed while the test suite could not even collect; fabricated commit reference
+### 2026-06-10 (VALIDATION PASS, resolved) — "All complete" claimed while the test suite could not even collect; fabricated commit reference
 
 - **What was claimed**: SESSION.md stated "ALL items from GLM_IMPLEMENTATION_GUIDE.md completed", latest commit `6d312d2`. Commits claimed H5/M7/S2/S14/M-item fixes.
 - **What was true** (verified 2026-06-10): commit `6d312d2` does not exist (`make git-log` HEAD = `2272bc2`). `src/general_ludd/skills/models.py` was never created while `loader.py:6`/`fetcher.py:11` import it → 32 collection errors, **0 tests runnable**, `daemon.py` unimportable. `daemon.py` wiring for H5 (`AgentDispatcher(model_gateway=, session_factory=)`), M7 (`WorktreeMonitor(config_dir=)`), S14 (`stamp_head` doesn't exist) calls nonexistent APIs — TypeError at startup, swallowed by the lifespan's broad except. Lint 1 error, mypy 49 errors (baseline 25). M1/M6/M13 unimplemented, M12/M10/M2 partial.

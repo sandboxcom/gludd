@@ -296,25 +296,37 @@ function gateStatusIsRed(): boolean {
   } catch { return false }
 }
 
-function repoHasPendingWork(): boolean {
+function repoHasPendingWork(mode?: "commit" | "push"): boolean {
   try {
     const { execSync } = require("node:child_process")
     const cwd = process.cwd()
+    if (mode !== "push") {
+      try {
+        const unpushed = execSync("git log --oneline @{u}..HEAD", {
+          cwd, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+        })
+        if (unpushed.trim().length > 0) return true
+      } catch {}
+    }
     try {
-      const unpushed = execSync("git log --oneline @{u}..HEAD", {
-        cwd, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
-      })
-      if (unpushed.trim().length > 0) return true
-    } catch {}
-    try {
-      const status = execSync("git status --porcelain", {
-        cwd, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
-      })
-      if (status.trim().length > 0) return true
+      if (mode === "commit") {
+        const unstaged = execSync("git diff --name-only", {
+          cwd, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+        })
+        if (unstaged.trim().length > 0) return true
+      } else {
+        const status = execSync("git status --porcelain", {
+          cwd, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+        })
+        if (status.trim().length > 0) return true
+      }
     } catch {}
     return false
   } catch { return false }
 }
+
+const COMMIT_TARGET_RE = /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/
+const PUSH_TARGET_RE = /^make\s+(git-push-branch|git-push-branch-nv|git-push-sandboxcom|git-push-sandboxcom-main|git-push-master|git-tag-push|release-cut|release-promote|ship-commit|release-recut|release-branch-new)(\s|$)/
 
 function ciIsPendingOrRed(): boolean {
   const now = Date.now()
@@ -495,7 +507,10 @@ export default (async ({ }) => {
             const bugsOpen = bugsMdHasOpenIncidents()
             const gateRed = gateStatusIsRed()
             const ciBad = ciIsPendingOrRed()
-            const repoPending = repoHasPendingWork()
+            const repoMode: "commit" | "push" | undefined =
+              COMMIT_TARGET_RE.test(command) ? "commit" :
+              PUSH_TARGET_RE.test(command) ? "push" : undefined
+            const repoPending = repoHasPendingWork(repoMode)
             // Disengage check: when the operator has explicitly disengaged
             // enforcement, skip the stop-like-tool block so commits and pushes
             // can proceed. Fixes: disengage-enforcement was only respected in

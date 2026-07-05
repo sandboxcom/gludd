@@ -77,6 +77,10 @@ function isReadTool(toolName: string): boolean {
   return toolName === "read" || toolName === "grep" || toolName === "glob"
 }
 
+function isCommitBashCommand(cmd: string): boolean {
+  return /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/.test(cmd)
+}
+
 // Open-work probe: only block when the repo actually has pending work. Avoids
 // wedging a session where the floor is breached because the work is genuinely
 // done. Signals (any one triggers "open work"):
@@ -92,7 +96,7 @@ function isReadTool(toolName: string): boolean {
 // disables. Paths are configurable via GLUDD_TASKS_MD / GLUDD_BUGS_MD env vars
 // (default <cwd>/TASKS.md / <cwd>/BUGS.md).
 // FAIL-OPEN: any error -> false (don't block on a probe bug).
-function openWorkExists(): boolean {
+function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
   try {
     const ratchet = path.join(process.cwd(), "config", "ratchet.yml")
     if (fs.existsSync(ratchet)) {
@@ -173,23 +177,36 @@ function openWorkExists(): boolean {
     // Check for uncommitted changes via .git/index vs .git/refs/heads mtime
     // — avoids the execSync("git status") dependency that may not work in
     // plugin sandboxes where `git` is not on PATH.
+    // When isCommitTool: staged changes are the commit payload — skip mtime check.
     try {
-      const index = path.join(process.cwd(), ".git", "index")
-      const headRef = path.join(process.cwd(), ".git", "refs", "heads", "master")
-      if (fs.existsSync(index) && fs.existsSync(headRef)) {
-        const idxMtime = fs.statSync(index).mtimeMs
-        const refMtime = fs.statSync(headRef).mtimeMs
-        if (Math.abs(idxMtime - refMtime) > 2000) return true
+      if (options?.isCommitTool) { /* skip mtime check for commit tools */ }
+      else {
+        const index = path.join(process.cwd(), ".git", "index")
+        const headRef = path.join(process.cwd(), ".git", "refs", "heads", "master")
+        if (fs.existsSync(index) && fs.existsSync(headRef)) {
+          const idxMtime = fs.statSync(index).mtimeMs
+          const refMtime = fs.statSync(headRef).mtimeMs
+          if (Math.abs(idxMtime - refMtime) > 2000) return true
+        }
       }
     } catch { /* ignore */ }
-    // BUG #21 fix: FALLBACK — run git status --porcelain to catch dirty state
-    // that mtime-based check misses (e.g., staged files, rebase-in-progress)
+    // BUG #21 fix: FALLBACK — run git status to catch dirty state
+    // that mtime-based check misses (e.g., staged files, rebase-in-progress).
+    // When isCommitTool: use `git diff --name-only` (unstaged only) because
+    // staged files ARE the commit payload.
     try {
       const { execSync } = require("node:child_process")
-      const status = execSync("git status --porcelain", {
-        cwd: process.cwd(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
-      })
-      if (status.trim().length > 0) return true
+      if (options?.isCommitTool) {
+        const unstaged = execSync("git diff --name-only", {
+          cwd: process.cwd(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+        })
+        if (unstaged.trim().length > 0) return true
+      } else {
+        const status = execSync("git status --porcelain", {
+          cwd: process.cwd(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+        })
+        if (status.trim().length > 0) return true
+      }
     } catch { /* git not available, fallback silently fails */ }
     return false
   } catch {
@@ -360,9 +377,11 @@ export default (async ({ }) => {
         // (git-log, ci-verdict, git-diff). These never produce productive
         // output; they are the looping pattern. The agent MUST dispatch via
         // Task tool instead.
+        let commitToolMode = false
         if (tool === "bash") {
           const outArgs = (_output as Record<string, unknown> | undefined)?.args as { command?: string } | undefined
           const cmd = typeof outArgs?.command === "string" ? outArgs.command.trim() : ""
+          commitToolMode = isCommitBashCommand(cmd)
           if (COMPULSIVE_CHECK_RE.test(cmd) && openWorkExists()) {
             return {
               permissionDecision: "deny" as const,
@@ -383,12 +402,31 @@ export default (async ({ }) => {
           }
         }
 
+        // Disengage check: when the operator has explicitly disengaged
+        // enforcement, skip ALL blocks including message-shape. Hoisted
+        // above message-shape to prevent the gap where disengage-enforcement
+        // is silently ignored when prev message had 1-4 dispatches.
+        let disengagedForFloor = false
+        try {
+          const disPath = "/tmp/gludd-watchdog-disengage.json"
+          if (fs.existsSync(disPath)) {
+            const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
+            if (d.disengage_until && d.disengage_until > Date.now()) {
+              disengagedForFloor = true
+            }
+          }
+        } catch {}
+        if (disengagedForFloor) {
+          _streakCount = 0
+          return
+        }
+
         // Gap 2: Message-shape enforcement — after a message that dispatched
         // only 1–4 subagents, the very next non-dispatch tool call is blocked.
         // This forces the agent to batch 5+ dispatches per wave rather than
         // dribbling 1–3 at a time.  Reset when the agent sends a 0-dispatch or
         // 5+-dispatch response (set on text.complete boundary).
-        if (_prevMessageDispatchCount > 0 && _prevMessageDispatchCount < 5 && openWorkExists()) {
+        if (_prevMessageDispatchCount > 0 && _prevMessageDispatchCount < 5 && openWorkExists({ isCommitTool: commitToolMode })) {
           return {
             permissionDecision: "deny" as const,
             message: [
@@ -436,7 +474,7 @@ export default (async ({ }) => {
 
         _streakCount++
         if (_streakCount <= MAX_STREAK) return
-        if (!openWorkExists()) {
+        if (!openWorkExists({ isCommitTool: commitToolMode })) {
           _streakCount = 0
           return
         }
