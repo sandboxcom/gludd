@@ -2090,4 +2090,3 @@ disengage-enforcement:
 
 verify-banana:
 	@$(PYTHON) /tmp/verify_banana.py
-

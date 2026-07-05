@@ -39,7 +39,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Key loading
 # ---------------------------------------------------------------------------
@@ -484,10 +483,10 @@ class TestDaemonGameBuilding:
                                 for _ in range(10):
                                     ok = instance.tick()
                                     if isinstance(ok, bool) and not ok:
-                                        print(f"  Game over after tick — as expected from wall collision")
+                                        print("  Game over after tick — as expected from wall collision")
                                         break
                                 else:
-                                    print(f"  10 ticks completed without game over")
+                                    print("  10 ticks completed without game over")
 
                                 state = instance.render_state()
                                 print(f"  render_state() keys: {sorted(state.keys())}")
@@ -497,7 +496,7 @@ class TestDaemonGameBuilding:
                                 if missing:
                                     print(f"  WARNING: render_state missing keys: {missing}")
                                 else:
-                                    print(f"  All required render_state keys present")
+                                    print("  All required render_state keys present")
 
                                 snake_len = state.get("length", len(state.get("snake", [])))
                                 print(f"  Snake length: {snake_len}, score: {state.get('score', 0)}")
@@ -593,7 +592,7 @@ class TestDaemonGameBuilding:
             await session.commit()
             todo_id = todo_row.todo_id
 
-        print(f"\n--- Running tick ---")
+        print("\n--- Running tick ---")
         metrics = await loop.tick()
         print(f"  Tick: phases={metrics['phases_completed']}, dispatched={metrics.get('todos_dispatched', 0)}")
 
@@ -604,7 +603,7 @@ class TestDaemonGameBuilding:
             if t.status != _TS.ACTIVE.value:
                 print(f"  NOTE: Todo not claimed (status={t.status!r}). Checking runner vars instead.")
             else:
-                print(f"  PASS: Todo claimed (QUEUED → ACTIVE)")
+                print("  PASS: Todo claimed (QUEUED → ACTIVE)")
 
         model_response = None
         if runner.vars_written:
@@ -612,7 +611,7 @@ class TestDaemonGameBuilding:
         assert model_response, "No model_response in runner vars"
         print(f"  model_response: {len(model_response)} chars")
 
-        print(f"\n--- Running ExecutionEngine ---")
+        print("\n--- Running ExecutionEngine ---")
         job = JobSpec(job_id="EXEC-SNAKE-FULL", todo_id=todo_id, playbook="validate_task.yml",
                       queue="core", work_type="code", prompt_text=SNAKE_PROMPT,
                       model_profile="deepseek_coder")
