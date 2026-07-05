@@ -203,6 +203,22 @@ function tasksMdHasUnchecked(): boolean {
   } catch { return false }
 }
 
+function countTasksMdUnchecked(): number {
+  try {
+    const tasksPath = path.join(process.cwd(), "TASKS.md")
+    if (!fs.existsSync(tasksPath)) return 0
+    const content = fs.readFileSync(tasksPath, "utf8")
+    const lines = content.split("\n")
+    let count = 0
+    for (const line of lines) {
+      if (/^\s*[-*]\s+\[\s*\]/.test(line) && !/\[\s*x\s*\]/i.test(line)) {
+        count++
+      }
+    }
+    return count
+  } catch { return 0 }
+}
+
 function gateStatusIsRed(): boolean {
   try {
     const gatePath = path.join(process.cwd(), ".gate-status")
@@ -433,10 +449,66 @@ export default (async ({ }) => {
 
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
       try {
-        if (typeof output === "string") {
-          return `[orchestration] make-only commits, floor ${FLOOR}, gate-background for long ops.\n\n${output}`
+        if (typeof output !== "string") return output
+
+        const unchecked = countTasksMdUnchecked()
+        const ratchetCount = ratchetHasEntries()
+        const hasPending = unchecked > 0 || ratchetCount > 0
+        const pendingStr = hasPending
+          ? `YES — ${unchecked} unchecked TASKS.md items, ${ratchetCount} ratchet entries`
+          : "NO"
+
+        const injection = [
+          `⛔ RESPONSE CONTRACT (violating this is a HARD error — enforced at the model level):`,
+          ``,
+          `1. Every response MUST include at least one tool call OR have zero pending work.`,
+          `2. Pending work status: ${pendingStr}.`,
+          `3. If pending work exists (current: ${hasPending ? "YES" : "NO"}), you may NEVER send a text-only response.`,
+          `4. A text-only response with pending work is a contract violation and will be rejected.`,
+          `5. FORBIDDEN text-only patterns: status reports, summaries, tables of completed work,`,
+          `   "all done" claims, Q&A recaps, "ready for review", markdown tables without tool calls.`,
+          `6. SELF-CHECK RULE: Before sending ANY text, verify this response includes a tool call.`,
+          `   If no tool call AND pending work exists (unchecked: ${unchecked}, ratchet: ${ratchetCount}),`,
+          `   REPLACE your entire response with a tool call.`,
+          `7. If you find yourself writing a completion summary with no tool calls: DELETE it.`,
+          `   Replace with a tool call that advances the work.`,
+          ``,
+        ].join("\n")
+
+        let finalOutput = injection + output
+
+        const directivePaths = [
+          "/tmp/gludd-continue-directive.json",
+          process.env.GLUDD_CONTINUE_DIRECTIVE || "",
+        ].filter(Boolean)
+
+        for (const directivePath of directivePaths) {
+          try {
+            if (fs.existsSync(directivePath)) {
+              const stat = fs.statSync(directivePath)
+              const ageMs = Date.now() - stat.mtimeMs
+              if (ageMs < 120_000) {
+                const directive = JSON.parse(fs.readFileSync(directivePath, "utf8"))
+                if (directive.action === "CONTINUE") {
+                  const pendingItems = (directive.pending_items || []).join("; ")
+                  const msg = directive.message || "Dispatch subagents NOW."
+                  const required = directive.required_tool || "task"
+                  finalOutput = [
+                    `URGENT CONTINUE DIRECTIVE (watchdog detected stop):`,
+                    `  pending: ${pendingItems || "(none listed)"}`,
+                    `  ${msg}`,
+                    `  Use ${required} tool to dispatch subagents immediately.`,
+                    `  Do NOT send text-only responses while these issues remain.`,
+                    ``,
+                    finalOutput,
+                  ].join("\n")
+                }
+              }
+            }
+          } catch {}
         }
-        return output
+
+        return finalOutput
       } catch { return output }
     },
 

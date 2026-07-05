@@ -157,7 +157,7 @@ _CHECK_COOLDOWN_SECS = 60
 STOP_STATE = os.environ.get("GLUDD_STOP_STATE", "/tmp/gludd-stop-state.json")
 FALSE_DONE_BLOCKS = os.environ.get("GLUDD_FALSE_DONE_BLOCKS", "/tmp/gludd-false-done-blocks.json")
 FALSE_DONE_MAXOUT = os.environ.get("GLUDD_FALSE_DONE_MAXOUT", "/tmp/gludd-false-done-maxout.json")
-CONTINUE_DIRECTIVE = os.environ.get("GLUDD_CONTINUE_DIRECTIVE", "/tmp/gludd-continue-directive.txt")
+CONTINUE_DIRECTIVE = os.environ.get("GLUDD_CONTINUE_DIRECTIVE", "/tmp/gludd-continue-directive.json")
 STALLED_TASKS_FILE = os.environ.get("GLUDD_STALLED_TASKS_FILE", "/tmp/gludd-stalled-tasks.txt")
 TASK_DEADLINES_FILE = os.environ.get("GLUDD_TASK_DEADLINES_FILE", "/tmp/gludd-task-deadlines.json")
 
@@ -1814,6 +1814,91 @@ def _is_disengage_active() -> bool:
         return False
 
 
+def _build_continue_directive(
+    work_sources: list[str],
+    stop_count: int,
+    tasks_unchecked: bool,
+    ratchet_count: int,
+    gate_red: bool,
+    ci_pending: bool,
+    ci_run_id: str | None = None,
+    work_hint: str = "",
+    extra_message: str = "",
+) -> dict:
+    pending_items: list[str] = []
+    if tasks_unchecked:
+        pending_items.append("TASKS.md has unchecked items")
+    if ratchet_count > 0:
+        pending_items.append(f"{ratchet_count} ratchet entries")
+    if gate_red:
+        pending_items.append(".gate-status is red")
+    if ci_pending:
+        suffix = f" (run {ci_run_id})" if ci_run_id else ""
+        pending_items.append(f"CI pending{suffix}")
+
+    msg_parts = ["Dispatch subagents NOW to clear pending work."]
+    if work_hint.strip():
+        msg_parts.append(work_hint.strip())
+    if extra_message.strip():
+        msg_parts.append(extra_message.strip())
+
+    return {
+        "action": "CONTINUE",
+        "pending_items": pending_items,
+        "required_tool": "task",
+        "message": " ".join(msg_parts),
+        "stop_count": stop_count,
+        "source": ", ".join(work_sources) if work_sources else "unknown",
+        "ts": _now(),
+    }
+
+
+LIVENESS_CHECK_COOLDOWN_SECS = 300
+_last_liveness_check: float = 0.0
+
+
+def _check_plugin_liveness_on_startup() -> None:
+    """Run the plugin liveness check once at startup and log the result."""
+    global _last_liveness_check
+    _log("plugin-liveness: running startup check...")
+    try:
+        result = subprocess.run(
+            ["make", "check-plugin-liveness"],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(_WORKSPACE),
+        )
+        if result.returncode == 0:
+            _log("plugin-liveness: PASSED — enforce-stop.ts structurally intact and firing")
+        else:
+            _log(f"plugin-liveness: FAILED (exit={result.returncode}) — "
+                 f"enforce-stop.ts may be dead or silently disabled")
+            _log(f"  stderr: {result.stderr.strip()[:300]}")
+        _last_liveness_check = time.time()
+    except subprocess.TimeoutExpired:
+        _log("plugin-liveness: TIMEOUT — check took >30s")
+    except Exception as e:
+        _log(f"plugin-liveness: ERROR running check: {e}")
+
+
+def _check_plugin_liveness_periodic() -> None:
+    """Run plugin liveness check every LIVENESS_CHECK_COOLDOWN_SECS."""
+    global _last_liveness_check
+    now = time.time()
+    if now - _last_liveness_check < LIVENESS_CHECK_COOLDOWN_SECS:
+        return
+    try:
+        result = subprocess.run(
+            ["make", "check-plugin-liveness"],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(_WORKSPACE),
+        )
+        if result.returncode != 0:
+            _log(f"plugin-liveness: periodic check FAILED (exit={result.returncode})")
+    except Exception:
+        pass
+    _last_liveness_check = now
+
+
 def check_and_reset() -> dict:
     result = {
         "ts": _now(),
@@ -1853,31 +1938,37 @@ def check_and_reset() -> dict:
         _log(reason)
 
         stop_count = _increment_stop_count()
+        extra_message = ""
         if stop_count >= STOP_ESCALATE_THRESHOLD:
-            directive = (
-                f"[{_now()}] REPEATED STOP DETECTED ({stop_count}x) — WORK OR FACE RESTART\n"
-            )
-        else:
-            work_hint = ""
-            if ci_pending and not has_pending_work:
-                ci_minutes = _ci_pending_for_too_long_minutes()
-                if ci_minutes and ci_minutes > 10:
-                    work_hint = (
-                        f" CI pending >{ci_minutes:.0f}min. "
-                        "Stop pushing new commits — they reset CI. "
-                        "Work on wiring/coding gaps while waiting.\n"
-                    )
-                else:
-                    work_hint = (
-                        " CI pending. Work on wiring/coding gaps while waiting. "
-                        "Do NOT push new commits until CI is green.\n"
-                    )
-            directive = (
-                f"[{_now()}] STOP DETECTED: pending work exists ({', '.join(work_sources)}). "
-                f"{work_hint}"
-                "Text-only responses suppressed. DISPATCH SUBAGENTS NOW.\n"
-            )
-        Path(CONTINUE_DIRECTIVE).write_text(directive)
+            extra_message = f"REPEATED STOP DETECTED ({stop_count}x) — WORK OR FACE RESTART"
+
+        work_hint = ""
+        if ci_pending and not has_pending_work:
+            ci_minutes = _ci_pending_for_too_long_minutes()
+            if ci_minutes and ci_minutes > 10:
+                work_hint = (
+                    f"CI pending >{ci_minutes:.0f}min. "
+                    "Stop pushing new commits — they reset CI. "
+                    "Work on wiring/coding gaps while waiting."
+                )
+            else:
+                work_hint = (
+                    "CI pending. Work on wiring/coding gaps while waiting. "
+                    "Do NOT push new commits until CI is green."
+                )
+
+        directive = _build_continue_directive(
+            work_sources=work_sources,
+            stop_count=stop_count,
+            tasks_unchecked=_tasks_md_has_unchecked(),
+            ratchet_count=_ratchet_has_entries(),
+            gate_red=_gate_status_is_red(),
+            ci_pending=ci_pending,
+            ci_run_id=ci_run_id,
+            work_hint=work_hint,
+            extra_message=extra_message,
+        )
+        Path(CONTINUE_DIRECTIVE).write_text(json.dumps(directive, indent=2))
         _log(f"directive written to {CONTINUE_DIRECTIVE} (stop_count={stop_count})")
 
         # Clear stop-state file if it exists, so plugin doesn't double-block
@@ -2009,8 +2100,16 @@ def check_and_reset() -> dict:
         # If the stop was NOT detected by our new logic, check and write directive
         if not result.get("stop_detected"):
             if check_agent_stalled():
-                directive = f"[{_now()}] CONTINUE: agent stalled on stop enforcement, pending={len(pending)} todos.\n"
-                Path(CONTINUE_DIRECTIVE).write_text(directive)
+                directive = _build_continue_directive(
+                    work_sources=["agent_stalled"],
+                    stop_count=_read_stop_count(),
+                    tasks_unchecked=_tasks_md_has_unchecked(),
+                    ratchet_count=_ratchet_has_entries(),
+                    gate_red=_gate_status_is_red(),
+                    ci_pending=False,
+                    extra_message=f"agent stalled on stop enforcement, pending={len(pending)} todos",
+                )
+                Path(CONTINUE_DIRECTIVE).write_text(json.dumps(directive, indent=2))
 
         if pending:
             _log(f"UNJAMMED: {reason}, pending={len(pending)} todos: {pending[:3]}")
@@ -2128,6 +2227,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cli_classification(argv)
 
     _log(f"watchdog started — poll={POLL_SECS}s, threshold={STREAK_THRESHOLD}")
+    _check_plugin_liveness_on_startup()
     while True:
         if HIBERNATION_MARKER.exists():
             _log("hibernation marker present — sleeping")
@@ -2138,6 +2238,7 @@ def main(argv: list[str] | None = None) -> int:
             check_running_tasks()
             check_push_status()
             _check_gate_background()
+            _check_plugin_liveness_periodic()
         except Exception as exc:
             _log(f"error: {exc}")
         time.sleep(POLL_SECS)
