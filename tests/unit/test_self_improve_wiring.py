@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -708,3 +708,407 @@ class TestEventLoopSelfImproveRecurringFailures:
 
         # Feature-gated off → the detector is never constructed/queried.
         cb_mock.assert_not_called()
+
+
+class TestTrainingDataCollectorWiring:
+    """TrainingDataCollector wired to the event loop self-improve phase."""
+
+    @pytest.mark.asyncio
+    async def test_collect_training_data_from_reviewed_returns(self):
+        """Seed reviewed returns + decisions + todos, then verify
+        (instruction, response, outcome) triples are recorded."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from general_ludd.db.models import (
+            OrnithTrainingPairModel,
+            TaskDecisionModel,
+            TaskReturnModel,
+            TodoModel,
+        )
+        from general_ludd.db.session import (
+            create_async_session_factory,
+            ensure_tables,
+        )
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        try:
+            await ensure_tables(engine)
+            factory = create_async_session_factory(engine)
+
+            loop = EventLoop(
+                session=factory,
+                self_improve_interval=1,
+                daemon_state={},
+            )
+
+            async with factory() as session:
+                todo = TodoModel(
+                    todo_id="TODO-1",
+                    title="Fix crash in daemon startup",
+                    description="The daemon crashes when no config dir exists",
+                    work_type="code",
+                    status="reviewed",
+                )
+                session.add(todo)
+                await session.flush()
+
+                tr = TaskReturnModel(
+                    return_id="RET-1",
+                    todo_id="TODO-1",
+                    job_id="JOB-1",
+                    playbook="noop.yml",
+                    queue="core",
+                    work_type="code",
+                    status="reviewed",
+                    result_summary="Fixed the startup crash by adding a null check",
+                    producer_worker_id="worker-1",
+                )
+                session.add(tr)
+                await session.flush()
+
+                dec = TaskDecisionModel(
+                    return_id="RET-1",
+                    decision="complete",
+                    confidence=0.95,
+                )
+                session.add(dec)
+                await session.commit()
+
+            recorded = await loop._collect_training_data_from_returns()
+            assert recorded == 1
+
+            async with factory() as session:
+                from sqlalchemy import select
+                stmt = select(OrnithTrainingPairModel).where(
+                    OrnithTrainingPairModel.task_description.like("%Fix crash%")
+                )
+                result = await session.execute(stmt)
+                pairs = list(result.scalars().all())
+                assert len(pairs) == 1
+                p = pairs[0]
+                assert "Fix crash" in p.task_description
+                assert p.outcome_status == "succeeded"
+                assert p.scaffold_kind == "patch"
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_collect_training_data_skips_when_no_factory(self):
+        """Returns 0 when no session_factory is wired."""
+        loop = EventLoop(daemon_state={})
+        assert loop._session_factory is None
+        recorded = await loop._collect_training_data_from_returns()
+        assert recorded == 0
+
+    @pytest.mark.asyncio
+    async def test_collect_training_data_rejected_outcome(self):
+        """A return whose decision is NOT 'complete' gets 'rejected_by_review'."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from general_ludd.db.models import (
+            OrnithTrainingPairModel,
+            TaskDecisionModel,
+            TaskReturnModel,
+            TodoModel,
+        )
+        from general_ludd.db.session import (
+            create_async_session_factory,
+            ensure_tables,
+        )
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        try:
+            await ensure_tables(engine)
+            factory = create_async_session_factory(engine)
+
+            loop = EventLoop(session=factory, daemon_state={})
+
+            async with factory() as session:
+                todo = TodoModel(
+                    todo_id="TODO-R",
+                    title="Refactor loop to use tenacity",
+                    work_type="refactor",
+                    status="reviewed",
+                )
+                session.add(todo)
+                await session.flush()
+
+                tr = TaskReturnModel(
+                    return_id="RET-R",
+                    todo_id="TODO-R",
+                    job_id="JOB-R",
+                    playbook="noop.yml",
+                    queue="core",
+                    work_type="refactor",
+                    status="reviewed",
+                    result_summary="patch did not apply cleanly",
+                    producer_worker_id="worker-2",
+                )
+                session.add(tr)
+                await session.flush()
+
+                dec = TaskDecisionModel(
+                    return_id="RET-R",
+                    decision="needs_more_work",
+                    confidence=0.3,
+                )
+                session.add(dec)
+                await session.commit()
+
+            recorded = await loop._collect_training_data_from_returns()
+            assert recorded == 1
+
+            async with factory() as session:
+                from sqlalchemy import select
+                stmt = select(OrnithTrainingPairModel)
+                result = await session.execute(stmt)
+                pairs = list(result.scalars().all())
+                assert len(pairs) == 1
+                assert pairs[0].outcome_status == "rejected_by_review"
+        finally:
+            await engine.dispose()
+
+
+class TestApplySelfImprovements:
+    """Quality report generation and error pattern detection."""
+
+    @pytest.mark.asyncio
+    async def test_apply_self_improvements_generates_quality_report(self):
+        """Verify quality_report is generated and logged.  When all pairs
+        succeeded there are zero rejected examples and no error patterns."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from general_ludd.db.models import OrnithTrainingPairModel
+        from general_ludd.db.session import (
+            create_async_session_factory,
+            ensure_tables,
+        )
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        try:
+            await ensure_tables(engine)
+            factory = create_async_session_factory(engine)
+
+            async with factory() as session:
+                for i in range(3):
+                    pair = OrnithTrainingPairModel(
+                        task_description=f"Task {i}",
+                        scaffold_content=f"patch {i}",
+                        scaffold_kind="patch",
+                        scaffold_hash=f"hash{i}",
+                        agent_id="agent-1",
+                        outcome_status="succeeded",
+                    )
+                    session.add(pair)
+                await session.commit()
+
+            loop = EventLoop(session=factory, daemon_state={})
+            await loop._apply_self_improvements()
+
+            assert "self_improve_error_patterns" not in loop._daemon_state
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_apply_self_improvements_detects_stop_pattern(self):
+        """Rejected examples containing 'stop'/'premature'/'halt'/'abort' are
+        classified as premature_stop."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from general_ludd.db.models import OrnithTrainingPairModel
+        from general_ludd.db.session import (
+            create_async_session_factory,
+            ensure_tables,
+        )
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        try:
+            await ensure_tables(engine)
+            factory = create_async_session_factory(engine)
+
+            async with factory() as session:
+                pair = OrnithTrainingPairModel(
+                    task_description="Agent stopped prematurely before completing all tasks",
+                    scaffold_content="done",
+                    scaffold_kind="patch",
+                    scaffold_hash="hash-stop",
+                    agent_id="agent-1",
+                    outcome_status="rejected_by_review",
+                )
+                session.add(pair)
+                await session.commit()
+
+            loop = EventLoop(session=factory, daemon_state={})
+            await loop._apply_self_improvements()
+
+            patterns = loop._daemon_state.get(
+                "self_improve_error_patterns", {}
+            )
+            assert patterns.get("patterns", {}).get("premature_stop") == 1
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_apply_self_improvements_detects_grind_pattern(self):
+        """Rejected examples containing 'grind'/'token'/'main_thread'/'inline'
+        are classified as grind_failure."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from general_ludd.db.models import OrnithTrainingPairModel
+        from general_ludd.db.session import (
+            create_async_session_factory,
+            ensure_tables,
+        )
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        try:
+            await ensure_tables(engine)
+            factory = create_async_session_factory(engine)
+
+            async with factory() as session:
+                pair = OrnithTrainingPairModel(
+                    task_description="Agent grinding on main_thread inline edits",
+                    scaffold_content="failed",
+                    scaffold_kind="patch",
+                    scaffold_hash="hash-grind",
+                    agent_id="agent-1",
+                    outcome_status="rejected_by_review",
+                )
+                session.add(pair)
+                await session.commit()
+
+            loop = EventLoop(session=factory, daemon_state={})
+            await loop._apply_self_improvements()
+
+            patterns = loop._daemon_state.get(
+                "self_improve_error_patterns", {}
+            )
+            assert patterns.get("patterns", {}).get("grind_failure") == 1
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_apply_self_improvements_detects_generic_failure(self):
+        """Rejected examples without stop/grind keywords get classified as
+        generic_failure."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from general_ludd.db.models import OrnithTrainingPairModel
+        from general_ludd.db.session import (
+            create_async_session_factory,
+            ensure_tables,
+        )
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        try:
+            await ensure_tables(engine)
+            factory = create_async_session_factory(engine)
+
+            async with factory() as session:
+                pair = OrnithTrainingPairModel(
+                    task_description="Write unit tests for the router",
+                    scaffold_content="patch content",
+                    scaffold_kind="patch",
+                    scaffold_hash="hash-generic",
+                    agent_id="agent-1",
+                    outcome_status="reverted",
+                )
+                session.add(pair)
+                await session.commit()
+
+            loop = EventLoop(session=factory, daemon_state={})
+            await loop._apply_self_improvements()
+
+            patterns = loop._daemon_state.get(
+                "self_improve_error_patterns", {}
+            )
+            assert patterns.get("patterns", {}).get("generic_failure") == 1
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_apply_self_improvements_skips_when_no_factory(self):
+        """No-op when no session_factory is wired."""
+        loop = EventLoop(daemon_state={})
+        assert loop._session_factory is None
+        await loop._apply_self_improvements()
+
+
+class TestPhaseSelfImproveIntegration:
+    """_phase_self_improve calls _collect_training_data_from_returns
+    and _apply_self_improvements."""
+
+    @pytest.mark.asyncio
+    async def test_phase_calls_collect_training_data(self):
+        from unittest.mock import AsyncMock
+
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        loop = EventLoop(
+            self_improve_interval=1,
+            daemon_state={},
+        )
+        loop._total_ticks = 1
+
+        with patch.object(
+            SelfImprovementHarness, "run_gap_analysis", return_value=[]
+        ), patch.object(
+            loop, "_collect_training_data_from_returns",
+            new_callable=AsyncMock, return_value=5,
+        ) as mock_collect, patch.object(
+            loop, "_apply_self_improvements",
+            new_callable=AsyncMock,
+        ) as mock_apply:
+            await loop._phase_self_improve()
+            mock_collect.assert_awaited_once()
+            mock_apply.assert_awaited_once()
+            assert loop._tick_metrics["self_improve_training_recorded"] == 5
+
+    @pytest.mark.asyncio
+    async def test_collect_training_data_failure_does_not_block_phase(self):
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        loop = EventLoop(self_improve_interval=1, daemon_state={})
+        loop._total_ticks = 1
+
+        with patch.object(
+            SelfImprovementHarness, "run_gap_analysis", return_value=[]
+        ), patch.object(
+            loop, "_collect_training_data_from_returns",
+            side_effect=Exception("DB down"),
+        ), patch.object(
+            loop, "_apply_self_improvements",
+        ) as mock_apply:
+            await loop._phase_self_improve()
+            assert loop._tick_metrics["self_improve_gaps"] == 0
+            mock_apply.assert_awaited_once()

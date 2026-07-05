@@ -158,30 +158,125 @@ function openWorkExists(): boolean {
   }
 }
 
-// --- In-memory streak counter (replaces Python-shell-out countActiveAgents) ---
-// The old `countActiveAgents()` called execSync("python3 ... agent_liveness.py")
-// which was slow (~5s), fragile (Python not on plugin-runtime PATH), and silently
-// failed, making the floor enforcement dead code. The replacement tracks
-// consecutive non-dispatch calls right here — zero external dependencies.
-// Dispatch (task/agent/workflow) resets the streak to 0.
-// After MAX_STREAK consecutive non-dispatch calls with open work → DENY.
+// =============================================================================
+// Dispatch-lifecycle awareness (2026-07-05 — fix the "refill gap")
+// =============================================================================
+//
+// The old streak-only model had zero awareness of the dispatch/result lifecycle:
+// it treated every non-dispatch call identically, even during legitimate result
+// processing or the critical refill moment after a batch drained.  This led to
+// blocks at exactly the wrong time — when the agent needed to READ results and
+// DISPATCH the next wave.  The block *caused* the floor breach it was trying to
+// prevent.
+//
+// Lifecycle phases tracked:
+//   (1) DISPATCH — agent sends task/agent/workflow calls → _dispatchCount ↑
+//   (2) WAIT     — subagents run; agent may do read-only operations
+//   (3) RESULTS  — model text contains "task result"/"completed" markers
+//   (4) PROCESS  — agent reads files, digests output → result-processing grace
+//   (5) REFILL   — _dispatchCount fell from peak → agent MUST dispatch again
+//
+// New state variables and their roles:
+//   _dispatchCount         — incremented on each dispatch; heuristically
+//                            decremented when result-markers appear in model text.
+//   _dispatchPeak          — the highest _dispatchCount seen in the current
+//                            cycle.  Reset to current count when a new dispatch
+//                            wave starts.
+//   _resultProcessingGrace — number of non-dispatch tool calls the agent gets
+//                            AFTER results arrive, before the streak counter
+//                            restarts.  Prevents blocks during legitimate
+//                            result digestion (reading files, inspecting output).
+//   _needsRefill           — true when _dispatchPeak was ≥ PEAK_DISPATCH but
+//                            _dispatchCount has fallen below REFILL_THRESHOLD.
+//                            When set, the block is DISABLED: the agent NEEDS
+//                            non-dispatch calls (reads, file scans) to prepare
+//                            the next dispatch wave.  Blocking here is the
+//                            "refill gap" bug.
+//
+// Refill safety: when _needsRefill is true, the agent needs the freedom to
+// survey results and dispatch — blocking non-dispatch tools would wedge the
+// session.  A new dispatch resets _needsRefill to false.
+
 const MAX_STREAK = 4
 let _streakCount = 0
+
+let _dispatchCount = 0
+let _dispatchPeak = 0
+let _resultProcessingGrace = 0
+let _needsRefill = false
+
+const RESULT_MARKERS = [
+  "task result",
+  "completed",
+  "agent result",
+  "workflow result",
+  "subagent result",
+  "returning result",
+  "final result",
+]
+const REFILL_THRESHOLD = 3
+const PEAK_DISPATCH = 5
+const RESULT_GRACE_CALLS = 3
+
+function _textHasResultMarker(text: string): boolean {
+  const lower = text.toLowerCase()
+  return RESULT_MARKERS.some(m => lower.includes(m))
+}
+
+function _updateRefillState(): void {
+  _needsRefill = _dispatchPeak >= PEAK_DISPATCH && _dispatchCount < REFILL_THRESHOLD
+}
+
 const floorTurnState: { accumulatedText: string } = { accumulatedText: "" }
 
 export default (async ({ }) => {
+  // ALIVE side effect — proves plugin loaded and its hooks are registered
+  try {
+    const alive: Record<string, any> = {}
+    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
+    alive["enforce-floor"] = { loaded: new Date().toISOString(), ts: Date.now() }
+    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
+  } catch {}
+
   return {
     "tool.execute.before": async (input: { tool?: string }, _output: unknown) => {
       try {
         if (!FLOOR_ENFORCE) return
         const tool = (input?.tool ?? "") as string
+
         if (isDispatchTool(tool)) {
           _streakCount = 0
+          _dispatchCount++
+          if (_dispatchCount > _dispatchPeak) {
+            _dispatchPeak = _dispatchCount
+          }
+          _needsRefill = false
           return
         }
+
         if (isReadTool(tool)) {
           return
         }
+
+        // Result-processing grace window: the agent just received subagent
+        // results and needs a few non-dispatch calls to digest them (read
+        // files, inspect outputs) before the streak counter kicks in.
+        if (_resultProcessingGrace > 0) {
+          _resultProcessingGrace--
+          _streakCount = 0
+          return
+        }
+
+        // Refill awareness: a large dispatch wave drained and the agent needs
+        // freedom to survey results and dispatch the next wave.  Blocking here
+        // IS the "refill gap" bug — it prevents the agent from dispatching.
+        if (_needsRefill) {
+          _streakCount = 0
+          // Don't decrement the grace here — the agent gets one free pass
+          // per call while in refill mode, but must dispatch eventually.
+          return
+        }
+
         _streakCount++
         if (_streakCount <= MAX_STREAK) return
         if (!openWorkExists()) {
@@ -203,12 +298,45 @@ export default (async ({ }) => {
 
     "session.idle": async () => {
       floorTurnState.accumulatedText = ""
+      // Reset dispatch-lifecycle state on idle: a new turn starts fresh.
+      // _dispatchCount and _dispatchPeak carry forward (subagents launched
+      // last turn may still be running), but the grace window and refill
+      // flag decay so a new turn doesn't inherit a stale pass.
+      _resultProcessingGrace = 0
+      _updateRefillState()
     },
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       try {
+        // Increment fire counter — proves text.complete actually fires
+        try {
+          const cPath = "/tmp/gludd-floor-text-complete-count.json"
+          let count = 1
+          if (fs.existsSync(cPath)) {
+            try { const d = JSON.parse(fs.readFileSync(cPath, "utf8")); count = (parseInt(d.count, 10) || 0) + 1 } catch {}
+          }
+          fs.writeFileSync(cPath, JSON.stringify({ count, last_fired: new Date().toISOString(), ts: Date.now() }), "utf8")
+        } catch {}
+
         if (!output || typeof output.text !== "string") return output
         floorTurnState.accumulatedText += output.text
+
+        // Detect result arrival: when the model's output mentions subagent
+        // results (e.g. "Task result: ...", "completed"), a batch of work
+        // has finished.  Heuristically decrement _dispatchCount and grant
+        // a grace window so the agent can digest results without the streak
+        // counter blocking file reads / output inspection.
+        if (_textHasResultMarker(output.text) && _resultProcessingGrace === 0) {
+          // Heuristic: each detection represents roughly 2 agents returning.
+          // Single detection → -2; avoids over-decrementing from multi-line
+          // result text that trips the marker multiple times.
+          _dispatchCount = Math.max(0, _dispatchCount - 2)
+          _resultProcessingGrace = RESULT_GRACE_CALLS
+          _streakCount = 0
+        }
+
+        _updateRefillState()
+
         if (_streakCount > MAX_STREAK) {
           return {
             text: [

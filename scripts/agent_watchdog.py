@@ -35,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import enum
+import hashlib
 import json
 import os
 import re
@@ -202,7 +203,8 @@ def _prune_alerted_anomalies(now_epoch: float | None = None) -> None:
     }
 
 
-GATE_PID_FILE = Path("/tmp/gludd-gate-background.pid")
+GATE_PID_FILE = _WORKSPACE / ".gate-background.pid"
+GATE_MAX_RUNTIME_SECS = 7200  # 2 hours
 
 ANOMALY_COUNT_FILE = "/tmp/gludd-watchdog-anomaly-count.json"
 TASK_ANOMALIES_FILE = "/tmp/gludd-task-anomalies.json"
@@ -810,6 +812,50 @@ def _check_ci_stall() -> None:
         _log("CI CHECK TIMEOUT: ci-verdict took >15s")
     except Exception as e:
         _log(f"CI check error: {e}")
+
+
+def _check_gate_background() -> None:
+    """Kill background gate if it has been running for > GATE_MAX_RUNTIME_SECS."""
+    try:
+        if not GATE_PID_FILE.exists():
+            return
+        pid_str = GATE_PID_FILE.read_text().strip()
+        if not pid_str:
+            return
+        pid = int(pid_str)
+        os.kill(pid, 0)
+    except (ValueError, ProcessLookupError):
+        return
+    except Exception:
+        return
+
+    try:
+        elapsed = time.time() - GATE_PID_FILE.stat().st_mtime
+    except Exception:
+        return
+
+    if elapsed > GATE_MAX_RUNTIME_SECS:
+        _log(
+            f"GATE STALLED: background gate pid={pid_str} running "
+            f"{elapsed:.0f}s (>2h) - auto-killing"
+        )
+        try:
+            os.kill(pid, signal.SIGTERM)
+            time.sleep(5)
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            else:
+                time.sleep(1)
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            GATE_PID_FILE.unlink(missing_ok=True)
+            _log(f"GATE KILLED: pid={pid_str} after {elapsed:.0f}s")
+        except Exception as exc:
+            _log(f"GATE KILL ERROR: pid={pid_str} {exc}")
 
 
 def _check_push_health() -> None:
@@ -1675,6 +1721,73 @@ def _clear_disengage_signal() -> None:
         pass
 
 
+def _check_plugin_hashes() -> None:
+    """Run check_plugin_hashes.py --quiet to detect stale plugin code.
+
+    Called every 100 watchdog cycles (~17 min). If plugin .ts files have been
+    modified since the last manifest write, the script writes the disengage
+    signal — the same effect as `make disengage-enforcement`.
+    """
+    try:
+        manifest = _WORKSPACE / ".opencode" / "plugin-hashes.json"
+        plugin_dir = _WORKSPACE / ".opencode" / "plugin"
+        current = {}
+        if plugin_dir.is_dir():
+            for f in sorted(plugin_dir.glob("*.ts")):
+                try:
+                    current[f.name] = hashlib.sha256(f.read_bytes()).hexdigest()
+                except Exception:
+                    pass
+
+        stored = {}
+        if manifest.is_file():
+            try:
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    stored = {k: v for k, v in data.items() if isinstance(v, str)}
+            except Exception:
+                pass
+
+        if not current:
+            return
+
+        if not stored:
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            return
+
+        if current == stored:
+            return
+
+        changed = [f for f in set(current) & set(stored) if current[f] != stored[f]]
+        new_f = sorted(set(current) - set(stored))
+        removed = sorted(set(stored) - set(current))
+        details = []
+        if new_f:
+            details.append(f"new: {', '.join(new_f)}")
+        if removed:
+            details.append(f"removed: {', '.join(removed)}")
+        if changed:
+            details.append(f"changed: {', '.join(changed)}")
+
+        reason = " | ".join(details) if details else "plugin hashes changed"
+        _write_disengage_signal(minutes=60, reason=f"plugin_version_mismatch: {reason}")
+
+        try:
+            Path(BLOCK_COUNTER_FILE).write_text(json.dumps({
+                "consecutiveBlocks": 0,
+                "totalBlocks": 0,
+                "lastBlockTs": 0,
+                "disengageUntil": 9999999999999,
+            }))
+        except Exception:
+            pass
+
+        _log(f"PLUGIN VERSION CHANGED: {reason} — disengage signal written")
+    except Exception:
+        pass
+
+
 def _is_disengage_active() -> bool:
     try:
         p = Path(DISENGAGE_FILE)
@@ -1871,6 +1984,7 @@ def check_and_reset() -> dict:
     _POLL_CYCLE_COUNT += 1
     if _POLL_CYCLE_COUNT % _POLL_CYCLE_PRUNE_INTERVAL == 0:
         _prune_alerted_anomalies()
+        _check_plugin_hashes()
 
     # ── Apply reset ──────────────────────────────────────────────────────
     if reset_needed:
@@ -2008,6 +2122,7 @@ def main(argv: list[str] | None = None) -> int:
             check_and_reset()
             check_running_tasks()
             check_push_status()
+            _check_gate_background()
         except Exception as exc:
             _log(f"error: {exc}")
         time.sleep(POLL_SECS)

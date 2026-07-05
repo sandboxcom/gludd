@@ -1513,6 +1513,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._runner = runner
         app.state._db_engine = engine
         app.state._session_factory = session_factory
+        app.state._training_data_session_factory = session_factory
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
         task.add_done_callback(_on_event_loop_done)
         app.state._event_loop_task = task  # W3.4: readyz checks this

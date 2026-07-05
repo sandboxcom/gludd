@@ -24,10 +24,11 @@ interface StopStateCache {
   watchdogDisengage: boolean
 }
 
-const turnState: { accumulatedText: string; blocked: boolean; toolCallMade: boolean } = {
+const turnState: { accumulatedText: string; blocked: boolean; toolCallMade: boolean; dispatchCount: number } = {
   accumulatedText: "",
   blocked: false,
   toolCallMade: false,
+  dispatchCount: 0,
 }
 
 interface CiVerdictCache {
@@ -118,6 +119,12 @@ const FUTURE_TENSE = /\b(will|going to|plan to|next|remaining|shall|upcoming|tod
 const COMPLETION_VERBATIM = /\b(all done|everything is complete|ready for review|waiting for (your )?feedback|(this|now) is (truly )?done)\b/i
 const TOOL_CALL_INTENT = /\b(make git-|dispatch|subagent|gludd |pytest |uv run)\b/
 const EVIDENCE_TOKEN = /(?:commit|sha|hash)\s*[:=]?\s*[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]|gate (?:green|PASS|ALL PASSED)|\d+\s+passed\b/i
+
+// ── RESULT PROCESSING & DISPATCH TRACKING (Items 1-4) ──────────────────────
+
+const RESULT_PROCESSING = /\b(task\s+result|completed|passed|failed)\b|\d+\s+passed\b|commit\s+[0-9a-f]{7,}/
+
+const DISPATCH_TOOLS = new Set(["task", "agent", "workflow"])
 
 function responseLooksTerminal(text: string): boolean {
   if (!text || text.length < 60) return false
@@ -275,12 +282,21 @@ function computeHealthScore(): number {
 // ── PLUGIN ─────────────────────────────────────────────────────────────────
 
 export default (async ({ }) => {
+  // ALIVE side effect — proves plugin loaded and its hooks are registered
+  try {
+    const alive: Record<string, any> = {}
+    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
+    alive["enforce-stop"] = { loaded: new Date().toISOString(), ts: Date.now() }
+    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
+  } catch {}
+
   return {
     event: async ({ event }: { event: { type: string } }) => {
       if (event.type === "session.idle") {
         try {
           turnState.accumulatedText = ""
           turnState.toolCallMade = false
+          turnState.dispatchCount = 0
 
           const ratchetCount = ratchetHasEntries()
           const tasksMdUnchecked = tasksMdHasUnchecked()
@@ -325,14 +341,34 @@ export default (async ({ }) => {
 
     "tool.execute.before": async (input: any, output: any) => {
       try {
+        // Increment tool counter — proves tool.execute.before fires
+        try {
+          const cPath = "/tmp/gludd-stop-tool-counts.json"
+          let data: Record<string, any> = { allowed: 0, blocked: 0, last_fired: null as any, ts: 0 }
+          if (fs.existsSync(cPath)) {
+            try { const d = JSON.parse(fs.readFileSync(cPath, "utf8")); data = d } catch {}
+          }
+          const now = new Date().toISOString()
+          let outcome = "allowed"
+          // Track which tool calls happen
+          data.last_fired = { tool: input.tool, ts: Date.now(), iso: now }
+          data.ts = Date.now()
+          // The outcome will be updated below if a tool is blocked
+          data._outcome = outcome
+          fs.writeFileSync(cPath, JSON.stringify(data), "utf8")
+        } catch {}
+
         if (turnState.blocked) {
           turnState.blocked = false
         }
 
         turnState.accumulatedText = ""
 
-        // Item 5: detect tool-call intent
         turnState.toolCallMade = true
+
+        if (DISPATCH_TOOLS.has(input.tool)) {
+          turnState.dispatchCount++
+        }
 
         if (input.tool === "question") {
           throw new Error(QUESTION_DENY_REASON)
@@ -379,8 +415,6 @@ export default (async ({ }) => {
         const text = output.text
         if (!text || text.trim().length === 0) return
         if (text.trim().length < 60) return
-
-        turnState.blocked = false
 
         turnState.accumulatedText += text
 
@@ -431,9 +465,25 @@ export default (async ({ }) => {
         const ciVerdictPendingOrRed = cache?.ciVerdictPendingOrRed ?? false
         const hasLocalWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed
 
+        // Item 3: Fix blocked flag blindness — if blocked but text shows dispatch
+        // evidence, clear the block so the agent can resume work
         if (turnState.blocked) {
-          output.text = ""
-          return
+          const combined = (text + turnState.accumulatedText).toLowerCase()
+          if (/\b(make git-|dispatch|subagent|task)\b/.test(combined)) {
+            turnState.blocked = false
+          } else {
+            output.text = ""
+            return
+          }
+        }
+
+        // Item 1-2: If text contains subagent result patterns AND work is pending,
+        // this is work-in-progress, not a terminal stop
+        if (RESULT_PROCESSING.test(text) && hasLocalWork) return
+
+        // Item 4: If dispatches were made since last idle, response is work-in-progress
+        if (turnState.dispatchCount > 0) {
+          if (!COMPLETION_VERBATIM.test(text)) return
         }
 
         // Item 5: if a tool call was just made, this response follows work — don't block

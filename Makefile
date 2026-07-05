@@ -42,7 +42,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
 		repo-visibility \
 		watchdog-start watchdog-status watchdog-stop watchdog-log \
-		check-readme-status
+		check-readme-status check-plugin-versions check-plugin-versions-quiet \
+		write-plugin-manifest disengage-enforcement
 
 help:
 	@echo "Usage: make [target]"
@@ -1862,8 +1863,28 @@ gate-status:
 
 # Launch gate detached via nohup; returns PID immediately (<1s).
 # Writes output to .gate-logs/gate-<ts>.log, PID to .gate-background.pid.
+# Startup check: if a stale PID file exists (process dead), clean it.
+# If an existing gate is alive for >2h, auto-kill it and warn before launching.
 gate-background:
 	@mkdir -p .gate-logs
+	@STALE_PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
+	GATE_PID_NOW=$$(date +%s); \
+	if [ -n "$$STALE_PID" ]; then \
+		if kill -0 "$$STALE_PID" 2>/dev/null; then \
+			GATE_MTIME=$$(stat -f %m .gate-background.pid 2>/dev/null || stat -c %Y .gate-background.pid 2>/dev/null || echo 0); \
+			ELAPSED=$$(( GATE_PID_NOW - GATE_MTIME )); \
+			if [ "$$ELAPSED" -gt 7200 ]; then \
+				echo "[gate-background] WARNING: existing gate running for $$ELAPSED s (>2h) - auto-killing staled process"; \
+				$(MAKE) gate-kill; \
+			else \
+				echo "[gate-background] gate already running (pid=$$STALE_PID elapsed=$$ELAPSED s) - refusing to launch duplicate"; \
+				exit 0; \
+			fi; \
+		else \
+			echo "[gate-background] removing stale PID file (pid=$$STALE_PID not alive)"; \
+			rm -f .gate-background.pid; \
+		fi; \
+	fi
 	@nohup $(MAKE) gate > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-background.pid
 
 # Probe background gate: running/pass/fail + current phase + last 20 log lines + .gate-status.
@@ -1921,6 +1942,14 @@ gate-kill:
 		echo "(no running background gate found)"; \
 	fi
 
+# Kill any running background gate, remove stale PID, clean old gate logs (>24h).
+gate-cleanup:
+	@$(MAKE) gate-kill
+	@rm -f .gate-background.pid
+	@echo "[gate-cleanup] removing gate logs older than 24h..."
+	@find .gate-logs -name "gate-*.log" -mtime +0 2>/dev/null -delete
+	@echo "[gate-cleanup] done"
+
 # ---------------------------------------------------------------------------
 # Activate the BLOCKING gate-safe agent-floor Stop hook (#79/#78)
 # ---------------------------------------------------------------------------
@@ -1970,3 +1999,20 @@ watchdog-auto:
 
 watchdog-log:
 	@tail -50 /tmp/gludd-watchdog.log 2>/dev/null || echo "No log yet"
+
+# --- Plugin version check — detects stale plugin code after .ts file edits ---
+check-plugin-versions:
+	@$(UV) run python3 scripts/check_plugin_hashes.py
+
+check-plugin-versions-quiet:
+	@$(UV) run python3 scripts/check_plugin_hashes.py --quiet
+
+write-plugin-manifest:
+	@$(UV) run python3 scripts/check_plugin_hashes.py --write-manifest
+
+# --- Emergency enforcement disengage — stops all enforcement blocking immediately ---
+disengage-enforcement:
+	@echo "DISENGAGING enforcement — all plugin blocking suspended for 1 hour"
+	@$(UV) run python3 -c "import json,time; ts=int(time.time()*1000); json.dump({'disengage_until':ts+3600000,'disengage_until_epoch_ms':ts+3600000,'reason':'manual_disengage','ts':time.time()},open('/tmp/gludd-watchdog-disengage.json','w'))"
+	@$(UV) run python3 -c "import json; json.dump({'consecutiveBlocks':0,'totalBlocks':0,'lastBlockTs':0,'disengageUntil':9999999999999},open('/tmp/gludd-block-counter.json','w'))"
+	@echo "Disengage files written — enforcement hooks will pass through for 1 hour"

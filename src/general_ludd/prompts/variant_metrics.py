@@ -34,7 +34,7 @@ class VariantMetrics:
     ) -> None:
         self._storage_path = storage_path
         self._min_samples = min_samples_per_variant
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._data: dict[str, dict[str, Any]] = self._load()
 
     # ------------------------------------------------------------------

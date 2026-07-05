@@ -3143,24 +3143,26 @@ class EventLoop:
             # event loop. The harness is freshly constructed per tick and the
             # gateway is threading.Lock-guarded, so the worker thread is safe.
             findings = await asyncio.to_thread(harness.run_gap_analysis, recurring)
-            if not findings:
+            if findings:
+                todos = harness.generate_fix_todos(findings)
+                enqueued = await self._persist_self_improve_todos(
+                    todos, project_id=self._tick_project_id
+                )
+                if self._daemon_state is not None:
+                    self._daemon_state["self_improve_last_analysis"] = {
+                        "findings": findings, "findings_count": len(findings),
+                        "todos_enqueued": enqueued,
+                    }
+                self._tick_metrics["self_improve_gaps"] = len(findings)
+                self._tick_metrics["self_improve_todos_persisted"] = enqueued
+                logger.info("Self-improve cycle: %d gaps found, %d todos persisted", len(findings), enqueued)
+            else:
                 self._tick_metrics["self_improve_gaps"] = 0
-                return
-            todos = harness.generate_fix_todos(findings)
-            # H2 (W3.7): persist through TodoRepository so the generated work
-            # survives the tick (the in-memory harness.enqueue_todos discarded
-            # them). Fall back to nothing if no repo/session is available.
-            enqueued = await self._persist_self_improve_todos(
-                todos, project_id=self._tick_project_id
-            )
-            if self._daemon_state is not None:
-                self._daemon_state["self_improve_last_analysis"] = {
-                    "findings": findings, "findings_count": len(findings),
-                    "todos_enqueued": enqueued,
-                }
-            self._tick_metrics["self_improve_gaps"] = len(findings)
-            self._tick_metrics["self_improve_todos_persisted"] = enqueued
-            logger.info("Self-improve cycle: %d gaps found, %d todos persisted", len(findings), enqueued)
+            # Training data collection and analysis run independently of
+            # gap findings — they operate on already-reviewed task returns.
+            training_recorded = await self._collect_training_data_from_returns()
+            self._tick_metrics["self_improve_training_recorded"] = training_recorded
+            await self._apply_self_improvements()
         except Exception as exc:
             # AB-7: capture the traceback (exc_info) — a bare "%s" hid the real
             # failure site of the self-improve phase, making regressions here
@@ -3220,6 +3222,183 @@ class EventLoop:
                 exc_info=True,
             )
             return []
+
+    async def _collect_training_data_from_returns(self) -> int:
+        """Collect (instruction, response, outcome) triples from reviewed task returns.
+
+        Queries ``TaskReturnModel`` rows with ``status='reviewed'``, joins to
+        ``TaskDecisionModel`` for the review verdict and ``TodoModel`` for the
+        instruction text, then records each triple via ``TrainingDataCollector``
+        for later self-improvement analysis.
+        """
+        factory = self._session_factory
+        if factory is None:
+            return 0
+        try:
+            from general_ludd.db.models import (
+                TaskDecisionModel,
+                TaskReturnModel,
+                TodoModel,
+            )
+            from general_ludd.ornith.training_data import TrainingDataCollector
+            from sqlalchemy import select
+
+            async with factory() as session:
+                collector = TrainingDataCollector(session)
+
+                stmt = (
+                    select(TaskReturnModel)
+                    .where(TaskReturnModel.status == "reviewed")
+                    .order_by(TaskReturnModel.updated_at.desc().nulls_last())
+                    .limit(50)
+                )
+                result = await session.execute(stmt)
+                returns = list(result.scalars().all())
+
+                recorded = 0
+                for tr in returns:
+                    dec_stmt = select(TaskDecisionModel).where(
+                        TaskDecisionModel.return_id == tr.return_id
+                    )
+                    dec_result = await session.execute(dec_stmt)
+                    decision_row = dec_result.scalar_one_or_none()
+
+                    instruction = ""
+                    if tr.todo_id:
+                        todo_stmt = select(TodoModel).where(
+                            TodoModel.todo_id == tr.todo_id
+                        )
+                        todo_result = await session.execute(todo_stmt)
+                        todo_row = todo_result.scalar_one_or_none()
+                        if todo_row:
+                            instruction = todo_row.title or ""
+                            if todo_row.description:
+                                instruction = f"{instruction}: {todo_row.description}"
+
+                    decision = (
+                        decision_row.decision if decision_row else "unknown"
+                    )
+                    outcome_status = (
+                        "succeeded"
+                        if decision == "complete"
+                        else "rejected_by_review"
+                    )
+
+                    try:
+                        pair = await collector.capture(
+                            instruction=instruction or tr.work_type,
+                            response=tr.result_summary or "",
+                            scaffold_kind="patch",
+                            agent_id=tr.producer_worker_id or "",
+                            project_id=tr.project_id,
+                        )
+                        await collector.resolve_outcome(
+                            pair.id, outcome_status
+                        )
+                        recorded += 1
+                    except Exception as pair_exc:
+                        logger.debug(
+                            "Failed to record training pair for return %s: %s",
+                            tr.return_id,
+                            pair_exc,
+                        )
+
+                await session.commit()
+                if recorded:
+                    logger.info(
+                        "Self-improve: recorded %d training (instruction, response, outcome) triples",
+                        recorded,
+                    )
+                return recorded
+        except Exception as exc:
+            logger.warning(
+                "Training data collection from returns failed: %s",
+                exc,
+                exc_info=True,
+            )
+            return 0
+
+    async def _apply_self_improvements(self) -> None:
+        """Analyse collected training data for error patterns.
+
+        Generates a quality report from the ``TrainingDataCollector`` and
+        scans rejected examples for recurring failure modes (premature stops,
+        grind failures, generic errors).  Patterns are logged and published
+        to ``daemon_state`` for operator review.
+        """
+        factory = self._session_factory
+        if factory is None:
+            return
+        try:
+            from general_ludd.ornith.training_data import TrainingDataCollector
+
+            async with factory() as session:
+                collector = TrainingDataCollector(session)
+                report = await collector.quality_report()
+
+                logger.info(
+                    "Self-improve quality report: total=%d resolved=%d "
+                    "positive=%d negative=%d",
+                    report["total_pairs"],
+                    report["resolved"],
+                    report["positive_examples"],
+                    report["negative_examples"],
+                )
+
+                rejected = await collector.list_by_statuses(
+                    statuses=[
+                        "rejected_by_review",
+                        "rejected_by_gate",
+                        "reverted",
+                    ],
+                    limit=100,
+                    lookback_days=7,
+                )
+
+                error_patterns: dict[str, int] = {}
+                stop_keywords = {"stop", "premature", "halt", "abort"}
+                grind_keywords = {"grind", "token", "main_thread", "inline"}
+                for ex in rejected:
+                    instr = ex.instruction.lower()
+                    if any(kw in instr for kw in stop_keywords):
+                        error_patterns["premature_stop"] = (
+                            error_patterns.get("premature_stop", 0) + 1
+                        )
+                    if any(kw in instr for kw in grind_keywords):
+                        error_patterns["grind_failure"] = (
+                            error_patterns.get("grind_failure", 0) + 1
+                        )
+                    if not any(
+                        kw in instr
+                        for kw in stop_keywords | grind_keywords
+                    ):
+                        error_patterns["generic_failure"] = (
+                            error_patterns.get("generic_failure", 0) + 1
+                        )
+
+                if error_patterns:
+                    logger.warning(
+                        "Self-improve: detected error patterns across %d "
+                        "rejected examples: %s",
+                        len(rejected),
+                        error_patterns,
+                    )
+                    if self._daemon_state is not None:
+                        self._daemon_state["self_improve_error_patterns"] = {
+                            "patterns": error_patterns,
+                            "rejected_count": len(rejected),
+                            "report": report,
+                        }
+                else:
+                    logger.info(
+                        "Self-improve: no error patterns detected in %d "
+                        "rejected examples",
+                        len(rejected),
+                    )
+        except Exception as exc:
+            logger.warning(
+                "Self-improve analysis failed: %s", exc, exc_info=True,
+            )
 
     # Maximum entries kept in the per-instance idempotency ledgers.
     # Beyond this cap, the oldest entry is evicted (FIFO) so the ledgers never
