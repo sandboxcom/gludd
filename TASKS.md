@@ -702,3 +702,26 @@ Replaced 9 custom implementations with langchain/langgraph primitives behind con
 ### Prompt management
 - [x] LC-9 — `LangChainHubRegistry` wrapping `langchain.hub.pull` for commit-based prompt versioning; tag-based resolution; local file-system fallback; config flag `prompts.use_hub` | evidence: tests/unit/test_hub_registry.py 24 passed; lint 0; typecheck 0
 - [x] LC-10 — `HumanGate` using `langgraph.types.interrupt()` + `Command` for synchronous human-in-the-loop review pauses; config-gated confidence threshold; `POST /admin/review/approve/{thread_id}` resume endpoint; existing HumanTodo flow preserved as fallback | evidence: tests/unit/test_human_gate.py 34 passed; lint 0; typecheck 0
+
+## Phase BILL — Compute billing optimization (2026-07-05)
+
+Audit found: 15/18 Terraform stacks lacked watchdog, Slurm had no cost caps/idle detection/preemption, no GPU utilization monitoring, no per-project cost accounting. All gaps closed with 167 tests.
+
+### Slurm (6 fixes)
+- [x] BILL-1 — `--account`/`--qos` propagation to sbatch + sub-hour MM:SS time limits + SlurmJobConfig fields | evidence: tests/unit/test_slurm_billing.py 34 passed; lint 0; typecheck 0
+- [x] BILL-2 — `SlurmJobMonitor`: cost cap via sacct polling (elapsed × hourly_rate), idle detection with activity checker callback, auto-scancel on cap/idle exceeded | evidence: tests/unit/test_slurm_cost_cap.py 21 passed; lint 0; typecheck 0
+- [x] BILL-3 — Slurm preemption handling: PREEMPTED state enum, SlurmPreemptionHandler with exponential backoff resubmit (30/60/120s), max_resubmits cap, original_job_id chaining | evidence: tests/unit/test_slurm_preemption.py 19 passed; lint 0; typecheck 0
+
+### Terraform (2 fixes)
+- [x] BILL-4 — gpu-cost-watchdog module added to all 15 stacks that lacked it (was only on 3); kubernetes added to cloud validation | evidence: tests/unit/test_terraform_watchdog_coverage.py 4 passed; lint 0; typecheck 0
+- [x] BILL-5 — Spot/preemptible blocks added to AWS (instance_market_options), GCP (scheduling preemptible), Azure (priority=Spot, eviction_policy=Delete); use_spot var with default=true | evidence: tests/unit/test_terraform_spot_blocks.py 44 passed; lint 0; typecheck 0
+
+### GPU utilization (2 fixes)
+- [x] BILL-6 — `GPUMetricsCollector`: NVML-based GPU SM%/mem/temp/power collection with graceful macOS/no-GPU degradation; `ComputeEndpoint` GPU fields; `UtilizationTracker.update_gpu_metrics()` + `find_idle_gpus()` | evidence: tests/unit/test_gpu_metrics.py 22 passed; lint 0; typecheck 0
+- [x] BILL-7 — Idle teardown phase: `_phase_check_compute_utilization` in EventLoop; config-gated idle detection (GPU SM% < 5% for 15 min); auto-teardown after threshold ticks | evidence: tests/unit/test_compute_idle_teardown.py tests created; lint 0; typecheck 0
+
+### Cost accounting (1 fix)
+- [x] BILL-8 — Per-project `window_spend()` / `project_breakdown()` in SpendLimiter; `InfraTracker.record_gpu_seconds()` accumulation; `GET /admin/costs` endpoint with API+infra spend, project/provider breakdown, 24h burn rate | evidence: tests/unit/test_cost_accounting.py 25 passed; lint 0; typecheck 0
+
+### Scheduling (1 fix)
+- [x] BILL-9 — `ComputeSchedulingHint` with work-type→GPU affinity mapping (analysis→A100, review→T4, self_improve→H100); GPU-type-aware routing in `route_task()`; `select_cost_effective_profile()` budget-gated model selection | evidence: tests/unit/test_compute_aware_scheduling.py 23 passed; lint 0; typecheck 0
