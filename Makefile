@@ -1763,7 +1763,7 @@ pip-audit-gate:
 	@echo "=== pip-audit-gate: no un-adjudicated advisories ==="
 
 pip-upgrade:
-	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run python -m pip install --upgrade 'pip>=26.1.2'
+	@$(UV) pip install --reinstall 'pip>=26.1.2'
 	@$(UV) run python -m pip --version
 
 security: sast sbom pip-audit

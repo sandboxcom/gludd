@@ -1,0 +1,38 @@
+{
+  "tpl": {
+    "A": {
+      "latency_sum": 3650.0,
+      "successes": 32,
+      "total": 32
+    },
+    "B": {
+      "latency_sum": 3500.0,
+      "successes": 17,
+      "total": 32
+    }
+  },
+  "tpl_a": {
+    "A": {
+      "latency_sum": 300.0,
+      "successes": 3,
+      "total": 3
+    },
+    "B": {
+      "latency_sum": 300.0,
+      "successes": 0,
+      "total": 3
+    }
+  },
+  "tpl_b": {
+    "A": {
+      "latency_sum": 300.0,
+      "successes": 0,
+      "total": 3
+    },
+    "B": {
+      "latency_sum": 300.0,
+      "successes": 3,
+      "total": 3
+    }
+  }
+}

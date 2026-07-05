@@ -1236,6 +1236,72 @@ sections:
         notes: "`infra/terraform/` stacks: aws, azure, gcp, runpod, vast, kubernetes; IAM onboarding modules; OPA policies; `[audit]`"
 
   # ---------------------------------------------------------------------------
+  - title: "Compute / Infrastructure Billing"
+    features:
+      - id: bill-1-slurm-billing
+        title: "BILL-1: Slurm billing — account/qos propagation + sub-hour time limits"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_slurm_billing.py"
+        notes: "`--account`/`--qos` propagation to sbatch + sub-hour MM:SS time limits + SlurmJobConfig fields; 34 passed"
+
+      - id: bill-2-slurm-cost-cap
+        title: "BILL-2: SlurmJobMonitor cost caps + idle detection"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_slurm_cost_cap.py"
+        notes: "Cost cap via sacct polling (elapsed x hourly_rate), idle detection with activity checker callback, auto-scancel on cap/idle exceeded; 21 passed"
+
+      - id: bill-3-slurm-preemption
+        title: "BILL-3: Slurm preemption handling"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_slurm_preemption.py"
+        notes: "PREEMPTED state enum, SlurmPreemptionHandler with exponential backoff resubmit (30/60/120s), max_resubmits cap, original_job_id chaining; 19 passed"
+
+      - id: bill-4-terraform-watchdog
+        title: "BILL-4: gpu-cost-watchdog on all Terraform stacks"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_terraform_watchdog_coverage.py"
+        notes: "gpu-cost-watchdog module added to all 15 stacks that lacked it (was only on 3); kubernetes added to cloud validation; 4 passed"
+
+      - id: bill-5-spot-preemptible
+        title: "BILL-5: Spot/preemptible blocks on AWS/GCP/Azure"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_terraform_spot_blocks.py"
+        notes: "AWS instance_market_options, GCP scheduling preemptible, Azure priority=Spot eviction_policy=Delete; use_spot var default=true; 44 passed"
+
+      - id: bill-6-gpu-metrics
+        title: "BILL-6: GPUMetricsCollector NVML-based monitoring"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_gpu_metrics.py"
+        notes: "GPUMetricsCollector: NVML-based GPU SM%/mem/temp/power collection with graceful macOS/no-GPU degradation; ComputeEndpoint GPU fields; 22 passed"
+
+      - id: bill-7-compute-idle
+        title: "BILL-7: Compute idle teardown in EventLoop"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_compute_idle_teardown.py"
+        notes: "Idle teardown phase: `_phase_check_compute_utilization` in EventLoop; config-gated idle detection (GPU SM% < 5% for 15 min); auto-teardown after threshold ticks"
+
+      - id: bill-8-cost-accounting
+        title: "BILL-8: Per-project cost accounting + infra cost tracking"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_cost_accounting.py"
+        notes: "Per-project `window_spend()`/`project_breakdown()` in SpendLimiter; InfraTracker.record_gpu_seconds(); GET /admin/costs endpoint with API+infra spend, project/provider breakdown, 24h burn rate; 25 passed"
+
+      - id: bill-9-compute-scheduling
+        title: "BILL-9: Compute-aware scheduling with GPU affinity"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_compute_aware_scheduling.py"
+        notes: "`ComputeSchedulingHint` with work-type to GPU affinity mapping (analysis->A100, review->T4, self_improve->H100); GPU-type-aware routing in `route_task()`; 23 passed"
+
+  # ---------------------------------------------------------------------------
   - title: "Dev-Harness Guardrails"
     features:
       - id: w1-1-ratchet-max

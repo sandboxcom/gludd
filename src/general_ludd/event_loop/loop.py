@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.compaction.aggressive import level_at as _level_at
+from general_ludd.controllers.floor import FloorController
 from general_ludd.controllers.load_scrape import LoadSnapshot
 from general_ludd.controllers.pid import LoadController
 from general_ludd.db.models import TaskDecisionModel
@@ -262,6 +263,7 @@ class EventLoop:
         checkpointer: TickCheckpointer | None = None,
         utilization_tracker: Any | None = None,
         deployment_manager: Any | None = None,
+        floor_controller: FloorController | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -281,6 +283,7 @@ class EventLoop:
         self._dispatcher = dispatcher
         self._spend_limiter = spend_limiter  # may be overwritten post-construction by the daemon
         self._pause_controller = pause_controller
+        self._floor_controller = floor_controller
         self._stuck_timeout_minutes = 15
         self._max_retries = 3
         if isinstance(session, async_sessionmaker):
@@ -1145,6 +1148,22 @@ class EventLoop:
             claimed = await self._todo_repo.claim_runnable(project_id=project_id)
         else:
             claimed = await self._todo_repo.claim_runnable()
+        # Floor cap: throttle active claims by floor controller max_active.
+        if self._floor_controller is not None and claimed:
+            max_active = self._floor_controller.get_max_active()
+            if len(claimed) > max_active:
+                excess = list(claimed[max_active:])
+                logger.info(
+                    "Floor cap: claimed %d but max_active=%d; releasing %d "
+                    "excess todos back to QUEUED",
+                    len(claimed), max_active, len(excess),
+                )
+                claimed = list(claimed[:max_active])
+                for _todo in excess:
+                    with contextlib.suppress(Exception):
+                        await self._todo_repo.transition(
+                            _todo.todo_id, TodoStatus.QUEUED, _todo.version
+                        )
         self._tick_state["claimed_todos"] = claimed
         # H15 (W2.5): record a bucket lease per claimed todo so a crashed tick's
         # work can be reclaimed once the lease expires.
@@ -1613,6 +1632,7 @@ class EventLoop:
         execute path (those todos arm a code hot-rotation + reload, not a
         playbook run).
         """
+        _dispatch_start = time.monotonic()
         # SpendLimiter pre-call gate: atomically check + record the projected
         # cost via try_charge().  The previous would_exceed()-only check was
         # non-mutating — it never recorded spend, so the rolling window stayed
@@ -2301,6 +2321,18 @@ class EventLoop:
                         "success": True,
                         "playbook": playbook,
                     })
+            if (
+                self._prompt_variant_selector is not None
+                and self._prompt_variant_selector.variant_metrics is not None
+                and ab_variant is not None
+            ):
+                with contextlib.suppress(Exception):
+                    _latency_ms = (time.monotonic() - _dispatch_start) * 1000.0
+                    _success = _model_call_success if model_response is not None else True
+                    self._prompt_variant_selector.record_outcome(
+                        success=_success,
+                        latency_ms=_latency_ms,
+                    )
             return
         if self._http_client is None:
             return

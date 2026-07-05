@@ -249,8 +249,8 @@ the config source is deferred).
 
 `make pip-audit` reports two advisories; both adjudicated, neither blocks ship:
 
-- [x] W5.3-CVE diskcache CVE-2025-69872 — adjudicated; does not block ship; `[526104b]`
-- [x] W5.3-CVE pip PYSEC-2026-196 — adjudicated; does not block ship; `[526104b]`
+- [x] W5.3-CVE diskcache CVE-2025-69872 — adjudicated; no fix available yet (5.6.3 is latest on PyPI, CVE affects all versions through 5.6.3); mitigated by owner-only (0o700) cache dir in models/response_cache.py; `[526104b]`
+- [x] W5.3-CVE pip PYSEC-2026-196 — fixed in pip 26.1.2; `make pip-upgrade` upgrades dev pip; `[526104b]`
 
 ## Phase W7 — Ansible FACTS + MESSAGE-QUEUE backbone (2026-06-13)
 

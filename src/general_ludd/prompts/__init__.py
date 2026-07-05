@@ -2,6 +2,12 @@
 
 from general_ludd.prompts.hub_registry import LangChainHubRegistry
 from general_ludd.prompts.registry import PromptRegistry
+from general_ludd.prompts.variant_metrics import VariantMetrics
 from general_ludd.prompts.variant_selector import PromptVariantSelector
 
-__all__ = ["LangChainHubRegistry", "PromptRegistry", "PromptVariantSelector"]
+__all__ = [
+    "LangChainHubRegistry",
+    "PromptRegistry",
+    "PromptVariantSelector",
+    "VariantMetrics",
+]

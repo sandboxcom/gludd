@@ -1101,6 +1101,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from general_ludd.controllers.pause_controller import PauseController
         app.state._pause_controller = PauseController()
 
+        from general_ludd.controllers.floor import FloorController
+        floor_controller = FloorController()
+        app.state._floor_controller = floor_controller
+
         from general_ludd.controllers.compaction_aggressiveness import (
             CompactionAggressivenessController,
         )
@@ -1501,6 +1505,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             checkpointer=app.state.checkpointer,
             utilization_tracker=app.state._utilization_tracker,
             deployment_manager=getattr(app.state, "_deployment_manager", None),
+            floor_controller=floor_controller,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
