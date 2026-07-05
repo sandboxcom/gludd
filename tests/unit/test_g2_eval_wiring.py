@@ -9,7 +9,6 @@ from general_ludd.eval.model import ModelEvaluator
 from general_ludd.eval.schema import EvalCase, EvalResult
 from general_ludd.models.gateway import ModelGateway, ModelResponse
 
-
 PATCH_TEXT = (
     "--- a/main.py\n+++ b/main.py\n@@ -1,2 +1,2 @@\n"
     " def foo(x):\n-    return x.bar()\n+    return x.bar() if x else None\n"

@@ -1474,6 +1474,20 @@ fix-benchmark-mock:
 	@python3 -c "c=open('tests/unit/test_daemon_coverage_lift.py').read(); c=c.replace('class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_sf = MagicMock()','class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_session.commit = AsyncMock()\n        mock_sf = MagicMock()'); open('tests/unit/test_daemon_coverage_lift.py','w').write(c)"
 	@echo "Fixed benchmark mock"
 
+# ── LangGraph benchmark ──────────────────────────────────────────────
+# Compare LangGraph-backed implementations against hand-rolled counterparts.
+# All comparisons use mocked model calls (no real API) to measure pure framework
+# overhead.  Outputs results as JSON to stdout.
+#
+#   make bench-langgraph                  — default (warmup=5, iterations=50)
+#   make bench-langgraph WARMUP=2 ITERS=10 — custom run size
+
+WARMUP ?= 5
+ITERS  ?= 50
+
+bench-langgraph:
+	@$(UV) run python -c "from general_ludd.benchmark.langgraph_bench import BenchmarkRunner; r = BenchmarkRunner(warmup=$(WARMUP), iterations=$(ITERS)); r.run_all(); r.report()"
+
 fix-ratchet-mocks:
 	@python3 -c " \
 c=open('tests/unit/test_daemon_coverage_lift.py').read(); \
