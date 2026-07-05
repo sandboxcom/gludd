@@ -256,6 +256,57 @@ class EmbeddingSearchResponse(BaseModel):
     results: list[SearchResultItem] = Field(default_factory=list)
 
 
+class MultiCorpusSearchRequest(BaseModel):
+    """Request body for POST /api/embeddings/search-multi.
+
+    Accepts a list of corpora to search and merges the ranked results across
+    all of them into a single sorted result set. Each result item carries a
+    ``corpus`` key in its metadata so the caller knows where it came from.
+    """
+
+    text: str = Field(
+        ...,
+        max_length=20000,
+        description="The query string to search across corpora (max 20000 chars).",
+    )
+    corpora: list[str] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Which real corpora to search across: 'skills', 'task_types', "
+            "'prompts', 'traces', and/or 'events'."
+        ),
+    )
+    top_k: int = Field(
+        5, ge=1, le=20, description="Number of merged corpus items to return."
+    )
+    include_embeddings: bool = Field(
+        False,
+        description="When true, the query embedding vector is returned.",
+    )
+
+    _VALID_CORPORA: frozenset[str] = frozenset(
+        {"skills", "task_types", "prompts", "traces", "events"}
+    )
+
+    @model_validator(mode="after")
+    def _check_corpora(self) -> MultiCorpusSearchRequest:
+        for c in self.corpora:
+            if c not in self._VALID_CORPORA:
+                raise ValueError(f"unknown corpus: {c}")
+        return self
+
+
+class MultiCorpusSearchResponse(BaseModel):
+    """Response body for POST /api/embeddings/search-multi."""
+
+    corpora_searched: list[str]
+    query_embedding_dim: int = 0
+    embedding_method: str = "hash"
+    query_embedding: list[float] | None = None
+    results: list[SearchResultItem] = Field(default_factory=list)
+
+
 def _get_session_factory(app: FastAPI) -> Any:
     return getattr(app.state, "_session_factory", None)
 
@@ -939,6 +990,82 @@ async def _search(
         return EmbeddingSearchResponse(corpus="skills")
 
 
+async def _search_multi(
+    app: FastAPI, req: MultiCorpusSearchRequest
+) -> MultiCorpusSearchResponse:
+    """corpus=multi: fan out, tag by corpus, merge, re-rank.
+
+    Creates a per-corpus ``EmbeddingSearchRequest``, calls each individual
+    search, tags every result with a ``corpus`` metadata key, then pools
+    all results together, sorts by similarity descending, caps by ``top_k``,
+    and reassigns ranks. A failed/empty individual corpus is silently skipped
+    — the caller gets whatever results the surviving corpora produced, never
+    a 500.
+    """
+    registry = getattr(app.state, "_skill_registry", None)
+
+    pooled: list[SearchResultItem] = []
+    corpora_searched: list[str] = []
+    query_dim = 0
+    method = "hash"
+
+    for corpus in req.corpora:
+        sub = EmbeddingSearchRequest(
+            text=req.text,
+            corpus=corpus,
+            top_k=20,  # fetch generously; cap after merge
+            include_embeddings=False,
+        )
+        try:
+            if corpus == "task_types":
+                resp = await _search_task_types(app, sub)
+            elif corpus == "prompts":
+                resp = await _search_prompts(app, sub)
+            elif corpus == "traces":
+                resp = _search_traces(app, sub)
+            elif corpus == "events":
+                resp = await _search_events(app, sub)
+            else:  # skills
+                resp = _search_skills(sub, registry)
+        except Exception as exc:  # degrade — skip the broken corpus
+            logger.debug("multi-corpus %s search failed: %s", corpus, exc)
+            continue
+
+        if resp.query_embedding_dim > 0:
+            query_dim = resp.query_embedding_dim
+        if resp.embedding_method and resp.embedding_method != "hash":
+            method = resp.embedding_method
+        corpora_searched.append(corpus)
+
+        for item in resp.results:
+            item.metadata = dict(item.metadata)
+            item.metadata["corpus"] = corpus
+            pooled.append(item)
+
+    pooled.sort(key=lambda r: r.similarity_score, reverse=True)
+    pooled = pooled[: req.top_k]
+    for i, item in enumerate(pooled):
+        item.rank = i + 1
+
+    query_vec: list[float] | None = None
+    if req.include_embeddings:
+        try:
+            embedder = _select_default_embedder()
+            query_vec = embedder.embed(req.text)
+            if query_dim == 0:
+                query_dim = len(query_vec)
+        except Exception as exc:
+            logger.debug("multi-corpus query embed failed: %s", exc)
+
+    return MultiCorpusSearchResponse(
+        corpora_searched=sorted(corpora_searched),
+        query_embedding_dim=query_dim,
+        embedding_method=method,
+        query_embedding=query_vec,
+        results=pooled,
+    )
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/api/embeddings/similar", response_model=EmbeddingSimilarResponse)
     async def api_embeddings_similar(
@@ -1014,3 +1141,33 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         ``include_embeddings`` is set — the query vector itself. Never 500s.
         """
         return await _search(app, req)
+
+    @app.post(
+        "/api/embeddings/search-multi",
+        response_model=MultiCorpusSearchResponse,
+        summary=(
+            "Search multiple corpora (skills/task_types/prompts/traces/events) "
+            "by embedding similarity and merge results"
+        ),
+        description=(
+            "Take a string a bot produced and search multiple real corpora with "
+            "it (multi-RAG search): fans out to each requested corpus, tags "
+            "every result with its source corpus, merges the results into a "
+            "single ranked list, and returns the top_k items. Reuses the same "
+            "default embedder as /search and /compare; `embedding_method` is "
+            "\"openai\" or \"hash\". Defensive: a failed/empty corpus is skipped; "
+            "bad input -> 422. Never 500s."
+        ),
+    )
+    async def api_embeddings_search_multi(
+        req: MultiCorpusSearchRequest,
+    ) -> MultiCorpusSearchResponse:
+        """Search multiple corpora and merge the results.
+
+        Read-only. ``corpora`` is a list of one or more of ``skills``,
+        ``task_types``, ``prompts``, ``traces``, ``events``. Returns the
+        merged ranked matches (highest cosine similarity first), the query
+        embedding dimensionality, the resolved embedding method, and — when
+        ``include_embeddings`` is set — the query vector itself. Never 500s.
+        """
+        return await _search_multi(app, req)

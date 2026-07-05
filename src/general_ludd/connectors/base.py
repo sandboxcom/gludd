@@ -28,7 +28,8 @@ import logging
 import math
 import operator
 import sys
-from typing import Any, Protocol, TypedDict, runtime_checkable
+import threading
+from typing import Any, Literal, Protocol, TypedDict, runtime_checkable
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -403,3 +404,146 @@ def is_safe_endpoint(url: str) -> bool:
       ``instance-data``, ``localhost.localdomain``).
     """
     return not is_url_blocked(url, scheme_allowlist=_ALLOWED_SCHEMES)
+
+
+# --------------------------------------------------------------------------- #
+# Connector healthcheck contract
+# --------------------------------------------------------------------------- #
+HealthStatus = Literal["healthy", "degraded", "unhealthy"]
+
+_DEFAULT_HEALTH_TIMEOUT = 30.0
+
+
+class HealthResult(TypedDict):
+    status: str
+    detail: str
+    source: str
+
+
+def _is_configured(source: Source) -> bool:
+    """Heuristic: does the source appear to have working credentials?
+
+    Inspects ``*_env`` attributes on the instance:
+    - At least one ``*_env`` attr that names an env var present in
+      ``os.environ`` → configured.
+    - ``*_env`` attrs exist but none resolve to a set env var → unconfigured.
+    - No ``*_env`` attrs at all → indeterminate → assume configured (the
+      connector may use non-env-var configuration such as a local file path).
+    """
+    import os
+
+    has_env_attrs = False
+    for attr_name in dir(source):
+        if not attr_name.endswith("_env"):
+            continue
+        value = getattr(source, attr_name, None)
+        if not isinstance(value, str) or not value:
+            continue
+        has_env_attrs = True
+        if value in os.environ:
+            return True
+    # No *_env attrs → this source doesn't use env-var config (e.g. local
+    # files, pure-parser connectors).  Only consider it unconfigured if it
+    # declares *_env attrs but none are satisfied.
+    return not has_env_attrs
+
+
+def classify_health(result: dict[str, Any], source_name: str) -> HealthResult:
+    """Normalize a connector's ``health()`` return dict to a :class:`HealthResult`.
+
+    Mapping rules (first-match):
+    - ``ok == True``  → ``healthy``
+    - ``ok == False`` AND source appears unconfigured → ``degraded``
+    - ``ok == False`` (configured but failing probe) → ``unhealthy``
+    - missing ``ok`` key → ``unhealthy`` (unrecognised format)
+    - exception captured earlier → ``unhealthy``
+    """
+    ok = result.get("ok")
+    if ok is True:
+        return HealthResult(
+            status="healthy",
+            detail=str(result.get("detail") or "ok"),
+            source=source_name,
+        )
+    if ok is False:
+        return HealthResult(
+            status="unhealthy",
+            detail=str(result.get("detail") or result.get("error") or "health check failed"),
+            source=source_name,
+        )
+    return HealthResult(
+        status="unhealthy",
+        detail="unrecognised health format (missing 'ok' key)",
+        source=source_name,
+    )
+
+
+def classify_health_for_source(
+    source: Source, result: dict[str, Any]
+) -> HealthResult:
+    """Like :func:`classify_health` but inspects whether *source* is configured.
+
+    An unconfigured source that returns ``ok == False`` gets ``degraded``
+    instead of ``unhealthy`` — missing credentials is an operator-configuration
+    gap, not a backend failure.
+    """
+    classification = classify_health(result, getattr(source, "name", "?"))
+    if classification["status"] == "unhealthy" and not _is_configured(source):
+        classification["status"] = "degraded"
+        classification["detail"] = (
+            f"unconfigured — {classification['detail']}"
+        )
+    return classification
+
+
+def run_healthcheck(
+    source: Source,
+    *,
+    timeout: float = _DEFAULT_HEALTH_TIMEOUT,
+) -> HealthResult:
+    """Run ``source.health()`` with a timeout guard. Never raises.
+
+    On timeout the result is ``unhealthy`` with a timeout detail. On any other
+    exception the result is also ``unhealthy`` with the exception class in the
+    detail (never the message string — credential leak prevention).
+    """
+    result_holder: dict[str, Any] = {}
+    error_holder: Exception | None = None
+    done = threading.Event()
+
+    def _probe() -> None:
+        nonlocal error_holder
+        try:
+            result_holder.update(source.health())
+        except Exception as exc:
+            error_holder = exc
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=_probe, daemon=True)
+    thread.start()
+    finished = done.wait(timeout)
+
+    if not finished:
+        return HealthResult(
+            status="unhealthy",
+            detail=f"healthcheck timed out after {timeout:.1f}s",
+            source=getattr(source, "name", "?"),
+        )
+
+    if error_holder is not None:
+        return HealthResult(
+            status="unhealthy",
+            detail=f"exception during healthcheck: {type(error_holder).__name__}",
+            source=getattr(source, "name", "?"),
+        )
+
+    raw = result_holder
+    if not isinstance(raw, dict) or not raw:
+        return HealthResult(
+            status="unhealthy",
+            detail="health() returned empty or non-dict",
+            source=getattr(source, "name", "?"),
+        )
+
+    return classify_health_for_source(source, raw)
