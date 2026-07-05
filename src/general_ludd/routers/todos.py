@@ -27,8 +27,8 @@ class AddTodoRequest(BaseModel):
     priority: str = Field(default="medium", pattern=r"^(low|medium|high|critical)$")
     work_type: str = Field(default="code", pattern=r"^[a-z_]+$")
     project_id: str | None = None
-    acceptance_criteria: list[str] = Field(default_factory=list)
-    definition_of_done: str = Field(default="")
+    acceptance_criteria: list[str] = Field(default_factory=list, max_length=20)
+    definition_of_done: str = Field(default="", max_length=4096)
 
 
 class AddScheduledTodoRequest(BaseModel):
@@ -38,8 +38,8 @@ class AddScheduledTodoRequest(BaseModel):
     priority: str = Field(default="medium", pattern=r"^(low|medium|high|critical)$")
     work_type: str = Field(default="code", pattern=r"^[a-z_]+$")
     project_id: str | None = None
-    acceptance_criteria: list[str] = Field(default_factory=list)
-    definition_of_done: str = Field(default="")
+    acceptance_criteria: list[str] = Field(default_factory=list, max_length=20)
+    definition_of_done: str = Field(default="", max_length=4096)
     # One-shot: fire once at this UTC datetime.
     scheduled_at: datetime | None = None
     # Recurring: 5-field cron expression (e.g. "0 9 * * 1-5").
@@ -293,6 +293,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "schedule_paused": False,
             "run_count": 0,
             "next_run_at": initial_next_run_at,
+            "acceptance_criteria": json.dumps(req.acceptance_criteria),
+            "definition_of_done": req.definition_of_done,
         }
         if factory is not None:
             async with factory() as session:
@@ -405,6 +407,42 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 and (project_id is None or todo.get("project_id") == project_id)
             ):
                 return dict(todo)
+        raise HTTPException(status_code=404, detail="Todo not found")
+
+    @app.put("/api/todos/{todo_id}")
+    async def api_update_todo(
+        todo_id: str, req: AddTodoRequest, project_id: str | None = None
+    ) -> dict[str, Any]:
+        _validate_project_id(app, project_id)
+        factory = _get_session_factory(app)
+        updates: dict[str, Any] = {
+            "title": req.title,
+            "description": req.description,
+            "acceptance_criteria": json.dumps(req.acceptance_criteria),
+            "definition_of_done": req.definition_of_done,
+        }
+        if factory is not None:
+            async with factory() as session:
+                repo = (
+                    TodoRepository.scoped(session, project_id)
+                    if project_id is not None
+                    else TodoRepository(session)
+                )
+                todo = await repo.get_by_id(todo_id)
+                if todo is None:
+                    raise HTTPException(status_code=404, detail="Todo not found")
+                await repo.update(todo_id, updates, expected_version=todo.version)
+                await session.commit()
+                updated = await repo.get_by_id(todo_id)
+                if updated is not None:
+                    return _todo_to_dict(updated)
+        for i, todo in enumerate(_daemon_state["todos"]):
+            if (
+                str(todo.get("todo_id", "")) == todo_id
+                and (project_id is None or todo.get("project_id") == project_id)
+            ):
+                _daemon_state["todos"][i] = {**todo, **updates}
+                return dict(_daemon_state["todos"][i])
         raise HTTPException(status_code=404, detail="Todo not found")
 
     @app.get("/admin/todos")

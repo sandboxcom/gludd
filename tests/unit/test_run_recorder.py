@@ -69,3 +69,16 @@ class TestRunRecorder:
             recorder.record("run-3", {"type": "prompt", "content": "hello"})
             data = store.read_text("runs/run-3/events/0.json")
             assert json.loads(data) == {"type": "prompt", "content": "hello"}
+
+    def test_replay_sorts_by_seq(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            recorder = RunRecorder(store=store)
+            recorder.record("run-sorted", {"type": "step", "idx": 2})
+            recorder.record("run-sorted", {"type": "step", "idx": 0})
+            recorder.record("run-sorted", {"type": "step", "idx": 1})
+            result = recorder.replay("run-sorted")
+            assert len(result) == 3
+            assert result[0]["idx"] == 2
+            assert result[1]["idx"] == 0
+            assert result[2]["idx"] == 1

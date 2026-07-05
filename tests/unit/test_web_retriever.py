@@ -104,3 +104,86 @@ class TestWebRetrieverFetch:
             result2 = retriever.fetch_web_page("https://example.com")
 
         assert result1.content == result2.content
+
+    def test_http_error_returns_result_with_error_code(self) -> None:
+        import urllib.error
+        with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
+            "https://example.com", 404, "Not Found", {}, io.BytesIO(b"")
+        )):
+            retriever = WebRetriever()
+            result = retriever.fetch_web_page("https://example.com/missing")
+        assert result.status_code == 404
+        assert result.content == ""
+
+    def test_network_error_returns_negative_status(self) -> None:
+        with patch("urllib.request.urlopen", side_effect=OSError("network unreachable")):
+            retriever = WebRetriever()
+            result = retriever.fetch_web_page("https://down.example.com")
+        assert result.status_code == -1
+        assert "Fetch error" in result.content
+
+    def test_title_extraction_with_attributes(self) -> None:
+        html = '<html><head><title lang="en">English Title</title></head><body>content</body></html>'
+        mock_response = io.BytesIO(html.encode("utf-8"))
+        mock_response.status = 200
+        mock_response.headers = {}
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            retriever = WebRetriever()
+            result = retriever.fetch_web_page("https://example.com")
+        assert result.title == "English Title"
+
+    def test_content_truncation_at_limit(self) -> None:
+        large_html = "<html><body>" + "x" * (2 * 1024 * 1024) + "</body></html>"
+        mock_response = io.BytesIO(large_html.encode("utf-8"))
+        mock_response.status = 200
+        mock_response.headers = {}
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            retriever = WebRetriever()
+            result = retriever.fetch_web_page("https://example.com/large")
+        assert len(result.content) <= 1 * 1024 * 1024 + 1
+
+    def test_allowed_domains_empty_by_default(self) -> None:
+        retriever = WebRetriever()
+        assert retriever.allowed_domains() == []
+
+    def test_allowed_domains_from_env(self) -> None:
+        import os
+        os.environ["GLUDD_WEB_FETCH_ALLOWED_DOMAINS"] = "a.com,b.com,c.org"
+        try:
+            retriever = WebRetriever()
+            assert retriever.allowed_domains() == ["a.com", "b.com", "c.org"]
+        finally:
+            del os.environ["GLUDD_WEB_FETCH_ALLOWED_DOMAINS"]
+
+    def test_fetch_with_response_headers(self) -> None:
+        html = "<html><body>test</body></html>"
+        mock_response = io.BytesIO(html.encode("utf-8"))
+        mock_response.status = 200
+        mock_response.headers = {"Content-Type": "text/html", "Server": "nginx"}
+
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            retriever = WebRetriever()
+            result = retriever.fetch_web_page("https://example.com")
+        assert result.headers is not None
+        assert result.headers.get("content-type") == "text/html"
+
+    def test_timeout_configurable(self) -> None:
+        retriever = WebRetriever(timeout_seconds=60)
+        assert retriever._timeout == 60
+
+    def test_content_limit_env_override(self) -> None:
+        from general_ludd.retrieval import web
+        original = web._MAX_CONTENT_BYTES
+        try:
+            web._MAX_CONTENT_BYTES = 500
+            mock_response = io.BytesIO(b"x" * 1000)
+            mock_response.status = 200
+            mock_response.headers = {}
+            with patch("urllib.request.urlopen", return_value=mock_response):
+                retriever = WebRetriever()
+                result = retriever.fetch_web_page("https://example.com/small")
+            assert len(result.content) <= 501
+        finally:
+            web._MAX_CONTENT_BYTES = original

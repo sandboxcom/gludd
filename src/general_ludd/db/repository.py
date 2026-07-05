@@ -2773,11 +2773,12 @@ class MemoryRepository:
                 select(MemoryRecordModel)
                 .where(
                     MemoryRecordModel.agent_id == agent_id,
-                    MemoryRecordModel.namespace == namespace,
                 )
                 .order_by(MemoryRecordModel.key)
                 .limit(min(limit, _DEFAULT_LIST_LIMIT))
             )
+            if namespace != "*":
+                stmt = stmt.where(MemoryRecordModel.namespace == namespace)
             result = await session.execute(stmt)
             rows = list(result.scalars().all())
             return [r for r in rows if not self._is_expired(r)]

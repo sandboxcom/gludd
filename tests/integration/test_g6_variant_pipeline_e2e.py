@@ -2,6 +2,8 @@
 
 Covers the full loop: select variant → dispatch job with variant →
 record outcome → check winner → auto-promotion → variant report.
+Plus PromptRegistry integration: template version hashing, version
+change tracking, and versioned template rendering alongside A/B metrics.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ import json
 import os
 import tempfile
 
+from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.prompts.variant_metrics import VariantMetrics
 from general_ludd.prompts.variant_selector import PromptVariantSelector
 
@@ -322,3 +325,196 @@ class TestVariantPipelineE2E:
         selector.select(template)  # triggers auto-promotion
         on_disk = _read_metrics_json(metrics)
         assert on_disk[template]["promoted"] == "A"
+
+
+# ── PromptRegistry integration with variant pipeline ────────────────────
+
+
+class TestPromptRegistryVersioning:
+    """PromptRegistry hash tracking integrated with variant pipeline."""
+
+    def test_register_template_produces_hash(self):
+        reg = PromptRegistry(version="0.1.0")
+        reg.register("dispatch_started", "You are a coding assistant.")
+        info = reg.get_template_version_info("dispatch_started")
+        assert info["hash"] is not None
+        assert len(info["hash"]) == 64  # SHA-256 hex digest
+        assert info["history"] == []
+
+    def test_version_history_tracked_across_template_changes(self):
+        reg = PromptRegistry(version="0.1.0")
+        reg.register("system_prompt", "Version A: be concise.")
+
+        info_a = reg.get_template_version_info("system_prompt")
+        hash_a = info_a["hash"]
+        assert info_a["history"] == []
+
+        # Upload a new version (simulating template refresh or manual edit)
+        reg.register("system_prompt", "Version B: be verbose and detailed.")
+        info_b = reg.get_template_version_info("system_prompt")
+        assert info_b["hash"] != hash_a
+        assert len(info_b["history"]) == 1
+        assert info_b["history"][0] == hash_a
+
+    def test_version_history_capped_at_max(self):
+        reg = PromptRegistry(version="0.1.0")
+        template = "iterative_prompt"
+
+        hashes: list[str] = []
+        for i in range(10):  # Max history is 5
+            text = f"Version {i}: iteratively improved."
+            reg.register(template, text)
+            hashes.append(reg._compute_hash(text))
+
+        info = reg.get_template_version_info(template)
+        assert len(info["history"]) == 5
+        # History keeps the most recent 5 old hashes
+        assert info["hash"] == hashes[-1]
+
+    def test_missing_template_returns_none_hash(self):
+        reg = PromptRegistry(version="0.1.0")
+        info = reg.get_template_version_info("nonexistent")
+        assert info["hash"] is None
+        assert info["history"] == []
+
+    def test_version_is_stored_on_registry(self):
+        reg = PromptRegistry(version="2.3.0")
+        assert reg.version == "2.3.0"
+
+
+class TestPromptRegistryRenderingWithVariants:
+    """Template rendering works correctly even when A/B variants are active."""
+
+    def test_render_registered_template(self):
+        reg = PromptRegistry()
+        reg.register("greeting", "Hello, {{ name }}!")
+        result = reg.render("greeting", name="World")
+        assert result == "Hello, World!"
+
+    def test_render_with_multiple_variables(self):
+        reg = PromptRegistry()
+        reg.register("task_prompt", "Task: {{ task_name }}. Priority: {{ priority }}.")
+        result = reg.render("task_prompt", task_name="Deploy", priority="high")
+        assert result == "Task: Deploy. Priority: high."
+
+    def test_variant_pipeline_with_registry_version_tracking(self):
+        """The variant metrics pipeline and registry versioning operate independently.
+        Registering a template in the registry does not affect variant routing."""
+        reg = PromptRegistry(version="1.2.0")
+        reg.register("dispatch_started", "You are an AI coding assistant. {{ task }}")
+
+        info = reg.get_template_version_info("dispatch_started")
+        original_hash = info["hash"]
+
+        # Simulate template refresh (operator updates the template on disk)
+        reg.refresh()
+
+        # The in-memory registered template is preserved
+        info_after = reg.get_template_version_info("dispatch_started")
+        assert info_after["hash"] == original_hash
+
+    def test_template_list_includes_registered_names(self):
+        reg = PromptRegistry(version="1.0.0")
+        reg.register("alpha.j2", "Alpha template content")
+        reg.register("beta.j2", "Beta template content")
+
+        names = reg.list_templates()
+        assert "alpha.j2" in names
+        assert "beta.j2" in names
+
+
+class TestFullG6PipelineIntegrated:
+    """The complete G6 pipeline: versioning + A/B variant selection + auto-promotion."""
+
+    def test_pipeline_with_versioned_templates_and_variants(self):
+        """A template is registered with versioning. Simultaneously, the A/B
+        variant selector evaluates outcomes to auto-promote a winning variant.
+        The two subsystems operate independently but coexist in the dispatch path."""
+        tmpdir = tempfile.mkdtemp()
+        metrics_path = os.path.join(tmpdir, "metrics.json")
+
+        # --- PromptRegistry side ---
+        reg = PromptRegistry(version="1.0.0")
+        reg.register("code_gen", "Generate code for: {{ task_description }}")
+
+        # --- VariantMetrics side ---
+        metrics = VariantMetrics(storage_path=metrics_path, min_samples_per_variant=3)
+        selector = PromptVariantSelector(enabled=True, variant_metrics=metrics)
+
+        template = "code_gen"
+
+        # Warmup: round-robin A/B selection
+        for _ in range(3):
+            r_a = selector.select(template)
+            assert r_a["variant"] == "A"
+            selector.record_outcome(success=True, latency_ms=80.0)
+
+            r_b = selector.select(template)
+            assert r_b["variant"] == "B"
+            selector.record_outcome(success=False, latency_ms=300.0)
+
+        # A wins, gets auto-promoted on next select
+        r_winner = selector.select(template)
+        assert r_winner["variant"] == "A"
+        assert metrics.is_promoted(template) == "A"
+
+        # --- Registry side remains unchanged ---
+        info = reg.get_template_version_info("code_gen")
+        assert info["hash"] is not None
+        assert len(info["hash"]) == 64
+
+        # Report reflects variant state but not registry state (decoupled)
+        report = metrics.generate_variant_report()
+        assert report["templates"][template]["winner"] == "A"
+        assert report["templates"][template]["promoted"] == "A"
+
+        # Cleanup
+        os.remove(metrics_path)
+        os.rmdir(tmpdir)
+
+    def test_version_hash_changes_do_not_reset_metrics(self):
+        """Updating a template (new hash) does NOT wipe variant A/B metrics.
+        The variant pipeline is version-aware but metrics are per-template-name."""
+        tmpdir = tempfile.mkdtemp()
+        path = os.path.join(tmpdir, "metrics.json")
+
+        # --- Initial state ---
+        metrics = VariantMetrics(storage_path=path, min_samples_per_variant=3)
+        selector = PromptVariantSelector(enabled=True, variant_metrics=metrics)
+
+        template = "system_prompt"
+        for _ in range(3):
+            selector.select(template)
+            selector.record_outcome(success=True, latency_ms=50.0)
+            selector.select(template)
+            selector.record_outcome(success=False, latency_ms=200.0)
+
+        selector.select(template)  # auto-promotes A
+        assert metrics.is_promoted(template) == "A"
+
+        # --- Simulate template version change in registry ---
+        reg = PromptRegistry(version="1.0.0")
+        reg.register(template, "Old system prompt")
+        old_hash = reg.get_template_version_info(template)["hash"]
+
+        reg.register(template, "New improved system prompt with more detail")
+        new_hash = reg.get_template_version_info(template)["hash"]
+        assert new_hash != old_hash
+        assert len(reg.get_template_version_info(template)["history"]) == 1
+
+        # --- Metrics survive the version change ---
+        on_disk = _read_metrics_json(metrics)
+        assert on_disk[template]["promoted"] == "A"
+        assert on_disk[template]["A"]["total"] == 3
+
+        # Cleanup
+        os.remove(path)
+        os.rmdir(tmpdir)
+
+    def test_get_template_name_for_work_type_mapping(self):
+        from general_ludd.prompts.registry import get_template_name_for_work_type
+
+        assert get_template_name_for_work_type("code") == "implementation.md.j2"
+        assert get_template_name_for_work_type("test") == "test.md.j2"
+        assert get_template_name_for_work_type("security") == "security.md.j2"
+        assert get_template_name_for_work_type("nonexistent_type") == "implementation.md.j2"

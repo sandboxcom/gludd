@@ -337,3 +337,170 @@ def test_composite_score_empty_assertions_uses_default():
     )
     result = composite_eval_score(case, "content", tokens_used=0, duration_ms=0)
     assert result.score >= 0.0
+
+
+# ── harness run_single tests ─────────────────────────────────────────────
+
+
+def test_harness_run_single_no_evaluator():
+    harness = EvalHarness(model="sonnet")
+    case = EvalCase(
+        id="s1",
+        description="test",
+        input_files={},
+        expected_patch="",
+    )
+    result = harness.run_single(case)
+    assert isinstance(result, EvalResult)
+    assert result.passed is False
+    assert "no evaluator" in " ".join(result.errors)
+
+
+def test_harness_run_single_with_mock_evaluator():
+    gateway = MagicMock(spec=ModelGateway)
+    response = MagicMock(spec=ModelResponse)
+    response.content = "mock patch output"
+    gateway.call_model.return_value = response
+    evaluator = ModelEvaluator(gateway, profile_id="sonnet")
+
+    harness = EvalHarness(model="sonnet", evaluator=evaluator)
+    case = EvalCase(
+        id="s2",
+        description="Add null check to function",
+        input_files={"lib.py": "def foo(): return None"},
+        expected_patch="",
+    )
+    result = harness.run_single(case)
+    assert isinstance(result, EvalResult)
+    assert result.actual_patch == "mock patch output"
+
+
+def test_harness_run_benchmark_with_evaluator():
+    gateway = MagicMock(spec=ModelGateway)
+    response = MagicMock(spec=ModelResponse)
+    response.content = "diff --git a/app.py b/app.py"
+    gateway.call_model.return_value = response
+    evaluator = ModelEvaluator(gateway, profile_id="sonnet")
+
+    harness = EvalHarness(model="sonnet", evaluator=evaluator)
+    cases = [
+        EvalCase(id="b1", description="Fix 1", input_files={"a.py": "x"}, expected_patch=""),
+        EvalCase(id="b2", description="Fix 2", input_files={"b.py": "y"}, expected_patch=""),
+    ]
+    results = harness.run_benchmark(cases)
+    assert len(results) == 2
+    assert all(isinstance(r, EvalResult) for r in results)
+
+
+def test_harness_last_results_preserved():
+    harness = EvalHarness(model="sonnet")
+    cases = [EvalCase(id="lr1", description="test", input_files={}, expected_patch="")]
+    harness.run_benchmark(cases)
+    assert len(harness._last_results) == 1
+    assert harness._last_results[0].case_id == "lr1"
+
+
+# ── ModelEvaluator additional tests ──────────────────────────────────────
+
+
+def test_model_evaluator_dry_run_does_not_call_gateway():
+    gateway = MagicMock(spec=ModelGateway)
+    evaluator = ModelEvaluator(gateway, profile_id="sonnet", dry_run=True)
+    case = EvalCase(
+        id="dry1",
+        description="Add type hints",
+        input_files={"utils.py": "def calc(a, b): return a + b"},
+        expected_patch="",
+    )
+    result = evaluator.generate_patch(case)
+    assert gateway.call_model.call_count == 0
+    assert "diff --git" in result or "unified diff" in result.lower()
+
+
+def test_model_evaluator_prompt_includes_file_contents():
+    gateway = MagicMock(spec=ModelGateway)
+    evaluator = ModelEvaluator(gateway, profile_id="sonnet", dry_run=True)
+    case = EvalCase(
+        id="e2",
+        description="Refactor to use pathlib",
+        input_files={"io.py": "import os\nos.path.join('a', 'b')", "config.py": "DEBUG = True"},
+        expected_patch="",
+    )
+    result = evaluator.generate_patch(case)
+    assert "io.py" in result
+    assert "config.py" in result
+    assert "import os" in result
+    assert "DEBUG = True" in result
+
+
+# ── compute_patch_similarity additional tests ────────────────────────────
+
+
+def test_similarity_utf8_content():
+    assert compute_patch_similarity("café", "café") == 1.0
+
+
+def test_similarity_multiline_diff():
+    a = "--- a/f.py\n+++ b/f.py\n@@ -1,3 +1,3 @@\n-def old():\n-    pass\n+def new():\n+    return 1\n"
+    b = "--- a/f.py\n+++ b/f.py\n@@ -1,3 +1,3 @@\n-def old():\n-    pass\n+def new():\n+    return 2\n"
+    score = compute_patch_similarity(a, b)
+    assert 0.5 < score < 1.0
+
+
+# ── composite_eval_score additional tests ────────────────────────────────
+
+
+def test_composite_score_qualifies_as_passed_threshold():
+    case = EvalCase(
+        id="c5",
+        description="test",
+        input_files={},
+        expected_patch="abc123",
+    )
+    result = composite_eval_score(case, "abc123", tokens_used=10, duration_ms=100)
+    assert result.passed is True
+    assert result.score == 1.0
+
+
+def test_composite_score_zero_tokens_still_reported():
+    case = EvalCase(
+        id="c6",
+        description="test",
+        input_files={},
+        expected_patch="same",
+    )
+    result = composite_eval_score(case, "same", tokens_used=0, duration_ms=0)
+    assert result.tokens_used == 0
+    assert result.duration_ms == 0
+    assert result.score == 1.0
+
+
+# ── check_assertions additional tests ────────────────────────────────────
+
+
+def test_assertions_multiple_checks_all_pass():
+    results = check_assertions(
+        {
+            "patch_contains": "return value",
+            "filename": "service.py",
+            "line_count_min": "3",
+        },
+        "--- a/service.py\n+++ b/service.py\ndef handle():\n    return value\n",
+    )
+    assert results == {"patch_contains": True, "filename": True, "line_count_min": True}
+
+
+def test_assertions_unknown_keys_checked_as_contains():
+    results = check_assertions(
+        {"custom_tag": "IMPORTANT"},
+        "This is an IMPORTANT patch",
+    )
+    assert results["custom_tag"] is True
+
+
+def test_assertions_empty_patch_all_containment_fails():
+    results = check_assertions(
+        {"patch_contains": "needle"},
+        "",
+    )
+    assert results["patch_contains"] is False

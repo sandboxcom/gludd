@@ -57,6 +57,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 time_limit=req.get("time_limit"),
                 output=req.get("output"),
                 extra_args=req.get("extra_args"),
+                account=req.get("account"),
+                qos=req.get("qos"),
             )
             return {"job_id": job_id}
         except SlurmNotInstalledError:
@@ -103,3 +105,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=503, detail="Slurm is not installed") from None
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Could not list jobs: {exc}") from exc
+
+    @app.get("/admin/slurm/jobs/{job_id}/cost")
+    async def admin_slurm_job_cost(job_id: str) -> dict[str, Any]:
+        adapter = _make_adapter(app)
+        try:
+            info = await asyncio.to_thread(adapter.status, job_id)
+            return {
+                "job_id": info.job_id,
+                "cost_breakdown": {
+                    "estimated_cost_usd": info.cost_incurred,
+                    "state": info.state.value,
+                },
+            }
+        except SlurmNotInstalledError:
+            raise HTTPException(status_code=503, detail="Slurm is not installed") from None

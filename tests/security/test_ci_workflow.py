@@ -523,3 +523,69 @@ class TestVersionPEP440:
             pytest.fail(
                 f"__init__.py __version__ {ver_str!r} is not PEP 440-valid: {exc}"
             )
+
+
+class TestGateMatrixStructure:
+    """Validate the CI gate and related job matrix structures.
+
+    Structural invariants that keep CI fast and informative:
+    - The gate runs on two Python versions in parallel with fail-fast disabled
+      so both versions' results are always reported.
+    - test-shard splits the suite across 4 path-based groups x 2 Python versions
+      so failures surface at job granularity in minutes.
+    - molecule is also fail-fast:false so all 4 shards report results.
+    """
+
+    def test_gate_matrix_python_versions(self) -> None:
+        wf = _load_workflow()
+        gate_job = wf["jobs"]["gate"]
+        strategy = gate_job.get("strategy", {})
+        matrix = strategy.get("matrix", {})
+        python_versions = matrix.get("python-version", [])
+        assert python_versions == ["3.11", "3.12"], (
+            f"gate job matrix.python-version must be ['3.11', '3.12']; "
+            f"got {python_versions!r}"
+        )
+
+    def test_gate_matrix_fail_fast_is_false(self) -> None:
+        wf = _load_workflow()
+        gate_job = wf["jobs"]["gate"]
+        strategy = gate_job.get("strategy", {})
+        fail_fast = strategy.get("fail-fast", True)
+        assert fail_fast is False, (
+            "gate job strategy.fail-fast must be false so both Python versions "
+            "always report results on every run"
+        )
+
+    def test_test_shard_matrix_dimensions(self) -> None:
+        wf = _load_workflow()
+        ts_job = wf["jobs"]["test-shard"]
+        strategy = ts_job.get("strategy", {})
+        matrix = strategy.get("matrix", {})
+        assert "python-version" in matrix, (
+            "test-shard matrix must include python-version dimension"
+        )
+        assert "shard" in matrix, (
+            "test-shard matrix must include shard dimension"
+        )
+        assert matrix.get("python-version") == ["3.11", "3.12"], (
+            f"test-shard python-version must be ['3.11', '3.12']; "
+            f"got {matrix.get('python-version')!r}"
+        )
+        assert matrix.get("shard") == ["unit-1", "unit-2", "unit-3", "other"], (
+            f"test-shard shard dimension must be ['unit-1', 'unit-2', 'unit-3', 'other']; "
+            f"got {matrix.get('shard')!r}"
+        )
+        assert strategy.get("fail-fast") is False, (
+            "test-shard strategy.fail-fast must be false so all shards report results"
+        )
+
+    def test_molecule_fail_fast_is_false(self) -> None:
+        wf = _load_workflow()
+        mol_job = wf["jobs"]["molecule"]
+        strategy = mol_job.get("strategy", {})
+        fail_fast = strategy.get("fail-fast", True)
+        assert fail_fast is False, (
+            "molecule job strategy.fail-fast must be false so all shards "
+            "report results every run"
+        )

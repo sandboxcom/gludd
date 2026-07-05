@@ -476,6 +476,34 @@ molecule-test-all:
 	if [ -n "$$FAILED" ]; then echo "FAILED:$$FAILED"; exit 1; fi; \
 	echo "=== molecule-test-all: ALL scenarios passed ==="
 
+# Sharded test runner for CI: SHARD=1/4 runs the first quarter of scenarios.
+# Scenarios are sorted by name; the SHARD numerator selects a contiguous slice.
+molecule-test-shard:
+	@echo "=== molecule-test-shard: shard $(SHARD) ==="
+	@numerator=$$(echo "$(SHARD)" | cut -d/ -f1); \
+	denominator=$$(echo "$(SHARD)" | cut -d/ -f2); \
+	ALL=$$(ls -d molecule/playbooks/*/ 2>/dev/null | sort); \
+	COUNT=$$(echo "$$ALL" | wc -l | tr -d ' '); \
+	SIZE=$$(( (COUNT + denominator - 1) / denominator )); \
+	START=$$(( (numerator - 1) * SIZE + 1 )); \
+	END=$$(( START + SIZE - 1 )); \
+	echo "  Total scenarios: $$COUNT, shard $$numerator/$$denominator → slice $$START-$$END"; \
+	INDEX=0; FAILED=""; PASSED=""; \
+	for d in $$ALL; do \
+		INDEX=$$((INDEX + 1)); \
+		if [ $$INDEX -lt $$START ] || [ $$INDEX -gt $$END ]; then continue; fi; \
+		s=$$(basename "$$d"); \
+		echo "--- running scenario: $$s ($$INDEX/$$COUNT) ---"; \
+		if $(MAKE) --no-print-directory molecule-test SCENARIO="$$s" > "/tmp/gludd-molecule-$$s.log" 2>&1; then \
+			PASSED="$$PASSED $$s"; echo "    PASS $$s"; \
+		else \
+			FAILED="$$FAILED $$s"; echo "    FAIL $$s (see /tmp/gludd-molecule-$$s.log)"; \
+		fi; \
+	done; \
+	echo ""; echo "SHARD-PASSED:$$PASSED"; \
+	if [ -n "$$FAILED" ]; then echo "SHARD-FAILED:$$FAILED"; exit 1; fi; \
+	echo "=== molecule-test-shard: ALL passed ==="
+
 clean-tmp:
 	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
 	@rm -rf /private/tmp/gludd-iso-* /private/tmp/pytest-of-* 2>/dev/null || true

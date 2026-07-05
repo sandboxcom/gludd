@@ -311,3 +311,41 @@ class TestInfraTrackerAccumulation:
         assert not errors, f"threads raised: {errors!r}"
         expected = INFRA_PRICING["gpu_second"] * _THREADS * _RECORDS_PER_THREAD
         assert tracker.get_total_infra_cost() == pytest.approx(expected)
+
+
+class TestInfraTrackerProjectBreakdown:
+    def test_infra_tracker_project_breakdown(self) -> None:
+        tracker = InfraTracker()
+        tracker.record_gpu_seconds("runpod", "A100-SXM4-80GB-1x", 100.0, project_id="proj-a")
+        tracker.record_gpu_seconds("runpod", "A100-SXM4-80GB-1x", 50.0, project_id="proj-a")
+        tracker.record_gpu_seconds("aws", "A100-SXM4-80GB-1x", 200.0, project_id="proj-b")
+
+        by_project = tracker.get_infra_cost_by_project()
+        rate = INFRA_PRICING["gpu_second"]
+        assert by_project["proj-a"] == pytest.approx(rate * 150.0)
+        assert by_project["proj-b"] == pytest.approx(rate * 200.0)
+
+    def test_infra_tracker_null_project_isolation(self) -> None:
+        tracker = InfraTracker()
+        tracker.record_gpu_seconds("runpod", "A100-SXM4-80GB-1x", 100.0)
+        tracker.record_gpu_seconds("runpod", "A100-SXM4-80GB-1x", 50.0, project_id="proj-x")
+
+        by_project = tracker.get_infra_cost_by_project()
+        assert "proj-x" in by_project
+        rate = INFRA_PRICING["gpu_second"]
+        assert by_project["proj-x"] == pytest.approx(rate * 50.0)
+        assert tracker.get_total_infra_cost() == pytest.approx(rate * 150.0)
+
+    def test_record_gpu_seconds_passes_project_id(self):
+        catalog = MagicMock()
+        spot_price = MagicMock()
+        spot_price.usd_per_unit = 0.0005
+        spot_price.granularity = "per_second"
+        catalog.compute_price.return_value = spot_price
+
+        tracker = InfraTracker(catalog=catalog)
+        tracker.record_gpu_seconds("runpod", "A100-SXM4-80GB-1x", 100.0, spot=True, project_id="p5")
+
+        by_project = tracker.get_infra_cost_by_project()
+        assert by_project["p5"] == pytest.approx(0.0005 * 100.0)
+        assert tracker.get_total_infra_cost() == pytest.approx(0.0005 * 100.0)

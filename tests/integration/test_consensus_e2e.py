@@ -10,6 +10,9 @@ B. 3 agents disagree → multiple rounds until convergence
 C. Max rounds exhausted → judge tiebreaker invoked
 D. ConsensusReviewer integration: full review_return → TaskDecision flow
 E. Parallel agent execution verified (all agents called in same round)
+F. ConsensusEngine edge cases: empty question, no reviewer, tie, single agent
+G. ConsensusEngine with judge overrides and custom configs
+H. Verdict parsing edge cases: whitespace, mixed case, embedded verdicts
 """
 
 from __future__ import annotations
@@ -420,3 +423,330 @@ class TestParallelAgentExecution:
         assert set(first_round_votes) == {"approve", "reject", "needs_changes"}
         second_round_votes = [v["verdict"] for v in result["transcript"][1]["votes"]]
         assert second_round_votes == ["approve", "approve", "approve"]
+
+
+# ---------------------------------------------------------------------------
+# F. ConsensusEngine edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestConsensusEngineEdgeCases:
+    """ConsensusEngine handles empty question, no reviewer, tie, single agent."""
+
+    def test_no_reviewer_returns_error(self):
+        from general_ludd.review.consensus import ConsensusEngine
+        engine = ConsensusEngine(reviewer=None)
+        result = engine.run_debate("Is this ok?")
+        assert result["consensus"] is False
+        assert result["verdict"] == "error"
+        assert result["rounds"] == 0
+        assert "No reviewer configured" in result.get("error", "")
+
+    def test_empty_question_returns_error(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        def dummy(prompt: str) -> str:
+            return _APPROVE
+
+        engine = ConsensusEngine(reviewer=dummy)
+        result = engine.run_debate("")
+        assert result["consensus"] is False
+        assert result["verdict"] == "error"
+        assert "empty" in result.get("error", "")
+
+    def test_whitespace_only_question_returns_error(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        def dummy(prompt: str) -> str:
+            return _APPROVE
+
+        engine = ConsensusEngine(reviewer=dummy)
+        result = engine.run_debate("   ")
+        assert result["consensus"] is False
+        assert result["verdict"] == "error"
+
+    def test_single_agent_reaches_consensus(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        def dummy(prompt: str) -> str:
+            return _APPROVE
+
+        engine = ConsensusEngine(reviewer=dummy)
+        result = engine.run_debate("Should we proceed?", num_agents=1, max_rounds=1)
+        assert result["consensus"] is True
+        assert result["verdict"] == "approve"
+        assert result["confidence"] == 1.0
+        assert result["rounds"] == 1
+        assert len(result["agent_votes"]) == 1
+
+    def test_zero_agents_clamped_to_one(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        def dummy(prompt: str) -> str:
+            return _REJECT
+
+        engine = ConsensusEngine(reviewer=dummy)
+        result = engine.run_debate("x", num_agents=0, max_rounds=1)
+        assert result["rounds"] == 1
+        assert len(result["agent_votes"]) == 1
+
+    def test_zero_rounds_clamped_to_one(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        def dummy(prompt: str) -> str:
+            return _APPROVE
+
+        engine = ConsensusEngine(reviewer=dummy)
+        result = engine.run_debate("x", num_agents=3, max_rounds=0)
+        assert result["rounds"] >= 1
+
+    def test_tie_without_judge(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        call_count = [0]
+
+        def mixed(prompt: str) -> str:
+            call_count[0] += 1
+            if call_count[0] % 2 == 0:
+                return _APPROVE
+            return _REJECT
+
+        engine = ConsensusEngine(reviewer=mixed, judge=None)
+        result = engine.run_debate("Tie?", num_agents=2, max_rounds=2)
+        assert result["consensus"] is False
+        assert result["verdict"] == "tie"
+        assert result["judge_ruling"] is False
+
+    def test_confidence_computation(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        def mixed(prompt: str) -> str:
+            return _APPROVE
+
+        engine = ConsensusEngine(reviewer=mixed)
+        result = engine.run_debate("x", num_agents=3, max_rounds=1)
+        assert result["confidence"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# G. ConsensusEngine with judge overrides
+# ---------------------------------------------------------------------------
+
+
+class TestConsensusJudgeOverrides:
+    """When deadlocked, judge breaks tie with its own verdict."""
+
+    def test_judge_approve_breaks_tie(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        call_count = [0]
+
+        def mixed(prompt: str) -> str:
+            call_count[0] += 1
+            if call_count[0] % 2 == 0:
+                return _APPROVE
+            return _REJECT
+
+        def judge(prompt: str) -> str:
+            return _APPROVE
+
+        engine = ConsensusEngine(reviewer=mixed, judge=judge)
+        result = engine.run_debate("x", num_agents=2, max_rounds=2)
+        assert result["verdict"] == "approve"
+        assert result["judge_ruling"] is True
+        assert "judge_verdict" in result
+
+    def test_judge_reject_breaks_tie(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        call_count = [0]
+
+        def mixed(prompt: str) -> str:
+            call_count[0] += 1
+            if call_count[0] % 2 == 0:
+                return _APPROVE
+            return _REJECT
+
+        def judge(prompt: str) -> str:
+            return "reject\nnot good enough"
+
+        engine = ConsensusEngine(reviewer=mixed, judge=judge)
+        result = engine.run_debate("x", num_agents=2, max_rounds=2)
+        assert result["verdict"] == "reject"
+        assert result["judge_ruling"] is True
+
+    def test_large_agent_count(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        def all_approve(prompt: str) -> str:
+            return _APPROVE
+
+        engine = ConsensusEngine(reviewer=all_approve)
+        result = engine.run_debate("x", num_agents=10, max_rounds=1)
+        assert result["consensus"] is True
+        assert result["verdict"] == "approve"
+        assert len(result["agent_votes"]) == 10
+
+    def test_context_included_in_prompt(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        captured: list[str] = []
+
+        def reviewer(prompt: str) -> str:
+            captured.append(prompt)
+            return _APPROVE
+
+        engine = ConsensusEngine(reviewer=reviewer)
+        engine.run_debate("Q?", context="CTX")
+        assert any("CTX" in p for p in captured)
+
+    def test_high_max_rounds_converges_early(self):
+        from general_ludd.review.consensus import ConsensusEngine
+
+        call_count = [0]
+
+        def diverge_then_converge(prompt: str) -> str:
+            call_count[0] += 1
+            if call_count[0] <= 6:
+                idx = call_count[0] % 3
+                return [_APPROVE, _REJECT, _NEEDS_CHANGES][idx]
+            return _APPROVE
+
+        engine = ConsensusEngine(reviewer=diverge_then_converge)
+        result = engine.run_debate("x", num_agents=3, max_rounds=10)
+        assert result["consensus"] is True
+        assert result["rounds"] <= 10
+
+
+# ---------------------------------------------------------------------------
+# H. Verdict parsing edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestVerdictParsingEdgeCases:
+    """Parse_verdict handles whitespace, mixed case, embedded verdicts."""
+
+    def test_parse_verdict_normalizes_case(self):
+        from general_ludd.review.consensus import _parse_verdict
+
+        verdict, _ = _parse_verdict("APPROVE\nlooks good")
+        assert verdict == "approve"
+
+    def test_parse_verdict_trims_whitespace(self):
+        from general_ludd.review.consensus import _parse_verdict
+
+        verdict, _ = _parse_verdict("  reject  \nreason")
+        assert verdict == "reject"
+
+    def test_parse_verdict_with_rationale(self):
+        from general_ludd.review.consensus import _parse_verdict
+
+        verdict, rationale = _parse_verdict(
+            "needs_changes\n\nThis code needs more tests.\nAlso fix imports."
+        )
+        assert verdict == "needs_changes"
+        assert "more tests" in rationale
+
+    def test_parse_verdict_first_line_priority(self):
+        from general_ludd.review.consensus import _parse_verdict
+
+        verdict, _ = _parse_verdict("approve\nreject\nneeds_changes")
+        assert verdict == "approve"
+
+    def test_parse_verdict_unknown_defaults_to_needs_changes(self):
+        from general_ludd.review.consensus import _parse_verdict
+
+        verdict, _ = _parse_verdict("not_a_verdict\nsomething")
+        assert verdict == "needs_changes"
+
+    def test_parse_verdict_empty_string(self):
+        from general_ludd.review.consensus import _parse_verdict
+
+        verdict, rationale = _parse_verdict("")
+        assert verdict == "needs_changes"
+        assert rationale == ""
+
+    def test_build_judge_prompt_includes_all_votes(self):
+        from general_ludd.review.consensus import _build_judge_prompt
+
+        votes = [
+            {"agent_index": 0, "verdict": "approve", "rationale": "good"},
+            {"agent_index": 1, "verdict": "reject", "rationale": "bad"},
+            {"agent_index": 2, "verdict": "needs_changes", "rationale": "ok"},
+        ]
+        prompt = _build_judge_prompt("Q?", "ctx", votes)
+        assert "tie-breaking judge" in prompt
+        assert "Agent 1:" in prompt
+        assert "Agent 2:" in prompt
+        assert "Agent 3:" in prompt
+        assert "Q?" in prompt
+        assert "ctx" in prompt
+
+    def test_check_consensus_all_same(self):
+        from general_ludd.review.consensus import _check_consensus
+
+        votes = [
+            {"verdict": "approve"},
+            {"verdict": "approve"},
+            {"verdict": "approve"},
+        ]
+        assert _check_consensus(votes) == "approve"
+
+    def test_check_consensus_disagree(self):
+        from general_ludd.review.consensus import _check_consensus
+
+        votes = [
+            {"verdict": "approve"},
+            {"verdict": "reject"},
+        ]
+        assert _check_consensus(votes) is None
+
+    def test_check_consensus_empty_votes(self):
+        from general_ludd.review.consensus import _check_consensus
+
+        assert _check_consensus([]) is None
+
+    def test_compute_confidence(self):
+        from general_ludd.review.consensus import _compute_confidence
+
+        votes = [
+            {"verdict": "approve"},
+            {"verdict": "approve"},
+            {"verdict": "reject"},
+        ]
+        assert _compute_confidence(votes) == 2.0 / 3.0
+
+    def test_compute_confidence_empty(self):
+        from general_ludd.review.consensus import _compute_confidence
+
+        assert _compute_confidence([]) == 0.0
+
+    def test_build_prompt_round_1_no_dissent(self):
+        from general_ludd.review.consensus import _build_prompt
+
+        prompt = _build_prompt("Q", "C", 0, 3, 1, "")
+        assert "reviewer agent 1 of 3" in prompt
+        assert "Q" in prompt
+        assert "C" in prompt
+        assert "NOT unanimous" not in prompt
+
+    def test_build_prompt_round_2_with_dissent(self):
+        from general_ludd.review.consensus import _build_prompt
+
+        prompt = _build_prompt("Q", "C", 1, 3, 2, "Agent 1: approve\nAgent 2: reject")
+        assert "reviewer agent 2 of 3" in prompt
+        assert "NOT unanimous" in prompt
+        assert "Agent 1: approve" in prompt
+
+    def test_build_dissent_prompt(self):
+        from general_ludd.review.consensus import _build_dissent_prompt
+
+        transcript = {
+            "votes": [
+                {"agent_index": 0, "verdict": "approve"},
+                {"agent_index": 1, "verdict": "reject"},
+            ],
+        }
+        result = _build_dissent_prompt(transcript)
+        assert "Agent 1: approve" in result
+        assert "Agent 2: reject" in result

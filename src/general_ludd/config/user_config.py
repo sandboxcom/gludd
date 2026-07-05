@@ -180,6 +180,10 @@ class UserConfig(BaseSettings):
     compute_idle_check_interval_ticks: int = 60
     compute_idle_teardown_threshold_ticks: int = 3
     compute_idle_gpu_sm_pct: float = 5.0
+    compute_idle_preemption_notice_ticks: int = 1
+    default_spot: bool = True
+    slurm_max_resubmits: int = 3
+    slurm_preemption_backoff_schedule: list[int] = [30, 60, 120]
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> UserConfig:

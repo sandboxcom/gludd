@@ -52,3 +52,36 @@ def test_daemon_py_has_wire_observability_call() -> None:
 
     assert imports_wire_obs, "daemon.py must import wire_observability"
     assert calls_wire_obs, "daemon.py must call wire_observability"
+
+
+def test_observe_query_request_rejects_extra_url_field() -> None:
+    """ObserveQueryRequest model does NOT accept an extra `url` field."""
+    from general_ludd.routers.observe import ObserveQueryRequest
+
+    req = ObserveQueryRequest(source="test", spec={})
+
+    # pydantic v2: model_extra is ignored by default (model_config extra='ignore')
+    if hasattr(req, "model_extra"):
+        req_with_url = ObserveQueryRequest(source="test", spec={}, url="http://evil.com")
+        assert not hasattr(req_with_url, "url")
+        assert req_with_url.model_extra is None or "url" not in (req_with_url.model_extra or {})
+
+
+def test_query_endpoint_ignores_extra_fields() -> None:
+    """POST /api/observe/query only passes source + spec, ignores smuggled url."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from general_ludd.routers.observe import register
+
+    app = FastAPI()
+    from general_ludd.connectors.registry import ConnectorRegistry
+    registry = ConnectorRegistry()
+    app.state._connector_registry = registry
+    register(app, {})
+
+    client = TestClient(app)
+
+    req_data = {"source": "nonexistent", "spec": {}, "url": "http://evil.com"}
+    response = client.post("/api/observe/query", json=req_data)
+    assert response.status_code == 404

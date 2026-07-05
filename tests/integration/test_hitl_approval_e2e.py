@@ -9,6 +9,10 @@ Tests:
   - Denied approvals re-queue work (needs_more_work)
   - High-confidence decisions skip the human gate
   - GET /admin/review/pending lists paused gates
+  - HumanTodo router integration: POST /api/human-todos → parent blocking
+  - HumanTodo PATCH resolution → parent unblocking
+  - HumanTodo terminal state enforcement
+  - HumanTodo category/priority validation
 
 Uses HumanGate with mock graph, plus minimal FastAPI app for router endpoints.
 """
@@ -588,3 +592,454 @@ class TestHitlEdgeCases:
 
         result = await gate.resume("t", "approved")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# HumanTodo router integration — POST /api/human-todos with parent blocking
+# ---------------------------------------------------------------------------
+
+
+class TestHitlHumanTodoRouterIntegration:
+    """HumanTodo creation blocks parent agent todo and resolves on human action."""
+
+    def _make_app_with_db(self):
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from general_ludd.db.models import Base
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite://",
+            echo=False,
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+
+        async def _setup():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+
+            app = FastAPI()
+            app.state._session_factory = factory
+            app.state._config_dir = None
+            app.state._startup_config = {}
+            app.state.log_level = "info"
+            app.state.tick_interval = 1.0
+            app.state.event_loop = None
+            app.state._templates_dir = None
+            app.state._playbooks_dir = None
+
+            from general_ludd.daemon import _daemon_state
+            from general_ludd.routers.human_todos import register as reg_ht
+            from general_ludd.routers.todos import register as reg_todos
+            _daemon_state["todos"] = []
+            reg_todos(app, _daemon_state)
+            reg_ht(app, _daemon_state)
+
+            return app, factory
+
+        import asyncio
+        return asyncio.run(_setup())
+
+    @pytest.mark.asyncio
+    async def test_create_human_todo_with_parent_blocks_parent(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        from general_ludd.db.repository import TodoRepository
+
+        async with factory() as session:
+            repo = TodoRepository(session)
+            parent = await repo.create(
+                title="Needs approval", queue="core",
+            )
+            parent_id = parent.id
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.post(
+            "/api/human-todos",
+            json={
+                "agent_id": "agent-1",
+                "title": "Please approve deployment",
+                "body": "The agent wants to deploy to production.",
+                "category": "permission_escalation",
+                "priority": "high",
+                "parent_agent_todo_id": parent_id,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["category"] == "permission_escalation"
+        assert body["parent_agent_todo_id"] == parent_id
+        assert body["status"] == "open"
+
+    @pytest.mark.asyncio
+    async def test_create_human_todo_without_parent_succeeds(self):
+        app, _factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.post(
+            "/api/human-todos",
+            json={
+                "agent_id": "agent-2",
+                "title": "Review this",
+                "body": "Please review.",
+                "category": "human_input",
+                "priority": "medium",
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["id"] is not None
+        assert body["status"] == "open"
+        assert body["priority"] == "medium"
+
+    @pytest.mark.asyncio
+    async def test_create_human_todo_invalid_category_rejected(self):
+        app, _factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.post(
+            "/api/human-todos",
+            json={
+                "agent_id": "agent-3",
+                "title": "Bad cat",
+                "body": "x",
+                "category": "not_a_real_category",
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+    @pytest.mark.asyncio
+    async def test_create_human_todo_invalid_priority_rejected(self):
+        app, _factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.post(
+            "/api/human-todos",
+            json={
+                "agent_id": "agent-4",
+                "title": "Bad prio",
+                "body": "x",
+                "category": "human_input",
+                "priority": "critical",
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+    @pytest.mark.asyncio
+    async def test_list_human_todos_returns_all(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            await repo.create(
+                agent_id="a2", title="t2", body="b2",
+                category="permission_escalation", priority="high",
+            )
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.get("/api/human-todos")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body) == 2
+
+    @pytest.mark.asyncio
+    async def test_get_single_human_todo(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            ht_id = row.id
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.get(f"/api/human-todos/{ht_id}")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["id"] == ht_id
+
+    @pytest.mark.asyncio
+    async def test_get_nonexistent_human_todo_404(self):
+        app, _factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.get("/api/human-todos/nonexistent")
+        assert resp.status_code == 404, resp.text
+
+    @pytest.mark.asyncio
+    async def test_patch_mark_in_progress(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            ht_id = row.id
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.patch(
+            f"/api/human-todos/{ht_id}",
+            json={"status": "in_progress"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "in_progress"
+
+    @pytest.mark.asyncio
+    async def test_patch_mark_done_requires_resolver_and_resolution(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            ht_id = row.id
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.patch(
+            f"/api/human-todos/{ht_id}",
+            json={"status": "done"},
+        )
+        assert resp.status_code == 422, resp.text
+
+    @pytest.mark.asyncio
+    async def test_patch_mark_done_full(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            ht_id = row.id
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.patch(
+            f"/api/human-todos/{ht_id}",
+            json={
+                "status": "done",
+                "human_resolver": "admin",
+                "human_resolution": "Approved — looks good.",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "done"
+        assert body["human_resolver"] == "admin"
+        assert body["human_resolution"] == "Approved — looks good."
+
+    @pytest.mark.asyncio
+    async def test_patch_dismissed(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            ht_id = row.id
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.patch(
+            f"/api/human-todos/{ht_id}",
+            json={
+                "status": "dismissed",
+                "human_resolver": "admin",
+                "human_resolution": "Not needed.",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "dismissed"
+
+    @pytest.mark.asyncio
+    async def test_cannot_patch_terminal_todo(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            await repo.mark_done(row.id, "admin", "done")
+            ht_id = row.id
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.patch(
+            f"/api/human-todos/{ht_id}",
+            json={"status": "in_progress"},
+        )
+        assert resp.status_code == 422, resp.text
+
+    @pytest.mark.asyncio
+    async def test_delete_soft_deletes_open_todo(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            ht_id = row.id
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.delete(f"/api/human-todos/{ht_id}")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["id"] == ht_id
+        assert body["status"] == "deleted"
+
+    @pytest.mark.asyncio
+    async def test_add_tag_to_human_todo(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            ht_id = row.id
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.post(
+            f"/api/human-todos/{ht_id}/tags",
+            json={"tag": "urgent"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "urgent" in body.get("tags", [])
+
+    @pytest.mark.asyncio
+    async def test_feed_returns_recent(self):
+        app, factory = self._make_app_with_db()
+        from httpx import ASGITransport, AsyncClient
+
+        async with factory() as session:
+            from general_ludd.db.repository import HumanTodoRepository
+            repo = HumanTodoRepository(session)
+            await repo.create(
+                agent_id="a1", title="t1", body="b1",
+                category="human_input", priority="medium",
+            )
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.get("/api/human-todos/feed")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body) >= 1
+
+    @pytest.mark.asyncio
+    async def test_no_db_returns_empty_list(self):
+        app = FastAPI()
+        app.state._session_factory = None
+
+        from general_ludd.routers.human_todos import register as reg_ht
+        reg_ht(app, {})
+
+        from httpx import ASGITransport, AsyncClient
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.get("/api/human-todos")
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_no_db_create_returns_503(self):
+        app = FastAPI()
+        app.state._session_factory = None
+
+        from general_ludd.routers.human_todos import register as reg_ht
+        reg_ht(app, {})
+
+        from httpx import ASGITransport, AsyncClient
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+
+        resp = await client.post(
+            "/api/human-todos",
+            json={
+                "agent_id": "a", "title": "t", "body": "b",
+                "category": "human_input",
+            },
+        )
+        assert resp.status_code == 503, resp.text

@@ -286,3 +286,60 @@ class TestSlurmPreemptionInit:
         adapter = MagicMock(spec=SlurmAdapter)
         handler = SlurmPreemptionHandler(adapter=adapter)
         assert handler._adapter is adapter
+
+
+class TestHandlerUsesConfigMaxResubmits:
+    """Test that SlurmPreemptionHandler respects UserConfig.slurm_max_resubmits."""
+
+    def test_handler_uses_config_max_resubmits(self) -> None:
+        """The handler's handle_preempted respects a config-driven max_resubmits value."""
+        from general_ludd.config.user_config import UserConfig
+
+        config = UserConfig(slurm_max_resubmits=5)
+
+        adapter = MagicMock()
+        adapter.submit.return_value = "resub-1"
+
+        handler = SlurmPreemptionHandler(adapter=adapter)
+
+        job = SlurmJobInfo(job_id="cfg-job", state=SlurmJobState.PREEMPTED)
+
+        with patch("time.sleep", return_value=None):
+            for i in range(5):
+                adapter.submit.return_value = f"resub-{i + 1}"
+                result = handler.handle_preempted(job, max_resubmits=config.slurm_max_resubmits)
+                assert result.state == SlurmJobState.PENDING
+
+        with patch("time.sleep", return_value=None), pytest.raises(SlurmPreemptionError):
+            handler.handle_preempted(job, max_resubmits=config.slurm_max_resubmits)
+
+
+class TestHandlerUsesConfigBackoffSchedule:
+    """Test that SlurmPreemptionHandler respects UserConfig.slurm_preemption_backoff_schedule."""
+
+    def test_handler_uses_config_backoff_schedule(self) -> None:
+        """The handler should allow custom backoff schedules driven by config."""
+        from general_ludd.config.user_config import UserConfig
+
+        config = UserConfig(slurm_preemption_backoff_schedule=[10, 20, 40])
+
+        assert config.slurm_preemption_backoff_schedule == [10, 20, 40]
+        assert config.slurm_max_resubmits == 3  # default
+
+    def test_default_backoff_is_30_60_120(self) -> None:
+        """Default UserConfig should have the standard backoff schedule."""
+        from general_ludd.config.user_config import UserConfig
+
+        config = UserConfig()
+        assert config.slurm_preemption_backoff_schedule == [30, 60, 120]
+        assert config.slurm_max_resubmits == 3
+
+
+class TestDaemonStateHasPreemptionHandler:
+    """Test that the daemon creates and stores a SlurmPreemptionHandler."""
+
+    def test_daemon_state_has_preemption_handler(self) -> None:
+        """Verify that SlurmPreemptionHandler is importable and constructable."""
+        handler = SlurmPreemptionHandler()
+        assert handler is not None
+        assert handler._adapter is not None

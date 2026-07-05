@@ -188,3 +188,49 @@ class TestEventLoopPollPhase:
         asyncio.run(loop._phase_poll_issue_sources())
         loop._todo_repo.create.assert_not_called()
         assert loop._tick_metrics.get("issues_polled") is None
+
+
+# --- Daemon wiring ---------------------------------------------------------
+
+
+class TestDaemonIssueSourceWiring:
+    def test_issue_ingestor_app_state_default(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from fastapi.testclient import TestClient
+
+        from general_ludd.daemon import create_daemon_app
+
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / "test.db"
+            with TestClient(create_daemon_app(
+                tick_interval=0.01,
+                _db_path_override=str(db),
+            )) as client:
+                # app.state should exist
+                assert client is not None
+
+    def test_issues_config_respects_env_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GLUDD_ISSUES__POLLING_ENABLED", "false")
+        cfg = UserConfig()
+        assert cfg.issues.polling_enabled is False
+        assert cfg.issues.poll_interval_ticks == 300
+
+    def test_issues_config_env_full_object(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "GLUDD_ISSUES",
+            '{"polling_enabled": true, "poll_interval_ticks": 60, '
+            '"github_label": "bot-task", "github_owner": "testorg", '
+            '"github_repo": "testrepo"}'
+        )
+        cfg = UserConfig()
+        assert cfg.issues.polling_enabled is True
+        assert cfg.issues.poll_interval_ticks == 60
+        assert cfg.issues.github_label == "bot-task"
+        assert cfg.issues.github_owner == "testorg"
+        assert cfg.issues.github_repo == "testrepo"
+
+    def test_issue_ingestor_label_respects_config(self) -> None:
+        ingestor = GitHubIssueIngestor(owner="o", repo="r", label="custom-label")
+        assert ingestor._label == "custom-label"

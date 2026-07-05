@@ -51,6 +51,7 @@ def invoke_model_for_generation(
     project_id: str | None = None,
     use_slm_compaction: bool = False,
     compaction_level: CompactionLevel | None = None,
+    scheduling_hint: Any | None = None,
 ) -> tuple[str | None, list[dict[str, Any]] | None]:
     """Call the model for a generation job.
 

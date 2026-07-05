@@ -124,8 +124,8 @@ class Todo(BaseModel):
     resource_profile: ResourceProfile = ResourceProfile.LOW_RESOURCE
     parent_todo_id: str | None = None
     child_todo_ids: list[str] = Field(default_factory=list)
-    acceptance_criteria: list[str] = Field(default_factory=list)
-    definition_of_done: str = ""
+    acceptance_criteria: list[str] = Field(default_factory=list, max_length=20)
+    definition_of_done: str = Field(default="", max_length=4096)
     test_commands: list[str] = Field(default_factory=list)
     molecule_scenarios: list[str] = Field(default_factory=list)
     molecule_evidence_refs: list[str] = Field(default_factory=list)

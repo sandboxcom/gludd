@@ -24,7 +24,7 @@ class EvalHarness:
 
     def run_benchmark(self, cases: list[EvalCase]) -> list[EvalResult]:
         if self._evaluator is None:
-            results = [
+            no_eval_results = [
                 EvalResult(
                     case_id=c.id,
                     passed=False,
@@ -33,8 +33,8 @@ class EvalHarness:
                 )
                 for c in cases
             ]
-            self._last_results = results
-            return results
+            self._last_results = no_eval_results
+            return no_eval_results
 
         time.monotonic()
         results: list[EvalResult] = []

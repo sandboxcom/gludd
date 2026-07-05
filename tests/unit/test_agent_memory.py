@@ -112,3 +112,56 @@ class TestMemoryRepository:
         perm = await repo.get("agent-1", "permanent")
         assert perm is not None
         assert perm.value == "y"
+
+    @pytest.mark.asyncio
+    async def test_delete_returns_true_when_record_exists(self, async_session):
+        repo = MemoryRepository(async_session)
+        await repo.set(agent_id="agent-1", key="del-key", value="val")
+        deleted = await repo.delete("agent-1", "del-key")
+        assert deleted is True
+        fetched = await repo.get("agent-1", "del-key")
+        assert fetched is None
+
+    @pytest.mark.asyncio
+    async def test_delete_returns_false_when_record_missing(self, async_session):
+        repo = MemoryRepository(async_session)
+        deleted = await repo.delete("agent-1", "no-such-key")
+        assert deleted is False
+
+    @pytest.mark.asyncio
+    async def test_list_by_namespace(self, async_session):
+        repo = MemoryRepository(async_session)
+        await repo.set(agent_id="agent-1", key="a", value="1", namespace="ns1")
+        await repo.set(agent_id="agent-1", key="b", value="2", namespace="ns1")
+        await repo.set(agent_id="agent-1", key="c", value="3", namespace="ns2")
+        results = await repo.list_by_namespace("agent-1", namespace="ns1")
+        assert len(results) == 2
+        keys = {r.key for r in results}
+        assert keys == {"a", "b"}
+
+    @pytest.mark.asyncio
+    async def test_list_by_namespace_filters_expired(self, async_session):
+        repo = MemoryRepository(async_session)
+        from datetime import UTC, datetime, timedelta
+
+        await repo.set(agent_id="agent-1", key="active", value="1", namespace="ns")
+        expired_rec = await repo.set(agent_id="agent-1", key="expired", value="2", namespace="ns", ttl_seconds=60)
+        expired_rec.created_at = datetime.now(UTC) - timedelta(seconds=120)
+        await async_session.flush()
+
+        results = await repo.list_by_namespace("agent-1", namespace="ns")
+        assert len(results) == 1
+        assert results[0].key == "active"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_set_same_key(self, async_session):
+
+        repo1 = MemoryRepository(async_session)
+        repo2 = MemoryRepository(async_session)
+
+        await repo1.set(agent_id="agent-1", key="shared", value="first")
+        await repo2.set(agent_id="agent-1", key="shared", value="second")
+
+        fetched = await repo1.get("agent-1", "shared")
+        assert fetched is not None
+        assert fetched.value == "second"

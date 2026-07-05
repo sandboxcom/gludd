@@ -368,7 +368,7 @@ class BenchmarkRunner:
         from general_ludd.review.reviewer import ReturnReviewer
 
         mock_gateway = _MockGatewayReview()
-        mock_registry = MagicMockPromptRegistry()  # type: ignore[name-defined]
+        mock_registry = MagicMockPromptRegistry()
 
         reviewer_custom = ReturnReviewer(
             gateway=mock_gateway,  # type: ignore[arg-type]

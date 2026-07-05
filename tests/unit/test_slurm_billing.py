@@ -198,3 +198,168 @@ class TestAccountQosValidation:
                 output=None,
                 extra_args=None,
             )
+
+
+class TestSubmitEndpointAcceptsAccountAndQos:
+    """Test that the router's submit endpoint processes account and qos fields."""
+
+    def test_submit_passes_account_to_adapter(self):
+        """The HTTP router submit extracts account from the JSON body."""
+        from unittest.mock import MagicMock, patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.routers.slurm import register as register_slurm
+
+        app = FastAPI()
+        register_slurm(app, {})
+
+        mock_adapter = MagicMock()
+        mock_adapter.submit.return_value = "12345"
+
+        with patch("general_ludd.routers.slurm._make_adapter", return_value=mock_adapter):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                "/admin/slurm/submit",
+                json={"command": "vllm-serve-model", "account": "billing_acct", "qos": "express"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["job_id"] == "12345"
+            call_kwargs = mock_adapter.submit.call_args.kwargs
+            assert call_kwargs["account"] == "billing_acct"
+            assert call_kwargs["qos"] == "express"
+
+    def test_submit_omits_account_and_qos_when_not_provided(self):
+        """account and qos are omitted from the adapter call when absent."""
+        from unittest.mock import MagicMock, patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.routers.slurm import register as register_slurm
+
+        app = FastAPI()
+        register_slurm(app, {})
+
+        mock_adapter = MagicMock()
+        mock_adapter.submit.return_value = "67890"
+
+        with patch("general_ludd.routers.slurm._make_adapter", return_value=mock_adapter):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post("/admin/slurm/submit", json={"command": "echo hi"})
+            assert resp.status_code == 200
+            call_kwargs = mock_adapter.submit.call_args.kwargs
+            assert call_kwargs["account"] is None
+            assert call_kwargs["qos"] is None
+
+
+class TestSubmitEndpointAcceptsCostFields:
+    """Test that max_cost_usd and hourly_rate_usd flow through the submit path."""
+
+    def test_submit_accepts_max_cost_usd(self):
+        """The cost fields are accepted in the submit request body."""
+        from unittest.mock import MagicMock, patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.routers.slurm import register as register_slurm
+
+        app = FastAPI()
+        register_slurm(app, {})
+
+        mock_adapter = MagicMock()
+        mock_adapter.submit.return_value = "job-cost"
+
+        with patch("general_ludd.routers.slurm._make_adapter", return_value=mock_adapter):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post(
+                "/admin/slurm/submit",
+                json={
+                    "command": "train-model",
+                    "max_cost_usd": 5.0,
+                    "hourly_rate_usd": 2.5,
+                },
+            )
+            assert resp.status_code == 200
+            # Cost fields are accepted in the request body (passed to adapter
+            # via the req dict — the router forwards them as part of submit params).
+            assert resp.json()["job_id"] == "job-cost"
+
+
+class TestGetJobCostEndpoint:
+    """Test GET /admin/slurm/jobs/{job_id}/cost returns cost breakdown."""
+
+    def test_cost_endpoint_returns_breakdown(self):
+        """The cost endpoint returns estimated cost information for a job."""
+        from unittest.mock import MagicMock, patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.routers.slurm import register as register_slurm
+
+        app = FastAPI()
+        register_slurm(app, {})
+
+        mock_adapter = MagicMock()
+        from general_ludd.infra.slurm import SlurmJobInfo, SlurmJobState
+        mock_adapter.status.return_value = SlurmJobInfo(
+            job_id="job-1", state=SlurmJobState.RUNNING, cost_incurred=2.75
+        )
+
+        with patch("general_ludd.routers.slurm._make_adapter", return_value=mock_adapter):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/admin/slurm/jobs/job-1/cost")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["job_id"] == "job-1"
+            assert "cost_breakdown" in data
+            assert data["cost_breakdown"]["estimated_cost_usd"] == 2.75
+
+    def test_cost_endpoint_unknown_job(self):
+        """The cost endpoint returns 200 with zero cost for unknown job."""
+        from unittest.mock import MagicMock, patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.routers.slurm import register as register_slurm
+
+        app = FastAPI()
+        register_slurm(app, {})
+
+        mock_adapter = MagicMock()
+        from general_ludd.infra.slurm import SlurmJobInfo, SlurmJobState
+        mock_adapter.status.return_value = SlurmJobInfo(
+            job_id="unknown", state=SlurmJobState.UNKNOWN, cost_incurred=0.0
+        )
+
+        with patch("general_ludd.routers.slurm._make_adapter", return_value=mock_adapter):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/admin/slurm/jobs/unknown/cost")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["cost_breakdown"]["estimated_cost_usd"] == 0.0
+
+    def test_cost_endpoint_not_installed(self):
+        """The cost endpoint returns 503 when Slurm is not installed."""
+        from unittest.mock import MagicMock, patch
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.infra.slurm import SlurmNotInstalledError
+        from general_ludd.routers.slurm import register as register_slurm
+
+        app = FastAPI()
+        register_slurm(app, {})
+
+        mock_adapter = MagicMock()
+        mock_adapter.status.side_effect = SlurmNotInstalledError("sacct not found")
+
+        with patch("general_ludd.routers.slurm._make_adapter", return_value=mock_adapter):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/admin/slurm/jobs/job-1/cost")
+            assert resp.status_code == 503

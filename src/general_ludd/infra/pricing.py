@@ -152,6 +152,7 @@ class InfraTracker:
 
         self._total_infra_cost: float = 0.0
         self._infra_cost_by_provider: dict[str, float] = {}
+        self._infra_cost_by_project: dict[str, float] = {}
         self._cost_lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -209,6 +210,7 @@ class InfraTracker:
         gpu_type: str,
         seconds: float,
         spot: bool = False,
+        project_id: str | None = None,
     ) -> None:
         """Compute the cost of GPU seconds and add to the running infra total.
 
@@ -217,10 +219,11 @@ class InfraTracker:
         picked up automatically.
 
         Args:
-            provider: Provider slug (e.g. ``"runpod"``, ``"aws"``).
-            gpu_type: GPU SKU (e.g. ``"A100-SXM4-80GB-1x"``).
-            seconds:  Seconds of GPU time consumed.
-            spot:     If True, apply spot pricing discount.
+            provider:   Provider slug (e.g. ``"runpod"``, ``"aws"``).
+            gpu_type:   GPU SKU (e.g. ``"A100-SXM4-80GB-1x"``).
+            seconds:    Seconds of GPU time consumed.
+            spot:       If True, apply spot pricing discount.
+            project_id: Optional project the cost is attributed to.
         """
         import math
 
@@ -239,6 +242,10 @@ class InfraTracker:
             self._infra_cost_by_provider[provider] = (
                 self._infra_cost_by_provider.get(provider, 0.0) + cost
             )
+            if project_id is not None:
+                self._infra_cost_by_project[project_id] = (
+                    self._infra_cost_by_project.get(project_id, 0.0) + cost
+                )
 
     def get_total_infra_cost(self) -> float:
         """Return the total accumulated infrastructure spend in USD."""
@@ -249,6 +256,11 @@ class InfraTracker:
         """Return infrastructure spend broken down by provider slug."""
         with self._cost_lock:
             return dict(self._infra_cost_by_provider)
+
+    def get_infra_cost_by_project(self) -> dict[str, float]:
+        """Return infrastructure spend broken down by project_id."""
+        with self._cost_lock:
+            return dict(self._infra_cost_by_project)
 
     # ------------------------------------------------------------------
     # Internal helpers

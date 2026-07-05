@@ -72,6 +72,7 @@ from general_ludd.projects.workspace import ProjectWorkspace
 from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.quality.preflight import run_preflight
 from general_ludd.reload.worker_broadcast import WorkerBroadcaster
+from general_ludd.replay.recorder import RunRecorder
 from general_ludd.sandbox_exec.executor import SandboxExecutor
 from general_ludd.scoring.pareto import ParetoRouter
 from general_ludd.scoring.router import AdaptiveRouter
@@ -902,6 +903,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:
             logger.warning("Orphan Slurm job detection failed", exc_info=True)
 
+        # Bill-3: preemption handler for Slurm jobs
+        from general_ludd.infra.slurm_preemption import SlurmPreemptionHandler
+        app.state._slurm_preemption_handler = SlurmPreemptionHandler()
+        logger.info("Slurm preemption handler initialised")
+
         # Phase 2 Step 3 (self-improve wiring): build the audit_sink closure over
         # session_factory + AuditEventRepository and publish it on app.state so
         # the /admin/self-update/plan router can pass it through to apply_plan.
@@ -946,6 +952,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             len(_collections_paths),
             ", ".join(f"{e.source}={e.path}" for e in _collections_paths),
         )
+
+        # Bill-4: Terraform watchdog for stack cost monitoring
+        stacks_dir = os.environ.get(
+            "GLUDD_TERRAFORM_STACKS_DIR",
+            str(Path.cwd() / "infra" / "terraform" / "stacks"),
+        )
+        from general_ludd.infra.terraform_watchdog import TerraformWatchdog
+        app.state._terraform_watchdog = TerraformWatchdog(stacks_dir=stacks_dir)
+        logger.info("Terraform watchdog initialised for stacks: %s", stacks_dir)
 
         def _update_ansible_env(
             paths: list[Any], env: dict[str, str]
@@ -1268,6 +1283,34 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     langgraph_reviewer._confidence_threshold,
                 )
 
+        # G11: Consensus-based multi-agent review. Wired when a model gateway
+        # exists so the consensus review path (3-agent debate) is available.
+        # Config-gated via ``consensus_review.enabled`` (default OFF).
+        consensus_reviewer = None
+        consensus_cfg: dict[str, Any] = {}
+        if uc is not None:
+            with contextlib.suppress(Exception):
+                cc = getattr(uc, "consensus_review", None)
+                if cc is not None:
+                    consensus_cfg["enabled"] = bool(getattr(cc, "enabled", False))
+                    consensus_cfg["num_agents"] = int(getattr(cc, "num_agents", 3))
+                    consensus_cfg["max_rounds"] = int(getattr(cc, "max_rounds", 3))
+        if model_gateway is not None:
+            from general_ludd.review.consensus_reviewer import ConsensusReviewer
+
+            consensus_reviewer = ConsensusReviewer(
+                gateway=model_gateway,
+                num_agents=consensus_cfg.get("num_agents", 3),
+                max_rounds=consensus_cfg.get("max_rounds", 3),
+                use_langgraph=False,
+            )
+            logger.info(
+                "ConsensusReviewer wired: num_agents=%d max_rounds=%d (enabled=%s)",
+                consensus_reviewer._num_agents,
+                consensus_reviewer._max_rounds,
+                consensus_cfg.get("enabled", False),
+            )
+
         # H2 (W3.7): self-improvement interval comes from config; 0 disables it.
         # interval=0 → disabled; default is 10 minutes so the feature is on out-of-the-box.
         self_improve_interval = 0
@@ -1433,6 +1476,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         sandbox_executor = SandboxExecutor(timeout=30)
 
+        _cfg_dir = getattr(app.state, "_config_dir", None)
+        replay_dir = os.path.join(_cfg_dir, "replay") if _cfg_dir else ".gludd/replay"
+        run_recorder = RunRecorder(_FS(root_path=replay_dir))
+        app.state._run_recorder = run_recorder
+
         issue_ingestor = None
         if uc is not None:
             issues_cfg = getattr(uc, "issues", None)
@@ -1509,13 +1557,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "compute_idle_teardown_threshold_ticks": getattr(uc, "compute_idle_teardown_threshold_ticks", 3)
                 if uc else 3,
                 "compute_idle_gpu_sm_pct": getattr(uc, "compute_idle_gpu_sm_pct", 5.0) if uc else 5.0,
+                "compute_idle_preemption_notice_ticks": getattr(uc, "compute_idle_preemption_notice_ticks", 1)
+                if uc else 1,
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,
             project_workspace=_init_project_workspaces(ext["projects"]),
             project_secrets_manager=secrets_resolver,
             reviewer=return_reviewer,
-            consensus_reviewer=None,
+            consensus_reviewer=consensus_reviewer,
             langgraph_reviewer=langgraph_reviewer,
             self_improve_interval=self_improve_interval,
             # H3: spend_limiter passed via constructor so _spend_limiter is set
@@ -1532,11 +1582,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             pause_controller=getattr(app.state, "_pause_controller", None),
             memory_repo=memory_repo,
             sandbox_executor=sandbox_executor,
+            run_recorder=run_recorder,
             checkpointer=app.state.checkpointer,
             utilization_tracker=app.state._utilization_tracker,
             deployment_manager=getattr(app.state, "_deployment_manager", None),
             floor_controller=floor_controller,
             issue_ingestor=issue_ingestor,
+            infra_tracker=getattr(app.state, "_infra_tracker", None),
+            compaction_controller=getattr(
+                app.state, "_compaction_aggressiveness_controller", None
+            ),
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -1716,6 +1771,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             registry=registry,
             executor=dispatcher_executor,
             pause_controller=app.state._pause_controller,
+            run_recorder=run_recorder,
         )
 
         # --- 3-lane multitask+merge pipeline (#77), behind config flag ----- #
@@ -1859,6 +1915,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         )
         except Exception:
             logger.warning("Slurm shutdown hook failed", exc_info=True)
+
+    # Bill-2: stop all Slurm cost-cap monitors on shutdown
+    monitors: dict[str, Any] = getattr(app.state, "_slurm_monitors", None) or {}
+    for job_id, monitor in list(monitors.items()):
+        try:
+            monitor.stop()
+            logger.info("Slurm shutdown: stopped cost-cap monitor for %s", job_id)
+        except Exception as exc:
+            logger.warning("Slurm shutdown: failed to stop monitor %s: %s", job_id, exc)
 
     if getattr(app.state, "_degraded", None):
         logger.warning("Daemon is running in degraded mode: %s", app.state._degraded)
@@ -2407,6 +2472,27 @@ def create_daemon_app(
             "class": type(critique).__name__ if critique is not None else None,
         }
 
+    @app.post(
+        "/admin/plan/critique",
+        summary="Critique a plan",
+        description=(
+            "Accepts a plan dict (matching PlanArtifact fields: title, "
+            "target_files, description, dependencies, content) and returns "
+            "a list of critique findings. Each finding has severity "
+            "(error/warning/info) and message."
+        ),
+    )
+    async def admin_plan_critique(body: dict[str, Any]) -> dict[str, Any]:
+        critique = getattr(app.state, "plan_critique", None)
+        if critique is None:
+            return {"status": "not_configured", "findings": []}
+        findings = critique.critique_plan(body)
+        return {
+            "status": "ok",
+            "findings": findings,
+            "finding_count": len(findings),
+        }
+
     @app.get(
         "/admin/compaction/eval-status",
         summary="Compaction evaluation status",
@@ -2442,6 +2528,7 @@ def create_daemon_app(
         integrity,
         maintenance,
         mcp,
+        memory,
         messages,
         model_performance,
         models,
@@ -2453,6 +2540,7 @@ def create_daemon_app(
         reload,
         remediation,
         render,
+        replays,
         review,
         schedule,
         security,
@@ -2489,6 +2577,7 @@ def create_daemon_app(
     variants.register(app, daemon_state)
     benchmark.register(app, daemon_state)
     mcp.register(app, daemon_state)
+    memory.register(app, daemon_state)
     skills.register(app, daemon_state)
     compute.register(app, daemon_state)
     deployments.register(app, daemon_state)
@@ -2501,6 +2590,7 @@ def create_daemon_app(
     projects.register(app, daemon_state)
     quantization.register(app, daemon_state)
     reload.register(app, daemon_state)
+    replays.register(app, daemon_state)
     worktree.register(app, daemon_state)
     ansible.register(app, daemon_state)
     slurm.register(app, daemon_state)
@@ -2613,5 +2703,27 @@ def create_daemon_app(
     _uc = (getattr(app.state, "_startup_config", {}) or {}).get("user_config")
     _connector_cfg = getattr(_uc, "connectors", None) if _uc else None
     wire_observability(app, daemon_state, _connector_cfg)
+
+    @app.get(
+        "/admin/connectors/health",
+        summary="Connector health — probe every registered connector",
+        description=(
+            "Returns health() across EVERY connector in the ConnectorRegistry. "
+            "When no registry is wired (no connectors configured), returns an "
+            "empty result rather than erroring. Each source is reported as "
+            "{\"ok\": true/false, ...} — a failed backend is a data point, not "
+            "an exception. This path is PSK-gated (NOT in _PUBLIC_PATHS)."
+        ),
+    )
+    async def admin_connectors_health() -> dict[str, Any]:
+        reg = getattr(app.state, "_connector_registry", None)
+        if reg is None:
+            return {"health": {}, "count": 0, "errors": []}
+        health = reg.health_all()
+        return {
+            "health": health,
+            "count": len(health),
+            "errors": reg.errors(),
+        }
 
     return app

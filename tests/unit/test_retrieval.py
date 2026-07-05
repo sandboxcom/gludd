@@ -194,3 +194,141 @@ class TestTokenization:
 
         assert _tokenize("") == []
         assert _tokenize("!@#$%") == []
+
+
+class TestCosineSimilarity:
+    def test_identical_vectors(self):
+        from general_ludd.retrieval.indexer import _cosine_similarity
+        vec = {"hello": 1.0, "world": 2.0}
+        assert _cosine_similarity(vec, vec) == 1.0
+
+    def test_orthogonal_vectors(self):
+        from general_ludd.retrieval.indexer import _cosine_similarity
+        vec_a = {"a": 1.0}
+        vec_b = {"b": 1.0}
+        assert _cosine_similarity(vec_a, vec_b) == 0.0
+
+    def test_zero_norm_returns_zero(self):
+        from general_ludd.retrieval.indexer import _cosine_similarity
+        assert _cosine_similarity({"x": 0.0}, {"y": 1.0}) == 0.0
+
+
+class TestIndexBatchSize:
+    def test_batch_size_default(self):
+        from general_ludd.retrieval.indexer import CodebaseIndexer
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            indexer = CodebaseIndexer(cache_dir=tmpdir)
+            result = indexer.index_files([], batch_size=32)
+            assert result["files_indexed"] == 0
+            indexer.close()
+
+
+class TestIndexUnicode:
+    def test_handles_non_utf8(self, temp_cache_dir):
+        import tempfile as tf
+        from pathlib import Path
+
+        from general_ludd.retrieval.indexer import CodebaseIndexer
+        tmp = Path(tf.gettempdir())
+        bad = tmp / "binary_file.bin"
+        bad.write_bytes(b"\x00\x01\x02\x80\xff")
+        try:
+            indexer = CodebaseIndexer(cache_dir=temp_cache_dir)
+            result = indexer.index_files([bad])
+            indexer.close()
+            assert result["errors"] >= 1 or result["files_indexed"] == 0
+        finally:
+            if bad.exists():
+                bad.unlink()
+
+
+class TestSemanticSearcherRelevance:
+    def test_search_ranks_by_relevance(self, sample_files, temp_cache_dir):
+        from general_ludd.retrieval.indexer import CodebaseIndexer
+        from general_ludd.retrieval.searcher import SemanticSearcher
+
+        paths, _ = sample_files
+        indexer = CodebaseIndexer(cache_dir=temp_cache_dir)
+        indexer.index_files(paths)
+        indexer.close()
+
+        searcher = SemanticSearcher(cache_dir=temp_cache_dir)
+        results = searcher.search("Calculator class", top_k=5)
+        searcher.close()
+
+        assert len(results) > 0
+        scores = [r["score"] for r in results]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_search_scores_are_between_zero_and_one(self, sample_files, temp_cache_dir):
+        from general_ludd.retrieval.indexer import CodebaseIndexer
+        from general_ludd.retrieval.searcher import SemanticSearcher
+
+        paths, _ = sample_files
+        indexer = CodebaseIndexer(cache_dir=temp_cache_dir)
+        indexer.index_files(paths)
+        indexer.close()
+
+        searcher = SemanticSearcher(cache_dir=temp_cache_dir)
+        results = searcher.search("test", top_k=5)
+        searcher.close()
+
+        for r in results:
+            assert 0.0 <= r["score"] <= 1.0
+
+    def test_top_k_zero_returns_empty(self, sample_files, temp_cache_dir):
+        from general_ludd.retrieval.indexer import CodebaseIndexer
+        from general_ludd.retrieval.searcher import SemanticSearcher
+
+        paths, _ = sample_files
+        indexer = CodebaseIndexer(cache_dir=temp_cache_dir)
+        indexer.index_files(paths)
+        indexer.close()
+
+        searcher = SemanticSearcher(cache_dir=temp_cache_dir)
+        results = searcher.search("test", top_k=0)
+        searcher.close()
+
+        assert results == []
+
+
+class TestIndexerContextManager:
+    def test_close_clears_cache(self, temp_cache_dir):
+        from general_ludd.retrieval.indexer import CodebaseIndexer
+
+        indexer = CodebaseIndexer(cache_dir=temp_cache_dir)
+        assert indexer._cache is not None
+        indexer.close()
+
+
+class TestTokenizeEdgeCases:
+    def test_single_char_tokens_filtered(self):
+        from general_ludd.retrieval.indexer import _tokenize
+
+        tokens = _tokenize("a b c d ef")
+        assert tokens == ["ef"]
+
+    def test_mixed_case_normalized(self):
+        from general_ludd.retrieval.indexer import _tokenize
+
+        tokens = _tokenize("FooBar FooBar")
+        assert "foobar" in tokens
+        count = tokens.count("foobar")
+        assert count == 2
+
+    def test_snake_case_tokens(self):
+        from general_ludd.retrieval.indexer import _tokenize
+
+        tokens = _tokenize("hello_world test_function")
+        assert "hello" in tokens
+        assert "world" in tokens
+        assert "test" in tokens
+        assert "function" in tokens
+
+    def test_camel_case_tokens(self):
+        from general_ludd.retrieval.indexer import _tokenize
+
+        tokens = _tokenize("camelCase PascalCase")
+        assert "camelcase" in tokens
+        assert "pascalcase" in tokens

@@ -6,6 +6,8 @@ import sys
 import time
 from unittest import mock
 
+import pytest
+
 from general_ludd.infra.gpu_metrics import GPUMetrics, GPUMetricsCollector
 from general_ludd.infra.utilization import ComputeEndpoint, UtilizationTracker
 
@@ -263,3 +265,88 @@ class TestUtilizationTrackerGPUIntegration:
         assert len(tracker._gpu_history["e1"]) == 3
         values = [sm for ts, sm in tracker._gpu_history["e1"]]
         assert values == [20.0, 30.0, 40.0]
+
+
+class TestGPUMetricsAPIEndpoints:
+    @pytest.mark.asyncio
+    async def test_collect_gpu_metrics_endpoint_returns_data(self):
+        from unittest.mock import MagicMock
+
+        from general_ludd.infra.gpu_metrics import GPUMetrics
+
+        tracker = UtilizationTracker()
+        tracker.register_endpoint("ep-a", "http://a:8000")
+        tracker.register_endpoint("ep-b", "http://b:8000")
+
+        app = MagicMock()
+        app.state.daemon_state = {
+            "_last_gpu_metrics": [
+                GPUMetrics(gpu_sm_util_pct=75.0, gpu_mem_util_pct=50.0),
+                GPUMetrics(gpu_sm_util_pct=85.0, gpu_mem_util_pct=60.0),
+            ],
+            "_last_gpu_metrics_at": 12345.0,
+        }
+        app.state._utilization_tracker = tracker
+        if not hasattr(app.state, "_compute_deployments"):
+            app.state._compute_deployments = {}
+
+        captured = []
+
+        def mock_get(path: str):
+            def decorator(handler):
+                captured.append(("GET", path, handler))
+                return handler
+            return decorator
+
+        app.get = mock_get
+        app.delete = MagicMock()
+        app.post = MagicMock()
+
+        import general_ludd.routers.compute as compute_mod
+        compute_mod.register(app, {})
+
+        metrics_routes = [c for c in captured if "gpu-metrics" in c[1]]
+        assert len(metrics_routes) >= 2
+
+        for _method, _path, handler in metrics_routes:
+            if "{endpoint_id}" not in _path:
+                result = await handler()
+                assert "metrics" in result
+                assert "collected_at" in result
+                assert "ep-a" in result["metrics"]
+                assert "ep-b" in result["metrics"]
+                assert result["collected_at"] == 12345.0
+
+    @pytest.mark.asyncio
+    async def test_gpu_metrics_endpoint_empty_when_no_collection(self):
+        from unittest.mock import MagicMock
+
+        tracker = UtilizationTracker()
+        app = MagicMock()
+        app.state.daemon_state = {}
+        app.state._utilization_tracker = tracker
+        if not hasattr(app.state, "_compute_deployments"):
+            app.state._compute_deployments = {}
+
+        captured = []
+
+        def mock_get(path: str):
+            def decorator(handler):
+                captured.append(("GET", path, handler))
+                return handler
+            return decorator
+
+        app.get = mock_get
+        app.delete = MagicMock()
+        app.post = MagicMock()
+
+        import general_ludd.routers.compute as compute_mod
+        compute_mod.register(app, {})
+
+        metrics_routes = [c for c in captured if "gpu-metrics" in c[1]]
+        all_route = next((h for p, h in [(c[1], c[2]) for c in metrics_routes if "{endpoint_id}" not in c[1]]), None)
+        assert all_route is not None
+
+        result = await all_route()
+        assert result["metrics"] == {}
+        assert result["collected_at"] is None

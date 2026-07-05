@@ -82,3 +82,60 @@ class TestTaskRole:
         assert TaskRole.EDITOR == "editor"
         assert TaskRole.COMPACTOR == "compactor"
         assert TaskRole.ENUMERATOR == "enumerator"
+
+
+class TestRoleWeightsProperties:
+    def test_weight_preserves_type_information(self):
+        w = RoleWeights(0.3, 0.7)
+        assert isinstance(w.cost, float)
+        assert isinstance(w.quality, float)
+
+    def test_all_weights_individually_sum_to_one(self):
+        for tt in TaskType:
+            w = task_weights[tt]
+            assert 0.0 < w.cost < 1.0, f"{tt.name} cost {w.cost} out of range"
+            assert 0.0 < w.quality < 1.0, f"{tt.name} quality {w.quality} out of range"
+
+    def test_security_fix_is_most_quality_sensitive(self):
+        security_cost = task_weights[TaskType.SECURITY_FIX].cost
+        for tt in TaskType:
+            if tt == TaskType.SECURITY_FIX:
+                continue
+            assert security_cost <= task_weights[tt].cost, f"{tt.name} has lower quality weight than SECURITY_FIX"
+
+    def test_documentation_is_most_cost_sensitive(self):
+        doc_cost = task_weights[TaskType.DOCUMENTATION].cost
+        for tt in TaskType:
+            if tt == TaskType.DOCUMENTATION:
+                continue
+            assert doc_cost >= task_weights[tt].cost, f"{tt.name} has higher quality weight than DOCUMENTATION"
+
+
+class TestTaskRoleEnumExport:
+    def test_exported_from_package_init(self):
+        from general_ludd.routing_roles import TaskRole as TR
+        assert TR is TaskRole
+
+    def test_role_weights_exported_from_package_init(self):
+        from general_ludd.routing_roles import RoleWeights as RW
+        assert RW is RoleWeights
+
+    def test_task_weights_exported_from_package_init(self):
+        from general_ludd.routing_roles import task_weights as tw
+        assert tw is task_weights
+
+    def test_weights_for_exported_from_package_init(self):
+        from general_ludd.routing_roles import weights_for as wf
+        assert wf is weights_for
+
+
+class TestTaskTypeFromSchema:
+    def test_task_type_enum_includes_all_weights(self):
+        from general_ludd.schemas.benchmark import TaskType
+        for tt in TaskType:
+            assert tt in task_weights, f"{tt.name} missing from task_weights"
+
+    def test_no_extra_types_in_weights(self):
+        from general_ludd.schemas.benchmark import TaskType
+        for tt_key in list(task_weights):
+            assert tt_key in list(TaskType)

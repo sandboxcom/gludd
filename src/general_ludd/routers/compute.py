@@ -214,6 +214,39 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             ) from exc
 
         app.state._compute_deployments[instance.instance_id] = instance
+
+        # Bill-2: wire Slurm cost cap monitor for compute deployments with max_cost_usd
+        max_cost = req.get("max_cost_usd", 10.0)
+        if max_cost and max_cost > 0:
+            from general_ludd.infra.slurm import SlurmAdapter, SlurmJobConfig, SlurmJobMonitor
+            try:
+                adapter = SlurmAdapter()
+                slurm_config = SlurmJobConfig(
+                    max_cost_usd=float(max_cost),
+                    hourly_rate_usd=req.get("hourly_rate_usd"),
+                    idle_timeout_minutes=req.get("idle_timeout_minutes"),
+                )
+                monitor = SlurmJobMonitor(
+                    adapter=adapter,
+                    job_id=instance.instance_id,
+                    config=slurm_config,
+                )
+                if not hasattr(app.state, "_slurm_monitors"):
+                    app.state._slurm_monitors = {}
+                app.state._slurm_monitors[instance.instance_id] = monitor
+                monitor.start()
+                logger.info(
+                    "started Slurm cost-cap monitor for %s (max_cost_usd=%.2f)",
+                    instance.instance_id,
+                    max_cost,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "failed to start Slurm cost-cap monitor for %s: %s",
+                    instance.instance_id,
+                    exc,
+                )
+
         return {
             "instance_id": instance.instance_id,
             "provider": instance.provider.value,
@@ -242,6 +275,72 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=500, detail="compute destroy failed") from exc
         app.state._compute_deployments.pop(instance_id, None)
         return {"destroyed": instance_id}
+
+    @app.get("/admin/compute/gpu-metrics")
+    async def admin_compute_gpu_metrics() -> dict[str, Any]:
+        daemon_state = getattr(app.state, "daemon_state", None) or {}
+        metrics_list: list[dict[str, float]] = []
+        raw = daemon_state.get("_last_gpu_metrics")
+        if raw is not None:
+            for m in raw:
+                if hasattr(m, "as_dict"):
+                    metrics_list.append(m.as_dict())
+                elif isinstance(m, dict):
+                    metrics_list.append(m)
+                else:
+                    metrics_list.append({
+                        "gpu_sm_util_pct": getattr(m, "gpu_sm_util_pct", 0.0),
+                        "gpu_mem_util_pct": getattr(m, "gpu_mem_util_pct", 0.0),
+                        "gpu_temp_c": getattr(m, "gpu_temp_c", 0.0),
+                        "power_draw_w": getattr(m, "power_draw_w", 0.0),
+                        "memory_used_mb": getattr(m, "memory_used_mb", 0.0),
+                        "memory_total_mb": getattr(m, "memory_total_mb", 0.0),
+                    })
+        ext = _get_or_create_extended_subsystems(app)
+        endpoints = ext["utilization"].list_endpoints()
+        result: dict[str, Any] = {
+            "metrics": {},
+            "collected_at": daemon_state.get("_last_gpu_metrics_at"),
+        }
+        for idx, m in enumerate(metrics_list):
+            if idx < len(endpoints):
+                result["metrics"][endpoints[idx].endpoint_id] = m
+            else:
+                result["metrics"][f"device_{idx}"] = m
+        return result
+
+    @app.get("/admin/compute/gpu-metrics/{endpoint_id}")
+    async def admin_compute_gpu_metric_by_endpoint(endpoint_id: str) -> dict[str, Any]:
+        daemon_state = getattr(app.state, "daemon_state", None) or {}
+        raw = daemon_state.get("_last_gpu_metrics")
+        ext = _get_or_create_extended_subsystems(app)
+        endpoints = ext["utilization"].list_endpoints()
+        endpoint_idx: int | None = None
+        for idx, ep in enumerate(endpoints):
+            if ep.endpoint_id == endpoint_id:
+                endpoint_idx = idx
+                break
+        if endpoint_idx is None or raw is None or endpoint_idx >= len(raw):
+            raise HTTPException(
+                status_code=404,
+                detail=f"No GPU metrics found for endpoint {endpoint_id}",
+            )
+        m = raw[endpoint_idx]
+        if hasattr(m, "as_dict"):
+            return {"endpoint_id": endpoint_id, "metrics": m.as_dict()}
+        if isinstance(m, dict):
+            return {"endpoint_id": endpoint_id, "metrics": dict(m)}
+        return {
+            "endpoint_id": endpoint_id,
+            "metrics": {
+                "gpu_sm_util_pct": getattr(m, "gpu_sm_util_pct", 0.0),
+                "gpu_mem_util_pct": getattr(m, "gpu_mem_util_pct", 0.0),
+                "gpu_temp_c": getattr(m, "gpu_temp_c", 0.0),
+                "power_draw_w": getattr(m, "power_draw_w", 0.0),
+                "memory_used_mb": getattr(m, "memory_used_mb", 0.0),
+                "memory_total_mb": getattr(m, "memory_total_mb", 0.0),
+            },
+        }
 
     @app.get("/api/deployments")
     async def list_deployments() -> dict[str, Any]:

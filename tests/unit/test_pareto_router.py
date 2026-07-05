@@ -389,3 +389,127 @@ class TestAdaptiveRouterParetoIntegration:
         result = await router.route(TaskType("bug_fix"))
         assert not result.fallback
         assert result.selected_model_profile_id == "healthy_best"
+
+
+class TestParetoRouterLargeCandidateSet:
+    def test_many_candidates_still_finds_frontier(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = []
+        for i in range(50):
+            cost = 0.01 * (i + 1)
+            quality = 0.95 - 0.01 * i
+            candidates.append({"model": f"m{i}", "cost": cost, "quality": quality})
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) >= 1
+        assert len(result) <= 50
+
+    def test_frontier_never_empty_for_valid_input(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.01, "quality": 0.99},
+            {"model": "b", "cost": 0.02, "quality": 0.80},
+            {"model": "c", "cost": 0.03, "quality": 0.70},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) >= 1
+
+    def test_quality_descending_on_frontier_always(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.01, "quality": 0.50},
+            {"model": "b", "cost": 0.50, "quality": 0.99},
+            {"model": "c", "cost": 0.10, "quality": 0.80},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        qualities = [float(r["quality"]) for r in result]
+        for i in range(len(qualities) - 1):
+            assert qualities[i] >= qualities[i + 1]
+
+
+class TestParetoRouterPickWinnerRobustness:
+    def test_pick_winner_handles_same_cost_range(self) -> None:
+        router = ParetoRouter()
+        frontier: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.05, "quality": 0.80},
+            {"model": "b", "cost": 0.05, "quality": 0.90},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        # when costs are equal, quality should decide
+        assert winner["model"] == "b"
+
+    def test_pick_winner_handles_same_quality_range(self) -> None:
+        router = ParetoRouter()
+        frontier: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.85},
+            {"model": "b", "cost": 0.05, "quality": 0.85},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        # when quality is equal, lower cost should win
+        assert winner["model"] == "b"
+
+    def test_pick_winner_normalizes_correctly(self) -> None:
+        router = ParetoRouter(cost_weight=0.5, quality_weight=0.5)
+        frontier: list[dict[str, Any]] = [
+            {"model": "low_cost", "cost": 0.01, "quality": 0.60},
+            {"model": "high_qual", "cost": 0.10, "quality": 0.99},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+
+    def test_pick_winner_returns_first_on_tie(self) -> None:
+        router = ParetoRouter()
+        frontier: list[dict[str, Any]] = [
+            {"model": "first", "cost": 0.05, "quality": 0.80},
+            {"model": "second", "cost": 0.05, "quality": 0.80},
+            {"model": "third", "cost": 0.05, "quality": 0.80},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        assert winner["model"] == "first"
+
+
+class TestParetoRouterCostQualityWeights:
+    def test_cost_weight_zero_quality_weight_one(self) -> None:
+        router = ParetoRouter(cost_weight=0.0, quality_weight=1.0)
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap", "cost": 0.01, "quality": 0.50},
+            {"model": "expensive", "cost": 0.10, "quality": 0.99},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        assert winner["model"] == "expensive"
+
+    def test_cost_weight_one_quality_weight_zero(self) -> None:
+        router = ParetoRouter(cost_weight=1.0, quality_weight=0.0)
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap", "cost": 0.01, "quality": 0.50},
+            {"model": "expensive", "cost": 0.10, "quality": 0.99},
+        ]
+        winner = router.pick_winner(frontier)
+        assert winner is not None
+        assert winner["model"] == "cheap"
+
+
+class TestParetoFrontierMixedInvalid:
+    def test_some_valid_some_nan_still_works(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "b", "cost": float("nan"), "quality": 0.95},
+            {"model": "c", "cost": 0.15, "quality": 0.85},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "a"
+
+    def test_string_cost_treated_as_nan(self) -> None:
+        router = ParetoRouter()
+        candidates: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.10, "quality": 0.90},
+            {"model": "bad", "cost": "not_a_number", "quality": 0.95},
+        ]
+        result = router.route_by_pareto_frontier(candidates)
+        assert len(result) == 1
+        assert result[0]["model"] == "a"

@@ -1015,6 +1015,7 @@ async def _search_multi(
             corpus=corpus,
             top_k=20,  # fetch generously; cap after merge
             include_embeddings=False,
+            project_id=None,
         )
         try:
             if corpus == "task_types":

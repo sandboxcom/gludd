@@ -109,10 +109,27 @@ class UtilizationTracker:
         while len(self._task_history) > _MAX_TASK_HISTORY:
             self._task_history.popitem(last=False)
 
-    def route_task(self, task_id: str, model: str = "", prefer_model: bool = True) -> TaskRouting | None:
+    def route_task(
+        self,
+        task_id: str,
+        model: str = "",
+        prefer_model: bool = True,
+        scheduling_hint: Any | None = None,
+    ) -> TaskRouting | None:
         candidates = [e for e in self._endpoints.values() if e.is_available]
         if not candidates:
             return None
+        # bill-9: when a scheduling hint specifies a preferred GPU type,
+        # filter candidates to those matching the preferred GPU type first.
+        if scheduling_hint is not None:
+            hint_gpu = getattr(scheduling_hint, "preferred_gpu_type", None)
+            if hint_gpu:
+                gpu_matches = [
+                    e for e in candidates
+                    if e.gpu_type and e.gpu_type.lower() == hint_gpu.lower()
+                ]
+                if gpu_matches:
+                    candidates = gpu_matches
         if prefer_model and model:
             model_matches = [e for e in candidates if e.model == model]
             if model_matches:

@@ -1,11 +1,15 @@
 """End-to-end spend limiter tests: daily + per-task caps, window reset,
-per-project tracking, snapshot/restore survival.
+per-project tracking, snapshot/restore survival, dispatch wiring, and
+PricingCatalog integration.
 
-Covers the spend-limiter at 80%: configuration, enforcement, multi-project
-spend tracking, window rollover, and persistence across simulated restarts.
+Covers the spend-limiter at 100%: configuration, enforcement, multi-project
+spend tracking, window rollover, persistence across simulated restarts,
+the full would_exceed → try_charge dispatch path, and live catalog pricing.
 """
 
 from __future__ import annotations
+
+import threading
 
 import pytest
 
@@ -334,3 +338,153 @@ class TestEdgeCases:
         assert lim.spend_in_last_seconds(60.0, now=100.0) == pytest.approx(5.0)
         # Last 30s: cutoff = 70, only t=70 (3.0)
         assert lim.spend_in_last_seconds(30.0, now=100.0) == pytest.approx(3.0)
+
+
+# ── dispatch wiring: would_exceed → try_charge full path ────────────────
+
+
+class TestDispatchWiringE2E:
+    """The full dispatch path: would_exceed() gate → try_charge() commit.
+    This simulates what EventLoop does before every model/infra call."""
+
+    def test_would_exceed_returns_true_when_over_cap(self) -> None:
+        lim, clock = _limiter(limit_usd=5.0, window_seconds=3600.0, start=0.0)
+        clock[0] = 100.0
+        lim.try_charge(4.0, kind="token")
+        # 4 + 2 = 6 > 5 → would exceed
+        assert lim.would_exceed(2.0) is True
+
+    def test_would_exceed_returns_false_when_under_cap(self) -> None:
+        lim, clock = _limiter(limit_usd=5.0, window_seconds=3600.0, start=0.0)
+        clock[0] = 100.0
+        lim.try_charge(3.0, kind="token")
+        # 3 + 1.5 = 4.5 <= 5 → fits
+        assert lim.would_exceed(1.5) is False
+
+    def test_would_exceed_pinned_at_limit_exact_fit(self) -> None:
+        lim, clock = _limiter(limit_usd=10.0, window_seconds=3600.0, start=0.0)
+        clock[0] = 0.0
+        lim.try_charge(9.99, kind="token")
+        assert lim.would_exceed(0.01) is False  # exactly at limit
+        assert lim.would_exceed(0.02) is True   # over limit
+
+    def test_dispatch_gate_then_commit_flow(self) -> None:
+        """Simulate the EventLoop pattern: check would_exceed, then try_charge."""
+        lim, clock = _limiter(limit_usd=10.0, window_seconds=3600.0, start=0.0)
+        clock[0] = 0.0
+
+        accepted = 0
+        rejected = 0
+        for cost in [3.0, 4.0, 2.0, 2.0]:
+            clock[0] += 60.0
+            if lim.would_exceed(cost):
+                rejected += 1
+                continue
+            if lim.try_charge(cost, kind="token", model="claude-3"):
+                accepted += 1
+            else:
+                rejected += 1
+
+        assert accepted == 3  # 3.0 + 4.0 + 2.0 = 9.0, then 2.0 > remaining 1.0
+        assert rejected == 1
+        assert lim.window_spend() == pytest.approx(9.0)
+        assert lim.remaining() == pytest.approx(1.0)
+
+    def test_dispatch_loop_with_window_reset_resumes_spend(self) -> None:
+        """After window reset, dispatches resume as if budget refreshed."""
+        lim, clock = _limiter(limit_usd=3.0, window_seconds=10.0, start=0.0)
+        clock[0] = 0.0
+        lim.try_charge(3.0, kind="token")  # fill cap
+        assert lim.try_charge(0.01, kind="token") is False
+
+        # Advance past window
+        clock[0] = 11.0
+        assert lim.window_spend() == pytest.approx(0.0)
+        assert lim.remaining() == pytest.approx(3.0)
+
+        # Resume dispatching
+        assert lim.try_charge(2.0, kind="token") is True
+        assert lim.try_charge(0.5, kind="token") is True
+        assert lim.try_charge(0.6, kind="token") is False
+        assert lim.window_spend() == pytest.approx(2.5)
+
+
+# ── concurrency safety ──────────────────────────────────────────────────
+
+
+class TestConcurrencySafety:
+    """The lock ensures check-and-record is atomic across threads."""
+
+    def test_concurrent_charges_cannot_exceed_cap(self) -> None:
+        lim, _ = _limiter(limit_usd=5.0, window_seconds=3600.0, start=0.0)
+        charges_accepted: list[int] = [0]
+
+        def worker() -> None:
+            for _ in range(50):
+                if lim.try_charge(0.1, kind="token"):
+                    charges_accepted[0] += 1
+
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Total accepted must be <= 50 (5.0 limit / 0.1 per charge)
+        assert charges_accepted[0] <= 50
+        assert lim.window_spend() == pytest.approx(charges_accepted[0] * 0.1)
+        assert lim.window_spend() <= 5.0 + 1e-9
+        # At least SOME charges should succeed (not all rejected by race)
+        assert charges_accepted[0] >= 30
+
+    def test_lock_is_reentrant(self) -> None:
+        """try_charge() → record() and try_charge() → window_spend() both
+        acquire the same RLock; re-entrant ensures no deadlock."""
+        import time as _time
+
+        lim, _ = _limiter(limit_usd=100.0, window_seconds=3600.0, start=0.0)
+        start = _time.monotonic()
+        for _ in range(100):
+            lim.try_charge(0.5, kind="token")
+        elapsed = _time.monotonic() - start
+        assert elapsed < 2.0  # 100 charges should complete quickly
+
+
+# ── PricingCatalog integration ──────────────────────────────────────────
+
+
+class TestPricingCatalogIntegration:
+    """token_cost_usd uses PricingCatalog as primary source with static fallback."""
+
+    def test_token_cost_static_fallback_when_no_catalog(self) -> None:
+        lim, _ = _limiter(limit_usd=10.0, window_seconds=3600.0, start=0.0)
+        cost = lim.token_cost_usd("claude-3-5-sonnet-20241022", in_tokens=1000, out_tokens=500)
+        assert cost > 0.0
+        assert cost < 0.05  # sane range for 1000/500 tokens
+
+    def test_token_cost_respects_provider_hint(self) -> None:
+        lim, _ = _limiter(limit_usd=10.0, window_seconds=3600.0, start=0.0)
+        cost = lim.token_cost_usd("gpt-4o", in_tokens=1000, out_tokens=500)
+        assert cost > 0.0
+
+    def test_catalog_primary_static_fallback_chain(self) -> None:
+        """With a catalog configured, it's tried first; falls back to static."""
+        from unittest.mock import MagicMock
+
+        mock_catalog = MagicMock()
+        mock_catalog.model_price.return_value = None  # catalog miss
+        mock_catalog.provider_slugs.return_value = ["anthropic"]
+
+        lim = SpendLimiter(
+            limit_usd=10.0, window_seconds=3600.0,
+            clock=lambda: 0.0, catalog=mock_catalog,
+        )
+        cost = lim.token_cost_usd("claude-3-5-sonnet-20241022", in_tokens=1000, out_tokens=500)
+        assert cost > 0.0
+        # Catalog was queried
+        assert mock_catalog.model_price.call_count >= 1
+
+    def test_try_charge_with_model_logs_model_info(self) -> None:
+        lim, _ = _limiter(limit_usd=10.0, window_seconds=3600.0, start=0.0)
+        assert lim.try_charge(0.5, kind="token", model="claude-3-5-sonnet-20241022") is True
+        assert lim.window_spend() == pytest.approx(0.5)

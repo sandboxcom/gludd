@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI
 
@@ -30,7 +30,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return {"templates": {}, "template_count": 0, "note": "VariantMetrics not wired"}
 
         try:
-            return metrics.generate_variant_report()
+            return cast("dict[str, Any]", metrics.generate_variant_report())
         except Exception:
             logger.warning("Failed to generate variant report", exc_info=True)
             return {"templates": {}, "template_count": 0, "error": "Report generation failed"}

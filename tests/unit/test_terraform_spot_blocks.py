@@ -222,3 +222,93 @@ class TestContainerAppNoComputeSpotBlock:
         assert 'resource "google_compute_instance"' not in text, (
             f"{stack_name}: container app stack should not have a GCP compute resource"
         )
+
+
+class TestSpotValidatorWarnsOnMismatch:
+    """Test that SpotConfigValidator warns when stacks don't match config."""
+
+    def test_spot_validator_warns_on_mismatch(self) -> None:
+        """Validator returns warning finding when use_spot doesn't match config."""
+        import tempfile
+        from pathlib import Path
+
+        from general_ludd.infra.spot_validator import SpotConfigValidator
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stacks_dir = Path(tmpdir)
+            stack_dir = stacks_dir / "test-stack"
+            stack_dir.mkdir()
+
+            variables_tf = stack_dir / "variables.tf"
+            variables_tf.write_text(
+                'variable "use_spot" {\n'
+                '  type    = bool\n'
+                '  default = true\n'
+                '}\n'
+            )
+
+            validator = SpotConfigValidator(default_spot=False)
+            findings = validator.validate("test-stack", stacks_dir=str(stacks_dir))
+
+            assert len(findings) == 1
+            f = findings[0]
+            assert f.severity == "warning"
+            assert f.use_spot_configured is True
+            assert f.use_spot_expected is False
+
+    def test_spot_validator_passes_on_match(self) -> None:
+        """Validator returns ok finding when use_spot matches config."""
+        import tempfile
+        from pathlib import Path
+
+        from general_ludd.infra.spot_validator import SpotConfigValidator
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stacks_dir = Path(tmpdir)
+            stack_dir = stacks_dir / "match-stack"
+            stack_dir.mkdir()
+
+            variables_tf = stack_dir / "variables.tf"
+            variables_tf.write_text(
+                'variable "use_spot" {\n'
+                '  type    = bool\n'
+                '  default = false\n'
+                '}\n'
+            )
+
+            validator = SpotConfigValidator(default_spot=False)
+            findings = validator.validate("match-stack", stacks_dir=str(stacks_dir))
+
+            assert len(findings) == 1
+            f = findings[0]
+            assert f.severity == "ok"
+            assert f.use_spot_configured is False
+            assert f.use_spot_expected is False
+
+    def test_spot_validator_missing_stack_dir(self) -> None:
+        """Validator returns warning for missing stack directory."""
+        import tempfile
+
+        from general_ludd.infra.spot_validator import SpotConfigValidator
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = SpotConfigValidator(default_spot=True)
+            findings = validator.validate("nonexistent-stack", stacks_dir=tmpdir)
+
+            assert len(findings) == 1
+            assert findings[0].severity == "warning"
+            assert "not found" in findings[0].message
+
+    def test_spot_validator_default_spot_field(self) -> None:
+        """UserConfig.default_spot is True by default."""
+        from general_ludd.config.user_config import UserConfig
+
+        config = UserConfig()
+        assert config.default_spot is True
+
+    def test_spot_validator_default_spot_custom(self) -> None:
+        """UserConfig.default_spot can be set to False."""
+        from general_ludd.config.user_config import UserConfig
+
+        config = UserConfig(default_spot=False)
+        assert config.default_spot is False

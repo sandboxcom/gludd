@@ -16,6 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.compaction.aggressive import level_at as _level_at
+from general_ludd.controllers.compaction_aggressiveness import (
+    AccuracySample,
+    CompactionAggressivenessController,
+)
 from general_ludd.controllers.floor import FloorController
 from general_ludd.controllers.load_scrape import LoadSnapshot
 from general_ludd.controllers.pid import LoadController
@@ -278,6 +282,8 @@ class EventLoop:
         deployment_manager: Any | None = None,
         floor_controller: FloorController | None = None,
         issue_ingestor: Any | None = None,
+        compaction_controller: CompactionAggressivenessController | None = None,
+        infra_tracker: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -298,6 +304,13 @@ class EventLoop:
         self._spend_limiter = spend_limiter  # may be overwritten post-construction by the daemon
         self._pause_controller = pause_controller
         self._floor_controller = floor_controller
+        self._compaction_controller = compaction_controller
+        self._infra_tracker = infra_tracker
+        # Compaction feedback loop: accumulated accuracy samples across ticks.
+        self._compaction_passed = 0
+        self._compaction_total = 0
+        self._compaction_level: int | None = None  # lazy-init from config on first dispatch
+        self._compaction_disabled: bool = False
         self._stuck_timeout_minutes = 15
         self._max_retries = 3
         if isinstance(session, async_sessionmaker):
@@ -1030,6 +1043,46 @@ class EventLoop:
         logger.info(
             "In-process review for return %s -> %s", return_id, decision.decision
         )
+        # Compaction feedback loop: feed review outcome into the adaptive controller
+        # so compaction aggressiveness auto-tunes from accuracy signal.
+        if self._compaction_controller is not None:
+            _success = decision.decision == "complete"
+            self._compaction_passed += 1 if _success else 0
+            self._compaction_total += 1
+            _sample = AccuracySample(
+                passed=self._compaction_passed,
+                total=self._compaction_total,
+            )
+            if self._compaction_level is None:
+                _cfg = (
+                    self.config.get("compaction", {})
+                    if isinstance(self.config, dict)
+                    else {}
+                )
+                _cfg_level = _cfg.get("level", 1) if _cfg.get("enabled") else 0
+                self._compaction_level = _cfg_level
+            _next = self._compaction_controller.compute(
+                self._compaction_level, _sample
+            )
+            if _next != self._compaction_level:
+                logger.info(
+                    "Compaction level adjusted: %d -> %d (passed=%d total=%d)",
+                    self._compaction_level, _next,
+                    self._compaction_passed, self._compaction_total,
+                )
+                self._compaction_level = _next
+            self._compaction_disabled = self._compaction_controller.disable_signaled(
+                self._compaction_level, _sample
+            )
+            if self._compaction_disabled:
+                logger.warning(
+                    "Compaction disabled by adaptive controller "
+                    "(level=%d, passed=%d total=%d, rate=%.2f)",
+                    self._compaction_level,
+                    self._compaction_passed,
+                    self._compaction_total,
+                    _sample.rate or 0.0,
+                )
 
     async def _persist_review_response(self, tr: Any, resp: Any) -> None:
         if self._task_return_repo is None:
@@ -1877,21 +1930,47 @@ class EventLoop:
                         )
                 _call_start = time.monotonic()
                 # #56: opt-in SLM context-compaction on the generation path.
-                # Read the enable flag + aggression level from the EventLoop's
-                # config dict (mirrors the debt_eval read a few frames up); default
-                # OFF so the plain ContextCompactor path is used unless enabled.
-                _compaction_cfg = (
-                    self.config.get("compaction", {})
-                    if isinstance(self.config, dict)
-                    else {}
-                )
-                _use_slm_compaction = bool(_compaction_cfg.get("enabled", False))
-                _compaction_level = (
-                    _level_at(_compaction_cfg.get("level", 1))
-                    if _use_slm_compaction
-                    else None
-                )
+                # When the adaptive compaction controller is wired, use its
+                # dynamically-tuned level; otherwise fall back to static config.
+                if self._compaction_controller is not None:
+                    if self._compaction_level is None:
+                        _compaction_cfg = (
+                            self.config.get("compaction", {})
+                            if isinstance(self.config, dict)
+                            else {}
+                        )
+                        _cfg_level = (
+                            _compaction_cfg.get("level", 1)
+                            if _compaction_cfg.get("enabled")
+                            else 0
+                        )
+                        self._compaction_level = _cfg_level
+                    _use_slm_compaction = (
+                        not self._compaction_disabled
+                        and self._compaction_level > 0
+                    )
+                    _compaction_level = (
+                        _level_at(self._compaction_level)
+                        if _use_slm_compaction
+                        else None
+                    )
+                else:
+                    _compaction_cfg = (
+                        self.config.get("compaction", {})
+                        if isinstance(self.config, dict)
+                        else {}
+                    )
+                    _use_slm_compaction = bool(_compaction_cfg.get("enabled", False))
+                    _compaction_level = (
+                        _level_at(_compaction_cfg.get("level", 1))
+                        if _use_slm_compaction
+                        else None
+                    )
                 try:
+                    from general_ludd.scheduling.scheduler import ComputeSchedulingHint
+                    _sched_hint = ComputeSchedulingHint.for_work_type(
+                        _safe_str(todo, "work_type", "code") or "code"
+                    )
                     model_response, model_tool_calls = await asyncio.to_thread(
                         invoke_model_for_generation,
                         self._model_gateway,
@@ -1908,6 +1987,7 @@ class EventLoop:
                         project_id=project_id_val,
                         use_slm_compaction=_use_slm_compaction,
                         compaction_level=_compaction_level,
+                        scheduling_hint=_sched_hint,
                     )
                     _model_call_success = model_response is not None
                     if self._run_recorder is not None:
@@ -2113,29 +2193,41 @@ class EventLoop:
                         from general_ludd.execution.tool_loop import ToolCallLoop
 
                         # SLICE 2 (task #56): opt-in SLM context-compaction on the
-                        # ITERATIVE tool loop. Read the SAME "compaction" config the
-                        # Phase-1 generation path reads (enable flag + aggression
-                        # level); default OFF so the tool loop is unchanged unless the
-                        # operator enables it. When on, a small local ``compactor``
-                        # model summarizes the older middle of the tool history before
-                        # each model call (fail-soft; the open tool round is preserved
-                        # verbatim inside ToolCallLoop).
-                        _tl_compaction_cfg = (
-                            self.config.get("compaction", {})
-                            if isinstance(self.config, dict)
-                            else {}
-                        )
+                        # ITERATIVE tool loop. When the adaptive controller is wired,
+                        # use its level; otherwise fall back to static config.
                         _tl_level = None
                         _tl_summarize_fn = None
-                        if bool(_tl_compaction_cfg.get("enabled", False)):
-                            from general_ludd.compaction.slm import (
-                                make_slm_summarize_fn,
+                        if self._compaction_controller is not None:
+                            _use_tl = (
+                                not self._compaction_disabled
+                                and (self._compaction_level or 0) > 0
                             )
-
-                            _tl_level = _level_at(_tl_compaction_cfg.get("level", 1))
-                            _tl_summarize_fn = make_slm_summarize_fn(
-                                self._model_gateway, "compactor"
+                            if _use_tl:
+                                from general_ludd.compaction.slm import (
+                                    make_slm_summarize_fn,
+                                )
+                                _tl_level = _level_at(
+                                    self._compaction_level or 1
+                                )
+                                _tl_summarize_fn = make_slm_summarize_fn(
+                                    self._model_gateway, "compactor"
+                                )
+                        else:
+                            _tl_compaction_cfg = (
+                                self.config.get("compaction", {})
+                                if isinstance(self.config, dict)
+                                else {}
                             )
+                            if bool(_tl_compaction_cfg.get("enabled", False)):
+                                from general_ludd.compaction.slm import (
+                                    make_slm_summarize_fn,
+                                )
+                                _tl_level = _level_at(
+                                    _tl_compaction_cfg.get("level", 1)
+                                )
+                                _tl_summarize_fn = make_slm_summarize_fn(
+                                    self._model_gateway, "compactor"
+                                )
 
                         auditor = ToolCallAuditor()
                         store = BadCallSituationStore()
@@ -3141,9 +3233,19 @@ class EventLoop:
                 logger.warning("Floor auto-tune failed: %s", exc)
 
         if self._utilization_tracker is None:
+            # GPU metric collection runs even without a utilization tracker
+            # so that /admin/compute/gpu-metrics always has fresh data.
+            import time as _time
+
+            from general_ludd.infra.gpu_metrics import GPUMetricsCollector
+            metrics = GPUMetricsCollector.collect_all_gpu_metrics()
+            if self._daemon_state is not None:
+                self._daemon_state["_last_gpu_metrics"] = metrics
+                self._daemon_state["_last_gpu_metrics_at"] = _time.time()
             return
         threshold = self.config.get("compute_idle_gpu_sm_pct", 5.0)
         teardown_ticks = self.config.get("compute_idle_teardown_threshold_ticks", 3)
+        notice_ticks = self.config.get("compute_idle_preemption_notice_ticks", 1)
         idle_endpoints = self._utilization_tracker.find_idle_gpus(
             threshold=float(threshold), window=900,
         )
@@ -3151,6 +3253,13 @@ class EventLoop:
         idle_tracking: dict[str, Any] = daemon_state.setdefault("idle_endpoints", {})
         torn_down: list[str] = daemon_state.setdefault("torn_down_endpoints", [])
         current_idle_ids: set[str] = set()
+        # bill-6: collect GPU metrics after compute utilization check.
+        import time as _time
+
+        from general_ludd.infra.gpu_metrics import GPUMetricsCollector
+        metrics = GPUMetricsCollector.collect_all_gpu_metrics()
+        daemon_state["_last_gpu_metrics"] = metrics
+        daemon_state["_last_gpu_metrics_at"] = _time.time()
         for ep in idle_endpoints:
             current_idle_ids.add(ep.endpoint_id)
             if ep.endpoint_id not in idle_tracking:
@@ -3159,6 +3268,7 @@ class EventLoop:
                     "url": ep.url,
                     "model": ep.model,
                     "gpu_type": ep.gpu_type,
+                    "last_used": ep.last_used,
                     "idle_ticks": 0,
                 }
             idle_tracking[ep.endpoint_id]["idle_ticks"] += 1
@@ -3167,11 +3277,33 @@ class EventLoop:
                 "Idle GPU endpoint %s (%s, %s): %d consecutive idle ticks",
                 ep.endpoint_id, ep.model, ep.gpu_type, count,
             )
+            # bill-7: preemption notice — warn N ticks before teardown.
+            if notice_ticks > 0 and count == teardown_ticks - notice_ticks:
+                logger.warning(
+                    "[COMPUTE] endpoint %s will be torn down in %d ticks if idle persists",
+                    ep.endpoint_id, notice_ticks,
+                )
             if count >= teardown_ticks:
                 logger.warning(
                     "Tearing down idle GPU endpoint %s after %d idle ticks",
                     ep.endpoint_id, count,
                 )
+                # bill-7: record infra cost on teardown.
+                if self._infra_tracker is not None:
+                    try:
+                        gpu_seconds = _time.time() - ep.last_used if ep.last_used > 0 else 0.0
+                        self._infra_tracker.record_gpu_seconds(
+                            provider=getattr(ep, "provider", "runpod") or "runpod",
+                            gpu_type=ep.gpu_type,
+                            seconds=max(gpu_seconds, 0.0),
+                            spot=True,
+                            project_id=getattr(ep, "project_id", None),
+                        )
+                    except Exception as _exc:
+                        logger.warning(
+                            "Failed to record infra cost for teardown of %s: %s",
+                            ep.endpoint_id, _exc,
+                        )
                 if self._deployment_manager is not None:
                     try:
                         await self._deployment_manager.destroy(ep.endpoint_id)
