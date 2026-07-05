@@ -166,7 +166,11 @@ class BenchmarkRunner:
                 return self.content
 
         class _MockGateway:
-            def call_model(self, profile_id: str, messages: Any = None, work_type: str = "", project_id: str | None = None, tools: Any = None) -> _MockResponse:
+            def call_model(
+                self, profile_id: str, messages: Any = None,
+                work_type: str = "", project_id: str | None = None,
+                tools: Any = None,
+            ) -> _MockResponse:
                 return _MockResponse(
                     content='{"answer": "def hello_world():"}',
                     tool_calls=None,

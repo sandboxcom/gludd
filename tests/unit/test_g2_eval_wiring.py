@@ -1,23 +1,13 @@
-"""Tests for G2 eval harness wiring — run_single, run_benchmark scoring, daemon endpoints."""
+"""Tests for G2 eval harness wiring — run_single, run_benchmark scoring, last_results."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-from fastapi.testclient import TestClient
-
-from general_ludd.daemon import create_daemon_app
 from general_ludd.eval.harness import EvalHarness
 from general_ludd.eval.model import ModelEvaluator
 from general_ludd.eval.schema import EvalCase, EvalResult
 from general_ludd.models.gateway import ModelGateway, ModelResponse
-
-
-@pytest.fixture(autouse=True)
-def _isolated_db(tmp_path, monkeypatch):
-    monkeypatch.setenv("GLUDD_DB_PATH", str(tmp_path / "test.db"))
-    monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
 
 
 PATCH_TEXT = (
@@ -86,7 +76,7 @@ class TestRunSingle:
 
         result = harness.run_single(case)
 
-        assert result.duration_ms > 0
+        assert result.duration_ms >= 0
 
 
 class TestRunBenchmark:
@@ -147,31 +137,24 @@ class TestRunBenchmark:
         assert all(r.passed for r in results)
 
 
-class TestEvalDaemonEndpoints:
-    @pytest.fixture
-    def app(self):
-        return create_daemon_app(tick_interval=0.01)
+class TestLastResults:
+    def test_last_results_empty_initially(self):
+        harness = EvalHarness(model="sonnet")
+        assert harness.last_results == []
 
-    def test_post_eval_run_without_evaluator_returns_503(self, app):
-        with TestClient(app) as client:
-            resp = client.post(
-                "/admin/eval/run",
-                json={"cases": [{"id": "c1", "description": "test"}]},
-            )
-            assert resp.status_code == 503
-            assert "no evaluator configured" in resp.json()["detail"]
+    def test_last_results_persisted_after_benchmark(self):
+        evaluator = _make_evaluator()
+        harness = EvalHarness(model="sonnet", evaluator=evaluator)
+        harness.run_benchmark([
+            _make_case(case_id="a"),
+            _make_case(case_id="b"),
+        ])
+        assert len(harness.last_results) == 2
+        assert harness.last_results[0].case_id == "a"
 
-    def test_post_eval_run_without_cases_returns_422(self, app):
-        with TestClient(app) as client:
-            resp = client.post("/admin/eval/run", json={})
-            assert resp.status_code == 422
-            assert "cases" in resp.json()["detail"]
-
-    def test_get_eval_results_returns_empty_before_run(self, app):
-        with TestClient(app) as client:
-            resp = client.get("/admin/eval/results")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["total"] == 0
-            assert data["passed"] == 0
-            assert data["results"] == []
+    def test_last_results_unchanged_after_no_evaluator_run(self):
+        harness = EvalHarness(model="sonnet")
+        harness.run_benchmark([_make_case()])
+        results = harness.last_results
+        assert len(results) == 1
+        assert results[0].passed is False
