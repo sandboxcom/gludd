@@ -8,9 +8,9 @@ Covers:
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
-import signal
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -99,37 +99,46 @@ def test_gate_background_timeout_default_3600():
 # --- Watchdog _check_gate_background tests ---
 
 
+def test_watchdog_gate_max_runtime_is_one_hour():
+    GATE_MAX_RUNTIME_SECS = None
+    exec(compile((ROOT / "scripts" / "agent_watchdog.py").read_text(), "agent_watchdog", "exec"), {
+        "GATE_MAX_RUNTIME_SECS": None,
+    })
+    import scripts.agent_watchdog as aw
+    assert aw.GATE_MAX_RUNTIME_SECS == 3600, (
+        f"GATE_MAX_RUNTIME_SECS must be 3600 (1 hour), got {aw.GATE_MAX_RUNTIME_SECS}"
+    )
+
+
 def test_watchdog_check_gate_background_kills_stale():
     import scripts.agent_watchdog as aw
-
     pid_file = Path(".gate-background.pid")
     status_file = Path(".gate-status")
 
+    status_file.unlink(missing_ok=True)
     pid_file.write_text("99999")
-    pid_file.touch()
+    mtime_in_past = time.time() - 4000
+    os.utime(str(pid_file), (mtime_in_past, mtime_in_past))
 
-    with patch.object(os, "kill", side_effect=None) as mock_kill:
+    calls = []
+
+    def fake_kill(pid, sig):
+        calls.append((pid, sig))
+
+    with patch.object(os, "kill", side_effect=fake_kill):
         aw._check_gate_background()
 
     pid_file.unlink(missing_ok=True)
     status_file.unlink(missing_ok=True)
 
-    assert mock_kill.call_count >= 1, (
-        "_check_gate_background must attempt to kill stale gate process"
-    )
-
-
-def test_watchdog_gate_max_runtime_is_one_hour():
-    import scripts.agent_watchdog as aw
-
-    assert aw.GATE_MAX_RUNTIME_SECS == 3600, (
-        "GATE_MAX_RUNTIME_SECS must be 3600 (1 hour), not 7200 (2 hours)"
+    assert len(calls) >= 1, (
+        "_check_gate_background must attempt to kill stale gate process, "
+        f"got {len(calls)} calls: {calls}"
     )
 
 
 def test_watchdog_detects_stale_gate_status():
     import scripts.agent_watchdog as aw
-
     status_file = Path(".gate-status")
     pid_file = Path(".gate-background.pid")
 

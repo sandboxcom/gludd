@@ -23,6 +23,7 @@ repos:
           (?x)^(
             uv.lock|
             .secrets.baseline|
+            \.opencode/plugin-hashes\.json|
             dist/.*|
             \.venv/.*|
             \.opencode/node_modules/.*|
