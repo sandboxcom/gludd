@@ -190,7 +190,7 @@ sections:
 
       - id: spend-limiter
         title: "SpendLimiter rolling budget cap (#27/#49)"
-        pct: 80
+        pct: 90
         evidence_refs:
           - "test:tests/unit/test_spend_limiter_dispatch_wiring.py"
           - "file:src/general_ludd/controllers/spend_limiter.py::SpendLimiter"
@@ -206,7 +206,7 @@ sections:
 
       - id: agent-orchestrate-role
         title: "`agent_orchestrate` role — advice/budget-driven workflow vs single-shot dispatch"
-        pct: 90
+        pct: 100
         evidence_refs:
           - "role:agent_orchestrate"
           - "molecule:role_agent_orchestrate"
@@ -298,7 +298,7 @@ sections:
 
       - id: scoring-cost-routing
         title: "Scoring cost-constrained routing (#59/#69)"
-        pct: 80
+        pct: 90
         evidence_refs:
           - "test:tests/unit/test_benchmark_repo.py::test_cost_cap_bites_with_real_repo_avg_cost"
           - "file:src/general_ludd/models/gateway.py::AdaptiveRouter"
@@ -320,7 +320,7 @@ sections:
 
       - id: bert-embeddings-search
         title: "BERT/embeddings search verb (similar / compare / search)"
-        pct: 85
+        pct: 95
         evidence_refs:
           - "test:tests/unit/test_embeddings_router.py"
           - "test:tests/unit/test_gludd_embed_module.py"
@@ -341,7 +341,7 @@ sections:
     features:
       - id: obs-connector-base
         title: "Observability connector base + normalize + registry (80+ connectors)"
-        pct: 80
+        pct: 90
         evidence_refs:
           - "file:src/general_ludd/connectors/registry.py::ConnectorRegistry"
           - "file:src/general_ludd/routers/observe.py::wire_observability"
@@ -829,7 +829,7 @@ sections:
 
       - id: floor-controller
         title: "Gate-safe + predictive floor controller (floor_controller-consolidated branch)"
-        pct: 90
+        pct: 100
         evidence_refs:
           - "test:tests/unit/test_floor_controller.py"
           - "file:scripts/floor_controller.py::decide"
@@ -1007,7 +1007,7 @@ sections:
 
       - id: g6-prompt-versioning
         title: "Prompt/skill versioning A/B (G6)"
-        pct: 85
+        pct: 95
         evidence_refs:
           - "file:src/general_ludd/prompts/registry.py::PromptRegistry"
           - "test:tests/unit/test_prompt_versioning_ab.py"
