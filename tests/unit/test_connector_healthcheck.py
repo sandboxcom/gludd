@@ -114,7 +114,7 @@ class _UnconfiguredSource:
     KIND = "logs"
 
     def __init__(self) -> None:
-        self.api_key_env = "MISSING_ENV_VAR_UNLIKELY_TO_EXIST"
+        self.api_key_env = "MISSING_ENV_VAR_UNLIKELY_TO_EXIST"  # pragma: allowlist secret
 
     def health(self) -> dict[str, Any]:
         return {"ok": False, "detail": "no credentials"}
