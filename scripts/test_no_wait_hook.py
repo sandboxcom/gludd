@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Test harness for .claude/hooks/no_wait_stop.sh.
 
-Covers the deferral patterns, the corrected anti-wedge (a deferral is now blocked
-EVEN when stop_hook_active is true -- the old blanket free-pass was the bug that
-let a "Want me to push?" turn end), and the bounded consecutive-block safety valve.
+Covers the deferral patterns, the dual anti-wedge (stop_hook_active==true grants a
+1-retry grace period, matching sibling hooks; the bounded consecutive-block counter
+is the long-term safety valve), the constraint-as-stopsign patterns, and future-tense
+self-deferral patterns.
 """
 import subprocess, json, os, tempfile, sys
 
@@ -46,11 +47,14 @@ with tempfile.TemporaryDirectory(prefix="hook_test_") as d:
     make_jsonl(p4, "Done — pushed d461919 and CI is green.")
     cases.append((4, "NOBLOCK", run_hook(json.dumps({"transcript_path": p4}))))
 
-    # Case 5 (THE FIX): a deferral with stop_hook_active:true must STILL BLOCK.
-    # The old hook let this through unconditionally -- that was the bug.
+    # Case 5 (REV 2026-07-05): stop_hook_active==true is the 1-retry grace period
+    # — a second consecutive stop with stop_hook_active set is allowed, matching
+    # sibling hooks multitasking_backlog_stop.sh and agent_floor_stop.sh. A
+    # deferral with stop_hook_active:true should therefore NOBLOCK (the grace
+    # period lets the session end after one block).
     p5 = os.path.join(d, "t5.jsonl")
     make_jsonl(p5, "Say so and I'll proceed.")
-    cases.append((5, "BLOCK", run_hook(json.dumps({"transcript_path": p5, "stop_hook_active": True}))))
+    cases.append((5, "NOBLOCK", run_hook(json.dumps({"transcript_path": p5, "stop_hook_active": True}))))
 
     # Case 6: empty payload -> NOBLOCK (fail-open, no transcript)
     cases.append((6, "NOBLOCK", run_hook("{}")))

@@ -63,8 +63,9 @@ function recordBlock(reason: string): void {
   const c = readBlockCounter()
   const now = Date.now()
   c.totalBlocks++
+  const prevTs = c.lastBlockTs
   c.lastBlockTs = now
-  if (now - c.lastBlockTs < 120_000) c.consecutiveBlocks++
+  if (now - prevTs < 120_000) c.consecutiveBlocks++
   else c.consecutiveBlocks = 1
   if (c.consecutiveBlocks >= 5) {
     c.disengageUntil = now + 300_000
@@ -111,7 +112,7 @@ function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number): string {
 const FUTURE_TENSE = /\b(will|going to|plan to|next|remaining|shall|upcoming|todo)\b/i
 const COMPLETION_VERBATIM = /\b(all done|everything is complete|ready for review|waiting for (your )?feedback|(this|now) is (truly )?done)\b/i
 const TOOL_CALL_INTENT = /\b(make git-|dispatch|subagent|gludd |pytest |uv run)\b/
-const EVIDENCE_TOKEN = /(?:commit|sha|hash)\s*[:=]?\s*[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]|gate (?:green|PASS|ALL PASSED)/i
+const EVIDENCE_TOKEN = /(?:commit|sha|hash)\s*[:=]?\s*[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]|gate (?:green|PASS|ALL PASSED)|\d+\s+passed\b/i
 
 function responseLooksTerminal(text: string): boolean {
   if (!text || text.length < 60) return false
@@ -131,8 +132,12 @@ function responseLooksTerminal(text: string): boolean {
   const unchecked = (text.match(/- \[ \]/g) || []).length
   if (checked >= 3 && unchecked === 0 && !FUTURE_TENSE.test(text)) return true
 
-  // Tables with no evidence tokens and no tool-call intent
-  if (/\|[^\n|]+\|[^\n|]+\|/.test(text) && !EVIDENCE_TOKEN.test(text)) return true
+  // Bug 2 fix: tables are terminal only when paired with completion signals
+  if (/\|[^\n|]+\|[^\n|]+\|/.test(text)) {
+    if (COMPLETION_VERBATIM.test(text)) return true
+    const tableChecked = [...text.matchAll(/\|[^|]*\[x\][^|]*\|/gi)]
+    if (tableChecked.length >= 3 && !FUTURE_TENSE.test(text)) return true
+  }
 
   // "session summary" without future-tense
   if (/session\s+summary/i.test(text) && !FUTURE_TENSE.test(text)) return true
@@ -238,31 +243,18 @@ function ciIsPendingOrRed(): boolean {
       }
     }
   } catch {}
-  // Fallback: run ci-verdict ourselves
+  // Try shared state file (written by session.idle handler)
   try {
-    const { execSync } = require("node:child_process")
-    const cwd = process.cwd()
-    try {
-      const output = execSync("make ci-verdict BRANCH=master", {
-        cwd, encoding: "utf8", timeout: 15000, stdio: ["pipe", "pipe", "pipe"],
-      }).trim()
-      const isGreen = /^CI GREEN:/m.test(output) && !/STALE RUN WARNING/i.test(output)
-      ciVerdictCache = { ts: now, isPendingOrRed: !isGreen }
-      return !isGreen
-    } catch (e: any) {
-      const output = (e?.stdout || e?.stderr || "").trim()
-      if (output) {
-        const isGreen = /^CI GREEN:/m.test(output) && !/STALE RUN WARNING/i.test(output)
-        ciVerdictCache = { ts: now, isPendingOrRed: !isGreen }
-        return !isGreen
+    if (fs.existsSync(STATE_FILE)) {
+      const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"))
+      if (typeof state.ciVerdictPendingOrRed === "boolean") {
+        ciVerdictCache = { ts: now, isPendingOrRed: state.ciVerdictPendingOrRed }
+        return state.ciVerdictPendingOrRed
       }
-      ciVerdictCache = { ts: now, isPendingOrRed: true }
-      return true
     }
-  } catch {
-    ciVerdictCache = null
-    return false
-  }
+  } catch {}
+  // No watchdog cache and no shared state — fail open
+  return false
 }
 
 function computeHealthScore(): number {
@@ -331,6 +323,8 @@ export default (async ({ }) => {
         if (turnState.blocked) {
           turnState.blocked = false
         }
+
+        turnState.accumulatedText = ""
 
         // Item 5: detect tool-call intent
         turnState.toolCallMade = true
@@ -448,7 +442,6 @@ export default (async ({ }) => {
             `ratchet entries: ${cache.ratchetEntries}`,
             `gate red: ${gateRed ? "yes" : "no"}`,
             `repo pending: ${cache.repoPending ? "yes" : "no"}`,
-            `CI pending: ${ciVerdictPendingOrRed ? "yes" : "no"}`,
             "Fix pending work. Dispatch subagents.",
           ].join("\n")
           turnState.blocked = true

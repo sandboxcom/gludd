@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 # Stop hook (#79/#78): BLOCK turn-end while fewer than FLOOR subagents are live.
+#
+# ⚠️  KNOWN LIMITATION (2026-07-05): The liveness probe (scripts/agent_liveness.py)
+# counts Agent-type subagent transcripts AND Workflow-subagent transcripts in
+# Claude Code sessions. HOWEVER, in opencode sessions the backend counts subagent
+# sessions via SQLite (parent_id IS NOT NULL), and Workflow-dispatched tasks may
+# NOT appear as subagent sessions — leading to an undercount. The probe also has
+# no ``--include-workflows`` flag: workflow inclusion is always-on in the Claude
+# backend but may miss opencode Workflow instances. Because of this visibility gap,
+# GLUDD_FLOOR_ENFORCE is kept at 0 (advisory-only) in .claude/settings.json so a
+# false "0 live" reading during Workflow-based sessions does NOT wedge the
+# orchestrator. If the probe is fixed to reliably count Workflow subagents in both
+# harnesses, GLUDD_FLOOR_ENFORCE can be re-enabled.
 # GATE-SAFE FLOOR RULE: a running gate does NOT lower the read-only floor.
 # Only heavy worktree-writers are capped during a gate -- read-only agents
 # (research/audit/review/explore) MUST still be dispatched to reach FLOOR.

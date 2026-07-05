@@ -625,6 +625,7 @@ def _setup_full(monkeypatch, tmp_path):
     monkeypatch.setattr(aw, "TODOWRITE_STATE", str(tmp_path / "todos.json"))
     monkeypatch.setattr(aw, "STOP_STATE", str(tmp_path / "stop-state.json"))
     monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "false-done-blocks.json"))
+    monkeypatch.setattr(aw, "FALSE_DONE_MAXOUT", str(tmp_path / "false-done-maxout.json"))
     monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(tmp_path / "continue-directive.txt"))
     monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
     monkeypatch.setattr(aw, "STOP_COUNT_FILE", str(tmp_path / "stop-count.json"))
@@ -703,14 +704,14 @@ def test_watchdog_false_done_max_out_on_every_cycle(tmp_path, monkeypatch):
     streak_path = tmp_path / "streak.json"
     streak_path.write_text('{"count":0,"last_tool":"write"}')
 
-    blocks_path = tmp_path / "false-done-blocks.json"
-    monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(blocks_path))
+    maxout_path = tmp_path / "false-done-maxout.json"
+    monkeypatch.setattr(aw, "FALSE_DONE_MAXOUT", str(maxout_path))
 
     monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
 
     aw.check_and_reset()
-    assert blocks_path.exists()
-    data = json.loads(blocks_path.read_text())
+    assert maxout_path.exists()
+    data = json.loads(maxout_path.read_text())
     assert data["count"] == 999
 
 

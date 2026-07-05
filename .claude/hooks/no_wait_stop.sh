@@ -13,13 +13,14 @@
 # CONTRACT: emits {"decision":"block","reason":...} + exit 0 (clean block, never a
 # hook error). FAIL-OPEN on any error.
 #
-# ANTI-WEDGE (the fix): the old version unconditionally let ANY second consecutive
-# stop through via stop_hook_active==true. That was a blanket free-pass: after a
-# single block, the very next stop -- even a pure deferral -- went straight through
-# (this is exactly how a "Want me to push?" turn ended despite matching). We replace
-# that with a BOUNDED consecutive-block counter: a deferral is blocked EVERY time,
-# but after MAX_CONSECUTIVE_BLOCKS in a row we fail open so a genuine false-positive
-# (a finished turn that happens to trip a pattern) can never wedge permanently.
+# ANTI-WEDGE (dual-layer, rev 2026-07-05):
+# 1. stop_hook_active==true: 1-retry grace period — a second consecutive stop is
+#    allowed so a genuine dead-end can always end the session. (Restored 2026-07-05
+#    per Bug 1 fix — this matches sibling hooks multitasking_backlog_stop.sh and
+#    agent_floor_stop.sh.)
+# 2. BOUNDED consecutive-block counter: a deferral is blocked EVERY time, but after
+#    MAX_CONSECUTIVE_BLOCKS in a row we fail open so a false-positive match on a
+#    genuinely-finished turn can never wedge permanently.
 
 MAX_CONSECUTIVE_BLOCKS=25
 
@@ -33,6 +34,13 @@ if [ "${GLUDD_NO_WAIT_ENFORCE:-0}" != "1" ]; then
 fi
 
 input="$(cat 2>/dev/null || echo '{}')"
+
+# ANTI-WEDGE: stop_hook_active means this is a second consecutive stop — allow it
+# so a session can always end after one block (the 1-retry grace period that
+# sibling hooks multitasking_backlog_stop.sh and agent_floor_stop.sh also use).
+case "$input" in
+  *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) exit 0 ;;
+esac
 
 transcript="$(printf '%s' "$input" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("transcript_path",""))' 2>/dev/null)"
 [ -z "$transcript" ] && exit 0

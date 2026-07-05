@@ -155,6 +155,7 @@ _CHECK_COOLDOWN_SECS = 60
 
 STOP_STATE = os.environ.get("GLUDD_STOP_STATE", "/tmp/gludd-stop-state.json")
 FALSE_DONE_BLOCKS = os.environ.get("GLUDD_FALSE_DONE_BLOCKS", "/tmp/gludd-false-done-blocks.json")
+FALSE_DONE_MAXOUT = os.environ.get("GLUDD_FALSE_DONE_MAXOUT", "/tmp/gludd-false-done-maxout.json")
 CONTINUE_DIRECTIVE = os.environ.get("GLUDD_CONTINUE_DIRECTIVE", "/tmp/gludd-continue-directive.txt")
 STALLED_TASKS_FILE = os.environ.get("GLUDD_STALLED_TASKS_FILE", "/tmp/gludd-stalled-tasks.txt")
 TASK_DEADLINES_FILE = os.environ.get("GLUDD_TASK_DEADLINES_FILE", "/tmp/gludd-task-deadlines.json")
@@ -253,7 +254,7 @@ def _log(msg: str) -> None:
 def _max_out_false_done() -> None:
     """Write max count to false-done blocks state file to force anti-wedge pass-through."""
     try:
-        Path(FALSE_DONE_BLOCKS).write_text(json.dumps({"count": 999}))
+        Path(FALSE_DONE_MAXOUT).write_text(json.dumps({"count": 999}))
     except Exception:
         pass
 
@@ -547,6 +548,9 @@ def _ci_pending_for_too_long_minutes() -> float | None:
         if not p.exists():
             return None
         data = json.loads(p.read_text())
+        last_check = data.get("last_ci_check", 0)
+        if last_check > 0 and (time.time() - last_check) > 300:
+            return 0.0
         first_seen = data.get("pending_first_seen", 0)
         if first_seen <= 0:
             return None
@@ -1720,9 +1724,10 @@ def _write_orchestrator_state(
 
 def _write_disengage_signal(minutes: int = 5, reason: str = "") -> None:
     try:
-        disengage_until = time.time() + minutes * 60
+        disengage_until = int(time.time() * 1000 + minutes * 60 * 1000)
         Path(DISENGAGE_FILE).write_text(json.dumps({
             "disengage_until": disengage_until,
+            "disengage_until_epoch_ms": disengage_until,
             "reason": reason,
             "ts": _now(),
         }))
@@ -1736,7 +1741,7 @@ def _clear_disengage_signal() -> None:
         p = Path(DISENGAGE_FILE)
         if p.exists():
             data = json.loads(p.read_text())
-            if data.get("disengage_until", 0) < time.time():
+            if data.get("disengage_until", 0) < time.time() * 1000:
                 p.unlink()
     except Exception:
         pass
@@ -1748,7 +1753,7 @@ def _is_disengage_active() -> bool:
         if not p.exists():
             return False
         data = json.loads(p.read_text())
-        return data.get("disengage_until", 0) > time.time()
+        return data.get("disengage_until", 0) > time.time() * 1000
     except Exception:
         return False
 

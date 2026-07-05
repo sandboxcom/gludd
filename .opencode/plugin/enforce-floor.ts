@@ -69,6 +69,10 @@ function isDispatchTool(tool: string): boolean {
   return tool === "task" || tool === "agent" || tool === "workflow"
 }
 
+function isReadTool(toolName: string): boolean {
+  return toolName === "read" || toolName === "grep" || toolName === "glob"
+}
+
 // Open-work probe: only block when the repo actually has pending work. Avoids
 // wedging a session where the floor is breached because the work is genuinely
 // done. Signals (any one triggers "open work"):
@@ -161,7 +165,7 @@ function openWorkExists(): boolean {
 // consecutive non-dispatch calls right here — zero external dependencies.
 // Dispatch (task/agent/workflow) resets the streak to 0.
 // After MAX_STREAK consecutive non-dispatch calls with open work → DENY.
-const MAX_STREAK = 2
+const MAX_STREAK = 4
 let _streakCount = 0
 const floorTurnState: { accumulatedText: string } = { accumulatedText: "" }
 
@@ -175,8 +179,15 @@ export default (async ({ }) => {
           _streakCount = 0
           return
         }
+        if (isReadTool(tool)) {
+          return
+        }
         _streakCount++
         if (_streakCount <= MAX_STREAK) return
+        if (!openWorkExists()) {
+          _streakCount = 0
+          return
+        }
         return {
           permissionDecision: "deny" as const,
           message: [
