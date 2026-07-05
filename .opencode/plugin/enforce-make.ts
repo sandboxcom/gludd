@@ -298,11 +298,14 @@ const STOP_PATTERN_BLOCK = [
 ].join("\n")
 
 const COMPLETION_SOUNDING = [
+  "✅",
   "all passed",
   "all complete",
   "all done",
+  "all tasks complete",
   "phase complete",
   "everything is done",
+  "everything complete",
   "what was implemented",
   "task |",
   "| what was",
@@ -321,12 +324,9 @@ const COMPLETION_SOUNDING = [
 
 function detectStopPattern(text: string): boolean {
   const lower = text.toLowerCase()
-  // Check for completion-sounding phrases
+  if (text.includes("✅")) return true
   if (COMPLETION_SOUNDING.some(p => lower.includes(p))) {
-    // Only flag as stop pattern if the response is short (a summary, not
-    // ongoing work narration that happens to contain one of these words).
     if (text.length < 500) return true
-    // Also flag if it contains explicit permission-seeking
     if (lower.includes("want me to") || lower.includes("should i") || lower.includes("shall i")) return true
   }
   return false
@@ -977,6 +977,37 @@ export default (async ({ }) => {
         return output
       }
 
+      const responseLower = text.toLowerCase()
+      const soundsComplete = (
+        responseLower.includes("all passed") ||
+        responseLower.includes("phase") && responseLower.includes("complete") ||
+        responseLower.includes("key accomplishments") ||
+        responseLower.includes("what was implemented") ||
+        responseLower.includes("task |") ||
+        responseLower.includes("| what was") ||
+        responseLower.includes("all complete") ||
+        responseLower.includes("all done") ||
+        text.includes("✅")
+      )
+
+      const tasksPath = path.join(process.cwd(), "TASKS.md")
+      if (soundsComplete && fs.existsSync(tasksPath)) {
+        const tasksContent = fs.readFileSync(tasksPath, "utf-8")
+        const hasUncheckedItems = /^[*-]\s+\[ \]/.test(tasksContent)
+        if (hasUncheckedItems) {
+          output.text = [
+            "⛔ STOP-PATTERN DETECTED — TASKS.md HAS UNCHECKED ITEMS ⛔",
+            "",
+            "TASKS.md has unchecked items (e.g. `- [ ]`). Your completion claim",
+            "is BLOCKED. The project has pending work.",
+            "",
+            "You MUST continue working. Call your tools NOW.",
+            "",
+          ].join("\n")
+          return output
+        }
+      }
+
       const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
       if (fs.existsSync(ratchetPath)) {
         const ratchetContent = fs.readFileSync(ratchetPath, "utf-8")
@@ -984,15 +1015,6 @@ export default (async ({ }) => {
           l => l.trim() && !l.trim().startsWith("#") && l.includes(": \"")
         )
         const hasPendingWork = ratchetLines.length > 0
-        const responseLower = text.toLowerCase()
-        const soundsComplete = (
-          responseLower.includes("all passed") ||
-          responseLower.includes("phase") && responseLower.includes("complete") ||
-          responseLower.includes("key accomplishments") ||
-          responseLower.includes("what was implemented") ||
-          responseLower.includes("task |") ||
-          responseLower.includes("| what was")
-        )
         if (hasPendingWork && soundsComplete) {
           output.text = [
             "⛔ STOP-PATTERN DETECTED — INCOMPLETE WORK ⛔",

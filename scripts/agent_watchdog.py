@@ -142,7 +142,7 @@ HIBERNATION_MARKER = Path("/tmp/gludd-watchdog-hibernating")
 POLL_SECS = 10
 
 STREAK_THRESHOLD = 3  # with 10s polling, threshold is reached in ~30s of sustained grinding
-STOP_IDLE_SECS = 60  # streak file mtime older than this + pending work = text-only stop
+STOP_IDLE_SECS = 15  # streak file mtime older than this + pending work = text-only stop
 STOP_COUNT_FILE = "/tmp/gludd-watchdog-stop-count.json"
 STOP_ESCALATE_THRESHOLD = 3
 
@@ -150,10 +150,12 @@ FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
 FORCE_DISPATCH_MAX_AGE = 120  # seconds — ignore stale force-dispatch flags
 FORCE_DISPATCH_IDLE_SECS = 5  # lower idle threshold when force-dispatch is active
 
-PURE_IDLE_SECS = 90
+PURE_IDLE_SECS = 15
 LAST_FLAG_FILE = "/tmp/gludd-watchdog-last-flag.json"
 FLAG_COOLDOWN_SECS = 30
 PURE_IDLE_DIRECTIVE = "/tmp/gludd-continue.txt"
+HEARTBEAT_FILE = "/tmp/gludd-watchdog-heartbeat.json"
+HEARTBEAT_VERBOSE = os.environ.get("GLUDD_WATCHDOG_VERBOSE", "0") == "1"
 
 _CHECK_COOLDOWN_FILE = "/tmp/gludd-watchdog-check-cooldowns.json"
 _CHECK_COOLDOWN_SECS = 60
@@ -1818,6 +1820,73 @@ def _is_disengage_active() -> bool:
         return False
 
 
+def _write_continue_directive(
+    work_sources: list[str],
+    stop_count: int,
+    tasks_unchecked: bool,
+    ratchet_count: int,
+    gate_red: bool,
+    ci_pending: bool,
+    ci_run_id: str | None = None,
+    work_hint: str = "",
+    extra_message: str = "",
+) -> None:
+    """Write the continue directive to BOTH JSON (for plugins) and plain-text (for visibility)."""
+    directive = _build_continue_directive(
+        work_sources=work_sources,
+        stop_count=stop_count,
+        tasks_unchecked=tasks_unchecked,
+        ratchet_count=ratchet_count,
+        gate_red=gate_red,
+        ci_pending=ci_pending,
+        ci_run_id=ci_run_id,
+        work_hint=work_hint,
+        extra_message=extra_message,
+    )
+
+    # JSON for plugin consumption
+    try:
+        Path(CONTINUE_DIRECTIVE).write_text(json.dumps(directive, indent=2))
+        _log(f"directive written to {CONTINUE_DIRECTIVE} (stop_count={stop_count})")
+    except Exception as e:
+        _log(f"ERROR writing JSON directive: {e}")
+
+    # LOUD plain-text directive for agent context injection
+    pending_items_str = "\n".join(f"  - {item}" for item in directive["pending_items"])
+    txt = (
+        "\n"
+        "======================================================================\n"
+        "⛔⛔⛔ WATCHDOG CONTINUE DIRECTIVE ⛔⛔⛔\n"
+        "======================================================================\n"
+        f"ACTION: {directive['action']}\n"
+        f"STOP COUNT: {stop_count} (escalation threshold: {STOP_ESCALATE_THRESHOLD})\n"
+        f"REQUIRED TOOL: {directive['required_tool']}\n"
+        f"SOURCE: {directive['source']}\n"
+        f"TS: {directive['ts']}\n"
+        "----------------------------------------------------------------------\n"
+        "PENDING WORK:\n"
+        f"{pending_items_str}\n"
+        "----------------------------------------------------------------------\n"
+        "MESSAGE:\n"
+        f"  {directive['message']}\n"
+    )
+    if extra_message:
+        txt += (
+            "\n----------------------------------------------------------------------\n"
+            f"ESCALATION: {extra_message}\n"
+        )
+    txt += (
+        "======================================================================\n"
+        "YOU MUST DISPATCH SUBAGENTS NOW. DO NOT SEND TEXT-ONLY RESPONSES.\n"
+        "======================================================================\n"
+    )
+    try:
+        Path(PURE_IDLE_DIRECTIVE).write_text(txt)
+        _log(f"loud directive written to {PURE_IDLE_DIRECTIVE}")
+    except Exception as e:
+        _log(f"ERROR writing plain-text directive: {e}")
+
+
 def _build_continue_directive(
     work_sources: list[str],
     stop_count: int,
@@ -1840,16 +1909,59 @@ def _build_continue_directive(
         suffix = f" (run {ci_run_id})" if ci_run_id else ""
         pending_items.append(f"CI pending{suffix}")
 
-    msg_parts = ["Dispatch subagents NOW to clear pending work."]
+    # Build SPECIFIC dispatch commands from TASKS.md unchecked items,
+    # ratchet entries, and gate status — so the CONTINUE directive lists
+    # exact tasks to dispatch, not a generic "do work" nudge.
+    dispatch_commands: list[dict] = []
+    task_index = 1
+    if tasks_unchecked and _TASKS_MD.exists():
+        try:
+            content = _TASKS_MD.read_text(encoding="utf-8")
+            for line in content.splitlines():
+                if _UNCHECKED_PATTERN.search(line):
+                    item_text = line.strip()
+                    dispatch_commands.append({
+                        "index": task_index,
+                        "task_item": item_text,
+                        "tool": "task",
+                        "command": f"dispatch subagent: {item_text}",
+                    })
+                    task_index += 1
+        except Exception:
+            pass
+
+    if ratchet_count > 0:
+        dispatch_commands.append({
+            "index": task_index,
+            "task_item": f"ratchet: {ratchet_count} entries",
+            "tool": "task",
+            "command": f"dispatch subagents to fix {ratchet_count} ratchet entries",
+        })
+        task_index += 1
+
+    if gate_red:
+        dispatch_commands.append({
+            "index": task_index,
+            "task_item": "gate: red — fix failures",
+            "tool": "task",
+            "command": "dispatch subagent to investigate and fix red gate",
+        })
+        task_index += 1
+
+    msg_parts = [
+        f"FORCE DISPATCH: {len(dispatch_commands)} specific tasks below. Dispatch ALL of them NOW."
+    ]
     if work_hint.strip():
         msg_parts.append(work_hint.strip())
     if extra_message.strip():
         msg_parts.append(extra_message.strip())
 
     return {
-        "action": "CONTINUE",
+        "action": "FORCE_DISPATCH",
         "pending_items": pending_items,
         "required_tool": "task",
+        "dispatch_count": len(dispatch_commands),
+        "dispatch_commands": dispatch_commands,
         "message": " ".join(msg_parts),
         "stop_count": stop_count,
         "source": ", ".join(work_sources) if work_sources else "unknown",
@@ -2000,6 +2112,7 @@ def _check_force_dispatch() -> bool:
 
 
 def check_and_reset() -> dict:
+    global _POLL_CYCLE_COUNT
     result = {
         "ts": _now(),
         "streak": _read_streak(),
@@ -2017,17 +2130,55 @@ def check_and_reset() -> dict:
     reset_needed = False
     reason = ""
 
-    # ── NEW: Stop detection via pending-work + streak mtime ──────────────
-    has_pending_work = _pending_work_exists()
+    # ── ALWAYS CHECK pending work on every poll cycle (not just on state changes) ──
+    tasks_unchecked = _tasks_md_has_unchecked()
+    ratchet_count = _ratchet_has_entries()
+    gate_red = _gate_status_is_red()
+    has_pending_work = tasks_unchecked or ratchet_count > 0 or gate_red
     ci_pending, ci_run_id = _ci_is_pending_or_red()
     has_any_work = has_pending_work or ci_pending
     mtime_age = _streak_mtime_age_seconds()
+
+    # ── HEARTBEAT: write every poll cycle so operator can see watchdog is alive ──
+    try:
+        Path(HEARTBEAT_FILE).write_text(json.dumps({
+            "ts": _now(),
+            "epoch": time.time(),
+            "poll_cycle": _POLL_CYCLE_COUNT + 1,
+            "streak": streak,
+            "mtime_age_s": round(mtime_age, 1) if mtime_age else None,
+            "has_pending_work": has_pending_work,
+            "tasks_md_unchecked": tasks_unchecked,
+            "ratchet_entries": ratchet_count,
+            "gate_status_red": gate_red,
+            "ci_pending_or_red": ci_pending,
+            "ci_run_id": ci_run_id,
+            "pending_todo_count": len(pending),
+            "stop_count": _read_stop_count(),
+        }, indent=2))
+    except Exception:
+        pass
 
     if mtime_age is not None and mtime_age < PURE_IDLE_SECS:
         _write_watchdog_activity()
 
     idle_threshold = FORCE_DISPATCH_IDLE_SECS if _is_force_dispatch_active() else STOP_IDLE_SECS
 
+    # ── Log pending-work status every cycle so we can observe what the watchdog sees ──
+    if HEARTBEAT_VERBOSE and has_any_work:
+        sources = []
+        if tasks_unchecked:
+            sources.append("TASKS.md")
+        if ratchet_count > 0:
+            sources.append("ratchet")
+        if gate_red:
+            sources.append("gate")
+        if ci_pending:
+            sources.append(f"CI(run={ci_run_id})")
+        _log(f"watchdog: pending work detected — sources={sources} mtime_age={mtime_age:.0f}s" if mtime_age else f"watchdog: pending work detected — sources={sources}")
+
+    # ── Stop detection via pending-work + streak mtime ───────────────────
+    # Fire when: agent is silent (streak==0/None) + mtime old + work pending
     if has_any_work and (streak == 0 or streak is None) and mtime_age is not None and mtime_age > idle_threshold:
         reset_needed = True
         work_sources = []
@@ -2059,19 +2210,17 @@ def check_and_reset() -> dict:
                     "Do NOT push new commits until CI is green."
                 )
 
-        directive = _build_continue_directive(
+        _write_continue_directive(
             work_sources=work_sources,
             stop_count=stop_count,
-            tasks_unchecked=_tasks_md_has_unchecked(),
-            ratchet_count=_ratchet_has_entries(),
-            gate_red=_gate_status_is_red(),
+            tasks_unchecked=tasks_unchecked,
+            ratchet_count=ratchet_count,
+            gate_red=gate_red,
             ci_pending=ci_pending,
             ci_run_id=ci_run_id,
             work_hint=work_hint,
             extra_message=extra_message,
         )
-        Path(CONTINUE_DIRECTIVE).write_text(json.dumps(directive, indent=2))
-        _log(f"directive written to {CONTINUE_DIRECTIVE} (stop_count={stop_count})")
 
         # Clear stop-state file if it exists, so plugin doesn't double-block
         sp = Path(STOP_STATE)
@@ -2081,6 +2230,36 @@ def check_and_reset() -> dict:
                 _log(f"cleared stop-state: {sp}")
             except Exception:
                 pass
+
+    # ── ALSO detect grinding-in-place: agent has streak>0 (making calls) ──
+    # but hasn't cleared pending work and streak file is very stale (>30s)
+    elif has_pending_work and streak is not None and streak > 0 and mtime_age is not None and mtime_age > STOP_IDLE_SECS * 2:
+        reset_needed = True
+        work_sources = ["local"]
+        reason = (
+            f"STOP DETECTED (grinding): agent has streak={streak} but "
+            f"mtime_age={mtime_age:.0f}s > {STOP_IDLE_SECS * 2}s with pending work — "
+            f"likely stuck in a loop"
+        )
+        result["stop_detected"] = True
+        _log(reason)
+
+        stop_count = _increment_stop_count()
+        extra_message = ""
+        if stop_count >= STOP_ESCALATE_THRESHOLD:
+            extra_message = f"REPEATED STOP DETECTED ({stop_count}x) — AGENT MAY BE LOOPING"
+
+        _write_continue_directive(
+            work_sources=work_sources,
+            stop_count=stop_count,
+            tasks_unchecked=tasks_unchecked,
+            ratchet_count=ratchet_count,
+            gate_red=gate_red,
+            ci_pending=ci_pending,
+            ci_run_id=ci_run_id,
+            work_hint="Agent has streak but mtime is stale — likely grinding in a loop. Dispatch subagents to break out.",
+            extra_message=extra_message,
+        )
 
     # ── Existing: streak threshold ───────────────────────────────────────
     elif streak is not None and streak >= STREAK_THRESHOLD:
@@ -2120,18 +2299,24 @@ def check_and_reset() -> dict:
     elif has_pending_work:
         _max_out_false_done()
     # else: leave false-done blocks alone (agent may be genuinely stopped)
-    # ── NEW: Pure idle detection (ANY idle >90s, regardless of pending work) ──
+        # ── Pure idle detection (ANY idle >PURE_IDLE_SECS, regardless of pending work) ──
     if not reset_needed and mtime_age is not None and mtime_age > PURE_IDLE_SECS:
         last_flag = _read_last_flag_time()
         now = time.time()
         if now - last_flag > FLAG_COOLDOWN_SECS:
-            _log(f"IDLE DETECTED: agent idle >90s ({mtime_age:.0f}s since last tool)")
+            _log(f"IDLE DETECTED: agent idle >{PURE_IDLE_SECS}s ({mtime_age:.0f}s since last tool)")
             _write_last_flag_time(now)
-            directive = (
-                "⛔ AGENT IDLE >90s — DISPATCH SUBAGENTS OR RESPOND WITH TOOL CALLS. "
-                "Do not send text-only responses.\n"
+            _write_continue_directive(
+                work_sources=["pure_idle"],
+                stop_count=_read_stop_count(),
+                tasks_unchecked=tasks_unchecked,
+                ratchet_count=ratchet_count,
+                gate_red=gate_red,
+                ci_pending=ci_pending,
+                ci_run_id=ci_run_id,
+                work_hint="",
+                extra_message=f"Pure idle detected — agent silent for {mtime_age:.0f}s",
             )
-            Path(PURE_IDLE_DIRECTIVE).write_text(directive)
             reset_needed = True
             reason = f"pure idle detected ({mtime_age:.0f}s)"
             result["stop_detected"] = True
@@ -2188,7 +2373,6 @@ def check_and_reset() -> dict:
             pass
 
     # ── Periodic prune of _alerted_anomalies ──────────────────────────────
-    global _POLL_CYCLE_COUNT
     _POLL_CYCLE_COUNT += 1
     if _POLL_CYCLE_COUNT % _POLL_CYCLE_PRUNE_INTERVAL == 0:
         _prune_alerted_anomalies()
@@ -2202,16 +2386,15 @@ def check_and_reset() -> dict:
         # If the stop was NOT detected by our new logic, check and write directive
         if not result.get("stop_detected"):
             if check_agent_stalled():
-                directive = _build_continue_directive(
+                _write_continue_directive(
                     work_sources=["agent_stalled"],
                     stop_count=_read_stop_count(),
-                    tasks_unchecked=_tasks_md_has_unchecked(),
-                    ratchet_count=_ratchet_has_entries(),
-                    gate_red=_gate_status_is_red(),
+                    tasks_unchecked=tasks_unchecked,
+                    ratchet_count=ratchet_count,
+                    gate_red=gate_red,
                     ci_pending=False,
                     extra_message=f"agent stalled on stop enforcement, pending={len(pending)} todos",
                 )
-                Path(CONTINUE_DIRECTIVE).write_text(json.dumps(directive, indent=2))
 
         if pending:
             _log(f"UNJAMMED: {reason}, pending={len(pending)} todos: {pending[:3]}")
@@ -2275,11 +2458,11 @@ def check_and_reset() -> dict:
     # ── Item 13: Write unified orchestrator state ────────────────────────
     agent_active = mtime_age is not None and mtime_age < PURE_IDLE_SECS
     _write_orchestrator_state(
-        tasks_unchecked=_tasks_md_has_unchecked(),
-        ratchet_count=_ratchet_has_entries(),
-        gate_red=_gate_status_is_red(),
+        tasks_unchecked=tasks_unchecked,
+        ratchet_count=ratchet_count,
+        gate_red=gate_red,
         ci_pending=ci_pending,
-        repo_pending=False,  # computed elsewhere
+        repo_pending=False,
         agent_active=agent_active,
         ci_run_id=ci_run_id,
         stop_detected=result.get("stop_detected", False),

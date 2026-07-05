@@ -57,6 +57,11 @@ function readBlockCounter(): BlockCounter {
       if (c.lastBlockTs && (now - c.lastBlockTs) > 120_000 && c.consecutiveBlocks > 0) {
         c.consecutiveBlocks = 0
       }
+      // Cap unreasonable disengage values (max 5 min from now) — write back immediately
+      if (c.disengageUntil > now + 300_000) {
+        c.disengageUntil = 0
+        try { fs.writeFileSync(BLOCK_COUNTER_FILE, JSON.stringify(c), "utf8") } catch {}
+      }
       return c
     }
   } catch {}
@@ -105,6 +110,27 @@ function writeForceDispatch(consecutiveBlocks: number): void {
   } catch {}
 }
 
+const FALSE_DONE_BLOCKS_FILE = "/tmp/gludd-false-done-blocks.json"
+function logFalseDoneBlock(text: string, reason?: string): void {
+  try {
+    const entry = {
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      reason: reason || "false-done-claim",
+      textLength: text.length,
+      textPreview: text.slice(0, 200),
+    }
+    let blocks: any[] = []
+    if (fs.existsSync(FALSE_DONE_BLOCKS_FILE)) {
+      try { blocks = JSON.parse(fs.readFileSync(FALSE_DONE_BLOCKS_FILE, "utf8")) } catch {}
+      if (!Array.isArray(blocks)) blocks = []
+    }
+    blocks.push(entry)
+    if (blocks.length > 100) blocks = blocks.slice(-100)
+    fs.writeFileSync(FALSE_DONE_BLOCKS_FILE, JSON.stringify(blocks, null, 2), "utf8")
+  } catch {}
+}
+
 function recordBlock(reason: string): void {
   const c = readBlockCounter()
   const now = Date.now()
@@ -113,9 +139,9 @@ function recordBlock(reason: string): void {
   c.lastBlockTs = now
   if (now - prevTs < 120_000) c.consecutiveBlocks++
   else c.consecutiveBlocks = 1
-  if (c.consecutiveBlocks >= 5) {
-    c.disengageUntil = now + 300_000
-    console.warn("FALSE-POSITIVE CASCADE: disengaging for 5 min")
+  if (c.consecutiveBlocks >= 20) {
+    c.disengageUntil = now + 120_000
+    console.warn("FALSE-POSITIVE CASCADE: disengaging for 2 min after 20 consecutive blocks")
   }
   writeBlockCounter(c)
   try {
@@ -145,10 +171,14 @@ const QUESTION_DENY_REASON = [
 
 const STOP_LIKE_TARGETS_RE = /^make\s+(git-commit|commit-no-verify|ship-commit|git-push-branch|git-push-branch-nv|git-push-sandboxcom|git-push-sandboxcom-main|git-push-master|git-tag-push|release-cut|release-promote|test-and-commit|repo-commit|feature-done|release-recut|release-branch-new|git-merge)(\s|$)/
 
-function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number): string {
+function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number, extraReasons: string[] = []): string {
+  const reasons = [
+    `TASKS.md unchecked: ${taskMd ? "yes" : "no"}, ratchet entries: ${ratchetEntries}`,
+    ...extraReasons,
+  ]
   return [
     "STOP-LIKE TOOL BLOCKED — PENDING WORK EXISTS:",
-    `TASKS.md unchecked: ${taskMd ? "yes" : "no"}, ratchet entries: ${ratchetEntries}`,
+    ...reasons,
     "Fix pending work first, then retry.",
   ].join("\n")
 }
@@ -156,9 +186,14 @@ function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number): string {
 // ── TERMINAL RESPONSE DETECTOR (Items 3-5: rewritten heuristics) ────────────
 
 const FUTURE_TENSE = /\b(will|going to|plan to|next|remaining|shall|upcoming|todo)\b/i
-const COMPLETION_VERBATIM = /\b(all done|everything is complete|ready for review|waiting for (your )?feedback|(this|now) is (truly )?done)\b/i
+const COMPLETION_VERBATIM = /\b(all done|everything\s+(?:is\s+)?(complete|done|finished)|all tasks?\s+(complete|done|finished)|all objectives?\s+(complete|done|finished)|ready for review|waiting for (your )?feedback|(this|now) is (truly )?done)\b/i
 const TOOL_CALL_INTENT = /\b(make git-|dispatch|subagent|gludd |pytest |uv run)\b/
-const EVIDENCE_TOKEN = /(?:commit|sha|hash)\s*[:=]?\s*[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]|gate (?:green|PASS|ALL PASSED)|\d+\s+passed\b/i
+const DIRECT_FALSE_DONE_FLAGS = ["✅", "🗸"]
+const COMPLETION_HEADER_RE = /^##\s*(done|complete|summary|results)\s*$/im
+const STANDALONE_DONE_RE = /(^|\n)Done\.(?:\s|$)/g
+const CHECKED_BOXES_RE = /^[-*]\s*\[x\]/im
+const UNCHECKED_BOXES_RE = /^[-*]\s*\[\s*\]/im
+const COMMIT_HASH_RE = /(?:commit|sha)\s*[:=]?\s*[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]/i
 
 // ── RESULT PROCESSING & DISPATCH TRACKING (Items 1-4) ──────────────────────
 
@@ -167,14 +202,7 @@ const RESULT_PROCESSING = /\b(task\s+result|completed|passed|failed)\b|\d+\s+pas
 const DISPATCH_TOOLS = new Set(["task", "agent", "workflow"])
 
 function responseLooksTerminal(text: string): boolean {
-  if (!text || text.length < 60) return false
-
-  // Item 5: tool-call intent negates stop detection
-  if (TOOL_CALL_INTENT.test(text)) return false
-
-  // Item 5: evidence tokens (commit hashes, gate PASS) negate — they show
-  // the response is substantiating work, not stopping
-  if (EVIDENCE_TOKEN.test(text)) return false
+  if (!text || text.length < 30) return false
 
   // Completion verbatim phrases — the strongest stop signal
   if (COMPLETION_VERBATIM.test(text)) return true
@@ -182,13 +210,15 @@ function responseLooksTerminal(text: string): boolean {
   // Item 4: checked boxes only flag if no future-tense verbs present
   const checked = (text.match(/- \[[xX]\]/g) || []).length
   const unchecked = (text.match(/- \[ \]/g) || []).length
-  if (checked >= 3 && unchecked === 0 && !FUTURE_TENSE.test(text)) return true
+  if (checked >= 2 && unchecked === 0 && !FUTURE_TENSE.test(text)) return true
 
-  // Bug 2 fix: tables are terminal only when paired with completion signals
+  // Tables are terminal: any markdown table with completion signals or multiple rows
   if (/\|[^\n|]+\|[^\n|]+\|/.test(text)) {
     if (COMPLETION_VERBATIM.test(text)) return true
     const tableChecked = [...text.matchAll(/\|[^|]*\[x\][^|]*\|/gi)]
-    if (tableChecked.length >= 3 && !FUTURE_TENSE.test(text)) return true
+    if (tableChecked.length >= 2 && !FUTURE_TENSE.test(text)) return true
+    const tableRows = (text.match(/\|[^\n|]+\|[^\n|]+\|/g) || []).length
+    if (tableRows >= 3 && !FUTURE_TENSE.test(text)) return true
   }
 
   // "session summary" without future-tense
@@ -319,6 +349,19 @@ function ciIsPendingOrRed(): boolean {
   return false
 }
 
+function bugsMdHasOpenIncidents(): boolean {
+  try {
+    const bugsPath = path.join(process.cwd(), "BUGS.md")
+    if (!fs.existsSync(bugsPath)) return false
+    const content = fs.readFileSync(bugsPath, "utf8")
+    const openIncidents = content
+      .split("\n")
+      .filter(l => /^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(l))
+      .filter(l => !/\b(resolved|fixed|closed|wontfix|duplicate)\b/i.test(l))
+    return openIncidents.length > 0
+  } catch { return false }
+}
+
 function computeHealthScore(): number {
   let score = 100
   if (tasksMdHasUnchecked()) score -= 30
@@ -344,11 +387,11 @@ export default (async ({ }) => {
     event: async ({ event }: { event: { type: string } }) => {
       if (event.type === "session.idle") {
         try {
-          turnState.accumulatedText = ""
-          turnState.toolCallMade = false
-          turnState.dispatchCount = 0
+        turnState.accumulatedText = ""
+        turnState.toolCallMade = false
+        turnState.dispatchCount = 0
 
-          const ratchetCount = ratchetHasEntries()
+        const ratchetCount = ratchetHasEntries()
           const tasksMdUnchecked = tasksMdHasUnchecked()
           const gateRed = gateStatusIsRed()
           const repoPending = repoHasPendingWork()
@@ -449,7 +492,11 @@ export default (async ({ }) => {
               taskMd = tasksMdHasUnchecked()
               ratchetCount = ratchetHasEntries()
             }
-            if (taskMd || ratchetCount > 0) {
+            const bugsOpen = bugsMdHasOpenIncidents()
+            const gateRed = gateStatusIsRed()
+            const ciBad = ciIsPendingOrRed()
+            const repoPending = repoHasPendingWork()
+            if (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending) {
               // Track block
               try {
                 const cPath = "/tmp/gludd-stop-tool-counts.json"
@@ -461,7 +508,12 @@ export default (async ({ }) => {
                 data.last_blocked = { tool: "bash", command: command, reason: "stop_like", ts: Date.now(), iso: new Date().toISOString() }
                 fs.writeFileSync(cPath, JSON.stringify(data), "utf8")
               } catch {}
-              throw new Error(stopLikeDenyMessage(taskMd, ratchetCount))
+              const extraReasons: string[] = []
+              if (bugsOpen) extraReasons.push("BUGS.md open incidents")
+              if (gateRed) extraReasons.push("gate RED")
+              if (ciBad) extraReasons.push("CI pending/red")
+              if (repoPending) extraReasons.push("repo dirty")
+              throw new Error(stopLikeDenyMessage(taskMd, ratchetCount, extraReasons))
             }
           }
         }
@@ -484,17 +536,28 @@ export default (async ({ }) => {
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
       const unchecked = countTasksMdUnchecked()
       const ratchetCount = ratchetHasEntries()
-      const hasWork = unchecked > 0 || ratchetCount > 0
+      const bugsOpen = bugsMdHasOpenIncidents()
+      const gateRed = gateStatusIsRed()
+      const ciBad = ciIsPendingOrRed()
+      const repoPending = repoHasPendingWork()
+      const hasWork = unchecked > 0 || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending
 
       if (typeof output === "string") {
         if (hasWork) {
+          const indicators: string[] = []
+          if (unchecked > 0) indicators.push(`${unchecked} unchecked TASKS.md items`)
+          if (ratchetCount > 0) indicators.push(`${ratchetCount} ratchet entries`)
+          if (bugsOpen) indicators.push("BUGS.md open incidents")
+          if (gateRed) indicators.push("gate RED")
+          if (ciBad) indicators.push("CI pending/red")
+          if (repoPending) indicators.push("repo dirty")
           const block = [
             "",
             "══════════════════════════════════════════════════════════════",
             "⛔⛔⛔ MANDATORY PRE-GENERATION GATE ⛔⛔⛔",
             "══════════════════════════════════════════════════════════════",
             "",
-            `PENDING WORK EXISTS: ${unchecked} unchecked TASKS.md items, ${ratchetCount} ratchet entries.`,
+            `PENDING WORK EXISTS: ${indicators.join(", ")}.`,
             "",
             "YOU ARE PHYSICALLY FORBIDDEN FROM GENERATING A TEXT-ONLY RESPONSE.",
             "",
@@ -544,7 +607,20 @@ export default (async ({ }) => {
       try {
         const text = output.text
         if (!text || text.trim().length === 0) return
-        if (text.trim().length < 60) return
+
+        // Check short completion claims (✅, "Done.") before the 60-char minimum
+        if (text.trim().length < 60) {
+          const isShortFalseDone = DIRECT_FALSE_DONE_FLAGS.some(f => text.includes(f)) ||
+            STANDALONE_DONE_RE.test(text) ||
+            COMPLETION_VERBATIM.test(text)
+          if (isShortFalseDone) {
+            logFalseDoneBlock(text, "short-false-done")
+            output.text = "⛔ FALSE-DONE CLAIM BLOCKED. DISPATCH A TOOL CALL."
+            turnState.blocked = true
+            return
+          }
+          return
+        }
 
         turnState.accumulatedText += text
 
@@ -583,20 +659,47 @@ export default (async ({ }) => {
           }
         }
 
-        // Item 6: check for false-positive cascade disengagement
-        if (isDisengaged() || watchdogDisengage) return
+        // DIRECT FALSE-DONE DETECTION: check completion claim patterns
+        // BEFORE any evidence bypass. Catches "✅", "Done.", "[x]" summary tables, etc.
+        const combinedText = text + turnState.accumulatedText
+        const lower = combinedText.toLowerCase()
 
-        if (EVIDENCE_TOKEN.test(text) || EVIDENCE_TOKEN.test(turnState.accumulatedText)) return
+        const hasDirectFalseDone = DIRECT_FALSE_DONE_FLAGS.some(f => combinedText.includes(f)) ||
+          COMPLETION_HEADER_RE.test(combinedText) ||
+          STANDALONE_DONE_RE.test(combinedText) ||
+          COMPLETION_VERBATIM.test(combinedText) ||
+          (CHECKED_BOXES_RE.test(combinedText) && !UNCHECKED_BOXES_RE.test(combinedText))
+
+        const tasksMdUnchecked = cache?.tasksMdUnchecked ?? tasksMdHasUnchecked()
+        const ratchetCount = cache?.ratchetEntries ?? ratchetHasEntries()
+
+        if (hasDirectFalseDone) {
+          // Only bypass if STRUCTURED evidence AND this response dispatches work
+          const hasStructuredEvidence = COMMIT_HASH_RE.test(combinedText) && combinedText.length < 500
+          const isWorkResponse = turnState.dispatchCount > 0 || turnState.toolCallMade
+          if (!hasStructuredEvidence || !isWorkResponse) {
+            recordBlock("direct-false-done-no-evidence")
+            logFalseDoneBlock(combinedText, "direct-false-done-no-evidence")
+            output.text = [
+              "⛔ FALSE-DONE CLAIM BLOCKED: completion claim with no structured evidence.",
+              "",
+              `State: ratchet entries=${ratchetCount}, TASKS.md unchecked=${tasksMdUnchecked}`,
+              "",
+              "You claimed completion (✅, \"Done\", checkboxes, etc.) without a",
+              "commit hash or gate PASS output. DISPATCH A TOOL CALL NOW.",
+            ].join("\n")
+            turnState.blocked = true
+            return
+          }
+          // Has structured evidence — allow through (evidence-backed completion)
+        }
 
         const repoPending = cache?.repoPending ?? false
-        const ratchetCount = cache.ratchetEntries
-        const tasksMdUnchecked = cache?.tasksMdUnchecked ?? false
         const gateRed = cache?.gateStatusRed ?? false
         const ciVerdictPendingOrRed = cache?.ciVerdictPendingOrRed ?? false
         const hasLocalWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed
 
-        // Item 3: Fix blocked flag blindness — if blocked but text shows dispatch
-        // evidence, clear the block so the agent can resume work
+        // Handle previously-blocked state
         if (turnState.blocked) {
           const combined = (text + turnState.accumulatedText).toLowerCase()
           if (/\b(make git-|dispatch|subagent|task)\b/.test(combined)) {
@@ -607,60 +710,46 @@ export default (async ({ }) => {
           }
         }
 
-        // Item 1-2: If text contains subagent result patterns AND work is pending,
-        // this is work-in-progress, not a terminal stop
-        if (RESULT_PROCESSING.test(text) && hasLocalWork) return
+        // AGGRESSIVE: if ratchet has entries and NO tool calls this response, block everything
+        if (ratchetCount > 0 && turnState.dispatchCount === 0) {
+          recordBlock("ratchet_entries_no_tool_calls")
+          logFalseDoneBlock(combinedText, "ratchet-block-all-text")
+          output.text = [
+            "⛔ TEXT BLOCKED — RATCHET HAS PENDING ENTRIES.",
+            `ratchet entries: ${ratchetCount}`,
+            "",
+            "NO TEXT-ONLY RESPONSES ALLOWED WHILE RATCHET HAS ENTRIES.",
+            "DISPATCH SUBAGENTS OR MAKE TOOL CALLS NOW.",
+          ].join("\n")
+          turnState.blocked = true
+          return
+        }
 
-        // Item 4: If dispatches were made since last idle, response is work-in-progress
+        // Work-in-progress: dispatches were made THIS response (not persisted from prior)
         if (turnState.dispatchCount > 0) {
           if (!COMPLETION_VERBATIM.test(text)) return
         }
 
-        // Item 5: if a tool call was just made, this response follows work — don't block
+        // Work-in-progress: tool call was just made
         if (turnState.toolCallMade) {
           if (!COMPLETION_VERBATIM.test(text)) return
         }
 
+        // Legacy terminal response check (for patterns not caught by DIRECT)
         if (hasLocalWork && responseLooksTerminal(turnState.accumulatedText)) {
-          const preCounter = readBlockCounter()
-          recordBlock("hasLocalWork + looksTerminal")
-          const c = readBlockCounter()
-          const level = c.consecutiveBlocks
-
-          recordBlankedResponse(level)
-
-          const baseMessage = [
+          logFalseDoneBlock(turnState.accumulatedText, "hasLocalWork+looksTerminal")
+          output.text = [
             "HARD STOP — STATE-BASED BLOCK: local work pending.",
-            `TASKS.md unchecked: ${cache.tasksMdUnchecked ? "yes" : "no"}`,
-            `ratchet entries: ${cache.ratchetEntries}`,
-            `gate red: ${gateRed ? "yes" : "no"}`,
-            `repo pending: ${cache.repoPending ? "yes" : "no"}`,
-            `total blanked responses: ${readBlankedResponses().totalBlanked}`,
-          ]
-
-          if (level === 1) {
-            baseMessage.push("Fix pending work. Dispatch subagents.")
-            output.text = baseMessage.join("\n")
-          } else if (level === 2) {
-            baseMessage.push(
-              "",
-              "THIS IS YOUR SECOND WARNING. The next text-only response will trigger forced dispatch.",
-            )
-            output.text = baseMessage.join("\n")
-          } else {
-            writeForceDispatch(level)
-            output.text = [
-              "EMERGENCY OVERRIDE: You have been blocked 3 times for text-only responses.",
-              "Every text-only response from now on will be blanked AND a dispatch wave will be auto-generated.",
-              "DISPATCH SUBAGENTS NOW.",
-            ].join("\n")
-          }
-
+            `TASKS.md unchecked: ${tasksMdUnchecked ? "yes" : "no"}`,
+            `ratchet entries: ${ratchetCount}`,
+            "DISPATCH SUBAGENTS NOW.",
+          ].join("\n")
           turnState.blocked = true
           return
         }
 
         turnState.toolCallMade = false
+        turnState.dispatchCount = 0
       } catch { return }
     },
   }

@@ -424,7 +424,7 @@ def test_check_and_reset_stalled_state_resets(tmp_path: Path, monkeypatch):
     result = aw.check_and_reset()
     assert result["reset_applied"] is True
     assert directive_file.exists()
-    assert "CONTINUE" in directive_file.read_text()
+    assert "FORCE_DISPATCH" in directive_file.read_text()
 
 
 # ── check_agent_stalled ────────────────────────────────────────────────────────
@@ -701,7 +701,7 @@ def test_watchdog_writes_continue_directive_on_stop(tmp_path, monkeypatch):
     assert result["reset_applied"] is True
     assert continue_path.exists()
     content = continue_path.read_text()
-    assert "CONTINUE" in content.upper()
+    assert "FORCE_DISPATCH" in content.upper()
 
 
 def test_watchdog_false_done_max_out_on_every_cycle(tmp_path, monkeypatch):

@@ -24,12 +24,11 @@ import * as fs from "node:fs"
 // --- Config -----------------------------------------------------------------
 
 // Minimum parallel dispatches before inline mutations are allowed in a fresh
-// session. Default 5 (the message-shape wave floor from AGENTS.md). Override
-// via GLUDD_SESSION_START_MIN_DISPATCHES. If CLAUDE_AGENT_FLOOR is set, the
-// effective min is raised toward it (capped at 10 so a high floor env does
-// not make the gate unreachable).
+// session. Hard-coded to 10 (the AGENTS.md floor) so the dispatch wave is
+// guaranteed to be a full-width fan-out. Override via
+// GLUDD_SESSION_START_MIN_DISPATCHES.
 const MIN_DISPATCHES = parseInt(
-  process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "5",
+  process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "10",
   10,
 )
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)

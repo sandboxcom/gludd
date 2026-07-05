@@ -400,11 +400,85 @@ function enforceForceDelegate(
 }
 
 // ============================================================================
-// MAIN-THREAD BUDGET (port of mainthread_budget.sh)
-// Counts consecutive main-thread tool calls since last delegation; escalates
-// when streak is long AND floor below target. Every task/workflow dispatch
-// RESETS the streak. Returns: null = allow, string = block reason.
+// FORCE-DISPATCH HELPER — writes /tmp/gludd-force-dispatch.json with specific
+// task dispatch commands extracted from TASKS.md, config/ratchet.yml, and
+// .gate-status.  Called when the main-thread streak blocks a mutation, so the
+// agent sees EXACTLY what to dispatch on instead of a generic "delegate" nudge.
 // ============================================================================
+
+const FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
+
+interface DispatchItem {
+  index: number
+  task_item: string
+  tool: string
+  command: string
+}
+
+function buildForceDispatchCommands(): DispatchItem[] {
+  const cmds: DispatchItem[] = []
+  let idx = 1
+  try {
+    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(process.cwd(), "TASKS.md")
+    if (fs.existsSync(tasksMd)) {
+      for (const line of fs.readFileSync(tasksMd, "utf8").split("\n")) {
+        if (/^\s*[-*]\s+\[\s*\]/.test(line)) {
+          const item = line.replace(/^\s*[-*]\s+\[\s*\]\s*/, "").trim().substring(0, 100)
+          cmds.push({
+            index: idx++,
+            task_item: item,
+            tool: "task",
+            command: `dispatch subagent: ${item}`,
+          })
+        }
+      }
+    }
+  } catch { /* best-effort */ }
+  try {
+    const ratchet = path.join(process.cwd(), "config", "ratchet.yml")
+    if (fs.existsSync(ratchet)) {
+      const count = fs.readFileSync(ratchet, "utf8")
+        .split("\n")
+        .filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
+        .length
+      if (count > 0) {
+        cmds.push({
+          index: idx++,
+          task_item: `ratchet: fix ${count} entries`,
+          tool: "task",
+          command: `dispatch subagents to fix ${count} ratchet entries`,
+        })
+      }
+    }
+  } catch { /* best-effort */ }
+  try {
+    const gs = path.join(process.cwd(), ".gate-status")
+    if (fs.existsSync(gs)) {
+      const content = fs.readFileSync(gs, "utf8")
+      if (/FAIL/.test(content)) {
+        cmds.push({
+          index: idx++,
+          task_item: "gate: red — fix failures",
+          tool: "task",
+          command: "dispatch subagent to investigate and fix red gate",
+        })
+      }
+    }
+  } catch { /* best-effort */ }
+  return cmds
+}
+
+function writeForceDispatchSignal(cmds: DispatchItem[]): void {
+  try {
+    fs.writeFileSync(FORCE_DISPATCH_FILE, JSON.stringify({
+      level: 3,
+      dispatch_count: cmds.length,
+      dispatch_commands: cmds,
+      reason: "mainthread_streak_block",
+      ts: Date.now(),
+    }))
+  } catch { /* fail open */ }
+}
 function readStreak(): number {
   try {
     const raw = fs.readFileSync(MAINTHREAD_STREAK_FILE, "utf8").trim()
@@ -452,15 +526,27 @@ function mainthreadBudgetBefore(tool: string): string | null {
     const rearm = Math.max(0, MAINTHREAD_THRESHOLD - 3)
     writeStreak(rearm)
 
+    // Write force-dispatch signal with specific tasks so the agent sees
+    // EXACTLY what to dispatch — not a generic "delegate" nudge.
+    const cmds = buildForceDispatchCommands()
+    if (cmds.length > 0) {
+      writeForceDispatchSignal(cmds)
+    }
+
+    const cmdDetail = cmds.slice(0, 5).map(c => `  ${c.index}. ${c.task_item}`).join("\n")
     return [
       `MAIN-THREAD STREAK BLOCK: ${streak} consecutive main-thread mutating tool`,
       `calls with no intervening dispatch, and only ${live} subagent(s) live`,
       `(target ${TARGET}). THIS is the grind-inline pattern that drains`,
-      `multitasking. The 5th+ call is HARD-DENIED. Hand the remaining chunk to a`,
+      `multitasking. The ${MAINTHREAD_THRESHOLD + 1}th call is HARD-DENIED. Hand the remaining chunk to a`,
       `task/agent NOW instead of doing it inline — a dispatch resets this streak.`,
+      "",
+      "== SPECIFIC DISPATCH COMMANDS ==",
+      cmdDetail || "  (no TASKS.md/ratchet/gate items — dispatch research tasks)",
+      "",
       `Set GLUDD_FORCE_DELEGATE=0 to disable. (If subagent dispatch is blocked by a`,
       `rate-limit/quota, this is expected; resume delegating once it clears.)`,
-    ].join(" ")
+    ].join("\n")
   } catch {
     return null
   }

@@ -56,10 +56,14 @@ const TARGET = Math.min(
 // warranted), not delete it. The plugin BLOCKS non-dispatch tool calls (via
 // tool.execute.before) when the floor is breached AND there is known open work
 // — forcing the agent to dispatch subagents rather than grind inline.
-// DEFAULT ON (continuous multitasking enforcement). Set GLUDD_FLOOR_ENFORCE=0
-// to disable the hard gate (back to advisory-only append). Mirrors
-// GLUDD_NO_WAIT_ENFORCE in enforce-stop.ts.
-const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
+// HARD DEFAULT — ALWAYS ON. This guardrail exists because past sessions repeatedly
+// demonstrated the agent collapsing to serial inline grinding with 0 subagents live.
+// It is NOT opt-in and does NOT depend on environment variables. The only way to
+// disable is to edit this source file directly.
+// PREVIOUS BUG (2026-07-05): `process.env.GLUDD_FLOOR_ENFORCE !== "0"` was default-ON
+// but .claude/settings.json explicitly set GLUDD_FLOOR_ENFORCE=0, silently disabling
+// the guardrail for ALL sessions. Now unconditionally true.
+const FLOOR_ENFORCE = true
 
 // Dispatch tools are ALWAYS allowed — even when the floor is breached and
 // enforce mode is on. Blocking a dispatch attempt would be counterproductive
@@ -140,6 +144,32 @@ function openWorkExists(): boolean {
         if (openIncidents.length > 0) return true
       }
     } catch { /* unreadable BUGS.md -> ignore */ }
+    // Gate status check — .gate-status exists and has FAIL lines
+    try {
+      const gatePath = path.join(process.cwd(), ".gate-status")
+      if (fs.existsSync(gatePath)) {
+        const content = fs.readFileSync(gatePath, "utf8")
+        for (const line of content.split("\n")) {
+          if (line.startsWith("===")) continue
+          if (/FAIL/.test(line) || /incomplete/i.test(line)) return true
+        }
+      }
+    } catch { /* ignore */ }
+    // CI status check — read from watchdog cache or shared state
+    try {
+      const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+      if (fs.existsSync(ciCachePath)) {
+        const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
+        const lastCheck = ciData.last_ci_check || 0
+        const lastStatus = ciData.last_ci_status || ""
+        if (Date.now() - lastCheck < 120_000 && lastStatus && lastStatus !== "SUCCESS") return true
+      }
+      const stopStatePath = "/tmp/gludd-stop-state.json"
+      if (fs.existsSync(stopStatePath)) {
+        const state = JSON.parse(fs.readFileSync(stopStatePath, "utf8"))
+        if (state.ciVerdictPendingOrRed) return true
+      }
+    } catch { /* ignore */ }
     // Check for uncommitted changes via .git/index vs .git/refs/heads mtime
     // — avoids the execSync("git status") dependency that may not work in
     // plugin sandboxes where `git` is not on PATH.
@@ -197,7 +227,7 @@ function openWorkExists(): boolean {
 // survey results and dispatch — blocking non-dispatch tools would wedge the
 // session.  A new dispatch resets _needsRefill to false.
 
-const MAX_STREAK = 4
+const MAX_STREAK = 0
 let _streakCount = 0
 
 let _dispatchCount = 0
@@ -216,7 +246,7 @@ const RESULT_MARKERS = [
 ]
 const REFILL_THRESHOLD = 3
 const PEAK_DISPATCH = 5
-const RESULT_GRACE_CALLS = 3
+const RESULT_GRACE_CALLS = 0
 
 function _textHasResultMarker(text: string): boolean {
   const lower = text.toLowerCase()
@@ -225,6 +255,48 @@ function _textHasResultMarker(text: string): boolean {
 
 function _updateRefillState(): void {
   _needsRefill = _dispatchPeak >= PEAK_DISPATCH && _dispatchCount < REFILL_THRESHOLD
+}
+
+// Dispatch-command builder: extract specific tasks from TASKS.md unchecked items,
+// config/ratchet.yml entries, and .gate-status FAIL lines.  Produces numbered
+// commands the agent sees in the deny message — mechanical, not advisory.
+interface DispatchCommand { index: number; tool: string; task_item: string }
+function _buildDispatchCommands(): DispatchCommand[] {
+  const commands: DispatchCommand[] = []
+  let idx = 1
+  try {
+    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(process.cwd(), "TASKS.md")
+    if (fs.existsSync(tasksMd)) {
+      for (const line of fs.readFileSync(tasksMd, "utf8").split("\n")) {
+        if (/^\s*[-*]\s+\[\s*\]/.test(line)) {
+          const item = line.replace(/^\s*[-*]\s+\[\s*\]\s*/, "").trim().substring(0, 100)
+          commands.push({ index: idx++, tool: "task", task_item: item })
+        }
+      }
+    }
+  } catch { /* best-effort */ }
+  try {
+    const ratchet = path.join(process.cwd(), "config", "ratchet.yml")
+    if (fs.existsSync(ratchet)) {
+      const count = fs.readFileSync(ratchet, "utf8")
+        .split("\n")
+        .filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
+        .length
+      if (count > 0) {
+        commands.push({ index: idx++, tool: "task", task_item: `ratchet: fix ${count} entries` })
+      }
+    }
+  } catch { /* best-effort */ }
+  try {
+    const gs = path.join(process.cwd(), ".gate-status")
+    if (fs.existsSync(gs)) {
+      const content = fs.readFileSync(gs, "utf8")
+      if (/FAIL/.test(content)) {
+        commands.push({ index: idx++, tool: "task", task_item: "gate: red — fix failures" })
+      }
+    }
+  } catch { /* best-effort */ }
+  return commands
 }
 
 const floorTurnState: { accumulatedText: string } = { accumulatedText: "" }
@@ -258,22 +330,12 @@ export default (async ({ }) => {
           return
         }
 
-        // Result-processing grace window: the agent just received subagent
-        // results and needs a few non-dispatch calls to digest them (read
-        // files, inspect outputs) before the streak counter kicks in.
+        // Result-processing grace: after results arrive the agent gets a brief
+        // window to digest output. With RESULT_GRACE_CALLS=0 (hard default),
+        // this fires once then the streak counter resumes immediately.
         if (_resultProcessingGrace > 0) {
           _resultProcessingGrace--
           _streakCount = 0
-          return
-        }
-
-        // Refill awareness: a large dispatch wave drained and the agent needs
-        // freedom to survey results and dispatch the next wave.  Blocking here
-        // IS the "refill gap" bug — it prevents the agent from dispatching.
-        if (_needsRefill) {
-          _streakCount = 0
-          // Don't decrement the grace here — the agent gets one free pass
-          // per call while in refill mode, but must dispatch eventually.
           return
         }
 
@@ -283,13 +345,49 @@ export default (async ({ }) => {
           _streakCount = 0
           return
         }
+
+        // Build SPECIFIC dispatch commands from TASKS.md unchecked items,
+        // ratchet entries, and gate status — so the agent sees EXACTLY what
+        // to dispatch on, not a generic "do work" nudge.
+        const commands = _buildDispatchCommands()
+
+        const lines = [
+          "",
+          "█████████████████████████████████████████████████████████████████████████████",
+          "█                                                                               █",
+          "█  ⛔  AGENT-FLOOR BREACH — NON-DISPATCH CALL BLOCKED  ⛔                      █",
+          "█                                                                               █",
+          `█  ${_streakCount} consecutive non-dispatch calls (MAX allowed: ${MAX_STREAK}).                      █`,
+          `█  FLOOR = ${FLOOR} subagents.  TARGET = ${TARGET}.  Current pool: BELOW FLOOR.                  █`,
+          "█                                                                               █",
+          "█  THE ONLY ALLOWED TOOL CALLS RIGHT NOW:                                       █",
+          "█    → task   (launch a subagent on concrete work)                              █",
+          "█    → agent  (launch a subagent on concrete work)                              █",
+          "█                                                                               █",
+          "█  DO NOT: read, write, edit, grep, glob, or bash.  DISPATCH SUBAGENTS.         █",
+          "█                                                                               █",
+          "█  Blocking mode is ALWAYS ON.  There is NO env-var escape hatch.               █",
+          "█  To permanently disable, edit enforce-floor.ts directly.                      █",
+          "█                                                                               █",
+        ]
+        const sep = "█" + (" ".repeat(79))
+        lines.push(sep)
+        lines.push("█  == SPECIFIC DISPATCH COMMANDS ==" + (" ".repeat(44)))
+        lines.push(sep)
+        if (commands.length === 0) {
+          lines.push("█  (no TASKS.md/ratchet/gate items found — dispatch RESEARCH tasks)" + " ".repeat(9))
+        } else {
+          for (const c of commands) {
+            const item = `  ${c.index}. tool="${c.tool}" | ${c.task_item}`
+            lines.push("█  " + item + (" ".repeat(Math.max(0, 76 - item.length))))
+          }
+        }
+        lines.push(sep)
+        lines.push("█████████████████████████████████████████████████████████████████████████████")
+        lines.push("")
         return {
           permissionDecision: "deny" as const,
-          message: [
-            `⛔ FLOOR BREACH: ${_streakCount} consecutive non-dispatch calls (> max ${MAX_STREAK}).`,
-            `Floor=${FLOOR}, target=${TARGET}. Dispatch task/agent/workflow NOW.`,
-            "Set GLUDD_FLOOR_ENFORCE=0 to disable.",
-          ].join("\n"),
+          message: lines.join("\n"),
         }
       } catch {
         return
@@ -338,15 +436,42 @@ export default (async ({ }) => {
         _updateRefillState()
 
         if (_streakCount > MAX_STREAK) {
+          // REPLACE the agent's text entirely — do NOT append.  When the floor
+          // is breached, the agent's only valid output is a dispatch tool call,
+          // not prose.  Appending a nag that sits below the agent's summary is
+          // invisible in practice; the agent ignores it.  Replacing the text
+          // makes it structurally impossible for prose to reach the user while
+          // the floor is breached.
+          const cmds = _buildDispatchCommands()
+          const cmdLines: string[] = []
+          if (cmds.length === 0) {
+            cmdLines.push("(no TASKS.md/ratchet/gate items — dispatch research tasks)")
+          } else {
+            for (const c of cmds) {
+              cmdLines.push(`  ${c.index}. tool="${c.tool}" | ${c.task_item}`)
+            }
+          }
           return {
             text: [
-              output.text,
               "",
+              "████████████████████████████████████████████████████████████████████████",
+              "█                                                                      █",
+              "█  ⛔  FLOOR BREACH — TEXT RESPONSE REPLACED BY GUARDRAIL  ⛔          █",
+              "█                                                                      █",
+              `█  ${_streakCount} non-dispatch calls without a dispatch.  Floor=${FLOOR}, target=${TARGET}.    █`,
+              "█  THE AGENT MAY NOT SEND PROSE WHILE THE SUBAGENT POOL IS EMPTY.      █",
+              "█  ALL USER-FACING TEXT HAS BEEN SUPPRESSED BY THIS GUARDRAIL.         █",
+              "█                                                                      █",
+              "█  REQUIRED NEXT ACTION:                                               █",
+              "█    → Dispatch task/agent calls (≥5 in parallel) on pending work.     █",
+              "█                                                                      █",
+              "█  DISPATCH COMMANDS:                                                  █",
+              ...cmdLines.map(l => "█  " + l + (" ".repeat(Math.max(0, 66 - l.length))) + "█"),
+              "█                                                                      █",
+              "█  Do not deliberate.  Do not explain.  DISPATCH NOW.                  █",
+              "█                                                                      █",
+              "████████████████████████████████████████████████████████████████████████",
               "",
-              "⛔ AGENT-FLOOR BREACH (auto-injected guardrail) ⛔",
-              `${_streakCount} non-dispatch calls without a dispatch — floor=${FLOOR}, target=${TARGET}.`,
-              "DELEGATE-FIRST: your VERY NEXT action MUST dispatch task/agent/workflow.",
-              "Do not deliberate; dispatch.",
             ].join("\n"),
           }
         }
