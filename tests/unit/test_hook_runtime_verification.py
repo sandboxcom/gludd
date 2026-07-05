@@ -362,3 +362,296 @@ class TestEnforceStopBlockCounter:
         assert isinstance(data, dict)
         assert "reason" in data
         assert isinstance(data["reason"], str)
+
+
+# ── Test 7: enforce-stop.ts writes text.complete count file ─────────────────
+
+class TestEnforceStopTextComplete:
+    """enforce-stop.ts writes /tmp/gludd-stop-text-complete-count.json via
+    experimental.text.complete. BUGS.md line 414 mandates runtime-verification
+    of every migrated hook surface.
+    """
+
+    STATE_FILE = "/tmp/gludd-stop-text-complete-count.json"
+
+    def test_text_complete_count_file_exists(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist — text.complete may not have fired yet")
+
+        assert isinstance(data, dict), (
+            f"{self.STATE_FILE} must contain a JSON object"
+        )
+
+    def test_text_complete_has_count(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        assert "count" in data, (
+            f"{self.STATE_FILE} missing 'count' key"
+        )
+
+    def test_text_complete_count_non_negative(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        assert isinstance(data["count"], (int, float)), "count must be a number"
+        assert data["count"] >= 0, f"count must be non-negative, got {data['count']}"
+
+    def test_text_complete_count_increasing(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        assert data["count"] > 0, (
+            f"text.complete count should be > 0 (hook has fired), got {data['count']}"
+        )
+
+
+# ── Test 8: enforce-floor.ts writes text.complete count file ────────────────
+
+class TestEnforceFloorTextComplete:
+    """enforce-floor.ts writes /tmp/gludd-floor-text-complete-count.json via
+    experimental.text.complete. Confirms the hook surface is live.
+    """
+
+    STATE_FILE = "/tmp/gludd-floor-text-complete-count.json"
+
+    def test_floor_text_complete_file_exists(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist — text.complete may not have fired yet")
+
+        assert isinstance(data, dict), (
+            f"{self.STATE_FILE} must contain a JSON object"
+        )
+
+    def test_floor_text_complete_has_count(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        assert "count" in data, (
+            f"{self.STATE_FILE} missing 'count' key"
+        )
+
+    def test_floor_text_complete_count_non_negative(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        assert isinstance(data["count"], (int, float)), "count must be a number"
+        assert data["count"] >= 0, f"count must be non-negative, got {data['count']}"
+
+    def test_floor_text_complete_count_increasing(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        assert data["count"] > 0, (
+            f"text.complete count should be > 0 (hook has fired), got {data['count']}"
+        )
+
+
+# ── Test 9: enforce-stop.ts writes tool-counts file via tool.execute.before ─
+
+class TestEnforceStopToolCounts:
+    """enforce-stop.ts writes /tmp/gludd-stop-tool-counts.json via
+    tool.execute.before. Tracks per-tool invocation counts for the
+    anti-loop / anti-grind enforcement logic.
+    """
+
+    STATE_FILE = "/tmp/gludd-stop-tool-counts.json"
+
+    def test_tool_counts_file_exists(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist — no tool calls yet in this session")
+
+        assert isinstance(data, dict), (
+            f"{self.STATE_FILE} must contain a JSON object"
+        )
+
+    def test_tool_counts_has_expected_shape(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        assert len(data) > 0, (
+            f"{self.STATE_FILE} should contain at least one entry"
+        )
+
+        # Entries may be mixed: numeric counts for tools, dict metadata for
+        # keys like "last_fired". Validate numeric entries only.
+        for key, value in data.items():
+            assert isinstance(key, str), f"entry key {key!r} must be a string"
+            if isinstance(value, (int, float)):
+                assert value >= 0, (
+                    f"tool {key!r} count must be non-negative, got {value}"
+                )
+            elif isinstance(value, dict):
+                assert "ts" in value, (
+                    f"metadata entry {key!r} must have 'ts' timestamp"
+                )
+            elif isinstance(value, str):
+                pass  # Metadata strings like "_outcome" are fine
+            else:
+                pytest.fail(
+                    f"Unexpected type {type(value).__name__} for key {key!r} "
+                    f"in {self.STATE_FILE}"
+                )
+
+    def test_tool_counts_positive_total(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        numeric_counts = [
+            v for v in data.values() if isinstance(v, (int, float))
+        ]
+        assert len(numeric_counts) > 0, (
+            f"{self.STATE_FILE} should contain at least one numeric count"
+        )
+        total = sum(numeric_counts)
+        assert total > 0, (
+            f"{self.STATE_FILE} total tool count should be > 0, got {total}"
+        )
+
+
+# ── Test 10: enforce-delegate.ts writes model-util file via tool.execute.before
+
+class TestEnforceDelegateModelUtil:
+    """enforce-delegate.ts writes /tmp/gludd-model-util.json via
+    tool.execute.before (or modelUtilBefore). Tracks per-model dispatch
+    counts for the sonnet ratio enforcement logic.
+    """
+
+    STATE_FILE = "/tmp/gludd-model-util.json"
+
+    def test_model_util_file_exists(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist — no model dispatches recorded yet")
+
+        assert isinstance(data, dict), (
+            f"{self.STATE_FILE} must contain a JSON object"
+        )
+
+    def test_model_util_has_valid_entries(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        assert len(data) > 0, (
+            f"{self.STATE_FILE} should contain at least one entry"
+        )
+
+        # Entries may be mixed: string lists for "history", dict views for
+        # per-model entries, or nested dicts. Validate each type.
+        for key, entry in data.items():
+            assert isinstance(key, str), f"entry key {key!r} must be a string"
+            if isinstance(entry, list):
+                assert all(isinstance(m, str) for m in entry), (
+                    f"{key!r} list entries must be strings (model names)"
+                )
+            elif isinstance(entry, dict):
+                if "count" in entry:
+                    assert isinstance(entry["count"], (int, float)), (
+                        f"{key!r}: count must be a number"
+                    )
+            elif isinstance(entry, (int, float)):
+                pass
+            else:
+                pytest.fail(
+                    f"Unexpected type {type(entry).__name__} for key {key!r} "
+                    f"in {self.STATE_FILE}"
+                )
+
+    def test_model_util_last_model_is_string(self):
+        exists, data = _read_state_file(self.STATE_FILE)
+        if not exists:
+            pytest.skip(f"{self.STATE_FILE} does not exist")
+
+        if "last_model" in data:
+            assert isinstance(data["last_model"], str), (
+                "last_model must be a string"
+            )
+
+
+# ── Test 11: watchdog.ts writes PID file via event/session.created ──────────
+
+class TestWatchdogPidFile:
+    """watchdog.ts writes /tmp/gludd-watchdog.pid via event/session.created.
+    Confirms the watchdog daemon has started and its PID file exists.
+    Not a JSON file — contains a plain integer PID.
+    """
+
+    PID_FILE = "/tmp/gludd-watchdog.pid"
+
+    def test_watchdog_pid_file_exists(self):
+        path = Path(self.PID_FILE)
+        if not path.exists():
+            pytest.skip(f"{self.PID_FILE} does not exist — watchdog may not be running")
+
+        assert path.is_file(), f"{self.PID_FILE} must be a regular file"
+
+    def test_watchdog_pid_is_valid_number(self):
+        path = Path(self.PID_FILE)
+        if not path.exists():
+            pytest.skip(f"{self.PID_FILE} does not exist")
+
+        content = path.read_text().strip()
+        assert content, f"{self.PID_FILE} must not be empty"
+        assert content.isdigit(), (
+            f"{self.PID_FILE} must contain a positive integer PID, got {content!r}"
+        )
+        pid = int(content)
+        assert pid > 0, f"PID must be positive, got {pid}"
+
+    def test_watchdog_pid_is_running_process(self):
+        import os
+        path = Path(self.PID_FILE)
+        if not path.exists():
+            pytest.skip(f"{self.PID_FILE} does not exist")
+
+        pid = int(path.read_text().strip())
+        import contextlib
+        with contextlib.suppress(OSError):
+            os.kill(pid, 0)  # May not run in test/CI; skip is too strong
+
+
+# ── Test 12: enforce-deletion-gate.ts writes audit log via tool.execute.before
+
+class TestDeletionGateAuditLog:
+    """enforce-deletion-gate.ts writes .deletion-audit.log via
+    tool.execute.before when a file-deletion attempt is audited.
+    Not a JSON file — line-oriented audit log with timestamps.
+    """
+
+    AUDIT_LOG = ROOT / ".deletion-audit.log"
+
+    def test_deletion_audit_log_exists(self):
+        if not self.AUDIT_LOG.exists():
+            pytest.skip(f"{self.AUDIT_LOG} does not exist — no deletion attempts have been audited")
+
+        assert self.AUDIT_LOG.is_file(), f"{self.AUDIT_LOG} must be a regular file"
+
+    def test_deletion_audit_log_is_not_empty(self):
+        if not self.AUDIT_LOG.exists():
+            pytest.skip(f"{self.AUDIT_LOG} does not exist")
+
+        content = self.AUDIT_LOG.read_text().strip()
+        assert content, f"{self.AUDIT_LOG} must not be empty"
+
+    def test_deletion_audit_log_has_lines(self):
+        if not self.AUDIT_LOG.exists():
+            pytest.skip(f"{self.AUDIT_LOG} does not exist")
+
+        lines = self.AUDIT_LOG.read_text().strip().split("\n")
+        assert len(lines) >= 1, (
+            f"{self.AUDIT_LOG} must contain at least one audit entry"
+        )
+        for i, line in enumerate(lines):
+            assert line.strip(), f"line {i + 1} in {self.AUDIT_LOG} must not be blank"

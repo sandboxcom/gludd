@@ -43,7 +43,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		repo-visibility \
 		watchdog-start watchdog-status watchdog-stop watchdog-log \
 		check-readme-status check-plugin-versions check-plugin-versions-quiet \
-		check-plugin-liveness write-plugin-manifest disengage-enforcement
+		check-plugin-liveness write-plugin-manifest disengage-enforcement \
+		verify-release-artifact
 
 help:
 	@echo "Usage: make [target]"
@@ -999,6 +1000,12 @@ gha-usage:
 release-view:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-view TAG=v0.1.0-alpha.1"; exit 1; }
 	@gh release view "$(TAG)" -R sandboxcom/gludd --json tagName,name,isDraft,isPrerelease,publishedAt,url,assets 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print('RELEASE:', d.get('tagName'), '|', d.get('url')); print('  draft=%s prerelease=%s published=%s' % (d.get('isDraft'), d.get('isPrerelease'), d.get('publishedAt'))); a=d.get('assets',[]); print('  ASSETS (%d):' % len(a)); [print('   -', x['name'], x['size'], 'bytes') for x in a]" || echo "release-view-failed"
+
+# Verify a GitHub Release has published assets (exit 0 only if non-draft + assets >= 1).
+# A tag is NOT a release. This is the machine-enforceable definition of "shipped."
+verify-release-artifact:
+	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-artifact TAG=v0.1.0-alpha.1"; exit 1; }
+	@$(PYTHON) scripts/verify_release_artifact.py "$(TAG)"
 
 ci-faillog:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-faillog RUN=<id>"; exit 1; fi

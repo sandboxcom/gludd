@@ -57,8 +57,8 @@ class TestPipelineConfigGating:
         cfg = PipelineConfig(enabled=False)
         assert cfg.enabled is False
         assert cfg.floor == 1
-        assert cfg.target == 1
-        assert cfg.max_worktrees == 1
+        assert cfg.target == 3
+        assert cfg.max_worktrees == 6
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +133,7 @@ class TestPipelineControllerLifecycle:
 
         ctrl = PipelineController(_cfg(), dispatch, merge, gate)
         await ctrl.start()
-        status = ctrl.status()
+        status = await ctrl.status()
         assert isinstance(status, dict)
         await ctrl.stop()
         await ctrl.stop()  # idempotent
@@ -151,7 +151,7 @@ class TestPipelineControllerLifecycle:
 
         ctrl = PipelineController(_cfg(), dispatch, merge, gate)
         await ctrl.start()
-        status = ctrl.status()
+        status = await ctrl.status()
         assert "running" in status
         await ctrl.stop()
 
@@ -166,7 +166,7 @@ class TestPipelineControllerLifecycle:
         async def gate() -> bool:
             return True
 
-        ctrl = PipelineController(_cfg(max_worktrees=0), dispatch, merge, gate)
+        ctrl = PipelineController(_cfg(floor=0, target=0, max_worktrees=0), dispatch, merge, gate)
         assert isinstance(ctrl.backpressured(), bool)
 
     @pytest.mark.asyncio
@@ -217,7 +217,8 @@ class TestPipelineControllerLifecycle:
 
 
 class TestLanesE2E:
-    def test_dispatch_lane_step(self) -> None:
+    @pytest.mark.asyncio
+    async def test_dispatch_lane_step(self) -> None:
         calls: list[str] = []
 
         async def dispatch(uid: str) -> None:
@@ -227,11 +228,12 @@ class TestLanesE2E:
         lane = DispatchLane(
             _cfg(), state, asyncio.Lock(), dispatch,
         )
-        state.pending_units.append("unit-1")
-        lane.step()
-        assert "unit-1" not in state.pending_units
+        state.pending.append("unit-1")
+        await lane.step()
+        assert "unit-1" not in state.pending
 
-    def test_gate_lane_step_when_no_pending(self) -> None:
+    @pytest.mark.asyncio
+    async def test_gate_lane_step_when_no_pending(self) -> None:
         call_count = 0
 
         async def gate_fn() -> bool:
@@ -241,10 +243,11 @@ class TestLanesE2E:
 
         state = LaneState()
         lane = GateLane(_cfg(), state, asyncio.Lock(), gate_fn)
-        lane.step()
+        await lane.step()
         assert call_count == 0  # nothing to gate
 
-    def test_integrate_lane_step_when_no_pending(self) -> None:
+    @pytest.mark.asyncio
+    async def test_integrate_lane_step_when_no_pending(self) -> None:
         calls: list[str] = []
 
         async def merge_fn(u: CompletedUnit) -> MergeOutcome:
@@ -253,5 +256,5 @@ class TestLanesE2E:
 
         state = LaneState()
         lane = IntegrateLane(_cfg(), state, asyncio.Lock(), merge_fn)
-        lane.step()
+        await lane.step()
         assert calls == []

@@ -332,9 +332,19 @@ function detectStopPattern(text: string): boolean {
   return false
 }
 
+function _reportAlive(): void {
+  try {
+    const alive: Record<string, any> = {}
+    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
+    alive["enforce-make"] = { last_seen: Date.now() }
+    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
+  } catch {}
+}
+
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
+      _reportAlive()
       if (input.tool === "bash") {
         const command = output?.args?.command ?? ""
         const trimmed = typeof command === "string" ? command.trim() : ""

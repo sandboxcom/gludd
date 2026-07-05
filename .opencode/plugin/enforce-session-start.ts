@@ -139,6 +139,15 @@ function isTaskFileRead(tool: string, input: unknown): boolean {
 
 // --- Plugin -----------------------------------------------------------------
 
+function _reportAlive(): void {
+  try {
+    const alive: Record<string, any> = {}
+    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
+    alive["enforce-session-start"] = { last_seen: Date.now() }
+    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
+  } catch {}
+}
+
 export default (async () => {
   return {
     // Inject the SESSION START PROTOCOL banner at the top of the system prompt.
@@ -164,6 +173,7 @@ export default (async () => {
       input: { tool?: string } & Record<string, unknown>,
       _output: unknown,
     ) => {
+      _reportAlive()
       let denyMessage: string | null = null
       try {
         const tool = String((input as { tool?: string }).tool ?? "")

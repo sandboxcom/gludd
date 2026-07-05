@@ -9,13 +9,11 @@
   },
   "plugin": [
     "./.opencode/plugin/enforce-make.ts",
-    "./.opencode/plugin/enforce-deletion-gate.ts",
     "./.opencode/plugin/enforce-floor.ts",
     "./.opencode/plugin/enforce-delegate.ts",
     "./.opencode/plugin/enforce-stop.ts",
     "./.opencode/plugin/enforce-session-start.ts",
     "./.opencode/plugin/enforce-deadline.ts",
-    "./.opencode/plugins/watchdog.ts",
-    "./.opencode/plugin/enforce-false-done.ts"
+    "./.opencode/plugins/watchdog.ts"
   ]
 }

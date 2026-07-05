@@ -4,9 +4,19 @@ import * as fs from "node:fs"
 
 let watchdogPid: number | null = null
 
+function _reportAlive(): void {
+  try {
+    const alive: Record<string, any> = {}
+    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
+    alive["watchdog"] = { last_seen: Date.now() }
+    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
+  } catch {}
+}
+
 export default (async ({ $ }) => {
   return {
     event: async ({ event }: { event: { type: string } }) => {
+      _reportAlive()
       if (event.type === "session.created") {
         try {
           // Kill any existing watchdog first
