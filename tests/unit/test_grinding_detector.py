@@ -6,7 +6,6 @@ import json
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -46,8 +45,8 @@ def recent_ts() -> float:
 
 def _patch_state(*, streak: str = "/nonexistent", stop: str = "/nonexistent", deadline: str = "/nonexistent"):
     """Combine three file-path patches into a single context manager."""
-    from unittest.mock import patch as _patch
     from contextlib import ExitStack
+    from unittest.mock import patch as _patch
     stack = ExitStack()
     stack.enter_context(_patch("general_ludd.self_update.grinding_detector._STREAK_FILE", streak))
     stack.enter_context(_patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", stop))

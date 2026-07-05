@@ -3271,13 +3271,14 @@ class EventLoop:
         if factory is None:
             return 0
         try:
+            from sqlalchemy import select
+
             from general_ludd.db.models import (
                 TaskDecisionModel,
                 TaskReturnModel,
                 TodoModel,
             )
             from general_ludd.ornith.training_data import TrainingDataCollector
-            from sqlalchemy import select
 
             async with factory() as session:
                 collector = TrainingDataCollector(session)

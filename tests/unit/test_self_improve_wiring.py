@@ -635,7 +635,6 @@ class TestEventLoopSelfImproveRecurringFailures:
     @pytest.mark.asyncio
     async def test_recurring_failures_reach_harness_when_enabled(self):
         from datetime import UTC, datetime
-        from unittest.mock import AsyncMock
 
         from general_ludd.remediation.blocker_detector import (
             BlockerDetector,
@@ -684,7 +683,6 @@ class TestEventLoopSelfImproveRecurringFailures:
 
     @pytest.mark.asyncio
     async def test_ingest_disabled_does_not_query_detector(self):
-        from unittest.mock import AsyncMock
 
         from general_ludd.remediation.blocker_detector import BlockerDetector
         from general_ludd.self_improve.harness import SelfImprovementHarness
@@ -1070,7 +1068,6 @@ class TestPhaseSelfImproveIntegration:
 
     @pytest.mark.asyncio
     async def test_phase_calls_collect_training_data(self):
-        from unittest.mock import AsyncMock
 
         from general_ludd.self_improve.harness import SelfImprovementHarness
 
