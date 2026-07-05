@@ -81,6 +81,7 @@ PHASE_ORDER = [
     "refresh_model_performance",
     "check_compute_utilization",
     "self_improve",
+    "poll_issue_sources",
     "emit_tick_metrics",
 ]
 
@@ -276,6 +277,7 @@ class EventLoop:
         utilization_tracker: Any | None = None,
         deployment_manager: Any | None = None,
         floor_controller: FloorController | None = None,
+        issue_ingestor: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -388,6 +390,9 @@ class EventLoop:
             else None
         )
         self._human_gate = HumanGate(config=self.config)
+        self._issue_ingestor: Any = issue_ingestor
+        self._issue_poll_interval_ticks: int = 300
+        self._issue_poll_tick_counter: int = 0
 
     def _track_background_task(self, task: asyncio.Task[Any]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -3082,6 +3087,59 @@ class EventLoop:
         interval = self.config.get("compute_idle_check_interval_ticks", 60)
         if self._total_ticks % interval != 0:
             return
+
+        # Floor auto-tuning: dynamically adjust concurrency floor based on
+        # system health metrics (CPU, memory, dispatch success rate, queue depth).
+        if self._floor_controller is not None:
+            try:
+                import psutil
+
+                cpu_pct = psutil.cpu_percent(interval=0)
+                mem = psutil.virtual_memory()
+                memory_pct = mem.percent
+
+                claimed = self._tick_state.get("claimed_todos", [])
+                dispatched = self._tick_metrics.get("todos_dispatched", 0)
+                dispatch_success_rate = (
+                    (dispatched / len(claimed) * 100) if claimed else 100.0
+                )
+
+                queue_depth = 0
+                if self._todo_repo is not None:
+                    try:
+                        summary = await self._todo_repo.status_summary()
+                        by_status = summary.get("by_status", {})
+                        queue_depth = int(by_status.get("queued", 0))
+                    except Exception:
+                        pass
+
+                new_floor = self._floor_controller.auto_tune(
+                    cpu_pct=cpu_pct,
+                    memory_pct=memory_pct,
+                    dispatch_success_rate=dispatch_success_rate,
+                    queue_depth=queue_depth,
+                )
+                entry = self._floor_controller.floor_history[-1]
+                if entry["reason"] != "no_change":
+                    logger.info(
+                        "Floor auto-tuned: %d -> %d (reason=%s, success_rate=%.1f%%, "
+                        "queue_depth=%d, cpu=%.1f%%, mem=%.1f%%)",
+                        entry["previous_floor"],
+                        new_floor,
+                        entry["reason"],
+                        dispatch_success_rate,
+                        queue_depth,
+                        cpu_pct,
+                        memory_pct,
+                    )
+                if self._daemon_state is not None:
+                    self._daemon_state["floor_auto_tune"] = {
+                        "floor": new_floor,
+                        "history_size": len(self._floor_controller.floor_history),
+                    }
+            except Exception as exc:
+                logger.warning("Floor auto-tune failed: %s", exc)
+
         if self._utilization_tracker is None:
             return
         threshold = self.config.get("compute_idle_gpu_sm_pct", 5.0)
@@ -3620,6 +3678,32 @@ class EventLoop:
                 logger.debug(
                     "Model routing decision capture failed: %s", exc,
                 )
+
+    async def _phase_poll_issue_sources(self) -> None:
+        if self._issue_ingestor is None:
+            return
+        self._issue_poll_tick_counter += 1
+        if self._issue_poll_tick_counter < self._issue_poll_interval_ticks:
+            return
+        self._issue_poll_tick_counter = 0
+        try:
+            new_todos = await self._issue_ingestor.poll_issues()
+            if not new_todos:
+                return
+            persisted = 0
+            for todo in new_todos:
+                if self._todo_repo is None:
+                    break
+                try:
+                    await self._todo_repo.create(todo)
+                    persisted += 1
+                except Exception as exc:
+                    logger.warning("Failed to persist polled issue todo: %s", exc)
+            if persisted:
+                self._tick_metrics["issues_polled"] = persisted
+                logger.info("Polled %d new issue(s) into intake queue", persisted)
+        except Exception as exc:
+            logger.warning("Issue source polling failed: %s", exc)
 
     async def _phase_emit_tick_metrics(self) -> None:
         logger.info("Tick metrics: %s", self._tick_metrics)

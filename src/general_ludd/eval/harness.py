@@ -36,7 +36,7 @@ class EvalHarness:
             self._last_results = results
             return results
 
-        results_start = time.monotonic()
+        time.monotonic()
         results: list[EvalResult] = []
         for c in cases:
             try:

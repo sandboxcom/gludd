@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from typing import Any
 
 
 class FloorController:
@@ -35,7 +36,7 @@ class FloorController:
         else:
             self._floor = 10
         self._health: float = 100.0
-        self._floor_history: list[dict] = []
+        self._floor_history: list[dict[str, Any]] = []
 
     @property
     def floor(self) -> int:
@@ -46,7 +47,7 @@ class FloorController:
         return self._health
 
     @property
-    def floor_history(self) -> list[dict]:
+    def floor_history(self) -> list[dict[str, Any]]:
         """Ordered list of floor-change records for trend analysis."""
         return list(self._floor_history)
 
@@ -83,10 +84,9 @@ class FloorController:
             if self._floor > 1:
                 self._floor = max(1, self._floor - 2)
                 reason = "low_success_rate"
-        elif queue_depth > 20 and dispatch_success_rate > 95.0:
-            if self._floor < 20:
-                self._floor = min(20, self._floor + 2)
-                reason = "high_queue_depth"
+        elif queue_depth > 20 and dispatch_success_rate > 95.0 and self._floor < 20:
+            self._floor = min(20, self._floor + 2)
+            reason = "high_queue_depth"
 
         self._floor_history.append({
             "floor": self._floor,

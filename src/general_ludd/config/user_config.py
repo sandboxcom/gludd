@@ -105,6 +105,14 @@ class HumanInTheLoopConfig(BaseModel):
     confidence_threshold: float = 0.7
 
 
+class IssuesConfig(BaseModel):
+    polling_enabled: bool = False
+    poll_interval_ticks: int = 300
+    github_owner: str = ""
+    github_repo: str = ""
+    github_label: str = "gludd"
+
+
 class UserConfig(BaseSettings):
     """User configuration with pydantic-settings (W4.4).
 
@@ -159,6 +167,7 @@ class UserConfig(BaseSettings):
     ornith_timeout_seconds: int = 300
     # Deletion gate: threshold for lines removed before requiring DELETION_REASON env var.
     # Set to 0 to disable the gate. Override via GLUDD_DELETION_GATE_THRESHOLD.
+    issues: IssuesConfig = IssuesConfig()
     deletion_gate_threshold: int = 5
     # LangChain/LangGraph integration feature flags. All default OFF so existing
     # behaviour is unchanged unless explicitly enabled.

@@ -1339,13 +1339,20 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     # already-built client; it does not touch external flows.
                     from general_ludd.mcp.builtins import register_builtins
 
+                    # Construct a shared WebRetriever so the MCP builtin tool
+                    # reuses one cache across calls instead of creating a fresh
+                    # diskcache per invocation.
+                    from general_ludd.retrieval.web import WebRetriever
+                    _web_retriever = WebRetriever()
+                    app.state._web_retriever = _web_retriever
+
                     # Isolate builtin registration: a failure here (e.g. an
                     # external server already advertising the same tool name,
                     # which the registry rejects as a collision) must NOT
                     # discard the working external MCP client or leak its
                     # already-started subprocesses.
                     try:
-                        register_builtins(mcp_client)
+                        register_builtins(mcp_client, web_retriever=_web_retriever)
                     except Exception:
                         logger.warning(
                             "builtin MCP tool registration failed; continuing "
@@ -1425,6 +1432,28 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._memory_repo = memory_repo
 
         sandbox_executor = SandboxExecutor(timeout=30)
+
+        issue_ingestor = None
+        if uc is not None:
+            issues_cfg = getattr(uc, "issues", None)
+            if issues_cfg is not None and getattr(issues_cfg, "polling_enabled", False):
+                from general_ludd.git_automation.issue_ingestor import GitHubIssueIngestor
+                issue_ingestor = GitHubIssueIngestor(
+                    owner=getattr(issues_cfg, "github_owner", ""),
+                    repo=getattr(issues_cfg, "github_repo", ""),
+                    label=getattr(issues_cfg, "github_label", "gludd"),
+                    poll_interval_seconds=getattr(issues_cfg, "poll_interval_ticks", 300),
+                    seen_ids=daemon_state.setdefault("issue_ingestor_seen_ids", {}).setdefault(
+                        (
+                            f"{getattr(issues_cfg, 'github_owner', '')}/"
+                            f"{getattr(issues_cfg, 'github_repo', '')}#"
+                            f"{getattr(issues_cfg, 'github_label', 'gludd')}"
+                        ),
+                        set(),
+                    ),
+                )
+                app.state._issue_ingestor = issue_ingestor
+                logger.info("Issue ingestor wired: polling enabled")
 
         _checkpointing_cfg = getattr(uc, "checkpointing", {}) if uc else {}
         _checkpointing_enabled = (
@@ -1507,6 +1536,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             utilization_tracker=app.state._utilization_tracker,
             deployment_manager=getattr(app.state, "_deployment_manager", None),
             floor_controller=floor_controller,
+            issue_ingestor=issue_ingestor,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -1959,6 +1989,12 @@ def _get_or_create_extended_subsystems(
             rr_edge_decay = float(getattr(rr_cfg, "edge_decay", 0.5))
             rr_external_penalty = float(getattr(rr_cfg, "external_penalty", 0.5))
             rr_min_borrow_weight = float(getattr(rr_cfg, "min_borrow_weight", 0.05))
+        # G8: cost-quality Pareto frontier router — filters dominated
+        # candidates (strictly worse on both cost and quality) before the
+        # AdaptiveRouter ranks the remainder. 15% cost / 85% quality weight
+        # so composite scoring in pick_winner slightly penalises expensive
+        # frontier candidates without discarding high-quality ones.
+        pareto_router = ParetoRouter(cost_weight=0.15, quality_weight=0.85)
         adaptive_router = AdaptiveRouter(
             benchmark_repo=benchmark_repo,
             quantization_map=quantization_map,
@@ -1968,6 +2004,7 @@ def _get_or_create_extended_subsystems(
             edge_decay=rr_edge_decay,
             external_penalty=rr_external_penalty,
             min_borrow_weight=rr_min_borrow_weight,
+            pareto_router=pareto_router,
         )
         app.state._adaptive_router = adaptive_router
     elif session_factory is not None and hasattr(app.state, "_adaptive_router"):
@@ -2426,13 +2463,18 @@ def create_daemon_app(
         slurm,
         spend,
         todos,
+        variants,
         webmcp,
         worktree,
     )
     from general_ludd.routers import (
         dispatch as dispatch_router,
     )
+    from general_ludd.routers import (
+        eval as eval_router,
+    )
 
+    eval_router.register(app, daemon_state)
     webmcp.register(app, daemon_state)
     todos.register(app, daemon_state)
     messages.register(app, daemon_state)
@@ -2444,6 +2486,7 @@ def create_daemon_app(
     schedule.register(app, daemon_state)
     model_performance.register(app, daemon_state)
     models.register(app, daemon_state)
+    variants.register(app, daemon_state)
     benchmark.register(app, daemon_state)
     mcp.register(app, daemon_state)
     skills.register(app, daemon_state)

@@ -390,7 +390,10 @@ class ExecutionEngine:
         if is_git:
             _git_create_branch(self.workspace_path, branch_name)
 
-        system_prompt = _build_system_prompt(job, behavior=self._behavior)
+        system_prompt = _build_system_prompt(
+            job, behavior=self._behavior,
+            searcher=self._searcher, workspace_path=self.workspace_path,
+        )
         user_prompt = _build_user_prompt(job)
 
         denial = self._budget_pre_check(self._budget_guard)
@@ -523,7 +526,10 @@ class ExecutionEngine:
         if is_git:
             _git_create_branch(self.workspace_path, branch_name)
 
-        system_prompt = _build_system_prompt(job, behavior=self._behavior)
+        system_prompt = _build_system_prompt(
+            job, behavior=self._behavior,
+            searcher=self._searcher, workspace_path=self.workspace_path,
+        )
         user_prompt = _build_user_prompt(job)
 
         denial = self._budget_pre_check(self._budget_guard)

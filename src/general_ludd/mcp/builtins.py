@@ -212,8 +212,9 @@ class BuiltinToolHandler:
         except (TypeError, ValueError):
             timeout = 30
 
-        retriever = self._web_retriever or WebRetriever(timeout_seconds=timeout)
-        if self._web_retriever is None and timeout != self._web_retriever._timeout if hasattr(self._web_retriever, '_timeout') else False:
+        if self._web_retriever is not None and timeout == self._web_retriever._timeout:
+            retriever = self._web_retriever
+        else:
             retriever = WebRetriever(timeout_seconds=timeout)
         try:
             result = retriever.fetch_web_page(url)
@@ -229,15 +230,27 @@ class BuiltinToolHandler:
         }
 
 
-def register_builtins(client: Any, default_workspace: str | Path | None = None) -> None:
+def register_builtins(
+    client: Any,
+    default_workspace: str | Path | None = None,
+    *,
+    web_retriever: WebRetriever | None = None,
+) -> None:
     """Register the ``gludd-builtin`` server + its tools on ``client``.
 
     Safe to call once per :class:`~general_ludd.mcp.client.MCPClient`; does not
     touch any external MCP server flow. ``default_workspace`` (typically the
     engine's workspace_path) is used when a ``run_project_check`` call omits an
     explicit ``workspace`` argument.
+
+    ``web_retriever``, when provided, is reused for all ``web_retrieve`` calls
+    (shared cache).  When omitted the handler constructs a fresh
+    :class:`WebRetriever` per call.
     """
-    handler = BuiltinToolHandler(default_workspace=default_workspace)
+    handler = BuiltinToolHandler(
+        default_workspace=default_workspace,
+        web_retriever=web_retriever,
+    )
     client.register_builtin(
         BUILTIN_SERVER_ID,
         [RUN_PROJECT_CHECK_TOOL, WEB_RETRIEVE_TOOL],
@@ -246,5 +259,5 @@ def register_builtins(client: Any, default_workspace: str | Path | None = None) 
     logger.debug(
         "registered builtin MCP server %r with tools: %s",
         BUILTIN_SERVER_ID,
-        [RUN_PROJECT_CHECK_TOOL.name],
+        [RUN_PROJECT_CHECK_TOOL.name, WEB_RETRIEVE_TOOL.name],
     )
