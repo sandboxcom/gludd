@@ -157,6 +157,113 @@ class TestExecutionEngine:
         result = engine.execute(job)
         assert result.exit_code != 0
 
+    def test_fallback_extracts_python_fenced_block_without_file_markers(self):
+        """When a model outputs ```python blocks but no FILE: markers,
+        the fallback auto-assigns a path and writes the code."""
+        mock_gateway = MagicMock()
+        code = "def hello():\n    return 'world'\n"
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(
+            content=f"Here is the code:\n\n```python\n{code}\n```"
+        ))
+        engine = self._make_engine(mock_gateway)
+
+        job = JobSpec(
+            job_id="JOB-FB1",
+            todo_id="TODO-FB1",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="Create a hello function",
+        )
+
+        result = engine.execute(job)
+        assert result.exit_code != 1, (
+            f"Expected exit_code != 1 (fallback should extract code), "
+            f"got {result.exit_code}: {result.result_summary}"
+        )
+        assert result.job_id == "JOB-FB1"
+
+    def test_fallback_not_triggered_when_no_code_blocks(self):
+        """No fenced blocks + no FILE markers should still fail (no fallback)."""
+        mock_gateway = MagicMock()
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(
+            content="I cannot generate any code for this request."
+        ))
+        engine = self._make_engine(mock_gateway)
+
+        job = JobSpec(
+            job_id="JOB-FB2",
+            todo_id="TODO-FB2",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="Make a change",
+        )
+
+        result = engine.execute(job)
+        assert result.exit_code != 0
+
+    def test_fallback_uses_default_filename_when_no_existing_py(self):
+        """When workspace has no .py files, fallback creates a slug-based name."""
+        import os
+        import tempfile
+
+        mock_gateway = MagicMock()
+        code = "print('hello world')"
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(
+            content=f"```python\n{code}\n```"
+        ))
+        empty_workspace = tempfile.mkdtemp()
+        engine = self._make_engine(mock_gateway, workspace=empty_workspace)
+
+        job = JobSpec(
+            job_id="JOB-FB3",
+            todo_id="TODO-FB3",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="Write a hello world printer",
+        )
+
+        result = engine.execute(job)
+        assert result.exit_code != 1, (
+            f"Expected exit_code != 1, got {result.exit_code}: {result.result_summary}"
+        )
+        generated_path = os.path.join(empty_workspace, "write-a-hello-world-printer.py")
+        assert os.path.isfile(generated_path), (
+            f"Expected generated file at {generated_path}"
+        )
+        with open(generated_path) as f:
+            assert f.read() == code
+
+    def test_fallback_logs_warning_for_missing_file_markers(self, caplog):
+        """Fallback emits a WARNING log when FILE: markers are absent."""
+        import logging
+
+        mock_gateway = MagicMock()
+        code = "x = 1\n"
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(
+            content=f"```python\n{code}\n```"
+        ))
+        engine = self._make_engine(mock_gateway)
+
+        job = JobSpec(
+            job_id="JOB-FB4",
+            todo_id="TODO-FB4",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="Set x to 1",
+        )
+
+        with caplog.at_level(logging.WARNING):
+            result = engine.execute(job)
+
+        assert result.exit_code != 1
+        assert "no FILE: markers" in caplog.text.lower() or (
+            "no FILE:" in caplog.text
+        ), f"Expected FILE: marker warning in logs, got: {caplog.text}"
+
     def test_skill_body_included_in_prompt(self):
         mock_gateway = MagicMock()
         mock_gateway.call_model = MagicMock(return_value=MagicMock(

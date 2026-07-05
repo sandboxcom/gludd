@@ -218,7 +218,7 @@ test-unit:
 
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
-	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v
+	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS)
 
 test-count:
 	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3

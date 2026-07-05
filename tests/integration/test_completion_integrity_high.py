@@ -680,9 +680,10 @@ class TestCAT9AgentToolAdapterWiring:
             f"tool action never fired. calls={tool_calls_made!r}"
         )
 
-    def test_code_worktype_does_not_invoke_phase2(self, monkeypatch: Any) -> None:
-        """Guard: a pure-generation work type (``code``) must NOT run Phase 2 even
-        when the MCP client + gateway are wired — CA-T9 stays whole for it.
+    def test_code_worktype_invokes_phase2(self, monkeypatch: Any) -> None:
+        """code work types NOW get Phase 2: ToolCallLoop is instantiated and
+        safety guard parameters (budget_guard, adversarial_detector,
+        work_type_max_iterations) are wired for code tasks.
         """
         from general_ludd.event_loop import loop as loop_mod
         from general_ludd.execution import tool_loop as tool_loop_mod
@@ -716,13 +717,19 @@ class TestCAT9AgentToolAdapterWiring:
             def run_playbook(self, **k: Any) -> dict[str, Any]:
                 return {"rc": 0}
 
+        class _FakeMCPTool:
+            def __init__(self) -> None:
+                self.name = "read_file"
+                self.description = "Read a file"
+                self.input_schema: dict[str, Any] = {"type": "object"}
+
         class _FakeMCPClient:
-            async def list_tools(self) -> list[Any]:  # pragma: no cover - must not run
-                raise AssertionError("Phase 2 must not run for work_type=code")
+            async def list_tools(self) -> list[Any]:
+                return [_FakeMCPTool()]
 
         class _FakeRegistry:
             def tool_names(self) -> list[str]:
-                return []
+                return ["read_file"]
 
         el = loop_mod.EventLoop(
             model_gateway=object(),
@@ -742,9 +749,9 @@ class TestCAT9AgentToolAdapterWiring:
 
         asyncio.run(el._dispatch_execute_job(_Todo()))
 
-        assert not instantiated, (
-            "CA-T9 VIOLATION: Phase 2 (ToolCallLoop) ran for a pure-generation "
-            "work type 'code' — tool-use must stay gated to tool work types."
+        assert instantiated, (
+            "Phase 2 (ToolCallLoop) was NOT instantiated for work_type 'code' — "
+            "code work types must now get the iterative tool loop."
         )
 
 

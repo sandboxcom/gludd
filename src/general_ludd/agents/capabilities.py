@@ -154,6 +154,11 @@ class AgentCapabilities:
         model_gateway: Any,
         mcp_client: Any = None,
         mcp_registry: Any = None,
+        budget_guard: Any = None,
+        adversarial_detector: Any = None,
+        max_total_tokens: int | None = None,
+        per_iteration_timeout: float | None = None,
+        work_type_max_iterations: dict[str, int] | None = None,
     ) -> ToolCallLoop:
         # mcp_registry pins the capability gate (Finding 3) explicitly; if not
         # passed, ToolCallLoop falls back to the client's own registry.
@@ -181,6 +186,11 @@ class AgentCapabilities:
             mcp_registry=mcp_registry,
             compaction_level=tool_compaction_level,
             summarize_fn=tool_summarize_fn,
+            budget_guard=budget_guard,
+            adversarial_detector=adversarial_detector,
+            max_total_tokens=max_total_tokens,
+            per_iteration_timeout=per_iteration_timeout,
+            work_type_max_iterations=work_type_max_iterations,
         )
 
     def make_langgraph_tool_loop(

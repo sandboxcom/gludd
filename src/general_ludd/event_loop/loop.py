@@ -95,12 +95,19 @@ PHASE_ORDER = [
 # Phase 2 runs the fully-built ``ToolCallLoop`` for work types whose execution
 # genuinely needs autonomous tool use (the model decides which MCP tools to call,
 # the loop executes them, feeds results back, and iterates). This frozenset is the
-# (tunable) gate for which work types get Phase 2; it is deliberately conservative
-# — only investigative/refinement work types that benefit from tool access — so
-# pure code/bugfix/docs generation stays Phase-1-only and CA-T9 still holds for
-# them. Phase 2 additionally requires both an MCP client and a model gateway to be
+# (tunable) gate for which work types get Phase 2; it now includes code-generation
+# work types (code, bug_fix, refactor, feature, test) so the model can iterate on
+# code based on test failures — with safety guards (budget check, token limit,
+# adversarial scan, per-iteration timeout, work-type-specific max iterations).
+# Phase 2 additionally requires both an MCP client and a model gateway to be
 # wired; absent either, the tick falls through to Phase-1-only output.
-_TOOL_USE_WORK_TYPES: frozenset[str] = frozenset({"analysis", "audit"})
+_TOOL_USE_WORK_TYPES: frozenset[str] = frozenset(
+    {"analysis", "audit", "code", "bug_fix", "refactor", "feature", "test"}
+)
+
+_CODE_WORK_TYPES: frozenset[str] = frozenset(
+    {"code", "bug_fix", "refactor", "feature", "test"}
+)
 
 
 def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
@@ -2158,10 +2165,11 @@ class EventLoop:
             # what makes autonomous tool action FUNCTIONAL (not merely
             # dispatch-wired) end to end.
             #
-            # Gated so it NEVER runs for pure-generation work types (code/bugfix/
-            # docs stay Phase-1-only, preserving CA-T9 for them), and only when an
-            # MCP client AND a model gateway are wired. Wrapped so any failure
-            # logs + falls through without breaking the tick.
+            # Gated so it runs for tool-requiring work types (analysis, audit,
+            # code, bug_fix, refactor, feature, test) — code work types now get
+            # the iterative tool loop so they can react to test failures. Still
+            # gated on MCP client + model gateway presence. Wrapped so any
+            # failure logs + falls through without breaking the tick.
             if (
                 work_type in _TOOL_USE_WORK_TYPES
                 and self._mcp_client is not None
@@ -2231,6 +2239,35 @@ class EventLoop:
 
                         auditor = ToolCallAuditor()
                         store = BadCallSituationStore()
+                        _adversarial_detector = None
+                        if self._daemon_state is not None:
+                            _adversarial_detector = self._daemon_state.get(
+                                "_adversarial_detector"
+                            )
+                        _code_max_iters = (
+                            self.config.get("tool_loop", {})
+                            .get("code_max_iterations", 5)
+                            if isinstance(self.config, dict)
+                            else 5
+                        )
+                        _analysis_max_iters = (
+                            self.config.get("tool_loop", {})
+                            .get("analysis_max_iterations", 10)
+                            if isinstance(self.config, dict)
+                            else 10
+                        )
+                        _max_total_tokens = (
+                            self.config.get("tool_loop", {})
+                            .get("max_total_tokens", None)
+                            if isinstance(self.config, dict)
+                            else None
+                        )
+                        _per_iteration_timeout = (
+                            self.config.get("tool_loop", {})
+                            .get("per_iteration_timeout_seconds", None)
+                            if isinstance(self.config, dict)
+                            else None
+                        )
                         tool_loop = ToolCallLoop(
                             model_gateway=self._model_gateway,
                             mcp_client=self._mcp_client,
@@ -2246,6 +2283,19 @@ class EventLoop:
                             summarize_fn=_tl_summarize_fn,
                             tool_auditor=auditor,
                             situation_store=store,
+                            budget_guard=self._budget_guard,
+                            adversarial_detector=_adversarial_detector,
+                            max_total_tokens=_max_total_tokens,
+                            per_iteration_timeout=_per_iteration_timeout,
+                            work_type_max_iterations={
+                                "analysis": _analysis_max_iters,
+                                "audit": _analysis_max_iters,
+                                "code": _code_max_iters,
+                                "bug_fix": _code_max_iters,
+                                "refactor": _code_max_iters,
+                                "feature": _code_max_iters,
+                                "test": _code_max_iters,
+                            },
                         )
                     # Use the Phase-1 generated text as additional context so the
                     # tool-driven phase REFINES the analysis rather than starting

@@ -453,6 +453,14 @@ class ExecutionEngine:
                 applied_changes = True
 
         if not applied_changes:
+            fallback_files, fallback_applied = self._fallback_extract_code(
+                job, blocks
+            )
+            if fallback_applied:
+                changed_files.extend(fallback_files)
+                applied_changes = True
+
+        if not applied_changes:
             return TaskReturn(
                 return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
                 playbook=job.playbook or "code", queue=job.queue or "core",
@@ -588,6 +596,14 @@ class ExecutionEngine:
                 changed_files.append(file_path)
                 applied_changes = True
 
+        if not applied_changes:
+            fallback_files, fallback_applied = self._fallback_extract_code(
+                job, blocks
+            )
+            if fallback_applied:
+                changed_files.extend(fallback_files)
+                applied_changes = True
+
         commit_sha = None
         if applied_changes and is_git:
             commit_msg = (
@@ -657,6 +673,57 @@ class ExecutionEngine:
                 pass
 
         return result
+
+    def _fallback_extract_code(
+        self, job: JobSpec, blocks: list[dict[str, str]]
+    ) -> tuple[list[str], bool]:
+        """Fallback: extract code from fenced Python blocks when no FILE: markers exist.
+
+        When a model (e.g. DeepSeek) doesn't emit ``FILE: <path>`` markers but
+        generates valid Python code in fenced blocks, this auto-assigns a file
+        path and writes the code so the job doesn't silently fail.
+        """
+        python_blocks: list[dict[str, str]] = [
+            b for b in blocks
+            if b["language"].lower() in ("python", "py", "")
+            and b["content"].strip()
+        ]
+        if not python_blocks:
+            return [], False
+
+        logger.warning(
+            "Model output contains %d Python fenced block(s) but no FILE: "
+            "markers. Falling back to auto-assigned file path.",
+            len(python_blocks),
+        )
+
+        target_path: str | None = None
+        workspace = os.path.realpath(self.workspace_path)
+        if os.path.isdir(workspace):
+            for root, dirs, files in os.walk(workspace):
+                dirs[:] = [
+                    d for d in dirs
+                    if not d.startswith(".") and d not in (
+                        "__pycache__", "node_modules", ".git", ".venv",
+                        "venv", "dist",
+                    )
+                ]
+                for f in files:
+                    if f.endswith(".py") and not f.startswith("."):
+                        target_path = os.path.relpath(
+                            os.path.join(root, f), workspace
+                        )
+                        break
+                if target_path:
+                    break
+
+        if target_path is None:
+            title = job.prompt_text or job.todo_id or "generated"
+            target_path = _slugify(title, max_len=30) + ".py"
+
+        first_block = python_blocks[0]
+        self._write_file(target_path, first_block["content"])
+        return [target_path], True
 
     def _resolve_in_workspace(self, file_path: str) -> str:
         """Resolve ``file_path`` against the workspace, refusing any escape.

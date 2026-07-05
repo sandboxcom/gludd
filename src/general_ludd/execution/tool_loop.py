@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 10
 PER_TOOL_TIMEOUT_SECONDS = 30
+CODE_MAX_ITERATIONS = 5
+MAX_TOTAL_TOKENS_DEFAULT = 100_000
+PER_ITERATION_TIMEOUT_DEFAULT = 300.0
 
 
 class ToolLoopExhausted(RuntimeError):
@@ -51,6 +54,11 @@ class ToolCallLoop:
         summarize_fn: Callable[[str, str], str] | None = None,
         tool_auditor: Any = None,
         situation_store: Any = None,
+        budget_guard: Any = None,
+        adversarial_detector: Any = None,
+        max_total_tokens: int | None = None,
+        per_iteration_timeout: float | None = None,
+        work_type_max_iterations: dict[str, int] | None = None,
     ) -> None:
         self._gateway = model_gateway
         self._mcp_client = mcp_client
@@ -86,6 +94,11 @@ class ToolCallLoop:
             # Fall back to the facade's own registry when one wasn't passed
             # explicitly, so the gate is on by default whenever it can be.
             self._mcp_registry = getattr(mcp_client, "_registry", None)
+        self._budget_guard = budget_guard
+        self._adversarial_detector = adversarial_detector
+        self._max_total_tokens = max_total_tokens or MAX_TOTAL_TOKENS_DEFAULT
+        self._per_iteration_timeout = per_iteration_timeout or PER_ITERATION_TIMEOUT_DEFAULT
+        self._work_type_max_iterations = work_type_max_iterations or {}
 
     def _resolve_server_id(self, tc_name: str) -> str:
         """Map a model-chosen tool name to its registered server_id.
@@ -131,24 +144,18 @@ class ToolCallLoop:
         if self._mcp_client is None:
             return cast(str, await self._call_model(job, system_prompt, user_prompt))
 
-        # Per-role capability gate (fail-closed): if a role was supplied, it must
-        # hold the "mcp" dispatch capability to drive MCP tool use at all. A role
-        # that lacks it is refused HERE — before list_tools / any call_tool — so
-        # the model can never reach a tool through an unauthorised role. A None
-        # role skips the gate (backward compatible with callers that pass none).
         if self._role is not None:
             check_dispatch(self._role, "mcp")
+
+        work_type = getattr(job, "work_type", "code") or "code"
+        effective_max_iterations = self._work_type_max_iterations.get(
+            work_type, self._max_iterations
+        )
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        # SLICE 2 pairing guard: index in ``messages`` where the CURRENT open
-        # tool round begins. Everything from here on (the tool results answering
-        # the tool_call_ids the model just asked for) is preserved verbatim by
-        # ``_compact_history`` so an open ``tool_call_id`` can never be summarized
-        # away. It is re-marked each iteration just before new tool results are
-        # appended.
         open_round_start = len(messages)
 
         tools = await self._mcp_client.list_tools()
@@ -161,24 +168,75 @@ class ToolCallLoop:
             for t in tools
         ]
 
-        for _ in range(self._max_iterations):
-            # SLICE 2 (task #56): pre-call SLM context-compaction. When enabled,
-            # shrink the ITERATIVE history BEFORE the model call so long tool
-            # conversations send fewer tokens. Default OFF (compaction_level is
-            # None) → this is a no-op and ``messages`` is unchanged. The helper is
-            # fail-soft (returns the input on any error) so compaction can NEVER
-            # crash the loop, and it preserves the open tool round verbatim.
+        cumulative_tokens = 0
+        for iteration in range(effective_max_iterations):
+            if self._budget_guard is not None:
+                from general_ludd.budget_guard_check import budget_pre_check
+                denial = budget_pre_check(self._budget_guard)
+                if denial is not None:
+                    logger.warning(
+                        "ToolCallLoop budget denied for job %s at iteration %d: %s",
+                        job.job_id, iteration + 1, denial,
+                    )
+                    raise ToolLoopExhausted(
+                        f"Tool call loop budget exhausted at iteration "
+                        f"{iteration + 1}/{effective_max_iterations} for job "
+                        f"{job.job_id}: {denial}"
+                    )
+
             if self._compaction_level is not None:
                 messages = self._compact_history(
                     messages, goal=user_prompt, open_round_start=open_round_start,
                 )
-            response = await self._call_with_tools(job, messages, tool_schemas)
+
+            try:
+                response = await asyncio.wait_for(
+                    self._call_with_tools(job, messages, tool_schemas),
+                    timeout=self._per_iteration_timeout,
+                )
+            except TimeoutError as err:
+                logger.warning(
+                    "ToolCallLoop iteration %d timed out after %.0fs for job %s",
+                    iteration + 1, self._per_iteration_timeout, job.job_id,
+                )
+                raise ToolLoopExhausted(
+                    f"Tool call loop iteration {iteration + 1} timed out "
+                    f"({self._per_iteration_timeout}s) for job {job.job_id}"
+                ) from err
+
             content = getattr(response, "content", "") or str(response)
             tool_calls = getattr(response, "tool_calls", None)
 
+            usage = getattr(response, "usage_metadata", {}) or {}
+            input_tokens = int(usage.get("input_tokens", 0))
+            output_tokens = int(usage.get("output_tokens", 0))
+            cumulative_tokens += input_tokens + output_tokens
+            if cumulative_tokens > self._max_total_tokens:
+                logger.warning(
+                    "ToolCallLoop token limit exceeded for job %s: %d > %d",
+                    job.job_id, cumulative_tokens, self._max_total_tokens,
+                )
+                raise ToolLoopExhausted(
+                    f"Tool call loop total tokens {cumulative_tokens} exceeded "
+                    f"limit {self._max_total_tokens} for job {job.job_id}"
+                )
+
+            if self._adversarial_detector is not None and content:
+                scan_result = self._adversarial_detector.scan_text(
+                    content, file_path=f"tool_loop:{job.job_id}"
+                )
+                if scan_result.blocked:
+                    logger.warning(
+                        "ToolCallLoop adversarial scan blocked output for job %s: %s",
+                        job.job_id, scan_result.summary,
+                    )
+                    raise ToolLoopExhausted(
+                        f"Tool call loop output blocked by adversarial scan "
+                        f"at iteration {iteration + 1} for job {job.job_id}: "
+                        f"{scan_result.summary}"
+                    )
+
             if tool_calls:
-                # This iteration's tool results are the new OPEN round: mark the
-                # boundary so they are preserved verbatim on the next compaction.
                 open_round_start = len(messages)
                 for tc in tool_calls:
                     tc_name = tc.get("function", {}).get("name", "")
@@ -188,16 +246,12 @@ class ToolCallLoop:
                         try:
                             tc_args = _json.loads(tc_args)
                         except _json.JSONDecodeError:
-                            # Don't silently swallow malformed model output: an
-                            # operator needs to see that the model emitted invalid
-                            # tool-call JSON (the tool then runs with empty args).
                             logger.warning(
                                 "Malformed tool-call arguments for %r (job %s); "
                                 "using empty args. Raw: %.200r",
                                 tc_name, job.job_id, tc_args,
                             )
                             tc_args = {}
-                    # Audit the tool call before execution
                     if self._auditor is not None:
                         situation = self._auditor.audit(
                             tc_name, tc_args,
@@ -225,11 +279,6 @@ class ToolCallLoop:
                             continue
                     try:
                         server_id = self._resolve_server_id(tc_name)
-                        # Per-tool timeout: a hung/slow MCP tool must NOT stall the
-                        # whole tool loop (and the daemon that awaits it). Bound the
-                        # call; on timeout we fall through to the tool-error branch
-                        # below, which appends an error message the model can react
-                        # to, instead of hanging forever.
                         result = await asyncio.wait_for(
                             self._mcp_client.call_tool(
                                 server_id, tc_name, tc_args,
@@ -274,10 +323,10 @@ class ToolCallLoop:
 
         logger.warning(
             "Tool call loop reached max iterations (%d) for job %s",
-            self._max_iterations, job.job_id,
+            effective_max_iterations, job.job_id,
         )
         raise ToolLoopExhausted(
-            f"Tool call loop reached max iterations ({self._max_iterations}) "
+            f"Tool call loop reached max iterations ({effective_max_iterations}) "
             f"for job {job.job_id} while the model was still requesting tools; "
             f"no final assistant answer was produced"
         )
