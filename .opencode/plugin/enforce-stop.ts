@@ -371,6 +371,17 @@ export default (async ({ }) => {
         }
 
         if (input.tool === "question") {
+          // Track block
+          try {
+            const cPath = "/tmp/gludd-stop-tool-counts.json"
+            let data: Record<string, any> = { allowed: 0, blocked: 0 }
+            if (fs.existsSync(cPath)) {
+              try { data = JSON.parse(fs.readFileSync(cPath, "utf8")) } catch {}
+            }
+            data.blocked = (parseInt(data.blocked, 10) || 0) + 1
+            data.last_blocked = { tool: input.tool, reason: "question_denied", ts: Date.now(), iso: new Date().toISOString() }
+            fs.writeFileSync(cPath, JSON.stringify(data), "utf8")
+          } catch {}
           throw new Error(QUESTION_DENY_REASON)
         }
 
@@ -389,6 +400,17 @@ export default (async ({ }) => {
               ratchetCount = ratchetHasEntries()
             }
             if (taskMd || ratchetCount > 0) {
+              // Track block
+              try {
+                const cPath = "/tmp/gludd-stop-tool-counts.json"
+                let data: Record<string, any> = { allowed: 0, blocked: 0 }
+                if (fs.existsSync(cPath)) {
+                  try { data = JSON.parse(fs.readFileSync(cPath, "utf8")) } catch {}
+                }
+                data.blocked = (parseInt(data.blocked, 10) || 0) + 1
+                data.last_blocked = { tool: "bash", command: command, reason: "stop_like", ts: Date.now(), iso: new Date().toISOString() }
+                fs.writeFileSync(cPath, JSON.stringify(data), "utf8")
+              } catch {}
               throw new Error(stopLikeDenyMessage(taskMd, ratchetCount))
             }
           }
@@ -396,6 +418,17 @@ export default (async ({ }) => {
       } catch (e: any) {
         if (e instanceof Error && e.message.includes("BLOCKED")) throw e
       }
+      // Tool passed through — increment allowed counter
+      try {
+        const cPath = "/tmp/gludd-stop-tool-counts.json"
+        let data: Record<string, any> = { allowed: 0, blocked: 0 }
+        if (fs.existsSync(cPath)) {
+          try { data = JSON.parse(fs.readFileSync(cPath, "utf8")) } catch {}
+        }
+        data.allowed = (parseInt(data.allowed, 10) || 0) + 1
+        data.last_allowed = { ts: Date.now(), iso: new Date().toISOString() }
+        fs.writeFileSync(cPath, JSON.stringify(data), "utf8")
+      } catch {}
     },
 
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
@@ -408,6 +441,16 @@ export default (async ({ }) => {
     },
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
+      // Increment fire counter — proves text.complete actually fires
+      try {
+        const cPath = "/tmp/gludd-stop-text-complete-count.json"
+        let count = 1
+        if (fs.existsSync(cPath)) {
+          try { const d = JSON.parse(fs.readFileSync(cPath, "utf8")); count = (parseInt(d.count, 10) || 0) + 1 } catch {}
+        }
+        fs.writeFileSync(cPath, JSON.stringify({ count, last_fired: new Date().toISOString(), ts: Date.now() }), "utf8")
+      } catch {}
+
       // Item 18: env var gate — disable enforcement entirely
       if (!STOP_ENFORCE) return
 

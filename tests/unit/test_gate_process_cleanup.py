@@ -1,0 +1,149 @@
+"""Tests for gate process cleanup: stale gate timeout, cleanup target, watchdog detection.
+
+Covers:
+- gate-cleanup kills stale process (SIGTERM → 10s wait → SIGKILL)
+- gate-background sets timeout (GATE_TIMEOUT env var, ABORTED marker)
+- watchdog _check_gate_background detects stale gate
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import time
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).parent.parent.parent
+MAKEFILE = ROOT / "Makefile"
+
+
+def _makefile_content() -> str:
+    assert MAKEFILE.exists(), "Makefile must exist"
+    return MAKEFILE.read_text()
+
+
+# --- Makefile structural tests ---
+
+
+def test_gate_cleanup_target_exists():
+    content = _makefile_content()
+    assert "gate-cleanup:" in content, "Makefile missing 'gate-cleanup:' target"
+
+
+def test_gate_cleanup_calls_gate_kill():
+    content = _makefile_content()
+    idx = content.find("gate-cleanup:")
+    assert idx != -1
+    recipe_block = content[idx : idx + 600]
+    assert "gate-kill" in recipe_block, (
+        "gate-cleanup must invoke gate-kill to terminate running gate"
+    )
+
+
+def test_gate_cleanup_removes_old_logs():
+    content = _makefile_content()
+    idx = content.find("gate-cleanup:")
+    assert idx != -1
+    recipe_block = content[idx : idx + 600]
+    assert ".gate-logs" in recipe_block, (
+        "gate-cleanup must clean old gate log files"
+    )
+    assert "gate-*.log" in recipe_block, (
+        "gate-cleanup must target gate-*.log files"
+    )
+
+
+def test_gate_kill_waits_10s_before_sigkill():
+    content = _makefile_content()
+    idx = content.find("gate-kill:")
+    assert idx != -1
+    recipe_block = content[idx : idx + 800]
+    assert "-lt 10" in recipe_block, (
+        "gate-kill must wait 10 seconds before SIGKILL"
+    )
+    assert "kill -TERM" in recipe_block, (
+        "gate-kill must send SIGTERM first"
+    )
+    assert "kill -KILL" in recipe_block, (
+        "gate-kill must send SIGKILL after wait"
+    )
+
+
+def test_gate_background_has_timeout_watcher():
+    content = _makefile_content()
+    idx = content.find("gate-background:")
+    assert idx != -1
+    recipe_block = content[idx : idx + 3000]
+    assert "GATE_TIMEOUT" in recipe_block, (
+        "gate-background must reference GATE_TIMEOUT env var"
+    )
+    assert "sleep $$GATE_TIMEOUT_VAL" in recipe_block, (
+        "gate-background must spawn timeout watcher with sleep"
+    )
+    assert "GATE: ABORTED" in recipe_block, (
+        "gate-background timeout must write ABORTED marker"
+    )
+
+
+def test_gate_background_timeout_default_3600():
+    content = _makefile_content()
+    idx = content.find("gate-background:")
+    recipe_block = content[idx : idx + 3000]
+    assert ":-3600" in recipe_block, (
+        "gate-background must default GATE_TIMEOUT to 3600s (1 hour)"
+    )
+
+
+# --- Watchdog _check_gate_background tests ---
+
+
+def test_watchdog_check_gate_background_kills_stale():
+    import scripts.agent_watchdog as aw
+
+    pid_file = Path(".gate-background.pid")
+    status_file = Path(".gate-status")
+
+    pid_file.write_text("99999")
+    pid_file.touch()
+
+    with patch.object(os, "kill", side_effect=None) as mock_kill:
+        aw._check_gate_background()
+
+    pid_file.unlink(missing_ok=True)
+    status_file.unlink(missing_ok=True)
+
+    assert mock_kill.call_count >= 1, (
+        "_check_gate_background must attempt to kill stale gate process"
+    )
+
+
+def test_watchdog_gate_max_runtime_is_one_hour():
+    import scripts.agent_watchdog as aw
+
+    assert aw.GATE_MAX_RUNTIME_SECS == 3600, (
+        "GATE_MAX_RUNTIME_SECS must be 3600 (1 hour), not 7200 (2 hours)"
+    )
+
+
+def test_watchdog_detects_stale_gate_status():
+    import scripts.agent_watchdog as aw
+
+    status_file = Path(".gate-status")
+    pid_file = Path(".gate-background.pid")
+
+    pid_file.unlink(missing_ok=True)
+    status_file.write_text("=== GATE: PASSED ===")
+    os.utime(str(status_file), (time.time(), time.time() - 4000))
+
+    logs = []
+    with patch.object(aw, "_log", side_effect=lambda msg: logs.append(msg)):
+        aw._check_gate_background()
+
+    status_file.unlink(missing_ok=True)
+
+    stale_logs = [l for l in logs if "STALE" in l or "stale" in l.lower()]
+    assert len(stale_logs) >= 1, (
+        "Watchdog must log when .gate-status is older than 1h with no gate running"
+    )

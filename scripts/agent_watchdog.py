@@ -204,7 +204,7 @@ def _prune_alerted_anomalies(now_epoch: float | None = None) -> None:
 
 
 GATE_PID_FILE = _WORKSPACE / ".gate-background.pid"
-GATE_MAX_RUNTIME_SECS = 7200  # 2 hours
+GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))  # 1 hour default
 
 ANOMALY_COUNT_FILE = "/tmp/gludd-watchdog-anomaly-count.json"
 TASK_ANOMALIES_FILE = "/tmp/gludd-task-anomalies.json"
@@ -815,47 +815,63 @@ def _check_ci_stall() -> None:
 
 
 def _check_gate_background() -> None:
-    """Kill background gate if it has been running for > GATE_MAX_RUNTIME_SECS."""
+    """Kill background gate if it has been running for > GATE_MAX_RUNTIME_SECS.
+
+    Also checks for stale .gate-status when no gate is running.
+    Runs every watchdog poll cycle (default 10s).
+    """
+    gate_running = False
+    pid_str = ""
+    pid = 0
+
     try:
-        if not GATE_PID_FILE.exists():
-            return
-        pid_str = GATE_PID_FILE.read_text().strip()
-        if not pid_str:
-            return
-        pid = int(pid_str)
-        os.kill(pid, 0)
+        if GATE_PID_FILE.exists():
+            pid_str = GATE_PID_FILE.read_text().strip()
+            if pid_str:
+                pid = int(pid_str)
+                os.kill(pid, 0)
+                gate_running = True
     except (ValueError, ProcessLookupError):
-        return
+        GATE_PID_FILE.unlink(missing_ok=True)
     except Exception:
-        return
+        pass
 
-    try:
-        elapsed = time.time() - GATE_PID_FILE.stat().st_mtime
-    except Exception:
-        return
-
-    if elapsed > GATE_MAX_RUNTIME_SECS:
-        _log(
-            f"GATE STALLED: background gate pid={pid_str} running "
-            f"{elapsed:.0f}s (>2h) - auto-killing"
-        )
+    if gate_running:
         try:
-            os.kill(pid, signal.SIGTERM)
-            time.sleep(5)
+            elapsed = time.time() - GATE_PID_FILE.stat().st_mtime
+        except Exception:
+            return
+
+        if elapsed > GATE_MAX_RUNTIME_SECS:
+            _log(
+                f"GATE STALLED: background gate pid={pid_str} running "
+                f"{elapsed:.0f}s (>1h) - auto-killing"
+            )
             try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
+                PATH_PARTS = Path(".gate-status").absolute()
+                PATH_PARTS.write_text("GATE_TIMEOUT\n=== GATE: ABORTED (watchdog timeout) ===\n")
+            except Exception:
                 pass
-            else:
-                time.sleep(1)
+            try:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(10)
                 try:
                     os.kill(pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
-            GATE_PID_FILE.unlink(missing_ok=True)
-            _log(f"GATE KILLED: pid={pid_str} after {elapsed:.0f}s")
-        except Exception as exc:
-            _log(f"GATE KILL ERROR: pid={pid_str} {exc}")
+                GATE_PID_FILE.unlink(missing_ok=True)
+                _log(f"GATE KILLED: pid={pid_str} after {elapsed:.0f}s")
+            except Exception as exc:
+                _log(f"GATE KILL ERROR: pid={pid_str} {exc}")
+
+    elif _GATE_STATUS.exists():
+        try:
+            mtime = _GATE_STATUS.stat().st_mtime
+            age = time.time() - mtime
+            if age > 3600:
+                _log(f"GATE STATUS STALE: .gate-status is {age:.0f}s old (>1h) with no gate running")
+        except Exception:
+            pass
 
 
 def _check_push_health() -> None:

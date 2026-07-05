@@ -1867,14 +1867,15 @@ gate-status:
 # If an existing gate is alive for >2h, auto-kill it and warn before launching.
 gate-background:
 	@mkdir -p .gate-logs
-	@STALE_PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
+	@GATE_TIMEOUT_OVERRIDE=$${GATE_TIMEOUT:-3600}; \
+	STALE_PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
 	GATE_PID_NOW=$$(date +%s); \
 	if [ -n "$$STALE_PID" ]; then \
 		if kill -0 "$$STALE_PID" 2>/dev/null; then \
 			GATE_MTIME=$$(stat -f %m .gate-background.pid 2>/dev/null || stat -c %Y .gate-background.pid 2>/dev/null || echo 0); \
 			ELAPSED=$$(( GATE_PID_NOW - GATE_MTIME )); \
-			if [ "$$ELAPSED" -gt 7200 ]; then \
-				echo "[gate-background] WARNING: existing gate running for $$ELAPSED s (>2h) - auto-killing staled process"; \
+			if [ "$$ELAPSED" -gt "$$GATE_TIMEOUT_OVERRIDE" ]; then \
+				echo "[gate-background] WARNING: existing gate running for $$ELAPSED s (>$$GATE_TIMEOUT_OVERRIDE s) - auto-killing staled process"; \
 				$(MAKE) gate-kill; \
 			else \
 				echo "[gate-background] gate already running (pid=$$STALE_PID elapsed=$$ELAPSED s) - refusing to launch duplicate"; \
@@ -1885,7 +1886,21 @@ gate-background:
 			rm -f .gate-background.pid; \
 		fi; \
 	fi
-	@nohup $(MAKE) gate > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-background.pid
+	@nohup $(MAKE) gate > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-background.pid; \
+	GATE_TIMEOUT_VAL=$${GATE_TIMEOUT:-3600}; \
+	( sleep $$GATE_TIMEOUT_VAL; \
+	  if [ -f .gate-background.pid ]; then \
+	    PID_TO_KILL=$$(cat .gate-background.pid 2>/dev/null); \
+	    if [ -n "$$PID_TO_KILL" ] && kill -0 "$$PID_TO_KILL" 2>/dev/null; then \
+	      echo "GATE_TIMEOUT" > .gate-status; \
+	      echo "=== GATE: ABORTED (timeout $$GATE_TIMEOUT_VAL s) ===" >> .gate-logs/gate-$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
+	      kill -TERM "$$PID_TO_KILL" 2>/dev/null; \
+	      sleep 10; \
+	      kill -KILL "$$PID_TO_KILL" 2>/dev/null; \
+	      rm -f .gate-background.pid; \
+	      echo "[gate-background-timeout] killed PID $$PID_TO_KILL after $$GATE_TIMEOUT_VAL s timeout"; \
+	    fi; \
+	  fi ) &
 
 # Probe background gate: running/pass/fail + current phase + last 20 log lines + .gate-status.
 gate-status-check:
@@ -1931,7 +1946,7 @@ gate-kill:
 		echo "[gate-kill] sending SIGTERM to pid=$$PID"; \
 		kill -TERM "$$PID" 2>/dev/null || true; \
 		ELAPSED=0; \
-		while [ $$ELAPSED -lt 5 ] && kill -0 "$$PID" 2>/dev/null; do sleep 1; ELAPSED=$$((ELAPSED+1)); done; \
+		while [ $$ELAPSED -lt 10 ] && kill -0 "$$PID" 2>/dev/null; do sleep 1; ELAPSED=$$((ELAPSED+1)); done; \
 		if kill -0 "$$PID" 2>/dev/null; then \
 			echo "[gate-kill] sending SIGKILL to pid=$$PID"; \
 			kill -KILL "$$PID" 2>/dev/null || true; \

@@ -3143,26 +3143,53 @@ class EventLoop:
             # event loop. The harness is freshly constructed per tick and the
             # gateway is threading.Lock-guarded, so the worker thread is safe.
             findings = await asyncio.to_thread(harness.run_gap_analysis, recurring)
+            todos: list[dict[str, Any]] = []
             if findings:
                 todos = harness.generate_fix_todos(findings)
+            # Grinding detector: scan enforcement-plugin state files for
+            # broken-agent patterns (high streak, low dispatch, frequent blocks)
+            # and auto-generate fix todos for each detected failure mode.
+            grinding_todos = self._detect_grinding_patterns()
+            if grinding_todos:
+                todos.extend(grinding_todos)
+            if todos:
                 enqueued = await self._persist_self_improve_todos(
                     todos, project_id=self._tick_project_id
                 )
                 if self._daemon_state is not None:
                     self._daemon_state["self_improve_last_analysis"] = {
                         "findings": findings, "findings_count": len(findings),
+                        "grinding_todos": len(grinding_todos),
                         "todos_enqueued": enqueued,
                     }
                 self._tick_metrics["self_improve_gaps"] = len(findings)
                 self._tick_metrics["self_improve_todos_persisted"] = enqueued
-                logger.info("Self-improve cycle: %d gaps found, %d todos persisted", len(findings), enqueued)
+                logger.info(
+                    "Self-improve cycle: %d gaps, %d grinding todos → %d persisted",
+                    len(findings), len(grinding_todos), enqueued,
+                )
             else:
                 self._tick_metrics["self_improve_gaps"] = 0
             # Training data collection and analysis run independently of
             # gap findings — they operate on already-reviewed task returns.
-            training_recorded = await self._collect_training_data_from_returns()
+            # Each is wrapped in its own try/except so a failure in one
+            # never prevents the other from running.
+            try:
+                training_recorded = await self._collect_training_data_from_returns()
+            except Exception:
+                logger.warning(
+                    "Training data collection failed",
+                    exc_info=True,
+                )
+                training_recorded = 0
             self._tick_metrics["self_improve_training_recorded"] = training_recorded
-            await self._apply_self_improvements()
+            try:
+                await self._apply_self_improvements()
+            except Exception:
+                logger.warning(
+                    "Self-improve analysis failed",
+                    exc_info=True,
+                )
         except Exception as exc:
             # AB-7: capture the traceback (exc_info) — a bare "%s" hid the real
             # failure site of the self-improve phase, making regressions here
