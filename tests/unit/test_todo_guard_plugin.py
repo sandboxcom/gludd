@@ -14,7 +14,6 @@ Two enforcement layers:
 """
 
 import json
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
@@ -136,8 +135,8 @@ class TestCommitBlock:
         src = PLUGIN.read_text()
         for target in ["git-commit", "commit-no-verify", "ship-commit"]:
             assert target in src, (
-                "Commit block must recognize make %s as a commit-shaped "
-                "target. Missing it leaves a bypass." % target
+                f"Commit block must recognize make {target} as a "
+                "commit-shaped target. Missing it leaves a bypass."
             )
 
     def test_tasks_md_checked(self):
