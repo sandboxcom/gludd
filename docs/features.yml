@@ -31,7 +31,7 @@ sections:
         pct: 100
         evidence_refs:
           - "test:tests/unit/test_daemon_launch_config.py"
-          - "file:src/general_ludd/daemon.py::register_all"
+          - "file:src/general_ludd/routers/__init__.py:11::register_all"
         notes: "`[b4de809]`"
 
       - id: g1-event-loop-session
@@ -606,11 +606,14 @@ sections:
         evidence_refs:
           - "file:src/general_ludd/routers/todos.py::api_status"
           - "file:src/general_ludd/daemon.py::create_daemon_app"
+          - "test:tests/unit/test_docs_prefix_bypass.py"
+          - "test:tests/test_api_status_no_leak.py"
+          - "test:tests/test_todos_pagination.py"
         notes: "merged into master (ancestor of HEAD); fast-follow branch never existed as named ref; F5b /docs auth bypass closed, F6a /api/status info-leak stripped, F6b GET /api/todos pagination"
 
       - id: batch4-security
         title: "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)"
-        pct: 100
+        pct: 0
         evidence_refs:
           - "file:docs/audit/NEW_FINDINGS_2026-06-16.md::P1"
         notes: "ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
@@ -804,7 +807,7 @@ sections:
 
       - id: w14-1-secure-sdlc-roles
         title: "7 secure-SDLC roles + molecule scenarios (W14.1)"
-        pct: 100
+        pct: 95
         pct_note: "(local)"
         evidence_refs:
           - "role:security_review"
@@ -840,13 +843,9 @@ sections:
 
       - id: watchdog-stall
         title: "Watchdog/stall detection improvements (mt-6-watchdog branch)"
-        pct: 100
-        evidence_refs:
-          - "file:src/general_ludd/observability/timing.py::StallWatchdog"
-          - "file:src/general_ludd/daemon.py::_stall_watchdog"
-          - "file:src/general_ludd/agents/dispatcher.py::_watchdog"
-          - "file:src/general_ludd/events/types.py::STALL_DETECTED"
-        notes: "Abandoned branch; feature rescoped into master. Stall detection exists via StallWatchdog in daemon.py + agent watchdog in dispatcher.py + STALL_DETECTED event type."
+        pct: 0
+        evidence_refs: []
+        notes: "Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status."
 
       - id: floor-controller
         title: "Gate-safe + predictive floor controller (floor_controller-consolidated branch)"
