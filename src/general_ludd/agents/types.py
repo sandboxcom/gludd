@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from general_ludd.agents.behavior import AgentBehavior
@@ -36,6 +36,7 @@ class AgentConfig:
     max_concurrent: int = 1
     enabled: bool = True
     behavior: AgentBehavior | None = None
+    bind_tools_on_dispatch: bool = True
 
 
 @dataclass
@@ -47,3 +48,4 @@ class AgentTask:
     parent_task_id: str | None = None
     invoker_name: str = ""
     project_id: str | None = None  # #51: enables pause-gate on dispatch
+    tools: list[dict[str, Any]] | None = None

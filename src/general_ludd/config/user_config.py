@@ -210,6 +210,7 @@ class AgentConfig(BaseModel):
     session_notes: str = ""
     use_langgraph_tool_loop: bool = False
     use_langgraph_review: bool = False
+    bind_tools_on_dispatch: bool = True
 
 
 class ConfigLayer(BaseModel):

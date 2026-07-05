@@ -103,6 +103,18 @@ def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
     return val if isinstance(val, str) else default
 
 
+def _format_acceptance_criteria(raw_ac: str | None) -> str:
+    if not raw_ac:
+        return ""
+    try:
+        criteria_list: list[str] = json.loads(raw_ac)
+    except (json.JSONDecodeError, TypeError):
+        return raw_ac
+    if not criteria_list:
+        return ""
+    return "\n".join(f"- {c}" for c in criteria_list)
+
+
 def _self_update_work_item_from_todo(todo: Any, todo_id: str) -> Any:
     """Build a Scheduler ``WorkItem`` for a ``self_update``-queue todo.
 
@@ -1699,6 +1711,10 @@ class EventLoop:
             "work_type": work_type,
             "queue": _safe_str(todo, "queue") or "core",
             "priority": str(getattr(todo, "priority", "medium") or "medium"),
+            "acceptance_criteria": _format_acceptance_criteria(
+                _safe_str(todo, "acceptance_criteria")
+            ),
+            "definition_of_done": _safe_str(todo, "definition_of_done") or "",
         }
         project_templates_dir = (
             str(ws.templates_dir)
@@ -3204,7 +3220,9 @@ class EventLoop:
         low dispatch ratios, and frequent block counters, then returns
         fix-todo dicts for each detected failure mode.
         """
-        return []
+        from general_ludd.self_update.grinding_detector import detect_and_create_todos
+
+        return detect_and_create_todos()
 
     async def _collect_recurring_failures(self) -> list[Any]:
         """Collect recurring-failure records from REAL task execution.

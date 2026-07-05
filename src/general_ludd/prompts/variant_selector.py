@@ -91,6 +91,8 @@ class PromptVariantSelector:
             promoted = self._variant_metrics.is_promoted(template_name)
             if promoted is None:
                 promoted = self._variant_metrics.get_winner(template_name)
+                if promoted is not None:
+                    self._variant_metrics.promote_winner(template_name)
 
         variant = promoted if promoted is not None else self._name_a if self._run_index % 2 == 0 else self._name_b
 

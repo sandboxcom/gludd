@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
-from general_ludd.self_update.grinding_detector import detect_and_create_todos
+from general_ludd.self_update.grinding_detector import (
+    GrindingDetector,
+    detect_and_create_todos,
+)
 
 
 def _write_json(path: str, data: object) -> None:
@@ -217,3 +221,151 @@ def test_todo_shape_compatible_with_harness(tmp_streak_file: Path, recent_ts: fl
     for todo in fixed:
         assert todo["title"]
         assert todo["description"]
+
+
+# ── GrindingDetector class tests ──────────────────────────────────────────────
+
+
+def _make_call(name: str, ts: float, dispatch: bool = False) -> dict:
+    return {"tool_name": name, "timestamp": ts, "is_dispatch": dispatch}
+
+
+def _make_response(has_tool_calls: bool, ts: float) -> dict:
+    return {"has_tool_calls": has_tool_calls, "timestamp": ts}
+
+
+class TestGrindingDetectorDetectGrinding:
+
+    def test_detects_4_consecutive_reads(self):
+        detector = GrindingDetector(streak_threshold=4)
+        calls = [
+            _make_call("read", 1.0),
+            _make_call("read", 2.0),
+            _make_call("read", 3.0),
+            _make_call("read", 4.0),
+        ]
+        episodes = detector.detect_grinding(calls)
+        assert len(episodes) == 1
+        assert episodes[0].tool_count == 4
+        assert episodes[0].tool_names == ["read", "read", "read", "read"]
+
+    def test_dispatch_resets_streak(self):
+        detector = GrindingDetector(streak_threshold=4)
+        calls = [
+            _make_call("read", 1.0),
+            _make_call("read", 2.0),
+            _make_call("read", 3.0),
+            _make_call("task", 4.0, dispatch=True),
+            _make_call("read", 5.0),
+            _make_call("read", 6.0),
+            _make_call("read", 7.0),
+        ]
+        episodes = detector.detect_grinding(calls)
+        assert len(episodes) == 0
+
+    def test_split_episodes(self):
+        detector = GrindingDetector(streak_threshold=4)
+        calls = [
+            _make_call("read", 1.0),
+            _make_call("read", 2.0),
+            _make_call("read", 3.0),
+            _make_call("read", 4.0),
+            _make_call("read", 5.0),
+            _make_call("task", 6.0, dispatch=True),
+            _make_call("edit", 7.0),
+            _make_call("edit", 8.0),
+            _make_call("edit", 9.0),
+            _make_call("edit", 10.0),
+            _make_call("write", 11.0),
+        ]
+        episodes = detector.detect_grinding(calls)
+        assert len(episodes) == 2
+        assert episodes[0].tool_count == 5
+        assert episodes[1].tool_count == 5
+
+    def test_no_false_positive_on_normal_dispatch(self):
+        detector = GrindingDetector(streak_threshold=4)
+        calls = [
+            _make_call("task", 1.0, dispatch=True),
+            _make_call("task", 2.0, dispatch=True),
+            _make_call("task", 3.0, dispatch=True),
+            _make_call("task", 4.0, dispatch=True),
+        ]
+        episodes = detector.detect_grinding(calls)
+        assert len(episodes) == 0
+
+    def test_empty_calls_no_episodes(self):
+        detector = GrindingDetector(streak_threshold=4)
+        episodes = detector.detect_grinding([])
+        assert len(episodes) == 0
+
+
+class TestGrindingDetectorDetectPrematureStop:
+
+    def test_detects_text_only_then_idle(self):
+        detector = GrindingDetector(idle_threshold=30.0)
+        now = time.time()
+        responses = [
+            _make_response(False, now - 60),  # text-only 60s ago
+            _make_response(True, now - 20),   # tool call 20s ago
+        ]
+        episodes = detector.detect_premature_stop(responses)
+        assert len(episodes) == 1
+        assert episodes[0].idle_seconds == pytest.approx(40.0, abs=1.0)
+
+    def test_text_only_trailing_against_now(self):
+        detector = GrindingDetector(idle_threshold=30.0)
+        responses = [
+            _make_response(True, time.time() - 100),
+            _make_response(False, time.time() - 60),  # last response text-only
+        ]
+        episodes = detector.detect_premature_stop(responses)
+        assert len(episodes) == 1
+        assert episodes[0].idle_seconds >= 30.0
+
+    def test_no_stop_when_all_have_tool_calls(self):
+        detector = GrindingDetector(idle_threshold=30.0)
+        responses = [
+            _make_response(True, 1.0),
+            _make_response(True, 2.0),
+        ]
+        episodes = detector.detect_premature_stop(responses)
+        assert len(episodes) == 0
+
+    def test_empty_responses_no_stops(self):
+        detector = GrindingDetector()
+        episodes = detector.detect_premature_stop([])
+        assert len(episodes) == 0
+
+
+class TestGrindingDetectorReport:
+
+    def test_generates_and_writes_report(self, tmp_path: Path):
+        detector = GrindingDetector(streak_threshold=4)
+
+        calls = [
+            _make_call("read", 1.0),
+            _make_call("read", 2.0),
+            _make_call("read", 3.0),
+            _make_call("read", 4.0),
+        ]
+        detector.detect_grinding(calls)
+
+        responses = [
+            _make_response(False, 1.0),
+            _make_response(True, 60.0),
+        ]
+        detector.detect_premature_stop(responses)
+
+        # Patch report path to use tmp_path
+        report_file = tmp_path / "gludd-grinding-report.json"
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setattr(
+                detector, "_REPORT_PATH", str(report_file),
+            )
+            report = detector.generate_remediation_report()
+
+        assert report["total_tool_calls_analyzed"] == 4
+        assert len(report["grinding_episodes"]) == 1
+        assert len(report["stop_episodes"]) == 1
+        assert os.path.isfile(str(report_file))

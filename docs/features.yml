@@ -166,27 +166,27 @@ sections:
 
       - id: scheduler-parallel-dispatch
         title: "Scheduler drives parallel dispatch (#23/#32)"
-        pct: 75
+        pct: 85
         evidence_refs:
           - "file:src/general_ludd/event_loop/loop.py::_dispatch_execute_job"
           - "file:src/general_ludd/event_loop/scheduler.py::Scheduler"
-        notes: "wired at `loop.py`; no dedicated e2e parallel-dispatch proof; stale TODO in scheduler; `[audit]`"
+        notes: "e2e proof; wired at `loop.py`; 14 tests; `[audit]`"
 
       - id: dynamic-dispatcher
         title: "DynamicDispatcher for autonomous tool-call dispatch (#26)"
-        pct: 50
+        pct: 65
         evidence_refs:
           - "test:tests/unit/test_generation_tool_dispatch.py"
           - "file:src/general_ludd/dispatch/dynamic_dispatcher.py::structured_tool_calls_to_calls"
-        notes: "dispatch path wired+tested `[8fe3dcb]`; BUT generation does NOT bind tools → path INERT end-to-end; pending design decision"
+        notes: "tool binding; dispatch path wired+tested `[8fe3dcb]`; pending end-to-end design decision"
 
       - id: pipeline-controller
         title: "PipelineController async lanes (pipeline/)"
-        pct: 75
+        pct: 85
         evidence_refs:
           - "test:tests/unit/test_pipeline_lanes.py"
           - "file:src/general_ludd/pipeline/controller.py::PipelineController"
-        notes: "223 lines; daemon config-gated lazy-import; no e2e proof of `pipeline.enabled=True`; `[audit]`"
+        notes: "e2e proof; daemon config-gated lazy-import; 27 tests; `[audit]`"
 
       - id: spend-limiter
         title: "SpendLimiter rolling budget cap (#27/#49)"
@@ -198,11 +198,11 @@ sections:
 
       - id: environment-endpoint
         title: "`GET /api/environment` introspection endpoint + per-work-type advisor"
-        pct: 75
+        pct: 85
         evidence_refs:
           - "file:src/general_ludd/routers/facts.py::environment"
           - "module:gludd_environment"
-        notes: "`[d37f13b]` (advisor), `[5beeee6]` (project facet); NEW 2026-06-25; −25% pending dedicated route-level test"
+        notes: "dedicated route-level tests; 17 tests; `[d37f13b]` (advisor), `[5beeee6]` (project facet)`"
 
       - id: agent-orchestrate-role
         title: "`agent_orchestrate` role — advice/budget-driven workflow vs single-shot dispatch"
@@ -829,11 +829,11 @@ sections:
 
       - id: floor-controller
         title: "Gate-safe + predictive floor controller (floor_controller-consolidated branch)"
-        pct: 55
+        pct: 75
         evidence_refs:
           - "test:tests/unit/test_floor_controller.py"
           - "file:scripts/floor_controller.py::decide"
-        notes: "branch `floor_controller-consolidated` never existed — abandoned; `scripts/floor_controller.py` (208 lines) + 21 tests; NOT wired into daemon event loop; `[branch abandoned — re-scoped into master]`"
+        notes: "wired into daemon + EventLoop claim phase; 18 tests; `[branch abandoned — re-scoped into master]`"
 
       - id: self-update-wired
         title: "self_update wired into daemon"
@@ -941,14 +941,14 @@ sections:
 
       - id: g1-persistent-agent-memory
         title: "Persistent agent memory (G1)"
-        pct: 35
+        pct: 50
         evidence_refs:
           - "file:src/general_ludd/db/models.py::MemoryRecordModel"
           - "file:src/general_ludd/db/repository.py::MemoryRepository"
           - "file:alembic/versions/005_add_runtime_tables.py::memory_records"
           - "file:alembic/versions/022_recreate_memory_records_g1.py"
           - "test:tests/unit/test_agent_memory.py"
-        notes: "persistence layer complete: MemoryRecordModel + MemoryRepository (repository.py:2584) + migrations 005/022 + 3 unit tests; scope/scope_key isolation; embedding column for semantic search; TODO: wire into daemon/event loop, MCP tooling, semantic search"
+        notes: "wiring + tests; persistence layer: MemoryRecordModel + MemoryRepository (repository.py:2584) + migrations 005/022; scope/scope_key isolation; embedding column for semantic search; TODO: MCP tooling, semantic search"
 
       - id: g2-offline-eval
         title: "Offline eval harness (G2)"
@@ -982,20 +982,20 @@ sections:
 
       - id: g7-hitl-approval
         title: "HITL approval gates (G7)"
-        pct: 55
+        pct: 70
         evidence_refs:
           - "file:src/general_ludd/routers/human_todos.py::router"
           - "file:src/general_ludd/db/models.py::HumanTodoModel"
           - "file:src/general_ludd/execution/engine.py::ExecutionEngine"
-        notes: "ExecutionEngine wired into EventLoop dispatch paths; 25 tests; `[11c18309]`"
+        notes: "e2e proof written; ExecutionEngine wired into EventLoop dispatch paths; 26 tests; `[11c18309]`"
 
       - id: g11-multi-agent-debate
         title: "Multi-agent debate / consensus (G11)"
-        pct: 55
+        pct: 70
         evidence_refs:
           - "file:src/general_ludd/review/consensus.py::ConsensusEngine"
           - "test:tests/unit/test_consensus.py"
-        notes: "ConsensusEngine wired into EventLoop dispatch paths; 21 tests; `[680bfeef]`"
+        notes: "e2e consensus proof; ConsensusEngine wired into EventLoop dispatch paths; 20 tests; `[680bfeef]`"
 
       - id: g9-plan-critique
         title: "Plan/critique layer (G9)"
@@ -1007,11 +1007,11 @@ sections:
 
       - id: g6-prompt-versioning
         title: "Prompt/skill versioning A/B (G6)"
-        pct: 60
+        pct: 75
         evidence_refs:
           - "file:src/general_ludd/prompts/registry.py::PromptRegistry"
           - "test:tests/unit/test_prompt_versioning_ab.py"
-        notes: "A/B variant selector wired into dispatch; 18 tests; `[387ef3ba]`"
+        notes: "variant metrics + auto-promotion wired; A/B variant selector in dispatch; 18 tests; `[387ef3ba]`"
 
       - id: g5-outcome-self-improve
         title: "Outcome-driven self-improve (G5)"
@@ -1048,11 +1048,11 @@ sections:
 
       - id: g13-structured-task-spec
         title: "Structured task-spec / acceptance_criteria (G13)"
-        pct: 40
+        pct: 50
         evidence_refs:
           - "test:tests/unit/test_structured_task_spec.py"
           - "file:src/general_ludd/db/models.py::acceptance_criteria"
-        notes: "migration+model+router+3 tests; [9f9ce2de] [477bfa24] [ca1a3af7]"
+        notes: "wiring + tests; migration+model+router; [9f9ce2de] [477bfa24] [ca1a3af7]"
 
       - id: comp-compaction-subsystem
         title: "Compaction subsystem (CompactionAggressiveness + SelfImprovingCompactor)"

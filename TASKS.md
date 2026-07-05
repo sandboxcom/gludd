@@ -725,3 +725,11 @@ Audit found: 15/18 Terraform stacks lacked watchdog, Slurm had no cost caps/idle
 
 ### Scheduling (1 fix)
 - [x] BILL-9 — `ComputeSchedulingHint` with work-type→GPU affinity mapping (analysis→A100, review→T4, self_improve→H100); GPU-type-aware routing in `route_task()`; `select_cost_effective_profile()` budget-gated model selection | evidence: tests/unit/test_compute_aware_scheduling.py 23 passed; lint 0; typecheck 0
+
+## Phase Post-BILL — wiring completion + enforcement hardening (2026-07-05)
+
+- [x] G6-Floor — FloorController + VariantMetrics wired for G6 A/B auto-promotion: variant selection driven by latency/cost/success metrics, floor controller enforces per-model concurrency caps, metrics collector feeds real data into promotion decisions | evidence: commit 7ceefe48; lint 0; typecheck 0
+- [x] CVE+Proofs — CVE patches, BILL features finalization, G6 variant metrics integration, scheduler/pipeline/env/G7/G11 e2e proofs — 122 tests total | evidence: commit 9b34b0b6; make lint "All checks passed"
+- [x] ENF-1 — Plugin version check + disengage-enforcement kill-switch: prevents broken enforcement plugins from persisting across restarts; writes emergency disengage signal respected by all enforcement hooks | evidence: commit f3140cae; lint 0; typecheck 0
+- [x] ENF-2 — Plugin check + kill-switch + grinding detector + gate cleanup: full enforcement hardener — prevents all broken-enforcement persistence modes, detects grinding inline patterns, cleans stale gate processes | evidence: commit b83e7c10; lint 0; typecheck 0
+- [x] Auto-1 — Auto-fix wave: hook modifications to enforce-stop.ts, Makefile, grinding_detector.py, agent_watchdog.py, gate_process_cleanup.py; plugin-hashes.json excluded from detect-secrets; lint issues resolved (imports, unused imports) | evidence: commits d26a96b0 299a9182 4a1f04c9 dfda4966 ff782849 62ff31cf; make lint "All checks passed"

@@ -1652,10 +1652,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         budget_manager.release_reservation(task.task_id)
                         return "deferred:budget_exhausted"
                 try:
+                    call_kwargs: dict[str, Any] = {}
+                    if getattr(task, "tools", None):
+                        call_kwargs["tools"] = task.tools
                     result = await asyncio.to_thread(
                         model_gateway.call_model_with_retry,
                         profile_id,
                         [{"role": "user", "content": task.prompt}],
+                        **call_kwargs,
                     )
                     if budget_manager is not None:
                         budget_manager.record_spend(

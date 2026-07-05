@@ -53,6 +53,7 @@ class AgentDispatcher:
         watchdog: StallWatchdog | None = None,
         pause_controller: Any | None = None,
         run_recorder: RunRecorder | None = None,
+        mcp_tool_registry: Any | None = None,
     ) -> None:
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
@@ -69,6 +70,7 @@ class AgentDispatcher:
         # shared tracker so histories accumulate across call sites.
         self._tracker = tracker or default_tracker()
         self._watchdog = watchdog
+        self._mcp_tool_registry = mcp_tool_registry
 
     @property
     def active_count(self) -> int:
@@ -160,6 +162,25 @@ class AgentDispatcher:
                     f"to dispatch '{task.agent_name}'"
                 ),
             )
+
+        if (
+            config.bind_tools_on_dispatch
+            and self._mcp_tool_registry is not None
+            and task.tools is None
+        ):
+            try:
+                mcp_tools = self._mcp_tool_registry.list_tools()
+                if mcp_tools:
+                    task.tools = [
+                        {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.input_schema,
+                        }
+                        for t in mcp_tools
+                    ]
+            except Exception:
+                pass
 
         semaphore = self._get_semaphore(task.agent_name)
         start = time.monotonic()

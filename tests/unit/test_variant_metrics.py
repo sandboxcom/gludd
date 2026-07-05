@@ -154,3 +154,34 @@ class TestVariantSelectorWithMetrics:
         selector.select("tpl")
         selector.record_outcome(success=True, latency_ms=50.0)
         assert metrics.total_samples("tpl", "A") == 1
+
+    def test_auto_promotion_on_select(self):
+        metrics, _p = _tmp_metrics(min_samples=3)
+        metrics.record_outcome("tpl", "A", success=True, latency_ms=50.0)
+        metrics.record_outcome("tpl", "A", success=True, latency_ms=50.0)
+        metrics.record_outcome("tpl", "A", success=True, latency_ms=50.0)
+        metrics.record_outcome("tpl", "B", success=False, latency_ms=200.0)
+        metrics.record_outcome("tpl", "B", success=False, latency_ms=200.0)
+        metrics.record_outcome("tpl", "B", success=False, latency_ms=200.0)
+        assert metrics.is_promoted("tpl") is None
+
+        selector = PromptVariantSelector(enabled=True, variant_metrics=metrics)
+        result = selector.select("tpl")
+        assert result["variant"] == "A"
+
+        assert metrics.is_promoted("tpl") == "A"
+
+        results = [selector.select("tpl")["variant"] for _ in range(10)]
+        assert all(v == "A" for v in results)
+
+    def test_select_no_winner_stays_round_robin(self):
+        metrics, _p = _tmp_metrics(min_samples=10)
+        metrics.record_outcome("tpl", "A", success=True, latency_ms=50.0)
+        metrics.record_outcome("tpl", "B", success=True, latency_ms=50.0)
+        assert metrics.is_promoted("tpl") is None
+
+        selector = PromptVariantSelector(enabled=True, variant_metrics=metrics)
+        r1 = selector.select("tpl")["variant"]
+        r2 = selector.select("tpl")["variant"]
+        assert r1 != r2
+        assert metrics.is_promoted("tpl") is None

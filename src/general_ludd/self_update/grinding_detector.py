@@ -4,6 +4,11 @@ Reads enforcement-plugin state files from ``/tmp/`` and creates
 self-improvement todo dicts for each detected failure mode. Designed to be
 called from ``_phase_self_improve`` so the harness turns its own broken
 behaviour into fix tasks without operator intervention.
+
+Also provides ``GrindingDetector``, a class that analyzes session-level
+tool-call and text-response patterns — grinding episodes (4+ consecutive
+non-dispatch tool calls), premature stops (text-only response + ≥30s idle),
+and generates remediation reports.
 """
 
 from __future__ import annotations
@@ -12,9 +17,13 @@ import json
 import logging
 import os
 import time
+from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ── dispatch tool names ──────────────────────────────────────────────────
+_DISPATCH_TOOLS = frozenset({"task", "agent", "workflow", "skill"})
 
 # ── canonical paths for enforcement-plugin state files ──────────────────────
 _STREAK_FILE = "/tmp/gludd-floor-streak.json"
@@ -267,3 +276,211 @@ def detect_and_create_todos() -> list[dict[str, Any]]:
         })
 
     return todos
+
+
+# ── Session-level pattern analysis ───────────────────────────────────────────
+
+
+@dataclass
+class GrindingEpisode:
+    """A detected grinding episode: 4+ consecutive non-dispatch tool calls."""
+
+    start_index: int
+    end_index: int
+    tool_count: int
+    tool_names: list[str]
+    start_timestamp: float
+    end_timestamp: float
+
+
+@dataclass
+class StopEpisode:
+    """A detected premature stop: text-only response + ≥30s idle."""
+
+    response_index: int
+    idle_seconds: float
+    timestamp: float
+
+
+@dataclass
+class GrindingReport:
+    """Aggregated grinding/premature-stop detection results."""
+
+    grinding_episodes: list[GrindingEpisode] = field(default_factory=list)
+    stop_episodes: list[StopEpisode] = field(default_factory=list)
+    total_tool_calls_analyzed: int = 0
+    total_responses_analyzed: int = 0
+    generated_at: float = 0.0
+
+
+class GrindingDetector:
+    """Analyzes agent session data for grinding and premature-stop patterns.
+
+    Operates on structured session tool-call and text-response records
+    collected from opencode's tool-call log or ``/tmp/gludd-*-state.json`` files.
+    Runs inside the daemon (full filesystem access), not as an opencode plugin.
+    """
+
+    _REPORT_PATH = "/tmp/gludd-grinding-report.json"
+
+    def __init__(
+        self,
+        streak_threshold: int = 4,
+        idle_threshold: float = 30.0,
+    ) -> None:
+        self._streak_threshold = streak_threshold
+        self._idle_threshold = idle_threshold
+        self._report: GrindingReport = GrindingReport()
+
+    # ── public API ───────────────────────────────────────────────────────
+
+    def detect_grinding(
+        self, session_tool_calls: list[dict[str, Any]]
+    ) -> list[GrindingEpisode]:
+        """Detect grinding episodes: 4+ consecutive non-dispatch tool calls.
+
+        Each entry in *session_tool_calls* must have at minimum:
+        ``{"tool_name": str, "timestamp": float}``.  An optional ``is_dispatch``
+        bool is checked first; if absent, *tool_name* is matched against the
+        known dispatch set (``task``, ``agent``, ``workflow``, ``skill``).
+        """
+        if not session_tool_calls:
+            return []
+
+        episodes: list[GrindingEpisode] = []
+        streak_start: int | None = None
+        streak_names: list[str] = []
+
+        for i, call in enumerate(session_tool_calls):
+            if not isinstance(call, dict):
+                continue
+            is_dispatch = self._is_dispatch(call)
+            if is_dispatch:
+                if streak_start is not None and len(streak_names) >= self._streak_threshold:
+                    episodes.append(self._build_episode(
+                        streak_start, i - 1, streak_names, session_tool_calls,
+                    ))
+                streak_start = None
+                streak_names = []
+            else:
+                if streak_start is None:
+                    streak_start = i
+                streak_names.append(call.get("tool_name", "unknown"))
+
+        # Trailing streak
+        if streak_start is not None and len(streak_names) >= self._streak_threshold:
+            episodes.append(self._build_episode(
+                streak_start, len(session_tool_calls) - 1, streak_names, session_tool_calls,
+            ))
+
+        self._report.grinding_episodes = episodes
+        self._report.total_tool_calls_analyzed = len(session_tool_calls)
+        return episodes
+
+    def detect_premature_stop(
+        self, session_text_responses: list[dict[str, Any]]
+    ) -> list[StopEpisode]:
+        """Detect premature stops: text-only responses followed by ≥30s idle.
+
+        Each entry must have: ``{"has_tool_calls": bool, "timestamp": float}``.
+        Idle is computed as ``next_response.timestamp - current.timestamp``.
+        The last response is only flagged if it has no tool calls and its
+        timestamp is at least *idle_threshold* before *now*.
+        """
+        if not session_text_responses:
+            return []
+
+        episodes: list[StopEpisode] = []
+        now = time.time()
+
+        for i in range(len(session_text_responses)):
+            resp = session_text_responses[i]
+            if not isinstance(resp, dict):
+                continue
+            if resp.get("has_tool_calls", True):
+                continue
+            ts = resp.get("timestamp", 0)
+            if i + 1 < len(session_text_responses):
+                next_ts = session_text_responses[i + 1].get("timestamp", ts)
+                idle_s = next_ts - ts
+            else:
+                idle_s = now - ts
+            if idle_s >= self._idle_threshold:
+                episodes.append(StopEpisode(
+                    response_index=i,
+                    idle_seconds=round(idle_s, 1),
+                    timestamp=ts,
+                ))
+
+        self._report.stop_episodes = episodes
+        self._report.total_responses_analyzed = len(session_text_responses)
+        return episodes
+
+    def generate_remediation_report(self) -> dict[str, Any]:
+        """Write aggregated report to ``/tmp/gludd-grinding-report.json``.
+
+        Returns the report as a dict and also writes it to disk.
+        """
+        self._report.generated_at = time.time()
+        report_dict: dict[str, Any] = {
+            "generated_at": self._report.generated_at,
+            "grinding_episodes": [
+                {
+                    "start_index": e.start_index,
+                    "end_index": e.end_index,
+                    "tool_count": e.tool_count,
+                    "tool_names": e.tool_names,
+                    "start_timestamp": e.start_timestamp,
+                    "end_timestamp": e.end_timestamp,
+                }
+                for e in self._report.grinding_episodes
+            ],
+            "stop_episodes": [
+                {
+                    "response_index": e.response_index,
+                    "idle_seconds": e.idle_seconds,
+                    "timestamp": e.timestamp,
+                }
+                for e in self._report.stop_episodes
+            ],
+            "total_tool_calls_analyzed": self._report.total_tool_calls_analyzed,
+            "total_responses_analyzed": self._report.total_responses_analyzed,
+        }
+        try:
+            os.makedirs(os.path.dirname(self._REPORT_PATH), exist_ok=True)
+            with open(self._REPORT_PATH, "w") as fh:
+                json.dump(report_dict, fh, indent=2)
+            logger.info(
+                "Grinding report written to %s: %d grinding, %d stop episodes",
+                self._REPORT_PATH,
+                len(self._report.grinding_episodes),
+                len(self._report.stop_episodes),
+            )
+        except OSError as exc:
+            logger.warning("Failed to write grinding report: %s", exc)
+        return report_dict
+
+    # ── helpers ──────────────────────────────────────────────────────────
+
+    def _is_dispatch(self, call: dict[str, Any]) -> bool:
+        if call.get("is_dispatch") is True:
+            return True
+        return call.get("tool_name", "") in _DISPATCH_TOOLS
+
+    def _build_episode(
+        self,
+        start: int,
+        end: int,
+        names: list[str],
+        calls: list[dict[str, Any]],
+    ) -> GrindingEpisode:
+        start_ts = float(calls[start].get("timestamp", 0))
+        end_ts = float(calls[end].get("timestamp", 0))
+        return GrindingEpisode(
+            start_index=start,
+            end_index=end,
+            tool_count=len(names),
+            tool_names=list(names),
+            start_timestamp=start_ts,
+            end_timestamp=end_ts,
+        )
