@@ -416,6 +416,24 @@ export default (async ({ }) => {
           return
         }
 
+        // Disengage check: when the operator has explicitly disengaged
+        // enforcement, skip the floor-breach block so commits and pushes
+        // can proceed.
+        let disengaged = false
+        try {
+          const disPath = "/tmp/gludd-watchdog-disengage.json"
+          if (fs.existsSync(disPath)) {
+            const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
+            if (d.disengage_until && d.disengage_until > Date.now()) {
+              disengaged = true
+            }
+          }
+        } catch {}
+        if (disengaged) {
+          _streakCount = 0
+          return
+        }
+
         _streakCount++
         if (_streakCount <= MAX_STREAK) return
         if (!openWorkExists()) {

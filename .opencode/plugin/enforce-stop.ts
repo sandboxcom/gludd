@@ -496,7 +496,22 @@ export default (async ({ }) => {
             const gateRed = gateStatusIsRed()
             const ciBad = ciIsPendingOrRed()
             const repoPending = repoHasPendingWork()
-            if (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending) {
+            // Disengage check: when the operator has explicitly disengaged
+            // enforcement, skip the stop-like-tool block so commits and pushes
+            // can proceed. Fixes: disengage-enforcement was only respected in
+            // session.idle, not tool.execute.before — the operator could run
+            // "make disengage-enforcement" and still be blocked on every commit.
+            let disengaged = false
+            try {
+              const disPath = "/tmp/gludd-watchdog-disengage.json"
+              if (fs.existsSync(disPath)) {
+                const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
+                if (d.disengage_until && d.disengage_until > Date.now()) {
+                  disengaged = true
+                }
+              }
+            } catch {}
+            if (!disengaged && (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending)) {
               // Track block
               try {
                 const cPath = "/tmp/gludd-stop-tool-counts.json"
