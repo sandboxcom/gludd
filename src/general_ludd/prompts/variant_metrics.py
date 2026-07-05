@@ -118,6 +118,103 @@ class VariantMetrics:
         with self._lock:
             return int(self._data.get(template_name, {}).get(variant, {}).get("total", 0))
 
+    def generate_variant_report(self) -> dict[str, Any]:
+        """Aggregate outcomes by template_name and variant into a comparison report.
+
+        Returns a structured dict with per-template variant comparisons:
+        which variant is winning, by what margin, and sample counts.
+        """
+        with self._lock:
+            templates: dict[str, Any] = {}
+            for tmpl_name, variants in self._data.items():
+                a = variants.get("A", {})
+                b = variants.get("B", {})
+                a_total = a.get("total", 0)
+                b_total = b.get("total", 0)
+                a_successes = a.get("successes", 0)
+                b_successes = b.get("successes", 0)
+                a_rate = a_successes / a_total if a_total else 0.0
+                b_rate = b_successes / b_total if b_total else 0.0
+                a_lat = a.get("latency_sum", 0.0) / a_total if a_total else float("inf")
+                b_lat = b.get("latency_sum", 0.0) / b_total if b_total else float("inf")
+                promoted = variants.get("promoted")
+
+                winner = self.get_winner(tmpl_name)
+                sufficient = (
+                    a_total >= self._min_samples
+                    and b_total >= self._min_samples
+                )
+
+                templates[tmpl_name] = {
+                    "variants": {
+                        "A": {
+                            "samples": a_total,
+                            "successes": a_successes,
+                            "success_rate": round(a_rate, 4),
+                            "avg_latency_ms": round(a_lat, 2) if a_lat != float("inf") else None,
+                        },
+                        "B": {
+                            "samples": b_total,
+                            "successes": b_successes,
+                            "success_rate": round(b_rate, 4),
+                            "avg_latency_ms": round(b_lat, 2) if b_lat != float("inf") else None,
+                        },
+                    },
+                    "sufficient_data": sufficient,
+                    "winner": winner,
+                    "promoted": promoted,
+                    "margin": self._compute_margin(a, b),
+                }
+
+            return {
+                "templates": templates,
+                "template_count": len(templates),
+            }
+
+    def _compute_margin(
+        self, a: dict[str, Any], b: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Compute the margin between two variants in success rate and latency."""
+        a_total = a.get("total", 0)
+        b_total = b.get("total", 0)
+        a_rate = a.get("successes", 0) / a_total if a_total else 0.0
+        b_rate = b.get("successes", 0) / b_total if b_total else 0.0
+        a_lat = a.get("latency_sum", 0.0) / a_total if a_total else float("inf")
+        b_lat = b.get("latency_sum", 0.0) / b_total if b_total else float("inf")
+
+        rate_delta = round(a_rate - b_rate, 4)
+        if a_lat != float("inf") and b_lat != float("inf"):
+            lat_delta_pct = round(
+                ((b_lat - a_lat) / max(a_lat, b_lat)) * 100, 2
+            )
+        else:
+            lat_delta_pct = None
+
+        winning_metric = None
+        if rate_delta != 0:
+            winning_metric = "success_rate"
+        elif lat_delta_pct is not None and lat_delta_pct != 0:
+            winning_metric = "latency"
+
+        return {
+            "success_rate_delta": rate_delta,
+            "latency_delta_pct": lat_delta_pct,
+            "winning_metric": winning_metric,
+            "description": (
+                f"A leads B by {abs(rate_delta):.1%} success rate"
+                if rate_delta > 0
+                else f"B leads A by {abs(rate_delta):.1%} success rate"
+                if rate_delta < 0
+                else (
+                    f"A faster by {abs(lat_delta_pct or 0):.1f}% latency"
+                    if lat_delta_pct is not None and lat_delta_pct > 0
+                    else f"B faster by {abs(lat_delta_pct or 0):.1f}% latency"
+                    if lat_delta_pct is not None and lat_delta_pct < 0
+                    else "equal"
+                )
+            ),
+        }
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

@@ -115,7 +115,52 @@ def _render_skill_body(raw: str, variables: dict[str, object] | None = None) -> 
         return raw
 
 
-def _build_system_prompt(job: JobSpec, behavior: AgentBehavior | None = None) -> str:
+def _inject_retrieval_context(
+    system_prompt: str,
+    job: JobSpec,
+    searcher: Any | None,
+    workspace_path: str | None,
+    *,
+    top_k: int = 5,
+) -> str:
+    if searcher is None or workspace_path is None:
+        return system_prompt
+
+    query = job.prompt_text or job.todo_id or ""
+    if not query or not query.strip():
+        return system_prompt
+
+    try:
+        results = searcher.search(query, top_k=top_k)
+    except Exception:
+        logger.debug("semantic search failed", exc_info=True)
+        return system_prompt
+
+    if not results:
+        return system_prompt
+
+    lines: list[str] = []
+    lines.append("\nRelevant Codebase Context:")
+    for i, result in enumerate(results, 1):
+        filepath = result.get("filepath", "unknown")
+        content = result.get("content", "")
+        score = result.get("score", 0.0)
+        lines.append(f"\n[{i}] {filepath} (score: {score:.2f}):")
+        preview = content[:1500]
+        if len(content) > 1500:
+            preview = preview + "\n... (truncated)"
+        lines.append(preview)
+
+    context_block = "\n".join(lines)
+    return system_prompt + context_block
+
+
+def _build_system_prompt(
+    job: JobSpec,
+    behavior: AgentBehavior | None = None,
+    searcher: Any | None = None,
+    workspace_path: str | None = None,
+) -> str:
     lines: list[str] = []
     lines.append(
         "You are a coding agent. Generate code changes for the following task."
@@ -132,7 +177,9 @@ def _build_system_prompt(job: JobSpec, behavior: AgentBehavior | None = None) ->
     if behavior is not None:
         renderer = BehaviorRenderer()
         behavior_block = renderer.render(behavior)
-        return behavior_block + "\n\n" + base
+        base = behavior_block + "\n\n" + base
+
+    base = _inject_retrieval_context(base, job, searcher, workspace_path)
     return base
 
 
@@ -235,6 +282,7 @@ class ExecutionEngine:
         metrics_collector: Any = None,
         budget_guard: Any = None,
         behavior: AgentBehavior | None = None,
+        searcher: Any = None,
     ) -> None:
         self._model_gateway = model_gateway
         self.workspace_path = workspace_path
@@ -242,6 +290,7 @@ class ExecutionEngine:
         self._metrics_collector = metrics_collector
         self._budget_guard = budget_guard
         self._behavior = behavior
+        self._searcher = searcher
         self._background_tasks: set[asyncio.Task[Any]] = set()
         os.makedirs(workspace_path, exist_ok=True)
 

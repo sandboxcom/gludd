@@ -101,8 +101,14 @@ WEB_RETRIEVE_TOOL = MCPTool(
 class BuiltinToolHandler:
     """Coroutine dispatcher backing the ``gludd-builtin`` synthetic server."""
 
-    def __init__(self, default_workspace: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        default_workspace: str | Path | None = None,
+        *,
+        web_retriever: WebRetriever | None = None,
+    ) -> None:
         self._default_workspace = default_workspace
+        self._web_retriever = web_retriever
 
     async def __call__(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if tool_name == RUN_PROJECT_CHECK_TOOL.name:
@@ -206,7 +212,9 @@ class BuiltinToolHandler:
         except (TypeError, ValueError):
             timeout = 30
 
-        retriever = WebRetriever(timeout_seconds=timeout)
+        retriever = self._web_retriever or WebRetriever(timeout_seconds=timeout)
+        if self._web_retriever is None and timeout != self._web_retriever._timeout if hasattr(self._web_retriever, '_timeout') else False:
+            retriever = WebRetriever(timeout_seconds=timeout)
         try:
             result = retriever.fetch_web_page(url)
         except ValueError as exc:

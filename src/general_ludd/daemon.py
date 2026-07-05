@@ -73,6 +73,7 @@ from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.quality.preflight import run_preflight
 from general_ludd.reload.worker_broadcast import WorkerBroadcaster
 from general_ludd.sandbox_exec.executor import SandboxExecutor
+from general_ludd.scoring.pareto import ParetoRouter
 from general_ludd.scoring.router import AdaptiveRouter
 from general_ludd.scoring.task_embeddings import TaskEmbeddingStore
 from general_ludd.secrets.config import OpenBaoConfig

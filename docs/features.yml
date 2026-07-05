@@ -174,7 +174,7 @@ sections:
 
       - id: dynamic-dispatcher
         title: "DynamicDispatcher for autonomous tool-call dispatch (#26)"
-        pct: 65
+        pct: 70
         evidence_refs:
           - "test:tests/unit/test_generation_tool_dispatch.py"
           - "file:src/general_ludd/dispatch/dynamic_dispatcher.py::structured_tool_calls_to_calls"
@@ -387,7 +387,7 @@ sections:
 
       - id: issue-sources
         title: "Issue sources (~17 connectors: GitHub, Linear, CSV, Markdown, etc.)"
-        pct: 20
+        pct: 40
         evidence_refs:
           - "file:src/general_ludd/issue_sources/base.py::IssueSource"
         notes: "base + adapters with tests; NOT wired; package incomplete; `[audit]`"
@@ -829,7 +829,7 @@ sections:
 
       - id: floor-controller
         title: "Gate-safe + predictive floor controller (floor_controller-consolidated branch)"
-        pct: 75
+        pct: 90
         evidence_refs:
           - "test:tests/unit/test_floor_controller.py"
           - "file:scripts/floor_controller.py::decide"
@@ -952,7 +952,7 @@ sections:
 
       - id: g2-offline-eval
         title: "Offline eval harness (G2)"
-        pct: 15
+        pct: 35
         evidence_refs:
           - "file:src/general_ludd/eval/__init__.py"
           - "file:src/general_ludd/eval/harness.py"
@@ -962,7 +962,7 @@ sections:
 
       - id: g3-semantic-retrieval
         title: "Semantic codebase retrieval (G3)"
-        pct: 15
+        pct: 35
         evidence_refs:
           - "file:src/general_ludd/retrieval/__init__.py"
           - "file:src/general_ludd/retrieval/indexer.py"
@@ -972,7 +972,7 @@ sections:
 
       - id: g4-sandboxed-execution
         title: "Sandboxed code execution (G4)"
-        pct: 50
+        pct: 70
         evidence_refs:
           - "file:src/general_ludd/security/sandboxes/__init__.py"
           - "file:src/general_ludd/security/sandboxes/linux_landlock.py::LandlockBackend"
@@ -1007,7 +1007,7 @@ sections:
 
       - id: g6-prompt-versioning
         title: "Prompt/skill versioning A/B (G6)"
-        pct: 75
+        pct: 85
         evidence_refs:
           - "file:src/general_ludd/prompts/registry.py::PromptRegistry"
           - "test:tests/unit/test_prompt_versioning_ab.py"
@@ -1024,7 +1024,7 @@ sections:
 
       - id: g8-cost-quality-pareto
         title: "Cost/quality Pareto router (G8)"
-        pct: 15
+        pct: 35
         evidence_refs:
           - "file:src/general_ludd/scoring/pareto.py::ParetoRouter"
           - "test:tests/unit/test_pareto_router.py"
@@ -1040,7 +1040,7 @@ sections:
 
       - id: g12-live-web-retrieval
         title: "Live web retrieval MCP tool (G12)"
-        pct: 15
+        pct: 35
         evidence_refs:
           - "file:src/general_ludd/retrieval/web.py::WebRetriever"
           - "test:tests/unit/test_web_retriever.py"
@@ -1064,7 +1064,7 @@ sections:
 
       - id: lc-langchain-integration
         title: "LangChain/LangGraph integration (10 modules, 165 tests, replaces 9 custom impls)"
-        pct: 45
+        pct: 55
         evidence_refs:
           - "file:src/general_ludd/langchain/__init__.py"
           - "test:tests/unit/test_langchain_integration.py"
