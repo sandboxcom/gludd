@@ -1,14 +1,14 @@
 {
   "tpl": {
     "A": {
-      "latency_sum": 3650.0,
-      "successes": 32,
-      "total": 32
+      "latency_sum": 4150.0,
+      "successes": 37,
+      "total": 37
     },
     "B": {
-      "latency_sum": 3500.0,
-      "successes": 17,
-      "total": 32
+      "latency_sum": 4000.0,
+      "successes": 22,
+      "total": 37
     }
   },
   "tpl_a": {
