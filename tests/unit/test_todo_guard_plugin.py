@@ -158,3 +158,55 @@ class TestCommitBlock:
         assert any(kw in lower for kw in ["resume", "continue", "fix"]), (
             "Deny message must guide the agent to resume/continue/fix work."
         )
+
+
+class TestProgressiveEscalation:
+    """Progressive escalation: 1st block = warning, 2nd = stronger, 3rd+ = emergency."""
+
+    def test_escalation_level_1_message(self):
+        src = PLUGIN.read_text()
+        assert "Fix pending work. Dispatch subagents." in src, (
+            "Level 1 (first block): must show the base warning message."
+        )
+
+    def test_escalation_level_2_message(self):
+        src = PLUGIN.read_text()
+        assert "SECOND WARNING" in src, (
+            "Level 2 (second consecutive block): must escalate with a second-warning message."
+        )
+        assert "forced dispatch" in src.lower(), (
+            "Level 2 warning must reference forced dispatch as the next step."
+        )
+
+    def test_escalation_level_3_emergency_override(self):
+        src = PLUGIN.read_text()
+        assert "EMERGENCY OVERRIDE" in src, (
+            "Level 3+ (third+ consecutive block): must show EMERGENCY OVERRIDE."
+        )
+        assert "DISPATCH SUBAGENTS NOW" in src, (
+            "Level 3+ must demand immediate subagent dispatch."
+        )
+
+    def test_force_dispatch_file_written_at_level_3(self):
+        src = PLUGIN.read_text()
+        assert "writeForceDispatch" in src, (
+            "Level 3+ must call writeForceDispatch() to notify the watchdog."
+        )
+        assert "gludd-force-dispatch.json" in src, (
+            "writeForceDispatch must write to /tmp/gludd-force-dispatch.json."
+        )
+
+    def test_blanked_response_tracker_exists(self):
+        src = PLUGIN.read_text()
+        assert "recordBlankedResponse" in src, (
+            "Must call recordBlankedResponse() to track how many times the agent has been blanked."
+        )
+        assert "BlankedResponseTracker" in src or "totalBlanked" in src, (
+            "Blanked response tracker must track totalBlanked count."
+        )
+
+    def test_consecutive_blocks_checked(self):
+        src = PLUGIN.read_text()
+        assert "consecutiveBlocks" in src, (
+            "Escalation must be based on consecutiveBlocks from the block counter."
+        )

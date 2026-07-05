@@ -146,6 +146,10 @@ STOP_IDLE_SECS = 60  # streak file mtime older than this + pending work = text-o
 STOP_COUNT_FILE = "/tmp/gludd-watchdog-stop-count.json"
 STOP_ESCALATE_THRESHOLD = 3
 
+FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
+FORCE_DISPATCH_MAX_AGE = 120  # seconds — ignore stale force-dispatch flags
+FORCE_DISPATCH_IDLE_SECS = 5  # lower idle threshold when force-dispatch is active
+
 PURE_IDLE_SECS = 90
 LAST_FLAG_FILE = "/tmp/gludd-watchdog-last-flag.json"
 FLAG_COOLDOWN_SECS = 30
@@ -1899,6 +1903,102 @@ def _check_plugin_liveness_periodic() -> None:
     _last_liveness_check = now
 
 
+def _is_force_dispatch_active() -> bool:
+    p = Path(FORCE_DISPATCH_FILE)
+    if not p.exists():
+        return False
+    try:
+        age = time.time() - p.stat().st_mtime
+        return age <= FORCE_DISPATCH_MAX_AGE
+    except Exception:
+        return False
+
+
+def _check_force_dispatch() -> bool:
+    """Read /tmp/gludd-force-dispatch.json from enforce-stop.ts escalation level 3+.
+
+    Builds specific task dispatch commands for each unchecked TASKS.md item,
+    ratchet entry, and red gate.  Writes to CONTINUE_DIRECTIVE with
+    action=FORCE_DISPATCH.
+
+    Returns True if force-dispatch is active (lower idle threshold).
+    """
+    p = Path(FORCE_DISPATCH_FILE)
+    if not p.exists():
+        return False
+
+    try:
+        mtime = p.stat().st_mtime
+        age = time.time() - mtime
+        if age > FORCE_DISPATCH_MAX_AGE:
+            p.unlink(missing_ok=True)
+            return False
+
+        data = json.loads(p.read_text())
+        level = data.get("level", 3)
+
+        tasks_unchecked = _tasks_md_has_unchecked()
+        ratchet_count = _ratchet_has_entries()
+        gate_red = _gate_status_is_red()
+
+        dispatch_commands: list[dict] = []
+        task_index = 1
+
+        if tasks_unchecked and _TASKS_MD.exists():
+            content = _TASKS_MD.read_text(encoding="utf-8")
+            for line in content.splitlines():
+                if _UNCHECKED_PATTERN.search(line):
+                    item_text = line.strip()
+                    dispatch_commands.append({
+                        "index": task_index,
+                        "task_item": item_text,
+                        "tool": "task",
+                        "command": f"dispatch subagent: {item_text}",
+                    })
+                    task_index += 1
+
+        if ratchet_count > 0:
+            dispatch_commands.append({
+                "index": task_index,
+                "task_item": f"ratchet: {ratchet_count} entries",
+                "tool": "task",
+                "command": f"dispatch subagents to fix {ratchet_count} ratchet entries",
+            })
+
+        if gate_red:
+            dispatch_commands.append({
+                "index": task_index + 1,
+                "task_item": "gate: red — fix failures",
+                "tool": "task",
+                "command": "dispatch subagent to investigate and fix red gate",
+            })
+
+        if dispatch_commands:
+            directive = {
+                "action": "FORCE_DISPATCH",
+                "level": level,
+                "dispatch_count": len(dispatch_commands),
+                "dispatch_commands": dispatch_commands,
+                "message": (
+                    f"FORCE DISPATCH (level {level}): "
+                    f"Dispatch {len(dispatch_commands)} subagents NOW. "
+                    f"Do NOT send text-only responses."
+                ),
+                "ts": _now(),
+            }
+            Path(CONTINUE_DIRECTIVE).write_text(json.dumps(directive, indent=2))
+            _log(f"FORCE DISPATCH: level={level}, {len(dispatch_commands)} commands written")
+        else:
+            p.unlink(missing_ok=True)
+            _log("FORCE DISPATCH: flag cleared — no pending work found")
+
+        return bool(dispatch_commands)
+
+    except Exception as e:
+        _log(f"FORCE DISPATCH: error processing flag: {e}")
+        return False
+
+
 def check_and_reset() -> dict:
     result = {
         "ts": _now(),
@@ -1926,14 +2026,16 @@ def check_and_reset() -> dict:
     if mtime_age is not None and mtime_age < PURE_IDLE_SECS:
         _write_watchdog_activity()
 
-    if has_any_work and (streak == 0 or streak is None) and mtime_age is not None and mtime_age > STOP_IDLE_SECS:
+    idle_threshold = FORCE_DISPATCH_IDLE_SECS if _is_force_dispatch_active() else STOP_IDLE_SECS
+
+    if has_any_work and (streak == 0 or streak is None) and mtime_age is not None and mtime_age > idle_threshold:
         reset_needed = True
         work_sources = []
         if has_pending_work:
             work_sources.append("local")
         if ci_pending:
             work_sources.append(f"CI (run {ci_run_id})")
-        reason = f"STOP DETECTED: agent idle with pending work ({', '.join(work_sources)}) — {mtime_age:.0f}s since last tool"
+        reason = f"STOP DETECTED: agent idle with pending work ({', '.join(work_sources)}) — {mtime_age:.0f}s since last tool (threshold={idle_threshold}s)"
         result["stop_detected"] = True
         _log(reason)
 
@@ -2235,6 +2337,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         try:
             check_and_reset()
+            _check_force_dispatch()
             check_running_tasks()
             check_push_status()
             _check_gate_background()

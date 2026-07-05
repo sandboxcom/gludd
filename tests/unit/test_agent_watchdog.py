@@ -41,6 +41,10 @@ STOP_STATE = aw.STOP_STATE
 FALSE_DONE_BLOCKS = aw.FALSE_DONE_BLOCKS
 CONTINUE_DIRECTIVE = aw.CONTINUE_DIRECTIVE
 check_and_reset = aw.check_and_reset
+_check_force_dispatch = aw._check_force_dispatch
+_is_force_dispatch_active = aw._is_force_dispatch_active
+FORCE_DISPATCH_FILE = aw.FORCE_DISPATCH_FILE
+FORCE_DISPATCH_MAX_AGE = aw.FORCE_DISPATCH_MAX_AGE
 # ── script exists ─────────────────────────────────────────────────────────────
 
 
@@ -1030,3 +1034,185 @@ def test_check_and_reset_ci_only_pending_no_stop_flag(tmp_path, monkeypatch):
     if orchestrator.exists():
         state = json.loads(orchestrator.read_text())
         assert state["health_score"] >= 70  # CI penalty but otherwise healthy
+
+
+# ── Force-dispatch tests ──────────────────────────────────────────────────────
+
+
+def test_force_dispatch_inactive_no_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "FORCE_DISPATCH_FILE", str(tmp_path / "nonexistent-force-dispatch.json"))
+    assert _is_force_dispatch_active() is False
+
+
+def test_force_dispatch_active_fresh_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    flag = tmp_path / "force-dispatch.json"
+    flag.write_text(json.dumps({"level": 3, "message": "escalated"}))
+    os.utime(flag, (time.time(), time.time()))
+    monkeypatch.setattr(aw, "FORCE_DISPATCH_FILE", str(flag))
+    assert _is_force_dispatch_active() is True
+
+
+def test_force_dispatch_inactive_stale_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    flag = tmp_path / "force-dispatch.json"
+    flag.write_text(json.dumps({"level": 3}))
+    stale_mtime = time.time() - FORCE_DISPATCH_MAX_AGE - 10
+    os.utime(flag, (stale_mtime, stale_mtime))
+    monkeypatch.setattr(aw, "FORCE_DISPATCH_FILE", str(flag))
+    assert _is_force_dispatch_active() is False
+
+
+def test_check_force_dispatch_writes_directive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    force_flag = tmp_path / "force-dispatch.json"
+    force_flag.write_text(json.dumps({"level": 3, "message": "escalated"}))
+    os.utime(force_flag, (time.time(), time.time()))
+    monkeypatch.setattr(aw, "FORCE_DISPATCH_FILE", str(force_flag))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] fix bug in parser\n- [x] done feature\n- [ ] write tests\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("# empty\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+
+    gate_status = tmp_path / ".gate-status"
+    gate_status.write_text("lint PASS 0\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
+    continue_directive = tmp_path / "continue-directive.json"
+    monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(continue_directive))
+
+    reset_log = tmp_path / "reset.log"
+    monkeypatch.setattr(aw, "RESET_LOG", str(reset_log))
+
+    result = _check_force_dispatch()
+    assert result is True
+    assert continue_directive.exists()
+
+    directive = json.loads(continue_directive.read_text())
+    assert directive["action"] == "FORCE_DISPATCH"
+    assert directive["level"] == 3
+    assert directive["dispatch_count"] == 2
+    assert len(directive["dispatch_commands"]) == 2
+    assert any("fix bug in parser" in cmd["task_item"] for cmd in directive["dispatch_commands"])
+    assert any("write tests" in cmd["task_item"] for cmd in directive["dispatch_commands"])
+
+
+def test_check_force_dispatch_clears_flag_when_no_pending(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    force_flag = tmp_path / "force-dispatch.json"
+    force_flag.write_text(json.dumps({"level": 3}))
+    os.utime(force_flag, (time.time(), time.time()))
+    monkeypatch.setattr(aw, "FORCE_DISPATCH_FILE", str(force_flag))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [x] all done\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("# empty\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+
+    gate_status = tmp_path / ".gate-status"
+    gate_status.write_text("lint PASS 0\ntypecheck PASS 0\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
+    continue_directive = tmp_path / "continue-directive.json"
+    monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(continue_directive))
+
+    reset_log = tmp_path / "reset.log"
+    monkeypatch.setattr(aw, "RESET_LOG", str(reset_log))
+
+    result = _check_force_dispatch()
+    assert result is False
+    assert not force_flag.exists()
+
+
+def test_check_force_dispatch_includes_ratchet_and_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    force_flag = tmp_path / "force-dispatch.json"
+    force_flag.write_text(json.dumps({"level": 4}))
+    os.utime(force_flag, (time.time(), time.time()))
+    monkeypatch.setattr(aw, "FORCE_DISPATCH_FILE", str(force_flag))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [x] all done\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("key: value\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+
+    gate_status = tmp_path / ".gate-status"
+    gate_status.write_text("tests FAIL 3\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
+    continue_directive = tmp_path / "continue-directive.json"
+    monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(continue_directive))
+
+    reset_log = tmp_path / "reset.log"
+    monkeypatch.setattr(aw, "RESET_LOG", str(reset_log))
+
+    result = _check_force_dispatch()
+    assert result is True
+    directive = json.loads(continue_directive.read_text())
+    assert directive["action"] == "FORCE_DISPATCH"
+    assert directive["level"] == 4
+    cmds = {cmd["task_item"] for cmd in directive["dispatch_commands"]}
+    assert any("ratchet" in c for c in cmds)
+    assert any("gate" in c for c in cmds)
+
+
+def test_force_dispatch_lowers_idle_threshold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """When force-dispatch is active, idle threshold drops from 60s to 5s."""
+    _setup_full(monkeypatch, tmp_path)
+
+    force_flag = tmp_path / "force-dispatch.json"
+    force_flag.write_text(json.dumps({"level": 3}))
+    os.utime(force_flag, (time.time(), time.time()))
+    monkeypatch.setattr(aw, "FORCE_DISPATCH_FILE", str(force_flag))
+
+    streak_path = tmp_path / "streak.json"
+    streak_path.write_text('{"count":0,"last_tool":"write"}')
+    old_mtime = time.time() - 70  # older than 60s but within force-dispatch threshold
+    os.utime(streak_path, (old_mtime, old_mtime))
+    monkeypatch.setattr(aw, "STREAK_FILE", str(streak_path))
+
+    activity_path = tmp_path / "watchdog-activity.json"
+    old_mtime = time.time() - 70  # older than 60s but typical stop detection
+    activity_path.write_text(json.dumps({"last_activity_ts": old_mtime}))
+    monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(activity_path))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] pending task\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    result = aw.check_and_reset()
+    assert result["stop_detected"] is True
+
+
+def test_check_force_dispatch_stale_flag_ignored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    force_flag = tmp_path / "force-dispatch.json"
+    force_flag.write_text(json.dumps({"level": 3}))
+    stale_mtime = time.time() - FORCE_DISPATCH_MAX_AGE - 10
+    os.utime(force_flag, (stale_mtime, stale_mtime))
+    monkeypatch.setattr(aw, "FORCE_DISPATCH_FILE", str(force_flag))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] pending\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("# empty\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+
+    gate_status = tmp_path / ".gate-status"
+    gate_status.write_text("lint PASS 0\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
+    reset_log = tmp_path / "reset.log"
+    monkeypatch.setattr(aw, "RESET_LOG", str(reset_log))
+
+    result = _check_force_dispatch()
+    assert result is False
+    assert not force_flag.exists()  # stale flag removed

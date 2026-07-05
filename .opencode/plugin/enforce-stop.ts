@@ -8,6 +8,8 @@ const STOP_ENFORCE = process.env.GLUDD_STOP_ENFORCE !== "0"
 const STATE_FILE = process.env.GLUDD_STOP_STATE_FILE || "/tmp/gludd-stop-state.json"
 const BLOCK_REASON_FILE = "/tmp/gludd-block-reason.json"
 const BLOCK_COUNTER_FILE = "/tmp/gludd-block-counter.json"
+const BLANKED_RESPONSE_FILE = "/tmp/gludd-blanked-responses.json"
+const FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
 
 interface StopStateCache {
   ts: number
@@ -63,6 +65,44 @@ function readBlockCounter(): BlockCounter {
 
 function writeBlockCounter(c: BlockCounter): void {
   try { fs.writeFileSync(BLOCK_COUNTER_FILE, JSON.stringify(c), "utf8") } catch {}
+}
+
+interface BlankedResponseTracker {
+  totalBlanked: number
+  blankedThisSession: number
+  lastBlankedTs: number
+  escalationLevel: number
+}
+
+function readBlankedResponses(): BlankedResponseTracker {
+  try {
+    if (fs.existsSync(BLANKED_RESPONSE_FILE)) {
+      return JSON.parse(fs.readFileSync(BLANKED_RESPONSE_FILE, "utf8"))
+    }
+  } catch {}
+  return { totalBlanked: 0, blankedThisSession: 0, lastBlankedTs: 0, escalationLevel: 0 }
+}
+
+function recordBlankedResponse(escalationLevel: number): void {
+  const b = readBlankedResponses()
+  const now = Date.now()
+  const sameSession = b.lastBlankedTs && (now - b.lastBlankedTs) < 300_000
+  b.totalBlanked++
+  b.blankedThisSession = sameSession ? b.blankedThisSession + 1 : 1
+  b.lastBlankedTs = now
+  b.escalationLevel = escalationLevel
+  try { fs.writeFileSync(BLANKED_RESPONSE_FILE, JSON.stringify(b), "utf8") } catch {}
+}
+
+function writeForceDispatch(consecutiveBlocks: number): void {
+  try {
+    fs.writeFileSync(FORCE_DISPATCH_FILE, JSON.stringify({
+      active: true,
+      consecutiveBlocks,
+      ts: Date.now(),
+      message: "EMERGENCY OVERRIDE: Agent has been blocked for text-only responses. Watchdog should inject auto-generated dispatch directives.",
+    }), "utf8")
+  } catch {}
 }
 
 function recordBlock(reason: string): void {
@@ -208,14 +248,8 @@ function countTasksMdUnchecked(): number {
     const tasksPath = path.join(process.cwd(), "TASKS.md")
     if (!fs.existsSync(tasksPath)) return 0
     const content = fs.readFileSync(tasksPath, "utf8")
-    const lines = content.split("\n")
-    let count = 0
-    for (const line of lines) {
-      if (/^\s*[-*]\s+\[\s*\]/.test(line) && !/\[\s*x\s*\]/i.test(line)) {
-        count++
-      }
-    }
-    return count
+    const matches = content.match(/^[-*]\s+\[ \]/gm)
+    return matches ? matches.length : 0
   } catch { return 0 }
 }
 
@@ -448,68 +482,49 @@ export default (async ({ }) => {
     },
 
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
-      try {
-        if (typeof output !== "string") return output
+      const unchecked = countTasksMdUnchecked()
+      const ratchetCount = ratchetHasEntries()
+      const hasWork = unchecked > 0 || ratchetCount > 0
 
-        const unchecked = countTasksMdUnchecked()
-        const ratchetCount = ratchetHasEntries()
-        const hasPending = unchecked > 0 || ratchetCount > 0
-        const pendingStr = hasPending
-          ? `YES — ${unchecked} unchecked TASKS.md items, ${ratchetCount} ratchet entries`
-          : "NO"
-
-        const injection = [
-          `⛔ RESPONSE CONTRACT (violating this is a HARD error — enforced at the model level):`,
-          ``,
-          `1. Every response MUST include at least one tool call OR have zero pending work.`,
-          `2. Pending work status: ${pendingStr}.`,
-          `3. If pending work exists (current: ${hasPending ? "YES" : "NO"}), you may NEVER send a text-only response.`,
-          `4. A text-only response with pending work is a contract violation and will be rejected.`,
-          `5. FORBIDDEN text-only patterns: status reports, summaries, tables of completed work,`,
-          `   "all done" claims, Q&A recaps, "ready for review", markdown tables without tool calls.`,
-          `6. SELF-CHECK RULE: Before sending ANY text, verify this response includes a tool call.`,
-          `   If no tool call AND pending work exists (unchecked: ${unchecked}, ratchet: ${ratchetCount}),`,
-          `   REPLACE your entire response with a tool call.`,
-          `7. If you find yourself writing a completion summary with no tool calls: DELETE it.`,
-          `   Replace with a tool call that advances the work.`,
-          ``,
-        ].join("\n")
-
-        let finalOutput = injection + output
-
-        const directivePaths = [
-          "/tmp/gludd-continue-directive.json",
-          process.env.GLUDD_CONTINUE_DIRECTIVE || "",
-        ].filter(Boolean)
-
-        for (const directivePath of directivePaths) {
-          try {
-            if (fs.existsSync(directivePath)) {
-              const stat = fs.statSync(directivePath)
-              const ageMs = Date.now() - stat.mtimeMs
-              if (ageMs < 120_000) {
-                const directive = JSON.parse(fs.readFileSync(directivePath, "utf8"))
-                if (directive.action === "CONTINUE") {
-                  const pendingItems = (directive.pending_items || []).join("; ")
-                  const msg = directive.message || "Dispatch subagents NOW."
-                  const required = directive.required_tool || "task"
-                  finalOutput = [
-                    `URGENT CONTINUE DIRECTIVE (watchdog detected stop):`,
-                    `  pending: ${pendingItems || "(none listed)"}`,
-                    `  ${msg}`,
-                    `  Use ${required} tool to dispatch subagents immediately.`,
-                    `  Do NOT send text-only responses while these issues remain.`,
-                    ``,
-                    finalOutput,
-                  ].join("\n")
-                }
-              }
-            }
-          } catch {}
+      if (typeof output === "string") {
+        if (hasWork) {
+          const block = [
+            "",
+            "══════════════════════════════════════════════════════════════",
+            "⛔⛔⛔ MANDATORY PRE-GENERATION GATE ⛔⛔⛔",
+            "══════════════════════════════════════════════════════════════",
+            "",
+            `PENDING WORK EXISTS: ${unchecked} unchecked TASKS.md items, ${ratchetCount} ratchet entries.`,
+            "",
+            "YOU ARE PHYSICALLY FORBIDDEN FROM GENERATING A TEXT-ONLY RESPONSE.",
+            "",
+            "Before generating ANY text character, you MUST include a tool call.",
+            "Acceptable: dispatch a subagent (Task tool), read a file (Read tool),",
+            "edit code (Edit/Write tool), or run a make target (Bash tool).",
+            "",
+            "UNACCEPTABLE AND WILL BE BLANKED:",
+            "- Status reports / summaries / recaps",
+            "- Tables of completed work",
+            "- 'All done' / 'Everything is complete' / 'Ready for review'",
+            "- Any text without an accompanying tool call",
+            "- 'Here is what I'll do next' without actually DOING it",
+            "",
+            "Example of CORRECT response when subagent results arrive:",
+            "  [Task tool: dispatch 10 more subagents to continue work]",
+            "",
+            "Example of INCORRECT response (will be blanked):",
+            "  'All 10 subagents completed. Here's a summary of results...'",
+            "",
+            "YOU HAVE BEEN WARNED. GENERATE A TOOL CALL NOW.",
+            "══════════════════════════════════════════════════════════════",
+            "",
+            output
+          ].join("\n")
+          return block
         }
-
-        return finalOutput
-      } catch { return output }
+        return `[orchestration] No pending work. Normal operation.\n\n${output}`
+      }
+      return output
     },
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
@@ -607,15 +622,40 @@ export default (async ({ }) => {
         }
 
         if (hasLocalWork && responseLooksTerminal(turnState.accumulatedText)) {
+          const preCounter = readBlockCounter()
           recordBlock("hasLocalWork + looksTerminal")
-          output.text = [
+          const c = readBlockCounter()
+          const level = c.consecutiveBlocks
+
+          recordBlankedResponse(level)
+
+          const baseMessage = [
             "HARD STOP — STATE-BASED BLOCK: local work pending.",
             `TASKS.md unchecked: ${cache.tasksMdUnchecked ? "yes" : "no"}`,
             `ratchet entries: ${cache.ratchetEntries}`,
             `gate red: ${gateRed ? "yes" : "no"}`,
             `repo pending: ${cache.repoPending ? "yes" : "no"}`,
-            "Fix pending work. Dispatch subagents.",
-          ].join("\n")
+            `total blanked responses: ${readBlankedResponses().totalBlanked}`,
+          ]
+
+          if (level === 1) {
+            baseMessage.push("Fix pending work. Dispatch subagents.")
+            output.text = baseMessage.join("\n")
+          } else if (level === 2) {
+            baseMessage.push(
+              "",
+              "THIS IS YOUR SECOND WARNING. The next text-only response will trigger forced dispatch.",
+            )
+            output.text = baseMessage.join("\n")
+          } else {
+            writeForceDispatch(level)
+            output.text = [
+              "EMERGENCY OVERRIDE: You have been blocked 3 times for text-only responses.",
+              "Every text-only response from now on will be blanked AND a dispatch wave will be auto-generated.",
+              "DISPATCH SUBAGENTS NOW.",
+            ].join("\n")
+          }
+
           turnState.blocked = true
           return
         }

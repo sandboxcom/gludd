@@ -25,6 +25,40 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 9. **No unseen events — an unobservable operation is a broken operation.** Any operation that runs longer than a few seconds (a gate, a test suite, a build, a poll loop, a backgrounded task, a daemon background job) MUST surface continuous progress: stream its output (`tee`), emit a per-phase marker, or print a periodic heartbeat. Never redirect a long-running operation solely to `/dev/null` or a buffered file with no live signal. If an event happens and no one can see it, it did not happen. Enforced by `tests/unit/test_observability_guardrails.py`; mirrored for agent behavior in [[gludd-observability-invariant]] memory.
 10. **Bash unavailable ⇒ adapt in ≤2 turns.** If `make` commands fail or bash is missing from your tool list, execute the 3-step diagnosis (check tool list, read SESSION.md for known issue, read opencode.json for permissions) IN ONE PARALLEL MESSAGE. Then adapt: use read/edit/write/grep/glob tools directly. Never spend 10+ turns diagnosing a tool-unavailable error — it is either a provider/model limitation (unfixable mid-session) or a permission-ordering bug (one-line fix). SESSION.md line ~9 documents known bash-unavailable sessions. BUGS.md tracks bash-diagnosis-relapse incidents.
     - **When you detect you're grinding inline** (main-thread streak accumulating, floor plugin blocking your edits, enforcement errors on every edit) → run `make disengage-enforcement` before any other action. This writes the emergency disengage signal that all enforcement hooks respect. Then fix the offending plugin code, run `make write-plugin-manifest`, and restart opencode.
+## ⛔ PRE-GENERATION CONTRACT (READ BEFORE GENERATING ANY TEXT)
+
+**This section is mechanically injected by the enforce-stop.ts plugin at generation time. It is ALSO present here as a permanent part of the system prompt.**
+
+Before generating ANY character of text, you MUST answer these questions:
+
+1. **Is there pending work?** Check TASKS.md for unchecked items. Check config/ratchet.yml for entries. If either has content, pending work EXISTS.
+
+2. **Does this response include a tool call?** You MUST include a tool call (Read, Write, Edit, Bash, Grep, Glob, Task, Skill) in EVERY response when work is pending.
+
+3. **Am I about to send a text-only summary?** If yes AND work is pending, DELETE the text and replace it with a tool call. Text-only summaries with pending work are silently erased before reaching the user.
+
+### Self-Check Protocol
+
+When subagent results arrive, the ONLY valid next action is:
+- Dispatch replacement subagents (Task tool) to maintain the 10-agent floor
+- Read/write files to codify results
+- Run tests/lint/typecheck on modified code
+
+You may NEVER:
+- Present a summary table of completed work
+- Say "All done" / "Ready for review" / "Everything is complete"
+- Ask "Shall I continue?" or "What should I do next?"
+- List remaining work without immediately starting it
+- Send a text response that acknowledges pending work but doesn't address it
+
+### Enforcement
+
+This contract is enforced by three mechanical layers:
+1. **System prompt** (this section) — you are reading it now
+2. **enforce-stop.ts plugin** — blanks text-only responses and injects "HARD STOP" directives
+3. **agent_watchdog.py** — detects idle sessions and injects CONTINUE directives
+
+Violating this contract wastes turns, confuses the user, and triggers progressive enforcement escalation. The plugin WILL blank your response. The watchdog WILL inject an override. Save yourself the wasted tokens and DISPATCH A TOOL CALL NOW.
 
 ## CRITICAL: Session Start Protocol (FIRST action of every session)
 
