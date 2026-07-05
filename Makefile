@@ -2025,6 +2025,79 @@ check-plugin-versions-quiet:
 write-plugin-manifest:
 	@$(UV) run python3 scripts/check_plugin_hashes.py --write-manifest
 
+# --- Plugin liveness check — verifies plugin hooks are actually firing ---
+# Exits 0 if all hooks healthy, exits 1 if any appear dead.
+# Checked by agent_watchdog.py every 60s.
+PLUGIN_ALIVE := /tmp/gludd-plugin-alive.json
+FLOOR_TC_COUNT := /tmp/gludd-floor-text-complete-count.json
+STOP_TC_COUNT := /tmp/gludd-stop-text-complete-count.json
+STOP_TOOL_COUNT := /tmp/gludd-stop-tool-counts.json
+
+check-plugin-liveness:
+	@NOW=$$(date +%s); \
+	OK=true; \
+	echo "=== Plugin Liveness Check ==="; \
+	if [ ! -f "$(PLUGIN_ALIVE)" ]; then \
+		echo "DEAD: $(PLUGIN_ALIVE) missing — no plugins loaded"; \
+		OK=false; \
+	else \
+		echo "plugin-alive: OK ($(PLUGIN_ALIVE) exists)"; \
+		for plugin in enforce-floor enforce-stop; do \
+			LOADED=$$(python3 -c "import json,sys; d=json.load(open('$(PLUGIN_ALIVE)')); print(d.get('$$plugin',{}).get('loaded','MISSING'))" 2>/dev/null || echo "ERROR"); \
+			if [ "$$LOADED" = "MISSING" ]; then \
+				echo "DEAD: $$plugin NOT in plugin-alive.json"; \
+				OK=false; \
+			else \
+				echo "  $$plugin: loaded at $$LOADED"; \
+			fi; \
+		done; \
+	fi; \
+	for fname in "enforce-floor text.complete" "enforce-stop text.complete"; do \
+		KEY=$$(echo $$fname | awk '{print $$1}'); \
+		HANDLER=$$(echo $$fname | awk '{print $$2}'); \
+		MAPPER=""; \
+		case "$$KEY:$$HANDLER" in \
+			enforce-floor:text.complete) MAPPER="$(FLOOR_TC_COUNT)" ;; \
+			enforce-stop:text.complete) MAPPER="$(STOP_TC_COUNT)" ;; \
+		esac; \
+		if [ ! -f "$$MAPPER" ]; then \
+			echo "DEAD: $$KEY $$HANDLER never fired (counter missing: $$MAPPER)"; \
+			OK=false; \
+		else \
+			TS=$$(python3 -c "import json; d=json.load(open('$$MAPPER')); print(d.get('ts',0))" 2>/dev/null || echo 0); \
+			AGE=$$(($$NOW - $$TS / 1000)); \
+			if [ $$AGE -gt 300 ]; then \
+				echo "DEAD: $$KEY $$HANDLER last fired $$AGE seconds ago (>5min)"; \
+				OK=false; \
+			else \
+				COUNT=$$(python3 -c "import json; d=json.load(open('$$MAPPER')); print(d.get('count',0))" 2>/dev/null || echo 0); \
+				echo "  $$KEY $$HANDLER: count=$$COUNT age=$${AGE}s OK"; \
+			fi; \
+		fi; \
+	done; \
+	if [ -f "$(STOP_TOOL_COUNT)" ]; then \
+		TOOL_TS=$$(python3 -c "import json; d=json.load(open('$(STOP_TOOL_COUNT)')); print(d.get('ts',0))" 2>/dev/null || echo 0); \
+		TOOL_AGE=$$(($$NOW - $$TOOL_TS / 1000)); \
+		if [ $$TOOL_AGE -gt 300 ]; then \
+			echo "DEAD: enforce-stop tool.execute.before last fired $$TOOL_AGE seconds ago (>5min)"; \
+			OK=false; \
+		else \
+			ALLOWED=$$(python3 -c "import json; d=json.load(open('$(STOP_TOOL_COUNT)')); print(d.get('allowed',0))" 2>/dev/null || echo 0); \
+			BLOCKED=$$(python3 -c "import json; d=json.load(open('$(STOP_TOOL_COUNT)')); print(d.get('blocked',0))" 2>/dev/null || echo 0); \
+			echo "  enforce-stop tool.execute.before: allowed=$$ALLOWED blocked=$$BLOCKED age=$${TOOL_AGE}s OK"; \
+		fi; \
+	else \
+		echo "DEAD: enforce-stop tool.execute.before never fired (counter missing: $(STOP_TOOL_COUNT))"; \
+		OK=false; \
+	fi; \
+	if [ "$$OK" = "true" ]; then \
+		echo "LIVENESS: ALL HEALTHY"; \
+		exit 0; \
+	else \
+		echo "LIVENESS: HOOKS DEAD — disengage signal recommended"; \
+		exit 1; \
+	fi
+
 # --- Emergency enforcement disengage — stops all enforcement blocking immediately ---
 disengage-enforcement:
 	@echo "DISENGAGING enforcement — all plugin blocking suspended for 1 hour"

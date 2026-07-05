@@ -184,10 +184,7 @@ def detect_and_create_todos() -> list[dict[str, Any]]:
         })
 
     # ── 2. low dispatch count → not multitasking ─────────────────────────
-    if max_streak <= 0:
-        dispatch_count = _recent_dispatch_count(streak_data, _WINDOW_SECONDS)
-    else:
-        dispatch_count = 0  # already covered by high-streak finding
+    dispatch_count = _recent_dispatch_count(streak_data, _WINDOW_SECONDS) if max_streak <= 0 else 0
     if dispatch_count < 2 and not todos:  # only if not already flagged as grinding
         # Check if there's evidence of recent activity but no dispatches
         entries = streak_data.get("entries") or streak_data.get("history") or []

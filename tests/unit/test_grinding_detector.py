@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 import time
 from pathlib import Path
@@ -20,12 +19,6 @@ def _write_json(path: str, data: object) -> None:
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
-
-
-@pytest.fixture(autouse=True)
-def _clean_state() -> None:
-    """Ensure state files are patched so tests never touch real /tmp state."""
-    pass
 
 
 @pytest.fixture
@@ -51,6 +44,17 @@ def recent_ts() -> float:
     return time.time() - 10
 
 
+def _patch_state(*, streak: str = "/nonexistent", stop: str = "/nonexistent", deadline: str = "/nonexistent"):
+    """Combine three file-path patches into a single context manager."""
+    from unittest.mock import patch as _patch
+    from contextlib import ExitStack
+    stack = ExitStack()
+    stack.enter_context(_patch("general_ludd.self_update.grinding_detector._STREAK_FILE", streak))
+    stack.enter_context(_patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", stop))
+    stack.enter_context(_patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", deadline))
+    return stack
+
+
 # ── High streak → self_improve todo created ──────────────────────────────────
 
 
@@ -59,10 +63,8 @@ def test_high_streak_creates_grinding_todo(tmp_streak_file: Path, recent_ts: flo
         "streak": 15,
         "timestamp": recent_ts,
     })
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", str(tmp_streak_file)):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", "/nonexistent"):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", "/nonexistent"):
-                todos = detect_and_create_todos()
+    with _patch_state(streak=str(tmp_streak_file)):
+        todos = detect_and_create_todos()
     grinding = [t for t in todos if t.get("gap_type") == "agent_grinding"]
     assert len(grinding) == 1
     assert "streak" in grinding[0]["description"].lower()
@@ -76,10 +78,8 @@ def test_high_streak_from_entries(tmp_streak_file: Path, recent_ts: float):
             {"streak": 3, "timestamp": recent_ts},
         ],
     })
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", str(tmp_streak_file)):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", "/nonexistent"):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", "/nonexistent"):
-                todos = detect_and_create_todos()
+    with _patch_state(streak=str(tmp_streak_file)):
+        todos = detect_and_create_todos()
     grinding = [t for t in todos if t.get("gap_type") == "agent_grinding"]
     assert len(grinding) == 1
     assert grinding[0]["evidence"]["max_streak"] == 12
@@ -93,10 +93,8 @@ def test_normal_streak_no_todo(tmp_streak_file: Path, recent_ts: float):
         "streak": 3,
         "timestamp": recent_ts,
     })
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", str(tmp_streak_file)):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", "/nonexistent"):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", "/nonexistent"):
-                todos = detect_and_create_todos()
+    with _patch_state(streak=str(tmp_streak_file)):
+        todos = detect_and_create_todos()
     grinding = [t for t in todos if t.get("gap_type") == "agent_grinding"]
     assert len(grinding) == 0
 
@@ -106,10 +104,8 @@ def test_old_streak_no_todo(tmp_streak_file: Path):
         "streak": 20,
         "timestamp": time.time() - 600,  # 10 min ago, outside 5 min window
     })
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", str(tmp_streak_file)):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", "/nonexistent"):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", "/nonexistent"):
-                todos = detect_and_create_todos()
+    with _patch_state(streak=str(tmp_streak_file)):
+        todos = detect_and_create_todos()
     grinding = [t for t in todos if t.get("gap_type") == "agent_grinding"]
     assert len(grinding) == 0
 
@@ -125,10 +121,8 @@ def test_frequent_blocks_creates_stop_todo(tmp_stop_file: Path, recent_ts: float
             {"blocked": True, "timestamp": recent_ts + 2},
         ],
     })
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", "/nonexistent"):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", str(tmp_stop_file)):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", "/nonexistent"):
-                todos = detect_and_create_todos()
+    with _patch_state(stop=str(tmp_stop_file)):
+        todos = detect_and_create_todos()
     stop_todos = [t for t in todos if t.get("gap_type") == "stop_false_positives"]
     assert len(stop_todos) == 1
     assert stop_todos[0]["evidence"]["block_count"] == 3
@@ -145,10 +139,8 @@ def test_no_blocks_no_todo(tmp_stop_file: Path, recent_ts: float):
             {"blocked": False, "timestamp": recent_ts + 1},
         ],
     })
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", "/nonexistent"):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", str(tmp_stop_file)):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", "/nonexistent"):
-                todos = detect_and_create_todos()
+    with _patch_state(stop=str(tmp_stop_file)):
+        todos = detect_and_create_todos()
     stop_todos = [t for t in todos if t.get("gap_type") == "stop_false_positives"]
     assert len(stop_todos) == 0
 
@@ -171,10 +163,8 @@ def test_combined_high_streak_and_blocks(
             {"blocked": True, "timestamp": recent_ts + 3},
         ],
     })
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", str(tmp_streak_file)):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", str(tmp_stop_file)):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", "/nonexistent"):
-                todos = detect_and_create_todos()
+    with _patch_state(streak=str(tmp_streak_file), stop=str(tmp_stop_file)):
+        todos = detect_and_create_todos()
     grinding = [t for t in todos if t.get("gap_type") == "agent_grinding"]
     stop_todos = [t for t in todos if t.get("gap_type") == "stop_false_positives"]
     assert len(grinding) == 1
@@ -194,10 +184,8 @@ def test_deadline_violations_creates_todo(tmp_deadline_file: Path, recent_ts: fl
             {"deadline_exceeded": True, "timestamp": recent_ts + 3},
         ],
     })
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", "/nonexistent"):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", "/nonexistent"):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", str(tmp_deadline_file)):
-                todos = detect_and_create_todos()
+    with _patch_state(deadline=str(tmp_deadline_file)):
+        todos = detect_and_create_todos()
     deadline_todos = [t for t in todos if t.get("gap_type") == "task_deadlines"]
     assert len(deadline_todos) == 1
     assert deadline_todos[0]["evidence"]["deadline_count"] == 4
@@ -207,10 +195,8 @@ def test_deadline_violations_creates_todo(tmp_deadline_file: Path, recent_ts: fl
 
 
 def test_missing_state_files_no_todos():
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", "/nonexistent"):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", "/nonexistent"):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", "/nonexistent"):
-                todos = detect_and_create_todos()
+    with _patch_state():
+        todos = detect_and_create_todos()
     assert todos == []
 
 
@@ -218,21 +204,15 @@ def test_missing_state_files_no_todos():
 
 
 def test_todo_shape_compatible_with_harness(tmp_streak_file: Path, recent_ts: float):
-    """Todos from grinding_detector must be directly passable to
-    SelfImprovementHarness.generate_fix_todos and EventLoop._persist_self_improve_todos.
-    """
     _write_json(str(tmp_streak_file), {
         "streak": 15,
         "timestamp": recent_ts,
     })
-    with patch("general_ludd.self_update.grinding_detector._STREAK_FILE", str(tmp_streak_file)):
-        with patch("general_ludd.self_update.grinding_detector._STOP_STATE_FILE", "/nonexistent"):
-            with patch("general_ludd.self_update.grinding_detector._TASK_DEADLINE_FILE", "/nonexistent"):
-                todos = detect_and_create_todos()
+    with _patch_state(streak=str(tmp_streak_file)):
+        todos = detect_and_create_todos()
 
     from general_ludd.self_improve.harness import SelfImprovementHarness
     harness = SelfImprovementHarness(repo_root="/tmp/test")
-    # generate_fix_todos should accept these dicts without error
     fixed = harness.generate_fix_todos(todos)
     assert len(fixed) >= 1
     for todo in fixed:

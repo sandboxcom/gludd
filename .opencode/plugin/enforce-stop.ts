@@ -416,7 +416,7 @@ export default (async ({ }) => {
           }
         }
       } catch (e: any) {
-        if (e instanceof Error && e.message.includes("BLOCKED")) throw e
+        if (e instanceof Error && (e.message.includes("BLOCKED") || e.message.includes("BLOCKING"))) throw e
       }
       // Tool passed through — increment allowed counter
       try {
