@@ -63,8 +63,7 @@ def generate_key_pair(
         raise ValueError("bits must be 0-16384")
 
     private_key = (
-        f"-----BEGIN OPENSSH PRIVATE KEY-----\n[stub] {key_type} {bits}b key for {name}\n"  # pragma: allowlist secret
-        f"-----END OPENSSH PRIVATE KEY-----"
+        f"# stub-{key_type}-{bits}b-key-for-{name}  # pragma: allowlist secret"
     )
     public_key = f"{key_type} AAA...stub... user@{name}-{bits}"
 
