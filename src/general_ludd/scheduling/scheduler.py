@@ -66,7 +66,11 @@ class ComputeSchedulingHint:
             defaults["min_vram_gb"] = 80.0
         defaults.update(overrides)
         return ComputeSchedulingHint(
-            preferred_gpu_type=str(defaults.get("preferred_gpu_type")) if isinstance(defaults.get("preferred_gpu_type"), str) else None,
+            preferred_gpu_type=(
+                str(defaults.get("preferred_gpu_type"))
+                if isinstance(defaults.get("preferred_gpu_type"), str)
+                else None
+            ),
             min_vram_gb=float(defaults.get("min_vram_gb", 0.0)),
             estimated_tokens=int(defaults.get("estimated_tokens", 0)),
             estimated_duration_seconds=float(defaults.get("estimated_duration_seconds", 0.0)),
