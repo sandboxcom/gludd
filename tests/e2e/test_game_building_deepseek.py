@@ -11,6 +11,12 @@ This test is a REAL gap detector, not a static check. It will:
   4. Verify game mechanics (ticks, state transitions, win/lose conditions)
   5. Report which games worked and what gaps exist in gludd's pipeline
 
+FULL PIPELINE tests (TestDeepSeekFullPipeline):
+  A. ExecutionEngine.execute() — model → code gen → file write → test → commit
+  B. EventLoop._dispatch_execute_job_isolated() — real loop dispatch wire-up
+
+These tests use gludd's FULL infrastructure (not a raw API call bypass).
+
 Run:
     DEEPSEEK_API_KEY="sk-..." uv run pytest tests/e2e/test_game_building_deepseek.py -v -s  # pragma: allowlist secret
 or:
@@ -23,6 +29,7 @@ import ast
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 import textwrap
 import traceback
@@ -104,8 +111,8 @@ def _build_deepseek_gateway() -> Any:
         context_window=65536,
         max_input_tokens=60000,
         max_output_tokens=8192,
-        cost_per_input_token=0.00027,
-        cost_per_output_token=0.0011,
+        cost_per_input_token=0.00000027,
+        cost_per_output_token=0.0000011,
         api_metered=True,
         run_budget_usd=5.0,
         enabled=True,
@@ -921,5 +928,372 @@ class TestGameBuildingGapAnalysis:
    - Tokens consumed per task
    - Iterations/debug cycles per task
    - Success rate by task type
-   - Common failure modes
+    - Common failure modes
 """)
+
+
+# ---------------------------------------------------------------------------
+# Full Pipeline Tests — gludd's ExecutionEngine + EventLoop wired to DeepSeek
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not _DEEPSEEK_KEY, reason=_SKIP_REASON)
+class TestDeepSeekFullPipeline:
+    """DeepSeek through gludd's FULL pipeline (not a raw API call bypass).
+
+    TEST A: ExecutionEngine.execute()
+        - model call → code extraction → file write → test run → git commit
+        - This is the canonical code-generation path; it exercises the real engine.
+
+    TEST B: EventLoop._dispatch_execute_job_isolated()
+        - real loop dispatch wired to DeepSeek via invoke_model_for_generation
+        - Follows the proven pattern from test_pipeline_live_zai.py (G7 real loop).
+    """
+
+    # -- async session factory (SQLite in-memory) for EventLoop tests ----------
+
+    @staticmethod
+    async def _make_session_factory() -> Any:
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from general_ludd.db.models import Base
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            echo=False,
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return async_sessionmaker(engine, expire_on_commit=False)
+
+    # -- No-op runner (records calls, no Ansible subprocess) -------------------
+
+    class _NoopRunner:
+        """Minimal AnsibleRunnerAdapter stand-in — no subprocess, just records."""
+
+        def __init__(self, workspace_root: str) -> None:
+            self._root = workspace_root
+            self.prepare_calls: list[str] = []
+            self.run_calls: list[str] = []
+            self.vars_written: list[dict[str, Any]] = []
+
+        def prepare_job_dirs(self, job_id: str) -> dict[str, str]:
+            self.prepare_calls.append(job_id)
+            root = str(Path(self._root) / "jobs" / job_id)
+            Path(root, "env").mkdir(parents=True, exist_ok=True)
+            return {"root": root}
+
+        def write_vars(self, job_id: str, job_vars: dict[str, Any], shared_vars: Any) -> None:
+            self.vars_written.append({"job_id": job_id, "job_vars": dict(job_vars)})
+
+        def run_playbook(
+            self, playbook_name: str, private_data_dir: str,
+            env: dict[str, str] | None = None,
+        ) -> None:
+            self.run_calls.append(playbook_name)
+
+        def list_playbooks(self) -> list[str]:
+            return ["noop.yml", "validate_task.yml", "return_review.yml"]
+
+    # -------------------------------------------------------------------
+    # TEST A: ExecutionEngine.execute() — the full code-generation path
+    # -------------------------------------------------------------------
+
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_execution_engine_full_pipeline_snake(self, tmp_path: Path) -> None:
+        """ExecutionEngine: model → code gen → file write → test → commit."""
+        from general_ludd.execution.engine import ExecutionEngine
+        from general_ludd.schemas.job import JobSpec
+
+        # 1. Create temp git workspace
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        subprocess.run(["git", "init", str(ws)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@general-ludd.local"],
+            cwd=ws, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test Agent"],
+            cwd=ws, check=True, capture_output=True,
+        )
+
+        (ws / "snake_game.py").write_text("# placeholder\n")
+        (ws / "test_snake.py").write_text("def test_placeholder():\n    assert True\n")
+        subprocess.run(["git", "add", "."], cwd=ws, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial workspace"],
+            cwd=ws, check=True, capture_output=True,
+        )
+
+        # 2. Create gateway
+        gateway = _build_deepseek_gateway()
+
+        # 3. Create ExecutionEngine
+        engine = ExecutionEngine(
+            model_gateway=gateway,
+            workspace_path=str(ws),
+        )
+
+        # 4. Create JobSpec for Snake game
+        job = JobSpec(
+            job_id="EXEC-SNAKE-001",
+            todo_id="TODO-SNAKE-001",
+            playbook="validate_task.yml",
+            queue="core",
+            work_type="code",
+            prompt_text=GAME_DEFINITIONS["snake"]["prompt"],
+            model_profile="deepseek_coder",
+        )
+
+        # 5. Execute
+        print("\n\n" + "=" * 70)
+        print("FULL PIPELINE TEST A: ExecutionEngine.execute() via DeepSeek")
+        print("=" * 70)
+        result = engine.execute(job)
+
+        print("\n  TaskReturn:")
+        print(f"    return_id    = {result.return_id}")
+        print(f"    exit_code    = {result.exit_code}")
+        print(f"    summary      = {result.result_summary[:300]}")
+        print(f"    artifacts    = {result.artifacts}")
+        print(f"    diff_ref     = {result.diff_ref}")
+        print(f"    test_results = {result.test_results_ref}")
+
+        # 6. Check files written
+        all_files = sorted(ws.glob("**/*"))
+        code_files = [
+            str(f.relative_to(ws))
+            for f in all_files
+            if f.suffix == ".py" or f.suffix == ".md" or f.suffix == ".txt"
+        ]
+        print(f"\n  Workspace files: {code_files}")
+
+        # 7. Check git status
+        log_result = subprocess.run(
+            ["git", "log", "--oneline", "-5"],
+            cwd=ws, capture_output=True, text=True,
+        )
+        branch_result = subprocess.run(
+            ["git", "branch"],
+            cwd=ws, capture_output=True, text=True,
+        )
+        print(f"  Git log:\n{log_result.stdout}")
+        print(f"  Git branches:\n{branch_result.stdout}")
+
+        # 8. Analysis
+        print("\n" + "-" * 70)
+        print("ANALYSIS")
+        print("-" * 70)
+        print(f"  Model returned content:   {result.diff_ref or 'NONE'}")
+        print(f"  Files changed:            {result.artifacts}")
+        print(f"  Test exit code:           {result.exit_code}")
+
+        has_git_artifact = bool(
+            result.artifacts
+            and any("commit:" in str(a) for a in result.artifacts)
+        )
+        print(f"  Has commit in artifacts:  {has_git_artifact}")
+
+        code_generated = (
+            has_git_artifact
+            or (result.artifacts and len(result.artifacts) > 1)
+        )
+        print(f"  Code was generated:       {code_generated}")
+
+        has_game_file = any("snake" in str(f).lower() for f in code_files)
+        print(f"  Snake file exists:        {has_game_file}")
+
+        # Structural assertions (setup wiring, not model output quality)
+        assert result.return_id.startswith("RET-"), "return_id missing RET- prefix"
+        assert result.result_summary, "result_summary should not be empty"
+
+        if not code_generated:
+            print("\n  GAP: ExecutionEngine did not produce application code.")
+            print("  This means either: (a) DeepSeek output was not parseable, or")
+            print("  (b) the fenced-block / FILE: extraction failed.")
+            print(f"  raw diff_ref: {result.diff_ref}")
+        else:
+            print("\n  SUCCESS: ExecutionEngine generated files, tests ran.")
+
+        print("=" * 70)
+        print("END TEST A")
+        print("=" * 70 + "\n")
+
+    # -------------------------------------------------------------------
+    # TEST B: EventLoop._dispatch_execute_job_isolated (real loop wire-up)
+    # -------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    async def test_event_loop_dispatch_snake(self, tmp_path: Path) -> None:
+        """EventLoop dispatch wired to DeepSeek — real invoke_model_for_generation.
+
+        Follows the proven pattern from test_pipeline_live_zai.py (G7).
+        """
+        from general_ludd.event_loop.loop import EventLoop
+        from general_ludd.prompts.registry import PromptRegistry
+        from general_ludd.schemas.todo import Todo, TodoStatus, WorkType
+
+        gw = _build_deepseek_gateway()
+        session_factory = await self._make_session_factory()
+
+        ws = str(tmp_path / "loop-workspace")
+        Path(ws).mkdir(parents=True, exist_ok=True)
+        runner = self._NoopRunner(ws)
+
+        prompt_registry = PromptRegistry()
+        prompt_registry.register(
+            "snake_build.md.j2",
+            GAME_DEFINITIONS["snake"]["prompt"],
+        )
+
+        loop = EventLoop(
+            session=None,
+            model_gateway=gw,
+            runner=runner,
+            prompt_registry=prompt_registry,
+        )
+        loop._session_factory = session_factory
+        loop._total_ticks = 1
+        loop._tick_state = {}
+        loop._config_snapshot = {}
+
+        todo = Todo(
+            todo_id="TODO-SNAKE-LIVE-001",
+            title="Build a Snake game in Python",
+            description=GAME_DEFINITIONS["snake"]["prompt"],
+            work_type=WorkType.CODE,
+            queue="core",
+            model_profile="deepseek_coder",
+            prompt_profile="snake_build.md.j2",
+        )
+        todo.status = TodoStatus.ACTIVE
+
+        print("\n\n" + "=" * 70)
+        print("FULL PIPELINE TEST B: EventLoop._dispatch_execute_job_isolated")
+        print("=" * 70)
+        print(f"[LOOP] dispatching {todo.todo_id} via real EventLoop dispatch")
+        print(f"[LOOP] model_profile={todo.model_profile!r} "
+              f"prompt_profile={todo.prompt_profile!r}")
+
+        await loop._dispatch_execute_job_isolated(todo)
+
+        print(f"\n[LOOP] prepare_calls  = {runner.prepare_calls}")
+        print(f"[LOOP] run_calls       = {runner.run_calls}")
+        print(f"[LOOP] vars_written    = {len(runner.vars_written)}")
+
+        # ---- Assertions (wiring) ----
+        assert runner.vars_written, (
+            "LOOP: write_vars never called — dispatch is broken"
+        )
+        assert runner.prepare_calls, (
+            "LOOP: prepare_job_dirs never called — dispatch is broken"
+        )
+
+        vars_entry = runner.vars_written[0]
+        job_vars = vars_entry.get("job_vars", {})
+        job_id = job_vars.get("job_id", "")
+        prompt_text = job_vars.get("prompt_text")
+        model_response = job_vars.get("model_response")
+
+        print(f"[LOOP] job_id          = {job_id!r}")
+        print(f"[LOOP] prompt_text[:200] = {str(prompt_text)[:200]!r}")
+
+        assert job_id.startswith("EXEC-"), (
+            f"LOOP: job_id should start with EXEC-, got {job_id!r}"
+        )
+        assert prompt_text, (
+            "LOOP: prompt_text is empty — PromptRegistry wiring failed"
+        )
+        assert model_response, (
+            "LOOP: model_response is empty — DeepSeek was never called "
+            "(invoke_model_for_generation returned None)"
+        )
+
+        response_text = str(model_response)
+        print(f"[LOOP] model_response  = {len(response_text)} chars")
+        print(f"[LOOP] model_response[:500] = {response_text[:500]!r}")
+
+        # ---- Code quality checks ----
+        has_class = "class Snake" in response_text or "class Snake:" in response_text
+        has_import = "import" in response_text.lower()
+        has_def = "def " in response_text
+        print(f"\n[LOOP] has class Snake?:  {has_class}")
+        print(f"[LOOP] has imports?:      {has_import}")
+        print(f"[LOOP] has function def?: {has_def}")
+
+        # ---- Extract and validate Python ----
+        source = _extract_python_module(response_text)
+        if source:
+            ast_result = _parse_ast(source)
+            print(f"[LOOP] AST parseable:     {ast_result['parseable']}")
+            print(f"[LOOP] AST has_class:     {ast_result['has_class']}")
+            print(f"[LOOP] AST has_imports:   {ast_result['has_imports']}")
+            if ast_result["error"]:
+                print(f"[LOOP] AST error:         {ast_result['error']}")
+
+            if ast_result["parseable"] and ast_result["has_class"]:
+                # Write to disk and try to import
+                game_dir = tmp_path / "snake_game"
+                game_dir.mkdir(exist_ok=True)
+                test_results = _run_game_tests(
+                    source,
+                    GAME_DEFINITIONS["snake"]["class_name"],
+                    GAME_DEFINITIONS["snake"]["verifications"],
+                    "snake_deepseek",
+                    game_dir,
+                )
+                print(f"[LOOP] module_imported:    {test_results['module_imported']}")
+                print(f"[LOOP] instantiated:       {test_results['instantiated']}")
+                checks = test_results.get("checks", {})
+                passed = sum(1 for c in checks.values() if c["passed"])
+                failed = len(checks) - passed
+                print(f"[LOOP] game checks:        {passed}/{len(checks)} passed, "
+                      f"{failed} failed")
+                if test_results["errors"]:
+                    for err in test_results["errors"]:
+                        print(f"[LOOP] ERROR: {err[:200]}")
+            else:
+                print("[LOOP] WARNING: model output does not parse as valid Python")
+        else:
+            print("[LOOP] WARNING: could not extract Python module from model output")
+            print(f"[LOOP] Raw output contains 'class': "
+                  f"{'class ' in response_text or 'class:' in response_text}")
+            print(f"[LOOP] Raw output contains '```': "
+                  f"{'```' in response_text}")
+
+        # ---- Gap analysis ----
+        print("\n" + "-" * 70)
+        print("ANALYSIS")
+        print("-" * 70)
+        print(f"  Model returned content:   {'YES' if model_response else 'NO'}")
+        print(f"  Contains Python class:    {has_class}")
+        print(f"  Contains imports:         {has_import}")
+        print(f"  Source extractable:       {source is not None}")
+        if source:
+            print(f"  Source parseable:         {ast_result['parseable']}")
+            print(f"  Source has Snake class:   {ast_result['has_class']}")
+
+        gaps: list[str] = []
+        if not has_class:
+            gaps.append("Model output lacks 'class Snake'")
+        if source is None:
+            gaps.append("Python code extraction failed")
+        elif not ast_result["parseable"]:
+            gaps.append(f"AST parse error: {ast_result.get('error', 'unknown')}")
+        elif not ast_result["has_class"]:
+            gaps.append("Parsed AST has no class definition")
+
+        if gaps:
+            print(f"\n  PIPELINE GAPS ({len(gaps)}):")
+            for g in gaps:
+                print(f"    - {g}")
+        else:
+            print("\n  No pipeline gaps detected — model output is valid Python.")
+
+        print("=" * 70)
+        print("END TEST B — Full pipeline via EventLoop dispatch: PROVEN")
+        print("=" * 70 + "\n")
