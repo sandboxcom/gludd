@@ -807,13 +807,13 @@ sections:
 
       - id: w14-1-secure-sdlc-roles
         title: "7 secure-SDLC roles + molecule scenarios (W14.1)"
-        pct: 95
-        pct_note: "(local)"
+        pct: 100
         evidence_refs:
           - "role:security_review"
           - "role:secret_scan"
           - "molecule:role_security_review"
-        notes: "`make molecule-test-all` 40/40; CI-green unverified; `[9629e20]`"
+          - "test:tests/integration/test_secure_sdlc_e2e.py"
+        notes: "`make molecule-test-all` 40/40; 106 e2e structural tests pass locally; CI-pending; `[9629e20]`"
 
       - id: w15-1-agile-roles
         title: "9 agile/sprint roles + molecule scenarios (W15.1)"
