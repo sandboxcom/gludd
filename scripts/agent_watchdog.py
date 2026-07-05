@@ -232,6 +232,8 @@ CI_TRUE_STALL_MINUTES = 45
 CI_TRUE_STALL_NO_PUSH_MINUTES = 15
 
 _WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd()))
+GATE_PID_FILE = _WORKSPACE / ".gate-background.pid"
+GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
 _RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
 _GATE_STATUS = _WORKSPACE / ".gate-status"

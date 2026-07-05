@@ -100,13 +100,12 @@ def test_gate_background_timeout_default_3600():
 
 
 def test_watchdog_gate_max_runtime_is_one_hour():
-    GATE_MAX_RUNTIME_SECS = None
-    exec(compile((ROOT / "scripts" / "agent_watchdog.py").read_text(), "agent_watchdog", "exec"), {
-        "GATE_MAX_RUNTIME_SECS": None,
-    })
-    import scripts.agent_watchdog as aw
-    assert aw.GATE_MAX_RUNTIME_SECS == 3600, (
-        f"GATE_MAX_RUNTIME_SECS must be 3600 (1 hour), got {aw.GATE_MAX_RUNTIME_SECS}"
+    import importlib
+    import scripts.agent_watchdog
+    importlib.reload(scripts.agent_watchdog)
+    assert scripts.agent_watchdog.GATE_MAX_RUNTIME_SECS == 3600, (
+        f"GATE_MAX_RUNTIME_SECS must be 3600 (1 hour), "
+        f"got {scripts.agent_watchdog.GATE_MAX_RUNTIME_SECS}"
     )
 
 
