@@ -186,7 +186,7 @@ function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number, extraReaso
 // ── TERMINAL RESPONSE DETECTOR (Items 3-5: rewritten heuristics) ────────────
 
 const FUTURE_TENSE = /\b(will|going to|plan to|next|remaining|shall|upcoming|todo)\b/i
-const COMPLETION_VERBATIM = /\b(all done|everything\s+(?:is\s+)?(complete|done|finished)|all tasks?\s+(complete|done|finished)|all objectives?\s+(complete|done|finished)|ready for review|waiting for (your )?feedback|(this|now) is (truly )?done)\b/i
+const COMPLETION_VERBATIM = /\b(all done|everything\s+(?:is\s+)?(complete|done|finished)|all tasks?\s+(complete|done|finished)|all objectives?\s+(complete|done|finished)|ready for review|waiting for (your )?feedback|(this|now) is (truly )?done|work finished|no more items|nothing left|all objectives met|all goals achieved|wrapping up|finishing up|closing out|this concludes|in conclusion)\b/i
 const TOOL_CALL_INTENT = /\b(make git-|dispatch|subagent|gludd |pytest |uv run)\b/
 const DIRECT_FALSE_DONE_FLAGS = ["✅", "🗸"]
 const COMPLETION_HEADER_RE = /^##\s*(done|complete|summary|results)\s*$/im
@@ -210,15 +210,15 @@ function responseLooksTerminal(text: string): boolean {
   // Item 4: checked boxes only flag if no future-tense verbs present
   const checked = (text.match(/- \[[xX]\]/g) || []).length
   const unchecked = (text.match(/- \[ \]/g) || []).length
-  if (checked >= 2 && unchecked === 0 && !FUTURE_TENSE.test(text)) return true
+  if (checked >= 2 && unchecked === 0) return true
 
   // Tables are terminal: any markdown table with completion signals or multiple rows
   if (/\|[^\n|]+\|[^\n|]+\|/.test(text)) {
     if (COMPLETION_VERBATIM.test(text)) return true
     const tableChecked = [...text.matchAll(/\|[^|]*\[x\][^|]*\|/gi)]
-    if (tableChecked.length >= 2 && !FUTURE_TENSE.test(text)) return true
+    if (tableChecked.length >= 2) return true
     const tableRows = (text.match(/\|[^\n|]+\|[^\n|]+\|/g) || []).length
-    if (tableRows >= 3 && !FUTURE_TENSE.test(text)) return true
+    if (tableRows >= 3) return true
   }
 
   // "session summary" without future-tense
@@ -608,6 +608,9 @@ export default (async ({ }) => {
         const text = output.text
         if (!text || text.trim().length === 0) return
 
+        // BUG #12 fix: check disengaged state first — legitimate admin override
+        if (isDisengaged()) return
+
         // Check short completion claims (✅, "Done.") before the 60-char minimum
         if (text.trim().length < 60) {
           const isShortFalseDone = DIRECT_FALSE_DONE_FLAGS.some(f => text.includes(f)) ||
@@ -619,7 +622,7 @@ export default (async ({ }) => {
             turnState.blocked = true
             return
           }
-          return
+          // Fall through — short non-false-done text still needs pending-work checks
         }
 
         turnState.accumulatedText += text
@@ -735,9 +738,10 @@ export default (async ({ }) => {
           if (!COMPLETION_VERBATIM.test(text)) return
         }
 
-        // Legacy terminal response check (for patterns not caught by DIRECT)
-        if (hasLocalWork && responseLooksTerminal(turnState.accumulatedText)) {
-          logFalseDoneBlock(turnState.accumulatedText, "hasLocalWork+looksTerminal")
+        // BUG #6 fix: when hasLocalWork, block ALL text (not just terminal-looking).
+        // If work is pending and the agent sends text without tool calls, it's a stop.
+        if (hasLocalWork) {
+          logFalseDoneBlock(turnState.accumulatedText, "hasLocalWork-text-only")
           output.text = [
             "HARD STOP — STATE-BASED BLOCK: local work pending.",
             `TASKS.md unchecked: ${tasksMdUnchecked ? "yes" : "no"}`,
@@ -750,7 +754,13 @@ export default (async ({ }) => {
 
         turnState.toolCallMade = false
         turnState.dispatchCount = 0
-      } catch { return }
+      } catch (e) {
+        try {
+          fs.writeFileSync('/tmp/gludd-enforce-stop-error.log',
+            `${new Date().toISOString()} ${String(e)}\n`)
+        } catch {}
+        console.error('enforce-stop text.complete error:', String(e))
+      }
     },
   }
 }) satisfies Plugin

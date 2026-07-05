@@ -36,6 +36,13 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
 
+// Turn state for text.complete bypass (BUG #16 fix)
+const DISPATCH_TOOLS_MAKE = new Set(["task", "agent", "workflow"])
+const _makeTurnState: { dispatchCount: number; toolCallMade: boolean } = {
+  dispatchCount: 0,
+  toolCallMade: false,
+}
+
 // --- Non-behavioral edit detection ------------------------------------------
 // Returns true when an edit only touches comments (# ...) and/or docstring
 // prose — i.e. no executable Python statement is added, removed, or changed.
@@ -326,8 +333,9 @@ function detectStopPattern(text: string): boolean {
   const lower = text.toLowerCase()
   if (text.includes("✅")) return true
   if (COMPLETION_SOUNDING.some(p => lower.includes(p))) {
-    if (text.length < 500) return true
-    if (lower.includes("want me to") || lower.includes("should i") || lower.includes("shall i")) return true
+    // BUG #15 fix: removed <500 length gate. Only negation is question intents.
+    if (lower.includes("want me to") || lower.includes("should i") || lower.includes("shall i")) return false
+    return true
   }
   return false
 }
@@ -345,6 +353,13 @@ export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       _reportAlive()
+
+      // BUG #16 fix: track tool calls and dispatches for text.complete bypass
+      _makeTurnState.toolCallMade = true
+      if (DISPATCH_TOOLS_MAKE.has(input.tool)) {
+        _makeTurnState.dispatchCount++
+      }
+
       if (input.tool === "bash") {
         const command = output?.args?.command ?? ""
         const trimmed = typeof command === "string" ? command.trim() : ""
@@ -843,6 +858,8 @@ export default (async ({ }) => {
     "session.idle": async () => {
       _pendingCommitReminder = false
       _pendingPreflightGate = ""
+      _makeTurnState.dispatchCount = 0
+      _makeTurnState.toolCallMade = false
     },
 
     "experimental.chat.system.transform": async (_input, output) => {
@@ -977,56 +994,49 @@ export default (async ({ }) => {
         return output
       }
 
-      const responseLower = text.toLowerCase()
-      const soundsComplete = (
-        responseLower.includes("all passed") ||
-        responseLower.includes("phase") && responseLower.includes("complete") ||
-        responseLower.includes("key accomplishments") ||
-        responseLower.includes("what was implemented") ||
-        responseLower.includes("task |") ||
-        responseLower.includes("| what was") ||
-        responseLower.includes("all complete") ||
-        responseLower.includes("all done") ||
-        text.includes("✅")
-      )
-
+      // BUG #16 fix: AGGRESSIVE block — when TASKS.md has unchecked items
+      // OR ratchet.yml has entries, block ALL text (not just completion-sounding).
+      // Only allow text if dispatch or tool calls were made this turn.
       const tasksPath = path.join(process.cwd(), "TASKS.md")
-      if (soundsComplete && fs.existsSync(tasksPath)) {
-        const tasksContent = fs.readFileSync(tasksPath, "utf-8")
-        const hasUncheckedItems = /^[*-]\s+\[ \]/.test(tasksContent)
-        if (hasUncheckedItems) {
-          output.text = [
-            "⛔ STOP-PATTERN DETECTED — TASKS.md HAS UNCHECKED ITEMS ⛔",
-            "",
-            "TASKS.md has unchecked items (e.g. `- [ ]`). Your completion claim",
-            "is BLOCKED. The project has pending work.",
-            "",
-            "You MUST continue working. Call your tools NOW.",
-            "",
-          ].join("\n")
-          return output
-        }
-      }
-
       const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
+      let hasUncheckedItems = false
+      let hasRatchetPending = false
+
+      if (fs.existsSync(tasksPath)) {
+        const tasksContent = fs.readFileSync(tasksPath, "utf-8")
+        hasUncheckedItems = /^[*-]\s+\[ \]/.test(tasksContent)
+      }
       if (fs.existsSync(ratchetPath)) {
         const ratchetContent = fs.readFileSync(ratchetPath, "utf-8")
         const ratchetLines = ratchetContent.split("\n").filter(
-          l => l.trim() && !l.trim().startsWith("#") && l.includes(": \"")
+          l => l.trim() && !l.trim().startsWith("#") && l.includes(":")
         )
-        const hasPendingWork = ratchetLines.length > 0
-        if (hasPendingWork && soundsComplete) {
-          output.text = [
-            "⛔ STOP-PATTERN DETECTED — INCOMPLETE WORK ⛔",
-            "",
-            `config/ratchet.yml has ${ratchetLines.length} known-failure entries.`,
-            "The project is NOT complete. Your completion claim is BLOCKED.",
-            "",
-            "You MUST continue working. Call your tools NOW.",
-            "",
-          ].join("\n")
-          return output
-        }
+        hasRatchetPending = ratchetLines.length > 0
+      }
+
+      const workPending = hasUncheckedItems || hasRatchetPending
+      if (workPending && _makeTurnState.dispatchCount === 0 && !_makeTurnState.toolCallMade) {
+        output.text = [
+          "⛔ TEXT BLOCKED — PENDING WORK EXISTS",
+          `TASKS.md unchecked: ${hasUncheckedItems ? "yes" : "no"}`,
+          `ratchet entries: ${hasRatchetPending ? "yes" : "no"}`,
+          "NO TEXT-ONLY RESPONSES WHEN WORK IS PENDING.",
+          "DISPATCH SUBAGENTS OR MAKE TOOL CALLS NOW.",
+        ].join("\n")
+        return output
+      }
+
+      // BUG #17 fix: catch-all — after all specific checks, if work is pending
+      // and no tool calls/dispatches this turn, block the text.
+      if (workPending && _makeTurnState.dispatchCount === 0 && !_makeTurnState.toolCallMade) {
+        output.text = [
+          "⛔ CATCH-ALL BLOCK — PENDING WORK REMAINS",
+          `TASKS.md unchecked: ${hasUncheckedItems ? "yes" : "no"}`,
+          `ratchet entries: ${hasRatchetPending ? "yes" : "no"}`,
+          "DO NOT SEND TEXT-ONLY RESPONSES WHILE WORK IS PENDING.",
+          "DISPATCH SUBAGENTS NOW.",
+        ].join("\n")
+        return output
       }
 
       return output

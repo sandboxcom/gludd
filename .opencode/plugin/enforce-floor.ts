@@ -182,6 +182,15 @@ function openWorkExists(): boolean {
         if (Math.abs(idxMtime - refMtime) > 2000) return true
       }
     } catch { /* ignore */ }
+    // BUG #21 fix: FALLBACK — run git status --porcelain to catch dirty state
+    // that mtime-based check misses (e.g., staged files, rebase-in-progress)
+    try {
+      const { execSync } = require("node:child_process")
+      const status = execSync("git status --porcelain", {
+        cwd: process.cwd(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+      })
+      if (status.trim().length > 0) return true
+    } catch { /* git not available, fallback silently fails */ }
     return false
   } catch {
     return false
@@ -246,7 +255,7 @@ const RESULT_MARKERS = [
 ]
 const REFILL_THRESHOLD = 3
 const PEAK_DISPATCH = 5
-const RESULT_GRACE_CALLS = 0
+const RESULT_GRACE_CALLS = 2  // BUG #18 fix: was 0 (dead)
 
 function _textHasResultMarker(text: string): boolean {
   const lower = text.toLowerCase()
@@ -435,6 +444,21 @@ export default (async ({ }) => {
 
         _updateRefillState()
 
+        // BUG #19 fix: when _needsRefill is set, inject a refill directive
+        // instead of a hard block. This tells the agent to dispatch more
+        // subagents without replacing their entire response.
+        if (_needsRefill && _streakCount <= MAX_STREAK) {
+          return {
+            text: [
+              "⛔ REFILL NEEDED — Subagent pool has drained below threshold.",
+              `Dispatch peak was ${_dispatchPeak}, current count estimate: ${_dispatchCount}.`,
+              "Dispatch ≥5 new subagents on the next wave.",
+              "",
+              output.text,
+            ].join("\n"),
+          }
+        }
+
         if (_streakCount > MAX_STREAK) {
           // REPLACE the agent's text entirely — do NOT append.  When the floor
           // is breached, the agent's only valid output is a dispatch tool call,
@@ -476,7 +500,12 @@ export default (async ({ }) => {
           }
         }
         return output
-      } catch {
+      } catch (e) {
+        try {
+          fs.writeFileSync('/tmp/gludd-enforce-floor-error.log',
+            `${new Date().toISOString()} ${String(e)}\n`)
+        } catch {}
+        console.error('enforce-floor text.complete error:', String(e))
         return output
       }
     },

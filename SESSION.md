@@ -46,24 +46,26 @@
 
 ## Known Gaps
 
-1. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
-2. **HEAD + working tree unpushed** — `90603ec7` + session 9 fixes not yet pushed to sandboxcom. CI status unknown.
-3. **Phantom plugin files on disk** — `enforce-deletion-gate.ts` and `enforce-false-done.ts` still exist in `.opencode/plugin/` but are no longer registered in `opencode.json`. Should be either re-registered or removed from disk.
-4. **Prior CI** — run 28733652540 on `46303d33` was in_progress; status unknown (likely cancelled by interceding pushes).
+1. **14 enforcement plugin bypass bugs identified** — being fixed across enforce-make, enforce-floor, enforce-delegate, enforce-stop, enforce-session-start, enforce-deadline, watchdog, enforce-false-done, enforce-deletion-gate plugins.
+2. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
+3. **CI pending** — run 28757988186 on master.
+4. **Only 2/7 plugins reporting liveness** — enforce-make and watchdog emit heartbeats; enforce-deadline, enforce-delegate, enforce-floor, enforce-session-start, enforce-stop do not. Requires opencode restart for hook registration to take effect.
+5. **AGENTS.md gap fixes pending** — identified but not yet codified.
 
 ## Next Steps
 
-1. **Commit session 9 fixes** — stage and commit the plugin fixes, liveness probes, verify-release-artifact target, test fixes.
-2. **Push to sandboxcom** — `make git-push-sandboxcom` to push the full wave.
-3. **Run `make ci-verdict BRANCH=master`** — check CI status after push.
-4. **Decide on phantom plugin files** — either re-register `enforce-deletion-gate.ts` + `enforce-false-done.ts` or remove them from disk.
+1. **Fix 14 enforcement plugin bypass bugs** — audit each plugin for the class of bugs identified (silent-fail paths, unregistered hooks, race conditions, no-argument handling, stale state, ungraceful degrade, no-fallback defaults).
+2. **Restart opencode** — needed for plugin liveness probe registration to take effect (all 7 plugins should report heartbeats).
+3. **Run `make ci-verdict BRANCH=master`** — check CI status of run 28757988186 after push.
+4. **Push HEAD** — `65b58233` is local-only; need to push to sandboxcom.
 5. **Run `make gate-background`** — validate locally once CI is green.
+6. **Codify AGENTS.md gap fixes** — document and enforce findings from plugin audit.
 
 ## Current Gate Status (2026-07-05)
 <!-- gate:begin -->
-- **Last full PASS**: 2026-07-05 — lint 0, typecheck 0, collect 0. Full suite OOM under xdist.
-- **HEAD**: `90603ec7` (unpushed, with uncommitted session 9 fixes)
-- **CI**: unknown — HEAD unpushed. Prior: run 28733652540 IN_PROGRESS on `46303d33` (status unknown).
+- **Last full PASS**: 2026-07-05 — lint 0, typecheck 0, collect 0, test 2 passed (targeted). Full suite OOM under xdist.
+- **HEAD**: `65b58233` (local only, not yet pushed to sandboxcom)
+- **CI**: run 28757988186 pending on master.
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
 <!-- gate:end -->
@@ -73,6 +75,7 @@
 
 ## Historical State
 
+- **2026-07-05 session 9b (current)**: HEAD `65b58233`. 9 commits since `90603ec7`: adversarial code detection (129 tests, `bf5aeaa6`), enforcement plugin hardening (permanent disengage self-heal, floor hard-default, watchdog 15s idle, false-done patterns, `fab9c8f0`), ExecutionEngine + EventLoop game-building e2e (DeepSeek, 2 tests passing, `376eabd4` / `3749ea59` / `43bddb05`). 14 enforcement bypass bugs identified, pending fix. Only 2/7 plugins with liveness probes.
 - **2026-07-05 session 9 (current)**: HEAD `90603ec7`. Plugin fixes (phantom registrations removed from opencode.json, liveness probes added to 5 plugins, verify-release-artifact Makefile target, e2e test fixes, TDD runtime-verification tests). 9 files modified, 79 insertions, 20 deletions. Pending commit.
 - **2026-07-05 session 8 (prior)**: HEAD `90603ec7`. Wave-9 + Wave-10 feature advancement: 42 features to 100% (`49561642`), inflated percentage corrections (`39d461a5`, `c604a574`), secure-SDLC roles to 100% with 106 e2e tests (`90603ec7`), false-positive secrets cleanup (`f854372c`, `fae25f97`). 27 commits total. 136 features at 100%.
 - **2026-07-05 session 7 (prior)**: HEAD `62ff31cf` (unpushed). 10 commits: G6 FloorController+VariantMetrics auto-promotion (7ceefe48), CVE patches + 122 e2e proofs (9b34b0b6), enforcement hardening (f3140cae + b83e7c10 — plugin check/kill-switch/grinding detector/gate cleanup), auto-fix wave (d26a96b0 299a9182 4a1f04c9 dfda4966 ff782849 62ff31cf — lint/pre-commit/detect-secrets). Lint 0.
