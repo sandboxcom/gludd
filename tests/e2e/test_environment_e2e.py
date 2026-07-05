@@ -26,7 +26,7 @@ from general_ludd.routers.environment import register
 _PSK = "env-e2e-test-psk"
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 _PUBLIC_PATHS: set[str] = {"/healthz"}
-_SECRET_VALUE = "sk-super-secret-key-DO-NOT-LEAK-0123456789"
+_SECRET_VALUE = "sk-super-secret-key-DO-NOT-LEAK-0123456789"  # pragma: allowlist secret
 
 
 def _psk_middleware_factory(psk: str):

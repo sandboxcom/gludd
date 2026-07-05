@@ -167,7 +167,7 @@ class TestNormaliseDomain:
         assert _normalise_domain("http://192.168.1.1/admin") == "192.168.1.1"
 
     def test_url_with_userinfo(self):
-        assert _normalise_domain("https://user:pass@example.com/secret") == "example.com"
+        assert _normalise_domain("https://user:pass@example.com/secret") == "example.com"  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------
