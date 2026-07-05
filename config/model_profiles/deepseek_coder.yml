@@ -14,8 +14,8 @@ max_output_tokens: 8192
 cost_per_input_token: 0.00027
 cost_per_output_token: 0.0011
 api_metered: true
-run_budget_usd: 1.0
-enabled: false
+run_budget_usd: 5.0
+enabled: true
 resource_profile: ai_heavy
 roles:
   - coder

@@ -39,9 +39,8 @@ sections:
         pct: 100
         evidence_refs:
           - "test:tests/unit/test_event_loop_session_per_tick.py"
-          - "file:src/general_ludd/event_loop/loop.py::_run_tick"
+          - "file:src/general_ludd/event_loop/loop.py::_run_phases"
         notes: "`[a7a97c6]`"
-
       - id: g2-post-todos
         title: "G2 `POST /api/todos` persists to DB"
         pct: 100
@@ -69,7 +68,7 @@ sections:
         pct: 100
         evidence_refs:
           - "test:tests/integration/test_w3_2_reviewer_wiring.py"
-          - "file:src/general_ludd/review/decision_applier.py::DecisionApplier"
+          - "file:src/general_ludd/review/decision_applier.py::apply_decision"
         notes: "3 passed; `[a7a97c6]`"
 
       - id: g6-work-lands-git
@@ -231,7 +230,7 @@ sections:
         pct: 100
         evidence_refs:
           - "test:tests/unit/test_environment_project_facet.py"
-          - "file:src/general_ludd/routers/facts.py::_project_facet"
+          - "file:src/general_ludd/routers/environment.py::_project_facet"
         notes: "`[5beeee6]`; NEW 2026-06-25"
 
       - id: project-hierarchy-phase3
@@ -345,7 +344,8 @@ sections:
         pct: 100
         evidence_refs:
           - "file:src/general_ludd/model_weights/__init__.py"
-          - "file:src/general_ludd/model_weights/store.py::WeightStore"
+          - "file:src/general_ludd/model_weights/store.py::ModelWeightStore"
+          - "test:tests/unit/test_model_weights_package.py"
         notes: "package landed with seed_data.json, schema, store, loader; `[audit resolved]`"
 
   # ---------------------------------------------------------------------------
@@ -561,8 +561,8 @@ sections:
         pct: 100
         evidence_refs:
           - "test:tests/unit/test_gateway_base_url_ssrf.py"
-          - "file:src/general_ludd/models/gateway.py::_validate_base_url"
-        notes: "`gateway.py:259-278`; `[audit #61 DONE-VERIFIED]`"
+          - "file:src/general_ludd/models/gateway.py::get_chat_model"
+        notes: "`gateway.py:396-402`; `[audit #61 DONE-VERIFIED]`"
 
       - id: ssh-key-gitignored
         title: "SSH key gitignored + enforcement layers (W5.1)"

@@ -1,22 +1,22 @@
-default_profile: zai_coder
-weak_model_profile: zai_coder
+default_profile: deepseek_coder
+weak_model_profile: deepseek_coder
 
 fallback_chain:
-  - deepseek_coder
   - qwen_coder
+  - zai_coder
 
 role_routing:
-  coder: zai_coder
-  planner: zai_coder
-  reviewer: zai_coder
-  fast: zai_coder
+  coder: deepseek_coder
+  planner: deepseek_coder
+  reviewer: deepseek_coder
+  fast: deepseek_coder
 
 quality_routing:
-  high: zai_coder
-  medium: zai_coder
+  high: deepseek_coder
+  medium: deepseek_coder
 
 latency_routing:
-  fast: zai_coder
+  fast: deepseek_coder
 
 pattern_routing:
   return_review: reviewer

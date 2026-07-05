@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from general_ludd.models.gateway import ModelGateway
 from general_ludd.models.router import ModelRouter
@@ -12,6 +12,10 @@ from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.review.conversation import Conversation
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn
+
+if TYPE_CHECKING:
+    from general_ludd.review.estimation_tracker import EstimationTracker
+    from general_ludd.security.adversarial_detector import AdversarialCodeDetector
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +29,16 @@ class ReturnReviewer:
         router: ModelRouter | None = None,
         conversations: dict[str, Conversation] | None = None,
         budget_guard: Any = None,
+        adversarial_detector: AdversarialCodeDetector | None = None,
+        estimation_tracker: EstimationTracker | None = None,
     ) -> None:
         self._gateway = gateway
         self._registry = prompt_registry
         self._model_profile_id = model_profile_id
         self._router = router
         self._budget_guard = budget_guard
+        self._adversarial_detector = adversarial_detector
+        self._estimation_tracker = estimation_tracker
         self._conversations: dict[str, Conversation] = (
             conversations if conversations is not None else {}
         )
@@ -49,6 +57,39 @@ class ReturnReviewer:
         if conv is None:
             conv = Conversation(todo_id=todo_id, return_id=task_return.return_id)
             self._conversations[todo_id] = conv
+
+        adversarial_findings: list[dict[str, object]] = []
+        if self._adversarial_detector is not None:
+            scan_result = self._adversarial_detector.scan_task_return(task_return)
+            adversarial_findings = [
+                {
+                    "pattern_id": f.pattern_id,
+                    "category": f.category.value if hasattr(f.category, "value") else str(f.category),
+                    "severity": f.severity.value if hasattr(f.severity, "value") else str(f.severity),
+                    "description": f.description,
+                    "match_text": f.match_text,
+                    "confidence": f.confidence,
+                }
+                for f in scan_result.findings
+            ]
+            if scan_result.high_confidence:
+                return TaskDecision(
+                    return_id=task_return.return_id,
+                    matched_todo_id=task_return.todo_id,
+                    decision="blocked",
+                    confidence=1.0,
+                    audit_notes=[
+                        f"Blocked by adversarial scan: {len(adversarial_findings)} "
+                        "high-confidence finding(s)",
+                        *[
+                            f"{f['category']}/{f['pattern_id']}: "
+                            f"{str(f.get('match_text', ''))[:120]}"
+                            for f in adversarial_findings
+                        ],
+                    ],
+                    adversarial_findings=adversarial_findings,
+                )
+
         prior_context = ""
         if conv.messages:
             prior_context = "\n\n".join(
@@ -57,6 +98,17 @@ class ReturnReviewer:
         review_prompt_text = (
             f"Review return {task_return.return_id} for todo {todo_id}"
         )
+
+        if adversarial_findings:
+            non_critical = "\n".join(
+                f"  - [{f['category']}] {f['description']}: "
+                f"{str(f.get('match_text', ''))[:100]}"
+                for f in adversarial_findings
+            )
+            review_prompt_text += (
+                f"\n\nADVERSARIAL SCAN FINDINGS (non-critical, review with scrutiny):\n{non_critical}"
+            )
+
         conv.add_message("user", review_prompt_text)
         prompt = self._registry.render(
             "return_review.md.j2",
@@ -76,6 +128,7 @@ class ReturnReviewer:
                 decision="failed",
                 confidence=0.0,
                 audit_notes=audit,
+                adversarial_findings=adversarial_findings,
             )
             conv.add_message(
                 "assistant", json.dumps(decision.model_dump(mode="json"))
@@ -83,11 +136,36 @@ class ReturnReviewer:
             return decision
         parsed = self._parse_model_output(raw_output, task_return)
         if parsed is not None:
+            parsed = parsed.model_copy(
+                update={"adversarial_findings": adversarial_findings}
+            )
             evidence_notes = self._audit_evidence(parsed, artifacts)
             if evidence_notes:
                 parsed = parsed.model_copy(
                     update={"audit_notes": [*parsed.audit_notes, *evidence_notes]}
                 )
+
+            if self._estimation_tracker is not None:
+                from general_ludd.review.estimation_tracker import TaskActual
+                actual = TaskActual(
+                    todo_id=task_return.todo_id or task_return.return_id,
+                    actual_cost_usd=0.0,
+                    actual_time_minutes=0.0,
+                    actual_loc=0,
+                    exit_code=task_return.exit_code,
+                )
+                variance = self._estimation_tracker.record_completion(actual)
+                if variance.is_suspect:
+                    parsed = parsed.model_copy(
+                        update={
+                            "estimation_suspect": True,
+                            "audit_notes": [
+                                *parsed.audit_notes,
+                                f"ESTIMATION_SUSPECT: {', '.join(variance.suspect_reasons)}",
+                            ],
+                        }
+                    )
+
             conv.add_message(
                 "assistant", json.dumps(parsed.model_dump(mode="json"))
             )
@@ -104,6 +182,7 @@ class ReturnReviewer:
             audit_notes=[
                 "Model output was not valid JSON or did not match TaskDecision schema"
             ],
+            adversarial_findings=adversarial_findings,
         )
         conv.add_message(
             "assistant", json.dumps(fallback.model_dump(mode="json"))

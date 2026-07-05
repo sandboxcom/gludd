@@ -73,6 +73,7 @@ from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.quality.preflight import run_preflight
 from general_ludd.reload.worker_broadcast import WorkerBroadcaster
 from general_ludd.replay.recorder import RunRecorder
+from general_ludd.review.estimation_tracker import EstimationTracker
 from general_ludd.sandbox_exec.executor import SandboxExecutor
 from general_ludd.scoring.pareto import ParetoRouter
 from general_ludd.scoring.router import AdaptiveRouter
@@ -82,6 +83,7 @@ from general_ludd.secrets.env import EnvSecretsManager
 from general_ludd.secrets.manager import SecretsManager
 from general_ludd.secrets.migration import migrate_profile_secrets
 from general_ludd.secrets.project_secrets import ProjectSecretsManager
+from general_ludd.security.adversarial_detector import AdversarialCodeDetector
 from general_ludd.skills.loader import discover_skills
 from general_ludd.skills.registry import SkillRegistry
 
@@ -1230,6 +1232,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # gateway exists. Review failure escalates the todo; it is never a
         # silent pass.
         return_reviewer = None
+        adversarial_detector = AdversarialCodeDetector()
+        estimation_tracker = EstimationTracker()
+        app.state._adversarial_detector = adversarial_detector
+        app.state._estimation_tracker = estimation_tracker
+        logger.info(
+            "Wired adversarial detector (%d patterns) and estimation tracker",
+            len(adversarial_detector.get_all_categories()),
+        )
         if model_gateway is not None:
             from general_ludd.review.reviewer import ReturnReviewer
 
@@ -1238,6 +1248,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 prompt_registry=prompt_registry,
                 router=ext.get("adaptive_router"),
                 budget_guard=budget_guard,
+                adversarial_detector=adversarial_detector,
+                estimation_tracker=estimation_tracker,
             )
 
         langgraph_reviewer = None

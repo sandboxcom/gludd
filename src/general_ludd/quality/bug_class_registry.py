@@ -376,6 +376,91 @@ DEFAULT_BUG_CLASSES: tuple[BugClass, ...] = (
             "actual diff so a second run is a no-op. (Guard gap — add one.)"
         ),
     ),
+    BugClass(
+        id="adversarial_eval_on_input",
+        description=(
+            "eval/exec invoked on user-controlled input (request/input/data/"
+            "body/params) — arbitrary code execution."
+        ),
+        detector=re.compile(r"(?:eval|exec)\s*\(\s*(?:request|input|data|body|params)"),  # bug-class-seed:exclude
+        guard_test_id="tests/unit/test_adversarial_detector.py::TestBackdoorPatterns::test_eval_on_input_detected",
+        remediation=(
+            "Never eval/exec on untrusted input; use ast.literal_eval or "
+            "structured parsing."
+        ),
+    ),
+    BugClass(
+        id="adversarial_shell_true",
+        description=(
+            "subprocess call with shell=True — command injection sink on "
+            "untrusted input."
+        ),
+        detector=re.compile(r"subprocess\.\w+\s*\([^)]*shell\s*=\s*True"),  # bug-class-seed:exclude
+        guard_test_id="tests/unit/test_adversarial_detector.py::TestBackdoorPatterns::test_shell_injection_detected",
+        remediation=(
+            "Use shell=False with list-based args; never shell=True on "
+            "untrusted input."
+        ),
+    ),
+    BugClass(
+        id="adversarial_hardcoded_secret",
+        description=(
+            "Hardcoded API key / secret / password as a literal string "
+            "(20+ chars of base64-ish text)."
+        ),
+        detector=re.compile(  # bug-class-seed:exclude
+            r'(?:api_key|secret_key|password)\s*[:=]\s*["\']'
+            r"[A-Za-z0-9_\-+/=]{20,}[\"']"
+            r"(?!\s*(?:#|//).*seed)"
+        ),
+        guard_test_id="tests/unit/test_adversarial_detector.py::TestCredentialPatterns::test_hardcoded_api_key_detected",
+        remediation=(
+            "Use environment variables or secrets manager; never hardcode "
+            "credentials."
+        ),
+    ),
+    BugClass(
+        id="adversarial_fail_open_auth",
+        description=(
+            "Auth check that defaults to allow after an exception — fail-open "
+            "instead of fail-closed."
+        ),
+        detector=re.compile(r"except\s+\w+\s*:\s*(?:return\s+True|pass)\s*#\s*allow"),  # bug-class-seed:exclude
+        guard_test_id="tests/unit/test_adversarial_detector.py::TestLogicDegradePatterns::test_default_allow_auth_detected",
+        remediation=(
+            "Auth must fail-closed: deny on exception, only allow on explicit "
+            "success."
+        ),
+    ),
+    BugClass(
+        id="adversarial_obfuscated_exec",
+        description=(
+            "eval/exec on obfuscated payload (base64, codecs.decode, "
+            "bytes.fromhex) — hidden code execution."
+        ),
+        detector=re.compile(r"(?:eval|exec)\s*\(\s*(?:base64|codecs\.decode|bytes\.fromhex)"),  # bug-class-seed:exclude
+        guard_test_id="tests/unit/test_adversarial_detector.py::TestObfuscationPatterns::test_base64_exec_detected",
+        remediation=(
+            "Remove obfuscated code execution; all executed code must be "
+            "auditable."
+        ),
+    ),
+    BugClass(
+        id="adversarial_typosquatted_import",
+        description=(
+            "Import of a typo-squatted package name (requsts, pyhtest, "
+            "cryptograpy, nmpy, etc.) — dependency confusion attack."
+        ),
+        detector=re.compile(  # bug-class-seed:exclude
+            r"\bimport\s+(?:requsts|pyhtest|cryptograpy|nmpy|panda|matplotlb|"
+            r"tensorflw|pythorch|djngo|flsk|fastpi|starllete|uvcorn|pydentic|"
+            r"sqlmodel|alembc|celry|pytz|datetmie|coloredlogs|rich-click)\b"
+        ),
+        guard_test_id="tests/unit/test_adversarial_detector.py::TestDependencyAttackPatterns::test_typosquatted_import_detected",
+        remediation=(
+            "Verify package name against PyPI; use hash-checking with pip."
+        ),
+    ),
 )
 
 

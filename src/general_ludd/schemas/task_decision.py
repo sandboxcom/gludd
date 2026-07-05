@@ -19,6 +19,8 @@ class TaskDecision(BaseModel):
     validation_requests: list[str] = Field(default_factory=list)
     git_requests: list[str] = Field(default_factory=list)
     audit_notes: list[str] = Field(default_factory=list)
+    adversarial_findings: list[dict[str, object]] = Field(default_factory=list)
+    estimation_suspect: bool = False
     policy_flags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
