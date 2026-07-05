@@ -12,7 +12,7 @@ This test is a REAL gap detector, not a static check. It will:
   5. Report which games worked and what gaps exist in gludd's pipeline
 
 Run:
-    DEEPSEEK_API_KEY="sk-..." uv run pytest tests/e2e/test_game_building_deepseek.py -v -s
+    DEEPSEEK_API_KEY="sk-..." uv run pytest tests/e2e/test_game_building_deepseek.py -v -s  # pragma: allowlist secret
 or:
     make test-specific TESTFILE=tests/e2e/test_game_building_deepseek.py
 """

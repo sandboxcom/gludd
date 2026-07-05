@@ -140,7 +140,7 @@ class TestCredentialPatterns:
     """Each CREDENTIAL_LEAK pattern must fire on commonly-leaked secrets."""
 
     def test_hardcoded_api_key(self):
-        code = 'api_key = "sk-abc123def456ghi789jkl012mno345pqr678stu"'
+        code = 'api_key = "sk-abc123def456ghi789jkl012mno345pqr678stu"'  # pragma: allowlist secret
         result = _detector().scan_text(code)
         assert any(f.pattern_id == "hardcoded_api_key" for f in result.findings)
 
@@ -154,11 +154,11 @@ class TestCredentialPatterns:
         assert any(f.pattern_id == "aws_key_hardcoded" for f in result.findings)
 
     def test_pem_private_key_armor(self):
-        result = _detector().scan_text("-----BEGIN RSA PRIVATE KEY-----")
+        result = _detector().scan_text("-----BEGIN RSA PRIVATE KEY-----")  # pragma: allowlist secret
         assert any(f.pattern_id == "private_key_armor" for f in result.findings)
 
     def test_github_token(self):
-        code = "token = ghp_abc123def456ghi789jkl012mno345pqr678"
+        code = "token = ghp_abc123def456ghi789jkl012mno345pqr678"  # pragma: allowlist secret
         result = _detector().scan_text(code)
         assert any(f.pattern_id == "github_token" for f in result.findings)
 
