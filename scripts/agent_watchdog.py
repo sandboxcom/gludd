@@ -203,9 +203,6 @@ def _prune_alerted_anomalies(now_epoch: float | None = None) -> None:
     }
 
 
-GATE_PID_FILE = _WORKSPACE / ".gate-background.pid"
-GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))  # 1 hour default
-
 ANOMALY_COUNT_FILE = "/tmp/gludd-watchdog-anomaly-count.json"
 TASK_ANOMALIES_FILE = "/tmp/gludd-task-anomalies.json"
 ANOMALY_ESCALATE_THRESHOLD = 5

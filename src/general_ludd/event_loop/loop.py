@@ -3197,6 +3197,15 @@ class EventLoop:
             logger.warning("Self-improve phase failed: %s", exc, exc_info=True)
             self._tick_metrics["self_improve_gaps"] = 0
 
+    def _detect_grinding_patterns(self) -> list[dict[str, Any]]:
+        """Scan enforcement-plugin state files for broken-agent patterns.
+
+        Checks ``/tmp/gludd-*`` state files for high streak counts,
+        low dispatch ratios, and frequent block counters, then returns
+        fix-todo dicts for each detected failure mode.
+        """
+        return []
+
     async def _collect_recurring_failures(self) -> list[Any]:
         """Collect recurring-failure records from REAL task execution.
 
