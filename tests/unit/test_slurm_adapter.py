@@ -291,7 +291,10 @@ class TestSlurmAdapterAvailable:
 
 class TestSlurmJobState:
     def test_all_expected_states_exist(self):
-        expected = {"PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL", "UNKNOWN"}
+        expected = {
+            "PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED",
+            "TIMEOUT", "NODE_FAIL", "PREEMPTED", "UNKNOWN",
+        }
         actual = {s.value for s in SlurmJobState}
         assert expected == actual
 

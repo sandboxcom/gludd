@@ -68,3 +68,14 @@ variable "azure_resource_group" {
   type        = string
   default     = "vllm-rg"
 }
+
+variable "use_spot" {
+  description = "When true, launches the VM as a Spot VM for cost savings. When false, uses standard on-demand pricing."
+  type        = bool
+  default     = true
+}
+
+variable "subnet_id" {
+  description = "Subnet ID to attach the VM's network interface to."
+  type        = string
+}

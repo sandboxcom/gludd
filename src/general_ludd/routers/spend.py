@@ -95,3 +95,40 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "limit_usd": req.limit_usd,
             "window_seconds": req.window_seconds,
         }
+
+    @app.get("/admin/costs")
+    async def admin_costs() -> dict[str, Any]:
+        """Return cost-accounting summary across API and infrastructure spend.
+
+        Returns:
+            JSON with ``total_api_spend``, ``total_infra_spend``,
+            ``breakdown_by_project``, ``breakdown_by_provider``, and
+            ``burn_rate_24h``.
+        """
+        limiter = _get_limiter(app)
+        infra_tracker = getattr(app.state, "_infra_tracker", None)
+
+        total_api_spend = 0.0
+        by_project: dict[str, float] = {}
+        burn_rate_24h = 0.0
+
+        if limiter is not None:
+            total_api_spend = limiter.window_spend()
+            by_project = limiter.project_breakdown()
+            last_hour = limiter.spend_in_last_seconds(3600.0)
+            burn_rate_24h = last_hour * 24.0
+
+        total_infra_spend = 0.0
+        by_provider: dict[str, float] = {}
+        if infra_tracker is not None:
+            total_infra_spend = infra_tracker.get_total_infra_cost()
+            by_provider = infra_tracker.get_infra_cost_by_provider()
+
+        return {
+            "total_api_spend": total_api_spend,
+            "total_infra_spend": total_infra_spend,
+            "total_combined_spend": total_api_spend + total_infra_spend,
+            "breakdown_by_project": by_project,
+            "breakdown_by_provider": by_provider,
+            "burn_rate_24h": burn_rate_24h,
+        }

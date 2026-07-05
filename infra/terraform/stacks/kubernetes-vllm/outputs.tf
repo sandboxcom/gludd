@@ -12,3 +12,8 @@ output "namespace" {
   description = "Kubernetes namespace deployed into."
   value       = module.kubernetes_deploy.namespace
 }
+
+output "watchdog_user_data" {
+  description = "Cloud-init fragment from the gpu-cost-watchdog module."
+  value       = module.gpu_cost_watchdog.user_data
+}

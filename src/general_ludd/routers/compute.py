@@ -102,6 +102,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             ]
         }
 
+    @app.get("/admin/compute/idle")
+    async def admin_compute_idle() -> dict[str, Any]:
+        daemon_state = getattr(app.state, "daemon_state", None) or {}
+        idle_endpoints = daemon_state.get("idle_endpoints", {})
+        torn_down = daemon_state.get("torn_down_endpoints", [])
+        return {
+            "idle_endpoints": list(idle_endpoints.values()),
+            "torn_down_endpoints": torn_down,
+        }
+
     @app.post("/admin/compute/endpoints")
     async def admin_register_compute_endpoint(req: dict[str, Any]) -> dict[str, Any]:
         ext = _get_or_create_extended_subsystems(app)

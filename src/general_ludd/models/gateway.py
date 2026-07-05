@@ -1435,6 +1435,40 @@ class ModelGateway:
             except Exception as exc:
                 logger.warning("Worker broadcast failed for model %s: %s", action, exc)
 
+    @staticmethod
+    def select_cost_effective_profile(
+        profiles: list[ModelProfile],
+        budget_remaining: float,
+    ) -> ModelProfile | None:
+        """Select the most cost-effective profile within the remaining budget.
+
+        Sorts profiles by effective cost (input + output token price) ascending
+        and returns the cheapest one whose ``run_budget_usd`` is not exceeded by
+        the remaining budget. If all profiles exceed the remaining budget cap,
+        returns None — the caller must handle the budget-exhausted case.
+
+        A profile with ``run_budget_usd == 0.0`` or ``api_metered == False``
+        is treated as unconstrained (no per-profile cap) and is eligible if its
+        token cost fits within ``budget_remaining``.
+        """
+        eligible = []
+        for p in profiles:
+            if not p.enabled:
+                continue
+            if p.api_metered and p.run_budget_usd > 0.0:
+                if budget_remaining >= p.run_budget_usd:
+                    eligible.append(p)
+            else:
+                eligible.append(p)
+
+        if not eligible:
+            return None
+
+        eligible.sort(
+            key=lambda p: p.cost_per_input_token + p.cost_per_output_token
+        )
+        return eligible[0]
+
     def add_profile(
         self,
         model_id: str,

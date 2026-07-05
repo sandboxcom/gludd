@@ -6,6 +6,9 @@ import enum
 import logging
 import re
 import subprocess
+import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import httpx
@@ -99,6 +102,46 @@ def _require_output(value: str) -> str:
     return value
 
 
+def _parse_elapsed(raw: str) -> float | None:
+    """Parse a Slurm ``Elapsed`` time string to seconds (float).
+
+    Accepts the formats sacct emits for ``--format=Elapsed``:
+    ``HH:MM:SS``, ``D-HH:MM:SS``, ``MM:SS``, or ``HH:MM:SS.US``.
+    Returns ``None`` on an unparseable / unlimited / empty input.
+    """
+    raw = raw.strip()
+    if not raw or raw.upper() == "UNLIMITED":
+        return None
+
+    days = 0
+    time_part = raw
+
+    if "-" in raw:
+        parts = raw.split("-", 1)
+        try:
+            days = int(parts[0])
+            time_part = parts[1]
+        except (ValueError, IndexError):
+            return None
+
+    time_parts = time_part.split(":")
+    try:
+        if len(time_parts) == 3:
+            hours = int(time_parts[0])
+            minutes = int(time_parts[1])
+            seconds = float(time_parts[2])
+        elif len(time_parts) == 2:
+            hours = 0
+            minutes = int(time_parts[0])
+            seconds = float(time_parts[1])
+        else:
+            return None
+    except (ValueError, IndexError):
+        return None
+
+    return days * 86400.0 + hours * 3600.0 + minutes * 60.0 + seconds
+
+
 class SlurmNotInstalledError(Exception):
     """Raised when Slurm commands are not available on the system."""
 
@@ -115,6 +158,7 @@ class SlurmJobState(enum.Enum):
     CANCELLED = "CANCELLED"
     TIMEOUT = "TIMEOUT"
     NODE_FAIL = "NODE_FAIL"
+    PREEMPTED = "PREEMPTED"
     UNKNOWN = "UNKNOWN"
 
     @classmethod
@@ -131,6 +175,28 @@ class SlurmJobInfo:
     job_id: str
     state: SlurmJobState
     exit_code: int | None = None
+    cost_incurred: float = 0.0
+    original_job_id: str | None = None
+    resubmit_count: int = 0
+
+
+@dataclass
+class SlurmJobConfig:
+    """Parameter bundle for a Slurm job submission.
+
+    Provides fields that map to ``--account``, ``--qos``, and ``--time``
+    sbatch options.  Also carries cost / idle guardrails consumed by
+    :class:`SlurmJobMonitor`.  All fields default to ``None`` (unset);
+    the adapter treats ``None`` as "omit the flag / directive entirely";
+    the monitor skips checks whose config field is ``None``.
+    """
+
+    account: str | None = None
+    qos: str | None = None
+    time_limit_str: str | None = None
+    max_cost_usd: float | None = None
+    idle_timeout_minutes: float | None = None
+    hourly_rate_usd: float | None = None
 
 
 @dataclass
@@ -194,6 +260,8 @@ class SlurmAdapter:
         gpus: str | None = None,
         memory: str | None = None,
         time_limit: str | None = None,
+        account: str | None = None,
+        qos: str | None = None,
         output: str | None = None,
         extra_args: list[str] | None = None,
     ) -> str:
@@ -207,6 +275,8 @@ class SlurmAdapter:
             gpus=gpus,
             memory=memory,
             time_limit=time_limit,
+            account=account,
+            qos=qos,
             output=output,
             extra_args=extra_args,
         )
@@ -219,6 +289,8 @@ class SlurmAdapter:
                 gpus=gpus,
                 memory=memory,
                 time_limit=time_limit,
+                account=account,
+                qos=qos,
             )
         return self._local_submit(
             command=command,
@@ -228,6 +300,8 @@ class SlurmAdapter:
             gpus=gpus,
             memory=memory,
             time_limit=time_limit,
+            account=account,
+            qos=qos,
             output=output,
             extra_args=extra_args,
         )
@@ -240,6 +314,8 @@ class SlurmAdapter:
         gpus: str | None,
         memory: str | None,
         time_limit: str | None,
+        account: str | None = None,
+        qos: str | None = None,
         output: str | None,
         extra_args: list[str] | None,
     ) -> None:
@@ -249,8 +325,8 @@ class SlurmAdapter:
         body (arbitrary shell by design). ``output`` is a path, so it is NOT
         charset-restricted either — but it IS embedded into a ``#SBATCH --output=``
         directive line, so it is checked for newlines/NUL (which would inject an
-        extra directive). name/partition/gpus/memory/time_limit are embedded into
-        ``#SBATCH`` directive lines, so a newline or shell metacharacter in any
+        extra directive). name/partition/gpus/memory/time_limit/account/qos are embedded
+        into ``#SBATCH`` directive lines, so a newline or shell metacharacter in any
         of them would let a caller inject an extra directive or break out of the
         intended argument — exactly the injection this hardening prevents.
         """
@@ -262,6 +338,10 @@ class SlurmAdapter:
             _require_name(gpus, "gpus")
         if memory is not None:
             _require_name(memory, "memory")
+        if account is not None:
+            _require_name(account, "account")
+        if qos is not None:
+            _require_name(qos, "qos")
         if time_limit is not None:
             _require_time(time_limit)
         if output is not None:
@@ -279,6 +359,40 @@ class SlurmAdapter:
         if self._is_remote:
             return self._remote_cancel(job_id)
         return self._local_cancel(job_id)
+
+    def elapsed_seconds(self, job_id: str) -> float | None:
+        if self._is_remote:
+            return None
+        return self._local_elapsed_seconds(job_id)
+
+    def _local_elapsed_seconds(self, job_id: str) -> float | None:
+        job_id = _require_job_id(job_id)
+        args = [
+            "sacct",
+            "--format=JobID,Elapsed",
+            "--parsable2",
+            "--noheader",
+            f"--jobs={job_id}",
+        ]
+        try:
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("|")
+            if len(parts) >= 2 and parts[0].strip() == job_id:
+                return _parse_elapsed(parts[1])
+
+        return None
 
     def available(self) -> bool:
         if self._is_remote:
@@ -299,12 +413,18 @@ class SlurmAdapter:
         gpus: str | None = None,
         memory: str | None = None,
         time_limit: str | None = None,
+        account: str | None = None,
+        qos: str | None = None,
     ) -> str:
         script_lines = ["#!/bin/bash"]
         if job_name:
             script_lines.append(f"#SBATCH --job-name={job_name}")
         if partition:
             script_lines.append(f"#SBATCH --partition={partition}")
+        if account:
+            script_lines.append(f"#SBATCH --account={account}")
+        if qos:
+            script_lines.append(f"#SBATCH --qos={qos}")
         if cpus_per_task is not None:
             script_lines.append(f"#SBATCH --cpus-per-task={cpus_per_task}")
         if gpus:
@@ -419,6 +539,8 @@ class SlurmAdapter:
         gpus: str | None = None,
         memory: str | None = None,
         time_limit: str | None = None,
+        account: str | None = None,
+        qos: str | None = None,
         output: str | None = None,
         extra_args: list[str] | None = None,
     ) -> str:
@@ -434,6 +556,8 @@ class SlurmAdapter:
             gpus=gpus,
             memory=memory,
             time_limit=time_limit,
+            account=account,
+            qos=qos,
             output=output,
         )
         # End-of-options guard so the trailing script positional can never be
@@ -560,6 +684,8 @@ class SlurmAdapter:
         gpus: str | None = None,
         memory: str | None = None,
         time_limit: str | None = None,
+        account: str | None = None,
+        qos: str | None = None,
         output: str | None = None,
     ) -> str:
         lines = ["#!/bin/bash"]
@@ -567,6 +693,10 @@ class SlurmAdapter:
             lines.append(f"#SBATCH --job-name={job_name}")
         if partition:
             lines.append(f"#SBATCH --partition={partition}")
+        if account:
+            lines.append(f"#SBATCH --account={account}")
+        if qos:
+            lines.append(f"#SBATCH --qos={qos}")
         if cpus_per_task is not None:
             lines.append(f"#SBATCH --cpus-per-task={cpus_per_task}")
         if gpus:
@@ -601,3 +731,148 @@ class SlurmAdapter:
             exit_code = int(exit_code_raw.strip())
 
         return SlurmJobInfo(job_id=job_id, state=state, exit_code=exit_code)
+
+
+_TERMINAL_STATES = frozenset(
+    {
+        SlurmJobState.COMPLETED,
+        SlurmJobState.FAILED,
+        SlurmJobState.CANCELLED,
+        SlurmJobState.TIMEOUT,
+        SlurmJobState.NODE_FAIL,
+    }
+)
+
+
+class SlurmJobMonitor:
+    """Background monitor for Slurm job cost cap and idle detection.
+
+    Spawns a daemon thread that periodically polls ``sacct`` for elapsed
+    time and optionally checks for inference request activity.  If
+    accumulated cost exceeds ``max_cost_usd`` or no requests arrive within
+    ``idle_timeout_minutes``, the job is cancelled via ``scancel``.
+
+    Usage::
+
+        monitor = SlurmJobMonitor(adapter, job_id, config)
+        monitor.start()
+        # ...
+        monitor.stop()
+    """
+
+    CANCEL_REASON_COST = "cost_cap"
+    CANCEL_REASON_IDLE = "idle_timeout"
+
+    def __init__(
+        self,
+        adapter: SlurmAdapter,
+        job_id: str,
+        config: SlurmJobConfig,
+        *,
+        activity_checker: Callable[[], bool] | None = None,
+        poll_interval: float = 30.0,
+    ) -> None:
+        self._adapter = adapter
+        self._job_id = job_id
+        self._config = config
+        self._activity_checker = activity_checker
+        self._poll_interval = poll_interval
+
+        self._cost_incurred: float = 0.0
+        self._cancelled: bool = False
+        self._cancel_reason: str | None = None
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._lock = threading.Lock()
+
+    @property
+    def cost_incurred(self) -> float:
+        with self._lock:
+            return self._cost_incurred
+
+    @property
+    def cancelled(self) -> bool:
+        with self._lock:
+            return self._cancelled
+
+    @property
+    def cancel_reason(self) -> str | None:
+        with self._lock:
+            return self._cancel_reason
+
+    # -- lifecycle --------------------------------------------------------
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(
+            target=self._run,
+            daemon=True,
+            name=f"slurm-monitor-{self._job_id}",
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5.0)
+
+    # -- polling loop -----------------------------------------------------
+
+    def _run(self) -> None:
+        while not self._stop_event.is_set():
+            if not self._poll():
+                return
+            self._stop_event.wait(self._poll_interval)
+
+    def _poll(self) -> bool:
+        """Execute one monitoring cycle.
+
+        Returns:
+            ``True`` if monitoring should continue, ``False`` if the
+            monitor should exit (job terminal, cancelled by cap/idle).
+        """
+        info = self._adapter.status(self._job_id)
+        if info.state in _TERMINAL_STATES:
+            return False
+
+        if self._config.max_cost_usd is not None:
+            elapsed = self._adapter.elapsed_seconds(self._job_id)
+            if elapsed is not None:
+                rate = self._resolve_hourly_rate()
+                hours = elapsed / 3600.0
+                cost = hours * rate
+                with self._lock:
+                    self._cost_incurred = cost
+                if cost > self._config.max_cost_usd:
+                    with self._lock:
+                        self._cancelled = True
+                        self._cancel_reason = self.CANCEL_REASON_COST
+                    self._adapter.cancel(self._job_id)
+                    return False
+
+        if (
+            self._activity_checker is not None
+            and self._config.idle_timeout_minutes is not None
+        ):
+            if not hasattr(self, "_idle_since"):
+                self._idle_since: float | None = None
+            if self._activity_checker():
+                self._idle_since = None
+            elif self._idle_since is None:
+                self._idle_since = time.time()
+            elif time.time() - self._idle_since >= self._config.idle_timeout_minutes * 60.0:
+                with self._lock:
+                    self._cancelled = True
+                    self._cancel_reason = self.CANCEL_REASON_IDLE
+                self._adapter.cancel(self._job_id)
+                return False
+
+        return True
+
+    def _resolve_hourly_rate(self) -> float:
+        if self._config.hourly_rate_usd is not None:
+            return self._config.hourly_rate_usd
+        from general_ludd.infra.pricing import infra_cost_usd
+
+        return infra_cost_usd("gpu_second", 3600.0)

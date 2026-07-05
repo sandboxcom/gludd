@@ -62,3 +62,25 @@ variable "ssh_cidr" {
   type        = string
   default     = "0.0.0.0/0"
 }
+
+variable "use_spot" {
+  description = "When true, launches the EC2 instance as a spot instance for cost savings. When false, uses on-demand pricing."
+  type        = bool
+  default     = true
+}
+
+variable "spot_price" {
+  description = "Maximum spot price per instance-hour. Empty string uses current market price. Only used when use_spot is true."
+  type        = string
+  default     = ""
+}
+
+variable "ami_id" {
+  description = "AMI ID for the EC2 instance. Should be an Ubuntu 22.04+ or similar cloud-init-ready image."
+  type        = string
+}
+
+variable "subnet_id" {
+  description = "Subnet ID to launch the EC2 instance into. Must be in the same VPC as the security group."
+  type        = string
+}

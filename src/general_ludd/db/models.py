@@ -1036,3 +1036,42 @@ class OrnithTrainingPairModel(Base):
     __table_args__ = (
         Index("ix_ornith_pairs_status_invoked", "outcome_status", "invoked_at"),
     )
+
+
+class SlurmJobModel(Base):
+    """Persistent record of a Slurm job lifecycle.
+
+    Written when a job is submitted; updated on completion/failure/cancellation.
+    The ``daemon_pid`` field ties the row to the daemon process that submitted it,
+    enabling orphan detection (startup) and shutdown scancel (shutdown hook).
+    """
+
+    __tablename__ = "slurm_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    deployment_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    account: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    qos: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    partition: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    gpu_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    gpu_type: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    max_hours: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    max_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    hourly_rate_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cost_incurred: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="submitted", index=True
+    )
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    daemon_pid: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("ix_slurm_jobs_status_daemon", "status", "daemon_pid"),
+        Index("ix_slurm_jobs_deployment", "deployment_id"),
+    )

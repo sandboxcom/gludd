@@ -168,6 +168,9 @@ class UserConfig(BaseSettings):
     use_hub: bool = False
     checkpointing: dict[str, Any] = {"enabled": False}
     human_in_the_loop: HumanInTheLoopConfig = HumanInTheLoopConfig()
+    compute_idle_check_interval_ticks: int = 60
+    compute_idle_teardown_threshold_ticks: int = 3
+    compute_idle_gpu_sm_pct: float = 5.0
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> UserConfig:

@@ -29,6 +29,7 @@ from general_ludd.db.models import (
     RelationType,
     RemediationActionModel,
     RoleRunModel,
+    SlurmJobModel,
     SpendRecordModel,
     TaskReturnModel,
     TodoEventModel,
@@ -2579,6 +2580,93 @@ class ModelPerformanceRepository:
                 "no session= override provided."
             )
         return self._session
+
+
+class SlurmJobRepository:
+    """Persistence for Slurm job lifecycle tracking.
+
+    Each row represents one Slurm job submitted by a daemon process.
+    Used by the shutdown hook to scancel active jobs and by startup
+    to detect orphaned jobs from a prior daemon instance.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(self, data: dict[str, Any]) -> SlurmJobModel:
+        row = SlurmJobModel(**data)
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def get_by_job_id(self, job_id: str) -> SlurmJobModel | None:
+        stmt = select(SlurmJobModel).where(SlurmJobModel.job_id == job_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def update_status(
+        self,
+        job_id: str,
+        status: str,
+        *,
+        cost_incurred: float | None = None,
+    ) -> bool:
+        """Update status (and optional cost) for a Slurm job by job_id.
+
+        Returns True if at least one row was updated, False otherwise.
+        """
+        from sqlalchemy import update as _update
+
+        values: dict[str, Any] = {"status": status}
+        if cost_incurred is not None:
+            values["cost_incurred"] = cost_incurred
+        if status in ("completed", "failed", "cancelled"):
+            values["completed_at"] = datetime.now(UTC)
+        guard = _update(SlurmJobModel).where(SlurmJobModel.job_id == job_id).values(**values)
+        res = await self._session.execute(guard)
+        await self._session.flush()
+        return (res.rowcount or 0) > 0  # type: ignore[attr-defined]
+
+    async def list_active(
+        self, daemon_pid: int | None = None
+    ) -> list[SlurmJobModel]:
+        """Return jobs with status 'submitted' or 'running'.
+
+        When ``daemon_pid`` is provided, only jobs matching that pid are returned.
+        """
+        stmt = (
+            select(SlurmJobModel)
+            .where(SlurmJobModel.status.in_(["submitted", "running"]))
+            .limit(_DEFAULT_LIST_LIMIT)
+        )
+        if daemon_pid is not None:
+            stmt = stmt.where(SlurmJobModel.daemon_pid == daemon_pid)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_deployment(
+        self, deployment_id: str
+    ) -> list[SlurmJobModel]:
+        stmt = (
+            select(SlurmJobModel)
+            .where(SlurmJobModel.deployment_id == deployment_id)
+            .limit(_DEFAULT_LIST_LIMIT)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_orphans(self, current_pid: int) -> list[SlurmJobModel]:
+        """Return jobs with status 'running' where daemon_pid != current_pid."""
+        stmt = (
+            select(SlurmJobModel)
+            .where(
+                SlurmJobModel.status == "running",
+                SlurmJobModel.daemon_pid != current_pid,
+            )
+            .limit(_DEFAULT_LIST_LIMIT)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
 
 class MemoryRepository:

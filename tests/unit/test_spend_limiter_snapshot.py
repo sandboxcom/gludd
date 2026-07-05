@@ -37,8 +37,8 @@ class TestSpendLimiterSnapshot:
 
         snapshot = limiter.snapshot()
         assert len(snapshot) == 2
-        assert snapshot[0] == (0.0, 2.0)
-        assert snapshot[1] == (0.0, 3.0)
+        assert snapshot[0] == (0.0, 2.0, None)
+        assert snapshot[1] == (0.0, 3.0, None)
 
     def test_restore_preserves_spend(self) -> None:
         limiter1 = SpendLimiter(limit_usd=10.0, window_seconds=3600.0, clock=FakeClock(0.0))

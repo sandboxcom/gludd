@@ -47,6 +47,28 @@ module "vllm_server" {
   timeout_minutes = var.timeout_minutes
 }
 
+resource "aws_instance" "inference" {
+  ami                    = var.ami_id
+  instance_type          = var.instance_type
+  subnet_id              = var.subnet_id
+  vpc_security_group_ids = [module.network.security_group_id]
+  user_data              = module.vllm_server.user_data
+
+  tags = {
+    Name = "aws-vllm-inference"
+  }
+
+  dynamic "instance_market_options" {
+    for_each = var.use_spot ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
+        max_price = var.spot_price
+      }
+    }
+  }
+}
+
 output "security_group_id" {
   description = "Id of the AWS security group created by the network module."
   value       = module.network.security_group_id

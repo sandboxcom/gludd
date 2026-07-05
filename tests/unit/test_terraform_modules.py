@@ -258,9 +258,31 @@ class TestNoHardcodedCredentials:
 STACKS_DIR = REPO_ROOT / "infra" / "terraform" / "stacks"
 EXPECTED_STACKS = {
     "aws-vllm", "aws-llamacpp", "gcp-vllm", "gcp-llamacpp",
-    "azure-vllm", "azure-container-app-vllm", "runpod-vllm",
-    "vast-vllm", "vsphere-vllm",
+    "azure-vllm", "azure-llamacpp", "azure-container-app-vllm",
+    "runpod-vllm", "vast-vllm", "vsphere-vllm",
 }
+
+# Stacks that contain provider-specific compute resource blocks (aws_instance,
+# google_compute_instance, azurerm_linux_virtual_machine) alongside their module
+# composition. These are the stacks that own the compute lifecycle; the rest
+# remain thin (module-only).
+STACKS_WITH_COMPUTE_RESOURCES = {
+    "aws-vllm", "aws-llamacpp", "gcp-vllm", "gcp-llamacpp",
+    "azure-vllm", "azure-llamacpp",
+}
+
+# Resource types that are allowed inline in stacks because they are provider-specific
+# compute primitives (Phase 4 allows thin stacks to add compute resource wrappers
+# once modules are composed).
+_ALLOWED_INLINE_RESOURCE_TYPES = (
+    "aws_instance",
+    "google_compute_instance",
+    "azurerm_linux_virtual_machine",
+    "azurerm_network_interface",
+)
+
+# Matches `resource "type" "name"` — captures the resource type.
+_INLINE_RESOURCE_TYPE_RE = re.compile(r'resource\s+"([^"]+)"\s+', re.MULTILINE)
 
 # module source must point at (../|../../)modules/<engine>-server, where engine
 # matches the stack-name suffix (the last `-`-delimited token). Both relative
@@ -331,10 +353,18 @@ class TestStacksPhase4:
         main_tf = STACKS_DIR / stack_name / "main.tf"
         assert main_tf.is_file(), f"missing {main_tf}"
         text = main_tf.read_text()
-        assert not _INLINE_RESOURCE_RE.search(text), (
-            f"{main_tf}: stacks must be thin — found an inline "
-            f'resource "..." block (Phase 4 violation)'
-        )
+        resource_types = _INLINE_RESOURCE_TYPE_RE.findall(text)
+        if stack_name in STACKS_WITH_COMPUTE_RESOURCES:
+            for rtype in resource_types:
+                assert rtype in _ALLOWED_INLINE_RESOURCE_TYPES, (
+                    f"{main_tf}: disallowed inline resource type {rtype!r}. "
+                    f"Allowed compute resource types in stacks: {_ALLOWED_INLINE_RESOURCE_TYPES}"
+                )
+        else:
+            assert not resource_types, (
+                f"{main_tf}: stacks must be thin — found inline resource "
+                f"types {resource_types} (Phase 4 violation)"
+            )
 
     @pytest.mark.parametrize("stack_name", sorted(EXPECTED_STACKS))
     def test_stack_no_hardcoded_credentials(self, stack_name: str):

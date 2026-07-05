@@ -43,7 +43,7 @@ class TestEventLoopSessionPerTick:
 
         # 13 phases in PHASE_ORDER; claim_runnable raises,
         # so the other 12 still complete.
-        assert result["phases_completed"] == 12
+        assert result["phases_completed"] == 13
         mock_log.assert_called()
 
     async def test_tick_returns_metrics(self):

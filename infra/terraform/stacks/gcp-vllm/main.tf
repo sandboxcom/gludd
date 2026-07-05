@@ -44,6 +44,32 @@ module "vllm_server" {
   timeout_minutes = var.timeout_minutes
 }
 
+resource "google_compute_instance" "inference" {
+  name         = "gcp-vllm-01"
+  machine_type = var.instance_type
+  zone         = "${var.region}-a"
+
+  tags = ["gcp-vllm"]
+
+  boot_disk {
+    initialize_params {
+      image = var.boot_image
+    }
+  }
+
+  network_interface {
+    network = "default"
+    access_config {}
+  }
+
+  metadata_startup_script = module.vllm_server.user_data
+
+  scheduling {
+    preemptible       = var.use_spot
+    automatic_restart = !var.use_spot
+  }
+}
+
 output "security_group_id" {
   description = "Self-link of the GCP firewall rule created by the network module."
   value       = module.network.security_group_id

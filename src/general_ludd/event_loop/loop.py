@@ -78,6 +78,7 @@ PHASE_ORDER = [
     "dispatch_execute_jobs",
     "reconcile_completed_decisions",
     "refresh_model_performance",
+    "check_compute_utilization",
     "self_improve",
     "emit_tick_metrics",
 ]
@@ -259,6 +260,8 @@ class EventLoop:
         run_recorder: Any | None = None,
         prompt_variant_selector: Any | None = None,
         checkpointer: TickCheckpointer | None = None,
+        utilization_tracker: Any | None = None,
+        deployment_manager: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -266,6 +269,8 @@ class EventLoop:
         self._run_recorder = run_recorder
         self._prompt_variant_selector = prompt_variant_selector
         self._checkpointer = checkpointer
+        self._utilization_tracker = utilization_tracker
+        self._deployment_manager = deployment_manager
         self._project_secrets_manager = project_secrets_manager
         self._project_workspace = project_workspace
         self._self_improve_interval = self_improve_interval
@@ -3024,6 +3029,58 @@ class EventLoop:
             logger.warning("F1: PR delivery for %s failed: %s", todo.todo_id, result["error"])
         else:
             logger.info("F1: opened PR for %s: %s", todo.todo_id, result.get("pr_url"))
+
+    async def _phase_check_compute_utilization(self) -> None:
+        interval = self.config.get("compute_idle_check_interval_ticks", 60)
+        if self._total_ticks % interval != 0:
+            return
+        if self._utilization_tracker is None:
+            return
+        threshold = self.config.get("compute_idle_gpu_sm_pct", 5.0)
+        teardown_ticks = self.config.get("compute_idle_teardown_threshold_ticks", 3)
+        idle_endpoints = self._utilization_tracker.find_idle_gpus(
+            threshold=float(threshold), window=900,
+        )
+        daemon_state = self._daemon_state if self._daemon_state is not None else {}
+        idle_tracking: dict[str, Any] = daemon_state.setdefault("idle_endpoints", {})
+        torn_down: list[str] = daemon_state.setdefault("torn_down_endpoints", [])
+        current_idle_ids: set[str] = set()
+        for ep in idle_endpoints:
+            current_idle_ids.add(ep.endpoint_id)
+            if ep.endpoint_id not in idle_tracking:
+                idle_tracking[ep.endpoint_id] = {
+                    "endpoint_id": ep.endpoint_id,
+                    "url": ep.url,
+                    "model": ep.model,
+                    "gpu_type": ep.gpu_type,
+                    "idle_ticks": 0,
+                }
+            idle_tracking[ep.endpoint_id]["idle_ticks"] += 1
+            count = idle_tracking[ep.endpoint_id]["idle_ticks"]
+            logger.warning(
+                "Idle GPU endpoint %s (%s, %s): %d consecutive idle ticks",
+                ep.endpoint_id, ep.model, ep.gpu_type, count,
+            )
+            if count >= teardown_ticks:
+                logger.warning(
+                    "Tearing down idle GPU endpoint %s after %d idle ticks",
+                    ep.endpoint_id, count,
+                )
+                if self._deployment_manager is not None:
+                    try:
+                        await self._deployment_manager.destroy(ep.endpoint_id)
+                    except Exception as exc:
+                        logger.error(
+                            "Failed to tear down idle endpoint %s: %s",
+                            ep.endpoint_id, exc,
+                        )
+                        continue
+                self._utilization_tracker.unregister_endpoint(ep.endpoint_id)
+                idle_tracking.pop(ep.endpoint_id, None)
+                torn_down.append(ep.endpoint_id)
+        no_longer_idle = [eid for eid in idle_tracking if eid not in current_idle_ids]
+        for eid in no_longer_idle:
+            idle_tracking.pop(eid, None)
 
     async def _phase_self_improve(self) -> None:
         interval = self._self_improve_interval

@@ -118,13 +118,17 @@ def infra_cost_usd(kind: str, units: float) -> float:
 
 
 class InfraTracker:
-    """GPU/compute cost projector: PricingCatalog primary, static fallback.
+    """GPU/compute cost projector and accumulator: PricingCatalog primary, static fallback.
 
     Wraps :func:`infra_cost_usd` so callers get live catalog prices when a
     :class:`~general_ludd.pricing_intel.catalog.PricingCatalog` is available,
     and the static ``INFRA_PRICING`` table otherwise.  Mirrors the fail-soft
     pattern of :meth:`SpendLimiter.token_cost_usd`: a missing or erroring
     catalog price NEVER breaks cost projection — the static table is used.
+
+    Accumulation methods (:meth:`record_gpu_seconds`, :meth:`get_total_infra_cost`,
+    :meth:`get_infra_cost_by_provider`) maintain a thread-safe running total of
+    infrastructure spend for observability and cost-accounting endpoints.
 
     Args:
         catalog:          Optional :class:`PricingCatalog` used as the PRIMARY
@@ -144,6 +148,11 @@ class InfraTracker:
     ) -> None:
         self._catalog = catalog
         self._default_provider = default_provider
+        import threading
+
+        self._total_infra_cost: float = 0.0
+        self._infra_cost_by_provider: dict[str, float] = {}
+        self._cost_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Cost projection
@@ -189,6 +198,57 @@ class InfraTracker:
             if per_second is not None:
                 return per_second * gpu_seconds
         return infra_cost_usd("gpu_second", gpu_seconds)
+
+    # ------------------------------------------------------------------
+    # Cost accumulation
+    # ------------------------------------------------------------------
+
+    def record_gpu_seconds(
+        self,
+        provider: str,
+        gpu_type: str,
+        seconds: float,
+        spot: bool = False,
+    ) -> None:
+        """Compute the cost of GPU seconds and add to the running infra total.
+
+        Uses :meth:`gpu_cost_usd` (PricingCatalog primary, static table
+        fallback) to determine the unit price, so live catalog rates are
+        picked up automatically.
+
+        Args:
+            provider: Provider slug (e.g. ``"runpod"``, ``"aws"``).
+            gpu_type: GPU SKU (e.g. ``"A100-SXM4-80GB-1x"``).
+            seconds:  Seconds of GPU time consumed.
+            spot:     If True, apply spot pricing discount.
+        """
+        import math
+
+        if not isinstance(seconds, (int, float)):
+            return
+        if not math.isfinite(seconds) or seconds < 0:
+            return
+        cost = self.gpu_cost_usd(
+            sku=gpu_type,
+            gpu_seconds=seconds,
+            provider=provider,
+            spot=spot,
+        )
+        with self._cost_lock:
+            self._total_infra_cost += cost
+            self._infra_cost_by_provider[provider] = (
+                self._infra_cost_by_provider.get(provider, 0.0) + cost
+            )
+
+    def get_total_infra_cost(self) -> float:
+        """Return the total accumulated infrastructure spend in USD."""
+        with self._cost_lock:
+            return self._total_infra_cost
+
+    def get_infra_cost_by_provider(self) -> dict[str, float]:
+        """Return infrastructure spend broken down by provider slug."""
+        with self._cost_lock:
+            return dict(self._infra_cost_by_provider)
 
     # ------------------------------------------------------------------
     # Internal helpers

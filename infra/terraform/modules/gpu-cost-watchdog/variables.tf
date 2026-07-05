@@ -36,7 +36,7 @@ variable "cloud" {
   default     = "aws"
 
   validation {
-    condition     = contains(["aws", "gcp", "azure", "vsphere", "runpod", "vast"], var.cloud)
-    error_message = "cloud must be one of: aws, gcp, azure, vsphere, runpod, vast."
+    condition     = contains(["aws", "gcp", "azure", "vsphere", "runpod", "vast", "kubernetes"], var.cloud)
+    error_message = "cloud must be one of: aws, gcp, azure, vsphere, runpod, vast, kubernetes."
   }
 }

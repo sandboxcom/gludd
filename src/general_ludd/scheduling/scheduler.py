@@ -27,6 +27,54 @@ class CycleError(ValueError):
 
 
 @dataclass(frozen=True)
+class ComputeSchedulingHint:
+    """Hints for compute-aware scheduling — GPU affinity, VRAM, and cost estimates.
+
+    Used by UtilizationTracker.route_task() to prefer endpoints matching GPU type
+    and by ModelGateway.select_cost_effective_profile() to prefer cheaper models
+    near budget cap.
+
+    Work-type → default GPU mapping:
+        - analysis    → A100_80 (heavy reasoning)
+        - review      → T4 or L4 (lightweight)
+        - self_improve → H100 (training-scale)
+    """
+
+    preferred_gpu_type: str | None = None
+    min_vram_gb: float = 0.0
+    estimated_tokens: int = 0
+    estimated_duration_seconds: float = 0.0
+    work_type: str = ""
+
+    @staticmethod
+    def for_work_type(work_type: str, **overrides: str | int | float) -> ComputeSchedulingHint:
+        """Return a hint pre-configured for a known work type.
+
+        Override any field by passing it as a keyword argument.
+        """
+        defaults: dict[str, str | float | int] = {
+            "work_type": work_type,
+        }
+        if work_type == "analysis":
+            defaults["preferred_gpu_type"] = "a100_80"
+            defaults["min_vram_gb"] = 40.0
+        elif work_type == "review":
+            defaults.setdefault("preferred_gpu_type", "t4")
+            defaults["min_vram_gb"] = 8.0
+        elif work_type == "self_improve":
+            defaults["preferred_gpu_type"] = "h100"
+            defaults["min_vram_gb"] = 80.0
+        defaults.update(overrides)
+        return ComputeSchedulingHint(
+            preferred_gpu_type=str(defaults.get("preferred_gpu_type")) if isinstance(defaults.get("preferred_gpu_type"), str) else None,
+            min_vram_gb=float(defaults.get("min_vram_gb", 0.0)),
+            estimated_tokens=int(defaults.get("estimated_tokens", 0)),
+            estimated_duration_seconds=float(defaults.get("estimated_duration_seconds", 0.0)),
+            work_type=str(defaults.get("work_type", "")),
+        )
+
+
+@dataclass(frozen=True)
 class WorkItem:
     """A unit of agentic work to be scheduled.
 

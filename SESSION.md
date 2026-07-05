@@ -9,15 +9,15 @@
 
 ## Current Work
 
-- **HEAD: `64a84436`** on master — pushed. CI PENDING (run 28732554372, in_progress).
+- **HEAD: `c2d08d49`** on master — pushed. CI PENDING (run 28732672001, in_progress).
 
-- **16 commits this session (session 6)**: enforce-stop rewrite, watchdog CI-awareness, push-rate guard, batch-push, escape-sequence fix, G4/G10/G11 wiring, G6 A/B wiring, AGENTS.md stale-ref fixes, SESSION.md update (579bdc0b), G5/G7/G9/Comp wiring (11c18309), bandit B602 fix (97a18df5), LC langchain/langgraph integration (25d0f40e), LC config flags + approval wiring (47269f92), enforce-todos→enforce-stop test ref fix (b8b6b509 + 64a84436).
+- **17 commits this session (session 6)**: enforce-stop rewrite, watchdog CI-awareness, push-rate guard, batch-push, escape-sequence fix, G4/G10/G11 wiring, G6 A/B wiring, AGENTS.md stale-ref fixes, SESSION.md update (579bdc0b), G5/G7/G9/Comp wiring (11c18309), bandit B602 fix (97a18df5), LC langchain/langgraph integration (25d0f40e), LC config flags + approval wiring (47269f92), enforce-todos→enforce-stop test ref fix (b8b6b509 + 64a84436), SESSION.md HEAD update (c2d08d49).
 
 - **G1-G13 scaffold/wire**: All 13 classes now wired. Dead classes 19→0 (5 dead-class gaps resolved: G2 eval, G3 splitter, G5 compaction eval, G8 scorer, G12, G13).
 
 - **LC integration** (25d0f40e + 47269f92): 31+ files, 165 tests, 10 langchain/langgraph modules. 9 custom implementations replaced with framework primitives (PromptRegistry → LangChain PromptTemplate, PromptCompactor → LangChain ConversationSummaryBufferMemory, VariantGenerator → LangGraph StateGraph, ResultAggregator → LangGraph checkpoint, ConsensusEngine → LangGraph conditional edges, RunRecorder → LangChain CallbackHandler, SandboxExecutor → LangChain Tool, EvalHarness → LangChain StringEvaluator, ExecutionEngine → LangGraph AgentExecutor). Follow-up (47269f92): 6 config flags wired, langsmith dep added, approval module wired, features.yml updated.
 
-- **Known Gaps**: All 4 prior SESSION.md gaps resolved. All 5 dead-class gaps resolved. All 10 LC modules wired. Local test suite still OOM under xdist (CI-as-gate). CI PENDING on current HEAD (`64a84436`, run 28732554372, in_progress). CI prior: RED on `25d0f40e` (run 28714920347), unknown on `47269f92` (never checked).
+- **Known Gaps**: All 4 prior SESSION.md gaps resolved. All 5 dead-class gaps resolved. All 10 LC modules wired. Local test suite still OOM under xdist (CI-as-gate). CI PENDING on current HEAD (`c2d08d49`, run 28732672001, in_progress). CI prior: run 28732554372 verdict pending on `64a84436`. RED on `25d0f40e` (run 28714920347), unknown on `47269f92` (never checked).
 
 - **Gate**: lint 0, typecheck 0, collect 0. Full test suite OOM under 8-worker xdist; CI-as-gate used.
 
@@ -25,6 +25,7 @@
 
 | Hash | Message |
 |------|---------|
+| `c2d08d49` | docs: update SESSION.md HEAD, CI, commit counts for session 6 |
 | `64a84436` | fix: update test_todo_guard_plugin.py to reference enforce-stop.ts instead of deleted enforce-todos.ts — 17 tests |
 | `b8b6b509` | fix: update test_todo_guard_plugin.py to reference enforce-stop.ts instead of deleted enforce-todos.ts — 17 tests |
 | `47269f92` | fix(LC): wire 6 config flags, add langsmith dep, wire approval module, update features.yml — 5 tests |
@@ -56,21 +57,21 @@
 ## Known Gaps
 
 1. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used.
-2. **CI PENDING on `64a84436`** — run 28732554372 (in_progress). Wait for CI verdict before pushing further.
-3. **CI RED on prior HEAD `25d0f40e`** — run 28714920347 (conclusion='failure'). Root cause: bandit B602 fixed in 97a18df5 but CI still red on subsequent commits.
+2. **CI PENDING on `c2d08d49`** — run 28732672001 (in_progress). Wait for CI verdict before pushing further.
+3. **CI prior runs** — run 28732554372 (on `64a84436`) verdict pending. Run 28714920347 RED on `25d0f40e`. Root cause: bandit B602 fixed in 97a18df5 but CI still red on subsequent commits.
 
 ## Next Steps
 
-1. **Wait for CI on `64a84436`** — run 28732554372 (in_progress). Poll with `make ci-verdict BRANCH=master` until complete.
-2. **Investigate CI RED root cause** — prior run 28714920347 (on `25d0f40e`) failed; determine if CI still red on current HEAD once verdict arrives.
-3. **Commit working tree changes** — `SESSION.md` + 3 test files modified (uncommitted).
+1. **Wait for CI on `c2d08d49`** — run 28732672001 (in_progress). Poll with `make ci-verdict BRANCH=master` until complete.
+2. **Wait for CI on `64a84436`** — run 28732554372 (in_progress). Collect verdict when available.
+3. **Investigate CI RED root cause** — prior run 28714920347 (on `25d0f40e`) failed; determine if CI still red on current HEAD once verdict arrives.
 4. **Run `make gate-background`** — validate LC integration locally once CI is green.
 
 ## Current Gate Status (2026-07-04)
 <!-- gate:begin -->
 - **Last full PASS**: 2026-07-05 — lint 0, typecheck 0, collect 0. Full suite OOM under xdist.
-- **HEAD**: `64a84436` (pushed)
-- **CI**: run 28732554372 IN_PROGRESS on `64a84436`. Prior: run 28714920347 RED (failure) on `25d0f40e`.
+- **HEAD**: `c2d08d49` (pushed)
+- **CI**: run 28732672001 IN_PROGRESS on `c2d08d49`. Prior: run 28732554372 pending on `64a84436`, run 28714920347 RED (failure) on `25d0f40e`.
 
 <!-- gate:end -->
 
@@ -79,7 +80,7 @@
 
 ## Historical State
 
-- **2026-07-05 session 6 (current)**: HEAD `64a84436` (pushed, CI pending run 28732554372). 16 commits: LC langchain/langgraph integration (31 files, 165 tests, 10 modules, 9 custom impls replaced), all 4 SESSION.md gaps resolved, all 5 dead-class gaps resolved, all 10 LC modules wired, bandit B602 fix, 6 LC config flags + approval wiring, enforce-todos→enforce-stop test ref fix (b8b6b509 + 64a84436). CI RED on prior HEAD (25d0f40e, run 28714920347); CI PENDING on current HEAD (64a84436, run 28732554372).
+- **2026-07-05 session 6 (current)**: HEAD `c2d08d49` (pushed, CI pending run 28732672001). 17 commits: LC langchain/langgraph integration (31 files, 165 tests, 10 modules, 9 custom impls replaced), all 4 SESSION.md gaps resolved, all 5 dead-class gaps resolved, all 10 LC modules wired, bandit B602 fix, 6 LC config flags + approval wiring, enforce-todos→enforce-stop test ref fix (b8b6b509 + 64a84436), SESSION.md update (c2d08d49). CI RED on prior HEAD (25d0f40e, run 28714920347); CI PENDING on current HEAD (c2d08d49, run 28732672001).
 - **2026-07-04 session 5**: HEAD `11c18309` (unpushed). G5/G7/G9/Comp wiring landed (11c18309) — PromptCompactor, ResultAggregator, VariantGenerator, Comp wired; dead classes 19→14. CI RED (run 28704091173, failure on 579bdc0b).
 - **2026-07-04 session 4**: HEAD `387ef3ba`. 9 commits: watchdog CI-awareness (8a128c3f), enforce-stop local-work distinction (186783a2), keep-working system rewrite (c69c0d72), push-rate-guard + batch-push (96714938), escape-sequence fix (53fe65af), G4/G10/G11 wiring (680bfeef), G6 A/B wiring + AGENTS stale fixes (387ef3ba), SESSION.md update (579bdc0b). All 4 SESSION.md gaps resolved (39 new tests). Lint/typecheck/collect green.
 - **2026-07-04 session 3**: HEAD `0ee32612`. 5 commits: G1-G13 README percentages bumped (76f72d75), G14 evidence (e21def86), G4+G8 README corrections (fadcf808), G6 content-hash tracking (b4bae0c5), G6a evidence (0ee32612). Gate green.

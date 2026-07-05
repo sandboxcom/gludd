@@ -32,6 +32,7 @@ from general_ludd.db.repository import (
     BenchmarkRepository,
     MemoryRepository,
     ModelPerformanceRepository,
+    SlurmJobRepository,
 )
 from general_ludd.db.session import (
     create_async_session_factory,
@@ -881,6 +882,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await seed_initial_queues(session)
             await session.commit()
 
+        # Orphan detection: flag Slurm jobs from a prior daemon instance.
+        import os as _os
+        _current_pid = _os.getpid()
+        try:
+            async with session_factory() as session:
+                slurm_repo = SlurmJobRepository(session)
+                orphans = await slurm_repo.list_orphans(_current_pid)
+            if orphans:
+                logger.warning(
+                    "Found %d orphan Slurm job(s) still marked 'running' from a prior "
+                    "daemon instance (pid != %d): %s. Not auto-cancelling — they may "
+                    "belong to another daemon.",
+                    len(orphans),
+                    _current_pid,
+                    ", ".join(j.job_id for j in orphans),
+                )
+        except Exception:
+            logger.warning("Orphan Slurm job detection failed", exc_info=True)
+
         # Phase 2 Step 3 (self-improve wiring): build the audit_sink closure over
         # session_factory + AuditEventRepository and publish it on app.state so
         # the /admin/self-update/plan router can pass it through to apply_plan.
@@ -1450,6 +1470,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "repo_root": os.getcwd(),
                 "review": review_cfg,
                 "use_langgraph_tool_loop": bool(getattr(uc, "use_langgraph_tool_loop", False)) if uc else False,
+                "compute_idle_check_interval_ticks": getattr(uc, "compute_idle_check_interval_ticks", 60)
+                if uc else 60,
+                "compute_idle_teardown_threshold_ticks": getattr(uc, "compute_idle_teardown_threshold_ticks", 3)
+                if uc else 3,
+                "compute_idle_gpu_sm_pct": getattr(uc, "compute_idle_gpu_sm_pct", 5.0) if uc else 5.0,
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,
@@ -1474,6 +1499,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             memory_repo=memory_repo,
             sandbox_executor=sandbox_executor,
             checkpointer=app.state.checkpointer,
+            utilization_tracker=app.state._utilization_tracker,
+            deployment_manager=getattr(app.state, "_deployment_manager", None),
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -1755,6 +1782,42 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("Failed to launch Ornith MCP subprocess: %s", ornith_exc)
 
     yield
+
+    # ── Slurm shutdown: scancel all active jobs owned by this daemon ──────
+    _session_factory = getattr(app.state, "_session_factory", None)
+    if _session_factory is not None:
+        try:
+            import os as _os
+            _current_pid = _os.getpid()
+            async with _session_factory() as session:
+                slurm_repo = SlurmJobRepository(session)
+                active_jobs = await slurm_repo.list_active(daemon_pid=_current_pid)
+            if active_jobs:
+                logger.info(
+                    "Shutdown: cancelling %d active Slurm job(s) owned by pid=%d",
+                    len(active_jobs),
+                    _current_pid,
+                )
+                for job in active_jobs:
+                    try:
+                        from general_ludd.infra.slurm import SlurmAdapter
+                        adapter = SlurmAdapter()
+                        adapter.cancel(job.job_id)
+                        logger.info(
+                            "Slurm shutdown: cancelled job %s", job.job_id
+                        )
+                        async with _session_factory() as session:
+                            await SlurmJobRepository(session).update_status(
+                                job.job_id, "cancelled"
+                            )
+                    except Exception as cancel_exc:
+                        logger.warning(
+                            "Slurm shutdown: failed to cancel job %s: %s",
+                            job.job_id,
+                            cancel_exc,
+                        )
+        except Exception:
+            logger.warning("Slurm shutdown hook failed", exc_info=True)
 
     if getattr(app.state, "_degraded", None):
         logger.warning("Daemon is running in degraded mode: %s", app.state._degraded)

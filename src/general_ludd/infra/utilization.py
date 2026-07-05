@@ -25,6 +25,9 @@ class ComputeEndpoint:
     model: str = ""
     gpu_type: str = ""
     gpu_count: int = 1
+    gpu_sm_util: float = 0.0
+    gpu_mem_util: float = 0.0
+    gpu_temp_c: float = 0.0
     max_concurrent: int = 4
     current_load: int = 0
     total_requests: int = 0
@@ -64,12 +67,15 @@ class TaskRouting:
 
 
 class UtilizationTracker:
-    def __init__(self) -> None:
+    def __init__(self, max_history: int = 60) -> None:
         self._endpoints: dict[str, ComputeEndpoint] = {}
         # OrderedDict so we can FIFO-evict the oldest routing record when the
         # history exceeds _MAX_TASK_HISTORY (popitem(last=False)). Plain dict
         # assignment/pop semantics are preserved.
         self._task_history: collections.OrderedDict[str, str] = collections.OrderedDict()
+        # Per-endpoint GPU metric history: endpoint_id → deque of (timestamp, gpu_sm_util_pct).
+        self._gpu_history: dict[str, collections.deque[tuple[float, float]]] = {}
+        self._max_gpu_history = max_history
 
     def register_endpoint(self, endpoint_id: str, url: str, model: str = "", **kwargs: Any) -> ComputeEndpoint:
         ep = ComputeEndpoint(endpoint_id=endpoint_id, url=url, model=model, **kwargs)
@@ -205,3 +211,42 @@ class UtilizationTracker:
         ep = self._endpoints.get(endpoint_id)
         if ep:
             ep.total_tokens += token_count
+
+    def update_gpu_metrics(self, endpoint_id: str, metrics: dict[str, float]) -> None:
+        ep = self._endpoints.get(endpoint_id)
+        if ep is None:
+            return
+        sm_util = metrics.get("gpu_sm_util_pct")
+        mem_util = metrics.get("gpu_mem_util_pct")
+        temp_c = metrics.get("gpu_temp_c")
+        if sm_util is not None:
+            ep.gpu_sm_util = float(sm_util)
+        if mem_util is not None:
+            ep.gpu_mem_util = float(mem_util)
+        if temp_c is not None:
+            ep.gpu_temp_c = float(temp_c)
+        if sm_util is not None:
+            now = time.time()
+            hist = self._gpu_history.setdefault(endpoint_id, collections.deque())
+            hist.append((now, float(sm_util)))
+            while len(hist) > self._max_gpu_history:
+                hist.popleft()
+
+    def find_idle_gpus(self, threshold: float = 5.0, window: float = 900.0) -> list[ComputeEndpoint]:
+        now = time.time()
+        idle: list[ComputeEndpoint] = []
+        for ep in self._endpoints.values():
+            if not ep.active:
+                continue
+            if not ep.gpu_type:
+                continue
+            hist = self._gpu_history.get(ep.endpoint_id)
+            if hist is not None:
+                window_start = now - window
+                recent = [(ts, sm) for ts, sm in hist if ts >= window_start]
+                if len(recent) >= 1 and all(sm <= threshold for _ts, sm in recent):
+                    idle.append(ep)
+                    continue
+            if ep.current_load == 0 and ep.last_used > 0 and (now - ep.last_used) >= window:
+                idle.append(ep)
+        return idle

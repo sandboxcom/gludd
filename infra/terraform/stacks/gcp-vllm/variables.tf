@@ -62,3 +62,15 @@ variable "ssh_cidr" {
   type        = string
   default     = "0.0.0.0/0"
 }
+
+variable "use_spot" {
+  description = "When true, launches the compute instance as a preemptible VM for cost savings. When false, uses standard on-demand pricing."
+  type        = bool
+  default     = true
+}
+
+variable "boot_image" {
+  description = "Boot disk image for the GCE instance. Should be an Ubuntu 22.04+ or similar image (e.g. projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts)."
+  type        = string
+  default     = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+}

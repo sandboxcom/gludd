@@ -67,6 +67,8 @@ class TestEventLoop:
             "evaluate_rules",
             "dispatch_execute_jobs",
             "reconcile_completed_decisions",
+            "refresh_model_performance",
+            "check_compute_utilization",
             "self_improve",
             "emit_tick_metrics",
         ]
@@ -459,7 +461,7 @@ class TestEventLoop:
         assert "tick_duration_ms" in result
         assert isinstance(result["tick_duration_ms"], float)
         # 13 phases: the original 11 + run_scheduler + _phase_publish_session_metrics.
-        assert result["phases_completed"] == 13
+        assert result["phases_completed"] == 14
 
     @pytest.mark.asyncio
     async def test_run_forever_can_be_stopped(self):

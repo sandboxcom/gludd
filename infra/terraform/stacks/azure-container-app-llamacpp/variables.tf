@@ -44,3 +44,9 @@ variable "timeout_minutes" {
   type        = number
   default     = 60
 }
+
+variable "use_spot" {
+  description = "Spot/preemptible instances are not supported for Azure Container Apps. Variable present for interface consistency."
+  type        = bool
+  default     = false
+}

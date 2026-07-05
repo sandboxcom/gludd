@@ -73,8 +73,8 @@ class SpendLimiter:
         self._window_seconds = window_seconds
         self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
         self._catalog = catalog
-        # Each record: (timestamp_float, cost_usd_float)
-        self._records: list[tuple[float, float]] = []
+        # Each record: (timestamp_float, cost_usd_float, project_id_or_None)
+        self._records: list[tuple[float, float, str | None]] = []
         # Re-entrant lock guards the check-and-record sequence so concurrent
         # charges in one window cannot collectively race past the cap (#3).
         # Re-entrant because try_charge() calls window_spend()/record() which
@@ -243,7 +243,7 @@ class SpendLimiter:
             )
         ts = at if at is not None else self._clock()
         with self._lock:
-            self._records.append((ts, cost_usd))
+            self._records.append((ts, cost_usd, project_id))
 
     def try_charge(
         self,
@@ -307,7 +307,7 @@ class SpendLimiter:
             )
             return True
 
-    def snapshot(self) -> list[tuple[float, float]]:
+    def snapshot(self) -> list[tuple[float, float, str | None]]:
         """Return a serializable copy of the in-window records.
 
         Persist this across a daemon restart and pass it back to ``restore`` so
@@ -315,17 +315,21 @@ class SpendLimiter:
         the window to zero and the cap can be evaded by restarting.
 
         Returns:
-            A list of ``(timestamp, cost_usd)`` tuples.
+            A list of ``(timestamp, cost_usd, project_id)`` tuples.
         """
         with self._lock:
             return list(self._records)
 
-    def restore(self, records: list[tuple[float, float]] | None) -> None:
+    def restore(self, records: list[tuple[float, float]] | list[tuple[float, float, str | None]] | None) -> None:
         """Reload previously-snapshotted records into this limiter.
 
         Records outside the current window are pruned lazily on the next
         ``window_spend()`` call, so restoring stale records after a long
         downtime is safe.
+
+        Accepts both 2-tuple ``(ts, cost)`` (old snapshot format) and
+        3-tuple ``(ts, cost, project_id)`` (current format).  Two-tuples are
+        upgraded to ``(ts, cost, None)`` on ingest.
 
         Invalid records are DROPPED (not silently accepted) to prevent
         cap-evasion attacks:
@@ -339,7 +343,8 @@ class SpendLimiter:
           treated as current-window spend.
 
         Args:
-            records: A list of ``(timestamp, cost_usd)`` tuples produced by
+            records: A list of ``(timestamp, cost_usd)`` or
+                     ``(timestamp, cost_usd, project_id)`` tuples produced by
                      ``snapshot`` (or an equivalent persisted form).  ``None``
                      or empty is a no-op.
 
@@ -356,7 +361,14 @@ class SpendLimiter:
         now = self._clock()
         with self._lock:
             valid = []
-            for ts, c in records:
+            for rec in records:
+                if len(rec) == 2:
+                    ts, c = rec
+                    pid: str | None = None
+                elif len(rec) == 3:
+                    ts, c, pid = rec
+                else:
+                    continue
                 if not isinstance(ts, (int, float)) or not isinstance(c, (int, float)):
                     continue
                 ts_f, c_f = float(ts), float(c)
@@ -383,17 +395,25 @@ class SpendLimiter:
                         now,
                     )
                     ts_f = now
-                valid.append((ts_f, c_f))
+                if pid is not None and not isinstance(pid, str):
+                    pid = None
+                valid.append((ts_f, c_f, pid))
             self._records.extend(valid)
 
-    def window_spend(self, now: float | None = None) -> float:
+    def window_spend(
+        self,
+        now: float | None = None,
+        *,
+        project_id: str | None = None,
+    ) -> float:
         """Sum of all spend within the rolling window ending at ``now``.
 
         Pruning: records older than ``(now - window_seconds)`` are dropped
         in-place so the list stays bounded.
 
         Args:
-            now: Override the current time (uses clock by default).
+            now:        Override the current time (uses clock by default).
+            project_id: If provided, filter to only records for this project.
 
         Returns:
             Total USD spent within the window.
@@ -403,8 +423,47 @@ class SpendLimiter:
         cutoff = now - self._window_seconds
         with self._lock:
             # Prune in-place: keep records where ts >= cutoff
-            self._records = [(ts, c) for ts, c in self._records if ts >= cutoff]
-            return sum(c for _, c in self._records)
+            self._records = [
+                (ts, c, pid) for ts, c, pid in self._records if ts >= cutoff
+            ]
+            if project_id is not None:
+                return sum(c for _, c, pid in self._records if pid == project_id)
+            return sum(c for _, c, _ in self._records)
+
+    def project_spend(self, project_id: str, now: float | None = None) -> float:
+        """Convenience: spend for a single project within the window.
+
+        Args:
+            project_id: Project to query.
+            now:        Override the current time (uses clock by default).
+
+        Returns:
+            Total USD spent by ``project_id`` within the window.
+        """
+        return self.window_spend(now=now, project_id=project_id)
+
+    def project_breakdown(self, now: float | None = None) -> dict[str, float]:
+        """Return per-project spend totals within the current window.
+
+        Args:
+            now: Override the current time (uses clock by default).
+
+        Returns:
+            Dict mapping ``project_id`` → USD spent.  Records without a
+            ``project_id`` are grouped under the key ``""`` (empty string).
+        """
+        if now is None:
+            now = self._clock()
+        cutoff = now - self._window_seconds
+        with self._lock:
+            self._records = [
+                (ts, c, pid) for ts, c, pid in self._records if ts >= cutoff
+            ]
+            breakdown: dict[str, float] = {}
+            for _, c, pid in self._records:
+                key = pid or ""
+                breakdown[key] = breakdown.get(key, 0.0) + c
+            return breakdown
 
     def remaining(self, now: float | None = None) -> float:
         """Remaining budget within the current window.
@@ -419,6 +478,26 @@ class SpendLimiter:
         """
         spent = self.window_spend(now=now)
         return max(0.0, self._limit_usd - spent)
+
+    def spend_in_last_seconds(
+        self,
+        seconds: float,
+        now: float | None = None,
+    ) -> float:
+        """Sum of spend in the last ``seconds`` seconds (does not prune).
+
+        Args:
+            seconds: Lookback window in seconds.
+            now:     Override the current time (uses clock by default).
+
+        Returns:
+            Total USD spent in the lookback window.
+        """
+        if now is None:
+            now = self._clock()
+        cutoff = now - seconds
+        with self._lock:
+            return sum(c for ts, c, _ in self._records if ts >= cutoff)
 
     def would_exceed(self, projected_usd: float, now: float | None = None) -> bool:
         """Return True if dispatching a call with ``projected_usd`` cost would

@@ -44,3 +44,20 @@ variable "timeout_minutes" {
   type        = number
   default     = 60
 }
+
+variable "use_spot" {
+  description = "When true, launches the VM as a Spot VM for cost savings. When false, uses standard on-demand pricing."
+  type        = bool
+  default     = true
+}
+
+variable "azure_resource_group" {
+  description = "Azure resource group name."
+  type        = string
+  default     = "llamacpp-rg"
+}
+
+variable "subnet_id" {
+  description = "Subnet ID to attach the VM's network interface to."
+  type        = string
+}

@@ -27,6 +27,11 @@ from typing import Any
 from general_ludd.infra.slurm import (
     SlurmAdapter,
     SlurmJobState,
+    _require_time,
+)
+from general_ludd.infra.slurm_preemption import (
+    SlurmPreemptionError,
+    SlurmPreemptionHandler,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,6 +108,42 @@ def _validate_extra_args(value: list[str]) -> list[str]:
     return out
 
 
+def _parse_total_minutes(value: str) -> int:
+    days = 0
+    rest = value
+    if "-" in rest:
+        days_str, rest = rest.split("-", 1)
+        days = int(days_str)
+    parts = rest.split(":")
+    total = days * 24 * 60
+    if len(parts) == 1:
+        if days > 0:
+            total += int(parts[0]) * 60
+        else:
+            total += int(parts[0])
+    elif len(parts) == 2:
+        if days > 0:
+            total += int(parts[0]) * 60 + int(parts[1])
+        else:
+            total += int(parts[0])
+    elif len(parts) == 3:
+        total += int(parts[0]) * 60 + int(parts[1])
+    return total
+
+
+def _resolve_time_limit(time_limit: str | int | None, max_hours: int) -> str:
+    if time_limit is None:
+        return f"{max_hours}:00:00"
+    if isinstance(time_limit, int):
+        return f"{time_limit}:00:00"
+    if not isinstance(time_limit, str) or not time_limit:
+        raise ValueError(f"invalid time_limit {time_limit!r}: must be str, int, or None")
+    _require_time(time_limit)
+    if _parse_total_minutes(time_limit) < 1:
+        raise ValueError(f"time limit {time_limit!r} is less than 1 minute")
+    return time_limit
+
+
 def _validate_module_loads(value: list[str]) -> list[str]:
     out: list[str] = []
     for mod in value:
@@ -146,6 +187,9 @@ class _BaseSlurmDeployment:
         mem_gb: int,
         partition: str,
         max_ctx: int,
+        time_limit: str | int | None = None,
+        account: str | None = None,
+        qos: str | None = None,
         module_loads: list[str] | None = None,
         extra_args: list[str] | None = None,
         artifact_dir: str = "${ARTIFACT_DIR}",
@@ -169,6 +213,8 @@ class _BaseSlurmDeployment:
         module_loads = _validate_module_loads(list(module_loads or []))
         extra_args = _validate_extra_args(list(extra_args or []))
 
+        resolved_time = _resolve_time_limit(time_limit, max_hours)
+
         template = self._template_path.read_text()
         return self._substitute(
             template,
@@ -183,6 +229,9 @@ class _BaseSlurmDeployment:
             module_loads=module_loads,
             extra_args=extra_args,
             artifact_dir=artifact_dir,
+            time_limit=resolved_time,
+            account=account or "",
+            qos=qos or "",
         )
 
     @staticmethod
@@ -221,6 +270,9 @@ class _BaseSlurmDeployment:
         partition: str,
         max_ctx: int,
         artifact_dir: str,
+        time_limit: str | int | None = None,
+        account: str | None = None,
+        qos: str | None = None,
         module_loads: list[str] | None = None,
         extra_args: list[str] | None = None,
         job_name: str | None = None,
@@ -233,6 +285,7 @@ class _BaseSlurmDeployment:
         whether the template is rendered inline or run as-is.
         """
         _validate_path(artifact_dir, "artifact_dir")
+        resolved_time = _resolve_time_limit(time_limit, max_hours)
         script = self.render_script(
             model_id=model_id,
             gpu_count=gpu_count,
@@ -242,6 +295,9 @@ class _BaseSlurmDeployment:
             mem_gb=mem_gb,
             partition=partition,
             max_ctx=max_ctx,
+            time_limit=time_limit,
+            account=account,
+            qos=qos,
             module_loads=module_loads,
             extra_args=extra_args,
             artifact_dir=artifact_dir,
@@ -251,7 +307,9 @@ class _BaseSlurmDeployment:
             command=script,
             job_name=name,
             partition=partition,
-            time_limit=f"{max_hours}:00:00",
+            time_limit=resolved_time,
+            account=account,
+            qos=qos,
             memory=f"{mem_gb}G",
             gpus=f"{gpu_count}:{gpu_type}",
         )
@@ -276,36 +334,56 @@ class _BaseSlurmDeployment:
         artifact_dir: str,
         timeout: float = 300.0,
         poll_interval: float = 5.0,
+        preemption_handler: SlurmPreemptionHandler | None = None,
     ) -> str:
         """Block until the artifact file appears with a servable_url.
 
         Returns the servable URL. Raises :class:`DeploymentError` on timeout,
-        job failure, or a failure artifact (``servable_url: null`` +
-        ``error`` field).
+        job failure, preemption exhaustion, or a failure artifact
+        (``servable_url: null`` + ``error`` field).
+
+        When ``preemption_handler`` is provided, ``PREEMPTED`` jobs are
+        automatically resubmitted (with exponential backoff) instead of
+        raising ``DeploymentError``.
         """
         deadline = time.time() + timeout
         artifact_path = Path(artifact_dir) / "servable.json"
         last_state = "UNKNOWN"
+        current_job_id = job_id
         while time.time() < deadline:
-            info = self._adapter.status(job_id)
+            info = self._adapter.status(current_job_id)
             last_state = info.state.value if hasattr(info.state, "value") else str(info.state)
-            # Terminal failure states short-circuit.
+            if info.state == SlurmJobState.PREEMPTED:
+                if preemption_handler is None:
+                    raise DeploymentError(
+                        f"slurm job {current_job_id} was preempted"
+                    )
+                try:
+                    resubmitted = preemption_handler.handle_preempted(info)
+                except SlurmPreemptionError as exc:
+                    raise DeploymentError(str(exc)) from exc
+                current_job_id = resubmitted.job_id
+                logger.info(
+                    "now polling resubmitted job %s (original %s)",
+                    current_job_id,
+                    job_id,
+                )
+                continue
             if info.state in (
                 SlurmJobState.FAILED,
                 SlurmJobState.CANCELLED,
                 SlurmJobState.TIMEOUT,
                 SlurmJobState.NODE_FAIL,
             ):
-                # Check whether the script wrote diagnostics before dying.
                 artifact = self._read_artifact(artifact_path)
                 if artifact is not None:
                     data = json.loads(artifact)
                     err = data.get("error") or data.get("diagnostics") or last_state
                     raise DeploymentError(
-                        f"slurm job {job_id} entered terminal state {last_state}: {err}"
+                        f"slurm job {current_job_id} entered terminal state {last_state}: {err}"
                     )
                 raise DeploymentError(
-                    f"slurm job {job_id} entered terminal state {last_state} with no artifact"
+                    f"slurm job {current_job_id} entered terminal state {last_state} with no artifact"
                 )
             artifact = self._read_artifact(artifact_path)
             if artifact is not None:
@@ -313,17 +391,16 @@ class _BaseSlurmDeployment:
                 url = data.get("servable_url")
                 if url:
                     logger.info(
-                        "slurm deployment job_id=%s servable at %s", job_id, url
+                        "slurm deployment job_id=%s servable at %s", current_job_id, url
                     )
                     return str(url)
-                # Artifact present but servable_url is null — terminal failure.
                 err = data.get("error") or data.get("diagnostics") or "no servable_url"
                 raise DeploymentError(
-                    f"slurm job {job_id} wrote failure artifact: {err}"
+                    f"slurm job {current_job_id} wrote failure artifact: {err}"
                 )
             time.sleep(poll_interval)
         raise DeploymentError(
-            f"timeout after {timeout}s waiting for slurm job {job_id} "
+            f"timeout after {timeout}s waiting for slurm job {current_job_id} "
             f"(last_state={last_state}, artifact={artifact_path})"
         )
 

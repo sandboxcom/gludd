@@ -12,6 +12,12 @@ provider "kubernetes" {
   config_context = var.kubeconfig_context
 }
 
+module "gpu_cost_watchdog" {
+  source = "../../modules/gpu-cost-watchdog"
+
+  cloud = "kubernetes"
+}
+
 module "kubernetes_deploy" {
   source = "../../modules/kubernetes-deploy"
 
