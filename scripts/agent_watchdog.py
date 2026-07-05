@@ -141,11 +141,11 @@ HIBERNATION_MARKER = Path("/tmp/gludd-watchdog-hibernating")
 POLL_SECS = 10
 
 STREAK_THRESHOLD = 3  # with 10s polling, threshold is reached in ~30s of sustained grinding
-STOP_IDLE_SECS = 15  # streak file mtime older than this + pending work = text-only stop
+STOP_IDLE_SECS = 60  # streak file mtime older than this + pending work = text-only stop
 STOP_COUNT_FILE = "/tmp/gludd-watchdog-stop-count.json"
 STOP_ESCALATE_THRESHOLD = 3
 
-PURE_IDLE_SECS = 20
+PURE_IDLE_SECS = 90
 LAST_FLAG_FILE = "/tmp/gludd-watchdog-last-flag.json"
 FLAG_COOLDOWN_SECS = 30
 PURE_IDLE_DIRECTIVE = "/tmp/gludd-continue.txt"
@@ -176,23 +176,31 @@ EXPECTED_DURATIONS: dict[str, int] = {
     "gate-run": 2400,
     "test": 30,
     "commit": 10,
+    "git-commit": 10,
+    "git-add": 5,
+    "test-iso": 60,
+    "research": 120,
     "subagent-task": 300,
     "general": 300,
+    "default": 300,
 }
 
-TASK_TIMEOUTS: dict[str, int] = {
-    "git-push": 10,
-    "git-commit": 5,
-    "git-add": 3,
-    "lint": 15,
-    "typecheck": 30,
-    "test-iso": 60,
-    "test-specific": 120,
-    "gate": 2400,
-    "default": 60,
-}
+_alerted_anomalies: dict[str, float] = {}
+_ALERTED_PRUNE_SECS = 1800  # 30 minutes
+_POLL_CYCLE_COUNT = 0
+_POLL_CYCLE_PRUNE_INTERVAL = 100  # prune every ~17 min (100 * 10s)
 
-_alerted_anomalies: set[str] = set()
+
+def _prune_alerted_anomalies(now_epoch: float | None = None) -> None:
+    """Remove entries older than _ALERTED_PRUNE_SECS from _alerted_anomalies."""
+    global _alerted_anomalies
+    if now_epoch is None:
+        now_epoch = time.time()
+    cutoff = now_epoch - _ALERTED_PRUNE_SECS
+    _alerted_anomalies = {
+        k: v for k, v in _alerted_anomalies.items() if v > cutoff
+    }
+
 
 GATE_PID_FILE = Path("/tmp/gludd-gate-background.pid")
 
@@ -223,13 +231,6 @@ CI_LOOP_THRESHOLD_PUSHES = 3
 CI_LOOP_THRESHOLD_MINUTES = 10
 CI_TRUE_STALL_MINUTES = 45
 CI_TRUE_STALL_NO_PUSH_MINUTES = 15
-
-TIMING_DATA_FILE = "/tmp/gludd-task-timing-data.json"
-PUSH_FLAG = "/tmp/gludd-push-flag"
-EX_TASKS_DIR = "/tmp/gludd-tasks"
-EX_ANOMALIES_FILE = "/tmp/gludd-ex-anomalies.json"
-EX_STALLED_TASKS_FILE = "/tmp/gludd-ex-stalled-tasks.json"
-PUSH_STALL_THRESHOLD = 60
 
 _WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd()))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
@@ -667,7 +668,7 @@ def check_running_tasks() -> None:
             continue
 
         elapsed = now - start_ts
-        expected = TASK_TIMEOUTS.get(task_name, TASK_TIMEOUTS["default"])
+        expected = EXPECTED_DURATIONS.get(task_name, EXPECTED_DURATIONS["default"])
         anomaly_key = task_name or task_id or "unknown"
 
         if elapsed > expected * 10:
@@ -866,71 +867,6 @@ def track_task_duration(task_name: str, duration_seconds: float) -> None:
 
     if avg > 0 and duration_seconds > avg * 3 and count > 2:
         _log(f"ANOMALY: {task_name} took {duration_seconds:.1f}s (avg {avg:.1f}s)")
-
-
-def _read_timing_data() -> dict:
-    try:
-        p = Path(TIMING_DATA_FILE)
-        if not p.exists():
-            return {}
-        return json.loads(p.read_text())
-    except Exception:
-        return {}
-
-
-def _write_timing_data(data: dict) -> None:
-    Path(TIMING_DATA_FILE).write_text(json.dumps(data))
-
-
-def _detect_operations() -> dict:
-    ops: dict = {}
-    if Path(PUSH_FLAG).exists():
-        ops["git-push"] = {"type": "push", "key": "git-push"}
-    if GATE_PID_FILE.exists():
-        ops["gate-run"] = {"type": "gate", "key": "gate-run"}
-    tasks_dir = Path(EX_TASKS_DIR)
-    if tasks_dir.is_dir():
-        for entry in sorted(tasks_dir.glob("*.output")):
-            if entry.is_file():
-                age = time.time() - entry.stat().st_mtime
-                if age < 300:
-                    ops["subagent-task"] = {"type": "subagent", "key": "subagent-task"}
-                    break
-    return ops
-
-
-def _check_timing_anomalies() -> list:
-    anomalies: list = []
-    timing = _read_timing_data()
-    if not timing:
-        _detect_operations()
-        return anomalies
-
-    now = time.time()
-
-    for op_key, op_data in list(timing.items()):
-        if not isinstance(op_data, dict):
-            continue
-        expected = EXPECTED_DURATIONS.get(op_key, 300)
-        started_at = float(op_data.get("started_at", 0))
-        elapsed = now - started_at
-
-        if elapsed > expected * 2:
-            anomalies.append(op_key)
-            _log(f"TIMING ANOMALY: {op_key} running {elapsed:.0f}s (expected {expected}s)")
-
-    return anomalies
-
-
-def _detect_stalled_push() -> dict | None:
-    p = Path(PUSH_FLAG)
-    if not p.exists():
-        return None
-    age = time.time() - p.stat().st_mtime
-    if age < PUSH_STALL_THRESHOLD:
-        return None
-    _log(f"TIMING ANOMALY: git-push stalled {age:.0f}s > {PUSH_STALL_THRESHOLD}s")
-    return {"git-push": {"elapsed": age, "key": "git-push"}}
 
 
 def _read_last_flag_time() -> float:
@@ -1365,14 +1301,6 @@ def _detect_task_type(task_id: str, tasks_dir: Path | None = None) -> str:
     return "default"
 
 
-EX_TASK_DURATIONS: dict[str, float] = {
-    "default": 300.0,
-    "gate": 2400.0,
-    "test": 1800.0,
-    "research": 120.0,
-    "push": 10.0,
-}
-
 EX_TASKS_DIR = os.environ.get("GLUDD_TASKS_DIR", "/tmp/gludd-tasks")
 EX_ANOMALIES_FILE = os.environ.get("GLUDD_TASK_ANOMALIES", "/tmp/gludd-task-anomalies.json")
 EX_STALLED_TASKS_FILE = os.environ.get("GLUDD_STALLED_TASKS", "/tmp/gludd-stalled-tasks.txt")
@@ -1417,7 +1345,7 @@ def check_task_anomalies() -> dict:
                         expected = _find_expected_duration(command)
                     else:
                         task_type = _detect_task_type(task_id)
-                        expected = EX_TASK_DURATIONS.get(task_type, EX_TASK_DURATIONS["default"])
+                        expected = EXPECTED_DURATIONS.get(task_type, EXPECTED_DURATIONS["default"])
 
                     if expected is None:
                         continue
@@ -1438,7 +1366,7 @@ def check_task_anomalies() -> dict:
                         findings["anomalies"].append(entry)
                         if task_id not in _alerted_anomalies:
                             _log(f"TASK ANOMALY: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
-                            _alerted_anomalies.add(task_id)
+                            _alerted_anomalies[task_id] = now_epoch
 
                 try:
                     Path(EX_ANOMALIES_FILE).write_text(json.dumps(findings, indent=2))
@@ -1871,15 +1799,15 @@ def check_and_reset() -> dict:
     elif has_pending_work:
         _max_out_false_done()
     # else: leave false-done blocks alone (agent may be genuinely stopped)
-    # ── NEW: Pure idle detection (ANY idle >20s, regardless of pending work) ──
+    # ── NEW: Pure idle detection (ANY idle >90s, regardless of pending work) ──
     if not reset_needed and mtime_age is not None and mtime_age > PURE_IDLE_SECS:
         last_flag = _read_last_flag_time()
         now = time.time()
         if now - last_flag > FLAG_COOLDOWN_SECS:
-            _log(f"IDLE DETECTED: agent idle >20s ({mtime_age:.0f}s since last tool)")
+            _log(f"IDLE DETECTED: agent idle >90s ({mtime_age:.0f}s since last tool)")
             _write_last_flag_time(now)
             directive = (
-                "⛔ AGENT IDLE >20s — DISPATCH SUBAGENTS OR RESPOND WITH TOOL CALLS. "
+                "⛔ AGENT IDLE >90s — DISPATCH SUBAGENTS OR RESPOND WITH TOOL CALLS. "
                 "Do not send text-only responses.\n"
             )
             Path(PURE_IDLE_DIRECTIVE).write_text(directive)
@@ -1937,6 +1865,12 @@ def check_and_reset() -> dict:
             directive_p.write_text(existing + "\n".join(anchored_messages) + "\n")
         except Exception:
             pass
+
+    # ── Periodic prune of _alerted_anomalies ──────────────────────────────
+    global _POLL_CYCLE_COUNT
+    _POLL_CYCLE_COUNT += 1
+    if _POLL_CYCLE_COUNT % _POLL_CYCLE_PRUNE_INTERVAL == 0:
+        _prune_alerted_anomalies()
 
     # ── Apply reset ──────────────────────────────────────────────────────
     if reset_needed:

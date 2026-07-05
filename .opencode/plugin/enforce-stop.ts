@@ -49,7 +49,12 @@ interface BlockCounter {
 function readBlockCounter(): BlockCounter {
   try {
     if (fs.existsSync(BLOCK_COUNTER_FILE)) {
-      return JSON.parse(fs.readFileSync(BLOCK_COUNTER_FILE, "utf8"))
+      const c: BlockCounter = JSON.parse(fs.readFileSync(BLOCK_COUNTER_FILE, "utf8"))
+      const now = Date.now()
+      if (c.lastBlockTs && (now - c.lastBlockTs) > 120_000 && c.consecutiveBlocks > 0) {
+        c.consecutiveBlocks = 0
+      }
+      return c
     }
   } catch {}
   return { consecutiveBlocks: 0, totalBlocks: 0, lastBlockTs: 0, disengageUntil: 0 }
@@ -177,7 +182,7 @@ function ratchetHasEntries(): number {
     if (!fs.existsSync(ratchetPath)) return 0
     const content = fs.readFileSync(ratchetPath, "utf8")
     return content.split("\n").filter(
-      l => l.trim() && !l.trim().startsWith("#") && l.includes(":")
+      l => l.trim() && !l.trim().startsWith("#") && (l.includes("::") || /^\w[\w\s]*:\s/.test(l))
     ).length
   } catch { return 0 }
 }
@@ -375,6 +380,8 @@ export default (async ({ }) => {
         if (!text || text.trim().length === 0) return
         if (text.trim().length < 60) return
 
+        turnState.blocked = false
+
         turnState.accumulatedText += text
 
         // Item 15: check watchdog disengage signal
@@ -415,6 +422,8 @@ export default (async ({ }) => {
         // Item 6: check for false-positive cascade disengagement
         if (isDisengaged() || watchdogDisengage) return
 
+        if (EVIDENCE_TOKEN.test(text) || EVIDENCE_TOKEN.test(turnState.accumulatedText)) return
+
         const repoPending = cache?.repoPending ?? false
         const ratchetCount = cache.ratchetEntries
         const tasksMdUnchecked = cache?.tasksMdUnchecked ?? false
@@ -429,8 +438,6 @@ export default (async ({ }) => {
 
         // Item 5: if a tool call was just made, this response follows work — don't block
         if (turnState.toolCallMade) {
-          turnState.toolCallMade = false
-          // Only block if the response AFTER a tool call truly says "done"
           if (!COMPLETION_VERBATIM.test(text)) return
         }
 
@@ -447,6 +454,8 @@ export default (async ({ }) => {
           turnState.blocked = true
           return
         }
+
+        turnState.toolCallMade = false
       } catch { return }
     },
   }
