@@ -9,14 +9,15 @@
 
 ## Current Work
 
-- **HEAD: `90603ec7`** on master (uncommitted fixes in working tree).
+- **HEAD: `65b58233`** on master.
 
-- **Plugin fixes (session 9)**:
-  - **Phantom plugin registrations removed**: `enforce-deletion-gate.ts` and `enforce-false-done.ts` were registered in `opencode.json` but the plugin files were removed. Cleaned up the registrations so `opencode.json` only references the 7 existing plugins: enforce-make, enforce-floor, enforce-delegate, enforce-stop, enforce-session-start, enforce-deadline, watchdog.
-  - **Plugin liveness probes added**: `+10 lines` each to `enforce-deadline.ts`, `enforce-delegate.ts`, `enforce-make.ts`, `enforce-session-start.ts`, and `plugins/watchdog.ts` — each plugin now emits a periodic liveness heartbeat so dead/broken plugins are detectable rather than silently failing.
-  - **verify-release-artifact target added** to `Makefile` — canonizes the release artifact verification as a `make` target (previously only invoked via `make release-cut` step 4/4).
-  - **Failing tests fixed** in `tests/e2e/test_pipeline_controller_e2e.py` — 7 assertions corrected.
-  - **TDD runtime-verification tests**: pipeline controller e2e tests now verify runtime behavior, not just static assertions.
+- **Plugin enforcement hardening (session 9)**:
+  - **Permanent disengage self-heal**: disengage signal persists across restarts; floor enforcement hard-default ON.
+  - **Watchdog 15s idle detection**: watchdog.ts now detects idle at 15s (was 30s).
+  - **False-done patterns hardened** in enforce-false-done.ts.
+  - **Plugin liveness probes**: 5 of 7 plugins emit periodic heartbeats. 2 plugins (enforce-deletion-gate, enforce-false-done) still need liveness wiring.
+  - **Adversarial code detection**: 129 new tests, 6 adversarial categories, self-correcting estimation, game-building e2e harness.
+  - **ExecutionEngine + EventLoop game-building**: Real e2e daemon game-building test via EventLoop tick + ExecutionEngine with DeepSeek. ExecutionEngine fallback extraction for models without FILE markers. ToolCallLoop expanded to code work types with budget/adversarial/token/timeout guards.
 
 - **Wave-9 feature advancement**: 19 features advanced in commit range `43df9070..f444693d`. 4 features reached 100% (accounting, file-overlap, self_update, tool-call-auditor). 15 features advanced <100% (agent_orchestrate, spend/scoring/obs/bert/G2/G3/G4/G6/G8/G12/LC/issue-sources/floor/G1-memory). All with TDD proof.
 

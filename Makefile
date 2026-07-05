@@ -43,7 +43,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		repo-visibility \
 		watchdog-start watchdog-status watchdog-stop watchdog-log \
 		check-readme-status check-plugin-versions check-plugin-versions-quiet \
-		check-plugin-liveness write-plugin-manifest disengage-enforcement \
+		check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
 		verify-release-artifact
 
 help:
@@ -2080,6 +2080,28 @@ write-plugin-manifest:
 # Used by agent_watchdog.py, validate, and preflight.
 check-plugin-liveness:
 	@$(UV) run python3 scripts/check_plugin_liveness.py
+
+# --- Restart opencode for plugin changes to take effect ---
+# TypeScript plugin changes are compiled once at opencode startup — edits to
+# .opencode/plugin/*.ts do NOT take effect until opencode is restarted.
+# Run this target to see the restart procedure and a process census.
+restart-opencode:
+	@echo "=== OpenCode Restart Procedure ==="
+	@echo ""
+	@echo "Plugin .ts edits do NOT hot-reload. OpenCode compiles plugins once at startup."
+	@echo "To activate plugin changes:"
+	@echo ""
+	@echo "  1. Save all work and commit (make test-and-commit MSG='...')"
+	@echo "  2. Quit opencode (Cmd+Q / Ctrl+C depending on interface)"
+	@echo "  3. Re-launch opencode"
+	@echo ""
+	@echo "Before restart, verify plugin health:"
+	@echo "  make check-plugin-liveness        — structural integrity check"
+	@echo "  make check-plugin-versions        — hash freshness check"
+	@echo ""
+	@echo "If enforcement plugins are blocking you, disengage first:"
+	@echo "  make disengage-enforcement        — suspends all plugin blocking for 1 hour"
+	@echo ""
 
 # --- Emergency enforcement disengage — stops all enforcement blocking immediately ---
 disengage-enforcement:
