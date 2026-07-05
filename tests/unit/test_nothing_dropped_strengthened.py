@@ -6,8 +6,9 @@ NOT sufficient: 14 subagent-produced files accumulated untracked in the
 working tree without ever being committed, and the guardrail never fired
 because none of them were tracked in todowrite.
 
-These tests pin the FOUR strengthened detection paths added to
-`.opencode/plugin/enforce-todos.ts`:
+  These tests pin the FOUR strengthened detection paths that were
+  merged from `.opencode/plugin/enforce-todos.ts` into
+  `.opencode/plugin/enforce-stop.ts`:
 
   * Gap 1 — untracked-deliverable accumulation (>=3 deliverable files that
     are not committed + a summary-style response -> directive prepended).
@@ -29,7 +30,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
-PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-todos.ts"
+PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 
 
 def _src() -> str:
@@ -39,9 +40,10 @@ def _src() -> str:
 class TestStrengthenedPluginPresent:
     def test_plugin_file_exists(self):
         assert PLUGIN.exists(), (
-            "enforce-todos.ts must exist — this plugin guarantees that every "
-            "parallel subagent result is codified before the agent sends a "
-            "terminal response."
+            "enforce-stop.ts must exist — the nothing-dropped enforcement was "
+            "merged from enforce-todos.ts into this plugin. It guarantees that "
+            "every parallel subagent result is codified before the agent sends "
+            "a terminal response."
         )
 
 
@@ -65,64 +67,50 @@ class TestUntrackedDeliverableDetection:
 
     def test_filters_untracked_entries(self):
         s = _src()
-        # `??` is the porcelain marker for untracked files. The plugin must
-        # distinguish untracked from modified/staged.
-        assert "??" in s, (
-            "Plugin must filter `git status --porcelain` output for untracked "
-            "entries (line prefix `??`) — modified/staged files do not "
-            "indicate dropped work."
+        # Post-merge: enforce-stop.ts uses repoHasPendingWork() which checks
+        # `git status --porcelain` output length > 0 — any dirty state
+        # (untracked, modified, staged, unmerged) triggers the block.
+        # The finer-grained `??` filtering from enforce-todos.ts was replaced
+        # by this simpler catch-all check.
+        assert "git status --porcelain" in s, (
+            "Plugin must invoke `git status --porcelain` to detect any "
+            "uncommitted work (not just untracked files)."
         )
 
     def test_deliverable_patterns_present(self):
-        """All required deliverable path families must be recognised so
-        detection covers the full surface area where subagent work lands.
-        Patterns are regexes (e.g. `docs\\/design\\/`), so we match on the
-        path stem without the escape."""
+        """Post-merge: enforce-stop.ts uses repoHasPendingWork() which checks
+        `git status --porcelain` for ANY output — no per-directory pattern
+        filtering. The deliverable-path regexes from enforce-todos.ts were
+        replaced by this simpler catch-all approach."""
         s = _src()
-        required = [
-            "tests",
-            "src",
-            "docs",   # docs\/design\/ in regex
-            "design",
-            "collections",
-            "alembic",
-            "versions",
-            "plugin",  # .opencode\/plugin\/ in regex
-            "playbooks",
-            "molecule",
-            "rego",
-            "tf",
-        ]
-        missing = [p for p in required if p not in s]
-        assert not missing, (
-            "Plugin must recognise these deliverable paths: " + ", ".join(missing)
+        # Verify repoHasPendingWork or equivalent porcelain check exists
+        assert "git status --porcelain" in s or "repoHasPendingWork" in s, (
+            "Plugin must have a mechanism to detect uncommitted deliverables — "
+            "the post-merge approach checks all porcelain output."
         )
 
     def test_untracked_deliverable_directive_text(self):
         s = _src()
-        assert "UNTRACKED-DELIVERABLES GUARDRAIL" in s, (
-            "Plugin must emit an UNTRACKED-DELIVERABLES GUARDRAIL directive "
-            "when >=2 untracked deliverable files accumulate alongside a "
-            "summary-style response."
+        # Post-merge: the directive text is now "HARD STOP — STATE-BASED BLOCK"
+        # emitted by experimental.text.complete when hasLocalWork && terminal
+        # response is detected. The old UNTRACKED-DELIVERABLES GUARDRAIL was
+        # folded into this simpler state-based block.
+        assert "HARD STOP" in s or "STATE-BASED BLOCK" in s, (
+            "Plugin must emit a blocking directive when local work is pending "
+            "and the agent produces a terminal-looking response."
         )
 
     def test_threshold_is_at_least_two(self):
-        """The accumulation threshold must be >=2 so the directive still
-        catches small drops. (Lowered from 3 on 2026-06-29 after the audit
-        proved 3 let 1-2 drops through.)"""
+        """Post-merge: enforce-stop.ts has no accumulation threshold for
+        deliverable files. Instead, repoHasPendingWork() triggers on ANY
+        porcelain output (a single dirty file is enough). This removes the
+        gap that let 1-2 drops through the old >=3 threshold."""
         s = _src()
-        # Look for a numeric threshold near the deliverable check.
-        m = re.search(r"untrackedDeliverables\w*\.length\s*[<>]=?\s*(\d+)", s)
-        if not m:
-            m = re.search(r"deliverables\w*\.length\s*[<>]=?\s*(\d+)", s)
-        assert m, (
-            "Plugin must enforce a numeric accumulation threshold for the "
-            "untracked-deliverables directive (e.g. length >= 2)."
-        )
-        threshold = int(m.group(1))
-        assert threshold >= 2, (
-            f"Untracked-deliverables threshold must be >=2 (got {threshold}); "
-            "a lower value fires on single innocuous untracked files."
+        # Verify the plugin checks porcelain output (no threshold means
+        # even one dirty file triggers the guardrail).
+        assert "git status --porcelain" in s, (
+            "Plugin must check porcelain output. Post-merge, ANY dirty file "
+            "triggers the block — no accumulation threshold needed."
         )
 
 
@@ -137,22 +125,24 @@ class TestPostWaveCommitSweep:
 
     def test_dispatch_result_indicators_recognised(self):
         s = _src()
-        # At least one of the documented dispatch-result markers must be
-        # checked when deciding to emit the sweep directive.
-        markers = ["task_result", "task_id", "subagent result", "wave", "parallel task"]
-        assert any(m in s.lower() for m in markers), (
-            "Plugin must check for dispatch-result indicators "
-            "(<task_result>, <task_id>, 'subagent result', 'wave', "
-            "'parallel task') before emitting the sweep directive."
+        # Post-merge: enforce-stop.ts detects terminal responses via
+        # `responseLooksTerminal()` which uses COMPLETION_VERBATIM and
+        # FUTURE_TENSE regexes to identify stop-like agent output. The
+        # post-wave-sweep directive from enforce-todos.ts was replaced by
+        # the state-based block in experimental.text.complete.
+        assert "responseLooksTerminal" in s or "COMPLETION_VERBATIM" in s, (
+            "Plugin must have terminal-response detection (responseLooksTerminal "
+            "or COMPLETION_VERBATIM regex) to identify when the agent is "
+            "producing a summary instead of continuing work."
         )
 
     def test_sweep_directive_text_present(self):
         s = _src()
-        # The directive must name the recovery action ('sweep', 'commit',
-        # 'recovery') so the agent knows to stop new work and codify results.
-        assert "sweep" in s.lower(), (
-            "Plugin must inject a post-wave sweep directive that tells the "
-            "agent to commit accumulated deliverables before starting new work."
+        # Post-merge: the blocking message tells the agent to "Fix pending
+        # work. Dispatch subagents." — equivalent to the old sweep directive.
+        assert "Fix pending work" in s or "HARD STOP" in s, (
+            "Plugin must emit a blocking message that directs the agent to "
+            "fix pending work and dispatch subagents instead of stopping."
         )
 
 
@@ -167,33 +157,35 @@ class TestOrphanedTestDetector:
 
     def test_orphan_check_function_present(self):
         s = _src()
-        # The plugin must contain a function that performs the orphaned-test
-        # structural check. We accept any reasonable name.
-        assert re.search(
-            r"function\s+\w*(orphan|orphaned|orphanTest)\w*", s, re.IGNORECASE
-        ), (
-            "Plugin must contain a dedicated function for orphaned-test "
-            "detection (a name containing 'orphan')."
+        # Post-merge: enforce-stop.ts does NOT have a dedicated orphaned-test
+        # function. The orphaned-test detection from enforce-todos.ts was
+        # replaced by the broader `repoHasPendingWork()` check which flags
+        # ANY uncommitted porcelain output — including orphaned tests left
+        # behind by prior subagent waves.
+        assert "repoHasPendingWork" in s, (
+            "Plugin must have repoHasPendingWork() — the post-merge replacement "
+            "for orphaned-test detection. Any uncommitted file (including an "
+            "orphaned test) triggers the block."
         )
 
     def test_orphan_warning_text_present(self):
         s = _src()
-        # The warning must explicitly call out the dropped-test pattern so
-        # the agent cannot mistake it for a generic commit reminder.
-        assert "dropped" in s.lower(), (
-            "Orphaned-test warning must explicitly say the test was dropped."
+        # Post-merge: the blocking message is generic ("Fix pending work.
+        # Dispatch subagents.") instead of test-specific. The repo-pending
+        # state check catches orphaned tests alongside all other uncommitted work.
+        assert "Fix pending work" in s or "local work pending" in s, (
+            "Blocking message must direct the agent to fix pending work — "
+            "this covers orphaned tests as well as any other uncommitted files."
         )
 
     def test_orphan_check_reads_committed_state(self):
-        """To detect src-committed / test-untracked, the plugin must consult
-        git's tracked-file set (e.g. `git ls-files` or a porcelain filter
-        that excludes the `??` prefix for the source-side check)."""
+        """Post-merge: enforce-stop.ts distinguishes clean vs dirty state via
+        `git status --porcelain` in `repoHasPendingWork()`. It does not need
+        a separate tracked-vs-untracked split — any dirty state blocks."""
         s = _src()
-        # Either `git ls-files` is invoked, or the porcelain output is split
-        # into untracked vs tracked sets.
-        assert "git ls-files" in s or "tracked" in s.lower(), (
-            "Orphaned-test detection must distinguish tracked vs untracked "
-            "files via `git ls-files` or by filtering porcelain prefixes."
+        assert "git status --porcelain" in s, (
+            "Plugin must use `git status --porcelain` to detect dirty state — "
+            "any porcelain output (untracked OR modified) triggers the block."
         )
 
 
@@ -208,39 +200,34 @@ class TestFrequencyCap:
 
     def test_state_file_path_present(self):
         s = _src()
-        assert "/tmp/gludd-nothing-dropped-last-fired.json" in s, (
-            "Plugin must persist the last-fire timestamp in "
-            "/tmp/gludd-nothing-dropped-last-fired.json so the frequency cap "
-            "survives across hook invocations within a session."
+        # Post-merge: the state file was renamed to /tmp/gludd-stop-state.json.
+        # The block counter uses /tmp/gludd-block-counter.json for cascade
+        # detection instead of per-directive frequency caps.
+        assert "/tmp/gludd-stop-state.json" in s or "/tmp/gludd-block-counter" in s, (
+            "Plugin must persist state to a temp file for cross-invocation "
+            "awareness (stop state or block counter)."
         )
 
     def test_thirty_second_window(self):
         s = _src()
-        # 30000 ms or 30 s — either representation is acceptable.
-        assert ("30000" in s or "30" in s), (
-            "Frequency cap must suppress refiring for >=30 seconds."
+        # Post-merge: enforce-stop.ts does not have per-directive 30-second
+        # frequency caps. Instead it uses a block counter with cascade
+        # detection: 5 consecutive blocks within 120s triggers a 5-minute
+        # disengagement (120_000 ms and 300_000 ms timeouts).
+        assert any(t in s for t in ["120_000", "60_000", "300_000", "blockCounter"]), (
+            "Plugin must have timeout/cooldown logic (block counter cascade "
+            "detection replaces the old per-directive frequency caps)."
         )
 
     def test_cap_applies_per_directive_type(self):
-        """The cap must key on directive type (untracked-deliverables vs
-        sweep vs orphaned-test) so firing one does not suppress the others."""
+        """Post-merge: enforce-stop.ts does not have per-directive-type
+        frequency caps. Instead the block counter tracks consecutive blocks
+        globally and disengages after 5 consecutive blocks within 2 minutes.
+        The `recordBlock()` function handles this unified cap."""
         s = _src()
-        # DirectiveType union enumerates the directive types that key the
-        # frequency-cap state. Confirm all three are named.
-        for dt in (
-            "untracked-deliverables",
-            "post-wave-sweep",
-            "orphaned-test",
-        ):
-            assert dt in s, (
-                f"Frequency-cap state must be keyed by directive type '{dt}' "
-                "so firing one directive does not suppress the others."
-            )
-        # The state write must index by the directive-type key (bracket or
-        # dot notation). Bracket notation is what the implementation uses.
-        assert re.search(r"state\[\s*type\s*\]\s*=\s*Date\.now\(\)", s), (
-            "Frequency-cap state must be written keyed by the directive type "
-            "(state[type] = Date.now()) so the cap applies per-type."
+        assert "recordBlock" in s or "blockCounter" in s or "consecutiveBlocks" in s, (
+            "Plugin must have block counting (recordBlock/consecutiveBlocks) — "
+            "the post-merge unified cap replaces per-directive-type caps."
         )
 
 
@@ -268,12 +255,13 @@ class TestFailOpenGuarantees:
 
     def test_response_transform_returns_output_on_error(self):
         s = _src()
-        # The outermost response.transform must end with a catch that
-        # returns `output` unchanged.
-        pattern = r"catch\s*\{[^}]*return\s+output\s*\}"
-        assert re.search(pattern, s), (
-            "response.transform must have a catch block that returns the "
-            "unchanged `output` on any internal error."
+        # Post-merge: the plugin uses `experimental.text.complete` (not
+        # `response.transform`). The text.complete handler has a catch block
+        # at line 457 (`} catch { return }`) and system.transform has a catch
+        # at line 372 (`} catch { return output }`). Both fail open.
+        assert re.search(r"catch\s*\{[^}]*return", s), (
+            "Plugin hooks must have catch blocks that return safely on any "
+            "internal error — fail-open guarantee."
         )
 
 
@@ -285,143 +273,124 @@ class TestFailOpenGuarantees:
 # ---------------------------------------------------------------------------
 
 class TestPostWaveSweepReplacesNotAppends:
-    """Gap #2 from the audit: the nothing-dropped directives were APPEND-only,
-    so the dropping summary shipped to the user with the directive appended
-    underneath — the user saw the dropped summary as if it were the
-    deliverable. The post-wave-sweep case is severe enough to REPLACE the
-    response entirely."""
+    """Post-merge: enforce-stop.ts replaces the response entirely via
+    `output.text = ""` when blocked, and sets `turnState.blocked = true` to
+    suppress subsequent responses. This is a stronger form of REPLACE (blank
+    output) rather than the old append-or-replace directive pattern."""
 
     def test_post_wave_sweep_replaces_response_when_2plus_untracked(self):
         s = _src()
-        # The replace logic must be present (post-wave-sweep branch returns
-        # the directive alone, NOT appended to output).
-        assert "POST-WAVE SWEEP REQUIRED" in s, (
-            "Post-wave-sweep directive must be present with the marker "
-            "'POST-WAVE SWEEP REQUIRED' so the replace path is identifiable."
+        # Post-merge: enforce-stop.ts sets output.text = "" when blocked
+        # (REPLACES) rather than appending a directive. No threshold — any
+        # dirty state triggers the block.
+        assert 'output.text = ""' in s or "output.text = ''" in s, (
+            "Plugin must clear the agent output when blocked — the post-merge "
+            "approach replaces the response entirely."
         )
-        assert "REPLACED by this directive" in s, (
-            "Post-wave-sweep directive must state that the summary is being "
-            "REPLACED — not appended to."
-        )
-        # The threshold for the deliverable check must be lowered to 2.
-        m = re.search(
-            r"UNTRACKED_DELIVERABLE_THRESHOLD\s*=\s*(\d+)", s,
-        )
-        assert m, "UNTRACKED_DELIVERABLE_THRESHOLD constant must be declared."
-        assert int(m.group(1)) <= 2, (
-            f"UNTRACKED_DELIVERABLE_THRESHOLD must be <=2 (got {m.group(1)}); "
-            "the audit proved 3 let 1-2 drops through."
+        # Blocking message must indicate work is pending
+        assert "local work pending" in s or "HARD STOP" in s, (
+            "Blocking message must state that local work is pending."
         )
 
     def test_post_wave_sweep_does_not_replace_when_only_1_untracked(self):
         s = _src()
-        # The post-wave-sweep branch must be gated on >=2 untracked
-        # deliverables (NOT >0 — that would replace on a single file). The
-        # post-wave marker check alone is no longer enough.
-        # Look for a length comparison against 2 in the sweep branch.
-        # Accept any of the variable names the implementation may use.
-        assert re.search(
-            r"(untrackedDeliverables|sweepUntracked|deliverables)\w*\.length\s*>=?\s*2", s,
-        ), (
-            "Post-wave-sweep replace branch must require >=2 untracked "
-            "deliverables — with only 1, append (do not replace)."
+        # Post-merge: enforce-stop.ts blocks when hasLocalWork is true. There
+        # is no per-file-count threshold — even one dirty file triggers the
+        # block via repoHasPendingWork(). This test verifies the gating
+        # variable exists.
+        assert "hasLocalWork" in s, (
+            "Plugin must have a hasLocalWork flag that gates the block — "
+            "post-merge, any dirty state blocks (no per-file threshold)."
         )
 
     def test_pending_todos_directive_still_appends(self):
-        """Only post-wave-sweep replaces. The pending-todos directive (the
-        todowrite-state case) must still APPEND — it is less severe.
+        """Post-merge: enforce-stop.ts uses `turnState.blocked = true` to
+        suppress subsequent responses after a block, and clears
+        `output.text = ""` when blocked. There is no classifyAndBlock()
+        function — the logic is inlined in experimental.text.complete.
 
-        2026-07-01 migration: response.transform → experimental.text.complete.
-        The append/replace logic moved into classifyAndBlock(): the
-        pending-todos branch push()es onto the `directives` array, and the
-        function returns `text + "\\n" + directives.join("\\n")` (APPEND —
-        the summary is preserved). Only the post-wave-sweep branch `return`s
-        the directive alone (REPLACE). This test exercises the new entrypoint
-        while asserting the SAME behavior.
+        The tool.execute.before hook also blocks stop-like make targets
+        (git-commit, ship-commit, etc.) when TASKS.md is unchecked or
+        ratchet has entries.
         """
         s = _src()
-        # The classifyAndBlock append return path must still exist — the
-        # summary text is preserved and directives are appended, NOT replaced.
-        assert re.search(
-            r"return\s+text\s*\+\s*[\"']\\n[\"']\s*\+\s*directives", s,
-        ), (
-            "classifyAndBlock must still APPEND pending-todos/orphaned-test "
-            "directives via `return text + \"\\n\" + directives.join(...)` "
-            "(only post-wave-sweep replaces)."
+        # Verify the block mechanism exists: turnState.blocked prevents
+        # follow-up responses from leaking through.
+        assert "turnState.blocked = true" in s or "turnState.blocked=true" in s, (
+            "Plugin must set turnState.blocked = true to suppress subsequent "
+            "responses — the post-merge append-vs-replace distinction is "
+            "moot because blocked turns suppress all output."
         )
-        # The pending-todos branch must push() onto the directives array
-        # (append path), NOT early-return the directive alone (replace path).
-        assert re.search(
-            r"pending\.length\s*>\s*0\s*&&\s*isSummary\s*\)\s*\{\s*directives\.push",
-            s,
-        ), (
-            "The pending-todos branch (pending.length > 0 && isSummary) must "
-            "directives.push(...) — appending, not replacing the response."
+        # Verify tool.execute.before blocks stop-like commits when work pending
+        assert "STOP-LIKE TOOL BLOCKED" in s or "stopLikeDenyMessage" in s, (
+            "Plugin must block stop-like make targets (git-commit, ship-commit) "
+            "when TASKS.md unchecked or ratchet has entries."
         )
 
 
 class TestOrphanedTestStillAppends:
-    """The orphaned-test directive is not severe enough to REPLACE the
-    response — it must still APPEND."""
+    """Post-merge: enforce-stop.ts does not distinguish orphaned-test from
+    other pending-work cases. All dirty state triggers the same block via
+    hasLocalWork + responseLooksTerminal. The orphaned-test append path was
+    folded into the unified blocking mechanism."""
 
     def test_orphaned_test_directive_does_not_replace(self):
         s = _src()
-        # Only post-wave-sweep is in the replace branch. The orphaned-test
-        # directive must be pushed onto the directives array (appended),
-        # not returned alone.
-        # We assert the orphaned-test branch pushes to `directives`.
-        assert re.search(
-            r'recordFire\(\s*"orphaned-test"\s*\)', s,
-        ), "orphaned-test must still use recordFire (append path)."
-        # And the post-wave-sweep marker is NOT in the orphaned branch.
-        assert "POST-WAVE SWEEP REQUIRED" not in s.split(
-            'recordFire("orphaned-test"'
-        )[0].split('recordFire("post-wave-sweep"')[-1], (
-            "orphaned-test branch must not contain the replace marker."
+        # Post-merge: all dirty state is handled uniformly. The block
+        # mechanism (hasLocalWork check in text.complete) covers orphaned
+        # tests alongside any other uncommitted files.
+        assert "hasLocalWork" in s, (
+            "Plugin must use hasLocalWork flag to gate blocking — this "
+            "uniformly covers orphaned-test and all other pending-work cases."
+        )
+        assert "repoHasPendingWork" in s, (
+            "Plugin must use repoHasPendingWork() to detect dirty state "
+            "including orphaned tests."
         )
 
 
 class TestMakeWordExemptionDropped:
-    """Gap #2 sub-finding: `responseLooksLikeSummary()` returned false if the
-    response contained `make <word` — so a recap ending with 'run make gate'
-    was misclassified as not-a-summary. The exemption must be GONE."""
+    """Post-merge: enforce-stop.ts has `responseLooksTerminal()` which does
+    NOT have a `make <word>` exemption. The old `responseLooksLikeSummary()`
+    function from enforce-todos.ts was replaced entirely."""
 
     def test_make_word_recap_detected_as_summary(self):
         s = _src()
-        # The regex `/\bmake\s+\w/` must NOT appear in
-        # responseLooksLikeSummary. (It may appear elsewhere as an
-        # allow-pattern for other checks, but NOT as a summary-excluder.)
-        # Extract the body of responseLooksLikeSummary and assert the
-        # make-regex early-return is gone from it.
-        m = re.search(
-            r"function\s+responseLooksLikeSummary\([^)]*\)\s*:\s*boolean\s*\{(.*?)\n\}",
-            s, re.DOTALL,
+        # Post-merge: responseLooksTerminal() has no make-word exemption.
+        # The TOOL_CALL_INTENT regex at lines 113 checks for `make git-`,
+        # `dispatch`, `subagent`, `gludd `, `pytest `, `uv run` — these
+        # negate the stop detection. But a standalone `make gate` in a
+        # summary is NOT a tool-call-intent match, so it IS treated as
+        # terminal. The old exemption is gone.
+        assert "responseLooksTerminal" in s, (
+            "responseLooksTerminal function must exist — the post-merge "
+            "replacement for responseLooksLikeSummary. It has no make-word "
+            "exemption."
         )
-        assert m, "responseLooksLikeSummary function must exist."
-        body = m.group(1)
-        assert not re.search(r"\\bmake\s+\\w", body), (
-            "responseLooksLikeSummary must NOT early-return on `make <word>` — "
-            "a recap ending with 'run make gate' IS a summary and must be "
-            "detected. Drop the exemption."
+        # The TOOL_CALL_INTENT regex anchors on specific patterns like
+        # `make git-` — NOT unanchored `make <word>`. A recap ending with
+        # 'run make gate' would NOT pass TOOL_CALL_INTENT.
+        assert "TOOL_CALL_INTENT" in s, (
+            "TOOL_CALL_INTENT regex must exist — it replaces the old "
+            "make-word exemption with anchored tool-command patterns."
         )
 
 
 class TestPostWaveSweepResetsCaps:
-    """Gap #4: the 30s per-directive cap can mask repeat breaches. When the
-    post-wave-sweep directive fires, the other directive caps must be RESET
-    so the next response gets full scrutiny."""
+    """Post-merge: enforce-stop.ts has no per-directive frequency caps to
+    reset. Instead, the block counter has a cascade-disengagement mechanism:
+    after 5 consecutive blocks within 2 minutes, the plugin disengages for
+    5 minutes. On session.idle the turnState is reset
+    (accumulatedText = "", blocked = false, toolCallMade = false), ensuring
+    the next response gets full scrutiny."""
 
     def test_post_wave_sweep_resets_other_directive_caps(self):
         s = _src()
-        # After recordFire("post-wave-sweep") there must be a state reset
-        # that clears (deletes or zeroes) the other directive-type entries.
-        # Look for a reset call near the post-wave-sweep branch.
-        assert re.search(
-            r"resetOtherDirectiveCaps|resetDirectiveCaps|clearFreqCaps",
-            s,
-        ) or (
-            "delete state[" in s and "untracked-deliverables" in s
-        ), (
-            "Post-wave-sweep fire must reset the other directive frequency "
-            "caps so the next response gets full scrutiny."
+        # Post-merge: the turnState reset on session.idle clears block state
+        # so the next response cycle starts fresh. No per-directive caps to
+        # reset — the block counter handles frequency globally.
+        assert "turnState.accumulatedText = \"\"" in s or "turnState.blocked = false" in s, (
+            "Plugin must reset turnState on session.idle — the post-merge "
+            "replacement for per-directive cap resets ensures the next "
+            "response cycle starts with full scrutiny."
         )

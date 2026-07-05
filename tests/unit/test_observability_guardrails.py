@@ -83,7 +83,7 @@ class TestNoUnseenEvents:
     def test_gate_emits_a_progress_marker_per_phase(self) -> None:
         """Each gate phase must print a stdout marker as it starts (heartbeat)."""
         body = _recipe("gate")
-        markers = re.findall(r"\[gate .*?\] phase", body)
+        markers = re.findall(r"=== GATE PHASE:", body)
         assert len(markers) >= 5, (
             f"gate must emit a per-phase stdout progress marker (lint/typecheck/"
             f"collect/test/smoke); found {len(markers)}"

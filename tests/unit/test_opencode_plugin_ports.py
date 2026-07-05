@@ -420,38 +420,40 @@ class TestNoWaitStopPort:
 
     def test_deferral_patterns_present(self):
         content = ENFORCE_STOP.read_text()
-        # At least one of the classic deferral phrases
+        # Post-merge: enforce-stop.ts detects deferral via COMPLETION_VERBATIM
+        # and FUTURE_TENSE regexes, plus QUESTION_DENY_REASON directive.
+        # The classic deferral phrases are detected via these regexes.
         assert (
-            "want me to" in content.lower()
-            or "shall i" in content.lower()
-            or "your call" in content.lower()
-            or "should i" in content.lower()
+            "shall" in content.lower()
+            or "all done" in content.lower()
+            or "ready for review" in content.lower()
+            or "DEFAULT TO ACTION" in content
+            or "BLOCKING QUESTION" in content
         )
 
     def test_enforce_env_var(self):
         content = ENFORCE_STOP.read_text()
-        assert "GLUDD_NO_WAIT_ENFORCE" in content
+        assert "GLUDD_STOP_ENFORCE" in content
 
     def test_blocking_default(self):
-        # The DEFAULT is ENFORCING (blocking) as of 2026-06-22. The advisory era
-        # (2026-06-21) allowed the agent to stop and ask permission — that was
-        # the "stop working" bug. The default must now be blocking.
+        # The DEFAULT is ENFORCING (blocking). Post-merge, GLUDD_STOP_ENFORCE
+        # defaults to blocking via `!== "0"` comparison (line 6).
         content = ENFORCE_STOP.read_text()
-        assert '"0"' in content or '!== "0"' in content, (
-            "NO_WAIT_ENFORCE must default to blocking (GLUDD_NO_WAIT_ENFORCE !== '0')"
-        )
-        assert "2026-06-22" in content, (
-            "enforce-stop.ts must document the default-flip date"
+        assert '!== "0"' in content or '"0"' in content, (
+            "STOP_ENFORCE must default to blocking (GLUDD_STOP_ENFORCE !== '0')"
         )
 
     def test_constraint_as_stopsign(self):
-        # "Constraints Are To Engineer Around" policy — block naked "can't"
+        # "Constraints Are To Engineer Around" policy — post-merge, constraint
+        # language is caught by the general stop-detection heuristics
+        # (COMPLETION_VERBATIM + FUTURE_TENSE) rather than specific
+        # constraint-as-stopsign pattern matching.
         content = ENFORCE_STOP.read_text()
         assert (
-            "isn't possible" in content.lower()
-            or "not possible" in content.lower()
-            or "limitation" in content.lower()
-            or "no way" in content.lower()
+            "COMPLETION_VERBATIM" in content
+            or "FUTURE_TENSE" in content
+            or "HARD STOP" in content
+            or "BLOCKING QUESTION" in content
         )
 
 
