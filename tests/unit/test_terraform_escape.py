@@ -9,6 +9,7 @@ values (quoted, escaped) and never valid HCL structure.
 from __future__ import annotations
 
 import inspect
+from typing import Any, cast
 
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
 from general_ludd.infra.terraform import TerraformGenerator, escape_tfvar_value
@@ -105,7 +106,7 @@ def _base_config(**overrides: object) -> ComputeConfig:
         "allowed_cidr": "0.0.0.0/0",
     }
     defaults.update(overrides)
-    return ComputeConfig(**defaults)  # type: ignore[arg-type]
+    return cast(Any, ComputeConfig)(**defaults)
 
 
 def test_build_tfvars_routes_all_string_values_through_escape_helper() -> None:

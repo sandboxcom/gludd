@@ -48,7 +48,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import asdict
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -69,7 +68,7 @@ class ObserveQueryRequest(BaseModel):
     """
 
     source: str = Field(min_length=1, max_length=256)
-    spec: dict[str, Any] = Field(default_factory=dict)
+    spec: dict[str, object] = Field(default_factory=dict)
 
 
 def _get_registry(app: FastAPI) -> ConnectorRegistry | None:
@@ -89,7 +88,7 @@ def _get_pricing_catalog(app: FastAPI) -> PricingCatalog | None:
     return cat if isinstance(cat, PricingCatalog) else None
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     """Register the observe routes on ``app``.
 
     Reads the live :class:`ConnectorRegistry` from ``app.state._connector_registry``
@@ -100,7 +99,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     """
 
     @app.get("/api/observe/sources")
-    async def observe_sources() -> dict[str, Any]:
+    async def observe_sources() -> dict[str, object]:
         """List operator-registered sources (metadata only — no secrets)."""
         reg = _get_registry(app)
         if reg is None:
@@ -113,7 +112,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/api/observe/health")
-    async def observe_health() -> dict[str, Any]:
+    async def observe_health() -> dict[str, object]:
         """Probe ``health()`` across every registered source (never raises)."""
         reg = _get_registry(app)
         if reg is None:
@@ -124,7 +123,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"health": health, "count": len(health)}
 
     @app.post("/api/observe/query")
-    async def observe_query(req: ObserveQueryRequest) -> dict[str, Any]:
+    async def observe_query(req: ObserveQueryRequest) -> dict[str, object]:
         """Run ``query(spec)`` on the NAMED, operator-registered source.
 
         ``404`` when the name is not a registered source — there is no
@@ -146,7 +145,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/api/pricing")
-    async def pricing_models(provider: str | None = None) -> dict[str, Any]:
+    async def pricing_models(provider: str | None = None) -> dict[str, object]:
         """Return all model token prices from the :class:`PricingCatalog`.
 
         PSK-gated by the daemon middleware (NOT in ``_PUBLIC_PATHS``), exactly
@@ -164,7 +163,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/api/pricing/compute")
-    async def pricing_compute(provider: str | None = None) -> dict[str, Any]:
+    async def pricing_compute(provider: str | None = None) -> dict[str, object]:
         """Return all compute instance prices from the :class:`PricingCatalog`.
 
         PSK-gated by the daemon middleware (NOT in ``_PUBLIC_PATHS``), exactly
@@ -182,7 +181,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/api/pricing/catalog")
-    async def pricing_catalog(provider: str | None = None) -> dict[str, Any]:
+    async def pricing_catalog(provider: str | None = None) -> dict[str, object]:
         """Return the WHOLE live :class:`PricingCatalog` as one JSON facet.
 
         This is the consolidated view the daemon's computed catalog was missing:
@@ -231,7 +230,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/api/pricing/info")
-    async def pricing_model_info(provider: str | None = None) -> dict[str, Any]:
+    async def pricing_model_info(provider: str | None = None) -> dict[str, object]:
         """Return ModelInfo records combining pricing with model metadata.
 
         PSK-gated by the daemon middleware. Optional ``?provider=`` filter.
@@ -249,10 +248,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
 def wire_observability(
     app: FastAPI,
-    daemon_state: dict[str, Any],
-    config: list[dict[str, Any]] | None,
+    daemon_state: dict[str, object],
+    config: list[dict[str, object]] | None,
     *,
-    factories: dict[str, Any] | None = None,
+    factories: dict[str, object] | None = None,
 ) -> ConnectorRegistry:
     """Build the connector registry from ``config`` and register the router.
 

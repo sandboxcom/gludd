@@ -26,7 +26,8 @@ def _reset_daemon_state():
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
+    monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
     return create_daemon_app(tick_interval=0.01)
 
 

@@ -16,6 +16,7 @@ from typing import Any, cast
 
 import yaml
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from general_ludd.ansible.isolation import ProcessIsolationConfig
@@ -256,7 +257,7 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
     return cfg
 
 
-def _openbao_reachable(mgr: Any) -> bool:
+def _openbao_reachable(mgr: SecretsManager) -> bool:
     """Bounded reachability/auth check for an OpenBao SecretsManager.
 
     Returns True only if the backend answers `is_authenticated()` truthfully.
@@ -485,7 +486,7 @@ def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
     return workspaces
 
 
-def load_model_profiles(profiles_dir: str | None = None) -> list[Any]:
+def load_model_profiles(profiles_dir: str | None = None) -> list[ModelProfile]:
     if profiles_dir is None:
         return []
     pdir = Path(profiles_dir)
@@ -594,7 +595,7 @@ def _on_event_loop_done(task: asyncio.Task[Any]) -> None:
         logger.error("EventLoop task exited unexpectedly without exception")
 
 
-def _check_degraded(app: FastAPI) -> Any:
+def _check_degraded(app: FastAPI) -> JSONResponse | None:
     """Return a 503 JSONResponse when the daemon lifespan failed, else None.
 
     Mutating handlers (dispatch, self-update, spend/configure) must call this
@@ -2457,13 +2458,14 @@ def create_daemon_app(
 
     @app.get(
         "/readyz",
+        response_model=None,
         summary="Readiness probe — daemon can accept work",
         description=(
             "200 when ready (not degraded, event loop alive); 503 otherwise. "
             "Public, no auth."
         ),
     )
-    async def readyz() -> Any:
+    async def readyz() -> JSONResponse | dict[str, str]:
         """Readiness probe (N1/C6, W3.4): 503 when degraded or event-loop done/cancelled.
 
         Distinct from /healthz (liveness):
@@ -2489,9 +2491,7 @@ def create_daemon_app(
         return {"status": "ready"}
 
     @app.get("/metrics")
-    async def metrics_prometheus() -> Any:
-        from fastapi.responses import PlainTextResponse
-
+    async def metrics_prometheus() -> PlainTextResponse:
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
         return PlainTextResponse(content=get_metrics_exporter().render_prometheus())
 
@@ -2617,6 +2617,9 @@ def create_daemon_app(
 
     # Lazy to avoid circular import: routers/*.py import from daemon at module level
     from general_ludd.routers import (
+        account as account_router,
+    )
+    from general_ludd.routers import (
         accounting,
         ansible,
         benchmark,
@@ -2670,6 +2673,7 @@ def create_daemon_app(
     todos.register(app, daemon_state)
     messages.register(app, daemon_state)
     accounting.register(app, daemon_state)
+    account_router.register(app, daemon_state)
     facts.register(app, daemon_state)
     environment.register(app, daemon_state)
     embeddings.register(app, daemon_state)

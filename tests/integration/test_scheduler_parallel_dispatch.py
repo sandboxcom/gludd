@@ -14,7 +14,7 @@ Coverage:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -142,12 +142,12 @@ class TestParallelDispatchNoSharedResources:
         loop._prompt_variant_selector = None
         loop._run_recorder = None
 
-        loop._dispatch_execute_job = record_dispatch  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = record_dispatch
         # Override isolated to skip sandbox + session wrapping for this test.
         async def fake_isolated(todo: Any) -> None:
             await record_dispatch(todo)
 
-        loop._dispatch_execute_job_isolated = fake_isolated  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job_isolated = fake_isolated
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
 
@@ -218,8 +218,8 @@ class TestSerializedDispatchSharedResources:
         async def fake_isolated(todo: Any) -> None:
             await record_with_tracking(todo)
 
-        loop._dispatch_execute_job = record_with_tracking  # type: ignore[method-assign]  # pytest monkeypatch
-        loop._dispatch_execute_job_isolated = fake_isolated  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = record_with_tracking
+        cast(Any, loop)._dispatch_execute_job_isolated = fake_isolated
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
 
@@ -281,8 +281,8 @@ class TestBatchSizeRespected:
         loop._prompt_variant_selector = None
         loop._run_recorder = None
 
-        loop._dispatch_execute_job = fake_isolated  # type: ignore[method-assign]  # pytest monkeypatch
-        loop._dispatch_execute_job_isolated = fake_isolated  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = fake_isolated
+        cast(Any, loop)._dispatch_execute_job_isolated = fake_isolated
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
         assert count == 3
@@ -350,8 +350,8 @@ class TestFailedItemsDontBlockBatch:
         async def fake_isolated(todo: Any) -> None:
             await dispatch_maybe_fail(todo)
 
-        loop._dispatch_execute_job = dispatch_maybe_fail  # type: ignore[method-assign]  # pytest monkeypatch
-        loop._dispatch_execute_job_isolated = fake_isolated  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = dispatch_maybe_fail
+        cast(Any, loop)._dispatch_execute_job_isolated = fake_isolated
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
 
@@ -392,8 +392,8 @@ class TestFailedItemsDontBlockBatch:
         async def fake_isolated(todo: Any) -> None:
             await always_fail(todo)
 
-        loop._dispatch_execute_job = always_fail  # type: ignore[method-assign]  # pytest monkeypatch
-        loop._dispatch_execute_job_isolated = fake_isolated  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = always_fail
+        cast(Any, loop)._dispatch_execute_job_isolated = fake_isolated
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
 
@@ -442,8 +442,8 @@ class TestFullClaimPlanBatchDispatchComplete:
         async def fake_isolated(todo: Any) -> None:
             await fake_dispatch(todo)
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]  # pytest monkeypatch
-        loop._dispatch_execute_job_isolated = fake_isolated  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
+        cast(Any, loop)._dispatch_execute_job_isolated = fake_isolated
 
         # Simulate the phase state after claim.
         loop._tick_state = {"claimed_todos": todos}
@@ -580,7 +580,7 @@ class TestSequentialFallback:
         loop._prompt_variant_selector = None
         loop._run_recorder = None
 
-        loop._dispatch_execute_job = record_order  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = record_order
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
 

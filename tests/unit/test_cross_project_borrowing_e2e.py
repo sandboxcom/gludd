@@ -21,7 +21,7 @@ These tests prove the wiring is now live AND strictly opt-in:
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -338,12 +338,12 @@ def test_environment_route_inherits_knowledge_when_flag_on() -> None:
             super().__init__(edges)
 
     orig = repo_mod.ProjectRelationshipRepository
-    repo_mod.ProjectRelationshipRepository = _Repo  # type: ignore[assignment,misc]
+    cast(Any, repo_mod).ProjectRelationshipRepository = _Repo
     try:
         client = TestClient(app)
         resp = client.get("/api/environment", params={"project_id": "proj-child"})
     finally:
-        repo_mod.ProjectRelationshipRepository = orig  # type: ignore[misc]
+        cast(Any, repo_mod).ProjectRelationshipRepository = orig
 
     assert resp.status_code == 200, resp.text
     project = resp.json()["project"]
@@ -365,12 +365,12 @@ def test_environment_route_no_inheritance_when_flag_off() -> None:
             super().__init__(edges)
 
     orig = repo_mod.ProjectRelationshipRepository
-    repo_mod.ProjectRelationshipRepository = _Repo  # type: ignore[assignment,misc]
+    cast(Any, repo_mod).ProjectRelationshipRepository = _Repo
     try:
         client = TestClient(app)
         resp = client.get("/api/environment", params={"project_id": "proj-child"})
     finally:
-        repo_mod.ProjectRelationshipRepository = orig  # type: ignore[misc]
+        cast(Any, repo_mod).ProjectRelationshipRepository = orig
 
     assert resp.status_code == 200, resp.text
     project = resp.json()["project"]

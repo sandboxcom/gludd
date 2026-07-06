@@ -12,6 +12,8 @@ Verifies:
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from general_ludd.models.timeout_detector import (
@@ -27,7 +29,7 @@ from general_ludd.models.timeout_detector import (
 
 def _policy(**kwargs: object) -> TimeoutRetryPolicy:
     """Return a policy with optional overrides."""
-    return TimeoutRetryPolicy(**kwargs)  # type: ignore[arg-type]
+    return cast(Any, TimeoutRetryPolicy)(**kwargs)
 
 
 # ---------------------------------------------------------------------------

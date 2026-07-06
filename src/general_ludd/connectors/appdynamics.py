@@ -25,7 +25,8 @@ Design contract (shared by all gludd APM connectors):
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from collections.abc import Mapping
+from typing import Protocol, TypedDict, cast, runtime_checkable
 from urllib.parse import quote, urlencode, urlparse, urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -38,6 +39,55 @@ VALID_KINDS = frozenset({KIND_METRICS, KIND_TRACES})
 DEFAULT_TIMEOUT = 30.0
 
 
+# --------------------------------------------------------------------------- #
+# Typed API-response shapes (AppDynamics controller metric-data JSON).
+# --------------------------------------------------------------------------- #
+class AppDMetricValue(TypedDict, total=False):
+    """One element of a metric series' ``metricValues[]`` array."""
+
+    startTimeInMillis: int
+    occurrences: int
+    current: int | float
+    min: int | float
+    max: int | float
+    value: int | float
+    sum: int | float
+    count: int
+
+
+class AppDMetricSeries(TypedDict, total=False):
+    """One element of the controller's metric-data JSON array response."""
+
+    metricId: int
+    metricName: str
+    metricPath: str
+    frequency: str
+    metricValues: list[AppDMetricValue]
+
+
+class AppDMetricDataPayload(TypedDict, total=False):
+    """Wrapper shape used by the urllib transport when the controller emits a bare list."""
+
+    data: list[AppDMetricSeries]
+    metrics: list[AppDMetricSeries]
+    result: list[AppDMetricSeries]
+
+
+class AppDQuerySpec(TypedDict, total=False):
+    """Caller-supplied query spec accepted by :meth:`AppDynamicsSource.query`.
+
+    Both snake_case (``metric_path``) and camelCase (``metricPath``) keys are
+    accepted because operator-supplied YAML/JSON config frequently carries the
+    AppDynamics-native camelCase form.
+    """
+
+    metric_path: str
+    metricPath: str
+    time_range_type: str
+    timeRangeType: str
+    duration_in_mins: int
+    rollup: bool
+
 
 @runtime_checkable
 class HttpTransport(Protocol):
@@ -49,7 +99,7 @@ class HttpTransport(Protocol):
         *,
         headers: dict[str, str],
         timeout: float,
-    ) -> tuple[int, dict[str, Any]]:
+    ) -> tuple[int, dict[str, object]]:
         ...
 
 
@@ -77,7 +127,7 @@ def _validate_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _resolve_secret(config: dict[str, Any], env_key_name: str) -> str:
+def _resolve_secret(config: Mapping[str, object], env_key_name: str) -> str:
     """Read a secret strictly from the environment named by ``config[env_key_name]``."""
     env_var = config.get(env_key_name)
     if not env_var or not isinstance(env_var, str):
@@ -97,7 +147,7 @@ class _UrllibTransport:
         *,
         headers: dict[str, str],
         timeout: float,
-    ) -> tuple[int, dict[str, Any]]:
+    ) -> tuple[int, dict[str, object]]:
         import json
         import urllib.error
         import urllib.request
@@ -111,13 +161,15 @@ class _UrllibTransport:
         except urllib.error.HTTPError as exc:  # pragma: no cover - exercised via injected transport
             body = exc.read()
             try:
-                return int(exc.code), json.loads(body or b"{}")
+                return int(exc.code), cast("dict[str, object]", json.loads(body or b"{}"))
             except ValueError:
                 return int(exc.code), {}
         if not raw:
             return status, {}
-        parsed: Any = json.loads(raw)
-        return status, parsed if isinstance(parsed, dict) else {"data": parsed}
+        parsed: object = json.loads(raw)
+        if isinstance(parsed, dict):
+            return status, cast("dict[str, object]", parsed)
+        return status, {"data": parsed}
 
 
 class AppDynamicsSource:
@@ -125,14 +177,19 @@ class AppDynamicsSource:
 
     KIND = KIND_METRICS
 
-    def __init__(self, config: dict[str, Any], transport: HttpTransport | None = None) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        transport: HttpTransport | None = None,
+    ) -> None:
         self.name: str = str(config.get("name", "appdynamics"))
         self.base_url: str = _validate_base_url(str(config.get("base_url", "")))
-        self.application: str = str(config.get("application", config.get("app", "")))
+        app_obj = config.get("application", config.get("app", ""))
+        self.application: str = str(app_obj) if app_obj else ""
         if not self.application:
             raise ConnectorConfigError("config['application'] is required")
         self._token: str = _resolve_secret(config, "token_env")
-        self.timeout: float = float(config.get("timeout", DEFAULT_TIMEOUT))
+        self.timeout: float = float(cast(float | int | str | bool, config.get("timeout", DEFAULT_TIMEOUT)))
         self._transport: HttpTransport = transport or _UrllibTransport()
 
     # -- internals ---------------------------------------------------------
@@ -143,7 +200,7 @@ class AppDynamicsSource:
             "Accept": "application/json",
         }
 
-    def _get(self, path: str, params: dict[str, str] | None = None) -> tuple[int, dict[str, Any]]:
+    def _get(self, path: str, params: dict[str, str] | None = None) -> tuple[int, dict[str, object]]:
         url = f"{self.base_url}{path}"
         if params:
             url = f"{url}?{urlencode(params)}"
@@ -151,7 +208,7 @@ class AppDynamicsSource:
 
     # -- public API --------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe reachability + auth; never raises."""
         try:
             app = quote(self.application, safe="")
@@ -165,15 +222,18 @@ class AppDynamicsSource:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: AppDQuerySpec) -> list[dict[str, object]]:
         """Run a metric-data query; return normalized records."""
-        metric_path = str(spec.get("metric_path", spec.get("metricPath", "")))
+        metric_path_raw = spec.get("metric_path", spec.get("metricPath", ""))
+        metric_path = metric_path_raw if isinstance(metric_path_raw, str) else str(metric_path_raw)
         if not metric_path:
             return []
         params: dict[str, str] = {
             "metric-path": metric_path,
             "output": "JSON",
-            "time-range-type": str(spec.get("time_range_type", spec.get("timeRangeType", "BEFORE_NOW"))),
+            "time-range-type": str(
+                spec.get("time_range_type", spec.get("timeRangeType", "BEFORE_NOW"))
+            ),
         }
         if spec.get("duration_in_mins") is not None:
             params["duration-in-mins"] = str(spec["duration_in_mins"])
@@ -190,20 +250,25 @@ class AppDynamicsSource:
 
     # -- normalization -----------------------------------------------------
 
-    def _normalize(self, body: dict[str, Any]) -> list[dict[str, Any]]:
+    def _normalize(self, body: Mapping[str, object]) -> list[dict[str, object]]:
         # The controller returns a JSON array; the urllib transport wraps a bare
         # list under {"data": [...]}, while an injected transport may pass the
         # list straight through under a conventional key.
         series_list = self._extract_series(body)
-        out: list[dict[str, Any]] = []
+        out: list[dict[str, object]] = []
         for series in series_list:
-            if not isinstance(series, dict):
+            if not isinstance(series, Mapping):
                 continue
-            metric_name = series.get("metricName", "")
-            metric_path = series.get("metricPath", "")
+            metric_name_obj = series.get("metricName", "")
+            metric_name = metric_name_obj if isinstance(metric_name_obj, str) else str(metric_name_obj)
+            metric_path_obj = series.get("metricPath", "")
+            metric_path = metric_path_obj if isinstance(metric_path_obj, str) else str(metric_path_obj)
             metric_id = series.get("metricId")
-            for mv in series.get("metricValues", []):
-                if not isinstance(mv, dict):
+            metric_values = series.get("metricValues", [])
+            if not isinstance(metric_values, list):
+                continue
+            for mv in metric_values:
+                if not isinstance(mv, Mapping):
                     continue
                 out.append(
                     {
@@ -211,20 +276,21 @@ class AppDynamicsSource:
                         "source": self.name,
                         "kind": KIND_METRICS,
                         "level_or_status": "ok",
-                        "message": str(metric_name),
+                        "message": metric_name,
                         "value": mv.get("value"),
                         "labels": {
                             "metricName": metric_name,
                             "metricPath": metric_path,
                             "metricId": metric_id,
                         },
-                        "raw": mv,
+                        "raw": dict(mv),
                     }
                 )
         return out
 
     @staticmethod
-    def _extract_series(body: dict[str, Any]) -> list[Any]:
+    def _extract_series(body: Mapping[str, object]) -> list[object]:
+        """Return the metric series list under any of the conventional keys, else []."""
         for key in ("data", "metrics", "result"):
             value = body.get(key)
             if isinstance(value, list):
@@ -235,11 +301,11 @@ class AppDynamicsSource:
         return []
 
 
-def _ms_to_epoch(ts_ms: Any) -> float | None:
+def _ms_to_epoch(ts_ms: object) -> float | None:
     """Convert epoch milliseconds to epoch seconds; tolerate None/garbage."""
     if ts_ms is None:
         return None
     try:
-        return float(ts_ms) / 1000.0
+        return float(cast(int | float | str | bool, ts_ms)) / 1000.0
     except (TypeError, ValueError):
         return None

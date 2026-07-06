@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-ansible = pytest.importorskip("ansible", reason="ansible-core not installed")
-
-# E402 suppressed: import requires the importorskip guard above to succeed.
-from general_ludd.ansible.core_runner import CoreAnsibleRunner  # noqa: E402
+try:
+    from general_ludd.ansible.core_runner import CoreAnsibleRunner
+except ImportError:
+    pytest.skip("ansible-core not installed", allow_module_level=True)
 
 
 def _make_runner() -> CoreAnsibleRunner:

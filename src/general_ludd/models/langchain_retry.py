@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from langchain_core.runnables import Runnable, RunnableLambda
+from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ class LangChainRetryGateway:
             "tools": tools,
             "_call_kwargs": context or {},
         }
-        return self._chain.invoke(input_dict, config=cast(Any, config or {}))
+        return self._chain.invoke(input_dict, config=cast(RunnableConfig, config or {}))
 
 
 _default_retry_config: dict[str, Any] = {

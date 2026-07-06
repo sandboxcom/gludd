@@ -19,7 +19,7 @@ P2 — _SourceLike preflight:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -217,7 +217,7 @@ class TestImportGuardIntegration:
             def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
                 return []
 
-        mock_mod.PrometheusSource = PrometheusSource  # type: ignore[attr-defined]
+        cast(Any, mock_mod).PrometheusSource = PrometheusSource
 
         with patch("importlib.import_module", return_value=mock_mod) as mock_import:
             reg = ConnectorRegistry.from_config(
@@ -250,7 +250,7 @@ class TestImportGuardIntegration:
             def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
                 return []
 
-        mock_mod.DatadogSource = DatadogSource  # type: ignore[attr-defined]
+        cast(Any, mock_mod).DatadogSource = DatadogSource
 
         with patch("importlib.import_module", return_value=mock_mod) as mock_import:
             reg = ConnectorRegistry.from_config(

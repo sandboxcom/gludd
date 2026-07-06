@@ -13,7 +13,7 @@ Verifies that:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -38,7 +38,7 @@ class _FakeChatModel:
         bound = _FakeChatModel(**{k: v for k, v in self.init_kwargs.items()})
         bound._bound_tools = list(tools)
         # Share the invocation recorder with the parent so the test can find it.
-        bound._parent = self  # type: ignore[attr-defined]
+        cast(Any, bound)._parent = self
         self._bind_tools_result = bound
         return bound
 

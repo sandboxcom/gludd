@@ -214,7 +214,7 @@ _WORK_TYPE_TASK_TYPE_MAP: dict[str, str] = {
 }
 
 
-def _work_type_to_task_type(work_type: str) -> Any:
+def _work_type_to_task_type(work_type: str) -> TaskType:
     mapped = _WORK_TYPE_TASK_TYPE_MAP.get(work_type, "feature")
     try:
         return TaskType(mapped)
@@ -302,6 +302,7 @@ class EventLoop:
         compaction_controller: CompactionAggressivenessController | None = None,
         infra_tracker: Any | None = None,
         credit_tracker: Any | None = None,
+        ephemeral_account_manager: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -325,6 +326,10 @@ class EventLoop:
         self._compaction_controller = compaction_controller
         self._infra_tracker = infra_tracker
         self._credit_tracker = credit_tracker
+        # Ephemeral cloud account lifecycle: when set, completed tasks that
+        # carry an ``ephemeral_account_id`` stamp trigger account teardown via
+        # ``maybe_delete_ephemeral_after_task``. None = ephemeral mode off.
+        self._ephemeral_account_manager = ephemeral_account_manager
         # Compaction feedback loop: accumulated accuracy samples across ticks.
         self._compaction_passed = 0
         self._compaction_total = 0
@@ -360,7 +365,7 @@ class EventLoop:
         # snapshots → cancels → awaits — is serialised by _bg_tasks_lock so a
         # concurrent discard during the drain can never raise "set changed size
         # during iteration".
-        self._background_tasks: set[asyncio.Task[Any]] = set()
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self._bg_tasks_lock = asyncio.Lock()
         self._observability_enabled: bool = bool(adaptive_router)
         self._tick_metrics: dict[str, Any] = {}
@@ -426,7 +431,7 @@ class EventLoop:
         self._issue_poll_interval_ticks: int = 300
         self._issue_poll_tick_counter: int = 0
 
-    def _track_background_task(self, task: asyncio.Task[Any]) -> None:
+    def _track_background_task(self, task: asyncio.Task[None]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
 
         A3: keeps a strong reference in ``self._background_tasks`` (so the task
@@ -1704,8 +1709,8 @@ class EventLoop:
         self,
         todo: Any,
         *,
-        _variable_repo_override: Any | None = None,
-        _task_return_repo_override: Any | None = None,
+        _variable_repo_override: VariableNamespaceRepository | None = None,
+        _task_return_repo_override: TaskReturnRepository | None = None,
         _session_override: AsyncSession | None = None,
     ) -> None:
         """Dispatch a single execute job.
@@ -2795,7 +2800,7 @@ class EventLoop:
         job: JobSpec,
         resp: Any,
         *,
-        _task_return_repo_override: Any | None = None,
+        _task_return_repo_override: TaskReturnRepository | None = None,
         _session_override: AsyncSession | None = None,
     ) -> None:
         eff_repo = _task_return_repo_override if _task_return_repo_override is not None else self._task_return_repo
@@ -2966,6 +2971,19 @@ class EventLoop:
                 and await self._attempt_completed_push(todo)
             ):
                 push_failures += 1
+            # Ephemeral account cleanup: when a task carrying an
+            # ``ephemeral_account_id`` stamp is marked COMPLETE and the
+            # policy says delete-after-use, tear the account down now so a
+            # finished job cannot leave a live credential behind. Best-effort
+            # — a provider failure is logged, not raised (the reconcile phase
+            # must not abort because cleanup hiccupped on one account).
+            if (
+                new_status == TodoStatus.COMPLETE
+                and self._ephemeral_account_manager is not None
+            ):
+                self._track_background_task(
+                    asyncio.create_task(self._maybe_cleanup_ephemeral(todo))
+                )
             if self._audit_repo is not None:
                 try:
                     from general_ludd.db.models import AuditEventType
@@ -3989,6 +4007,39 @@ class EventLoop:
     # ------------------------------------------------------------------
     # AutoMemory — episodic recording, consolidation, cross-task learning
     # ------------------------------------------------------------------
+
+    async def _maybe_cleanup_ephemeral(self, todo: Any) -> None:
+        """Best-effort teardown of the ephemeral account attached to ``todo``.
+
+        Triggered from the reconcile phase when a task is marked COMPLETE and
+        an :class:`EphemeralAccountManager` is wired. Reads the
+        ``ephemeral_account_id`` stamp from the todo's metadata/tags and asks
+        the manager to delete it. Never raises — a provider cleanup failure
+        is logged and surfaced via the returned dict.
+        """
+        if self._ephemeral_account_manager is None:
+            return
+        try:
+            from general_ludd.account.ephemeral import maybe_delete_ephemeral_after_task
+            # The ephemeral stamp is propagated via the todo's tags dict
+            # (the deployment path set it there when provisioning the account).
+            tags = getattr(todo, "tags", None) or {}
+            metadata = tags if isinstance(tags, dict) else {}
+            result = maybe_delete_ephemeral_after_task(
+                manager=self._ephemeral_account_manager,
+                metadata=metadata,
+            )
+            if result is not None and result.get("deleted"):
+                logger.info(
+                    "Ephemeral cleanup: deleted account %s for completed todo %s",
+                    result.get("account_id"), getattr(todo, "todo_id", "?"),
+                )
+        except Exception:
+            logger.warning(
+                "Ephemeral cleanup failed for todo %s",
+                getattr(todo, "todo_id", "?"),
+                exc_info=True,
+            )
 
     async def _auto_record_episode(
         self, todo: Any, new_status: Any, decision: Any,

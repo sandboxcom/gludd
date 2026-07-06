@@ -8,25 +8,13 @@ passed a fake runner that never executes pytest so the suite stays fast.
 """
 from __future__ import annotations
 
-import sys
 import textwrap
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
-
-# ── path setup ──────────────────────────────────────────────────────────────
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPTS = _REPO_ROOT / "scripts"
-if str(_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS))
-if str(_REPO_ROOT / "src") not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT / "src"))
-
-# E402 suppressed: the imports below require the sys.path setup above to
-# locate scripts/ and src/ which are not installed packages.
-from gen_status_table import (  # noqa: E402
+from gen_status_table import (
     _END_MARKER,
     _START_MARKER,
     _badge,
@@ -40,7 +28,10 @@ from gen_status_table import (  # noqa: E402
     main,
 )
 
-from general_ludd.quality.feature_verifier import FeatureVerifier  # noqa: E402
+from general_ludd.quality.feature_verifier import FeatureVerifier
+
+# ── path setup (now handled by tests/conftest.py) ──────────────────────────
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -495,8 +486,8 @@ class TestMain:
         manifest = tmp_path / "docs" / "features.yml"
         manifest.parent.mkdir(parents=True, exist_ok=True)
         # Serialise sections back to YAML for loading.
-        import yaml  # type: ignore[import-untyped]
-        manifest.write_text(yaml.dump({"sections": sections}))
+        import yaml
+        manifest.write_text(cast(Any, yaml).dump({"sections": sections}))
         return manifest
 
     def _write_readme_with_markers(self, tmp_path: Path) -> Path:
@@ -560,6 +551,29 @@ class TestMain:
         with patch.object(gst, "_REPO_ROOT", tmp_path):
             rc = main(["--check", "--fast", "--manifest", str(manifest)])
         assert rc == 1
+
+    def test_check_mode_exits_0_when_no_markers_and_no_heading(self, tmp_path: Path) -> None:
+        """Table intentionally removed: README has neither markers nor heading → exit 0."""
+        manifest = self._write_minimal_manifest(tmp_path)
+        readme = tmp_path / "README.md"
+        readme.write_text("# Doc\n\nSome unrelated content. No status table here.\n")
+        import gen_status_table as gst
+        with patch.object(gst, "_REPO_ROOT", tmp_path):
+            rc = main(["--check", "--fast", "--manifest", str(manifest)])
+        assert rc == 0
+
+    def test_write_mode_exits_0_when_no_markers_and_no_heading(self, tmp_path: Path) -> None:
+        """Table intentionally removed: --write should not inject, should exit 0."""
+        manifest = self._write_minimal_manifest(tmp_path)
+        readme = tmp_path / "README.md"
+        original = "# Doc\n\nSome unrelated content. No status table here.\n"
+        readme.write_text(original)
+        import gen_status_table as gst
+        with patch.object(gst, "_REPO_ROOT", tmp_path):
+            rc = main(["--write", "--fast", "--manifest", str(manifest)])
+        assert rc == 0
+        # README must be unchanged — no injection performed.
+        assert readme.read_text() == original
 
     def test_missing_manifest_exits_1(self, tmp_path: Path) -> None:
         (tmp_path / "README.md").write_text("# x\n")

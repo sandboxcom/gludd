@@ -22,8 +22,8 @@ from __future__ import annotations
 import csv
 import io
 import subprocess
-from collections.abc import Callable, Mapping
-from typing import Any
+from collections.abc import Callable
+from typing import TypedDict, cast
 
 # A runner takes an argv list and returns (returncode, stdout, stderr).
 Runner = Callable[[list[str]], "tuple[int, str, str]"]
@@ -48,6 +48,40 @@ _CSV_FIELDS = (
     "success",
     "summary",
 )
+
+
+class AuditdConfig(TypedDict, total=False):
+    """Optional constructor config for :class:`AuditdSource`."""
+
+    name: str
+
+
+class AuditdQuerySpec(TypedDict, total=False):
+    """Optional ``query()`` spec: ``start`` time and/or message ``type``."""
+
+    start: str
+    type: str
+
+
+class AuditdHealthResult(TypedDict, total=False):
+    """Health probe result: ``ok`` flag plus human-readable ``detail``."""
+
+    ok: bool
+    detail: str
+
+
+class AuditdCsvRow(TypedDict, total=False):
+    """One parsed row of ``ausearch --format csv`` output (positional map)."""
+
+    node: str
+    event_kind: str
+    event_type: str
+    event_time: str
+    serial: str
+    uid: str
+    exe: str
+    success: str
+    summary: str
 
 
 def _default_runner(argv: list[str]) -> tuple[int, str, str]:
@@ -85,17 +119,17 @@ class AuditdSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any] | None = None,
+        config: AuditdConfig | None = None,
         runner: Runner | None = None,
     ) -> None:
-        config = dict(config or {})
-        self.name: str = str(config.get("name", "auditd"))
-        self._config = config
+        cfg: dict[str, object] = dict(config or {})
+        self.name: str = str(cfg.get("name", "auditd"))
+        self._config = cfg
         self._runner: Runner = runner if runner is not None else _default_runner
 
     # -- health ---------------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> AuditdHealthResult:
         """Return {'ok': bool, 'detail': str}; never raises.
 
         Tries `auditctl -s` first; falls back to `ausearch --version`.
@@ -113,19 +147,19 @@ class AuditdSource:
 
     # -- query ----------------------------------------------------------------
 
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: AuditdQuerySpec | None = None) -> list[dict[str, object]]:
         """Run ausearch and return normalized audit records.
 
         spec keys (all optional): start (str), type (str message type).
         """
-        spec = dict(spec or {})
-        argv = self._build_argv(spec)
+        spec_dict = cast(AuditdQuerySpec, dict(spec or {}))
+        argv = self._build_argv(spec_dict)
         rc, out, _err = self._runner(argv)
         if rc != 0:
             return []
         return [self._normalize(row) for row in self._parse_csv(out or "")]
 
-    def _build_argv(self, spec: Mapping[str, Any]) -> list[str]:
+    def _build_argv(self, spec: AuditdQuerySpec) -> list[str]:
         argv: list[str] = ["ausearch", "--format", "csv"]
 
         start = spec.get("start")
@@ -138,8 +172,8 @@ class AuditdSource:
 
         return argv
 
-    def _parse_csv(self, text: str) -> list[dict[str, Any]]:
-        rows: list[dict[str, Any]] = []
+    def _parse_csv(self, text: str) -> list[AuditdCsvRow]:
+        rows: list[AuditdCsvRow] = []
         reader = csv.reader(io.StringIO(text))
         for raw in reader:
             if not raw or all(c.strip() == "" for c in raw):
@@ -151,14 +185,17 @@ class AuditdSource:
                 c.strip().lower() for c in raw
             ):
                 continue
-            row = {
-                _CSV_FIELDS[i]: raw[i].strip()
-                for i in range(min(len(raw), len(_CSV_FIELDS)))
-            }
+            row = cast(
+                AuditdCsvRow,
+                {
+                    _CSV_FIELDS[i]: raw[i].strip()
+                    for i in range(min(len(raw), len(_CSV_FIELDS)))
+                },
+            )
             rows.append(row)
         return rows
 
-    def _normalize(self, row: Mapping[str, Any]) -> dict[str, Any]:
+    def _normalize(self, row: AuditdCsvRow) -> dict[str, object]:
         ts = self._parse_time(row.get("event_time"))
         event_type = row.get("event_type") or row.get("event_kind")
         summary = row.get("summary")
@@ -182,7 +219,7 @@ class AuditdSource:
         }
 
     @staticmethod
-    def _parse_time(raw: Any) -> float | None:
+    def _parse_time(raw: int | float | str | None) -> float | None:
         """ausearch event time may be an epoch (float/int) or a date string.
 
         We return a float epoch when the value is numeric, else None (the

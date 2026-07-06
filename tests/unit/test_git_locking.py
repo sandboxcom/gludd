@@ -10,6 +10,7 @@ on commits (lost / interleaved). These tests pin the contract of
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import threading
@@ -223,11 +224,11 @@ def test_reentrant_same_repo_same_thread_no_self_deadlock(tmp_path):
 
     def nested() -> None:
         # Intentionally nested (not combined) — that IS the re-entrancy under test.
-        # SIM117 suppressed: combining the with-statements would defeat the test.
-        with git_repo_lock(repo):  # noqa: SIM117
-            with git_repo_lock(repo):
-                with git_repo_lock(repo):
-                    pass
+        # ExitStack drives N levels of nesting without combining the with-statements
+        # (combining would defeat the re-entrancy test).
+        with contextlib.ExitStack() as stack:
+            for _ in range(3):
+                stack.enter_context(git_repo_lock(repo))
         done.set()
 
     t = threading.Thread(target=nested)

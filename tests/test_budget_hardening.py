@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -585,7 +586,7 @@ class TestBudgetPreCheckRealInstances:
 
         # Wrong positional kwarg (old buggy pattern)
         with pytest.raises(TypeError):
-            limiter.try_charge(cost=0.0)  # type: ignore[call-arg]  # test stub
+            cast(Any, limiter).try_charge(cost=0.0)
 
     def test_real_spend_limiter_try_charge_requires_kind_kwarg(self):
         """try_charge requires 'kind' keyword argument — positional cost_usd only."""

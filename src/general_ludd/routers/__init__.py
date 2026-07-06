@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 def register_all(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     # Lazy to avoid circular import: routers/*.py import from daemon at module level
+    from general_ludd.routers.account import register as register_account
     from general_ludd.routers.adversarial import register as register_adversarial
     from general_ludd.routers.ansible import register as register_ansible
     from general_ludd.routers.benchmark import register as register_benchmark
@@ -39,6 +40,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     from general_ludd.routers.web_search import register as register_web_search
     from general_ludd.routers.worktree import register as register_worktree
 
+    register_account(app, daemon_state)
     register_ansible(app, daemon_state)
     register_adversarial(app, daemon_state)
     register_benchmark(app, daemon_state)

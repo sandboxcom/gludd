@@ -83,7 +83,7 @@ def _db_factory() -> Any:
     """Minimal async session-factory (yields a no-op AsyncMock session)."""
 
     @asynccontextmanager
-    async def _f() -> Any:  # type: ignore[return]
+    async def _f():
         s = AsyncMock()
         s.commit = AsyncMock()
         yield s

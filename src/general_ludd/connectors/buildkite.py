@@ -26,7 +26,7 @@ import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TypedDict, cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -37,6 +37,36 @@ Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
 
 DEFAULT_BASE_URL = "https://api.buildkite.com"
 
+
+# --------------------------------------------------------------------------- #
+# Typed API-response shapes (Buildkite REST API v2).
+# --------------------------------------------------------------------------- #
+class BuildkiteBuild(TypedDict, total=False):
+    """One element of the Buildkite ``builds`` JSON array response."""
+
+    id: str
+    number: int
+    state: str
+    branch: str
+    commit: str
+    finished_at: str
+    created_at: str
+    web_url: str
+
+
+class BuildkiteLogResponse(TypedDict, total=False):
+    """Response shape of ``GET .../jobs/{job_id}/log`` — ``{"content": "..."}``."""
+
+    content: str
+
+
+class BuildkiteQuerySpec(TypedDict, total=False):
+    """Caller-supplied query selection accepted by :meth:`BuildkiteSource.query`.
+
+    Currently unused (Buildkite's builds endpoint takes no filter params in
+    this connector), but kept for contract symmetry with sibling pipeline
+    connectors.
+    """
 
 
 def _guard_base_url(base_url: str) -> str:
@@ -70,13 +100,13 @@ class BuildkiteSource:
 
     KIND = "pipeline"
 
-    def __init__(self, config: Mapping[str, Any], transport: Transport | None = None) -> None:
+    def __init__(self, config: Mapping[str, object], transport: Transport | None = None) -> None:
         self._config = dict(config)
         self.name = str(self._config.get("name", "buildkite"))
         self.base_url = _guard_base_url(str(self._config.get("base_url", DEFAULT_BASE_URL)))
         self.org = str(self._config.get("org", ""))
         self.pipeline = str(self._config.get("pipeline", ""))
-        self.timeout = float(self._config.get("timeout", 10.0))
+        self.timeout = float(cast(float | int | str | bool, self._config.get("timeout", 10.0)))
         self._token_env = str(self._config.get("token_env", "BUILDKITE_TOKEN"))
         self._token = os.environ.get(self._token_env, "")
         self._transport: Transport = transport or _urllib_transport
@@ -95,10 +125,12 @@ class BuildkiteSource:
         return f"{self.base_url}/v2/organizations/{self.org}/pipelines/{self.pipeline}/builds"
 
     @staticmethod
-    def _normalize_build(build: Mapping[str, Any]) -> dict[str, Any]:
+    def _normalize_build(build: Mapping[str, object]) -> dict[str, object]:
         ts = build.get("finished_at") or build.get("created_at")
-        branch = build.get("branch") or ""
-        commit = build.get("commit") or ""
+        branch_obj = build.get("branch") or ""
+        branch = branch_obj if isinstance(branch_obj, str) else str(branch_obj)
+        commit_obj = build.get("commit") or ""
+        commit = commit_obj if isinstance(commit_obj, str) else str(commit_obj)
         message = f"{branch}@{commit[:12]}" if commit else branch
         return {
             "ts": ts,
@@ -115,7 +147,7 @@ class BuildkiteSource:
         }
 
     # -- public API --------------------------------------------------------
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the builds endpoint. Never raises."""
         try:
             status, _ = self._request("GET", self._builds_url())
@@ -125,7 +157,7 @@ class BuildkiteSource:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
 
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: BuildkiteQuerySpec | None = None) -> list[dict[str, object]]:
         """Fetch + normalize builds. ``spec`` is accepted for contract symmetry."""
         status, body = self._request("GET", self._builds_url())
         if not (200 <= status < 300):
@@ -133,7 +165,11 @@ class BuildkiteSource:
         payload = json.loads(body.decode("utf-8") or "[]")
         if not isinstance(payload, list):
             raise ConnectorConfigError("buildkite builds response was not a JSON array")
-        return [self._normalize_build(b) for b in payload if isinstance(b, Mapping)]
+        return [
+            self._normalize_build(cast("Mapping[str, object]", b))
+            for b in payload
+            if isinstance(b, Mapping)
+        ]
 
     def fetch_log(self, job_id: str) -> str:
         """Fetch the raw log content for a single job within this pipeline."""
@@ -147,5 +183,6 @@ class BuildkiteSource:
         except json.JSONDecodeError:
             return decoded
         if isinstance(doc, Mapping) and "content" in doc:
-            return str(doc["content"])
+            content_obj = doc["content"]
+            return content_obj if isinstance(content_obj, str) else str(content_obj)
         return decoded

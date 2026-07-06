@@ -20,6 +20,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType
+from typing import Any, cast
 
 import pytest
 
@@ -108,8 +109,8 @@ class TestStripCodeFences:
     def test_non_str_input_does_not_raise(self, gludd_mu: ModuleType):
         # Documented contract: never raises; non-str is returned as-is.
         sentinel = object()
-        assert gludd_mu.strip_code_fences(sentinel) is sentinel  # type: ignore[arg-type]
-        assert gludd_mu.strip_code_fences(None) is None  # type: ignore[arg-type]
+        assert cast(Any, gludd_mu).strip_code_fences(sentinel) is sentinel
+        assert cast(Any, gludd_mu).strip_code_fences(None) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -171,7 +172,7 @@ class TestParseStructuredFailure:
         assert isinstance(reason, str) and reason  # non-empty reason
 
     def test_none_input(self, gludd_mu: ModuleType):
-        obj, reason = gludd_mu.parse_structured(None)  # type: ignore[arg-type]
+        obj, reason = cast(Any, gludd_mu).parse_structured(None)
         assert obj is None
         assert isinstance(reason, str) and "None" in reason
 

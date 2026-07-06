@@ -1,0 +1,33 @@
+---
+# type_safety_audit role defaults
+
+# Path to the AST-based scanner (powers `make check-types`).
+# Relative paths resolve against the playbook's cwd; set an absolute path
+# when invoking from a different working directory.
+checker_script: "scripts/check_type_strictness.py"
+
+# Source tree to scan for `Any` in annotations.
+source_path: "src"
+
+# Baseline of tolerated `file:line` violations (one per line, # comments ok).
+# When set and present, the gate fails only on NEW violations.
+baseline_file: "config/type_any_baseline.txt"
+
+# Maximum new violations tolerated before the play fails. 0 = zero-tolerance.
+max_new_violations: 0
+
+# Artifact output
+artifact_dir: "/tmp/gludd-type-safety-audit"
+
+# Daemon connectivity (for gludd_model_call + gludd_message)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# SAFE-BY-DEFAULT: do NOT call a model unless explicitly enabled.
+enable_model_call: false
+
+# Model profile hint (empty = daemon default)
+model_profile: ""
+
+# Message handoff: recipient role/agent to notify when new violations exceed threshold
+handoff_recipient: ""

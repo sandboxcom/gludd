@@ -22,6 +22,7 @@ adversarial errors.
 from __future__ import annotations
 
 import itertools
+from typing import Any, cast
 
 import pytest
 
@@ -198,7 +199,7 @@ class TestShouldRetryStatusCodes:
 
     def test_status_code_takes_precedence_over_status(self):
         err = _ErrWithStatusCode(404)
-        err.status = 503  # type: ignore[attr-defined]
+        cast(Any, err).status = 503
         chain = ModelFailoverChain("p")
         # status_code (404, non-retryable) wins over status (503, retryable).
         assert chain.should_retry(err) is False

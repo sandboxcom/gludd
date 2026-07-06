@@ -264,3 +264,44 @@ def test_heartbeat_reflects_ci_state(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert heartbeat["has_pending_work"] is True, (
         f"has_pending_work should be True after CI injection, got: {heartbeat}"
     )
+
+
+# ── Test 6: CI "pending" with NO run ID (unpushed commit) → do NOT inject ─────
+
+def test_ci_pending_no_run_id_does_not_inject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """When _ci_is_pending_or_red returns (True, None) — meaning ci-verdict
+    found NO actual CI run for the local HEAD (e.g., the commit hasn't been
+    pushed yet) — the watchdog must NOT overwrite .gate-status.
+
+    Injecting a CI-FAIL when no CI run exists creates a chicken-and-egg: the
+    commit can never land (gate red) and CI can never start (no push). Only
+    inject when a concrete run_id exists, which indicates a real CI run is
+    pending or red for an already-pushed commit.
+    """
+    _setup_ci_gate_test(monkeypatch, tmp_path)
+
+    streak_path = tmp_path / "streak.json"
+    streak_path.write_text('{"count": 0, "last_tool": "write"}')
+    streak_path.touch()
+
+    gate_status = tmp_path / ".gate-status"
+    original_content = (
+        "lint PASS 0\ntypecheck PASS 0\ncollect PASS 0\n=== GATE: PASSED ===\n"
+    )
+    gate_status.write_text(original_content)
+
+    monkeypatch.setattr(aw, "_ci_is_pending_or_red", lambda: (True, None))
+
+    activity_path = tmp_path / "watchdog-activity.json"
+    activity_path.write_text(json.dumps({"last_activity_ts": time.time()}))
+    monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(activity_path))
+
+    check_and_reset()
+
+    content = gate_status.read_text()
+    assert content == original_content, (
+        f"Gate-status must NOT be overwritten when no CI run exists "
+        f"(run_id=None — unpushed commit).\n"
+        f"Original: {original_content!r}\n"
+        f"Got:      {content!r}"
+    )

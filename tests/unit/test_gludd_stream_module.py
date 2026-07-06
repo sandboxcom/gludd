@@ -14,7 +14,7 @@ import ast
 import importlib.util
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -105,7 +105,7 @@ class TestRollingBuffer:
         RollingBuffer = buffer_mod.RollingBuffer
         buf = RollingBuffer(max_bytes=8)
         with pytest.raises(TypeError):
-            buf.push("not bytes")  # type: ignore[arg-type]
+            cast(Any, buf).push("not bytes")
 
     def test_default_max_bytes(self, buffer_mod: ModuleType) -> None:
         RollingBuffer = buffer_mod.RollingBuffer
@@ -406,7 +406,7 @@ class TestEncodeKey:
     def test_input_key_bad_type_rejected(self) -> None:
         mod = self._load_main()
         with pytest.raises(TypeError):
-            mod._encode_key(42)  # type: ignore[arg-type]
+            cast(Any, mod)._encode_key(42)
 
 
 class TestInputKeyStateMachine:

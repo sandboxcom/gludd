@@ -16,7 +16,7 @@ subprocess is spawned.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -66,7 +66,7 @@ def test_run_smoke_task_uses_argv_list_not_shell(monkeypatch: Any) -> None:
     spy = _SubprocessSpy()
     import general_ludd.dogfood.runner as runner_mod
 
-    monkeypatch.setattr(runner_mod.subprocess, "run", spy)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cast(Any, runner_mod.subprocess), "run", spy)
     _make_runner().run_smoke_task("ping")
 
     assert spy.called
@@ -120,7 +120,7 @@ def test_run_smoke_task_does_not_spawn_for_unsafe_name(monkeypatch: Any) -> None
     spy = _SubprocessSpy()
     import general_ludd.dogfood.runner as runner_mod
 
-    monkeypatch.setattr(runner_mod.subprocess, "run", spy)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cast(Any, runner_mod.subprocess), "run", spy)
     result = _make_runner().run_smoke_task("../../etc/passwd")
 
     # No subprocess may be spawned for an unsafe task name.
@@ -133,7 +133,7 @@ def test_run_smoke_task_traversal_cannot_escape_playbooks(monkeypatch: Any) -> N
     spy = _SubprocessSpy()
     import general_ludd.dogfood.runner as runner_mod
 
-    monkeypatch.setattr(runner_mod.subprocess, "run", spy)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cast(Any, runner_mod.subprocess), "run", spy)
     _make_runner().run_smoke_task("../secret")
 
     assert spy.called is False

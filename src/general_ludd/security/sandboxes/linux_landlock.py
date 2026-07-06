@@ -112,14 +112,16 @@ class LandlockBackend:
     def available() -> bool:
         """True iff pylandlock is importable + the kernel ABI is non-zero."""
         try:
-            import landlock  # type: ignore[import-not-found]  # noqa: F401  pylandlock: Linux-only, guarded by try/except
+            import importlib
+
+            importlib.import_module("landlock")  # pylandlock: Linux-only, guarded by try/except
         except Exception:
             return False
         try:
-            from landlock import (
-                Ruleset,  # type: ignore[import-not-found]  # pylandlock: Linux-only, guarded by try/except
-            )
-            rs = Ruleset()
+            import importlib
+
+            _landlock = importlib.import_module("landlock")  # pylandlock: Linux-only, guarded by try/except
+            rs = _landlock.Ruleset()
             abi = rs.abi
         except Exception:
             return False
@@ -134,10 +136,10 @@ class LandlockBackend:
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
         ruleset_name = f"gludd-{spec.agent_type}"
         try:
-            import landlock  # type: ignore[import-not-found]  # pylandlock: Linux-only, guarded by try/except
-            from landlock import (
-                Ruleset,  # type: ignore[import-not-found]  # pylandlock: Linux-only, guarded by try/except
-            )
+            import importlib
+
+            landlock = importlib.import_module("landlock")  # pylandlock: Linux-only, guarded by try/except
+            Ruleset = landlock.Ruleset
         except Exception as exc:
             logger.warning(
                 "Landlock apply skipped (%s): pylandlock not importable — UNSANDBOXED",
@@ -184,7 +186,7 @@ class LandlockBackend:
                     if "write" in cap.actions:
                         access = write_flags
                     elif "execute" in cap.actions:
-                        access = read_flags | landlock.AccessFS.EXECUTE
+                        access = read_flags | landlock.AccessFs.EXECUTE
                     else:
                         access = read_flags
                     try:

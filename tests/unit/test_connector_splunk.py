@@ -226,7 +226,7 @@ def test_health_not_ok_on_401_and_never_raises() -> None:
 
 def test_health_never_raises_on_transport_error() -> None:
     class BoomTransport(FakeTransport):
-        def get(self, *a: Any, **k: Any) -> FakeResponse:  # type: ignore[override]
+        def get(self, *a: Any, **k: Any) -> FakeResponse:
             raise ConnectionError("network down")
 
     src = SplunkSource(GOOD_CONFIG, transport=BoomTransport(), env=dict(ENV))

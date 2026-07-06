@@ -16,11 +16,11 @@ Design contract:
 Executor contract:
   ``executor(command)`` runs a Redis command string and returns its parsed
   reply:
-    * ``INFO``    -> a Mapping[str, Any] of ``field -> value`` (redis-py
-      ``decode_responses`` style, optionally with ``# Section`` markers folded
-      in as a ``__section__`` hint per field).
-    * ``SLOWLOG GET`` -> a Sequence[Mapping] of slowlog entries with keys like
-      ``id``, ``start_time``, ``duration``, ``command``.
+    * ``INFO``    -> a ``RedisInfo`` (Mapping[str, object]) of ``field -> value``
+      (redis-py ``decode_responses`` style, optionally with ``# Section``
+      markers folded in as a ``__section__`` hint per field).
+    * ``SLOWLOG GET`` -> a Sequence of :class:`RedisSlowlogEntry` dicts with
+      keys like ``id``, ``start_time``, ``duration``, ``command``.
 """
 
 from __future__ import annotations
@@ -29,15 +29,47 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import TypedDict, cast
 
-from general_ludd.connectors.base import normalized_record
+from general_ludd.connectors.base import NormalizedRecord, normalized_record
 
 logger = logging.getLogger(__name__)
 
-# The Redis executor returns either an INFO mapping or a sequence of slowlog
-# entries, so its return type is intentionally broad.
-ReplyValue = Any
+
+# Redis INFO replies are a dynamic, heterogeneous field->value mapping (the
+# field set is not enumerable across Redis versions), so this is a type alias
+# rather than a TypedDict.
+RedisInfo = Mapping[str, object]
+
+
+class RedisSlowlogEntry(TypedDict, total=False):
+    """A single ``SLOWLOG GET`` entry.
+
+    Fields are ``total=False`` because Redis versions differ in which keys
+    they emit (e.g. ``command`` may be a list of args or a joined string).
+    """
+
+    id: int | str
+    start_time: int
+    duration: int
+    command: str | list[str]
+
+
+class RedisConfig(TypedDict, total=False):
+    """Typed shape for the ``config`` mapping accepted by RedisStatsSource.
+
+    Operators may type their config dict as ``RedisConfig``; the class itself
+    accepts any ``Mapping[str, object]`` so unknown keys pass through.
+    """
+
+    url_env: str
+
+
+# The Redis executor returns one of three shapes depending on the command:
+#   * ``INFO``         -> a RedisInfo mapping
+#   * ``SLOWLOG GET``  -> a Sequence of RedisSlowlogEntry
+#   * ``PING``         -> a bool (probe result, consumed by health())
+ReplyValue = RedisInfo | Sequence[RedisSlowlogEntry] | bool
 Executor = Callable[[str], ReplyValue]
 
 _INFO_COMMAND = "INFO"
@@ -51,7 +83,7 @@ def _utc_now_epoch() -> float:
     return datetime.now(UTC).timestamp()
 
 
-def _to_float(value: Any) -> float | None:
+def _to_float(value: object) -> float | None:
     """Best-effort numeric coercion that never raises."""
     if value is None:
         return None
@@ -96,10 +128,10 @@ class RedisStatsSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any] | None = None,
+        config: Mapping[str, object] | None = None,
         executor: Executor | None = None,
     ) -> None:
-        self.config: dict[str, Any] = dict(config or {})
+        self.config: dict[str, object] = dict(config or {})
         self._executor = executor
 
     # -- credential / driver plumbing ------------------------------------
@@ -114,7 +146,9 @@ class RedisStatsSource:
     def _default_executor(self) -> Executor:
         """Build a redis-py backed executor with a guarded driver import."""
         try:
-            import redis  # type: ignore[import-not-found]  # lazy guarded import
+            import importlib
+
+            redis = importlib.import_module("redis")  # lazy guarded import
         except ImportError as exc:  # pragma: no cover - exercised via health()
             raise RuntimeError("driver unavailable: redis not installed") from exc
 
@@ -127,11 +161,11 @@ class RedisStatsSource:
         def _run(command: str) -> ReplyValue:  # pragma: no cover - needs real Redis
             cmd = command.strip().upper()
             if cmd == _INFO_COMMAND:
-                return client.info()
+                return cast(ReplyValue, client.info())
             if cmd == _SLOWLOG_COMMAND:
-                return client.slowlog_get()
+                return cast(ReplyValue, client.slowlog_get())
             if cmd == "PING":
-                return client.ping()
+                return cast(bool, client.ping())
             raise ValueError(f"unsupported command: {command!r}")
 
         return _run
@@ -143,7 +177,7 @@ class RedisStatsSource:
 
     # -- health ----------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Report connectivity health. Never raises."""
         try:
             executor = self._get_executor()
@@ -167,30 +201,28 @@ class RedisStatsSource:
         *,
         message: str,
         value: float | None,
-        labels: Mapping[str, Any],
-        raw: Mapping[str, Any],
+        labels: Mapping[str, object],
+        raw: Mapping[str, object],
         status: str = "ok",
-    ) -> dict[str, Any]:
+    ) -> NormalizedRecord:
         clean_labels = {k: str(v) for k, v in labels.items() if v is not None}
         # Route through normalized_record so a non-finite (NaN / +Inf / -Inf)
         # ``value`` is coerced to None per the boundary numeric policy, and ``ts``
         # is an epoch float (not an ISO string) consistent with _sort_by_ts /
         # associate() — an ISO-string ts would TypeError in the find/sort path.
-        return dict(
-            normalized_record(
-                source=self.name,
-                kind=self.KIND,
-                message=message,
-                ts=_utc_now_epoch(),
-                level_or_status=status,
-                value=value,
-                labels=clean_labels,
-                raw=dict(raw),
-            )
+        return normalized_record(
+            source=self.name,
+            kind=self.KIND,
+            message=message,
+            ts=_utc_now_epoch(),
+            level_or_status=status,
+            value=value,
+            labels=clean_labels,
+            raw=dict(raw),
         )
 
-    def _normalize_info(self, info: Mapping[str, Any]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+    def _normalize_info(self, info: RedisInfo) -> list[NormalizedRecord]:
+        out: list[NormalizedRecord] = []
         for field, raw_value in info.items():
             num = _to_float(raw_value)
             if num is None:
@@ -208,9 +240,9 @@ class RedisStatsSource:
         return out
 
     def _normalize_slowlog(
-        self, entries: Sequence[Mapping[str, Any]]
-    ) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+        self, entries: Sequence[RedisSlowlogEntry]
+    ) -> list[NormalizedRecord]:
+        out: list[NormalizedRecord] = []
         for entry in entries:
             command = entry.get("command")
             if isinstance(command, (list, tuple)):
@@ -233,7 +265,7 @@ class RedisStatsSource:
 
     # -- query -----------------------------------------------------------
 
-    def query(self, spec: str | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: str | None = None) -> list[NormalizedRecord]:
         """Run the selected command and return normalized records.
 
         ``spec`` selects: ``info`` (default) or ``slowlog``.

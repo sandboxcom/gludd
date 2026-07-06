@@ -15,6 +15,8 @@
     "./.opencode/plugin/enforce-session-start.ts",
     "./.opencode/plugin/enforce-deadline.ts",
     "./.opencode/plugin/enforce-deletion-gate.ts",
+    "./.opencode/plugin/enforce-no-suppressions.ts",
+    "./.opencode/plugin/enforce-no-wait.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }

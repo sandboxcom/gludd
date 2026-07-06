@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -180,7 +181,7 @@ def test_mac_is_domain_separated(tmp_path: Path) -> None:
     from hashlib import sha256
 
     bare = hmac.new(
-        store._mac_key, payload.encode("utf-8"), sha256  # type: ignore[arg-type]  # test stub
+        cast(Any, store)._mac_key, payload.encode("utf-8"), sha256
     ).hexdigest()
     assert store._mac(payload) != bare
     assert store._MAC_CONTEXT and store._MAC_CONTEXT not in payload.encode("utf-8")

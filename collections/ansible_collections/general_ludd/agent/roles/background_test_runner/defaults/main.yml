@@ -1,0 +1,21 @@
+---
+# background_test_runner role defaults
+
+# Mode of operation: launch | status | kill
+#   launch — start test in background, poll until terminal (default)
+#   status — one-shot non-blocking status probe
+#   kill   — terminate a running background test
+state: "launch"
+
+# Test file to run (e.g. tests/unit/test_foo.py)
+testfile: ""
+
+# Polling configuration (state=launch only)
+poll_interval_seconds: 10
+poll_max_iterations: 180   # 180 * 10s = 30 min max
+
+# Fail the play when the launched test reports FAIL
+fail_on_test_failure: true
+
+# Artifact output
+artifact_dir: "/tmp/gludd-background-test-runner"

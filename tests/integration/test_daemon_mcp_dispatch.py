@@ -94,7 +94,8 @@ class TestDaemonMcpDispatchWired:
         Before the fix this import fails — the daemon never builds a dispatcher
         for the EventLoop, so the symbol does not exist.
         """
-        from general_ludd.daemon import build_event_loop_mcp_dispatcher  # noqa: F401  importability is the test
+        from general_ludd.daemon import build_event_loop_mcp_dispatcher
+        _ = build_event_loop_mcp_dispatcher  # importability is the test
 
     @pytest.mark.asyncio
     async def test_dispatcher_routes_mcp_call_to_client(self) -> None:
@@ -339,7 +340,8 @@ class TestDaemonCollectionDispatchWired:
 
     def test_factory_exists(self) -> None:
         """``make_collection_handler`` is importable from daemon_wiring."""
-        from general_ludd.daemon_wiring import make_collection_handler  # noqa: F401  importability is the test
+        from general_ludd.daemon_wiring import make_collection_handler
+        _ = make_collection_handler  # importability is the test
 
     def test_factory_returns_none_when_adapter_is_none(self) -> None:
         """No adapter ⇒ no handler (kind fails-closed at dispatch)."""

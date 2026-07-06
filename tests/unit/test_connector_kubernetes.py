@@ -18,7 +18,7 @@ request/response pair here is canned. We assert on:
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -433,7 +433,7 @@ def test_health_never_raises_on_transport_error() -> None:
 
     src = make_source()
     # Swap in a raising transport directly.
-    src._transport = boom  # type: ignore[attr-defined]
+    cast(Any, src)._transport = boom
     h = src.health()
     assert h["ok"] is False
     assert "detail" in h
@@ -452,7 +452,7 @@ def test_query_never_raises_on_transport_error() -> None:
         raise TimeoutError("slow")
 
     src = make_source()
-    src._transport = boom  # type: ignore[attr-defined]
+    cast(Any, src)._transport = boom
     recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
     assert len(recs) == 1
     assert recs[0]["level_or_status"] == "error"

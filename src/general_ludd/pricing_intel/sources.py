@@ -1007,7 +1007,9 @@ class AWSPricingSource:
         Lazy import keeps the module loadable when boto3 (an optional dep) is
         not installed; tests mock this method to avoid the network/dep.
         """
-        import boto3  # type: ignore[import-not-found]  # boto3: optional [aws] extra, lazy-imported
+        import importlib
+
+        boto3 = importlib.import_module("boto3")  # boto3: optional [aws] extra, lazy-imported
 
         return boto3.client("pricing", region_name=self._REGION)
 

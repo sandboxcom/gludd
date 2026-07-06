@@ -16,14 +16,75 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, ClassVar, Protocol, runtime_checkable
+from collections.abc import Mapping
+from typing import ClassVar, Protocol, TypedDict, cast, runtime_checkable
 
+from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 10.0
+
+
+# --------------------------------------------------------------------------- #
+# Typed API-response shapes (Jaeger query-service JSON).
+# --------------------------------------------------------------------------- #
+class JaegerTag(TypedDict, total=False):
+    """One tag on a Jaeger span or process."""
+
+    key: str
+    value: object
+    type: str
+
+
+class JaegerProcess(TypedDict, total=False):
+    """A process entry referenced by a span via ``processID``."""
+
+    serviceName: str
+    tags: list[JaegerTag]
+
+
+class JaegerSpan(TypedDict, total=False):
+    """One span in a Jaeger trace.
+
+    ``duration`` is int|float because Jaeger emits microseconds as an int, but
+    a misbehaving exporter or JSON deserializer can surface it as a float; the
+    numeric sanitizer tolerates both, and NaN/Inf are normalized to ``None``.
+    """
+
+    traceID: str
+    spanID: str
+    operationName: str
+    startTime: int
+    duration: int | float
+    processID: str
+    tags: list[JaegerTag]
+
+
+class JaegerTrace(TypedDict, total=False):
+    """One trace from ``/api/traces`` or ``/api/traces/{id}`` — the ``data[]`` item."""
+
+    traceID: str
+    spans: list[JaegerSpan]
+    processes: dict[str, JaegerProcess]
+
+
+class JaegerPayload(TypedDict, total=False):
+    """Top-level Jaeger query-service response."""
+
+    data: list[JaegerTrace]
+
+
+class JaegerQuerySpec(TypedDict, total=False):
+    """Caller-supplied query selection accepted by :meth:`JaegerSource.query`."""
+
+    trace_id: str
+    service: str
+    operation: str
+    lookback: str
+    limit: int
 
 
 # --------------------------------------------------------------------------- #
@@ -34,10 +95,10 @@ class HttpTransport(Protocol):
     def get(
         self,
         url: str,
-        params: dict[str, Any] | None = ...,
+        params: Mapping[str, str | int] | None = ...,
         timeout: float | None = ...,
-        headers: dict[str, str] | None = ...,
-    ) -> Any: ...
+        headers: Mapping[str, str] | None = ...,
+    ) -> HttpResponse: ...
 
 
 class _HttpxTransport:
@@ -46,17 +107,17 @@ class _HttpxTransport:
     def get(
         self,
         url: str,
-        params: dict[str, Any] | None = None,
+        params: Mapping[str, str | int] | None = None,
         timeout: float | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> Any:
+        headers: Mapping[str, str] | None = None,
+    ) -> HttpResponse:
         import httpx  # local import: keep module import-light + optional dep
 
         return httpx.get(
             url,
-            params=params,
+            params=dict(params) if params else None,
             timeout=timeout if timeout is not None else _DEFAULT_TIMEOUT,
-            headers=headers,
+            headers=dict(headers) if headers else None,
             follow_redirects=False,
         )
 
@@ -80,8 +141,18 @@ def _assert_public_base_url(base_url: str) -> None:
 # --------------------------------------------------------------------------- #
 # Span normalization helpers
 # --------------------------------------------------------------------------- #
-def _span_has_error(span: dict[str, Any]) -> bool:
-    for tag in span.get("tags", []) or []:
+def _span_has_error(span: Mapping[str, object]) -> bool:
+    """Return True if the span carries an error / 5xx tag.
+
+    Defensive about the shape of ``tags``: a malformed exporter can omit the
+    field or emit a non-list, in which case the span is treated as non-error.
+    """
+    tags_obj = span.get("tags")
+    if not isinstance(tags_obj, list):
+        return False
+    for tag in tags_obj:
+        if not isinstance(tag, Mapping):
+            continue
         key = tag.get("key")
         val = tag.get("value")
         if key == "error" and val not in (False, "false", "False", 0, None):
@@ -90,7 +161,7 @@ def _span_has_error(span: dict[str, Any]) -> bool:
             return True
         if key == "http.status_code":
             try:
-                if int(val) >= 500:
+                if int(cast(int | float | str | bool, val)) >= 500:
                     return True
             except (TypeError, ValueError):
                 pass
@@ -102,7 +173,11 @@ class JaegerSource:
 
     KIND: ClassVar[str] = "traces"
 
-    def __init__(self, config: dict[str, Any], transport: HttpTransport | None = None) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        transport: HttpTransport | None = None,
+    ) -> None:
         base_url = str(config.get("base_url", "")).rstrip("/")
         if not base_url:
             raise ValueError("JaegerSource requires config['base_url']")
@@ -110,8 +185,9 @@ class JaegerSource:
 
         self._base_url = base_url
         self.name: str = str(config.get("name") or "jaeger")
-        self._timeout: float = float(config.get("timeout", _DEFAULT_TIMEOUT))
-        self._token_env: str | None = config.get("token_env")
+        self._timeout: float = float(cast(float | int | str | bool, config.get("timeout", _DEFAULT_TIMEOUT)))
+        token_env_obj = config.get("token_env")
+        self._token_env: str | None = str(token_env_obj) if token_env_obj is not None else None
         self._transport: HttpTransport = transport or _HttpxTransport()
 
     # -- auth ------------------------------------------------------------- #
@@ -123,7 +199,11 @@ class JaegerSource:
             return {}
         return {"Authorization": f"Bearer {token}"}
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    def _get(
+        self,
+        path: str,
+        params: Mapping[str, str | int] | None = None,
+    ) -> HttpResponse:
         url = f"{self._base_url}{path}"
         headers = self._auth_header()
         return self._transport.get(
@@ -134,10 +214,10 @@ class JaegerSource:
         )
 
     # -- health ----------------------------------------------------------- #
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         try:
             resp = self._get("/api/services")
-            code = getattr(resp, "status_code", 0)
+            code = int(getattr(resp, "status_code", 0))
             ok = 200 <= code < 300
             return {"ok": ok, "detail": f"GET /api/services -> {code}"}
         except Exception as exc:  # never raise
@@ -145,19 +225,21 @@ class JaegerSource:
             return {"ok": False, "detail": f"error: {exc}"}
 
     # -- query ------------------------------------------------------------ #
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: JaegerQuerySpec | None = None) -> list[dict[str, object]]:
         try:
-            trace_id = spec.get("trace_id")
+            trace_id = spec.get("trace_id") if spec else None
             if trace_id:
                 resp = self._get(f"/api/traces/{trace_id}")
             else:
-                params: dict[str, Any] = {}
-                for key in ("service", "operation", "lookback", "limit"):
-                    if spec.get(key) is not None:
-                        params[key] = spec[key]
+                params: dict[str, str | int] = {}
+                if spec:
+                    for key in ("service", "operation", "lookback", "limit"):
+                        val = spec.get(key)
+                        if val is not None:
+                            params[key] = cast(str | int, val)
                 resp = self._get("/api/traces", params=params)
 
-            code = getattr(resp, "status_code", 0)
+            code = int(getattr(resp, "status_code", 0))
             if not (200 <= code < 300):
                 logger.warning("jaeger query non-2xx: %s", code)
                 return []
@@ -166,32 +248,49 @@ class JaegerSource:
             logger.warning("jaeger query failed: %s", exc)
             return []
 
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
+        if not isinstance(payload, Mapping):
+            return records
         for trace in payload.get("data", []) or []:
-            processes = trace.get("processes", {}) or {}
+            if not isinstance(trace, Mapping):
+                continue
+            processes_raw = trace.get("processes")
+            processes: Mapping[str, object] = processes_raw if isinstance(processes_raw, Mapping) else {}
             for span in trace.get("spans", []) or []:
+                if not isinstance(span, Mapping):
+                    continue
                 rec = self._normalize_span(span, processes)
                 if rec is not None:
                     records.append(rec)
         return records
 
     def _normalize_span(
-        self, span: dict[str, Any], processes: dict[str, Any]
-    ) -> dict[str, Any] | None:
+        self,
+        span: Mapping[str, object],
+        processes: Mapping[str, object],
+    ) -> dict[str, object] | None:
         try:
             trace_id = span["traceID"]
             span_id = span["spanID"]
             start_us = span["startTime"]
-            duration = span.get("duration", 0)
-            operation = span.get("operationName", "")
-        except (KeyError, TypeError):
+        except KeyError:
             return None
 
-        proc = processes.get(span.get("processID", ""), {}) or {}
-        service = proc.get("serviceName", "")
+        duration = span.get("duration", 0)
+        operation = str(span.get("operationName", ""))
+
+        proc_id = str(span.get("processID", ""))
+        proc_obj = processes.get(proc_id, {})
+        proc: Mapping[str, object] = proc_obj if isinstance(proc_obj, Mapping) else {}
+        service = str(proc.get("serviceName", ""))
+
+        try:
+            ts_seconds = float(cast(int | float | str | bool, start_us)) / 1_000_000.0
+        except (TypeError, ValueError):
+            return None
 
         return {
-            "ts": float(start_us) / 1_000_000.0,  # microseconds -> seconds
+            "ts": ts_seconds,  # microseconds -> seconds
             "source": self.name,
             "kind": self.KIND,
             "level_or_status": "error" if _span_has_error(span) else "ok",
@@ -202,5 +301,5 @@ class JaegerSource:
                 "span_id": span_id,
                 "service": service,
             },
-            "raw": span,
+            "raw": dict(span),
         }

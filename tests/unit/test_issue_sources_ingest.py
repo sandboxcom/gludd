@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from general_ludd.issue_sources.base import IssueSource, Transition, new_issue_record
 from general_ludd.issue_sources.ingest import (
     dedup_key,
@@ -14,7 +16,7 @@ from general_ludd.schemas.todo import TodoStatus
 
 
 def _rec(external_id: str, status: str = "open", **kw: object) -> dict:
-    return new_issue_record(external_id=external_id, title=f"item {external_id}", status=status, **kw)  # type: ignore[arg-type]
+    return cast(Any, new_issue_record)(external_id=external_id, title=f"item {external_id}", status=status, **kw)
 
 
 # --- dedup key -------------------------------------------------------------

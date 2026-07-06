@@ -638,11 +638,83 @@ This is enforced by:
 - `.opencode/plugin/enforce-make.ts` — `tool.execute.before` checks
 - `tests/unit/test_guardrails.py` — guardrail existence and behavior tests
 
+## CRITICAL: No Lint-Suppression Comments
+
+**The following comments are FORBIDDEN in `src/` and `tests/`:**
+
+- `# noqa` (and `# noqa: E501` etc.) — ruff suppression
+- `# type: ignore` (and `# type: ignore[code]`) — mypy suppression
+- `# pylint: disable=...` / `# pylint: skip-file` — pylint suppression
+- `# fmt: off` / `# fmt: skip` / `# fmt: on` — black suppression
+- `# isort:skip` — isort suppression
+
+**Fix the underlying issue; never silence the warning.** A suppression comment
+hides a real problem (an over-long line, a missing type, an unused import) and
+blocks the linter from catching future regressions of the same kind. The
+"fix-means-repair-never-disable" policy applies: if a linter complains, repair
+the code so the linter is satisfied — do NOT paste a directive that tells the
+linter to look the other way.
+
+### Why this is hard-enforced, not advisory
+
+A prior codification was advisory-only (a `warnings.warn` in
+`test_type_safety_guardrails.py`) and regression went unnoticed — `# noqa` and
+`# type: ignore` re-proliferated across `src/`. Per the **Guardrail Integrity
+Policy** above, an advisory-only check is a weakened guardrail. This policy is
+therefore enforced at all three layers:
+
+1. **Runtime hook** — `.opencode/plugin/enforce-no-suppressions.ts`
+   registers a `tool.execute.before` matcher on `edit` and `write`. If the
+   would-be content matches any of the five patterns, the edit is DENIED with
+   `{"permissionDecision": "deny", "message": "Lint-suppression comments
+   forbidden. Fix the underlying issue. See AGENTS.md Guardrail Integrity
+   Policy."}` and exit 0 (clean deny, never a hook error). Fail-open: any
+   exception → allow (a broken hook is preferable to a wedged editor).
+
+2. **Behavior pin** — `tests/unit/test_no_suppression_comments_plugin.py`
+   extracts the plugin's exported `SUPPRESSION_PATTERNS` and `ALLOWLIST_PATHS`
+   and asserts on each spec test case (deny on `# noqa`, deny on
+   `# type: ignore`, deny on `# pylint: disable=E1101`, allow on plain
+   `# comment`, allow on the two allowlisted files, etc.).
+
+3. **Repo-wide scan** — `tests/unit/test_type_safety_guardrails.py` walks
+   `src/` and fails the gate (assert-based, NOT `warnings.warn`) if any
+   forbidden pattern is found in shipped code.
+
+### Allowlist (string-literal DATA, not suppression comments)
+
+Two files legitimately contain the patterns as DATA inside string literals /
+regex fixtures — they are the policy's own enforcement code:
+
+- `src/general_ludd/security/fix_not_disable.py` — `"# noqa"` is a frozenset
+  entry inside `DISABLE_PATTERNS`, detecting disabling actions. The string
+  literal IS the data; it is not itself a live suppression comment.
+- `tests/unit/test_type_safety_guardrails.py` — the patterns appear as regex
+  fixtures (`re.compile(r"#\s*noqa")`) used to scan other files.
+
+Both paths are listed in the plugin's `ALLOWLIST_PATHS` export so the runtime
+hook skips them. Adding any other path to the allowlist is a guardrail-integrity
+violation — narrow the matcher instead.
+
+### If you genuinely need to silence a linter
+
+You don't. Fix the code. The legitimate options are, in order:
+- **Long line?** Reflow it. Extract a variable. Lower the complexity.
+- **Missing type?** Add the type annotation. If unknown, use `object` (the
+  top type) and narrow — never `Any` (also forbidden, see type-safety skill).
+- **Unused import?** Delete it.
+- **Genuinely unfixable third-party attribute?** `getattr(obj, "attr")` with
+  a typed wrapper, or a `cast(...)` to the correct type — both observable in
+  the source, both lintable, neither a suppression comment.
+
+There is no "just this once" exception. Every suppression comment in this
+repo's history became a permanent hiding place for a real bug.
+
 ## Opencode Plugin Ports (Claude Hook Equivalents)
 
 The Claude Code layer (`.claude/hooks/*.sh`, 23 shell scripts registered in
 `.claude/settings.json`) and the opencode layer (`.opencode/plugin/*.ts` +
-`.opencode/plugins/*.ts`, 8 TypeScript plugins registered in `opencode.json`)
+`.opencode/plugins/*.ts`, 9 TypeScript plugins registered in `opencode.json`)
 **enforce the same policies in parallel**. An opencode-only session gets the
 same guardrails as a Claude-only session. The port map:
 
@@ -655,6 +727,7 @@ same guardrails as a Claude-only session. The port map:
 | `enforce-session-start.ts` | (system.transform + tool.execute.before hooks; dispatches session-start directive at boot) |
 | `enforce-deadline.ts` | (deadline enforcement; no direct Claude hook equivalent) |
 | `enforce-deletion-gate.ts` | (file-deletion gate; no direct Claude hook equivalent) |
+| `enforce-no-suppressions.ts` | (lint-suppression comment block on edit/write; no direct Claude hook equivalent) |
 | `watchdog.ts` | (background daemon watchdog; no direct Claude hook equivalent) |
 
 Both layers are registered and active by default. The env-var knobs are
@@ -967,24 +1040,6 @@ The 2026-06-22 incident: an agent committed `50dbd1b` with a red gate via `make 
 5. "Environmental issues" (expired credentials, network) are NEVER an excuse. Either fix the env issue or dispatch a research task to work around it.
 
 **Enforcement:** `tests/unit/test_commit_gate_freshness.py` structurally scans the Makefile for any target whose recipe invokes `git commit` without referencing `.gate-status` or `_gate-fresh-check`. Any new commit target MUST add the gate check or be explicitly allowlisted in the test with a documented reason.
-
-### CI-as-Gate Override
-
-When the local gate is too slow but CI has ALREADY validated the commit, use:
-
-```
-make commit-no-verify MSG='...' GLUDD_CI_IS_GATE=1
-```
-
-This does NOT blindly skip the gate — it queries `gh run list` for the current HEAD
-and only allows the bypass when CI is `conclusion: success`. If CI is red, pending, or
-has no run, the commit is DENIED (same as a red local gate). Use ONLY when:
-1. The local gate has timed out repeatedly (>2 attempts)
-2. Lint + typecheck pass locally
-3. Targeted tests pass locally
-4. CI is VERIFIED GREEN for the exact commit being committed
-
-This is NOT a blank check. A red CI = a blocked commit.
 
 ## CRITICAL: Don't Push Every Commit — Batch Locally, Push Once
 
@@ -1549,6 +1604,31 @@ A response with 1–4 task dispatches is a **policy violation** when ≥3 known 
 **Never**: make a single-task-dispatch message and wait for the result when ≥3 work items are known. Either fan out wider, or do non-blocking work inline while the wave runs.
 
 This rule exists because the agent repeatedly claimed "dispatching 10 parallel agents" but delivered 1-3 in sequence, serializing work that should have been concurrent. The floor plugin (enforce-floor.ts) tracks dispatch count per message; after a message with 1–4 dispatches, the next non-dispatch tool call is denied until the agent sends a 5+ dispatch wave.
+
+## CRITICAL: Background Operations NEVER Block Dispatch (anti-wait rule)
+
+**A background operation running (`make gate-background`, a long test, a build) is NEVER a reason to sleep or wait on the main thread. The main thread dispatches subagents and polls — it does not sleep.** This is the same anti-pattern as stopping to ask permission: both burn the only non-delegatable resource (main-thread wall time) on something a subagent could own.
+
+**The pattern (mandatory):**
+1. Launch via `make <thing>-background` (returns in <1s).
+2. **IMMEDIATELY** dispatch the next wave of work — coverage tests, typing refactor, e2e tests, research. NEVER `sleep` on the main thread.
+3. Poll status from a SUBAGENT (`make gate-status-check` dispatched via Task tool), NOT from the main thread. The poller subagent returns the result; the orchestrator ingests it like any other result.
+4. While waiting for the poller, dispatch MORE work. The pipeline stays primed at the 10-agent floor.
+
+**Forbidden patterns (each is a policy violation):**
+- `sleep 60 && make gate-status-check` on the main thread (blocks ALL dispatch).
+- `make gate-tail` on the main thread (follows forever, blocks ALL dispatch).
+- "Let me wait for the gate to finish, then I'll commit" — the gate is NOT a blocker for any other work. Dispatch other work while it runs.
+- "I'll check the gate result before deciding what to do next" — decide NOW, dispatch NOW, ingest the gate result when it arrives.
+
+**Why this matters:** A 25-minute gate that blocks the main thread = 25 minutes with 0 subagents running = the entire pipeline drains. The user cannot tell whether work is progressing or stalled. This is structurally identical to the "premature stop" anti-pattern in BUGS.md — both waste the only non-delegatable resource.
+
+**Enforcement (3-layer):**
+- **Prompt** — this section (proactive instruction).
+- **Plugin** — `.opencode/plugin/enforce-no-wait.ts` (NEW): denies bash calls matching `sleep\s+\d+\s*&&\s*make` or `make gate-tail` or `make gate-status-check` when issued from the main thread (not via Task dispatch). Default ON; `GLUDD_NO_WAIT_ENFORCE=0` disables.
+- **Test** — `tests/unit/test_no_wait_plugin.py` pins the matcher behavior.
+
+This rule was added 2026-07-06 after a recurring incident where the agent dispatched a background gate then `sleep 60 && make gate-status-check` on the main thread, blocking ALL subagent dispatch for 5+ minutes. The user explicitly called out: "why are you actively waiting when i specifically asked you to keep working and ensure you are multitasking."
 
 ## CRITICAL: Long-Running Operations MUST Be Backgrounded
 

@@ -27,7 +27,7 @@ import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TypedDict, cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -39,6 +39,46 @@ Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
 # map documents the recognized set and provides a stable default for unknowns).
 _PHASE_STATUSES = frozenset({"Pending", "Running", "Succeeded", "Failed", "Error", "Skipped"})
 
+
+# --------------------------------------------------------------------------- #
+# Typed API-response shapes (Argo Workflows REST API).
+# --------------------------------------------------------------------------- #
+class ArgoObjectMeta(TypedDict, total=False):
+    """The ``metadata`` block on an Argo workflow (k8s ObjectMeta shape)."""
+
+    name: str
+    namespace: str
+    uid: str
+
+
+class ArgoWorkflowStatus(TypedDict, total=False):
+    """The ``status`` block on an Argo workflow."""
+
+    phase: str
+    startedAt: str
+    finishedAt: str
+    progress: str
+
+
+class ArgoWorkflow(TypedDict, total=False):
+    """One element of the Argo ``items[]`` array."""
+
+    metadata: ArgoObjectMeta
+    status: ArgoWorkflowStatus
+
+
+class ArgoWorkflowsListResponse(TypedDict, total=False):
+    """Top-level response of ``GET /api/v1/workflows/{namespace}``."""
+
+    items: list[ArgoWorkflow] | None
+
+
+class ArgoQuerySpec(TypedDict, total=False):
+    """Caller-supplied query selection accepted by :meth:`ArgoWorkflowsSource.query`.
+
+    Currently unused (Argo's list endpoint takes no filter params in this
+    connector), but kept for contract symmetry with sibling pipeline connectors.
+    """
 
 
 def _guard_base_url(base_url: str, allow_private: bool) -> str:
@@ -74,13 +114,13 @@ class ArgoWorkflowsSource:
 
     KIND = "pipeline"
 
-    def __init__(self, config: Mapping[str, Any], transport: Transport | None = None) -> None:
+    def __init__(self, config: Mapping[str, object], transport: Transport | None = None) -> None:
         self._config = dict(config)
         self.name = str(self._config.get("name", "argo_workflows"))
         self.allow_private = bool(self._config.get("allow_private", False))
         self.base_url = _guard_base_url(str(self._config.get("base_url", "")), self.allow_private)
         self.namespace = str(self._config.get("namespace", "argo"))
-        self.timeout = float(self._config.get("timeout", 10.0))
+        self.timeout = float(cast(float | int | str | bool, self._config.get("timeout", 10.0)))
         self._token_env = str(self._config.get("token_env", "ARGO_TOKEN"))
         self._token = os.environ.get(self._token_env, "")
         self._transport: Transport = transport or _urllib_transport
@@ -98,15 +138,13 @@ class ArgoWorkflowsSource:
     def _workflows_url(self) -> str:
         return f"{self.base_url}/api/v1/workflows/{self.namespace}"
 
-    def _normalize_workflow(self, workflow: Mapping[str, Any]) -> dict[str, Any]:
-        metadata = workflow.get("metadata") or {}
+    def _normalize_workflow(self, workflow: Mapping[str, object]) -> dict[str, object]:
+        metadata_obj = workflow.get("metadata") or {}
         status_obj = workflow.get("status") or {}
-        if not isinstance(metadata, Mapping):
-            metadata = {}
-        if not isinstance(status_obj, Mapping):
-            status_obj = {}
-        ts = status_obj.get("finishedAt") or status_obj.get("startedAt")
-        phase = status_obj.get("phase")
+        metadata: Mapping[str, object] = metadata_obj if isinstance(metadata_obj, Mapping) else {}
+        status: Mapping[str, object] = status_obj if isinstance(status_obj, Mapping) else {}
+        ts = status.get("finishedAt") or status.get("startedAt")
+        phase = status.get("phase")
         level_or_status = phase if phase in _PHASE_STATUSES else (str(phase) if phase is not None else None)
         return {
             "ts": ts,
@@ -114,7 +152,7 @@ class ArgoWorkflowsSource:
             "kind": "pipeline",
             "level_or_status": level_or_status,
             "message": metadata.get("name"),
-            "value": status_obj.get("progress"),
+            "value": status.get("progress"),
             "labels": {
                 "namespace": metadata.get("namespace") or self.namespace,
                 "uid": metadata.get("uid"),
@@ -123,7 +161,7 @@ class ArgoWorkflowsSource:
         }
 
     # -- public API --------------------------------------------------------
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         try:
             status, _ = self._request("GET", self._workflows_url())
         except Exception as exc:  # health must never raise
@@ -132,21 +170,22 @@ class ArgoWorkflowsSource:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
 
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: ArgoQuerySpec | None = None) -> list[dict[str, object]]:
         status, body = self._request("GET", self._workflows_url())
         if not (200 <= status < 300):
             raise ConnectorConfigError(f"argo workflows query failed: HTTP {status}")
         payload = json.loads(body.decode("utf-8") or "{}")
         if not isinstance(payload, Mapping):
             raise ConnectorConfigError("argo workflows response was not a JSON object")
-        items = payload.get("items")
+        items_obj = payload.get("items")
         # Argo returns null `items` when the list is empty.
-        if items is None:
-            items = []
-        if not isinstance(items, list):
-            raise ConnectorConfigError("argo 'items' field was not a JSON array")
-        return [self._normalize_workflow(w) for w in items if isinstance(w, Mapping)]
+        items: list[object] = items_obj if isinstance(items_obj, list) else []
+        return [
+            self._normalize_workflow(cast("Mapping[str, object]", w))
+            for w in items
+            if isinstance(w, Mapping)
+        ]
 
-    def fetch_jobs(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def fetch_jobs(self, spec: ArgoQuerySpec | None = None) -> list[dict[str, object]]:
         """Helper alias: each Argo *workflow* is the unit of pipeline work here."""
         return self.query(spec)

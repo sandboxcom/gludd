@@ -19,16 +19,63 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import TypedDict, cast
 
-from general_ludd.connectors.base import normalized_record
+from general_ludd.connectors.base import NormalizedRecord, normalized_record
 
 logger = logging.getLogger(__name__)
 
+
+# --------------------------------------------------------------------------- #
+# Typed row / config shapes
+# --------------------------------------------------------------------------- #
+class PostgresConfig(TypedDict, total=False):
+    """Configuration for :class:`PostgresStatsSource`.
+
+    ``dsn_env`` carries the *name* of the environment variable holding the
+    PostgreSQL connection DSN — the secret value itself is never inlined.
+    """
+
+    dsn_env: str
+
+
+class PgRow(TypedDict, total=False):
+    """Unified row shape covering every ``pg_stat_*`` query this module runs.
+
+    The four queries return distinct column subsets; they are unioned here
+    with ``total=False`` so a single :data:`Executor` signature covers all of
+    them. Per-query column sets:
+
+    * ``pg_stat_activity``: ``state``, ``value`` (connection count), ``datname``
+    * ``pg_stat_replication``: ``application_name``, ``value`` (replay-lag s)
+    * ``pg_stat_database``: ``datname``, ``xact_commit``, ``xact_rollback``,
+      ``blks_read``, ``blks_hit``
+    * ``pg_stat_statements``: ``query_id``, ``value`` (mean exec time ms),
+      ``calls``
+    """
+
+    state: str | None
+    value: int | float | None
+    datname: str | None
+    application_name: str | None
+    xact_commit: int
+    xact_rollback: int
+    blks_read: int
+    blks_hit: int
+    query_id: str | int | None
+    calls: int
+
+
+class PostgresHealthResult(TypedDict, total=False):
+    """Shape returned by :meth:`PostgresStatsSource.health`."""
+
+    ok: bool
+    detail: str
+
+
 # A query-executor takes a SQL string and returns rows as a sequence of
-# mappings (column-name -> value).
-Row = Mapping[str, Any]
-Executor = Callable[[str], Sequence[Row]]
+# typed mappings (column-name -> value).
+Executor = Callable[[str], Sequence[PgRow]]
 
 
 def _utc_now_epoch() -> float:
@@ -36,7 +83,7 @@ def _utc_now_epoch() -> float:
     return datetime.now(UTC).timestamp()
 
 
-def _to_float(value: Any) -> float | None:
+def _to_float(value: object) -> float | None:
     """Best-effort numeric coercion that never raises."""
     if value is None:
         return None
@@ -90,10 +137,10 @@ class PostgresStatsSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any] | None = None,
+        config: PostgresConfig | None = None,
         executor: Executor | None = None,
     ) -> None:
-        self.config: dict[str, Any] = dict(config or {})
+        self.config: dict[str, object] = dict(config or {})
         self._executor = executor
 
     # -- credential / driver plumbing ------------------------------------
@@ -125,12 +172,12 @@ class PostgresStatsSource:
         if not dsn:
             raise RuntimeError("missing DSN: set config['dsn_env'] to an env var name")
 
-        def _run(query: str) -> Sequence[Row]:  # pragma: no cover - needs real DB
+        def _run(query: str) -> Sequence[PgRow]:  # pragma: no cover - needs real DB
             conn = psycopg.connect(dsn, autocommit=True)
             try:
                 with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
                     cur.execute(query)  # static, parameter-free read-only SQL
-                    return list(cur.fetchall())
+                    return cast("list[PgRow]", list(cur.fetchall()))
             finally:
                 conn.close()
 
@@ -143,7 +190,7 @@ class PostgresStatsSource:
 
     # -- health ----------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> PostgresHealthResult:
         """Report connectivity health. Never raises."""
         try:
             executor = self._get_executor()
@@ -167,30 +214,28 @@ class PostgresStatsSource:
         *,
         message: str,
         value: float | None,
-        labels: Mapping[str, Any],
-        raw: Row,
+        labels: Mapping[str, object],
+        raw: PgRow,
         status: str = "ok",
-    ) -> dict[str, Any]:
+    ) -> NormalizedRecord:
         clean_labels = {k: str(v) for k, v in labels.items() if v is not None}
         # Route through normalized_record so a non-finite (NaN / +Inf / -Inf)
         # ``value`` is coerced to None per the boundary numeric policy, and ``ts``
         # is an epoch float (not an ISO string) consistent with _sort_by_ts /
         # associate() — an ISO-string ts would TypeError in the find/sort path.
-        return dict(
-            normalized_record(
-                source=self.name,
-                kind=self.KIND,
-                message=message,
-                ts=_utc_now_epoch(),
-                level_or_status=status,
-                value=value,
-                labels=clean_labels,
-                raw=dict(raw),
-            )
+        return normalized_record(
+            source=self.name,
+            kind=self.KIND,
+            message=message,
+            ts=_utc_now_epoch(),
+            level_or_status=status,
+            value=value,
+            labels=clean_labels,
+            raw=dict(raw),
         )
 
-    def _normalize_activity(self, rows: Sequence[Row]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+    def _normalize_activity(self, rows: Sequence[PgRow]) -> list[NormalizedRecord]:
+        out: list[NormalizedRecord] = []
         for row in rows:
             state = row.get("state")
             datname = row.get("datname")
@@ -204,8 +249,8 @@ class PostgresStatsSource:
             )
         return out
 
-    def _normalize_replication(self, rows: Sequence[Row]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+    def _normalize_replication(self, rows: Sequence[PgRow]) -> list[NormalizedRecord]:
+        out: list[NormalizedRecord] = []
         for row in rows:
             out.append(
                 self._record(
@@ -217,8 +262,8 @@ class PostgresStatsSource:
             )
         return out
 
-    def _normalize_database(self, rows: Sequence[Row]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+    def _normalize_database(self, rows: Sequence[PgRow]) -> list[NormalizedRecord]:
+        out: list[NormalizedRecord] = []
         fields = ("xact_commit", "xact_rollback", "blks_read", "blks_hit")
         for row in rows:
             datname = row.get("datname")
@@ -235,8 +280,8 @@ class PostgresStatsSource:
                 )
         return out
 
-    def _normalize_statements(self, rows: Sequence[Row]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+    def _normalize_statements(self, rows: Sequence[PgRow]) -> list[NormalizedRecord]:
+        out: list[NormalizedRecord] = []
         for row in rows:
             out.append(
                 self._record(
@@ -253,7 +298,7 @@ class PostgresStatsSource:
 
     # -- query -----------------------------------------------------------
 
-    def query(self, spec: str | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: str | None = None) -> list[NormalizedRecord]:
         """Run the selected stat query and return normalized records.
 
         ``spec`` selects which view to read: ``activity`` (default),
@@ -269,7 +314,7 @@ class PostgresStatsSource:
         executor = self._get_executor()
         rows = executor(sql)
 
-        normalizers: dict[str, Callable[[Sequence[Row]], list[dict[str, Any]]]] = {
+        normalizers: dict[str, Callable[[Sequence[PgRow]], list[NormalizedRecord]]] = {
             "activity": self._normalize_activity,
             "replication": self._normalize_replication,
             "database": self._normalize_database,

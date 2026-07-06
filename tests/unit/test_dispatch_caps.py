@@ -16,7 +16,7 @@ from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST, register
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_client(role: str = UNRESTRICTED_ROLE):  # type: ignore[return]
+def _make_client(role: str = UNRESTRICTED_ROLE):
     """Build a minimal FastAPI app with the dispatch router registered."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

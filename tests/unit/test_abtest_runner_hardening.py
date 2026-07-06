@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -67,7 +68,7 @@ def test_non_dict_workload_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     is rejected before spawning so no surprise argv shape reaches the child."""
     monkeypatch.setattr(runner_mod.subprocess, "Popen", _ExplodingPopen)
     with pytest.raises(ValueError):
-        run_candidate_in_subprocess("/root", ["not", "a", "dict"], timeout=5.0)  # type: ignore[arg-type]
+        cast(Any, run_candidate_in_subprocess)("/root", ["not", "a", "dict"], timeout=5.0)
 
 
 def test_non_serializable_workload_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

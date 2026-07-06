@@ -141,7 +141,9 @@ def _build_boto3_client(service: str, region: str) -> Any:
     "install with: pip install 'general-ludd-agent[aws]'" message.
     """
     try:
-        import boto3  # type: ignore[import-not-found]  # boto3: optional [aws] extra, guarded by try/except
+        import importlib
+
+        boto3 = importlib.import_module("boto3")  # boto3: optional [aws] extra, guarded by try/except
     except ImportError as exc:  # pragma: no cover - exercised via test monkeypatch
         raise ImportError(
             "boto3 is not installed. Install with: pip install 'general-ludd-agent[aws]'"

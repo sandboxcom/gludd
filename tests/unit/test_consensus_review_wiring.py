@@ -7,6 +7,7 @@ consensus reviewer's ``review_return`` instead of the standard reviewer.
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -214,7 +215,7 @@ class TestConsensusReviewWiring:
             call_order.append("review_in_process")
             await original_review(tr_arg)
 
-        loop._review_in_process = _tracking_review  # type: ignore[method-assign]
+        cast(Any, loop)._review_in_process = _tracking_review
 
         with patch(
             "general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()
@@ -254,7 +255,7 @@ class TestConsensusReviewWiring:
             call_order.append("review_in_process")
             await original_review(tr_arg)
 
-        loop._review_in_process = _tracking_review  # type: ignore[method-assign]
+        cast(Any, loop)._review_in_process = _tracking_review
 
         await loop._dispatch_review_job(tr)
 
@@ -285,7 +286,7 @@ class TestConsensusReviewWiring:
             call_order.append("review_in_process")
             await original_review(tr_arg)
 
-        loop._review_in_process = _tracking_review  # type: ignore[method-assign]
+        cast(Any, loop)._review_in_process = _tracking_review
 
         await loop._dispatch_review_job(tr)
 

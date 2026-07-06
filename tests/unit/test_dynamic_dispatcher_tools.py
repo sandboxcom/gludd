@@ -12,6 +12,7 @@ Verifies that:
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 
 from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
 from general_ludd.agents.registry import AgentRegistry
@@ -198,8 +199,8 @@ class TestDispatcherToolBinding:
         assert result.status == "completed"
         assert len(seen_tools) == 1
         assert seen_tools[0] is not None
-        assert len(seen_tools[0]) == 2  # type: ignore[arg-type]
-        assert seen_tools[0][0]["name"] == "read_file"  # type: ignore[index]
+        assert len(cast(Any, seen_tools[0])) == 2
+        assert cast(Any, seen_tools[0])[0]["name"] == "read_file"
 
     def test_empty_registry_produces_no_tools(self) -> None:
         """An MCP registry with no tools leaves task.tools as None."""

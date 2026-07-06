@@ -15,6 +15,7 @@ import sys
 import textwrap
 import uuid
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -58,7 +59,7 @@ def test_reload_swaps_in_candidate_when_healthy(tmp_path: Path, reloader: HotRel
             return 1
         """,
     )
-    assert mod.value() == 1  # type: ignore[attr-defined]
+    assert cast(Any, mod).value() == 1
 
     candidate = tmp_path / "candidate_leafa.py"
     candidate.write_text(
@@ -79,7 +80,7 @@ def test_reload_swaps_in_candidate_when_healthy(tmp_path: Path, reloader: HotRel
     )
     assert result.success is True
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 2  # type: ignore[attr-defined]
+    assert cast(Any, reloaded).value() == 2
     assert mod_path.read_text().strip().endswith('return 2')
 
 
@@ -119,7 +120,7 @@ def test_reload_rolls_back_when_health_gate_fails(tmp_path: Path, reloader: HotR
     assert mod_path.read_bytes() == original_bytes
     # Live module restored to v1 behaviour.
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 1  # type: ignore[attr-defined]
+    assert cast(Any, reloaded).value() == 1
 
 
 def test_reload_unknown_module_fails_closed(reloader: HotReloader, tmp_path: Path) -> None:
@@ -164,7 +165,7 @@ def test_workflow_reload_if_needed_uses_real_hot_reloader(tmp_path: Path) -> Non
             return 1
         """,
     )
-    assert mod.value() == 1  # type: ignore[attr-defined]
+    assert cast(Any, mod).value() == 1
 
     candidate = tmp_path / "candidate_leafw.py"
     candidate.write_text("def value():\n    return 7\n")
@@ -176,7 +177,7 @@ def test_workflow_reload_if_needed_uses_real_hot_reloader(tmp_path: Path) -> Non
 
     assert result.status == "success"
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 7  # type: ignore[attr-defined]
+    assert cast(Any, reloaded).value() == 7
 
 
 def test_workflow_reload_rolls_back_on_degraded(tmp_path: Path) -> None:
@@ -205,7 +206,7 @@ def test_workflow_reload_rolls_back_on_degraded(tmp_path: Path) -> None:
     assert "roll" in result.message.lower()
     assert mod_path.read_bytes() == original
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 1  # type: ignore[attr-defined]
+    assert cast(Any, reloaded).value() == 1
 
 
 class _RaisingBus:
@@ -239,7 +240,7 @@ def test_publish_failure_does_not_break_successful_reload(tmp_path: Path) -> Non
     )
 
     assert result.success is True
-    assert importlib.import_module(fqmn).value() == 5  # type: ignore[attr-defined]
+    assert cast(Any, importlib.import_module(fqmn)).value() == 5
 
 
 def test_reload_if_needed_survives_unexpected_reloader_error(tmp_path: Path) -> None:
@@ -252,7 +253,7 @@ def test_reload_if_needed_survives_unexpected_reloader_error(tmp_path: Path) -> 
             raise RuntimeError("unexpected internal error")
 
     wf = SelfImprovementWorkflow(config_dir=str(tmp_path / "config"))
-    wf._hot_reloader = _BoomReloader()  # type: ignore[assignment]
+    cast(Any, wf)._hot_reloader = _BoomReloader()
     wf.set_code_target("some.module", str(tmp_path / "c.py"), health_check=lambda: True)
     ar = ApplyResult(todo_id="SI-z", applied=True, reload_needed=True, validation_passed=True)
 
@@ -290,7 +291,7 @@ def test_set_code_target_threads_base_source_path(tmp_path: Path) -> None:
             return _Verdict()
 
     wf = SelfImprovementWorkflow(config_dir=str(tmp_path / "config"))
-    wf._hot_reloader = _SpyReloader()  # type: ignore[assignment]
+    cast(Any, wf)._hot_reloader = _SpyReloader()
     wf.set_code_target(
         "m", "/tmp/cand.py", health_check=lambda: True, base_source_path="/tmp/base.py"
     )
@@ -316,7 +317,7 @@ def test_reload_verifies_matching_expected_sha256(tmp_path: Path, reloader: HotR
             return 1
         """,
     )
-    assert mod.value() == 1  # type: ignore[attr-defined]
+    assert cast(Any, mod).value() == 1
 
     candidate = tmp_path / "candidate_leafhashok.py"
     candidate.write_bytes(b"def value():\n    return 2\n")
@@ -332,7 +333,7 @@ def test_reload_verifies_matching_expected_sha256(tmp_path: Path, reloader: HotR
     assert result.success is True
     assert result.details.get("integrity_verified") is True
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 2  # type: ignore[attr-defined]
+    assert cast(Any, reloaded).value() == 2
     assert mod_path.read_bytes() == candidate.read_bytes()
 
 
@@ -372,7 +373,7 @@ def test_reload_rejects_wrong_expected_sha256_without_touching_live(
     # Live file untouched — the tampered candidate was never loaded/executed.
     assert mod_path.read_bytes() == original_bytes
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 1  # type: ignore[attr-defined]
+    assert cast(Any, reloaded).value() == 1
 
 
 def test_reload_none_expected_sha256_is_backward_compatible(
@@ -388,7 +389,7 @@ def test_reload_none_expected_sha256_is_backward_compatible(
             return 1
         """,
     )
-    assert mod.value() == 1  # type: ignore[attr-defined]
+    assert cast(Any, mod).value() == 1
 
     candidate = tmp_path / "candidate_leafhashnone.py"
     candidate.write_bytes(b"def value():\n    return 3\n")
@@ -403,7 +404,7 @@ def test_reload_none_expected_sha256_is_backward_compatible(
     assert result.success is True
     assert "integrity_verified" not in result.details
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 3  # type: ignore[attr-defined]
+    assert cast(Any, reloaded).value() == 3
     assert mod_path.read_bytes() == candidate.read_bytes()
 
 
@@ -434,7 +435,7 @@ def test_workflow_threads_expected_sha256_to_reloader(tmp_path: Path) -> None:
             return _Verdict()
 
     wf = SelfImprovementWorkflow(config_dir=str(tmp_path / "config"))
-    wf._hot_reloader = _SpyReloader()  # type: ignore[assignment]
+    cast(Any, wf)._hot_reloader = _SpyReloader()
     wf.set_code_target("m", "/tmp/cand.py", health_check=lambda: True, expected_sha256="abc123")
     ar = ApplyResult(todo_id="SI-h", applied=True, reload_needed=True, validation_passed=True)
 

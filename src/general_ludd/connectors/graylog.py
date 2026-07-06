@@ -44,7 +44,7 @@ import logging
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Protocol, TypedDict, cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -70,6 +70,60 @@ SYSLOG_LEVEL_NAMES: dict[int, str] = {
 }
 
 
+class GraylogConfig(TypedDict, total=False):
+    """Configuration mapping accepted by :class:`GraylogSource`.
+
+    ``base_url`` and ``token_env`` are morally required (the constructor raises
+    if either is missing); they are declared optional here only so callers may
+    construct the dict incrementally. ``name`` and ``timeout`` are genuine
+    optional overrides with safe defaults.
+    """
+
+    base_url: str
+    token_env: str
+    name: str
+    timeout: float | int | str
+
+
+# ``GraylogQuerySpec`` is declared via the functional form because ``from`` and
+# ``to`` are Python keywords and cannot appear as attribute names in the class
+# body of a class-based TypedDict. All fields are optional (total=False);
+# defaults are applied in :meth:`GraylogSource._build_search_request`.
+# ``range`` / ``limit`` accept int or str because operator-supplied YAML/JSON
+# config frequently carries them as strings; they are coerced to int at use time.
+GraylogQuerySpec = TypedDict(
+    "GraylogQuerySpec",
+    {
+        "query": str,
+        "range": int | str,
+        "limit": int | str,
+        "from": str,
+        "to": str,
+    },
+    total=False,
+)
+
+
+class GraylogRecord(TypedDict):
+    """One normalized Graylog log record (the connector's 8-key shape).
+
+    Note: ``ts`` is the ISO-8601 string emitted by Graylog (not epoch float),
+    and ``source`` / ``message`` are ``object`` because the message-field map
+    is heterogeneous and only isinstance-narrowed at the boundary. ``value``
+    is always ``None`` for log records — the field exists to satisfy the
+    shared 8-key normalized-record shape consumed by the Observability facade.
+    """
+
+    ts: str | None
+    source: object
+    kind: str
+    level_or_status: str | None
+    message: object
+    value: None
+    labels: dict[str, object]
+    raw: dict[str, object]
+
+
 class _Transport(Protocol):
     """Injectable HTTP transport.
 
@@ -83,7 +137,7 @@ class _Transport(Protocol):
         url: str,
         *,
         headers: Mapping[str, str],
-        params: Mapping[str, Any] | None,
+        params: Mapping[str, str | int] | None,
         timeout: float,
     ) -> HttpResponse: ...
 
@@ -92,7 +146,7 @@ def _default_transport(
     url: str,
     *,
     headers: Mapping[str, str],
-    params: Mapping[str, Any] | None,
+    params: Mapping[str, str | int] | None,
     timeout: float,
 ) -> HttpResponse:
     """Real GET via httpx with a bounded timeout (imported lazily).
@@ -127,7 +181,7 @@ class GraylogSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any],
+        config: GraylogConfig,
         *,
         transport: _Transport | None = None,
         env: Mapping[str, str] | None = None,
@@ -168,7 +222,7 @@ class GraylogSource:
         return {"Authorization": f"Basic {encoded}", "Accept": "application/json"}
 
     # ---------------------------------------------------------------- health
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe Graylog load-balancer/system status. NEVER raises.
 
         Returns a dict with at least ``ok`` (bool). On any failure (network
@@ -196,7 +250,7 @@ class GraylogSource:
 
         status = int(getattr(resp, "status_code", 0))
         ok = status == 200
-        result: dict[str, Any] = {
+        result: dict[str, object] = {
             "ok": ok,
             "name": self.name,
             "kind": self.kind,
@@ -209,7 +263,7 @@ class GraylogSource:
         return result
 
     # ----------------------------------------------------------------- query
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: GraylogQuerySpec | None = None) -> list[GraylogRecord]:
         """Run a Graylog universal search and return normalized records.
 
         ``spec`` keys (all optional):
@@ -222,8 +276,8 @@ class GraylogSource:
         Returns a list of flat records. Returns ``[]`` on any transport/parse
         failure (fail-soft) so a logs source can never crash a caller.
         """
-        spec = dict(spec or {})
-        url, params = self._build_search_request(spec)
+        spec_copy: Mapping[str, object] = dict(spec or {})
+        url, params = self._build_search_request(spec_copy)
         try:
             resp = self._transport(
                 url,
@@ -243,7 +297,7 @@ class GraylogSource:
         if not isinstance(messages, list):
             return []
 
-        records: list[dict[str, Any]] = []
+        records: list[GraylogRecord] = []
         for entry in messages:
             record = self._normalize(entry)
             if record is not None:
@@ -251,13 +305,13 @@ class GraylogSource:
         return records
 
     # ------------------------------------------------------- request builder
-    def _build_search_request(self, spec: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+    def _build_search_request(self, spec: Mapping[str, object]) -> tuple[str, dict[str, str | int]]:
         query = str(spec.get("query", "*"))
         limit = _coerce_int(spec.get("limit"), default=100)
 
         if spec.get("from") is not None and spec.get("to") is not None:
             url = f"{self.base_url}/api/search/universal/absolute"
-            params: dict[str, Any] = {
+            params: dict[str, str | int] = {
                 "query": query,
                 "from": str(spec["from"]),
                 "to": str(spec["to"]),
@@ -271,7 +325,7 @@ class GraylogSource:
         return url, params
 
     # ---------------------------------------------------------- normalization
-    def _normalize(self, entry: Any) -> dict[str, Any] | None:
+    def _normalize(self, entry: object) -> GraylogRecord | None:
         """Normalize one universal-search ``messages[]`` entry into a record.
 
         A universal-search entry is ``{"message": {...fields...}, ...}``. The
@@ -286,7 +340,7 @@ class GraylogSource:
         ts = _parse_timestamp(msg.get("timestamp"))
         level_or_status = _level_name(msg.get("level"))
         text = msg.get("message")
-        labels = {
+        labels: dict[str, object] = {
             "source": msg.get("source"),
             "facility": msg.get("facility"),
             "stream": _first_stream(msg.get("streams")),
@@ -306,17 +360,19 @@ class GraylogSource:
 # ============================================================== module helpers
 
 
-def _coerce_int(value: Any, *, default: int) -> int:
+def _coerce_int(value: object, *, default: int) -> int:
     """Best-effort int coercion that never raises."""
     if value is None:
         return default
     try:
-        return int(value)
+        # int() accepts int|float|str|bool at runtime; the cast preserves the
+        # original try/except contract without weakening the static type.
+        return int(cast(int | float | str | bool, value))
     except (TypeError, ValueError):
         return default
 
 
-def _level_name(level: Any) -> str | None:
+def _level_name(level: object) -> str | None:
     """Map a numeric syslog level to its canonical name.
 
     Non-numeric or out-of-range values pass through as a string (or None).
@@ -324,20 +380,21 @@ def _level_name(level: Any) -> str | None:
     if level is None:
         return None
     try:
-        num = int(level)
+        num = int(cast(int | float | str | bool, level))
     except (TypeError, ValueError):
         return str(level)
     return SYSLOG_LEVEL_NAMES.get(num, str(num))
 
 
-def _first_stream(streams: Any) -> Any:
+def _first_stream(streams: object) -> object | None:
     """Return the first stream id from a list, else the value/None as-is."""
     if isinstance(streams, list) and streams:
-        return streams[0]
+        first: object = streams[0]
+        return first
     return None
 
 
-def _parse_timestamp(value: Any) -> str | None:
+def _parse_timestamp(value: int | float | str | None) -> str | None:
     """Parse a Graylog ISO-8601 timestamp into a normalized UTC ISO string.
 
     Graylog emits e.g. ``2026-06-12T18:30:00.000Z``. We normalize to an

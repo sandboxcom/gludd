@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
-from typing import Any
+from typing import Any, cast
 
 # ---------------------------------------------------------------------------
 # Import the module under test by path (it lives in scripts/, not a package)
@@ -20,8 +20,8 @@ def _load_module():
         os.path.dirname(__file__), "..", "..", "scripts", "require_ci_green.py"
     )
     spec = importlib.util.spec_from_file_location("require_ci_green", script_path)
-    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    mod = cast(Any, importlib.util).module_from_spec(spec)
+    cast(Any, spec.loader).exec_module(mod)
     return mod
 
 

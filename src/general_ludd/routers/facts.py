@@ -27,9 +27,9 @@ import logging
 import os
 import shutil
 import subprocess
-from typing import Any
 
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.db.repository import (
     AgentMessageRepository,
@@ -48,13 +48,13 @@ _DEFAULT_SPAN_CAP = 25
 _DEFAULT_RANKING_LIMIT = 10
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def _models_facet(app: FastAPI) -> dict[str, Any]:
+def _models_facet(app: FastAPI) -> dict[str, object]:
     """Configured routing + per-model usage/health from the live MetricsCollector."""
-    facet: dict[str, Any] = {"routing": {}, "usage": {}}
+    facet: dict[str, object] = {"routing": {}, "usage": {}}
     startup_config = getattr(app.state, "_startup_config", {}) or {}
     routing = startup_config.get("model_routing")
     if routing is not None:
@@ -84,13 +84,13 @@ async def _metrics_facet(
     app: FastAPI,
     project_id: str | None = None,
     agent_id: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Deeper metrics: agent-level report, global model usage, per-project cost,
     and benchmark rankings (when a BenchmarkRepository is reachable).
 
     Reuses MetricsCollector / BenchmarkRepository — no stat logic is duplicated.
     """
-    facet: dict[str, Any] = {
+    facet: dict[str, object] = {
         "agents": [],
         "total_agents": 0,
         "running_agents": 0,
@@ -140,7 +140,7 @@ def _traces_facet(
     limit: int = _DEFAULT_TRACE_LIMIT,
     todo_id: str | None = None,
     project_id: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Recent execution traces + by-phase aggregate + otel exporter status.
 
     Sourced ONLY from the in-process RecentTracesBuffer (genuinely-captured
@@ -153,7 +153,7 @@ def _traces_facet(
     of other tenants never leak. ``None`` = unscoped/global caller.
     """
     buffer = getattr(app.state, "_recent_traces", None)
-    facet: dict[str, Any]
+    facet: dict[str, object]
     if buffer is not None and hasattr(buffer, "snapshot"):
         facet = buffer.snapshot(
             limit=limit,
@@ -176,9 +176,9 @@ def _traces_facet(
 
 def _codebase_facet(
     app: FastAPI,
-    recent_failures: dict[str, Any] | None = None,
+    recent_failures: dict[str, object] | None = None,
     project_id: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Best-effort codebase self-knowledge for the self-improvement pipeline.
 
     Composed from genuinely-capturable signals via CodebaseIntrospector: git
@@ -217,7 +217,7 @@ def _codebase_facet(
         }
 
 
-async def _features_facet(app: FastAPI, project_id: str | None = None) -> dict[str, Any]:
+async def _features_facet(app: FastAPI, project_id: str | None = None) -> dict[str, object]:
     """Feature-database summary: counts by status + list of feature names per status.
 
     Sourced from FeatureRepository — never self-asserted.
@@ -226,7 +226,7 @@ async def _features_facet(app: FastAPI, project_id: str | None = None) -> dict[s
     from general_ludd.db.repository import FeatureRepository
 
     factory = _get_session_factory(app)
-    facet: dict[str, Any] = {
+    facet: dict[str, object] = {
         "total": 0,
         "by_status": {},
         "verified": [],
@@ -251,15 +251,17 @@ async def _features_facet(app: FastAPI, project_id: str | None = None) -> dict[s
         for row in rows:
             status = row.status
             by_status.setdefault(status, []).append(row.name)
+        by_status_counts: dict[str, int] = {}
         for status in FeatureStatus:
             names = by_status.get(status.value, [])
-            facet["by_status"][status.value] = len(names)
+            by_status_counts[status.value] = len(names)
             facet[status.value] = names
+        facet["by_status"] = by_status_counts
         facet["total"] = len(rows)
     except Exception as exc:
         logger.debug("features facet unavailable: %s", exc)
     return facet
-def _spend_facet(app: FastAPI) -> dict[str, Any]:
+def _spend_facet(app: FastAPI) -> dict[str, object]:
     """Current rolling-window spend summary for the spend-limiter subsystem.
 
     Returns a dict suitable for embedding in /api/facts under the ``"spend"``
@@ -284,7 +286,7 @@ def _spend_facet(app: FastAPI) -> dict[str, Any]:
 async def _accounting_facet(
     app: FastAPI,
     project_id: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Per-project accounting snapshot(s) for playbook consumption.
 
     When ``project_id`` is supplied, returns a single-project result under
@@ -310,7 +312,7 @@ async def _accounting_facet(
         # degraded state without parsing HTTP status.
         logger.warning("accounting facet unavailable: %s", exc, exc_info=True)
         return {"projects": [], "error": "accounting facet unavailable"}
-def _osquery_facet(app: FastAPI) -> dict[str, Any]:
+def _osquery_facet(app: FastAPI) -> dict[str, object]:
     """Fast availability + version probe for osquery system-state querying.
 
     This is intentionally a *cheap* probe (``osqueryi --version`` with a short
@@ -322,7 +324,7 @@ def _osquery_facet(app: FastAPI) -> dict[str, Any]:
     ``PATH``. A heavier query-as-corpus search path is a later phase that
     consumes this availability signal.
     """
-    facet: dict[str, Any] = {"available": False, "version": None, "source": None, "path": None}
+    facet: dict[str, object] = {"available": False, "version": None, "source": None, "path": None}
 
     binary: str | None = None
     source: str | None = None
@@ -365,7 +367,7 @@ def _osquery_facet(app: FastAPI) -> dict[str, Any]:
     return facet
 
 
-def _schedule_facet(app: FastAPI) -> dict[str, Any]:
+def _schedule_facet(app: FastAPI) -> dict[str, object]:
     """Last computed schedule plan and in-flight batch summary.
 
     Populated by POST /api/schedule; returns an empty placeholder when no plan
@@ -387,7 +389,7 @@ def _schedule_facet(app: FastAPI) -> dict[str, Any]:
     }
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get(
         "/api/facts",
         summary="Get consolidated daemon facts for playbooks",
@@ -398,11 +400,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "PSK-authenticated."
         ),
     )
-    async def api_facts(project_id: str | None = None) -> dict[str, Any]:
-        work: dict[str, Any] = {}
-        todos: dict[str, Any] = {}
-        history: dict[str, Any] = {}
-        messages: dict[str, Any] = {}
+    async def api_facts(project_id: str | None = None) -> dict[str, object]:
+        work: dict[str, object] = {}
+        todos: dict[str, object] = {}
+        history: dict[str, object] = {}
+        messages: dict[str, object] = {}
 
         factory = _get_session_factory(app)
         if factory is not None:
@@ -417,7 +419,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 messages = {"unread_by_recipient": unread, "total_unread": sum(unread.values())}
 
         dispatch_facet_fn = getattr(app.state, "_dispatch_facet", None)
-        dispatch: dict[str, Any] = (
+        dispatch: dict[str, object] = (
             dispatch_facet_fn() if callable(dispatch_facet_fn) else {}
         )
         return {
@@ -448,7 +450,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def api_metrics(
         project_id: str | None = None,
         agent_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Focused read-only metrics snapshot (gludd_metrics module).
 
         Optional filters: ``project_id`` (per-project agents/cost) and
@@ -461,7 +463,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         todo_id: str | None = None,
         limit: int = _DEFAULT_TRACE_LIMIT,
         project_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Focused read-only traces snapshot (gludd_traces module).
 
         Optional filters: ``todo_id``, ``project_id`` (tenant scope — only that

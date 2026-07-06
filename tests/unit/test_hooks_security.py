@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -437,7 +438,7 @@ class TestRetryCountClampAtRegistration:
         hs.register_webhook("evt_clamp", "http://example.com", retry_count=10000)
         hooks = hs.list_hooks()
         assert len(hooks) == 1
-        stored = hooks[0].webhook_config.retry_count  # type: ignore[union-attr]
+        stored = cast(Any, hooks[0]).webhook_config.retry_count
         assert stored == 5, (
             f"Expected retry_count=5 (clamped), got {stored}. "
             "Clamp must happen at register_webhook, not only at fire time."
@@ -447,21 +448,21 @@ class TestRetryCountClampAtRegistration:
         """register_webhook(retry_count=0) must store retry_count=1."""
         hs = HookSystem()
         hs.register_webhook("evt_zero", "http://example.com", retry_count=0)
-        stored = hs.list_hooks()[0].webhook_config.retry_count  # type: ignore[union-attr]
+        stored = cast(Any, hs.list_hooks()[0]).webhook_config.retry_count
         assert stored == 1, f"Expected retry_count=1 for input 0, got {stored}"
 
     def test_retry_count_negative_stored_as_1(self):
         """register_webhook(retry_count=-99) must store retry_count=1."""
         hs = HookSystem()
         hs.register_webhook("evt_neg", "http://example.com", retry_count=-99)
-        stored = hs.list_hooks()[0].webhook_config.retry_count  # type: ignore[union-attr]
+        stored = cast(Any, hs.list_hooks()[0]).webhook_config.retry_count
         assert stored == 1, f"Expected retry_count=1 for input -99, got {stored}"
 
     def test_retry_count_in_range_stored_unchanged(self):
         """retry_count=3 is within range and must be stored as-is."""
         hs = HookSystem()
         hs.register_webhook("evt_ok", "http://example.com", retry_count=3)
-        stored = hs.list_hooks()[0].webhook_config.retry_count  # type: ignore[union-attr]
+        stored = cast(Any, hs.list_hooks()[0]).webhook_config.retry_count
         assert stored == 3, f"Expected retry_count=3 unchanged, got {stored}"
 
 

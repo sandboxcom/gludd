@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 
 import pytest
 
@@ -57,7 +58,7 @@ def _make_registry() -> AgentRegistry:
 
 
 def _run(coro: object) -> object:
-    return asyncio.run(coro)  # type: ignore[arg-type]
+    return cast(Any, asyncio.run)(coro)
 
 
 def test_disabled_agent_returns_failed() -> None:
@@ -129,7 +130,7 @@ def test_empty_invoker_name_is_denied_fail_closed(empty_invoker: str | None) -> 
         prompt="do stuff",
     )
     # Assign directly so we can also exercise the None case (dataclass default "").
-    task.invoker_name = empty_invoker  # type: ignore[assignment]
+    cast(Any, task).invoker_name = empty_invoker
     result: AgentTaskResult = _run(dispatcher.dispatch_one(task))
     assert result.status == "failed"
     assert "permission denied" in result.output.lower()

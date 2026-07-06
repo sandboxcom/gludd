@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -24,8 +25,8 @@ _SCRIPT_PATH = Path(__file__).resolve().parent.parent.parent / "scripts" / "chec
 
 def _load_module():
     spec = importlib.util.spec_from_file_location("check_readme_status_current", _SCRIPT_PATH)
-    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    mod = cast(Any, importlib.util).module_from_spec(spec)
+    cast(Any, spec.loader).exec_module(mod)
     return mod
 
 

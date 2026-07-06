@@ -18,7 +18,7 @@ These tests prove:
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -298,12 +298,12 @@ def test_environment_response_renders_project_facet_with_edges() -> None:
             super().__init__(edges)
 
     orig = repo_mod.ProjectRelationshipRepository
-    repo_mod.ProjectRelationshipRepository = _Repo  # type: ignore[assignment,misc]
+    cast(Any, repo_mod).ProjectRelationshipRepository = _Repo
     try:
         client = TestClient(app)
         resp = client.get("/api/environment", params={"project_id": "proj-self"})
     finally:
-        repo_mod.ProjectRelationshipRepository = orig  # type: ignore[misc]
+        cast(Any, repo_mod).ProjectRelationshipRepository = orig
 
     assert resp.status_code == 200, resp.text
     project = resp.json()["project"]

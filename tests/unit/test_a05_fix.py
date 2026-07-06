@@ -14,6 +14,7 @@ stays ``max_retries`` (default 3).
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -72,7 +73,7 @@ class TestOverloadKindAwareCap:
         )
 
         with patch("time.sleep"), pytest.raises(httpx.HTTPStatusError):
-            gateway.call_model_with_retry(  # type: ignore[attr-defined]
+            cast(Any, gateway).call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,
@@ -94,7 +95,7 @@ class TestOverloadKindAwareCap:
         )
 
         with patch("time.sleep"), pytest.raises(httpx.HTTPStatusError):
-            gateway.call_model_with_retry(  # type: ignore[attr-defined]
+            cast(Any, gateway).call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,
@@ -117,7 +118,7 @@ class TestTransientKindStillCappedAtMaxRetries:
         )
 
         with patch("time.sleep"), pytest.raises(httpx.ConnectTimeout):
-            gateway.call_model_with_retry(  # type: ignore[attr-defined]
+            cast(Any, gateway).call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,
@@ -134,7 +135,7 @@ class TestTransientKindStillCappedAtMaxRetries:
         )
 
         with patch("time.sleep"), pytest.raises(httpx.ReadTimeout):
-            gateway.call_model_with_retry(  # type: ignore[attr-defined]
+            cast(Any, gateway).call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,

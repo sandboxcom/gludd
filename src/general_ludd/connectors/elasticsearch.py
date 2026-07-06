@@ -29,16 +29,40 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import Literal, TypedDict, cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
 
 # Transport contract: (method, url, headers, body) -> (status_code, json_dict)
-HttpRequest = Callable[[str, str, Mapping[str, str], "bytes | None"], "tuple[int, dict[str, Any]]"]
+HttpRequest = Callable[[str, str, Mapping[str, str], "bytes | None"], "tuple[int, dict[str, object]]"]
 
 RecordKind = Literal["logs", "traces"]
+
+
+class ElasticsearchConfig(TypedDict, total=False):
+    base_url: str
+    index: str
+    api_key_env: str
+    token_env: str
+
+
+class ElasticsearchQuerySpec(TypedDict, total=False):
+    dsl: Mapping[str, object]
+    query: str
+    size: int
+    time_field: str
+    start: object
+    end: object
+
+
+class ElasticsearchHit(TypedDict, total=False):
+    _id: str
+    _index: str
+    _source: Mapping[str, object]
+    _score: float
+
 
 _DEFAULT_TIMEOUT_SECONDS = 10.0
 
@@ -73,7 +97,7 @@ def _default_http_request(
     url: str,
     headers: Mapping[str, str],
     body: bytes | None,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, dict[str, object]]:
     """Real transport — httpx with a bounded timeout. Imported lazily.
 
     Kept tiny and side-effect-light so tests never need it (they inject a mock).
@@ -92,10 +116,10 @@ def _default_http_request(
         payload = resp.json()
     except ValueError:
         payload = {}
-    return resp.status_code, cast("dict[str, Any]", payload if isinstance(payload, dict) else {})
+    return resp.status_code, cast("dict[str, object]", payload if isinstance(payload, dict) else {})
 
 
-def _parse_timestamp(value: Any) -> float:
+def _parse_timestamp(value: object) -> float:
     """Parse an ES time value into an epoch float. Best-effort; 0.0 on failure."""
     if value is None:
         return 0.0
@@ -114,11 +138,15 @@ def _parse_timestamp(value: Any) -> float:
     return 0.0
 
 
-def _dig(source: Mapping[str, Any], dotted: str) -> Any:
-    """Read a possibly-nested value addressed either as 'a.b' nesting or a flat 'a.b' key."""
+def _dig(source: Mapping[str, object], dotted: str) -> object:
+    """Read a possibly-nested value addressed either as 'a.b' nesting or a flat 'a.b' key.
+
+    Returns object: dotted-path lookup into arbitrary JSON yields an unknown shape;
+    callers narrow via isinstance.
+    """
     if dotted in source:
         return source[dotted]
-    cur: Any = source
+    cur: object = source
     for part in dotted.split("."):
         if isinstance(cur, Mapping) and part in cur:
             cur = cur[part]
@@ -136,7 +164,7 @@ class ElasticsearchSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any],
+        config: ElasticsearchConfig,
         http_request: HttpRequest | None = None,
     ) -> None:
         base_url = config.get("base_url")
@@ -181,7 +209,7 @@ class ElasticsearchSource:
 
     # -- health --------------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """GET ``_cluster/health``; ok when status is green or yellow. Never raises."""
         url = f"{self._base_url}/_cluster/health"
         try:
@@ -198,9 +226,9 @@ class ElasticsearchSource:
 
     # -- query ---------------------------------------------------------------
 
-    def _build_search_body(self, spec: Mapping[str, Any]) -> dict[str, Any]:
+    def _build_search_body(self, spec: ElasticsearchQuerySpec) -> dict[str, object]:
         """Translate a query spec into an ES ``_search`` request body."""
-        body: dict[str, Any] = {}
+        body: dict[str, object] = {}
 
         dsl = spec.get("dsl")
         query_str = spec.get("query")
@@ -220,7 +248,7 @@ class ElasticsearchSource:
         start = spec.get("start")
         end = spec.get("end")
         if start is not None or end is not None:
-            rng: dict[str, Any] = {}
+            rng: dict[str, object] = {}
             if start is not None:
                 rng["gte"] = start
             if end is not None:
@@ -234,7 +262,7 @@ class ElasticsearchSource:
             }
         return body
 
-    def query(self, spec: Mapping[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: ElasticsearchQuerySpec) -> list[dict[str, object]]:
         """Issue an ES ``_search`` and return normalized records."""
         url = f"{self._base_url}/{self._index}/_search"
         body = self._build_search_body(spec)
@@ -248,7 +276,7 @@ class ElasticsearchSource:
         if status >= 400:
             raise ConnectionError(f"elasticsearch _search returned http {status}")
 
-        time_field = cast("str", spec.get("time_field") or "@timestamp")
+        time_field = spec.get("time_field") or "@timestamp"
         hits = []
         if isinstance(payload, Mapping):
             hits_block = payload.get("hits")
@@ -257,11 +285,15 @@ class ElasticsearchSource:
                 if isinstance(inner, list):
                     hits = inner
 
-        return [self._normalize_hit(hit, time_field) for hit in hits if isinstance(hit, Mapping)]
+        return [
+            self._normalize_hit(cast("ElasticsearchHit", hit), time_field)
+            for hit in hits
+            if isinstance(hit, Mapping)
+        ]
 
-    def _normalize_hit(self, hit: Mapping[str, Any], time_field: str) -> dict[str, Any]:
+    def _normalize_hit(self, hit: ElasticsearchHit, time_field: str) -> dict[str, object]:
         source = hit.get("_source")
-        src_map: Mapping[str, Any] = source if isinstance(source, Mapping) else {}
+        src_map: Mapping[str, object] = source if isinstance(source, Mapping) else {}
 
         ts = _parse_timestamp(_dig(src_map, time_field))
 
@@ -276,7 +308,7 @@ class ElasticsearchSource:
         span_id = _dig(src_map, "span.id")
         kind: RecordKind = "traces" if (trace_id is not None or span_id is not None) else "logs"
 
-        labels: dict[str, Any] = {
+        labels: dict[str, object] = {
             "index": hit.get("_index"),
             "_id": hit.get("_id"),
         }

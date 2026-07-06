@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,7 +24,7 @@ def _make_config(**kwargs: object) -> ComputeConfig:
         "region": "eastus",
     }
     defaults.update(kwargs)
-    return ComputeConfig(**defaults)  # type: ignore[arg-type]
+    return cast(Any, ComputeConfig)(**defaults)
 
 
 class TestProviderAuthAliases:

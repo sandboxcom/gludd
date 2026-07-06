@@ -7,6 +7,7 @@ running real pytest so the suite stays fast and CPU-light.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from general_ludd.quality.feature_verifier import FeatureVerifier
 
@@ -24,7 +25,7 @@ def _fake_runner_fail(node_id: str) -> int:
     return 1
 
 
-def _make_verifier(tmp_path: Path, runner=_fake_runner_pass) -> FeatureVerifier:  # type: ignore[assignment]
+def _make_verifier(tmp_path: Path, runner: Any = _fake_runner_pass) -> FeatureVerifier:
     # Scaffold a minimal repo root so role/module/molecule presence checks work.
     # roles
     roles_dir = tmp_path / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles"

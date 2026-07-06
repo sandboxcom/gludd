@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from typing import Any, cast
 
 import pytest
 
@@ -45,7 +46,7 @@ def _cfg(**kw: object) -> PipelineConfig:
         heartbeat_interval_s=0.01,
     )
     base.update(kw)
-    return PipelineConfig(**base)  # type: ignore[arg-type]  # test stub
+    return cast(Any, PipelineConfig)(**base)
 
 
 def _controller(
@@ -82,7 +83,7 @@ def _controller(
         dispatch,
         merge,
         gate,
-        heartbeat_sink=(lambda hb: (heartbeat_sink.append(hb) if heartbeat_sink is not None else None))  # type: ignore[arg-type]  # test stub
+        heartbeat_sink=cast(Any, lambda hb: (heartbeat_sink.append(hb) if heartbeat_sink is not None else None))
         if heartbeat_sink is not None
         else None,
     )

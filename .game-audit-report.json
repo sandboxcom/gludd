@@ -1,0 +1,584 @@
+{
+  "report_generated": "2026-07-06T23:33:06Z",
+  "games": {
+    "snake": {
+      "game_id": "snake",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 6,
+      "checks_total": 6,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "tick_loop": {
+          "passed": true,
+          "desc": "tick() returns bool for 100 frames without error"
+        },
+        "direction_change": {
+          "passed": true,
+          "desc": "input('down') then tick advances snake downward"
+        },
+        "wall_collision": {
+          "passed": true,
+          "desc": "snake hitting wall returns game_over True"
+        },
+        "food_eating": {
+          "passed": true,
+          "desc": "moving onto food cell increments score and length"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 305,
+      "tokens_out": 589,
+      "tool_calls": 0,
+      "content_len": 2232,
+      "model": "unknown",
+      "phases": {
+        "model_call": 5024.9,
+        "extract_code": 0.0,
+        "ast_parse": 0.8,
+        "game_verify": 2.4
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "tetris": {
+      "game_id": "tetris",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 6,
+      "checks_total": 6,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "tick_gravity": {
+          "passed": true,
+          "desc": "tick() moves piece down one row"
+        },
+        "line_clear": {
+          "passed": true,
+          "desc": "filling a row clears it and increments score"
+        },
+        "rotation": {
+          "passed": true,
+          "desc": "rotate_cw changes piece orientation"
+        },
+        "hard_drop": {
+          "passed": true,
+          "desc": "hard_drop instantly places piece"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 367,
+      "tokens_out": 1772,
+      "tool_calls": 0,
+      "content_len": 6824,
+      "model": "unknown",
+      "phases": {
+        "model_call": 13079.0,
+        "extract_code": 0.1,
+        "ast_parse": 4.2,
+        "game_verify": 2.9
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "minesweeper": {
+      "game_id": "minesweeper",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 6,
+      "checks_total": 7,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "reveal_safe": {
+          "passed": true,
+          "desc": "revealing a non-mine cell returns 'ok'"
+        },
+        "reveal_mine": {
+          "passed": true,
+          "desc": "revealing a mine cell returns 'mine' and game_over=True"
+        },
+        "flood_fill": {
+          "passed": true,
+          "desc": "revealing a 0 cell auto-reveals adjacent cells"
+        },
+        "flag_toggle": {
+          "passed": false,
+          "desc": "flag() toggles between flagged/unflagged"
+        },
+        "win_detection": {
+          "passed": true,
+          "desc": "revealing all non-mine cells sets won=True"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 362,
+      "tokens_out": 1140,
+      "tool_calls": 0,
+      "content_len": 4576,
+      "model": "unknown",
+      "phases": {
+        "model_call": 7874.9,
+        "extract_code": 0.2,
+        "ast_parse": 1.9,
+        "game_verify": 3.5
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "checkers": {
+      "game_id": "checkers",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 7,
+      "checks_total": 7,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "valid_move": {
+          "passed": true,
+          "desc": "valid diagonal move returns valid=True"
+        },
+        "invalid_move": {
+          "passed": true,
+          "desc": "moving to occupied square returns valid=False"
+        },
+        "capture": {
+          "passed": true,
+          "desc": "jump capture removes opponent piece"
+        },
+        "king_promotion": {
+          "passed": true,
+          "desc": "piece reaching back rank becomes king"
+        },
+        "game_over": {
+          "passed": true,
+          "desc": "no valid moves sets game_over=True"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 467,
+      "tokens_out": 2177,
+      "tool_calls": 0,
+      "content_len": 8667,
+      "model": "unknown",
+      "phases": {
+        "model_call": 22844.3,
+        "extract_code": 0.3,
+        "ast_parse": 8.4,
+        "game_verify": 4.7
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "skifree": {
+      "game_id": "skifree",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 6,
+      "checks_total": 6,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "tick_movement": {
+          "passed": true,
+          "desc": "tick() moves skier down the course"
+        },
+        "left_right": {
+          "passed": true,
+          "desc": "input('left') changes skier x position"
+        },
+        "tree_collision": {
+          "passed": true,
+          "desc": "overlapping a tree sets crashed=True"
+        },
+        "course_completion": {
+          "passed": true,
+          "desc": "reaching bottom sets finished=True"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 399,
+      "tokens_out": 834,
+      "tool_calls": 0,
+      "content_len": 3068,
+      "model": "unknown",
+      "phases": {
+        "model_call": 7754.5,
+        "extract_code": 0.1,
+        "ast_parse": 2.7,
+        "game_verify": 3.6
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "banana": {
+      "game_id": "banana",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 6,
+      "checks_total": 6,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "throw_arc": {
+          "passed": true,
+          "desc": "throw(45, 10) produces trajectory with multiple points"
+        },
+        "building_hit": {
+          "passed": true,
+          "desc": "throw at low angle hits a building"
+        },
+        "gorilla_hit": {
+          "passed": true,
+          "desc": "direct hit on gorilla returns hit_type='gorilla1' or 'gorilla2'"
+        },
+        "turn_alternation": {
+          "passed": true,
+          "desc": "current_player changes after each throw"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 493,
+      "tokens_out": 1102,
+      "tool_calls": 0,
+      "content_len": 4246,
+      "model": "unknown",
+      "phases": {
+        "model_call": 10442.5,
+        "extract_code": 0.2,
+        "ast_parse": 2.5,
+        "game_verify": 3.5
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "pong": {
+      "game_id": "pong",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 6,
+      "checks_total": 6,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "pong_ball_move": {
+          "passed": true,
+          "desc": "ball position changes after tick()"
+        },
+        "pong_wall_bounce": {
+          "passed": true,
+          "desc": "ball bounces off top or bottom wall (dy flips)"
+        },
+        "pong_paddle_move": {
+          "passed": true,
+          "desc": "paddle moves in response to input"
+        },
+        "pong_scoring": {
+          "passed": true,
+          "desc": "score increments when ball passes paddle"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 519,
+      "tokens_out": 738,
+      "tool_calls": 0,
+      "content_len": 2438,
+      "model": "unknown",
+      "phases": {
+        "model_call": 5404.7,
+        "extract_code": 0.1,
+        "ast_parse": 0.9,
+        "game_verify": 1.2
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "breakout": {
+      "game_id": "breakout",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 6,
+      "checks_total": 6,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "brk_ball_moves": {
+          "passed": true,
+          "desc": "ball position changes after tick()"
+        },
+        "brk_brick_smash": {
+          "passed": true,
+          "desc": "tick loop destroys at least one brick"
+        },
+        "brk_paddle_bounce": {
+          "passed": true,
+          "desc": "ball bounces when hitting paddle area"
+        },
+        "brk_life_loss": {
+          "passed": true,
+          "desc": "lives decrement when ball passes bottom"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 563,
+      "tokens_out": 839,
+      "tool_calls": 0,
+      "content_len": 3014,
+      "model": "unknown",
+      "phases": {
+        "model_call": 5840.4,
+        "extract_code": 0.0,
+        "ast_parse": 0.8,
+        "game_verify": 1.7
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "maze_runner": {
+      "game_id": "maze_runner",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 4,
+      "checks_total": 5,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "maze_moves": {
+          "passed": false,
+          "desc": "input('right') moves player on a path cell"
+        },
+        "maze_wall_blocks": {
+          "passed": true,
+          "desc": "moving into a wall cell blocks movement"
+        },
+        "maze_reach_end": {
+          "passed": true,
+          "desc": "reaching end position sets won=True"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 392,
+      "tokens_out": 732,
+      "tool_calls": 0,
+      "content_len": 2740,
+      "model": "unknown",
+      "phases": {
+        "model_call": 5613.4,
+        "extract_code": 0.0,
+        "ast_parse": 0.9,
+        "game_verify": 1.4
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "word_guesser": {
+      "game_id": "word_guesser",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 6,
+      "checks_total": 6,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "wg_correct_letter": {
+          "passed": true,
+          "desc": "guessing a letter in the word reveals positions"
+        },
+        "wg_wrong_letter": {
+          "passed": true,
+          "desc": "guessing a wrong letter increments wrong_guesses"
+        },
+        "wg_win_word": {
+          "passed": true,
+          "desc": "guessing all letters sets won=True"
+        },
+        "wg_lose_max": {
+          "passed": true,
+          "desc": "reaching max_guesses sets game_over=True and won=False"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 436,
+      "tokens_out": 533,
+      "tool_calls": 0,
+      "content_len": 2009,
+      "model": "unknown",
+      "phases": {
+        "model_call": 4706.7,
+        "extract_code": 0.1,
+        "ast_parse": 0.8,
+        "game_verify": 1.9
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "memory_match": {
+      "game_id": "memory_match",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 5,
+      "checks_total": 6,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "mm_flip_cards": {
+          "passed": true,
+          "desc": "flip() reveals a card and returns valid dict"
+        },
+        "mm_match_pair": {
+          "passed": true,
+          "desc": "matching two cards with same value sets matched=True"
+        },
+        "mm_mismatch_flips": {
+          "passed": true,
+          "desc": "non-matching pair flips back after second card"
+        },
+        "mm_all_matched": {
+          "passed": false,
+          "desc": "game ends when all cards are matched"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 490,
+      "tokens_out": 509,
+      "tool_calls": 0,
+      "content_len": 1975,
+      "model": "unknown",
+      "phases": {
+        "model_call": 4707.7,
+        "extract_code": 0.0,
+        "ast_parse": 1.5,
+        "game_verify": 1.4
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    },
+    "tic_tac_toe": {
+      "game_id": "tic_tac_toe",
+      "imported": true,
+      "instantiated": true,
+      "checks_passed": 6,
+      "checks_total": 6,
+      "checks": {
+        "import_and_instantiate": {
+          "passed": true,
+          "desc": "class imports and instantiates without error"
+        },
+        "ttt_legal_move": {
+          "passed": true,
+          "desc": "move on empty cell returns valid=True"
+        },
+        "ttt_illegal_reject": {
+          "passed": true,
+          "desc": "move on occupied cell returns valid=False"
+        },
+        "ttt_three_in_row": {
+          "passed": true,
+          "desc": "three in a row sets winner and game_over"
+        },
+        "ttt_board_full_draw": {
+          "passed": true,
+          "desc": "full board with no winner sets draw=True"
+        },
+        "render_state": {
+          "passed": true,
+          "desc": "render_state() returns dict with expected keys"
+        }
+      },
+      "tokens_in": 497,
+      "tokens_out": 1149,
+      "tool_calls": 0,
+      "content_len": 4348,
+      "model": "unknown",
+      "phases": {
+        "model_call": 7367.3,
+        "extract_code": 0.2,
+        "ast_parse": 1.9,
+        "game_verify": 2.5
+      },
+      "errors": [],
+      "gaps": [],
+      "feature_failures": []
+    }
+  },
+  "summary": {
+    "total_games": 12,
+    "games_imported": 12,
+    "games_fully_verified": 9,
+    "total_tokens_in": 5290,
+    "total_tokens_out": 12114,
+    "total_latency_ms": 100719.6,
+    "total_latency_s": 100.72,
+    "most_tokens": "checkers",
+    "most_latency": "checkers"
+  }
+}

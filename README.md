@@ -3,7 +3,7 @@
 The black swan agentic coding system — an autonomous, Ansible-driven, multi-model AI agent
 that submits coding tasks and produces real, committed, reviewed, and reconciled code changes.
 
-## 📊 [Interactive Presentation](https://sandboxcom.github.io/gludd/)
+## [Interactive Presentation](https://sandboxcom.github.io/gludd/)
 
 ## What Is This?
 
@@ -67,53 +67,17 @@ and Windows (x86_64).
 
 ---
 
-## Feature & Task Completion Status
+## Backlog
 
-**Backlog items only — completed features are in the CHANGELOG**
+Completed features are documented in CHANGELOG.md. Only in-progress items are tracked here.
 
-The table below is **code-generated** from [`docs/features.yml`](docs/features.yml) by
-[`scripts/gen_status_table.py`](scripts/gen_status_table.py): every row's verified status is
-derived by running each feature's evidence references through the fail-closed
-`FeatureVerifier` (test/file/role/module/molecule refs). It refreshes on every build/deploy
-and can be regenerated on demand:
-
-```bash
-make gen-status-table     # regenerate the table from docs/features.yml (writes between markers)
-make check-status-table   # CI/release gate: fail if the on-disk table is stale
-```
-
-The table is regenerated/verified on every release cut (enforced by `make release-cut`) and
-in CI (the `gate` job runs `make check-status-table`). Do NOT hand-edit the rows between the
-`STATUS-TABLE` markers — edit `docs/features.yml` and regenerate.
-
-Honesty note: this project has a documented history of false "done" claims (see `BUGS.md`).
-The status line above states only machine-verified facts (test counts, gate results, CI
-verdicts) — no percentage-of-completion claims. The ✓/~/✗ badge in the "Verified %" column
-below is the **machine** verdict from `FeatureVerifier` (✓ all evidence met, ~ partial,
-✗ none met / no evidence — fail-closed). "Local-only" means the gate passes on macOS arm64
-but CI (ubuntu) is unverified. No row claims "100% complete" — completeness is only
-established by passing CI + verified artifact.
-
-Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file or class,
-`[audit]` = `docs/audit/` findings.
-
-<!-- STATUS-TABLE:START -->
-*(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
-
-
-### Security Hardening
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 0% | **PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
-
-### Orchestration / Agents
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 0% | **PENDING**: Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status. |
-
-<!-- STATUS-TABLE:END -->
+| Item | Status |
+|---|---|
+| CI pipeline green | 0% — all recent runs failed |
+| 6 game mechanics checks | 50% — 6/12 games fully verified |
+| Type annotations (no Any) | 76% — 420/1770 return types still missing |
+| Reveal.js presentation | 80% — deck created, needs GitHub Pages deploy |
+| Account lifecycle | 90% — ephemeral accounts implemented, needs e2e test |
 ## Presentation
 
 > **Status: not yet implemented.** The `make deck`, `make deck-data`, and
@@ -276,9 +240,45 @@ runs a **single gunicorn worker**. `--workers` defaults to 1, and any `--workers
 
 The model router selects which AI model to use based on role, quality requirement, latency
 budget, or work pattern. The shipped config routes to `zai_coder` (Z.AI GLM) with a fallback
-chain to `deepseek_coder` and `qwen_coder`. Supported providers: Z.AI, OpenAI, Anthropic
-Claude, OpenRouter, vLLM (local), llama.cpp (local). API keys are resolved from OpenBao or
-environment variables — never stored in profile YAML files.
+chain to `deepseek_coder` and `qwen_coder`.
+
+Supported providers (alphabetical): Anthropic Claude, Baseten, CoreWeave, DeepSeek, Fireworks
+AI, Groq, Lambda Labs, Modal, OpenAI, OpenRouter, Replicate, RunPod, Together AI, Z.AI GLM.
+Local backends: vLLM, llama.cpp. API keys are resolved from OpenBao or environment variables
+— never stored in profile YAML files.
+
+#### GPU / Compute Providers
+
+In addition to the hosted-model providers above, gludd supports large GPU/compute backends
+for self-hosted and serverless inference. Each is configured via its environment variable:
+
+| Provider | Env var | Description |
+|---|---|---|
+| Baseten | `BASETEN_API_KEY=...` | Managed model hosting |
+| CoreWeave | `COREWEAVE_API_KEY=...` | GPU cloud |
+| Fireworks AI | `FIREWORKS_API_KEY=...` | Fast open-model inference |
+| Lambda Labs | `LAMBDALABS_API_KEY=...` | GPU cloud + hosted open models |
+| Modal | `MODAL_API_TOKEN=...` | Serverless GPU compute |
+| Replicate | `REPLICATE_API_TOKEN=...` | Model hosting marketplace |
+| RunPod | `RUNPOD_API_KEY=...` | Serverless GPU |
+| Together AI | `TOGETHER_API_KEY=...` | Managed open-model inference |
+
+All GPU/compute providers expose an OpenAI-compatible `/v1/chat/completions` endpoint and use
+the `langchain-openai` adapter, so they drop into the same model-routing pipeline as the
+hosted providers.
+
+#### Adding a New Provider
+
+To add support for a new model or compute provider:
+
+1. **Edit `src/general_ludd/models/provider_presets.py`** — add an entry to the
+   `PROVIDER_PRESETS` dict with the provider's `api_base_url`, `provider_package`
+   (typically `langchain-openai` for OpenAI-compatible endpoints), `provider_class`
+   (typically `ChatOpenAI`), `credential_env_var`, and `display_name`.
+2. **Set the env var** — export the credential (e.g. `export BASETEN_API_KEY=...`) or
+   store it via `gludd login <provider>` / OpenBao so it is never committed to config YAML.
+3. **Restart the daemon** — the new provider is loaded on boot from the presets file and
+   becomes selectable in model routing and profile configuration.
 
 ## The `general_ludd.agent` Ansible Collection
 
@@ -475,15 +475,24 @@ gludd login github                   # OAuth2 + PKCE flow (requires OAuth app)
 
 ### Supported Services
 
-| Service    | Command              | Auth method   | Credential env var      |
-|------------|---------------------|---------------|--------------------------|
-| OpenAI     | `gludd login openai`    | API key       | `OPENAI_API_KEY`          |
-| DeepSeek   | `gludd login deepseek`  | API key       | `DEEPSEEK_API_KEY`        |
-| Z.AI       | `gludd login zai`       | API key       | `ZAI_API_KEY`             |
-| Anthropic  | `gludd login anthropic` | API key       | `ANTHROPIC_API_KEY`       |
-| OpenRouter | `gludd login openrouter`| API key       | `OPENROUTER_API_KEY`      |
-| GitHub     | `gludd login github`    | OAuth2 + PKCE | `GITHUB_TOKEN`            |
-| Google     | `gludd login gemini`    | OAuth2 + PKCE | `GOOGLE_API_KEY`          |
+| Service     | Command               | Auth method   | Credential env var      |
+|-------------|-----------------------|---------------|--------------------------|
+| Anthropic   | `gludd login anthropic`  | API key       | `ANTHROPIC_API_KEY`       |
+| Baseten     | `gludd login baseten`    | API key       | `BASETEN_API_KEY`         |
+| CoreWeave   | `gludd login coreweave`  | API key       | `COREWEAVE_API_KEY`       |
+| DeepSeek    | `gludd login deepseek`   | API key       | `DEEPSEEK_API_KEY`        |
+| Fireworks AI| `gludd login fireworks`  | API key       | `FIREWORKS_API_KEY`       |
+| GitHub      | `gludd login github`     | OAuth2 + PKCE | `GITHUB_TOKEN`            |
+| Google      | `gludd login gemini`     | OAuth2 + PKCE | `GOOGLE_API_KEY`          |
+| Groq        | `gludd login groq`       | API key       | `GROQ_API_KEY`            |
+| Lambda Labs | `gludd login lambdalabs` | API key       | `LAMBDALABS_API_KEY`      |
+| Modal       | `gludd login modal`      | API key       | `MODAL_API_TOKEN`         |
+| OpenAI      | `gludd login openai`     | API key       | `OPENAI_API_KEY`          |
+| OpenRouter  | `gludd login openrouter` | API key       | `OPENROUTER_API_KEY`      |
+| Replicate   | `gludd login replicate`  | API key       | `REPLICATE_API_TOKEN`     |
+| RunPod      | `gludd login runpod`     | API key       | `RUNPOD_API_KEY`          |
+| Together AI | `gludd login together`   | API key       | `TOGETHER_API_KEY`        |
+| Z.AI        | `gludd login zai`        | API key       | `ZAI_API_KEY`             |
 
 Credentials are stored in `~/.config/gludd/credentials.env` (permissions 600).
 Use `--store openbao` to store in OpenBao instead.

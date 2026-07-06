@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import pytest_asyncio
@@ -147,7 +147,7 @@ class TestClaimContention:
                     )
                 return await real_execute(stmt, *a, **k)
 
-            session.execute = flaky_execute  # type: ignore[method-assign]  # pytest monkeypatch
+            cast(Any, session).execute = flaky_execute
             # Must not raise: the locked guard is a lost race -> the row is skipped.
             claimed = await repo.claim_runnable(limit=10)
             assert calls["n"] == 1  # we did inject one lock error
@@ -172,7 +172,7 @@ class TestClaimContention:
                     )
                 return await real_execute(stmt, *a, **k)
 
-            session.execute = boom_execute  # type: ignore[method-assign]  # pytest monkeypatch
+            cast(Any, session).execute = boom_execute
             with pytest.raises(OperationalError):
                 await repo.claim_runnable(limit=10)
 
@@ -216,7 +216,7 @@ class TestClaimContention:
                     )
                 return await real_execute(stmt, *a, **k)
 
-            session.execute = flaky_execute  # type: ignore[method-assign]  # pytest monkeypatch
+            cast(Any, session).execute = flaky_execute
             claimed = await repo.claim_unreviewed(limit=10)
             assert calls["n"] == 1
             assert all(c.return_id != "R-LK" for c in claimed)

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pkgutil
 import time
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -151,7 +151,7 @@ class _NonDictSource:
     KIND = "logs"
 
     def health(self) -> dict[str, Any]:
-        return None  # type: ignore[return-value]
+        return cast(Any, None)
 
     def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         return []
@@ -243,7 +243,7 @@ class TestIsConfigured:
     def test_source_with_env_var_present_is_configured(self, monkeypatch: Any) -> None:
         monkeypatch.setenv("MY_TOKEN", "secret")
         src = _UnhealthySource()
-        src.token_env = "MY_TOKEN"  # type: ignore[attr-defined]
+        cast(Any, src).token_env = "MY_TOKEN"
         assert _is_configured(src) is True
 
 
@@ -373,7 +373,7 @@ class TestConnectorRegistryHealthAll:
                 self.KIND = "logs"
 
             def health(self) -> dict[str, Any]:
-                return ["not a dict"]  # type: ignore[return-value]
+                return cast(Any, ["not a dict"])
 
             def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
                 return []

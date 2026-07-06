@@ -22,7 +22,7 @@ Coverage:
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -749,7 +749,7 @@ class TestFailSoftBehavior:
             def fetch_compute_prices(self) -> list[ComputePrice]:
                 raise RuntimeError("source exploded")
 
-        catalog = PricingCatalog(sources=[BrokenSource()])  # type: ignore[list-item]
+        catalog = cast(Any, PricingCatalog)(sources=[BrokenSource()])
         # Must not raise
         prices = catalog.all_model_prices("broken", refresh=True)
         assert prices == []
@@ -773,7 +773,7 @@ class TestFailSoftBehavior:
             def fetch_compute_prices(self) -> list[ComputePrice]:
                 return []
 
-        catalog = PricingCatalog(sources=[BrokenSource(), AnthropicSource()])  # type: ignore[list-item]
+        catalog = cast(Any, PricingCatalog)(sources=[BrokenSource(), AnthropicSource()])
         # Anthropic (static) should still work
         prices = catalog.all_model_prices()
         anthropic_prices = [p for p in prices if p.provider == "anthropic"]
@@ -794,8 +794,8 @@ class TestFailSoftBehavior:
             def fetch_compute_prices(self) -> list[ComputePrice]:
                 return []
 
-        catalog = PricingCatalog(
-            sources=[ExplodingBillingSource(), AnthropicSource()]  # type: ignore[list-item]
+        catalog = cast(Any, PricingCatalog)(
+            sources=[ExplodingBillingSource(), AnthropicSource()]
         )
         # Must not raise; must still include Anthropic
         billing_list = catalog.all_billing()

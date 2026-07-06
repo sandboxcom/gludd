@@ -10,6 +10,8 @@ edits or returns a conflict-flagged result with markers.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from general_ludd.integration.safe_merge import (
@@ -140,16 +142,16 @@ class TestSafeMergeFile:
         return p
 
     def test_clean_merge_writes_dest(self, tmp_path: object) -> None:
-        base = self._write(tmp_path / "base.txt", BASE)  # type: ignore[operator]
+        base = self._write(cast(Any, tmp_path) / "base.txt", BASE)
         ours = self._write(
-            tmp_path / "ours.txt",  # type: ignore[operator]
+            cast(Any, tmp_path) / "ours.txt",
             BASE.replace("line1", "OURS_TOP"),
         )
         theirs = self._write(
-            tmp_path / "theirs.txt",  # type: ignore[operator]
+            cast(Any, tmp_path) / "theirs.txt",
             BASE.replace("line5", "THEIRS_BOTTOM"),
         )
-        dest = str(tmp_path / "dest.txt")  # type: ignore[operator]
+        dest = str(cast(Any, tmp_path) / "dest.txt")
 
         result = safe_merge_file(base, ours, theirs, dest)
 
@@ -160,16 +162,16 @@ class TestSafeMergeFile:
         assert "THEIRS_BOTTOM" in written
 
     def test_conflict_refuses_to_write(self, tmp_path: object) -> None:
-        base = self._write(tmp_path / "base.txt", BASE)  # type: ignore[operator]
+        base = self._write(cast(Any, tmp_path) / "base.txt", BASE)
         ours = self._write(
-            tmp_path / "ours.txt",  # type: ignore[operator]
+            cast(Any, tmp_path) / "ours.txt",
             BASE.replace("line3", "OURS_WINS"),
         )
         theirs = self._write(
-            tmp_path / "theirs.txt",  # type: ignore[operator]
+            cast(Any, tmp_path) / "theirs.txt",
             BASE.replace("line3", "THEIRS_WINS"),
         )
-        dest = str(tmp_path / "dest.txt")  # type: ignore[operator]
+        dest = str(cast(Any, tmp_path) / "dest.txt")
 
         result = safe_merge_file(base, ours, theirs, dest)
 
@@ -181,13 +183,13 @@ class TestSafeMergeFile:
         assert not os.path.exists(dest)
 
     def test_only_one_side_changed_writes_that(self, tmp_path: object) -> None:
-        base = self._write(tmp_path / "base.txt", BASE)  # type: ignore[operator]
+        base = self._write(cast(Any, tmp_path) / "base.txt", BASE)
         ours = self._write(
-            tmp_path / "ours.txt",  # type: ignore[operator]
+            cast(Any, tmp_path) / "ours.txt",
             BASE.replace("line1", "OURS"),
         )
-        theirs = self._write(tmp_path / "theirs.txt", BASE)  # type: ignore[operator]
-        dest = str(tmp_path / "dest.txt")  # type: ignore[operator]
+        theirs = self._write(cast(Any, tmp_path) / "theirs.txt", BASE)
+        dest = str(cast(Any, tmp_path) / "dest.txt")
 
         result = safe_merge_file(base, ours, theirs, dest)
 
@@ -196,12 +198,12 @@ class TestSafeMergeFile:
             assert "OURS" in fh.read()
 
     def test_missing_base_raises(self, tmp_path: object) -> None:
-        ours = self._write(tmp_path / "ours.txt", BASE)  # type: ignore[operator]
-        theirs = self._write(tmp_path / "theirs.txt", BASE)  # type: ignore[operator]
-        dest = str(tmp_path / "dest.txt")  # type: ignore[operator]
+        ours = self._write(cast(Any, tmp_path) / "ours.txt", BASE)
+        theirs = self._write(cast(Any, tmp_path) / "theirs.txt", BASE)
+        dest = str(cast(Any, tmp_path) / "dest.txt")
         with pytest.raises((FileNotFoundError, OSError)):
             safe_merge_file(
-                str(tmp_path / "nope.txt"),  # type: ignore[operator]
+                str(cast(Any, tmp_path) / "nope.txt"),
                 ours,
                 theirs,
                 dest,

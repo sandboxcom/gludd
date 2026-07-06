@@ -9,10 +9,12 @@ Endpoints:
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from general_ludd.db.models import MemoryRecordModel
+from general_ludd.db.repository import MemoryRepository
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +38,7 @@ class MemoryRecordResponse(BaseModel):
     updated_at: str
 
     @staticmethod
-    def from_model(row: Any) -> MemoryRecordResponse:
+    def from_model(row: MemoryRecordModel) -> MemoryRecordResponse:
         return MemoryRecordResponse(
             id=row.id,
             agent_id=row.agent_id,
@@ -49,14 +51,14 @@ class MemoryRecordResponse(BaseModel):
         )
 
 
-def _get_memory_repo(app: FastAPI) -> Any:
+def _get_memory_repo(app: FastAPI) -> MemoryRepository:
     repo = getattr(app.state, "_memory_repo", None)
-    if repo is None:
+    if not isinstance(repo, MemoryRepository):
         raise HTTPException(status_code=503, detail="Memory repository not available")
     return repo
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/api/memory", status_code=201)
     async def api_memory_create(req: MemoryCreateRequest) -> MemoryRecordResponse:

@@ -107,7 +107,11 @@ def test_watchdog_gate_max_runtime_is_one_hour():
 
 
 def test_watchdog_check_gate_background_kills_stale():
+    import importlib
+
     import scripts.agent_watchdog as aw
+
+    importlib.reload(aw)
     pid_file = Path(".gate-background.pid")
     status_file = Path(".gate-status")
 

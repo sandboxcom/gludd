@@ -17,7 +17,7 @@ import sys
 import types
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -135,7 +135,7 @@ def _inject_fake_git(module: ModuleType, monkeypatch: pytest.MonkeyPatch, **beha
         return git
 
     fake_pkg = types.ModuleType("general_ludd.git_automation.repo")
-    fake_pkg.GitAutomation = _factory  # type: ignore[attr-defined]
+    cast(Any, fake_pkg).GitAutomation = _factory
     monkeypatch.setitem(sys.modules, "general_ludd.git_automation.repo", fake_pkg)
     return holder
 

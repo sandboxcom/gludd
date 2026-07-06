@@ -7,7 +7,7 @@ into a metric record.
 Design (matches the package contract):
 
   - The query executor is INJECTABLE via ``executor=``. It is a callable
-    ``(sql: str) -> list[Mapping[str, Any]]`` returning result rows as dicts
+    ``(sql: str) -> Sequence[ClickhouseRow]`` returning result rows as dicts
     (the shape ClickHouse's ``JSONEachRow`` / ``FORMAT JSON`` produces). Tests
     inject a canned executor so neither a live server nor an HTTP round-trip is
     needed.
@@ -28,12 +28,42 @@ import json
 import logging
 import os
 import time
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, TypedDict, cast
+
+if TYPE_CHECKING:
+    from general_ludd.connectors.base import NormalizedRecord
 
 logger = logging.getLogger(__name__)
 
-Executor = Callable[[str], "Sequence[Mapping[str, Any]]"]
+
+class ClickhouseRow(TypedDict, total=False):
+    metric: str
+    value: float | int | str
+    database: str
+    table: str
+    is_readonly: int
+    absolute_delay: float | int
+    queue_size: float | int
+
+
+class ClickhouseConfig(TypedDict, total=False):
+    name: str
+    url: str
+    user: str
+    password_env: str
+
+
+class ClickhouseHealthResult(TypedDict, total=False):
+    ok: bool
+    detail: str
+
+
+class ClickhouseQuerySpec(TypedDict, total=False):
+    pass
+
+
+Executor = Callable[[str], Sequence[ClickhouseRow]]
 
 _DRIVER_UNAVAILABLE = "driver unavailable"
 
@@ -59,8 +89,8 @@ class ClickHouseStatsSource:
 
     KIND = "metrics"
 
-    def __init__(self, config: Mapping[str, Any] | None = None, executor: Executor | None = None) -> None:
-        cfg: dict[str, Any] = dict(config or {})
+    def __init__(self, config: ClickhouseConfig | None = None, executor: Executor | None = None) -> None:
+        cfg: dict[str, object] = dict(config or {})
         self.name: str = str(cfg.get("name", "clickhouse"))
         self._config = cfg
         self._url: str = str(cfg.get("url", "http://localhost:8123")).rstrip("/")
@@ -97,7 +127,7 @@ class ClickHouseStatsSource:
         url = self._url
         user = self._user
 
-        def _run(sql: str) -> Sequence[Mapping[str, Any]]:
+        def _run(sql: str) -> Sequence[ClickhouseRow]:
             # FORMAT JSONEachRow returns one JSON object per line.
             query = sql + " FORMAT JSONEachRow"
             with httpx.Client(timeout=20.0) as client:
@@ -107,21 +137,21 @@ class ClickHouseStatsSource:
                     auth=(user, password),
                 )
                 resp.raise_for_status()
-                rows: list[Mapping[str, Any]] = []
+                rows: list[ClickhouseRow] = []
                 for line in resp.text.splitlines():
                     line = line.strip()
                     if not line:
                         continue
                     parsed = json.loads(line)
                     if isinstance(parsed, dict):
-                        rows.append(parsed)
+                        rows.append(cast("ClickhouseRow", parsed))
                 return rows
 
         return _run
 
     # -- health ------------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> ClickhouseHealthResult:
         """Probe the source. Never raises."""
         executor = self._get_executor()
         if executor is None:
@@ -135,13 +165,13 @@ class ClickHouseStatsSource:
 
     # -- query -------------------------------------------------------------
 
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: ClickhouseQuerySpec | None = None) -> list[NormalizedRecord]:
         executor = self._get_executor()
         if executor is None:
             return []
 
         ts = time.time()
-        out: list[dict[str, Any]] = []
+        out: list[NormalizedRecord] = []
         for table, sql in _QUERIES:
             try:
                 rows = executor(sql)
@@ -161,10 +191,10 @@ class ClickHouseStatsSource:
         ts: float,
         message: str,
         value: float | int | None,
-        labels: dict[str, Any],
-        raw: Any,
+        labels: dict[str, object],
+        raw: object,
         status: str = "ok",
-    ) -> dict[str, Any]:
+    ) -> NormalizedRecord:
         return {
             "ts": ts,
             "source": self.name,
@@ -177,9 +207,9 @@ class ClickHouseStatsSource:
         }
 
     def _metric_records(
-        self, rows: Sequence[Mapping[str, Any]], table: str, ts: float
-    ) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+        self, rows: Sequence[ClickhouseRow], table: str, ts: float
+    ) -> list[NormalizedRecord]:
+        out: list[NormalizedRecord] = []
         for row in rows:
             metric = row.get("metric")
             if metric is None:
@@ -196,9 +226,9 @@ class ClickHouseStatsSource:
         return out
 
     def _replica_records(
-        self, rows: Sequence[Mapping[str, Any]], table: str, ts: float
-    ) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+        self, rows: Sequence[ClickhouseRow], table: str, ts: float
+    ) -> list[NormalizedRecord]:
+        out: list[NormalizedRecord] = []
         for row in rows:
             db = str(row.get("database", ""))
             tbl = str(row.get("table", ""))
@@ -219,7 +249,7 @@ class ClickHouseStatsSource:
         return out
 
 
-def _num(value: Any) -> float | int | None:
+def _num(value: object) -> float | int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):

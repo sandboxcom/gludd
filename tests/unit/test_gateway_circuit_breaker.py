@@ -28,22 +28,6 @@ from typing import ClassVar
 import httpx
 import pytest
 
-# Warm the routing_roles <-> schemas.benchmark import cycle BEFORE importing the
-# gateway. That cycle (schemas.benchmark -> routing_roles.weights -> back to
-# schemas.benchmark.TaskType) is a pre-existing, repo-wide import-ordering quirk:
-# importing general_ludd.models.gateway FIRST (before anything imports
-# routing_roles) raises a partial-init ImportError. Every gateway-importing test
-# module hits it in isolation; the full suite happens to import routing_roles
-# earlier. Importing it here first makes THIS module collectable in any order.
-# imported for side effects — warms the routing_roles <-> schemas.benchmark
-# import cycle BEFORE importing the gateway. That cycle (schemas.benchmark ->
-# routing_roles.weights -> back to schemas.benchmark.TaskType) is a pre-existing,
-# repo-wide import-ordering quirk: importing general_ludd.models.gateway FIRST
-# (before anything imports routing_roles) raises a partial-init ImportError.
-# Every gateway-importing test module hits it in isolation; the full suite
-# happens to import routing_roles earlier. Importing it here first makes THIS
-# module collectable in any order.
-import general_ludd.routing_roles  # noqa: F401
 from general_ludd.models.gateway import (
     ModelGateway,
     ModelProfile,

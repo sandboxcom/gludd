@@ -17,6 +17,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -99,9 +100,9 @@ def _fake_client_error(code: str, message: str = "probe") -> Exception:
     """Build a botocore-shaped ClientError for tests (without importing botocore)."""
     try:
         # types-botocore not installed; import-not-found is expected here.
-        from botocore.exceptions import ClientError  # type: ignore[import-not-found]
+        from botocore.exceptions import ClientError
     except ImportError:
-        ClientError = _ClientErrorFallback
+        ClientError = cast(Any, _ClientErrorFallback)  # botocore not installed
     return ClientError({"Error": {"Code": code, "Message": message}}, "DryRun")
 
 

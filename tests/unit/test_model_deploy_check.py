@@ -8,6 +8,7 @@ finding. Remediation patches must have a stable, yaml-first shape.
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+from typing import Any, cast
 
 import pytest
 
@@ -449,20 +450,20 @@ def test_rule_l_silent_on_good() -> None:
 )
 def test_malformed_input_never_raises(bad: object) -> None:
     det = MisconfigDetector()
-    findings = det.check(bad)  # type: ignore[arg-type]
+    findings = cast(Any, det).check(bad)
     assert isinstance(findings, list)
     assert all(isinstance(f, Finding) for f in findings)
 
 
 def test_malformed_input_yields_critical() -> None:
     det = MisconfigDetector()
-    findings = det.check("totally-broken")  # type: ignore[arg-type]
+    findings = cast(Any, det).check("totally-broken")
     assert any(f.severity == "critical" for f in findings)
 
 
 def test_malformed_gpu_info_never_raises() -> None:
     det = MisconfigDetector()
-    findings = det.check(_good_vllm(), gpu_info="not-a-dict")  # type: ignore[arg-type]
+    findings = cast(Any, det).check(_good_vllm(), gpu_info="not-a-dict")
     assert isinstance(findings, list)
 
 

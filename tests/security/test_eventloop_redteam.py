@@ -16,6 +16,7 @@ non-sqlite URLs), so SELECT ... FOR UPDATE SKIP LOCKED is a no-op and every
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 import pytest
 import pytest_asyncio
@@ -161,7 +162,7 @@ async def test_pid_cap_release_deletes_lease_row(session_factory):
         loop._tick_state["pid_outputs"] = _CapOutputs(1)
 
         # Skip the actual dispatch path so the test isolates the cap-trim logic.
-        loop._dispatch_jobs_via_scheduler = _noop_dispatch  # type: ignore[assignment]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_jobs_via_scheduler = _noop_dispatch
 
         await loop._phase_dispatch_execute_jobs()
         await s.commit()

@@ -9,6 +9,8 @@ path, shell metacharacters into the ``--wrap`` string.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from general_ludd.infra.local_inference import (
@@ -154,7 +156,7 @@ def test_out_of_range_port_rejected(mgr: LocalInferenceManager, port: int):
 def test_non_int_port_rejected(mgr: LocalInferenceManager):
     # A string port like "8000; rm -rf" must not flow into argv.
     cfg = LocalServerConfig(engine="vllm", model_name="m")
-    cfg.port = "8000; rm -rf"  # type: ignore[assignment]
+    cast(Any, cfg).port = "8000; rm -rf"
     with pytest.raises(ValueError):
         mgr._build_command(cfg)
 
@@ -174,7 +176,7 @@ def test_extra_args_with_metacharacters_rejected(mgr: LocalInferenceManager):
 
 def test_extra_args_non_string_rejected(mgr: LocalInferenceManager):
     cfg = LocalServerConfig(engine="vllm", model_name="m")
-    cfg.extra_args = ["--foo", 123]  # type: ignore[list-item]
+    cast(Any, cfg).extra_args = ["--foo", 123]
     with pytest.raises(ValueError):
         mgr._build_command(cfg)
 

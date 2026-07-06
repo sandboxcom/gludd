@@ -30,6 +30,7 @@ import binascii
 import contextlib
 import hashlib
 import hmac
+import importlib
 import json
 import os
 import threading
@@ -39,14 +40,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - non-POSIX platform (e.g. Windows)
-    # Platform-specific: fcntl is POSIX-only (Linux/macOS). The try/except is
-    # the documented Python idiom for optional stdlib modules; the suppression
-    # is required because mypy sees the import as defining ``fcntl``.
-    fcntl = None  # type: ignore[assignment]
-
 from general_ludd.integrity.scanner import (
     ChangeRecord,
     FileIntegrityScanner,
@@ -54,6 +47,12 @@ from general_ludd.integrity.scanner import (
     IntegrityStoreError,
     _get_integrity_key,
 )
+
+# Platform-specific: fcntl is POSIX-only (Linux/macOS).
+# contextlib.suppress handles the optional-stdlib-module idiom.
+fcntl: Any = None
+with contextlib.suppress(ImportError):
+    fcntl = importlib.import_module("fcntl")
 
 # Reuse the scanner's HMAC-SHA256-over-serialized-bytes helper verbatim so the
 # change log is signed with the exact same construction as the baseline store.

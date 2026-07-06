@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 from general_ludd.security.sanitize import is_path_within
 from general_ludd.skills.catalog import SkillCatalog
@@ -16,7 +16,28 @@ from general_ludd.skills.fetcher import (
 )
 
 
-def _get_catalog(app: FastAPI) -> Any:
+class SkillCatalogSearchRequest(BaseModel):
+    query: str = ""
+    tags: list[str] | None = None
+    category: str | None = None
+    limit: int = 20
+
+
+class SkillCatalogInstallRequest(BaseModel):
+    name: str = ""
+
+
+class SkillFetchRequest(BaseModel):
+    url: str = ""
+
+
+class SkillFetchGithubRequest(BaseModel):
+    repo: str = ""
+    path: str = ""
+    branch: str = "main"
+
+
+def _get_catalog(app: FastAPI) -> SkillCatalog:
     catalog = getattr(app.state, "_skill_catalog", None)
     if catalog is None:
         catalog = SkillCatalog()
@@ -24,16 +45,18 @@ def _get_catalog(app: FastAPI) -> Any:
     return catalog
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/skills/catalog/search")
-    async def admin_skills_catalog_search(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_skills_catalog_search(
+        req: SkillCatalogSearchRequest,
+    ) -> dict[str, object]:
         catalog = _get_catalog(app)
         results = catalog.search(
-            query=req.get("query", ""),
-            tags=req.get("tags"),
-            category=req.get("category"),
-            limit=req.get("limit", 20),
+            query=req.query,
+            tags=req.tags,
+            category=req.category,
+            limit=req.limit,
         )
         return {
             "results": [
@@ -49,7 +72,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/skills/catalog")
-    async def admin_skills_catalog() -> dict[str, Any]:
+    async def admin_skills_catalog() -> dict[str, object]:
         catalog = _get_catalog(app)
         results = catalog.search(limit=100)
         return {
@@ -66,9 +89,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/skills/catalog/install")
-    async def admin_skills_catalog_install(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_skills_catalog_install(
+        req: SkillCatalogInstallRequest,
+    ) -> dict[str, object]:
         catalog = _get_catalog(app)
-        name = req.get("name", "")
+        name = req.name
         config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
         path = catalog.install_skill(name, config_dir)
         if path is None:
@@ -76,8 +101,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"installed": str(path), "name": name}
 
     @app.post("/admin/skills/fetch")
-    async def admin_skills_fetch(req: dict[str, Any]) -> dict[str, Any]:
-        url = req.get("url", "")
+    async def admin_skills_fetch(req: SkillFetchRequest) -> dict[str, object]:
+        url = req.url
         if not url:
             raise HTTPException(status_code=422, detail="url required")
         # SSRF guard: reject non-https or internal-host URLs before any network
@@ -102,10 +127,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"installed": str(path), "url": url}
 
     @app.post("/admin/skills/fetch-github")
-    async def admin_skills_fetch_github(req: dict[str, Any]) -> dict[str, Any]:
-        repo = req.get("repo", "")
-        skill_path = req.get("path", "")
-        branch = req.get("branch", "main")
+    async def admin_skills_fetch_github(
+        req: SkillFetchGithubRequest,
+    ) -> dict[str, object]:
+        repo = req.repo
+        skill_path = req.path
+        branch = req.branch
         if not repo or not skill_path:
             raise HTTPException(status_code=422, detail="repo and path required")
         try:

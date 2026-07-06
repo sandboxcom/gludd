@@ -8,6 +8,8 @@ conversion, the health() 200-vs-403 behavior, and the literal-host SSRF block.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from general_ludd.connectors.jenkins import JenkinsSource
@@ -240,7 +242,7 @@ def test_health_never_raises_on_transport_error() -> None:
     def boom(url: str, headers: dict[str, str]) -> tuple[int, object]:
         raise OSError("connection refused")
 
-    src = _make_source(boom)  # type: ignore[arg-type]
+    src = cast(Any, _make_source)(boom)
     h = src.health()
     assert h["ok"] is False
     assert "error" in h

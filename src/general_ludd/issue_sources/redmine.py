@@ -23,8 +23,37 @@ import ipaddress
 import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Protocol, TypedDict, cast
 from urllib.parse import urlsplit
+
+
+class RedmineNamedRef(TypedDict, total=False):
+    """A Redmine named reference (tracker, status, priority, category, ...).
+
+    Redmine emits these as ``{"id": int, "name": str}`` sub-objects on issues.
+    """
+
+    id: int
+    name: str
+
+
+class RedmineIssue(TypedDict, total=False):
+    """A Redmine issue as returned by ``GET /issues.json``.
+
+    All fields are optional (``total=False``) because Redmine projections vary
+    by endpoint parameters and the sub-objects (tracker, status, ...) may be
+    absent on issues that lack the corresponding assignment.
+    """
+
+    id: int
+    subject: str
+    description: str
+    updated_on: str
+    tracker: RedmineNamedRef
+    category: RedmineNamedRef
+    status: RedmineNamedRef
+    assigned_to: RedmineNamedRef
+    priority: RedmineNamedRef
 
 
 class _Response(Protocol):
@@ -32,7 +61,7 @@ class _Response(Protocol):
 
     status_code: int
 
-    def json(self) -> Any:  # pragma: no cover - structural typing only
+    def json(self) -> object:  # pragma: no cover - structural typing only
         ...
 
 
@@ -59,15 +88,19 @@ def _default_transport() -> Transport:
         url: str,
         *,
         headers: Mapping[str, str],
-        params: Mapping[str, Any] | None = None,
-        json: Mapping[str, Any] | None = None,
+        params: Mapping[str, object] | None = None,
+        json: Mapping[str, object] | None = None,
         timeout: float,
     ) -> _Response:
+        # Cast narrows our wide config-derived param values to the narrower
+        # shape requests' stubs declare (str/int/float values). At runtime
+        # requests stringifies whatever it receives, so the cast is sound.
+        narrowed_params = cast("dict[str, str]", dict(params)) if params else None
         return requests.request(
             method,
             url,
             headers=dict(headers),
-            params=dict(params) if params else None,
+            params=narrowed_params,
             json=dict(json) if json is not None else None,
             timeout=timeout,
         )
@@ -118,7 +151,7 @@ def _host_is_internal(host: str) -> bool:
     )
 
 
-def _parse_ts(value: Any) -> str | None:
+def _parse_ts(value: object) -> str | None:
     """Parse a Redmine ``updated_on`` timestamp into ISO-8601 UTC text.
 
     Returns ``None`` when the value is missing or unparseable rather than
@@ -131,6 +164,7 @@ def _parse_ts(value: Any) -> str | None:
     text = value.strip()
     # Redmine commonly emits e.g. "2024-05-01T12:30:00Z".
     candidate = text.replace("Z", "+00:00")
+    dt: datetime | None = None
     try:
         dt = datetime.fromisoformat(candidate)
     except ValueError:
@@ -140,8 +174,8 @@ def _parse_ts(value: Any) -> str | None:
                 break
             except ValueError:
                 continue
-        else:
-            return None
+    if dt is None:
+        return None
 
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
@@ -155,7 +189,7 @@ class RedmineIssueSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any],
+        config: Mapping[str, object],
         transport: Transport | None = None,
     ) -> None:
         base_url = str(config.get("base_url", "")).rstrip("/")
@@ -178,11 +212,15 @@ class RedmineIssueSource:
             raise ValueError("config['api_key_env'] is required")
         self._api_key_env = str(api_key_env)
 
-        self._timeout = float(config.get("timeout", 15.0))
+        raw_timeout = config.get("timeout", 15.0)
+        self._timeout = float(raw_timeout) if isinstance(raw_timeout, (int, float, str)) else 15.0
         # Optional explicit status-name -> status-id resolution map.
-        self._status_map: dict[str, int] = {
-            str(k): int(v) for k, v in dict(config.get("status_map", {})).items()
-        }
+        self._status_map: dict[str, int] = {}
+        raw_status_map = config.get("status_map") or {}
+        if isinstance(raw_status_map, Mapping):
+            for k, v in raw_status_map.items():
+                if isinstance(v, (int, str)) and not isinstance(v, bool):
+                    self._status_map[str(k)] = int(v)
         self._transport: Transport = transport or _default_transport()
 
     # -- internals -----------------------------------------------------------
@@ -200,8 +238,8 @@ class RedmineIssueSource:
         method: str,
         path: str,
         *,
-        params: Mapping[str, Any] | None = None,
-        json: Mapping[str, Any] | None = None,
+        params: Mapping[str, object] | None = None,
+        json: Mapping[str, object] | None = None,
     ) -> _Response:
         url = f"{self.base_url}{path}"
         return self._transport(
@@ -237,13 +275,13 @@ class RedmineIssueSource:
         raise ValueError(f"cannot resolve status_id for status {status!r}")
 
     @staticmethod
-    def _name_of(node: Any) -> str | None:
+    def _name_of(node: object) -> str | None:
         if isinstance(node, Mapping):
             value = node.get("name")
             return str(value) if value is not None else None
         return None
 
-    def _normalize(self, issue: Mapping[str, Any]) -> dict[str, Any]:
+    def _normalize(self, issue: RedmineIssue) -> dict[str, object]:
         issue_id = issue.get("id")
         external_id = str(issue_id)
 
@@ -269,9 +307,21 @@ class RedmineIssueSource:
             "raw": dict(issue),
         }
 
+    @staticmethod
+    def _extract_issues(payload: object) -> list[RedmineIssue]:
+        """Narrow a Redmine ``/issues.json`` response to its issue entries."""
+        issues: list[RedmineIssue] = []
+        if isinstance(payload, Mapping):
+            raw = payload.get("issues", [])
+            if isinstance(raw, Sequence):
+                for entry in raw:
+                    if isinstance(entry, Mapping):
+                        issues.append(cast(RedmineIssue, entry))
+        return issues
+
     # -- public API ----------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the Redmine API. Never raises; returns {'ok', 'detail'}."""
 
         try:
@@ -288,21 +338,23 @@ class RedmineIssueSource:
         except Exception as exc:  # health must never raise
             return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
 
-    def fetch_issues(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def fetch_issues(
+        self, spec: Mapping[str, object] | None = None
+    ) -> list[dict[str, object]]:
         """GET /issues.json filtered by spec; return normalized issue dicts."""
 
-        spec = dict(spec or {})
-        params: dict[str, Any] = {}
+        spec_dict: dict[str, object] = dict(spec or {})
+        params: dict[str, object] = {}
 
-        project_id = spec.get("project_id", self.project_id)
+        project_id = spec_dict.get("project_id", self.project_id)
         if project_id is not None:
             params["project_id"] = project_id
 
-        status_id = spec.get("status_id")
+        status_id = spec_dict.get("status_id")
         if status_id is not None:
             params["status_id"] = status_id
 
-        limit = spec.get("limit")
+        limit = spec_dict.get("limit")
         if limit is not None:
             params["limit"] = limit
 
@@ -310,30 +362,19 @@ class RedmineIssueSource:
         if not (200 <= int(resp.status_code) < 300):
             raise RedmineError(f"fetch_issues failed: status {resp.status_code}")
 
-        payload = resp.json()
-        issues: Sequence[Any] = []
-        if isinstance(payload, Mapping):
-            raw = payload.get("issues", [])
-            if isinstance(raw, Sequence):
-                issues = raw
-
-        return [
-            self._normalize(issue)
-            for issue in issues
-            if isinstance(issue, Mapping)
-        ]
+        return [self._normalize(issue) for issue in self._extract_issues(resp.json())]
 
     def update_status(
         self,
         external_id: str,
         status: str,
         comment: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """PUT /issues/{id}.json setting status_id (and optional notes)."""
 
         status_id = self._resolve_status_id(status)
-        issue_body: dict[str, Any] = {"status_id": status_id, "notes": comment}
-        body = {"issue": issue_body}
+        issue_body: dict[str, object] = {"status_id": status_id, "notes": comment}
+        body: dict[str, object] = {"issue": issue_body}
 
         resp = self._request(
             "PUT", f"/issues/{external_id}.json", json=body
@@ -349,10 +390,10 @@ class RedmineIssueSource:
             "status_id": status_id,
         }
 
-    def add_comment(self, external_id: str, comment: str) -> dict[str, Any]:
+    def add_comment(self, external_id: str, comment: str) -> dict[str, object]:
         """PUT /issues/{id}.json appending a note."""
 
-        body = {"issue": {"notes": comment}}
+        body: dict[str, object] = {"issue": {"notes": comment}}
         resp = self._request(
             "PUT", f"/issues/{external_id}.json", json=body
         )

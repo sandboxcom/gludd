@@ -8,7 +8,7 @@ cache).
 Design (matches the package contract):
 
   - The command executor is INJECTABLE via ``executor=``. It is a callable
-    ``(command: str) -> Mapping[str, Any]`` that returns the raw document a
+    ``(command: str) -> Mapping[str, object]`` that returns the raw document a
     MongoDB admin command yields. Tests inject a canned executor so no real
     database (or ``pymongo`` driver) is ever required.
   - When no executor is given, a default one is built LAZILY on first use. It
@@ -25,12 +25,88 @@ import logging
 import os
 import time
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TypedDict, cast
 
 logger = logging.getLogger(__name__)
 
+
+# --- TypedDicts for MongoDB admin-command result documents -------------------
+# These model the subset of keys this connector consumes. ``total=False`` because
+# every field is optional at the MongoDB wire level. They double as living
+# documentation of the shapes produced by serverStatus / currentOp /
+# replSetGetStatus, and underpin the executor signature (which stays the more
+# permissive ``Mapping[str, object]`` so per-command ``.get()`` stays ergonomic).
+
+
+class MongoOpTime(TypedDict, total=False):
+    """The ``optime`` sub-document of a replica-set member."""
+
+    ts: int | float
+
+
+class MongoMember(TypedDict, total=False):
+    """One element of ``replSetGetStatus().members``."""
+
+    name: str
+    stateStr: str
+    optimeDate: int | float
+    optime: MongoOpTime
+    optime_seconds: int | float
+
+
+class MongoReplSetDoc(TypedDict, total=False):
+    """Result of ``replSetGetStatus``."""
+
+    members: list[MongoMember]
+
+
+class MongoCurrentOpDoc(TypedDict, total=False):
+    """Result of ``currentOp``."""
+
+    inprog: list[object]
+
+
+class MongoServerStatusDoc(TypedDict, total=False):
+    """Result of ``serverStatus`` (the subset of keys we consume)."""
+
+    connections: Mapping[str, int | float]
+    opcounters: Mapping[str, int | float]
+    wiredTiger: Mapping[str, Mapping[str, object]]
+
+
+# Union of the three admin-command documents the executor may return. Kept as a
+# named alias for callers that want to discriminate on command name; the
+# executor signature itself uses the wider ``Mapping[str, object]`` so that
+# per-key ``.get()`` remains ergonomic.
+MongoAdminDoc = MongoServerStatusDoc | MongoCurrentOpDoc | MongoReplSetDoc
+
+
+class MongoConfig(TypedDict, total=False):
+    """Constructor config accepted by :class:`MongoDbStatsSource`."""
+
+    name: str
+    uri_env: str
+
+
+class MongoQuerySpec(TypedDict, total=False):
+    """Query spec — ignored by this connector (``query()`` reads everything)."""
+
+
+class MongoRecord(TypedDict):
+    """The 8-key normalized record shape produced by :meth:`MongoDbStatsSource._record`."""
+
+    ts: float
+    source: str
+    kind: str
+    level_or_status: str
+    message: str
+    value: float | int | None
+    labels: dict[str, object]
+    raw: object
+
+
 # An executor maps a mongo admin command name to its raw result document.
-Executor = Callable[[str], Mapping[str, Any]]
+Executor = Callable[[str], Mapping[str, object]]
 
 _DRIVER_UNAVAILABLE = "driver unavailable"
 
@@ -40,8 +116,8 @@ class MongoDbStatsSource:
 
     KIND = "metrics"
 
-    def __init__(self, config: Mapping[str, Any] | None = None, executor: Executor | None = None) -> None:
-        cfg: dict[str, Any] = dict(config or {})
+    def __init__(self, config: MongoConfig | None = None, executor: Executor | None = None) -> None:
+        cfg: dict[str, object] = dict(config or {})
         self.name: str = str(cfg.get("name", "mongodb"))
         self._config = cfg
         # Env var NAME holding the connection URI (never the secret itself).
@@ -70,7 +146,9 @@ class MongoDbStatsSource:
             self._driver_error = f"missing env {self._uri_env}"
             return None
         try:
-            import pymongo  # type: ignore[import-not-found]  # guarded optional dependency
+            import importlib
+
+            pymongo = importlib.import_module("pymongo")  # guarded optional dependency
         except Exception as exc:  # pragma: no cover - exercised via health test with injected error
             self._driver_error = _DRIVER_UNAVAILABLE
             logger.debug("pymongo import failed: %s", exc)
@@ -78,7 +156,7 @@ class MongoDbStatsSource:
 
         client = pymongo.MongoClient(uri)
 
-        def _run(command: str) -> Mapping[str, Any]:
+        def _run(command: str) -> Mapping[str, object]:
             result = client.admin.command(command)
             return dict(result)
 
@@ -86,7 +164,7 @@ class MongoDbStatsSource:
 
     # -- health ------------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the source. Never raises."""
         executor = self._get_executor()
         if executor is None:
@@ -100,13 +178,13 @@ class MongoDbStatsSource:
 
     # -- query -------------------------------------------------------------
 
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: MongoQuerySpec | None = None) -> list[MongoRecord]:
         """Collect metric records. Returns ``[]`` on any executor failure."""
         executor = self._get_executor()
         if executor is None:
             return []
 
-        records: list[dict[str, Any]] = []
+        records: list[MongoRecord] = []
         ts = time.time()
 
         records.extend(self._server_status_records(executor, ts))
@@ -121,10 +199,10 @@ class MongoDbStatsSource:
         ts: float,
         message: str,
         value: float | int | None,
-        labels: dict[str, Any],
-        raw: Any,
+        labels: dict[str, object],
+        raw: object,
         status: str = "ok",
-    ) -> dict[str, Any]:
+    ) -> MongoRecord:
         return {
             "ts": ts,
             "source": self.name,
@@ -136,16 +214,16 @@ class MongoDbStatsSource:
             "raw": raw,
         }
 
-    def _server_status_records(self, executor: Executor, ts: float) -> list[dict[str, Any]]:
+    def _server_status_records(self, executor: Executor, ts: float) -> list[MongoRecord]:
         try:
             doc = executor("serverStatus")
         except Exception as exc:
             logger.debug("serverStatus failed: %s", exc)
             return []
 
-        out: list[dict[str, Any]] = []
+        out: list[MongoRecord] = []
 
-        connections = doc.get("connections") or {}
+        connections = _as_mapping(doc.get("connections"))
         for key in ("current", "available", "active"):
             if key in connections:
                 out.append(
@@ -158,7 +236,7 @@ class MongoDbStatsSource:
                     )
                 )
 
-        opcounters = doc.get("opcounters") or {}
+        opcounters = _as_mapping(doc.get("opcounters"))
         for key, val in opcounters.items():
             out.append(
                 self._record(
@@ -170,7 +248,8 @@ class MongoDbStatsSource:
                 )
             )
 
-        cache = ((doc.get("wiredTiger") or {}).get("cache")) or {}
+        wired_tiger = _as_mapping(doc.get("wiredTiger"))
+        cache = _as_mapping(wired_tiger.get("cache"))
         for key in ("bytes currently in the cache", "maximum bytes configured"):
             if key in cache:
                 out.append(
@@ -185,7 +264,7 @@ class MongoDbStatsSource:
 
         return out
 
-    def _current_op_records(self, executor: Executor, ts: float) -> list[dict[str, Any]]:
+    def _current_op_records(self, executor: Executor, ts: float) -> list[MongoRecord]:
         try:
             doc = executor("currentOp")
         except Exception as exc:
@@ -204,21 +283,21 @@ class MongoDbStatsSource:
             )
         ]
 
-    def _repl_status_records(self, executor: Executor, ts: float) -> list[dict[str, Any]]:
+    def _repl_status_records(self, executor: Executor, ts: float) -> list[MongoRecord]:
         try:
             doc = executor("replSetGetStatus")
         except Exception as exc:
             logger.debug("replSetGetStatus failed: %s", exc)
             return []
 
-        members = doc.get("members")
-        if not isinstance(members, list) or not members:
+        members_raw = doc.get("members")
+        if not isinstance(members_raw, list) or not members_raw:
             return []
 
         # Primary optime is the reference for oplog replication lag.
-        primary_ts = _member_optime(members, want_primary=True)
-        out: list[dict[str, Any]] = []
-        for member in members:
+        primary_ts = _member_optime(members_raw, want_primary=True)
+        out: list[MongoRecord] = []
+        for member in members_raw:
             name = str(member.get("name", "?"))
             state = str(member.get("stateStr", "?"))
             member_ts = _member_optime([member], want_primary=False)
@@ -238,7 +317,19 @@ class MongoDbStatsSource:
         return out
 
 
-def _num(value: Any) -> float | int | None:
+def _as_mapping(value: object) -> Mapping[str, object]:
+    """Narrow ``value`` to ``Mapping[str, object]`` for typed access.
+
+    Preserves the original ``value or {}`` semantics: a falsy value (None,
+    empty) collapses to ``{}``; a truthy value is returned as-is, INCLUDING a
+    truthy non-mapping (malformed input), which will raise on the subsequent
+    ``.get()`` call — matching the pre-refactor crash-on-garbage behavior. The
+    ``cast`` is type-only (a runtime no-op); no behavior change.
+    """
+    return cast("Mapping[str, object]", value or {})
+
+
+def _num(value: object) -> float | int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -246,7 +337,7 @@ def _num(value: Any) -> float | int | None:
     return None
 
 
-def _member_optime(members: list[Mapping[str, Any]], want_primary: bool) -> float | None:
+def _member_optime(members: list[MongoMember], want_primary: bool) -> float | None:
     """Extract an optime (seconds) from member docs.
 
     When ``want_primary`` the primary member (``stateStr == 'PRIMARY'``) is used;

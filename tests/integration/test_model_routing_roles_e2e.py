@@ -5,7 +5,7 @@ Proves the full pipeline: TaskType -> RoleWeights -> ParetoRouter -> winner.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 
@@ -39,7 +39,7 @@ class TestRoleWeightsStruct:
     def test_named_tuple_immutable(self):
         w = RoleWeights(cost=0.1, quality=0.9)
         with pytest.raises(AttributeError):
-            w.cost = 0.5  # type: ignore[misc]
+            cast(Any, w).cost = 0.5
 
     def test_equality_semantics(self):
         a = RoleWeights(0.2, 0.8)
@@ -132,7 +132,7 @@ class TestWeightsForDefaultFallback:
             pass
 
         fake = FakeType("not_a_real_type")
-        result = weights_for(fake)  # type: ignore[arg-type]
+        result = cast(Any, weights_for)(fake)
         assert result == _DEFAULT_WEIGHTS
 
     def test_default_weights_sum_to_one(self):
@@ -143,7 +143,7 @@ class TestWeightsForDefaultFallback:
         class FakeType(str):
             pass
 
-        result = weights_for(FakeType("x"), default=custom)  # type: ignore[arg-type]
+        result = cast(Any, weights_for)(FakeType("x"), default=custom)
         assert result == custom
 
 

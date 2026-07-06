@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -133,7 +134,7 @@ def test_drain_in_band_reports_effective() -> None:
 
 
 def test_none_ages_in_list_ignored() -> None:
-    d = plan(8, 6, 8, 12, inflight_ages=[None, None], drain_age=240, buffer=2)  # type: ignore[list-item]  # test stub
+    d = cast(Any, plan)(8, 6, 8, 12, inflight_ages=[None, None], drain_age=240, buffer=2)
     assert d["dispatch_now"] == 0
 
 

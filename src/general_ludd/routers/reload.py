@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -68,10 +68,10 @@ class RegisterHookRequest(BaseModel):
         return v
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/reload")
-    async def admin_reload(req: ReloadRequest) -> dict[str, Any]:
+    async def admin_reload(req: ReloadRequest) -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         _skills_dirs: list[str] = []
         _config_dir_val = getattr(app.state, "_config_dir", None)
@@ -103,7 +103,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"success": result.success, "scope": result.scope, "details": result.details, "error": result.error}
 
     @app.post("/admin/config/reload")
-    async def admin_config_reload() -> dict[str, Any]:
+    async def admin_config_reload() -> dict[str, object]:
         from general_ludd.daemon import load_startup_config
 
         config_dir = getattr(app.state, "_config_dir", None)
@@ -117,7 +117,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
         # Extract live-reloadable values from the new config
         new_uc = new_startup_config.get("user_config")
-        live_reloadable: dict[str, Any] = {
+        live_reloadable: dict[str, object] = {
             "rules": new_startup_config.get("rules", []),
             "model_profiles": new_startup_config.get("model_profiles", []),
             "queues": getattr(new_uc, "queues", []) if new_uc else [],
@@ -147,7 +147,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"success": True, "merged": merged}
 
     @app.get("/admin/reload/status")
-    async def admin_reload_status() -> dict[str, Any]:
+    async def admin_reload_status() -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         history = subsys["bus"].get_history()
         recent = [
@@ -157,7 +157,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"recent_events": recent, "total_events": len(history)}
 
     @app.post("/admin/templates/refresh")
-    async def admin_templates_refresh() -> dict[str, Any]:
+    async def admin_templates_refresh() -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         if not hasattr(app.state, "_prompt_registry") or app.state._prompt_registry is None:
             app.state._prompt_registry = PromptRegistry(
@@ -168,13 +168,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"success": True, "templates": result.get("templates", [])}
 
     @app.get("/admin/templates")
-    async def admin_list_templates() -> dict[str, Any]:
+    async def admin_list_templates() -> dict[str, object]:
         if hasattr(app.state, "_prompt_registry") and app.state._prompt_registry is not None:
             return {"templates": app.state._prompt_registry.list_templates()}
         return {"templates": []}
 
     @app.post("/admin/playbooks/refresh")
-    async def admin_playbooks_refresh() -> dict[str, Any]:
+    async def admin_playbooks_refresh() -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         if not hasattr(app.state, "_runner") or app.state._runner is None:
             app.state._runner = AnsibleRunnerAdapter(
@@ -189,13 +189,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"success": True, "playbooks": result.get("playbooks", [])}
 
     @app.get("/admin/playbooks")
-    async def admin_list_playbooks() -> dict[str, Any]:
+    async def admin_list_playbooks() -> dict[str, object]:
         if hasattr(app.state, "_runner") and app.state._runner is not None:
             return {"playbooks": app.state._runner.list_playbooks()}
         return {"playbooks": []}
 
     @app.get("/admin/hooks")
-    async def admin_list_hooks() -> dict[str, Any]:
+    async def admin_list_hooks() -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         hooks = subsys["hooks"].list_hooks()
         return {
@@ -212,7 +212,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/hooks")
-    async def admin_register_hook(req: RegisterHookRequest) -> dict[str, Any]:
+    async def admin_register_hook(req: RegisterHookRequest) -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         hook_id = subsys["hooks"].register_webhook(
             event_name=req.event_name,
@@ -224,20 +224,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"hook_id": hook_id, "event_name": req.event_name}
 
     @app.delete("/admin/hooks/{hook_id}")
-    async def admin_delete_hook(hook_id: str) -> dict[str, Any]:
+    async def admin_delete_hook(hook_id: str) -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         subsys["hooks"].unregister(hook_id)
         return {"removed": hook_id}
 
     @app.post("/admin/workers/ping")
-    async def admin_workers_ping() -> dict[str, Any]:
+    async def admin_workers_ping() -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         # ping_all does serial blocking httpx.get per worker — offload it.
         results = await asyncio.to_thread(subsys["broadcaster"].ping_all)
         return {"workers": results}
 
     @app.get("/admin/workers")
-    async def admin_list_workers() -> dict[str, Any]:
+    async def admin_list_workers() -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         workers = subsys["broadcaster"].list_workers()
         return {
@@ -252,7 +252,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/agents")
-    async def admin_list_agents() -> dict[str, Any]:
+    async def admin_list_agents() -> dict[str, object]:
         ext = _get_or_create_extended_subsystems(app)
         agents = ext["metrics"].list_agents()
         return {
@@ -280,19 +280,19 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/agents/{agent_id}")
-    async def admin_get_agent(agent_id: str) -> dict[str, Any]:
+    async def admin_get_agent(agent_id: str) -> dict[str, object]:
         ext = _get_or_create_extended_subsystems(app)
         summary = ext["metrics"].get_agent_summary(agent_id)
         if not summary:
             raise HTTPException(status_code=404, detail="Agent not found")
-        return cast(dict[str, Any], summary)
+        return cast(dict[str, object], summary)
 
     @app.get("/admin/metrics/cost")
     async def admin_metrics_cost(
         subscription_name: str = "",
         subscription_cost_per_month: float = 0.0,
         tokens_per_week: int = 0,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         ext = _get_or_create_extended_subsystems(app)
         estimate = ext["metrics"].get_cost_estimate(
             subscription_name=subscription_name,
@@ -311,6 +311,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/metrics/report")
-    async def admin_metrics_report() -> dict[str, Any]:
+    async def admin_metrics_report() -> dict[str, object]:
         ext = _get_or_create_extended_subsystems(app)
-        return cast(dict[str, Any], ext["metrics"].get_full_report())
+        return cast(dict[str, object], ext["metrics"].get_full_report())

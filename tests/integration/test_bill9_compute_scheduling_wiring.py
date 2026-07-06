@@ -12,6 +12,7 @@ is wired end-to-end, including:
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -209,7 +210,7 @@ class TestConfigGatesForComputeAwareScheduling:
     def test_hint_is_frozen_dataclass(self):
         hint = ComputeSchedulingHint(preferred_gpu_type="a100_80")
         with pytest.raises(AttributeError):
-            hint.preferred_gpu_type = "h100"  # type: ignore[misc]  # frozen dataclass: tests immutability
+            cast(Any, hint).preferred_gpu_type = "h100"
 
     def test_direct_construction_matches_factory(self):
         factory = ComputeSchedulingHint.for_work_type("analysis")

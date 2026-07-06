@@ -62,7 +62,7 @@ async def test_h2_maybe_open_pr_uses_to_thread_when_enabled() -> None:
 
     captured_fn: list = []
 
-    async def fake_to_thread(fn: object, **kwargs: object) -> dict:  # type: ignore[override]
+    async def fake_to_thread(fn: object, **kwargs: object) -> dict:
         captured_fn.append(fn)
         # call synchronously in test context (no real thread needed)
         return fake_delivery.push_and_create_pr(**kwargs)

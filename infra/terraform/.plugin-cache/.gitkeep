@@ -1,0 +1,5 @@
+# Shared Terraform plugin cache. Contents are populated by `make tf-cache-warm`
+# (or any `make tf-init STACK=...`) and ignored by git — see .gitignore.
+# Each third-party provider binary (aws, google, azurerm, kubernetes, vsphere,
+# runpod) is downloaded here ONCE and symlinked into every stack's .terraform/
+# at init time, instead of being re-fetched per stack.

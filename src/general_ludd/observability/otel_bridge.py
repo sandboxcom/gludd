@@ -40,19 +40,22 @@ class OTelBridge:
         # installed mypy cannot find stubs; the runtime guard above
         # (_check_otel_available) ensures these imports only execute when the
         # packages are present, so the missing-stub errors are suppressed here.
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-not-found]
-            OTLPSpanExporter,
+        import importlib
+
+        _otlp_exporter = importlib.import_module(
+            "opentelemetry.exporter.otlp.proto.grpc.trace_exporter"
         )
-        from opentelemetry.sdk.resources import Resource  # type: ignore[import-not-found]
-        from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
-        from opentelemetry.sdk.trace.export import (  # type: ignore[import-not-found]
-            BatchSpanProcessor,
-        )
-        from opentelemetry.trace import (  # type: ignore[import-not-found]
-            Status,
-            StatusCode,
-            get_tracer,
-        )
+        OTLPSpanExporter = _otlp_exporter.OTLPSpanExporter
+        _sdk_resources = importlib.import_module("opentelemetry.sdk.resources")
+        Resource = _sdk_resources.Resource
+        _sdk_trace = importlib.import_module("opentelemetry.sdk.trace")
+        TracerProvider = _sdk_trace.TracerProvider
+        _sdk_trace_export = importlib.import_module("opentelemetry.sdk.trace.export")
+        BatchSpanProcessor = _sdk_trace_export.BatchSpanProcessor
+        _otel_trace = importlib.import_module("opentelemetry.trace")
+        Status = _otel_trace.Status
+        StatusCode = _otel_trace.StatusCode
+        get_tracer = _otel_trace.get_tracer
 
         self._Status = Status
         self._StatusCode = StatusCode

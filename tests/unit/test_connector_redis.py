@@ -7,7 +7,7 @@ Driver-unavailable health and the env-only credential contract are covered.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -136,7 +136,7 @@ class TestContract:
 
         src = RedisStatsSource(executor=_canned(info={"used_memory": 1}))
         reg = SourceRegistry()
-        reg.register(src)  # type: ignore[arg-type]
+        cast(Any, reg).register(src)
         obs = Observability(reg)
         results = obs.find({}, kinds=["metrics"])
         assert results

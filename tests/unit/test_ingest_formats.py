@@ -8,6 +8,7 @@ input -> []. Each emits plain dicts with the normalized record shape
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 from general_ludd.connectors.ingest_formats import (
     MAX_PAYLOAD_BYTES,
@@ -113,7 +114,7 @@ class TestParseFluentForward:
         assert [r["message"] for r in records] == ["ok", "ok2"]
 
     def test_non_bytes_returns_empty(self) -> None:
-        assert parse_fluent_forward("a string") == []  # type: ignore[arg-type]
+        assert cast(Any, parse_fluent_forward)("a string") == []
 
 
 # --------------------------------------------------------------------------- #
@@ -158,7 +159,7 @@ class TestParseBeatsLumberjack:
 
     def test_skips_non_dict_events(self) -> None:
         frames = ["nope", 123, {"message": "ok"}, None]
-        records = parse_beats_lumberjack(frames)  # type: ignore[arg-type]
+        records = cast(Any, parse_beats_lumberjack)(frames)
         assert len(records) == 1
         assert records[0]["message"] == "ok"
 
@@ -166,8 +167,8 @@ class TestParseBeatsLumberjack:
         assert parse_beats_lumberjack([]) == []
 
     def test_non_list_returns_empty(self) -> None:
-        assert parse_beats_lumberjack("not a list") == []  # type: ignore[arg-type]
-        assert parse_beats_lumberjack(None) == []  # type: ignore[arg-type]
+        assert cast(Any, parse_beats_lumberjack)("not a list") == []
+        assert cast(Any, parse_beats_lumberjack)(None) == []
 
     def test_oversized_event_count_returns_empty(self) -> None:
         frames = [{"message": "m"}] * 100001
@@ -260,4 +261,4 @@ class TestParseGelf:
         assert parse_gelf(b"{" + b"a" * (MAX_PAYLOAD_BYTES + 1)) == []
 
     def test_non_bytes_returns_empty(self) -> None:
-        assert parse_gelf("a string") == []  # type: ignore[arg-type]
+        assert cast(Any, parse_gelf)("a string") == []

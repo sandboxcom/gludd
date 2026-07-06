@@ -25,10 +25,11 @@ spend); when absent it falls back to reading ``_spend_limiter`` and
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
+
+from general_ludd.controllers.spend_limiter import SpendLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +42,14 @@ class ConfigureSpendRequest(BaseModel):
     window_seconds: float = Field(gt=0.0, description="Rolling window width in seconds")
 
 
-def _get_limiter(app: FastAPI) -> Any:
-    return getattr(app.state, "_spend_limiter", None)
+def _get_limiter(app: FastAPI) -> SpendLimiter | None:
+    limiter = getattr(app.state, "_spend_limiter", None)
+    return limiter if isinstance(limiter, SpendLimiter) else None
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/api/spend")
-    async def api_spend_status() -> dict[str, Any]:
+    async def api_spend_status() -> dict[str, object]:
         """Return the current rolling-window spend summary.
 
         Returns:
@@ -72,7 +74,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/api/spend/configure")
-    async def api_spend_configure(req: ConfigureSpendRequest) -> dict[str, Any]:
+    async def api_spend_configure(req: ConfigureSpendRequest) -> dict[str, object]:
         """Replace the spend limiter with new ``limit_usd`` / ``window_seconds``.
 
         Prior spend history is PRESERVED: the old limiter's in-window records
@@ -83,8 +85,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         Returns:
             JSON with the new effective limits.
         """
-        from general_ludd.controllers.spend_limiter import SpendLimiter
-
         old_limiter = _get_limiter(app)
         new_limiter = SpendLimiter(
             limit_usd=req.limit_usd,
@@ -105,7 +105,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/costs")
-    async def admin_costs() -> dict[str, Any]:
+    async def admin_costs() -> dict[str, object]:
         """Return cost-accounting summary across API and infrastructure spend.
 
         Returns:
@@ -142,7 +142,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/api/costs")
-    async def api_costs() -> dict[str, Any]:
+    async def api_costs() -> dict[str, object]:
         """Return combined model API + infrastructure cost breakdown.
 
         Resolution order:
@@ -160,7 +160,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         """
         combined = getattr(app.state, "_combined_cost_tracker", None)
         if combined is not None:
-            breakdown: dict[str, Any] = combined.get_cost_breakdown()
+            breakdown: dict[str, object] = combined.get_cost_breakdown()
             return breakdown
 
         limiter = _get_limiter(app)
@@ -196,7 +196,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/api/credits")
-    async def api_credits(refresh: bool = False) -> dict[str, Any]:
+    async def api_credits(refresh: bool = False) -> dict[str, object]:
         """Return prepaid service credit balances across all configured providers.
 
         Resolves a :class:`~general_ludd.budget.credit_tracker.CreditTracker`
@@ -221,12 +221,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return {}
         if refresh or not getattr(tracker, "_last_balance", None):
             try:
-                balances: dict[str, Any] = dict(tracker.check_all_balances())
+                balances: dict[str, object] = dict(tracker.check_all_balances())
                 return balances
             except Exception as exc:
                 logger.warning("balance probe failed: %s", exc)
                 return {}
-        cached: dict[str, Any] = {
+        cached: dict[str, object] = {
             svc: result
             for svc, result in (
                 (svc, tracker.last_balance(svc)) for svc in tracker._last_balance

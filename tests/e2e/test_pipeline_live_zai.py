@@ -27,7 +27,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -105,7 +105,7 @@ def _build_gateway(profile_id: str = "zai_pipeline") -> Any:
     assert _ZAI_KEY, "key must be set before building gateway"
     secrets.set("ZAI_API_KEY", _ZAI_KEY)
     secrets.set("ZAI_BASE_URL", _ZAI_BASE_URL)
-    return ModelGateway(profiles=[profile], provider_registry=registry, secrets_manager=secrets)  # type: ignore[arg-type]  # test stub
+    return cast(Any, ModelGateway)(profiles=[profile], provider_registry=registry, secrets_manager=secrets)
 
 
 # ---------------------------------------------------------------------------

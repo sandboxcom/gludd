@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 
@@ -21,8 +21,8 @@ from general_ludd.validation.log_auditor import LogAuditor
 # size limit. Reject oversized input early with HTTP 413.
 _MAX_LOG_AUDIT_ENTRIES = 10_000
 
-_integrity_changes: list[dict[str, Any]] = []
-_integrity_log: list[dict[str, Any]] = []
+_integrity_changes: list[dict[str, object]] = []
+_integrity_log: list[dict[str, object]] = []
 
 
 def _scan_roots(app: FastAPI) -> list[str]:
@@ -50,7 +50,7 @@ def _scan_roots(app: FastAPI) -> list[str]:
     return [r for r in roots if r]
 
 
-def _confine_scan_paths(app: FastAPI, paths: list[Any]) -> list[str]:
+def _confine_scan_paths(app: FastAPI, paths: list[object]) -> list[str]:
     """Validate each requested scan path lies inside an allowed root, else 422."""
     roots = _scan_roots(app)
     confined: list[str] = []
@@ -65,13 +65,14 @@ def _confine_scan_paths(app: FastAPI, paths: list[Any]) -> list[str]:
     return confined
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/integrity/scan")
-    async def admin_integrity_scan(req: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def admin_integrity_scan(req: dict[str, object] | None = None) -> dict[str, object]:
         req = req or {}
-        paths = req.get("paths", [])
-        if not paths:
+        raw_paths = req.get("paths", [])
+        paths: list[str]
+        if not raw_paths:
             # Trusted defaults — already the allowed roots, no confinement needed.
             paths = [
                 str(getattr(app.state, "_config_dir", "")),
@@ -82,7 +83,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         else:
             # AUTH-5: caller-supplied scan paths must stay inside an allowed root
             # so the endpoint can't be used to hash/exfiltrate arbitrary files.
-            paths = _confine_scan_paths(app, paths)
+            paths = _confine_scan_paths(app, cast(list[object], raw_paths))
         scanner = FileIntegrityScanner()
         # Shared canonical exclude set (see integrity.fim_excludes); one source
         # of truth so the scan sites cannot drift apart.
@@ -109,11 +110,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return result
 
     @app.get("/admin/integrity/report")
-    async def admin_integrity_report() -> dict[str, Any]:
+    async def admin_integrity_report() -> dict[str, object]:
         return {"changes": _integrity_changes, "log_entries": len(_integrity_log)}
 
     @app.post("/admin/integrity/approve")
-    async def admin_integrity_approve(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_integrity_approve(req: dict[str, object]) -> dict[str, object]:
         # AUTH: the signed path must resolve inside an allowed root, else a
         # caller can sign/exfiltrate arbitrary files (e.g. /etc/passwd).
         raw_path = req.get("path", "")
@@ -123,8 +124,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # the caller-supplied hashes match what was scanned.  An approval whose
         # hashes don't match a real scanned change is rejected so that an
         # approval cannot be replayed against a tampered version of the file.
-        req_old_hash: str | None = req.get("old_hash")
-        req_new_hash: str | None = req.get("new_hash")
+        req_old_hash = cast(str | None, req.get("old_hash"))
+        req_new_hash = cast(str | None, req.get("new_hash"))
 
         # Find the pending change record for this path (unapproved).
         matched_change = next(
@@ -154,8 +155,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                         f"request={req_new_hash!r} scan={matched_change.get('new_hash')!r}"
                     ),
                 )
-            sign_old_hash = matched_change.get("old_hash")
-            sign_new_hash = matched_change.get("new_hash")
+            sign_old_hash = cast(str | None, matched_change.get("old_hash"))
+            sign_new_hash = cast(str | None, matched_change.get("new_hash"))
         else:
             # No pending scanned change found — use caller-supplied hashes (may
             # be None if caller doesn't know them; the signature will cover
@@ -166,8 +167,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         try:
             result = sign_change_openbao(
                 path=path,
-                signer=req.get("signer", "admin"),
-                reason=req.get("reason", ""),
+                signer=cast(str, req.get("signer", "admin")),
+                reason=cast(str, req.get("reason", "")),
                 old_hash=sign_old_hash,
                 new_hash=sign_new_hash,
             )
@@ -195,7 +196,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return result
 
     @app.post("/admin/integrity/reject")
-    async def admin_integrity_reject(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_integrity_reject(req: dict[str, object]) -> dict[str, object]:
         # AUTH: confine the path the same way approve does so the integrity log
         # cannot be polluted with / referenced against out-of-root paths.
         raw_path = req.get("path", "")
@@ -210,18 +211,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"path": path, "status": "rejected"}
 
     @app.get("/admin/integrity/log")
-    async def admin_integrity_log() -> dict[str, Any]:
+    async def admin_integrity_log() -> dict[str, object]:
         return {"entries": _integrity_log}
 
     @app.post("/admin/selftest")
-    async def admin_selftest() -> dict[str, Any]:
+    async def admin_selftest() -> dict[str, object]:
         import asyncio
         import subprocess
 
         resolver = BinaryPathResolver()
         podman_available = resolver.is_available("podman")
 
-        results: list[dict[str, Any]] = []
+        results: list[dict[str, object]] = []
         scenarios_run = 0
         scenarios_passed = 0
         errors: list[str] = []
@@ -275,14 +276,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/gap-analysis")
-    async def admin_gap_analysis(req: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def admin_gap_analysis(req: dict[str, object] | None = None) -> dict[str, object]:
         req = req or {}
-        sprint_path = req.get("sprint_path", "")
+        sprint_path = cast(str, req.get("sprint_path", ""))
         # AUTH: confine sprint_path the same way as repo_root so the analyzer
         # can't be pointed at arbitrary out-of-root files.
         if sprint_path:
             (sprint_path,) = _confine_scan_paths(app, [sprint_path])
-        raw_root = req.get("repo_root", "")
+        raw_root = cast(str, req.get("repo_root", ""))
         if raw_root and raw_root != ".":
             (repo_root,) = _confine_scan_paths(app, [raw_root])
         else:
@@ -304,9 +305,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/log-audit")
-    async def admin_log_audit(req: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def admin_log_audit(req: dict[str, object] | None = None) -> dict[str, object]:
         req = req or {}
-        log_entries = req.get("log_entries", [])
+        log_entries = cast(list[dict[str, object]], req.get("log_entries", []))
         if len(log_entries) > _MAX_LOG_AUDIT_ENTRIES:
             raise HTTPException(
                 status_code=413,

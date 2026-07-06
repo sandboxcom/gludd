@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.cli_core_changes import _excluded
 from general_ludd.db.repository import TodoRepository
@@ -67,11 +69,11 @@ class _ConfigTierCapabilityChecker:
         return capability in self._ALLOWED
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def _coerce_priority(raw: Any) -> int:
+def _coerce_priority(raw: object) -> int:
     if isinstance(raw, bool):  # bool is an int subclass; treat as unset
         return _PRIORITY_MAP["medium"]
     if isinstance(raw, int):
@@ -80,7 +82,7 @@ def _coerce_priority(raw: Any) -> int:
 
 
 async def _persist_gated_self_improve_todos(
-    repo: TodoRepository, todos: list[dict[str, Any]]
+    repo: TodoRepository, todos: list[dict[str, object]]
 ) -> list[str]:
     """Persist harness-generated todos behind the self-improve human-approval gate.
 
@@ -116,8 +118,8 @@ async def _persist_gated_self_improve_todos(
 
 
 async def _config_tier_apply(
-    app: FastAPI, kind: str, payload: dict[str, Any]
-) -> dict[str, Any]:
+    app: FastAPI, kind: str, payload: dict[str, object]
+) -> dict[str, object]:
     """Human-gated config-tier apply (task #22).
 
     Without a released approval record this NEVER writes to disk: it either
@@ -140,8 +142,10 @@ async def _config_tier_apply(
 
 
 async def _enqueue_config_change(
-    factory: Any, kind: str, payload: dict[str, Any]
-) -> dict[str, Any]:
+    factory: async_sessionmaker[AsyncSession],
+    kind: str,
+    payload: dict[str, object],
+) -> dict[str, object]:
     """Record an APPROVAL_REQUIRED self-improve todo capturing the config change.
 
     The change spec (kind, capability, target paths, content) is serialized into
@@ -155,16 +159,17 @@ async def _enqueue_config_change(
         or str(payload.get("description", "")).strip()
         or f"self-improve config write ({kind})"
     )
-    spec = {
+    target_paths = list(cast(Iterable[str], payload.get("target_paths", [])))
+    spec: dict[str, object] = {
         "kind": kind,
         "capability_required": str(
             payload.get("capability_required", _CONFIG_TIER_CAPABILITY)
         ),
-        "target_paths": list(payload.get("target_paths", [])),
+        "target_paths": target_paths,
         "change_content": str(payload.get("change_content", "")),
         "reason": reason,
     }
-    targets = ", ".join(spec["target_paths"]) or kind
+    targets = ", ".join(target_paths) or kind
     async with factory() as session:
         repo = TodoRepository(session)
         created = await repo.create(
@@ -193,8 +198,8 @@ async def _enqueue_config_change(
 
 
 async def _apply_approved_config_change(
-    factory: Any, approval_id: str
-) -> dict[str, Any]:
+    factory: async_sessionmaker[AsyncSession], approval_id: str
+) -> dict[str, object]:
     """Perform the on-disk config write for a human-RELEASED approval record.
 
     The record must be a self-improve todo that a human approved
@@ -226,7 +231,7 @@ async def _apply_approved_config_change(
                 ),
             )
         try:
-            spec = json.loads(todo.plan_artifact or "{}")
+            spec = cast(dict[str, object], json.loads(todo.plan_artifact or "{}"))
         except (TypeError, ValueError) as exc:
             raise HTTPException(
                 status_code=422,
@@ -273,7 +278,7 @@ async def _apply_approved_config_change(
             capability_required=str(
                 spec.get("capability_required", _CONFIG_TIER_CAPABILITY)
             ),
-            target_paths=list(spec.get("target_paths", [])),
+            target_paths=list(cast(Iterable[str], spec.get("target_paths", []))),
         )
         result = applier.apply(plan, str(spec.get("change_content", "")))
 
@@ -296,10 +301,10 @@ async def _apply_approved_config_change(
         }
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/self-improve/analyze")
-    async def admin_self_improve_analyze() -> dict[str, Any]:
+    async def admin_self_improve_analyze() -> dict[str, object]:
         harness = SelfImprovementHarness()
         findings = harness.run_gap_analysis()
         _daemon_state["self_improve_last_analysis"] = {
@@ -309,7 +314,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"findings": findings, "findings_count": len(findings)}
 
     @app.post("/admin/self-improve/run")
-    async def admin_self_improve_run() -> dict[str, Any]:
+    async def admin_self_improve_run() -> dict[str, object]:
         harness = SelfImprovementHarness()
         result = harness.run_full_cycle()
         _daemon_state["self_improve_last_analysis"] = {
@@ -327,11 +332,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 await session.commit()
                 result["persisted_todo_ids"] = persisted_ids
         else:
-            _daemon_state["todos"].extend(result.get("todos", []))
+            cast(list[object], _daemon_state["todos"]).extend(result.get("todos", []))
         return result
 
     @app.post("/admin/self-improve/apply")
-    async def admin_self_improve_apply(payload: dict[str, Any]) -> dict[str, Any]:
+    async def admin_self_improve_apply(payload: dict[str, object]) -> dict[str, object]:
         kind = str(payload.get("kind", ""))
 
         # Config-tier path: route through UpdateApplier + AtomicSafeWriter. The
@@ -382,11 +387,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/self-improve/status")
-    async def admin_self_improve_status() -> dict[str, Any]:
+    async def admin_self_improve_status() -> dict[str, object]:
         last = _daemon_state.get("self_improve_last_analysis")
         if last is None:
             return {"status": "never_run", "findings_count": 0}
-        return {"status": "completed", **last}
+        return {"status": "completed", **cast(dict[str, object], last)}
 
     # ------------------------------------------------------------------
     # Human approval gate for self-authored self-improve todos.
@@ -397,7 +402,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     # release path: without them held todos would strand forever.
     # ------------------------------------------------------------------
 
-    def _todo_view(todo: Any) -> dict[str, Any]:
+    def _todo_view(todo: object) -> dict[str, object]:
         return {
             "todo_id": getattr(todo, "todo_id", None),
             "title": getattr(todo, "title", None),
@@ -411,7 +416,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/self-improve/approvals")
-    async def admin_self_improve_list_approvals() -> dict[str, Any]:
+    async def admin_self_improve_list_approvals() -> dict[str, object]:
         """List self-improve todos awaiting a human approve/reject decision."""
         factory = _get_session_factory(app)
         if factory is None:
@@ -424,7 +429,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"pending": rows, "count": len(rows)}
 
     @app.post("/admin/self-improve/approvals/{todo_id}/approve")
-    async def admin_self_improve_approve(todo_id: str) -> dict[str, Any]:
+    async def admin_self_improve_approve(todo_id: str) -> dict[str, object]:
         """Release a held self-improve todo into the queue (APPROVAL_REQUIRED -> QUEUED)."""
         factory = _get_session_factory(app)
         if factory is None:
@@ -441,8 +446,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/self-improve/approvals/{todo_id}/reject")
     async def admin_self_improve_reject(
-        todo_id: str, payload: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+        todo_id: str, payload: dict[str, object] | None = None
+    ) -> dict[str, object]:
         """Reject a held self-improve todo (APPROVAL_REQUIRED -> CANCELLED)."""
         reason = str((payload or {}).get("reason", ""))
         factory = _get_session_factory(app)

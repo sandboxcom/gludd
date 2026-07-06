@@ -13,12 +13,17 @@ This is the missing e2e proof for environment-endpoint (features.yml: 85%->100%)
 
 from __future__ import annotations
 
+import hmac
 import json
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.types import ASGIApp
 
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.routers.environment import register
@@ -29,22 +34,30 @@ _PUBLIC_PATHS: set[str] = {"/healthz"}
 _SECRET_VALUE = "sk-super-secret-key-DO-NOT-LEAK-0123456789"  # pragma: allowlist secret
 
 
-def _psk_middleware_factory(psk: str):
-    import hmac
+class _PSKMiddleware(BaseHTTPMiddleware):
+    """Minimal PSK auth gate mirroring the daemon's real middleware contract.
 
-    def middleware(request, call_next):
+    Subclasses BaseHTTPMiddleware so Starlette's ``cls(app, *args, **kwargs)``
+    instantiation in ``build_middleware_stack`` succeeds — the prior
+    ``type("PSKMiddleware", (), ...)`` stub lacked an ``__init__`` and raised
+    ``TypeError: PSKMiddleware() takes no arguments`` on every request.
+    """
+
+    def __init__(self, app: ASGIApp, psk: str) -> None:
+        super().__init__(app)
+        self._psk = psk
+
+    async def dispatch(self, request: Request, call_next) -> Response:
         if request.method in _SAFE_METHODS and request.url.path in _PUBLIC_PATHS:
-            return call_next(request)
+            return await call_next(request)
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer ") or not hmac.compare_digest(
-            auth.removeprefix("Bearer "), psk
+            auth.removeprefix("Bearer "), self._psk
         ):
             return JSONResponse(
                 status_code=401, content={"detail": "Unauthorized"}
             )
-        return call_next(request)
-
-    return middleware
+        return await call_next(request)
 
 
 def _gateway_with_secret() -> ModelGateway:
@@ -62,9 +75,7 @@ def _gateway_with_secret() -> ModelGateway:
 
 def _app(**state: object) -> FastAPI:
     app = FastAPI()
-    app.add_middleware(
-        type("PSKMiddleware", (), {"dispatch": _psk_middleware_factory(_PSK)})
-    )
+    app.add_middleware(_PSKMiddleware, psk=_PSK)
     app.state._psk = _PSK
     app.state._model_gateway = state.get("model_gateway")
     app.state._startup_config = state.get("startup_config", {})

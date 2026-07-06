@@ -12,6 +12,8 @@ Covers, per the task contract:
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from general_ludd.connectors.normalize import (
@@ -428,7 +430,7 @@ class TestBundleCredentials:
 class TestMalformedSafety:
     @pytest.mark.parametrize("bad", [None, 42, "string", [], object()])
     def test_normalize_join_keys_non_dict(self, bad: object) -> None:
-        assert normalize_join_keys(bad) == {}  # type: ignore[arg-type]
+        assert cast(Any, normalize_join_keys)(bad) == {}
 
     def test_normalize_join_keys_labels_not_a_dict(self) -> None:
         rec = _rec()
@@ -447,24 +449,24 @@ class TestMalformedSafety:
 
     @pytest.mark.parametrize("bad", [None, 42, "string", {}])
     def test_correlate_non_list(self, bad: object) -> None:
-        assert correlate(bad, by="trace_id") == {}  # type: ignore[arg-type]
+        assert cast(Any, correlate)(bad, by="trace_id") == {}
 
     def test_correlate_skips_non_dict_members(self) -> None:
         records = [_rec(trace_id="t1"), None, 7, "x"]
-        groups = correlate(records, by="trace_id")  # type: ignore[list-item]
+        groups = cast(Any, correlate)(records, by="trace_id")
         assert set(groups) == {"t1"}
 
     @pytest.mark.parametrize("bad", [None, 42, {}])
     def test_auth_family_non_string(self, bad: object) -> None:
-        assert auth_family(bad) == "unknown"  # type: ignore[arg-type]
+        assert cast(Any, auth_family)(bad) == "unknown"
 
     @pytest.mark.parametrize("bad", [None, 42, "string", {}])
     def test_bundle_credentials_non_list(self, bad: object) -> None:
-        assert bundle_credentials(bad) == {}  # type: ignore[arg-type]
+        assert cast(Any, bundle_credentials)(bad) == {}
 
     def test_bundle_credentials_skips_non_dict_members(self) -> None:
         configs = [{"source": "loki", "token_env": "T"}, None, 7, "x"]
-        bundle = bundle_credentials(configs)  # type: ignore[list-item]
+        bundle = cast(Any, bundle_credentials)(configs)
         assert bundle == {"grafana": ["T"]}
 
 

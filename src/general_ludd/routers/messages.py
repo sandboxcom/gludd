@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import collections
 import logging
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from general_ludd.db.models import AgentMessageModel
 from general_ludd.db.repository import AgentMessageRepository
 
 logger = logging.getLogger(__name__)
@@ -36,11 +38,11 @@ class SendMessageRequest(BaseModel):
     project_id: str | None = None
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def _msg_to_dict(msg: Any) -> dict[str, Any]:
+def _msg_to_dict(msg: AgentMessageModel) -> dict[str, object]:
     return {
         "id": msg.id,
         "sender": msg.sender,
@@ -65,7 +67,7 @@ def _msg_to_dict(msg: Any) -> dict[str, Any]:
 _MAX_INMEMORY_MESSAGES = 5000
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     # Bound the in-memory fallback. Preserve any pre-seeded entries; idempotent if
     # already a deque with the right cap.
     _existing = _daemon_state.get("messages")
@@ -73,12 +75,19 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         isinstance(_existing, collections.deque)
         and _existing.maxlen == _MAX_INMEMORY_MESSAGES
     ):
+        items: list[dict[str, object]] = (
+            list(_existing)
+            if isinstance(_existing, (list, collections.deque))
+            else []
+        )
         _daemon_state["messages"] = collections.deque(
-            _existing or [], maxlen=_MAX_INMEMORY_MESSAGES
+            items, maxlen=_MAX_INMEMORY_MESSAGES
         )
 
+    messages = cast(collections.deque[dict[str, object]], _daemon_state["messages"])
+
     @app.post("/api/messages", status_code=201)
-    async def api_send_message(req: SendMessageRequest) -> dict[str, Any]:
+    async def api_send_message(req: SendMessageRequest) -> dict[str, object]:
         data = req.model_dump()
         factory = _get_session_factory(app)
         if factory is not None:
@@ -95,7 +104,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         mem["id"] = f"MSG-{uuid.uuid4().hex[:12].upper()}"
         mem["created_at"] = datetime.now(UTC)
         mem["read_at"] = None
-        _daemon_state["messages"].append(mem)
+        messages.append(mem)
         return {**mem, "created_at": str(mem["created_at"]), "read_at": None}
 
     @app.get("/api/messages")
@@ -104,7 +113,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         unread: bool = True,
         include_broadcast: bool = True,
         project_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
@@ -119,7 +128,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 return {"messages": results, "count": len(results), "recipient": recipient}
         # Degraded fallback: in-memory.
         results = []
-        for m in _daemon_state["messages"]:
+        for m in messages:
             target = m.get("recipient")
             if target == recipient or (include_broadcast and target == "broadcast"):
                 if unread and m.get("read_at") is not None:
@@ -134,8 +143,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/api/messages/{message_id}/ack")
     async def api_ack_message(
-        message_id: str, project_id: str | None = None
-    ) -> dict[str, Any]:
+            message_id: str, project_id: str | None = None
+    ) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
@@ -147,7 +156,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                     raise HTTPException(status_code=404, detail="message not found")
                 await session.commit()
                 return {"acked": True, "id": row.id, "read_at": str(row.read_at)}
-        for m in _daemon_state["messages"]:
+        for m in messages:
             if m.get("id") == message_id:
                 # XT-11: the degraded in-memory fallback must also refuse a
                 # cross-tenant ack, matching the DB path.

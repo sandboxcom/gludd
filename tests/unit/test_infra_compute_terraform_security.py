@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import shlex
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
@@ -34,7 +35,7 @@ def _base_config(**overrides: object) -> ComputeConfig:
         "allowed_cidr": "0.0.0.0/0",
     }
     defaults.update(overrides)
-    return ComputeConfig(**defaults)  # type: ignore[arg-type]
+    return cast(Any, ComputeConfig)(**defaults)
 
 
 # ---------------------------------------------------------------------------

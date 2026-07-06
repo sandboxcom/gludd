@@ -1,0 +1,18 @@
+galaxy_info:
+  author: general-ludd
+  description: >-
+    Manage the ephemeral cloud account lifecycle — create budget-scoped
+    accounts on demand and clean them up after use / past retention.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: ["9"]
+  galaxy_tags:
+    - cloud
+    - aws
+    - gcp
+    - azure
+    - ephemeral
+    - lifecycle
+dependencies: []

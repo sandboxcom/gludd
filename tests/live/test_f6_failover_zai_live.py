@@ -40,6 +40,7 @@ be attempted — where DNS resolution fails -> ConnectError -> retryable failove
 from __future__ import annotations
 
 import os
+from typing import Any, cast
 
 import pytest
 
@@ -95,20 +96,20 @@ def _build_failover_gateway() -> ModelGateway:
 
     # Primary: real credential, real model name, but UNREACHABLE base URL so the
     # call fails with a retryable ConnectError and the chain walks to the fallback.
-    primary = ModelProfile(
+    primary = cast(Any, ModelProfile)(
         model_profile_id="zai_bad",
         model_name=good_model,
         api_base_alias="ZAI_BAD_BASE_URL",
         fallback_profiles=["zai_good"],
-        **common,  # type: ignore[arg-type]  # test stub
+        **common,
     )
     # Fallback: real credential + real base URL + real working model.
-    fallback = ModelProfile(
+    fallback = cast(Any, ModelProfile)(
         model_profile_id="zai_good",
         model_name=good_model,
         api_base_alias="ZAI_BASE_URL",
         fallback_profiles=[],
-        **common,  # type: ignore[arg-type]  # test stub
+        **common,
     )
 
     registry = ProviderRegistry()
@@ -123,7 +124,7 @@ def _build_failover_gateway() -> ModelGateway:
     return ModelGateway(
         profiles=[primary, fallback],
         provider_registry=registry,
-        secrets_manager=secrets,  # type: ignore[arg-type]  # test stub
+        secrets_manager=cast(Any, secrets),
         health_tracker=ModelHealthTracker(),
     )
 

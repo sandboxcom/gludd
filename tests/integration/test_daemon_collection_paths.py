@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -197,7 +198,7 @@ class TestAnsibleRunnerUsesResolvedEnv:
             result.model_dump.return_value = {"status": "ok"}
             return result
 
-        adapter._core_runner.run_playbook = _fake_run  # type: ignore[assignment]
+        cast(Any, adapter._core_runner).run_playbook = _fake_run
         adapter.run_playbook(playbook_name="noop.yml")
 
         extra_env = captured.get("extra_env") or {}

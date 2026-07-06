@@ -32,11 +32,12 @@ import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from general_ludd.db.models import OrnithTrainingPairModel
 from general_ludd.ornith.training_repo import (
     VALID_OUTCOME_STATUSES,
     VALID_SCAFFOLD_KINDS,
@@ -47,7 +48,7 @@ from general_ludd.ornith.training_repo import (
 logger = logging.getLogger(__name__)
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
@@ -66,10 +67,10 @@ class RecordPairRequest(BaseModel):
 
 class SetOutcomeRequest(BaseModel):
     status: str
-    details: dict[str, Any] = Field(default_factory=dict)
+    details: dict[str, object] = Field(default_factory=dict)
 
 
-def _pair_to_dict(row: Any) -> dict[str, Any]:
+def _pair_to_dict(row: OrnithTrainingPairModel) -> dict[str, object]:
     try:
         target_files = _json.loads(row.target_files or "[]")
     except Exception:
@@ -99,9 +100,9 @@ def _pair_to_dict(row: Any) -> dict[str, Any]:
     }
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.post("/admin/ornith/record", status_code=201)
-    async def api_record_pair(req: RecordPairRequest) -> dict[str, Any]:
+    async def api_record_pair(req: RecordPairRequest) -> dict[str, object]:
         if req.scaffold_kind not in VALID_SCAFFOLD_KINDS:
             raise HTTPException(
                 status_code=422,
@@ -138,7 +139,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.patch("/admin/ornith/{pair_id}/outcome")
     async def api_set_outcome(
         pair_id: str, req: SetOutcomeRequest
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         if req.status not in VALID_OUTCOME_STATUSES:
             raise HTTPException(
                 status_code=422,
@@ -164,7 +165,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.get("/admin/ornith/pending")
     async def api_list_pending(
         limit: int = 100, older_than_minutes: int = 0
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             return {"pending": [], "count": 0}
@@ -183,7 +184,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         since: datetime | None = None,
         project_id: str | None = None,
         out_path: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database available")
@@ -208,7 +209,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/ornith/stats")
-    async def api_stats() -> dict[str, Any]:
+    async def api_stats() -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             return {
@@ -227,7 +228,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         limit: int = 100,
         lookback_days: int = 0,
         project_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """List pairs filtered by comma-separated outcome statuses.
 
         ``status=rejected_by_gate,rejected_by_review,reverted`` is the shape
@@ -256,7 +257,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return {"pairs": [_pair_to_dict(r) for r in rows], "count": len(rows)}
 
     @app.get("/admin/ornith/status")
-    async def api_ornith_status() -> dict[str, Any]:
+    async def api_ornith_status() -> dict[str, object]:
         mcp_proc = getattr(app.state, "_ornith_mcp_proc", None)
         status = getattr(app.state, "_ornith_status", {})
         return {
@@ -270,7 +271,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/ornith/self-improve")
-    async def api_ornith_self_improve() -> dict[str, Any]:
+    async def api_ornith_self_improve() -> dict[str, object]:
         import httpx
 
         daemon_url = f"http://{app.state._host}:{app.state._port}" if hasattr(app.state, "_host") else "http://127.0.0.1:8000"
@@ -296,12 +297,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"status": "triggered", "cycle": cycle}
 
     @app.get("/admin/ornith/history")
-    async def api_ornith_history(limit: int = 20) -> dict[str, Any]:
+    async def api_ornith_history(limit: int = 20) -> dict[str, object]:
         history = getattr(app.state, "_ornith_history", [])
         return {"cycles": history[:max(1, min(limit, 100))], "count": len(history[:limit])}
 
     @app.get("/admin/ornith/config")
-    async def api_ornith_config_get() -> dict[str, Any]:
+    async def api_ornith_config_get() -> dict[str, object]:
         status = getattr(app.state, "_ornith_status", {})
         return {
             "ornith_enabled": bool(getattr(app.state, "_ornith_mcp_proc", None)),
@@ -314,7 +315,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         model_sha: str | None = None
 
     @app.put("/admin/ornith/config")
-    async def api_ornith_config_update(req: OrnithConfigUpdateRequest) -> dict[str, Any]:
+    async def api_ornith_config_update(req: OrnithConfigUpdateRequest) -> dict[str, object]:
         if req.model_sha is not None:
             status = getattr(app.state, "_ornith_status", {})
             status["model_sha"] = req.model_sha

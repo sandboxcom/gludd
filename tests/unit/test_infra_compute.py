@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import pytest
 
@@ -271,7 +272,7 @@ class TestProviderRegistry:
     def test_get_raises_for_unknown(self):
         reg = ProviderRegistry()
         with pytest.raises(KeyError):
-            reg.get("nonexistent")  # type: ignore[arg-type]
+            cast(Any, reg).get("nonexistent")
 
 
 class TestTerraformGeneratorAWS:

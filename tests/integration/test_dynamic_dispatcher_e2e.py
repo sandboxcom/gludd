@@ -15,6 +15,7 @@ Tests:
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -128,7 +129,7 @@ class TestStructuredToolCallsToCalls:
 
     def test_non_dict_tool_call_skipped(self):
         tool_calls = ["not_a_dict"]
-        assert structured_tool_calls_to_calls(tool_calls) == []  # type: ignore[arg-type]  # test stub
+        assert structured_tool_calls_to_calls(cast(Any, tool_calls)) == []
 
 
 # ---------------------------------------------------------------------------

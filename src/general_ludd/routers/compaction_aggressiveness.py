@@ -9,18 +9,23 @@ The shared CompactionAggressivenessController instance is stored on
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import FastAPI
 
+from general_ludd.controllers.compaction_aggressiveness import (
+    CompactionAggressivenessController,
+)
 
-def _get_controller(app: FastAPI) -> Any:
-    return getattr(app.state, "_compaction_aggressiveness_controller", None)
+
+def _get_controller(app: FastAPI) -> CompactionAggressivenessController | None:
+    controller = getattr(app.state, "_compaction_aggressiveness_controller", None)
+    if controller is None:
+        return None
+    return controller if isinstance(controller, CompactionAggressivenessController) else None
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/admin/compaction/aggressiveness-status")
-    async def api_compaction_aggressiveness_status() -> dict[str, Any]:
+    async def api_compaction_aggressiveness_status() -> dict[str, object]:
         controller = _get_controller(app)
         if controller is None:
             return {"available": False}

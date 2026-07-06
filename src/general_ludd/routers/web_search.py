@@ -5,7 +5,6 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
-from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 
@@ -99,12 +98,12 @@ def _web_search(query: str) -> list[dict[str, str]]:
     return results
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/web/search")
     async def admin_web_search(
         q: str = Query(..., min_length=1, max_length=512),
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         if not _RATE_LIMITER.allow():
             raise HTTPException(
                 status_code=429,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from general_ludd.infra.compute import (
     ComputeConfig,
     ComputeProvider,
@@ -20,7 +22,7 @@ def _config(**overrides: object) -> ComputeConfig:
         "model_name": "org/model",
     }
     base.update(overrides)
-    return ComputeConfig(**base)  # type: ignore[arg-type]  # test stub
+    return cast(Any, ComputeConfig)(**base)
 
 
 def test_build_deployment_dict_maps_engine_and_serving_knobs() -> None:

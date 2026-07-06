@@ -22,7 +22,7 @@ import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TypedDict, cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -33,6 +33,55 @@ Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
 DEFAULT_BASE_URL = "https://api.travis-ci.com"
 TRAVIS_API_VERSION = "3"
 
+
+# --------------------------------------------------------------------------- #
+# Typed API-response shapes (Travis CI API v3).
+# --------------------------------------------------------------------------- #
+class TravisBranchRef(TypedDict, total=False):
+    """The ``branch`` object embedded in a Travis build (API v3)."""
+
+    name: str
+
+
+class TravisCommitRef(TypedDict, total=False):
+    """The ``commit`` object embedded in a Travis build (API v3)."""
+
+    sha: str
+
+
+class TravisBuild(TypedDict, total=False):
+    """One element of the Travis ``builds[]`` array.
+
+    ``branch`` may be a string (older payloads) or a ``TravisBranchRef``
+    object (API v3) — both shapes are tolerated by :meth:`TravisSource._normalize_build`.
+    """
+
+    id: str
+    number: int
+    state: str
+    finished_at: str
+    branch: TravisBranchRef | str
+    commit: TravisCommitRef
+
+
+class TravisBuildsResponse(TypedDict, total=False):
+    """Top-level response of ``GET /repo/{slug}/builds``."""
+
+    builds: list[TravisBuild]
+
+
+class TravisLogResponse(TypedDict, total=False):
+    """Response shape of ``GET /job/{job_id}/log`` — ``{"content": "..."}``."""
+
+    content: str
+
+
+class TravisQuerySpec(TypedDict, total=False):
+    """Caller-supplied query selection accepted by :meth:`TravisSource.query`.
+
+    Currently unused (Travis's builds endpoint takes no filter params in this
+    connector), but kept for contract symmetry with sibling pipeline connectors.
+    """
 
 
 def _guard_base_url(base_url: str) -> str:
@@ -63,12 +112,12 @@ class TravisSource:
 
     KIND = "pipeline"
 
-    def __init__(self, config: Mapping[str, Any], transport: Transport | None = None) -> None:
+    def __init__(self, config: Mapping[str, object], transport: Transport | None = None) -> None:
         self._config = dict(config)
         self.name = str(self._config.get("name", "travis"))
         self.base_url = _guard_base_url(str(self._config.get("base_url", DEFAULT_BASE_URL)))
         self.slug = str(self._config.get("slug", ""))
-        self.timeout = float(self._config.get("timeout", 10.0))
+        self.timeout = float(cast(float | int | str | bool, self._config.get("timeout", 10.0)))
         self._token_env = str(self._config.get("token_env", "TRAVIS_TOKEN"))
         self._token = os.environ.get(self._token_env, "")
         self._transport: Transport = transport or _urllib_transport
@@ -92,18 +141,20 @@ class TravisSource:
         return f"{self.base_url}/repo/{encoded}/builds"
 
     @staticmethod
-    def _normalize_build(build: Mapping[str, Any]) -> dict[str, Any]:
+    def _normalize_build(build: Mapping[str, object]) -> dict[str, object]:
         ts = build.get("finished_at")
         branch_obj = build.get("branch")
         branch = ""
         if isinstance(branch_obj, Mapping):
-            branch = str(branch_obj.get("name") or "")
+            name_obj = branch_obj.get("name") or ""
+            branch = name_obj if isinstance(name_obj, str) else str(name_obj)
         elif isinstance(branch_obj, str):
             branch = branch_obj
         commit_obj = build.get("commit")
         commit = ""
         if isinstance(commit_obj, Mapping):
-            commit = str(commit_obj.get("sha") or "")
+            sha_obj = commit_obj.get("sha") or ""
+            commit = sha_obj if isinstance(sha_obj, str) else str(sha_obj)
         message = f"{branch}@{commit[:12]}" if commit else branch
         return {
             "ts": ts,
@@ -120,7 +171,7 @@ class TravisSource:
         }
 
     # -- public API --------------------------------------------------------
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         try:
             status, _ = self._request("GET", self._builds_url())
         except Exception as exc:  # health must never raise
@@ -129,17 +180,20 @@ class TravisSource:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
 
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: TravisQuerySpec | None = None) -> list[dict[str, object]]:
         status, body = self._request("GET", self._builds_url())
         if not (200 <= status < 300):
             raise ConnectorConfigError(f"travis builds query failed: HTTP {status}")
         payload = json.loads(body.decode("utf-8") or "{}")
         if not isinstance(payload, Mapping):
             raise ConnectorConfigError("travis builds response was not a JSON object")
-        builds = payload.get("builds", [])
-        if not isinstance(builds, list):
-            raise ConnectorConfigError("travis 'builds' field was not a JSON array")
-        return [self._normalize_build(b) for b in builds if isinstance(b, Mapping)]
+        builds_obj = payload.get("builds", [])
+        builds: list[object] = builds_obj if isinstance(builds_obj, list) else []
+        return [
+            self._normalize_build(cast("Mapping[str, object]", b))
+            for b in builds
+            if isinstance(b, Mapping)
+        ]
 
     def fetch_log(self, job_id: str) -> str:
         """Fetch the raw log content for a single Travis job."""
@@ -153,5 +207,6 @@ class TravisSource:
         except json.JSONDecodeError:
             return decoded
         if isinstance(doc, Mapping) and "content" in doc:
-            return str(doc["content"])
+            content_obj = doc["content"]
+            return content_obj if isinstance(content_obj, str) else str(content_obj)
         return decoded

@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: type_safety_audit
+  author: Agentic Harness Agent
+  description: >
+    Scans Python source for `Any` usage in type annotations using
+    scripts/check_type_strictness.py (the AST-based scanner behind
+    `make check-types`). Detects `Any` in return/param annotations, annotated
+    assignments, nested containers (dict[str, Any], list[Any]), Optional/Union
+    forms, the typing.Any attribute form, and stringified forward refs.
+    Enforces on NEW code via a baseline file. Fails the play when new
+    violations exceed the configurable threshold. Optionally calls
+    gludd_model_call for AI-assisted type-narrowing suggestions.
+    Ports .opencode/skills/type-safety/SKILL.md to a gludd role.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

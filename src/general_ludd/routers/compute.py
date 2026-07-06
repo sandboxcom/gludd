@@ -190,6 +190,50 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             )
 
         mgr = _get_deployment_manager()
+
+        # EPHEMERAL ACCOUNT HOOK: if the request (or daemon-wide config) asks
+        # for an ephemeral account, provision a fresh one NOW and stamp its
+        # credentials onto the deploy env. The account is tracked for
+        # automatic cleanup after the workload that used it completes.
+        ephemeral_creds: dict[str, Any] | None = None
+        ephemeral_mgr = getattr(app.state, "_ephemeral_account_manager", None)
+        ephemeral_policy = getattr(app.state, "_ephemeral_policy", None)
+        if (
+            req.get("ephemeral")
+            and ephemeral_mgr is not None
+            and ephemeral_policy is not None
+            and ephemeral_policy.auto_delete_after_use
+            and str(provider) in ("aws", "gcp", "azure")
+        ):
+            try:
+                from general_ludd.account.ephemeral import maybe_create_ephemeral_for_deploy
+                _meta: dict[str, Any] = {}
+                _new_mgr, creds = maybe_create_ephemeral_for_deploy(
+                    provider=str(provider),
+                    policy=ephemeral_policy,
+                    metadata=_meta,
+                    manager=ephemeral_mgr,
+                )
+                if creds is not None:
+                    ephemeral_creds = {
+                        "account_id": creds.account_id,
+                        "provider": creds.provider,
+                        "access_key_id": creds.access_key_id,
+                        "secret_access_key": creds.secret_access_key,
+                        "budget_limit": creds.budget_limit,
+                    }
+                    # Attach the ephemeral stamp so the EventLoop reconcile
+                    # phase can find it after the task completes.
+                    app.state._compute_deployments_ephemeral = getattr(
+                        app.state, "_compute_deployments_ephemeral", {}
+                    )
+            except Exception as exc:
+                logger.warning("ephemeral account creation failed: %s", exc, exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail={"error": "ephemeral account creation failed", "cause": str(exc)},
+                ) from exc
+
         try:
             instance = await mgr.deploy(config)
         except Exception as exc:
@@ -214,6 +258,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             ) from exc
 
         app.state._compute_deployments[instance.instance_id] = instance
+
+        # EPHEMERAL STAMP: if we provisioned an ephemeral account for this
+        # deploy, record the linkage so the EventLoop reconcile phase can find
+        # it when the workload completes.
+        if ephemeral_creds is not None:
+            app.state._compute_deployments_ephemeral[instance.instance_id] = ephemeral_creds
 
         # Bill-2: wire Slurm cost cap monitor for compute deployments with max_cost_usd
         max_cost = req.get("max_cost_usd", 10.0)

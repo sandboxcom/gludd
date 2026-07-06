@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, cast
+from collections.abc import Callable
+from typing import Protocol, cast
 
 from fastapi import FastAPI, HTTPException, Request
 
@@ -20,7 +21,7 @@ from general_ludd.daemon import (
 from general_ludd.db.repository import BenchmarkRepository
 from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
 from general_ludd.models.auto_configurator import AutoConfigurator, ModelPrioritizer
-from general_ludd.models.gateway import ModelGateway
+from general_ludd.models.gateway import ModelGateway, ModelResponse
 from general_ludd.models.langgraph_gateway import LangGraphGateway
 from general_ludd.models.openrouter_discovery import OpenRouterScraper
 from general_ludd.models.provider_presets import (
@@ -37,6 +38,15 @@ from general_ludd.scoring.router import AdaptiveRouter
 from general_ludd.security.sanitize import is_path_within
 
 logger = logging.getLogger(__name__)
+
+
+class _CheckAllLimitsGuard(Protocol):
+    """Structural type for budget guards exposing ``check_all_limits``."""
+
+    def check_all_limits(
+        self, estimated_cost: float = 0.0
+    ) -> dict[str, bool | str | float]: ...
+
 
 # DoS cap: /admin/models/call accepts a caller-supplied max_tokens int that is
 # threaded into the budget gate. An absurd value (e.g. 10**18) is a resource /
@@ -94,14 +104,14 @@ def _confined_code_path(app: FastAPI, path: str) -> str:
     return os.path.realpath(path)
 
 
-async def _parse_request_body(request: Request) -> dict[str, Any]:
+async def _parse_request_body(request: Request) -> dict[str, object]:
     body = await request.json() if hasattr(request, "json") else {}
     if isinstance(body, str):
         body = json.loads(body)
     return body
 
 
-def _serialize_discovered_profile(p: dict[str, Any], *, include_enabled: bool = False) -> dict[str, Any]:
+def _serialize_discovered_profile(p: dict[str, object], *, include_enabled: bool = False) -> dict[str, object]:
     result = {
         "model_profile_id": p["model_profile_id"],
         "model_name": p["model_name"],
@@ -118,10 +128,10 @@ def _serialize_discovered_profile(p: dict[str, Any], *, include_enabled: bool = 
     return result
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/models")
-    async def admin_add_model(req: AddModelRequest) -> dict[str, Any]:
+    async def admin_add_model(req: AddModelRequest) -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         if not hasattr(app.state, "_model_gateway") or app.state._model_gateway is None:
             if not hasattr(app.state, "_health_tracker"):
@@ -154,7 +164,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"model_id": req.model_id, "profile": profile.model_dump()}
 
     @app.delete("/admin/models/{model_id}")
-    async def admin_remove_model(model_id: str) -> dict[str, Any]:
+    async def admin_remove_model(model_id: str) -> dict[str, object]:
         if hasattr(app.state, "_model_gateway") and app.state._model_gateway is not None:
             app.state._model_gateway.remove_profile(model_id)
         return {"removed": model_id}
@@ -162,7 +172,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/models/discover")
     async def admin_models_discover(
         provider: str = "openrouter",
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         configured = list_configured_providers()
         if provider not in configured and provider != "openrouter":
             msg = f"Provider '{provider}' not configured (missing credentials)"
@@ -194,7 +204,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/models/discovered")
-    async def admin_models_discovered() -> dict[str, Any]:
+    async def admin_models_discovered() -> dict[str, object]:
         profiles = getattr(app.state, "_discovered_profiles", None)
         if profiles is None:
             return {"profiles": []}
@@ -206,7 +216,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def admin_observability_comparison(
         task_type: str | None = None,
         sort_by: str = "composite",
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         # H1-residual (W3.10): lifespan sets _session_factory, never _session.
         # Reading _session always returned "No DB session available".
         session_factory = getattr(app.state, "_session_factory", None)
@@ -218,16 +228,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return await comparison.compare_models(task_type=task_type, sort_by=sort_by)
 
     @app.post("/admin/code/blocks")
-    async def admin_code_blocks(request: Request) -> dict[str, Any]:
+    async def admin_code_blocks(request: Request) -> dict[str, object]:
         body = await _parse_request_body(request)
-        source = body.get("source", "")
-        language = body.get("language", "python")
+        source = cast(str, body.get("source", ""))
+        language = cast(str, body.get("language", "python"))
         extractor = ASTBlockExtractor()
         blocks = extractor.extract_blocks(source, language=language)
         return {"blocks": blocks, "count": len(blocks)}
 
     @app.get("/admin/code/graph")
-    async def admin_code_graph(source: str = "", language: str = "python") -> dict[str, Any]:
+    async def admin_code_graph(source: str = "", language: str = "python") -> dict[str, object]:
         extractor = ASTBlockExtractor()
         blocks = extractor.extract_blocks(source, language=language)
         graph = CallGraph()
@@ -240,7 +250,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         query: str = "",
         type_filter: str | None = None,
         language: str = "python",
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         extractor = ASTBlockExtractor()
         blocks = extractor.extract_blocks(source, language=language)
         searcher = CodeSearch(blocks)
@@ -248,14 +258,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"results": results, "count": len(results)}
 
     @app.get("/admin/models")
-    async def admin_list_models() -> dict[str, Any]:
+    async def admin_list_models() -> dict[str, object]:
         if hasattr(app.state, "_model_gateway") and app.state._model_gateway is not None:
             profiles = app.state._model_gateway.list_profiles()
             return {"profiles": [p.model_dump() for p in profiles]}
         return {"profiles": []}
 
     @app.get("/admin/models/health")
-    async def admin_models_health() -> dict[str, Any]:
+    async def admin_models_health() -> dict[str, object]:
         if hasattr(app.state, "_health_tracker") and app.state._health_tracker is not None:
             tracker = app.state._health_tracker
             if hasattr(app.state, "_model_gateway") and app.state._model_gateway is not None:
@@ -265,7 +275,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"health": []}
 
     @app.post("/admin/models/search")
-    async def admin_models_search(req: ModelSearchRequest) -> dict[str, Any]:
+    async def admin_models_search(req: ModelSearchRequest) -> dict[str, object]:
         ext = _get_or_create_extended_subsystems(app)
         results = ext["model_registry"].search(query=req.query, limit=req.limit)
         return {
@@ -283,7 +293,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/models/downloaded")
-    async def admin_models_downloaded() -> dict[str, Any]:
+    async def admin_models_downloaded() -> dict[str, object]:
         ext = _get_or_create_extended_subsystems(app)
         models = ext["model_registry"].list_downloaded()
         return {
@@ -299,19 +309,19 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/local-inference/start")
-    async def admin_local_inference_start(payload: dict[str, Any]) -> dict[str, Any]:
+    async def admin_local_inference_start(payload: dict[str, object]) -> dict[str, object]:
         if not hasattr(app.state, "_local_inference") or app.state._local_inference is None:
             subsys = _get_or_create_subsystems(app)
             app.state._local_inference = LocalInferenceManager(event_bus=subsys["bus"])
         manager: LocalInferenceManager = app.state._local_inference
         config = LocalServerConfig(
-            engine=payload.get("engine", "vllm"),
-            model_path=payload.get("model_path", ""),
-            model_name=payload.get("model_name", ""),
-            host=payload.get("host", "localhost"),
-            port=payload.get("port", 8001),
-            gpu_layers=payload.get("gpu_layers", -1),
-            context_size=payload.get("context_size", 4096),
+            engine=cast(str, payload.get("engine", "vllm")),
+            model_path=cast(str, payload.get("model_path", "")),
+            model_name=cast(str, payload.get("model_name", "")),
+            host=cast(str, payload.get("host", "localhost")),
+            port=cast(int, payload.get("port", 8001)),
+            gpu_layers=cast(int, payload.get("gpu_layers", -1)),
+            context_size=cast(int, payload.get("context_size", 4096)),
         )
         server = manager.create_server(config)
         await manager.start_server(server.server_id)
@@ -324,9 +334,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/code/complexity")
-    async def admin_code_complexity(request: Request) -> dict[str, Any]:
+    async def admin_code_complexity(request: Request) -> dict[str, object]:
         body = await _parse_request_body(request)
-        path = body.get("path", "")
+        path = cast(str, body.get("path", ""))
         safe_path = _confined_code_path(app, path)
         scorer = CodeComplexityScorer()
         score = scorer.score_file(safe_path)
@@ -337,15 +347,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/code/suggest-model")
-    async def admin_code_suggest_model(request: Request) -> dict[str, Any]:
+    async def admin_code_suggest_model(request: Request) -> dict[str, object]:
         body = await _parse_request_body(request)
-        path = body.get("path", "")
+        path = cast(str, body.get("path", ""))
         safe_path = _confined_code_path(app, path)
         scorer = CodeComplexityScorer()
         score = scorer.score_file(safe_path)
         task_type = scorer.suggest_task_type(score)
 
-        recommendation: dict[str, Any] = {
+        recommendation: dict[str, object] = {
             "selected_prompt_profile_id": None,
             "selected_model_profile_id": "default",
             "composite_score": 0.0,
@@ -387,7 +397,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "usage. Budget-gated, PSK-authenticated."
         ),
     )
-    async def admin_models_call(request: Request) -> dict[str, Any]:
+    async def admin_models_call(request: Request) -> dict[str, object]:
         """W6.2: model generation endpoint for Ansible modules and external callers.
 
         Request body:
@@ -409,7 +419,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         """
         body = await _parse_request_body(request)
 
-        prompt: str = body.get("prompt", "")
+        prompt: str = cast(str, body.get("prompt", ""))
         if not prompt:
             raise HTTPException(status_code=422, detail="prompt is required")
 
@@ -442,8 +452,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                     _nudge += f" The JSON must match this schema: {_schema_json}."
             system_text = f"{system_text}\n\n{_nudge}".strip() if system_text else _nudge
 
-        model_profile_id: str | None = body.get("model_profile")
-        route_task_type: str | None = body.get("route_task_type")
+        model_profile_id: str | None = cast(str | None, body.get("model_profile"))
+        route_task_type: str | None = cast(str | None, body.get("route_task_type"))
         # The caller-supplied output cap. The gateway does not yet forward this
         # to the provider (per-call token limits come from profile config), but
         # it IS threaded into the budget gate as requested_max_output_tokens so
@@ -453,7 +463,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # over-conservatism). estimate_cost min()s it against the profile cap, so
         # a caller cannot use it to under-report below the profile's capacity.
         try:
-            requested_max_output_tokens: int | None = int(body.get("max_tokens", 2048))
+            requested_max_output_tokens: int | None = int(cast(int | float | str, body.get("max_tokens", 2048)))
         except (TypeError, ValueError):
             requested_max_output_tokens = None
         if requested_max_output_tokens is not None and requested_max_output_tokens <= 0:
@@ -485,7 +495,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         )
         if _guard_active:
             try:
-                _verdict = cast(Any, _budget_guard).check_all_limits(estimated_cost=0.0)
+                _verdict = cast(_CheckAllLimitsGuard, _budget_guard).check_all_limits(estimated_cost=0.0)
             except Exception as _exc:
                 logger.warning("budget check raised: %s", _exc, exc_info=True)
                 raise HTTPException(
@@ -592,7 +602,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "warnings. Budget-gated, PSK-authenticated."
         ),
     )
-    async def admin_models_workflow(request: Request) -> dict[str, Any]:
+    async def admin_models_workflow(request: Request) -> dict[str, object]:
         """Run the multi-step LangGraph workflow over a chat-message list.
 
         Mirrors /admin/models/call's auth (PSK middleware) and budget pre-check,
@@ -621,11 +631,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 status_code=422, detail="messages must be a non-empty list"
             )
 
-        profile_id: str | None = body.get("profile_id")
-        work_type: str | None = body.get("work_type")
+        profile_id: str | None = cast(str | None, body.get("profile_id"))
+        work_type: str | None = cast(str | None, body.get("work_type"))
         try:
-            max_retries = int(body.get("max_retries", 2))
-            quality_threshold = float(body.get("quality_threshold", 0.6))
+            max_retries = int(cast(int | float | str, body.get("max_retries", 2)))
+            quality_threshold = float(cast(float | int | str, body.get("quality_threshold", 0.6)))
         except (TypeError, ValueError) as exc:
             logger.warning("invalid numeric parameter in workflow request: %s", exc, exc_info=True)
             raise HTTPException(
@@ -652,7 +662,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         )
         if _guard_active:
             try:
-                _verdict = cast(Any, _budget_guard).check_all_limits(estimated_cost=0.0)
+                _verdict = cast(_CheckAllLimitsGuard, _budget_guard).check_all_limits(estimated_cost=0.0)
             except Exception as _exc:
                 logger.warning("budget check raised: %s", _exc, exc_info=True)
                 raise HTTPException(
@@ -704,13 +714,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         _gateway = gateway
 
         async def _call_model_fn(
-            profile_id: str, messages: list[Any], **kwargs: Any
-        ) -> Any:
+            profile_id: str, messages: list[dict[str, str]], **kwargs: object
+        ) -> ModelResponse:
             # Forward extra kwargs (e.g. work_type, used for token-cost capture at
             # the gateway billing chokepoint) through to call_model so the
             # LangGraphGateway generation path is metered like every other path.
             return await asyncio.to_thread(
-                _gateway.call_model, profile_id, messages, **kwargs
+                cast(Callable[..., ModelResponse], _gateway.call_model),
+                profile_id,
+                messages,
+                **kwargs,
             )
 
         gw = LangGraphGateway(

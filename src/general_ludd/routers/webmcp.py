@@ -22,8 +22,6 @@ Only endpoints that genuinely exist are listed here (honest documentation).
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import FastAPI
 
 # Paths that the daemon allows without a PSK token.
@@ -61,7 +59,7 @@ _FACTS_FACETS = [
 ]
 
 # Endpoint inventory — only what truly exists on the daemon.
-_ENDPOINTS: list[dict[str, Any]] = [
+_ENDPOINTS: list[dict[str, object]] = [
     # ── Probe / status ──────────────────────────────────────────────────────
     {
         "method": "GET",
@@ -413,7 +411,7 @@ _ENDPOINTS: list[dict[str, Any]] = [
 # Error envelope shapes the daemon actually emits, keyed by HTTP status.
 # Grounded in daemon.py's auth middleware + FastAPI's default validation handler,
 # so a context-free consumer can parse failures, not only successes.
-_ERROR_RESPONSES: dict[str, dict[str, Any]] = {
+_ERROR_RESPONSES: dict[str, dict[str, object]] = {
     "401": {
         "meaning": (
             "Missing or invalid Bearer token on a protected path (GLUDD_PSK is "
@@ -443,7 +441,7 @@ _ERROR_RESPONSES: dict[str, dict[str, Any]] = {
 }
 
 
-_SELF_DESCRIPTION: dict[str, Any] = {
+_SELF_DESCRIPTION: dict[str, object] = {
     "name": "general-ludd-agent",
     "description": (
         "Autonomous agentic SDLC daemon.  Exposes a REST API for task management, "
@@ -484,11 +482,11 @@ _SELF_DESCRIPTION: dict[str, Any] = {
 }
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     """Register GET /api/webmcp — no PSK required (deliberately public)."""
 
     @app.get("/api/webmcp")
-    async def api_webmcp() -> dict[str, Any]:
+    async def api_webmcp() -> dict[str, object]:
         """Machine-readable self-description for context-free consumers.
 
         Returns the endpoint inventory, auth instructions, and /api/facts

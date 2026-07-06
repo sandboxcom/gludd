@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -92,7 +93,7 @@ class TestEventLoopPollPhase:
 
     def test_phase_noop_when_ingestor_is_none(self) -> None:
         ingestor = GitHubIssueIngestor()
-        ingestor.is_configured = MagicMock(return_value=False)  # type: ignore[method-assign]
+        cast(Any, ingestor).is_configured = MagicMock(return_value=False)
         loop = EventLoop(session=MagicMock(spec=AsyncSession), issue_ingestor=None)
         loop._issue_ingestor = None
         # Should not raise
@@ -103,27 +104,27 @@ class TestEventLoopPollPhase:
 
     def test_phase_skips_when_counter_below_interval(self) -> None:
         ingestor = GitHubIssueIngestor(owner="o", repo="r")
-        ingestor.poll_issues = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        cast(Any, ingestor).poll_issues = AsyncMock(return_value=[])
         loop = EventLoop(session=MagicMock(spec=AsyncSession), issue_ingestor=ingestor)
         loop._issue_poll_interval_ticks = 10
         loop._issue_poll_tick_counter = 5
         import asyncio
         asyncio.run(loop._phase_poll_issue_sources())
-        ingestor.poll_issues.assert_not_called()  # type: ignore[attr-defined]
+        cast(Any, ingestor.poll_issues).assert_not_called()
 
     def test_phase_polls_when_counter_reaches_interval(self) -> None:
         ingestor = GitHubIssueIngestor(owner="o", repo="r")
-        ingestor.poll_issues = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        cast(Any, ingestor).poll_issues = AsyncMock(return_value=[])
         loop = EventLoop(session=MagicMock(spec=AsyncSession), issue_ingestor=ingestor)
         loop._issue_poll_interval_ticks = 5
         loop._issue_poll_tick_counter = 5
         import asyncio
         asyncio.run(loop._phase_poll_issue_sources())
-        ingestor.poll_issues.assert_called_once()  # type: ignore[attr-defined]
+        cast(Any, ingestor.poll_issues).assert_called_once()
 
     def test_phase_resets_counter_after_poll(self) -> None:
         ingestor = GitHubIssueIngestor(owner="o", repo="r")
-        ingestor.poll_issues = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        cast(Any, ingestor).poll_issues = AsyncMock(return_value=[])
         loop = EventLoop(session=MagicMock(spec=AsyncSession), issue_ingestor=ingestor)
         loop._issue_poll_interval_ticks = 5
         loop._issue_poll_tick_counter = 5
@@ -136,7 +137,7 @@ class TestEventLoopPollPhase:
         todo = {"title": "Fix bug", "description": "desc", "queue": "core",
                 "priority": "medium", "work_type": "bug_fix",
                 "source": "github:o/r#1"}
-        ingestor.poll_issues = AsyncMock(return_value=[todo])  # type: ignore[method-assign]
+        cast(Any, ingestor).poll_issues = AsyncMock(return_value=[todo])
         session = MagicMock(spec=AsyncSession)
         loop = EventLoop(session=session, issue_ingestor=ingestor)
         loop._issue_poll_interval_ticks = 1
@@ -151,7 +152,7 @@ class TestEventLoopPollPhase:
 
     def test_phase_handles_poll_exception_gracefully(self) -> None:
         ingestor = GitHubIssueIngestor(owner="o", repo="r")
-        ingestor.poll_issues = AsyncMock(side_effect=RuntimeError("network down"))  # type: ignore[method-assign]
+        cast(Any, ingestor).poll_issues = AsyncMock(side_effect=RuntimeError("network down"))
         loop = EventLoop(session=MagicMock(spec=AsyncSession), issue_ingestor=ingestor)
         loop._issue_poll_interval_ticks = 1
         loop._issue_poll_tick_counter = 1
@@ -162,7 +163,7 @@ class TestEventLoopPollPhase:
     def test_phase_handles_create_exception_gracefully(self) -> None:
         ingestor = GitHubIssueIngestor(owner="o", repo="r")
         todo = {"title": "Fix bug"}
-        ingestor.poll_issues = AsyncMock(return_value=[todo])  # type: ignore[method-assign]
+        cast(Any, ingestor).poll_issues = AsyncMock(return_value=[todo])
         session = MagicMock(spec=AsyncSession)
         loop = EventLoop(session=session, issue_ingestor=ingestor)
         loop._issue_poll_interval_ticks = 1
@@ -177,7 +178,7 @@ class TestEventLoopPollPhase:
 
     def test_phase_skips_when_poll_returns_empty(self) -> None:
         ingestor = GitHubIssueIngestor(owner="o", repo="r")
-        ingestor.poll_issues = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        cast(Any, ingestor).poll_issues = AsyncMock(return_value=[])
         session = MagicMock(spec=AsyncSession)
         loop = EventLoop(session=session, issue_ingestor=ingestor)
         loop._issue_poll_interval_ticks = 1

@@ -117,7 +117,9 @@ class CsvExcelSource(IssueSource):
 
     def _load_xlsx_rows(self) -> tuple[list[str], list[list[str]]]:
         try:
-            import openpyxl  # type: ignore[import-untyped]  # openpyxl: optional, only for .xlsx parsing
+            import importlib
+
+            openpyxl = importlib.import_module("openpyxl")  # openpyxl: optional, only for .xlsx parsing
         except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
             raise RuntimeError(
                 "reading .xlsx requires the optional 'openpyxl' dependency; "
@@ -224,7 +226,9 @@ class CsvExcelSource(IssueSource):
 
     def _write_back_xlsx(self, external_id: str, word: str) -> bool:
         try:
-            import openpyxl
+            import importlib
+
+            openpyxl = importlib.import_module("openpyxl")
         except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
             raise RuntimeError(
                 "writing .xlsx requires the optional 'openpyxl' dependency"

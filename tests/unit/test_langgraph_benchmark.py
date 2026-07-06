@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from typing import Any, cast
 
 import pytest
 
@@ -251,7 +252,7 @@ class TestBenchmarkRunner:
         captured = StringIO()
         original = sys.stdout
         try:
-            sys.stdout = captured  # type: ignore[assignment]
+            sys.stdout = cast(Any, captured)
             runner.report()
             output = captured.getvalue()
         finally:
@@ -471,7 +472,7 @@ class TestReviewerComparison:
         )
         registry = _MockPromptRegistry()
 
-        reviewer = ReturnReviewer(gateway=gateway, prompt_registry=registry)  # type: ignore[arg-type]
+        reviewer = cast(Any, ReturnReviewer)(gateway=gateway, prompt_registry=registry)
         tr = TaskReturn(
             return_id="r001",
             job_id="j001",
@@ -636,7 +637,7 @@ class TestFullBenchmarkPipeline:
         captured = StringIO()
         original = sys.stdout
         try:
-            sys.stdout = captured  # type: ignore[assignment]
+            sys.stdout = cast(Any, captured)
             runner.report()
             output = captured.getvalue()
         finally:

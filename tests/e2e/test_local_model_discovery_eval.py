@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -749,7 +749,7 @@ class TestLocalModelLive:
         return ModelGateway(
             profiles=[profile],
             provider_registry=registry,
-            secrets_manager=secrets,  # type: ignore[arg-type]  # test stub
+            secrets_manager=cast(Any, secrets),
         )
 
     def test_live_hardware_probe_and_discovery(self) -> None:

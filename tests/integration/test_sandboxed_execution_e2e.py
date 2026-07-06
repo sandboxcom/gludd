@@ -13,6 +13,8 @@ Tests the full sandbox backend pipeline:
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from general_ludd.security.permissions import Capability, PermissionSpec
@@ -52,7 +54,7 @@ class TestSandboxTarget:
 
         target = SandboxTarget(pid=1)
         with pytest.raises(FrozenInstanceError):
-            target.pid = 2  # type: ignore[misc]
+            cast(Any, target).pid = 2
 
     def test_multiple_fields_populated(self):
         target = SandboxTarget(pid=42, directory="/sandbox", service="unit")
@@ -127,7 +129,7 @@ class TestFinding:
 
         f = Finding(severity="ok", message="x")
         with pytest.raises(FrozenInstanceError):
-            f.severity = "fail"  # type: ignore[misc]
+            cast(Any, f).severity = "fail"
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +147,7 @@ class TestConstraintHelpers:
         assert constraint_value(cap, "path_prefix") is None
 
     def test_constraint_value_non_dict_constraints_returns_none(self):
-        cap = Capability(name="net", description="", constraints="bad")  # type: ignore[arg-type]  # test stub
+        cap = cast(Any, Capability)(name="net", description="", constraints="bad")
         assert constraint_value(cap, "x") is None
 
     def test_path_prefix_string(self):

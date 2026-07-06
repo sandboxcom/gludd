@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 
@@ -40,8 +40,8 @@ def _make_handler() -> tuple[Any, dict[str, Any]]:
         state["status_msg"] = "Daemon stopped"
 
     handler = TUIKeyHandler(state)
-    handler._start_daemon = _start_daemon  # type: ignore[assignment]
-    handler._stop_daemon = _stop_daemon  # type: ignore[assignment]
+    cast(Any, handler)._start_daemon = _start_daemon
+    cast(Any, handler)._stop_daemon = _stop_daemon
     return handler, state
 
 

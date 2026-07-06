@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: background_test_runner
+  author: Agentic Harness Agent
+  description: >
+    Launches a long-running test in the background and polls its status until
+    terminal, so a gludd daemon agent is never blocked waiting for a test
+    result. Wraps `make test-bg` / `make test-bg-status` / `make test-bg-kill`.
+    Supports state=launch (start + poll), state=status (one-shot probe), and
+    state=kill (terminate). Ports
+    .opencode/skills/background-test-runner/SKILL.md to a gludd role.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

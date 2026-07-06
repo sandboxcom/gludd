@@ -1,32 +1,32 @@
 from __future__ import annotations
 
 import base64
+import importlib
 import json
 import logging
 import os
 import re
 import secrets
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.secrets.manager import SecretsManager, SecretsUnavailableError
 
 logger = logging.getLogger("general_ludd.secrets.payment_vault")
 
+hashes: Any = None
+AESGCM: Any = None
+HKDF: Any = None
 try:
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    hashes = importlib.import_module("cryptography.hazmat.primitives.hashes")
+    _aead = importlib.import_module("cryptography.hazmat.primitives.ciphers.aead")
+    AESGCM = _aead.AESGCM
+    _hkdf = importlib.import_module("cryptography.hazmat.primitives.kdf.hkdf")
+    HKDF = _hkdf.HKDF
 
     _CRYPTO_AVAILABLE = True
 except ImportError as _import_err:  # pragma: no cover - exercised only when dep missing
     _CRYPTO_AVAILABLE = False
-    # Optional dependency: cryptography may be absent (slim install). The
-    # try/except is the documented Python idiom; suppressions are required
-    # because mypy sees the imports as already defining these names.
-    hashes = None  # type: ignore[assignment]
-    AESGCM = None  # type: ignore[assignment, misc]
-    HKDF = None  # type: ignore[assignment, misc]
 
 
 _KEK_PATH = "gludd/payment/kek"
@@ -293,9 +293,12 @@ class SecurePaymentVault:
         return root
 
     def _derive_kek(self, root_key: bytes, label: str) -> bytes:
-        return HKDF(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=None,
-            info=label.encode("utf-8"),
-        ).derive(root_key)
+        return cast(
+            bytes,
+            HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=label.encode("utf-8"),
+            ).derive(root_key),
+        )

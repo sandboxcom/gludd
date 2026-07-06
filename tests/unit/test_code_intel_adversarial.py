@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,7 +14,7 @@ class TestExtractorAdversarial:
 
         extractor = ASTBlockExtractor()
         with pytest.raises((TypeError, AttributeError)):
-            extractor.extract_blocks(None)  # type: ignore[arg-type]
+            cast(Any, extractor).extract_blocks(None)
 
     def test_extract_binary_data(self):
         from general_ludd.code_intelligence.extractor import ASTBlockExtractor
@@ -153,7 +154,7 @@ class TestCallGraphAdversarial:
 
         graph = CallGraph()
         graph.build_from_blocks([
-            {"name": 123, "type": "function"},  # type: ignore[dict-item]
+            cast(Any, {"name": 123, "type": "function"}),
             {},
             {"name": "valid", "type": "function"},
         ])
@@ -203,7 +204,7 @@ class TestCodeSearchAdversarial:
         from general_ludd.code_intelligence.search import CodeSearch
 
         searcher = CodeSearch([{"name": "test", "type": "function"}])
-        results = searcher.search(None, type_filter="function")  # type: ignore[arg-type]
+        results = cast(Any, searcher).search(None, type_filter="function")
         assert len(results) == 1
 
     def test_search_blocks_with_missing_fields(self):

@@ -27,7 +27,7 @@ class _FakeHeaders(dict):
     the object, so being a real dict (not a MagicMock) is needed.
     """
 
-    def items(self):  # type: ignore[override]
+    def items(self):
         return list(super().items())
 
 

@@ -14,7 +14,7 @@ Tests cover:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -160,7 +160,7 @@ class TestHotReloaderSkillsRefresh:
 
         def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:
             captured_skills_dirs.append(kwargs.get("skills_dirs"))
-            original_init(self, *args, **kwargs)  # type: ignore[misc]
+            cast(Any, original_init)(self, *args, **kwargs)
 
         from general_ludd import daemon as daemon_mod
         from general_ludd.reload import hot_reloader as hr_mod
@@ -213,7 +213,7 @@ class TestHotReloaderSkillsRefresh:
 
         def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:
             captured_skills_dirs.append(kwargs.get("skills_dirs"))
-            original_init(self, *args, **kwargs)  # type: ignore[misc]
+            cast(Any, original_init)(self, *args, **kwargs)
 
         from general_ludd import daemon as daemon_mod
         from general_ludd.reload import hot_reloader as hr_mod
@@ -259,7 +259,7 @@ class TestHotReloaderSkillsRefresh:
 
         def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:
             captured_skills_dirs.append(kwargs.get("skills_dirs"))
-            original_init(self, *args, **kwargs)  # type: ignore[misc]
+            cast(Any, original_init)(self, *args, **kwargs)
 
         from general_ludd import daemon as daemon_mod
         from general_ludd.reload import hot_reloader as hr_mod

@@ -13,7 +13,7 @@ import json
 import urllib.error
 import urllib.request
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,8 +32,8 @@ def test_pagerduty_transport_passes_follow_redirects_false() -> None:
     def fake_httpx_get(url: str, **kwargs: Any) -> SimpleNamespace:
         captured.update(kwargs)
         resp = SimpleNamespace(status_code=200)
-        resp.json = lambda: {}  # type: ignore[assignment]
-        return resp  # type: ignore[return-value]
+        cast(Any, resp).json = lambda: {}
+        return resp
 
     transport = _DefaultTransport()
     with patch("httpx.get", side_effect=fake_httpx_get):
@@ -66,8 +66,8 @@ def test_opsgenie_transport_passes_follow_redirects_false() -> None:
     def fake_httpx_get(url: str, **kwargs: Any) -> SimpleNamespace:
         captured.update(kwargs)
         resp = SimpleNamespace(status_code=200)
-        resp.json = lambda: {}  # type: ignore[assignment]
-        return resp  # type: ignore[return-value]
+        cast(Any, resp).json = lambda: {}
+        return resp
 
     transport = _DefaultTransport()
     with patch("httpx.get", side_effect=fake_httpx_get):
@@ -181,7 +181,7 @@ def test_monday_default_transport_uses_no_redirect_opener() -> None:
 
 def _fake_response() -> SimpleNamespace:
     resp = SimpleNamespace(status_code=200)
-    resp.json = lambda: {}  # type: ignore[attr-defined]
+    cast(Any, resp).json = lambda: {}
     return resp
 
 

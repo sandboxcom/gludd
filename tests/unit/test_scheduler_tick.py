@@ -11,7 +11,7 @@ W(#23): verify that _phase_dispatch_execute_jobs uses Scheduler.plan() to:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -115,7 +115,7 @@ class TestSchedulerTickConcurrentDispatch:
         loop._active_session = None
 
         # Patch _dispatch_execute_job to use our fake.
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         # Rebuild _dispatch_execute_job_isolated to use the patched method.
         # We need it to call the fake directly (skip the isolated session wrapper)
@@ -127,7 +127,7 @@ class TestSchedulerTickConcurrentDispatch:
             await fake_dispatch(todo)
             isolated_calls.append(todo.todo_id)
 
-        loop._dispatch_execute_job_isolated = fake_isolated  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job_isolated = fake_isolated
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
 
@@ -161,7 +161,7 @@ class TestSchedulerTickConcurrentDispatch:
         loop._task_return_repo = None
         loop._active_session = MagicMock()
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
 
@@ -202,7 +202,7 @@ class TestSchedulerTickConcurrentDispatch:
         loop._budget_guard = None
         loop._mcp_tool_registry = None
         loop._adaptive_router = None
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         with patch(
             "general_ludd.scheduling.scheduler.Scheduler.plan",
@@ -238,7 +238,7 @@ class TestSchedulerTickConcurrentDispatch:
         loop._active_session = None
         loop._tick_state = {"claimed_todos": todos}
         loop._tick_metrics = {"todos_dispatched": 0}
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         await loop._phase_dispatch_execute_jobs()
 
@@ -273,7 +273,7 @@ class TestSchedulerTickConcurrentDispatch:
         loop._active_session = None
         loop._tick_state = {"claimed_todos": todos, "pid_outputs": pid}
         loop._tick_metrics = {"todos_dispatched": 0}
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         await loop._phase_dispatch_execute_jobs()
 
@@ -305,7 +305,7 @@ class TestSchedulerOrderDriven:
         loop._budget_guard = None
         loop._mcp_tool_registry = None
         loop._adaptive_router = None
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         await loop._dispatch_jobs_via_scheduler(todos)
 
@@ -336,7 +336,7 @@ class TestSchedulerOrderDriven:
         loop._budget_guard = None
         loop._mcp_tool_registry = None
         loop._adaptive_router = None
-        loop._dispatch_execute_job_isolated = fake_isolated  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job_isolated = fake_isolated
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
 
@@ -385,7 +385,7 @@ class TestSchedulerOrderDriven:
             concurrent_batches.extend(batches)
             return len(todos_)
 
-        loop._dispatch_jobs_via_scheduler = recording_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_jobs_via_scheduler = recording_dispatch
 
         await loop._dispatch_jobs_via_scheduler(todos)
 
@@ -420,7 +420,7 @@ class TestDispatchExecuteJobIsolated:
         loop._budget_guard = None
         loop._mcp_tool_registry = None
         loop._adaptive_router = None
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         await loop._dispatch_execute_job_isolated(todo)
 

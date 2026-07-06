@@ -27,8 +27,14 @@ from typing import Any, TypeVar
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from general_ludd.db.repository import RemediationActionRepository
+from general_ludd.db.models import RemediationActionModel
+from general_ludd.db.repository import (
+    HumanTodoRepository,
+    RemediationActionRepository,
+    TodoRepository,
+)
 from general_ludd.remediation.blocker_detector import (
     BlockedTask,
     BlockerDetector,
@@ -78,7 +84,7 @@ def _action_to_dict(a: RemediationAction) -> dict[str, Any]:
     }
 
 
-def _remediation_row_to_dict(row: Any) -> dict[str, Any]:
+def _remediation_row_to_dict(row: RemediationActionModel) -> dict[str, Any]:
     try:
         detail = _json.loads(row.detail or "{}")
     except Exception:
@@ -178,9 +184,9 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
 
         async def _run(
             *,
-            session: Any,
-            todo_repo: Any,
-            human_todo_repo: Any,
+            session: AsyncSession,
+            todo_repo: TodoRepository,
+            human_todo_repo: HumanTodoRepository,
         ) -> dict[str, Any]:
             det = BlockerDetector(
                 todo_repo=todo_repo,
@@ -206,9 +212,9 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
 
         async def _run(
             *,
-            session: Any,
-            todo_repo: Any,
-            human_todo_repo: Any,
+            session: AsyncSession,
+            todo_repo: TodoRepository,
+            human_todo_repo: HumanTodoRepository,
         ) -> dict[str, Any]:
             from general_ludd.db.repository import RemediationActionRepository
 
@@ -251,9 +257,9 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
 
         async def _run(
             *,
-            session: Any,
-            todo_repo: Any,
-            human_todo_repo: Any,
+            session: AsyncSession,
+            todo_repo: TodoRepository,
+            human_todo_repo: HumanTodoRepository,
         ) -> dict[str, Any]:
             det = BlockerDetector(
                 todo_repo=todo_repo,

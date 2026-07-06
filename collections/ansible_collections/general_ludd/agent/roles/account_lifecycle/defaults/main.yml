@@ -1,0 +1,27 @@
+---
+# account_lifecycle role defaults
+
+# Cloud provider to target (aws | gcp | azure)
+provider: "aws"
+
+# Budget cap in USD for each ephemeral account
+budget_limit: 10.0
+
+# Retention window (hours) after which an ephemeral account is eligible for cleanup
+retention_period_hours: 24
+
+# When true, accounts are deleted once the task that requested them completes
+auto_delete_after_use: true
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-account-lifecycle"
+
+# Model routing (for the audit phase)
+model_profile: ""
+
+# Destructive ops guard — never enables git push from this role
+enable_git_push: false

@@ -11,6 +11,7 @@ Covers:
 
 from __future__ import annotations
 
+import importlib.util
 from unittest.mock import patch
 
 import pytest
@@ -214,10 +215,10 @@ class TestOpenAIEmbedderOption:
             # When key is available, the embedder should NOT be the hash fallback.
             # (It may still be hash if the openai package is missing, so we only
             # assert non-hash-when-openai-importable.)
-            try:
-                import openai  # noqa: F401  import probe — checks if openai is installed
+            _openai_available = importlib.util.find_spec("openai") is not None
+            if _openai_available:
                 assert not isinstance(se._embedder, HashEmbedder)
-            except ImportError:
+            else:
                 assert isinstance(se._embedder, HashEmbedder)
 
     def test_skill_embedder_accepts_custom_embedder(self):

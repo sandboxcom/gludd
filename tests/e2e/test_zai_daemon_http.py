@@ -22,6 +22,7 @@ To run locally (once a key is available):
 from __future__ import annotations
 
 import os
+from typing import Any, cast
 
 import pytest
 
@@ -91,7 +92,7 @@ def _build_zai_gateway() -> ModelGateway:
     return ModelGateway(
         profiles=[profile],
         provider_registry=registry,
-        secrets_manager=secrets,  # type: ignore[arg-type]  # test stub
+        secrets_manager=cast(Any, secrets),
     )
 
 

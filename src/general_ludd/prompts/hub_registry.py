@@ -7,20 +7,21 @@ to file-system templates when the Hub is unreachable.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
+langchain_hub: Any = None
 try:
     # ``hub`` is a dynamically-loaded submodule of langchain, not declared in
-    # its type stubs; the attr-defined ignore is required for this optional dep.
-    from langchain import hub as langchain_hub  # type: ignore[attr-defined]
+    # its type stubs.
+    langchain_hub = importlib.import_module("langchain.hub")
 
     HAS_LANGCHAIN_HUB = True
 except ImportError:
     HAS_LANGCHAIN_HUB = False
-    langchain_hub = None
 
 
 class LangChainHubRegistry:

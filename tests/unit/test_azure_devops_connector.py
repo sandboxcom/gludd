@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import base64
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -181,7 +181,7 @@ def test_health_never_raises() -> None:
     def boom(url: str, headers: dict[str, str]) -> tuple[int, Any]:
         raise OSError("connection refused")
 
-    src = _make(boom)  # type: ignore[arg-type]  # test stub
+    src = cast(Any, _make)(boom)
     h = src.health()
     assert h["ok"] is False
     assert "transport error" in h["detail"]

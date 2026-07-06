@@ -12,6 +12,7 @@ so that dispatch_many's gather and every caller receives a result, not an except
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from general_ludd.agents.behavior import BehaviorRenderer, default_subagent_behavior
 from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
@@ -77,7 +78,7 @@ def _register_trusted_invoker(registry: AgentRegistry) -> str:
     return _TRUSTED_INVOKER
 
 
-def _run(coro):  # type: ignore[return]
+def _run(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
@@ -306,7 +307,7 @@ class TestPromptTemplateParsedOnce:
         calls = {"n": 0}
         original = renderer._render_uncached
 
-        def _counting_render(b):  # type: ignore[no-untyped-def]
+        def _counting_render(b: Any) -> Any:
             calls["n"] += 1
             return original(b)
 
@@ -356,7 +357,7 @@ class TestPromptTemplateParsedOnce:
         calls = {"n": 0}
         original = renderer._render_uncached
 
-        def _counting_render(b):  # type: ignore[no-untyped-def]
+        def _counting_render(b: Any) -> Any:
             calls["n"] += 1
             return original(b)
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -74,7 +75,7 @@ def _load_migration_by_filename(filename: str):
     spec = importlib.util.spec_from_file_location(f"migration_{src.stem}", src)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    cast(Any, spec.loader).exec_module(mod)
     return mod
 
 
@@ -162,7 +163,7 @@ def _load_migration_001():
     spec = importlib.util.spec_from_file_location("migration_001_initial_schema", src)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    cast(Any, spec.loader).exec_module(mod)
     return mod
 
 
@@ -180,7 +181,7 @@ def _load_migration_011():
     spec = importlib.util.spec_from_file_location("migration_011_add_bucket_leases_expires_at_index", src)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    cast(Any, spec.loader).exec_module(mod)
     return mod
 
 

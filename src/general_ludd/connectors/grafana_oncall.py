@@ -22,7 +22,8 @@ import ipaddress
 import logging
 import os
 import socket
-from typing import Any
+from collections.abc import Mapping
+from typing import TypedDict, cast
 from urllib.parse import urlsplit
 
 import httpx
@@ -32,6 +33,51 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TOKEN_ENV = "GRAFANA_ONCALL_TOKEN"
 _DEFAULT_TIMEOUT = 15.0
 _DEFAULT_LIMIT = 100
+
+
+# --------------------------------------------------------------------------- #
+# Typed API-response shapes (Grafana OnCall REST API).
+# --------------------------------------------------------------------------- #
+class GrafanaAlertGroup(TypedDict, total=False):
+    """One element of the OnCall ``alert_groups`` response array.
+
+    ``integration``, ``team`` and ``acknowledged_by`` are ``object`` because
+    OnCall may emit either a string id or a nested object depending on the
+    endpoint revision; callers treat them as opaque labels.
+    """
+
+    id: str
+    state: str
+    title: str
+    created_at: str
+    integration: object
+    team: object
+    acknowledged_by: object
+
+
+class GrafanaOnCallResultsResponse(TypedDict, total=False):
+    """Paginated response shape of ``GET /api/v1/alert_groups``."""
+
+    results: list[GrafanaAlertGroup]
+    data: list[GrafanaAlertGroup]
+
+
+class GrafanaOnCallQuerySpec(TypedDict, total=False):
+    """Caller-supplied query selection accepted by :meth:`GrafanaOnCallSource.query`."""
+
+    limit: int
+    state: str
+
+
+class GrafanaOnCallConfig(TypedDict, total=False):
+    """Caller-supplied config accepted by :meth:`GrafanaOnCallSource.__init__`."""
+
+    name: str
+    base_url: str
+    token_env: str
+    timeout: float | int | str
+    limit: int | str
+    allow_private: bool
 
 
 class GrafanaOnCallSource:
@@ -45,14 +91,14 @@ class GrafanaOnCallSource:
 
     def __init__(
         self,
-        config: dict[str, Any] | None = None,
+        config: Mapping[str, object] | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         config = dict(config or {})
         self.name: str = str(config.get("name", "grafana_oncall"))
         self._token_env: str = str(config.get("token_env", _DEFAULT_TOKEN_ENV))
-        self._timeout: float = float(config.get("timeout", _DEFAULT_TIMEOUT))
-        self._limit: int = int(config.get("limit", _DEFAULT_LIMIT))
+        self._timeout: float = float(cast(float | int | str | bool, config.get("timeout", _DEFAULT_TIMEOUT)))
+        self._limit: int = int(cast(int | float | str | bool, config.get("limit", _DEFAULT_LIMIT)))
         self._allow_private: bool = bool(config.get("allow_private", False))
 
         base_url = config.get("base_url")
@@ -79,7 +125,7 @@ class GrafanaOnCallSource:
 
     # -- health ------------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Return ``{'ok': bool, 'detail': str}``. Never raises."""
         try:
             token = self._token()
@@ -103,24 +149,27 @@ class GrafanaOnCallSource:
 
     # -- query -------------------------------------------------------------
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: GrafanaOnCallQuerySpec | None = None) -> list[dict[str, object]]:
         """Fetch alert groups and normalize to incident records."""
-        spec = dict(spec or {})
-        params: dict[str, Any] = {"perpage": int(spec.get("limit", self._limit))}
-        if spec.get("state"):
-            params["state"] = str(spec["state"])
+        spec = spec or {}
+        limit_val = spec.get("limit", self._limit)
+        perpage = int(limit_val) if isinstance(limit_val, (int, float)) else self._limit
+        params: dict[str, object] = {"perpage": perpage}
+        state = spec.get("state")
+        if state:
+            params["state"] = str(state)
 
         token = self._token()
         with self._client() as client:
             resp = client.get(
                 f"{self._base_url}/api/v1/alert_groups",
                 headers=_auth_header(token),
-                params=params,
+                params=cast("Mapping[str, str | int | list[str]]", params),
             )
             resp.raise_for_status()
             payload = resp.json()
 
-        groups: list[Any]
+        groups: list[object]
         if isinstance(payload, dict):
             raw = payload.get("results")
             if raw is None:
@@ -130,9 +179,14 @@ class GrafanaOnCallSource:
             groups = payload
         else:
             groups = []
-        return [self._normalize(group) for group in groups]
+        return [
+            rec
+            for group in groups
+            for rec in [self._normalize(cast("Mapping[str, object]", group))]
+            if isinstance(group, Mapping) and rec is not None
+        ]
 
-    def _normalize(self, group: dict[str, Any]) -> dict[str, Any]:
+    def _normalize(self, group: Mapping[str, object]) -> dict[str, object]:
         state = group.get("state")
         return {
             "ts": group.get("created_at"),
@@ -147,7 +201,7 @@ class GrafanaOnCallSource:
                 "state": state,
                 "acknowledged_by": group.get("acknowledged_by"),
             },
-            "raw": group,
+            "raw": dict(group),
         }
 
 
@@ -180,7 +234,7 @@ def _guard_ssrf(base_url: str, *, allow_private: bool) -> None:
     if not host:
         raise ValueError("base_url has no host")
 
-    candidates: list[Any] = []
+    candidates: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
     try:
         candidates.append(ipaddress.ip_address(host))
     except ValueError:
@@ -210,6 +264,8 @@ def _guard_ssrf(base_url: str, *, allow_private: bool) -> None:
                 continue
 
     for ip in candidates:
+        if not isinstance(ip, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
+            continue
         if (
             ip.is_private
             or ip.is_loopback

@@ -28,7 +28,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import pytest
 
@@ -260,7 +260,7 @@ def _build_gateway(profile_id: str = "ab_live") -> Any:
     secrets.set("ZAI_API_KEY", _ZAI_KEY)
     secrets.set("ZAI_BASE_URL", _ZAI_BASE_URL)
     return ModelGateway(
-        profiles=[profile], provider_registry=registry, secrets_manager=secrets  # type: ignore[arg-type]  # test stub
+        profiles=[profile], provider_registry=registry, secrets_manager=cast(Any, secrets)
     )
 
 

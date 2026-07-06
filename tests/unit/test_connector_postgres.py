@@ -8,7 +8,7 @@ env-only credential contract are also covered.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -150,7 +150,7 @@ class TestContract:
         rows = [{"state": "active", "value": 1, "datname": "app"}]
         src = PostgresStatsSource(executor=_canned({"pg_stat_activity": rows}))
         reg = SourceRegistry()
-        reg.register(src)  # type: ignore[arg-type]
+        cast(Any, reg).register(src)
         obs = Observability(reg)
         results = obs.find({}, kinds=["metrics"])
         assert results

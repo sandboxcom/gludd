@@ -6,6 +6,7 @@ All handlers are FAKE (lambda or dict-based) — no live daemon required.
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 import pytest
 
@@ -94,7 +95,7 @@ class TestParseToolCallsMalformed:
 
     def test_plain_list_returns_empty(self):
         # Top-level list is not the expected shape
-        assert parse_tool_calls([]) == []  # type: ignore[arg-type]
+        assert cast(Any, parse_tool_calls)([]) == []
 
     def test_empty_dict_returns_empty(self):
         assert parse_tool_calls({}) == []
@@ -168,7 +169,7 @@ class TestDynamicDispatcherUnknownKind:
         d = DynamicDispatcher(
             role_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
         )
-        result = await d.dispatch(ToolCall(kind="unknown_xyz", name="foo", args={}))  # type: ignore[arg-type]
+        result = await cast(Any, d).dispatch(ToolCall(kind="unknown_xyz", name="foo", args={}))
         assert result.ok is False
         assert result.error is not None
         assert "unknown_kind" in result.error

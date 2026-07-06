@@ -18,18 +18,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from classify_agent_error import classify
 
-# Path to the script under test
+# Path to the script under test (defined after imports to satisfy E402).
 _SCRIPT = str(Path(__file__).parent.parent.parent / "scripts" / "classify_agent_error.py")
-
-
-# ---------------------------------------------------------------------------
-# Import the module directly so we test the pure classify() function
-# ---------------------------------------------------------------------------
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
-# E402 suppressed: import requires the sys.path manipulation above to locate
-# the scripts/ directory, which is not an installed package.
-from classify_agent_error import classify  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # TRANSIENT markers — at least 6 tested by name

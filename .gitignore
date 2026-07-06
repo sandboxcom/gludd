@@ -51,6 +51,10 @@ scripts/scan-secrets.py
 *.tfplan
 .terraform/
 .terraform.lock.hcl
+# Shared plugin cache: provider binaries downloaded once via TF_PLUGIN_CACHE_DIR
+# (make tf-cache-warm / tf-init). Keep the dir (.gitkeep) but never the binaries.
+infra/terraform/.plugin-cache/*
+!infra/terraform/.plugin-cache/.gitkeep
 # Real tfvars carry secrets; only *.tfvars.example is committed (negated below).
 *.tfvars
 !*.tfvars.example

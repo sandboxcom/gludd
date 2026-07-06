@@ -1,7 +1,5 @@
 """Tests for OpenRouter auto-discovery, provider presets, and auto-configuration."""
 
-# ruff: noqa: E501
-
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -260,9 +258,24 @@ class TestModelPrioritizer:
         from general_ludd.models.auto_configurator import ModelPrioritizer
 
         models = [
-            {"model_profile_id": "expensive", "cost_per_input_token": 0.01, "cost_per_output_token": 0.05, "context_window": 128000},
-            {"model_profile_id": "cheap", "cost_per_input_token": 0.00000015, "cost_per_output_token": 0.00000060, "context_window": 131072},
-            {"model_profile_id": "medium", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 64000},
+            {
+                "model_profile_id": "expensive",
+                "cost_per_input_token": 0.01,
+                "cost_per_output_token": 0.05,
+                "context_window": 128000,
+            },
+            {
+                "model_profile_id": "cheap",
+                "cost_per_input_token": 0.00000015,
+                "cost_per_output_token": 0.00000060,
+                "context_window": 131072,
+            },
+            {
+                "model_profile_id": "medium",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 64000,
+            },
         ]
         prioritizer = ModelPrioritizer(strategy="cheapest_first")
         ranked = prioritizer.rank(models)
@@ -273,9 +286,24 @@ class TestModelPrioritizer:
         from general_ludd.models.auto_configurator import ModelPrioritizer
 
         models = [
-            {"model_profile_id": "small", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 8000},
-            {"model_profile_id": "large", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 200000},
-            {"model_profile_id": "medium", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 64000},
+            {
+                "model_profile_id": "small",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 8000,
+            },
+            {
+                "model_profile_id": "large",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 200000,
+            },
+            {
+                "model_profile_id": "medium",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 64000,
+            },
         ]
         prioritizer = ModelPrioritizer(strategy="largest_context_first")
         ranked = prioritizer.rank(models)
@@ -286,9 +314,24 @@ class TestModelPrioritizer:
         from general_ludd.models.auto_configurator import ModelPrioritizer
 
         models = [
-            {"model_profile_id": "cheap_small", "cost_per_input_token": 0.0000001, "cost_per_output_token": 0.0000003, "context_window": 8000},
-            {"model_profile_id": "expensive_large", "cost_per_input_token": 0.01, "cost_per_output_token": 0.05, "context_window": 200000},
-            {"model_profile_id": "mid", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 128000},
+            {
+                "model_profile_id": "cheap_small",
+                "cost_per_input_token": 0.0000001,
+                "cost_per_output_token": 0.0000003,
+                "context_window": 8000,
+            },
+            {
+                "model_profile_id": "expensive_large",
+                "cost_per_input_token": 0.01,
+                "cost_per_output_token": 0.05,
+                "context_window": 200000,
+            },
+            {
+                "model_profile_id": "mid",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 128000,
+            },
         ]
         prioritizer = ModelPrioritizer(strategy="balanced")
         ranked = prioritizer.rank(models)
@@ -305,8 +348,19 @@ class TestModelPrioritizer:
         from general_ludd.models.auto_configurator import ModelPrioritizer
 
         models = [
-            {"model_profile_id": "enabled", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 64000},
-            {"model_profile_id": "disabled", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 64000, "enabled": False},
+            {
+                "model_profile_id": "enabled",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 64000,
+            },
+            {
+                "model_profile_id": "disabled",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 64000,
+                "enabled": False,
+            },
         ]
         prioritizer = ModelPrioritizer()
         ranked = prioritizer.rank(models)
@@ -317,8 +371,19 @@ class TestModelPrioritizer:
         from general_ludd.models.auto_configurator import ModelPrioritizer
 
         models = [
-            {"model_profile_id": "normal", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 64000},
-            {"model_profile_id": "deprioritized", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 64000, "user_priority": "deprioritized"},
+            {
+                "model_profile_id": "normal",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 64000,
+            },
+            {
+                "model_profile_id": "deprioritized",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 64000,
+                "user_priority": "deprioritized",
+            },
         ]
         prioritizer = ModelPrioritizer()
         ranked = prioritizer.rank(models)
@@ -328,8 +393,19 @@ class TestModelPrioritizer:
         from general_ludd.models.auto_configurator import ModelPrioritizer
 
         models = [
-            {"model_profile_id": "normal", "cost_per_input_token": 0.001, "cost_per_output_token": 0.002, "context_window": 64000},
-            {"model_profile_id": "prioritized", "cost_per_input_token": 0.01, "cost_per_output_token": 0.05, "context_window": 64000, "user_priority": "prioritized"},
+            {
+                "model_profile_id": "normal",
+                "cost_per_input_token": 0.001,
+                "cost_per_output_token": 0.002,
+                "context_window": 64000,
+            },
+            {
+                "model_profile_id": "prioritized",
+                "cost_per_input_token": 0.01,
+                "cost_per_output_token": 0.05,
+                "context_window": 64000,
+                "user_priority": "prioritized",
+            },
         ]
         prioritizer = ModelPrioritizer()
         ranked = prioritizer.rank(models)
@@ -356,7 +432,12 @@ class TestAutoUpdateJob:
 
         new_response = {
             "data": [
-                {"id": "new/model", "name": "New Model", "context_length": 65536, "pricing": {"prompt": "0", "completion": "0"}},
+                {
+                    "id": "new/model",
+                    "name": "New Model",
+                    "context_length": 65536,
+                    "pricing": {"prompt": "0", "completion": "0"},
+                },
             ]
         }
         new_scraped = scraper._parse_models_response(new_response)

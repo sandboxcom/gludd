@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -39,7 +40,7 @@ def _base_config(provider: ComputeProvider, **overrides: object) -> ComputeConfi
         "allowed_cidr": "0.0.0.0/0",
     }
     defaults.update(overrides)
-    return ComputeConfig(**defaults)  # type: ignore[arg-type]
+    return cast(Any, ComputeConfig)(**defaults)
 
 
 _IMPLEMENTED_PROVIDERS = [

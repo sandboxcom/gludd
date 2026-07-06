@@ -12,7 +12,7 @@ This is the missing e2e proof for scheduler-parallel-dispatch (features.yml: 85%
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -139,7 +139,7 @@ class TestEventLoopParallelDispatch:
             dispatched.append(todo.todo_id)
 
         loop = _empty_loop()
-        loop._dispatch_execute_job = record  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = record
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
         assert count == 3
@@ -154,7 +154,7 @@ class TestEventLoopParallelDispatch:
             dispatched.append(todo.todo_id)
 
         loop = _empty_loop()
-        loop._dispatch_execute_job = record  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = record
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
         assert count == 7
@@ -169,7 +169,7 @@ class TestEventLoopParallelDispatch:
             order.append(todo.todo_id)
 
         loop = _empty_loop()
-        loop._dispatch_execute_job = record_order  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = record_order
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
         assert count == 3
@@ -192,7 +192,7 @@ class TestEventLoopParallelDispatch:
                 raise RuntimeError("simulated failure")
 
         loop = _empty_loop()
-        loop._dispatch_execute_job = maybe_fail  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, loop)._dispatch_execute_job = maybe_fail
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
         assert count >= 2

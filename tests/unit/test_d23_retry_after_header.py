@@ -16,7 +16,7 @@ respected.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -138,7 +138,7 @@ class TestRetryAfterHeaderHonored:
         with patch("time.sleep", side_effect=_capture_sleep), pytest.raises(
             httpx.HTTPStatusError
         ):
-            gateway.call_model_with_retry(  # type: ignore[attr-defined]
+            cast(Any, gateway).call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,

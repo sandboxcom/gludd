@@ -25,18 +25,72 @@ Normalized record schema (every emitted record is a dict with exactly):
     message           str
     value             None   (reserved; always None for this source)
     labels            dict[str, str | None]
-    raw               dict   the untouched upstream payload
+    raw               object the untouched upstream payload
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from typing import Any, Protocol, TypedDict, runtime_checkable
+from collections.abc import Callable, Mapping
+from typing import Any, Protocol, TypedDict, cast, runtime_checkable
 
 __all__ = ["AwsPipelineSource", "NormalizedRecord"]
 
 logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# AWS API response shapes
+# --------------------------------------------------------------------------- #
+# All response TypedDicts are ``total=False`` because boto3 omits empty/missing
+# fields rather than emitting nulls; every key is therefore optional at runtime.
+
+
+class CloudWatchLogEvent(TypedDict, total=False):
+    """One row from ``logs.filter_log_events``."""
+
+    timestamp: int | float
+    message: str
+    logStreamName: str
+    eventId: str
+
+
+class FilterLogEventsResponse(TypedDict, total=False):
+    """Response of ``logs.filter_log_events``."""
+
+    events: list[CloudWatchLogEvent]
+
+
+class PipelineExecutionTrigger(TypedDict, total=False):
+    """``trigger`` sub-document inside a PipelineExecutionSummary."""
+
+    triggerType: str
+    trigger: str
+
+
+class PipelineExecutionSummary(TypedDict, total=False):
+    """One row from ``codepipeline.list_pipeline_executions``."""
+
+    pipelineExecutionId: str
+    status: str
+    lastUpdateTime: object  # boto3 returns datetime | epoch int/float
+    trigger: PipelineExecutionTrigger
+
+
+class ListPipelineExecutionsResponse(TypedDict, total=False):
+    """Response of ``codepipeline.list_pipeline_executions``."""
+
+    pipelineExecutionSummaries: list[PipelineExecutionSummary]
+
+
+class HealthStatus(TypedDict):
+    """Return shape of :meth:`AwsPipelineSource.health`."""
+
+    ok: bool
+    kind: str
+    name: str
+    region: str
+    detail: str
 
 
 class NormalizedRecord(TypedDict):
@@ -49,7 +103,12 @@ class NormalizedRecord(TypedDict):
     message: str
     value: None
     labels: dict[str, str | None]
-    raw: dict[str, Any]
+    raw: object
+
+
+# --------------------------------------------------------------------------- #
+# Client protocol + factory
+# --------------------------------------------------------------------------- #
 
 
 @runtime_checkable
@@ -57,16 +116,17 @@ class _AwsClient(Protocol):
     """Structural type for the slice of a boto3 client we use.
 
     Both methods are part of the protocol; a given client only needs the one
-    relevant to the service it represents (codepipeline vs. logs).
+    relevant to the service it represents (codepipeline vs. logs). ``__getattr__``
+    is the dynamic-dispatch escape hatch (boto3 generates one client class per
+    service) — this is the documented ``Any`` exception per the type-safety
+    skill.
     """
 
-    def list_pipeline_executions(self, **kwargs: Any) -> dict[str, Any]: ...
-
-    def filter_log_events(self, **kwargs: Any) -> dict[str, Any]: ...
+    def __getattr__(self, name: str) -> Any: ...  # pragma: no cover - protocol
 
 
 # A factory turning a service name ('codepipeline' | 'logs') into a client.
-ClientFactory = Callable[[str], Any]
+ClientFactory = Callable[[str], _AwsClient]
 
 # Known CloudWatch-Logs / generic log levels, longest-first so 'WARNING' is
 # matched before a hypothetical shorter prefix would be.
@@ -100,11 +160,13 @@ class AwsPipelineSource:
 
     KIND: str = "pipeline"
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self._config = dict(config)
+    def __init__(self, config: Mapping[str, object]) -> None:
+        self._config: dict[str, object] = dict(config)
         self.region: str = str(config.get("region", ""))
-        self.pipeline: str | None = config.get("pipeline")
-        self.log_group: str | None = config.get("log_group")
+        pipeline_raw = config.get("pipeline")
+        self.pipeline: str | None = pipeline_raw if isinstance(pipeline_raw, str) else None
+        log_group_raw = config.get("log_group")
+        self.log_group: str | None = log_group_raw if isinstance(log_group_raw, str) else None
 
         factory = config.get("client_factory")
         self._client_factory: ClientFactory = (
@@ -116,7 +178,7 @@ class AwsPipelineSource:
 
     # -- client acquisition -------------------------------------------------
 
-    def _default_client_factory(self, service: str) -> Any:
+    def _default_client_factory(self, service: str) -> _AwsClient:
         """Lazily import boto3 and build a real client.
 
         The boto3 import is intentionally local so the module imports even when
@@ -124,24 +186,26 @@ class AwsPipelineSource:
         no credentials are sourced from config.
         """
         try:
-            import boto3  # type: ignore[import-not-found]  # boto3: optional [aws] extra, lazy-imported
+            import importlib
+
+            boto3 = importlib.import_module("boto3")  # boto3: optional [aws] extra, lazy-imported
         except ImportError as exc:  # boto3 not installed
             raise RuntimeError("boto3 unavailable") from exc
-        return boto3.client(service, region_name=self.region or None)
+        return cast(_AwsClient, boto3.client(service, region_name=self.region or None))
 
-    def _client(self, service: str) -> Any:
+    def _client(self, service: str) -> _AwsClient:
         return self._client_factory(service)
 
     # -- health -------------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> HealthStatus:
         """Return a health dict. Never raises.
 
         ``ok`` is True only when a client can be constructed. When boto3 is
         unavailable (default factory path) ``detail`` contains
         ``"boto3 unavailable"``.
         """
-        base: dict[str, Any] = {
+        base: HealthStatus = {
             "ok": False,
             "kind": self.KIND,
             "name": self.name,
@@ -155,19 +219,15 @@ class AwsPipelineSource:
             # sentinel; never echo str(exc) (a custom factory could embed an
             # endpoint/credential). Log the real detail, return the sentinel.
             logger.warning("aws_pipeline client init failed", exc_info=True)
-            base["detail"] = "boto3 unavailable"
-            return base
+            return {**base, "detail": "boto3 unavailable"}
         except Exception:  # health must never raise
             logger.warning("aws_pipeline client init failed", exc_info=True)
-            base["detail"] = "client init failed"
-            return base
-        base["ok"] = True
-        base["detail"] = "ok"
-        return base
+            return {**base, "detail": "client init failed"}
+        return {**base, "ok": True, "detail": "ok"}
 
     # -- pipeline executions ------------------------------------------------
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[NormalizedRecord]:
+    def query(self, spec: Mapping[str, object] | None = None) -> list[NormalizedRecord]:
         """List recent CodePipeline executions as normalized records.
 
         ``spec`` filters:
@@ -180,8 +240,10 @@ class AwsPipelineSource:
             raise ValueError("query requires a 'pipeline' name in config")
 
         client = self._client("codepipeline")
-        response = client.list_pipeline_executions(pipelineName=self.pipeline)
-        summaries: list[dict[str, Any]] = list(
+        response: ListPipelineExecutionsResponse = client.list_pipeline_executions(
+            pipelineName=self.pipeline
+        )
+        summaries: list[PipelineExecutionSummary] = list(
             response.get("pipelineExecutionSummaries", [])
         )
 
@@ -193,12 +255,12 @@ class AwsPipelineSource:
                 continue
             records.append(self._normalize_execution(summary))
 
-        limit = spec.get("limit")
-        if isinstance(limit, int) and limit >= 0:
-            records = records[:limit]
+        limit_raw = spec.get("limit")
+        if isinstance(limit_raw, int) and limit_raw >= 0:
+            records = records[:limit_raw]
         return records
 
-    def _normalize_execution(self, summary: dict[str, Any]) -> NormalizedRecord:
+    def _normalize_execution(self, summary: PipelineExecutionSummary) -> NormalizedRecord:
         execution_id = str(summary.get("pipelineExecutionId", ""))
         status = summary.get("status")
         trigger = summary.get("trigger")
@@ -232,11 +294,13 @@ class AwsPipelineSource:
             raise ValueError("fetch_logs requires a log_group (arg or config)")
 
         client = self._client("logs")
-        response = client.filter_log_events(logGroupName=group, startTime=since)
-        events: list[dict[str, Any]] = list(response.get("events", []))
+        response: FilterLogEventsResponse = client.filter_log_events(
+            logGroupName=group, startTime=since
+        )
+        events: list[CloudWatchLogEvent] = list(response.get("events", []))
         return [self._normalize_log_event(event) for event in events]
 
-    def _normalize_log_event(self, event: dict[str, Any]) -> NormalizedRecord:
+    def _normalize_log_event(self, event: CloudWatchLogEvent) -> NormalizedRecord:
         message = str(event.get("message", ""))
         timestamp_ms = event.get("timestamp")
         ts = int(timestamp_ms) // 1000 if isinstance(timestamp_ms, (int, float)) else 0
@@ -268,7 +332,7 @@ class AwsPipelineSource:
         return None
 
     @staticmethod
-    def _epoch_seconds(value: Any) -> int:
+    def _epoch_seconds(value: object) -> int:
         """Coerce a CodePipeline ``lastUpdateTime`` to epoch seconds.
 
         Accepts an int/float epoch or an object exposing ``timestamp()`` (e.g. a

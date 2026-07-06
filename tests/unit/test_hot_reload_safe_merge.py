@@ -26,6 +26,7 @@ import textwrap
 import uuid
 from pathlib import Path
 from types import ModuleType
+from typing import Any, cast
 
 import pytest
 
@@ -97,7 +98,7 @@ def test_disjoint_divergence_is_three_way_merged_not_clobbered(
     assert result.details.get("merged") is True
 
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 2  # type: ignore[attr-defined]  # dynamic module attr
+    assert cast(Any, reloaded).value() == 2
 
 
 def test_overlapping_divergence_refuses_reload_fail_closed(
@@ -123,7 +124,7 @@ def test_overlapping_divergence_refuses_reload_fail_closed(
     mod_path.write_text(live_diverged)
     importlib.invalidate_caches()
     importlib.reload(live_mod)
-    assert live_mod.value() == 42  # type: ignore[attr-defined]  # dynamic module attr
+    assert cast(Any, live_mod).value() == 42
     original_bytes = mod_path.read_bytes()
 
     # Candidate ALSO rewrites that line, differently -> true conflict.
@@ -143,7 +144,7 @@ def test_overlapping_divergence_refuses_reload_fail_closed(
     assert mod_path.read_bytes() == original_bytes
     # The live module still behaves as the concurrent edit left it.
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 42  # type: ignore[attr-defined]  # dynamic module attr
+    assert cast(Any, reloaded).value() == 42
 
 
 def test_no_divergence_applies_candidate_verbatim(
@@ -169,7 +170,7 @@ def test_no_divergence_applies_candidate_verbatim(
     assert result.success is True, result.error
     assert mod_path.read_text() == "def value():\n    return 9\n"
     reloaded = importlib.import_module(fqmn)
-    assert reloaded.value() == 9  # type: ignore[attr-defined]  # dynamic module attr
+    assert cast(Any, reloaded).value() == 9
 
 
 def test_missing_base_preserves_legacy_blind_swap(

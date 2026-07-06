@@ -9,6 +9,7 @@ breaks a real assertion.
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -580,7 +581,7 @@ class TestAuditEventTypeWiring:
             captured.update(kwargs)
             return MagicMock()
 
-        repo.create = _fake_create  # type: ignore[method-assign]  # pytest monkeypatch
+        cast(Any, repo).create = _fake_create
 
         await repo.record_typed(
             AuditEventType.TODO_CREATED,

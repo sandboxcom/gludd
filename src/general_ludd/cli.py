@@ -255,8 +255,8 @@ def _http_call(
     method: str,
     url: str,
     *,
-    json: Any = None,
-    params: Any = None,
+    json: dict[str, Any] | None = None,
+    params: dict[str, str] | None = None,
     timeout: float = 10.0,
     ok_codes: tuple[int, ...] = (200,),
 ) -> Any:
@@ -888,6 +888,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_core_changes_subparser(sub)
     core_changes_parser = sub.choices["core-changes"]
 
+    # `gludd account` — account backup, deletion, and cloud retention policy.
+    from general_ludd.cli_account import add_account_subparser
+
+    add_account_subparser(sub)
+    account_parser = sub.choices["account"]
+
     subcommand_map = {
         "login": login_parser,
         "models": models_parser,
@@ -915,6 +921,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "deploy-check": deploy_check_parser,
         "core-changes": core_changes_parser,
         "payment": payment_parser,
+        "account": account_parser,
     }
 
     return parser, subcommand_map

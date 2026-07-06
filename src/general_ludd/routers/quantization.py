@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.models.quantization import (
@@ -13,20 +11,20 @@ from general_ludd.models.quantization import (
 )
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/quantization")
-    async def admin_quantization_list() -> dict[str, Any]:
+    async def admin_quantization_list() -> dict[str, object]:
         tracker: QuantizationTracker | None = getattr(app.state, "_quantization_tracker", None)
         if tracker is None:
             return {"models": []}
         return {"models": tracker.to_dict()}
 
     @app.post("/admin/quantization/detect")
-    async def admin_quantization_detect(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_quantization_detect(req: dict[str, object]) -> dict[str, object]:
         import time as _time
 
-        model_id = req.get("model_id", "")
+        model_id = str(req.get("model_id") or "")
         if not model_id:
             raise HTTPException(status_code=422, detail="model_id required")
         if not hasattr(app.state, "_quantization_tracker") or app.state._quantization_tracker is None:
@@ -37,7 +35,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         fw_detector = FireworksDetector(api_key=fireworks_key)
         or_detector = OpenRouterEndpointDetector()
         probe_detector = SelfProbeDetector()
-        results: list[dict[str, Any]] = []
+        results: list[dict[str, object]] = []
         for info in await hf_detector.detect(model_id):
             drift = tracker.check_drift(model_id, info)
             tracker.update(model_id, info)
@@ -84,7 +82,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/quantization/{model_id}")
-    async def admin_quantization_get(model_id: str) -> dict[str, Any]:
+    async def admin_quantization_get(model_id: str) -> dict[str, object]:
         tracker: QuantizationTracker | None = getattr(app.state, "_quantization_tracker", None)
         if tracker is None:
             return {"model_id": model_id, "precision": None}
@@ -102,13 +100,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/quantization/drift-check")
-    async def admin_quantization_drift_check() -> dict[str, Any]:
+    async def admin_quantization_drift_check() -> dict[str, object]:
         tracker: QuantizationTracker | None = getattr(app.state, "_quantization_tracker", None)
         if tracker is None:
             return {"drift_detected": False, "changes": []}
         hf_detector = HuggingFaceDetector()
         or_detector = OpenRouterEndpointDetector()
-        changes: list[dict[str, Any]] = []
+        changes: list[dict[str, object]] = []
         for model_id in list(tracker.list_all().keys()):
             new_infos = await hf_detector.detect(model_id)
             new_infos.extend(await or_detector.detect(model_id))

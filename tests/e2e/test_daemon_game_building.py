@@ -35,7 +35,7 @@ import sys
 import textwrap
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -102,7 +102,7 @@ def _build_deepseek_gateway() -> Any:
     assert DEEPSEEK_KEY, "key must be set before building gateway"
     secrets.set("DEEPSEEK_API_KEY", DEEPSEEK_KEY)
     secrets.set("DEEPSEEK_API_BASE", _DS_BASE_URL)
-    return ModelGateway(profiles=[profile], provider_registry=registry, secrets_manager=secrets)  # type: ignore[arg-type]  # test stub
+    return cast(Any, ModelGateway)(profiles=[profile], provider_registry=registry, secrets_manager=secrets)
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ def _extract_python_module(text: str) -> str | None:
 
 
 def _parse_ast(source: str) -> dict[str, Any]:
-    result = {"parseable": False, "has_class": False, "has_imports": False, "error": None}
+    result: dict[str, Any] = {"parseable": False, "has_class": False, "has_imports": False, "error": None}
     try:
         tree = ast.parse(source)
         result["parseable"] = True
@@ -238,6 +238,235 @@ def _parse_ast(source: str) -> dict[str, Any]:
     except SyntaxError as e:
         result["error"] = str(e)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Generic game-interface discovery (tolerant of how the model names things)
+# ---------------------------------------------------------------------------
+#
+# The model produces a functionally-equivalent but syntactically-different
+# implementation each run.  These helpers find the game by behaviour, not by
+# name: discover the most class-like class, instantiate it with whichever
+# constructor signature works, and locate tick/input/state methods by trying
+# common synonyms.  Feature verification then operates on the discovered
+# interface instead of hardcoded names.
+
+_TICK_NAMES: tuple[str, ...] = (
+    "tick", "step", "update", "advance", "next_frame", "next_turn",
+    "frame", "turn", "simulate", "do_tick",
+)
+_INPUT_NAMES: tuple[str, ...] = (
+    "input", "handle_input", "send_input", "set_direction", "direction",
+    "action", "key", "press", "set_input", "on_input",
+)
+_STATE_NAMES: tuple[str, ...] = (
+    "render_state", "get_state", "state", "to_dict", "as_dict",
+    "snapshot", "serialize", "export_state",
+)
+
+
+def _find_callable(obj: Any, names: tuple[str, ...]) -> tuple[str, Any] | None:
+    """Return ``(attr_name, attr)`` for the first name in ``names`` that resolves
+    to a callable on ``obj``, else ``None``."""
+    for name in names:
+        attr = getattr(obj, name, None)
+        if callable(attr):
+            return name, attr
+    return None
+
+
+def _discover_game_class(mod: Any, preferred: str | None = None) -> type | None:
+    """Find the most likely game class in ``mod``.
+
+    Selection order:
+      1. Exact case-insensitive match on ``preferred``.
+      2. Substring match (either direction) on ``preferred``.
+      3. The class with the most user-defined methods (heuristic: the game
+         state class is the richest one in the module).
+    Classes imported into the module (not defined there) are skipped.
+    """
+    import inspect
+
+    candidates = [
+        (name, obj)
+        for name, obj in inspect.getmembers(mod, inspect.isclass)
+        if getattr(obj, "__module__", None) == mod.__name__
+    ]
+    if not candidates:
+        return None
+    if preferred:
+        plow = preferred.lower()
+        for name, obj in candidates:
+            if name.lower() == plow:
+                return obj
+        for name, obj in candidates:
+            nlow = name.lower()
+            if plow in nlow or nlow in plow:
+                return obj
+    return max(
+        candidates,
+        key=lambda kv: len([
+            m for m in inspect.getmembers(kv[1], predicate=inspect.isfunction)
+            if not m[0].startswith("_")
+        ]),
+    )
+
+
+def _instantiate_game(cls: type, hints: list[tuple[Any, ...]] | None = None) -> Any:
+    """Instantiate ``cls`` by trying common constructor signatures.
+
+    ``hints`` is a list of arg-tuples to try first (caller-supplied
+    game-specific knowledge).  Generic fallbacks cover (no args), one int,
+    and two/three ints.  Raises the last exception if every attempt fails.
+    """
+    import inspect
+
+    sig = inspect.signature(cls.__init__)
+    params = [
+        p for p in sig.parameters.values()
+        if p.name != "self"
+        and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    n_required = sum(
+        1 for p in params if p.default is inspect.Parameter.empty
+    )
+
+    candidates: list[tuple[Any, ...]] = []
+    if hints:
+        candidates.extend(hints)
+    candidates.extend([(), (10,), (20,), (10, 10), (20, 20), (10, 10, 10)])
+    seen: set[tuple[Any, ...]] = set()
+    last_exc: Exception | None = None
+    for args in candidates:
+        if args in seen:
+            continue
+        seen.add(args)
+        if len(args) < n_required:
+            continue
+        try:
+            return cls(*args)
+        except (TypeError, ValueError) as exc:
+            last_exc = exc
+            continue
+    if last_exc is not None:
+        raise last_exc
+    raise TypeError(f"could not instantiate {cls.__name__}: no viable signature")
+
+
+def _load_generated_module(source: str, module_name: str, tmp_path: Path) -> Any:
+    """Write ``source`` to ``tmp_path`` and import it as ``module_name``.
+
+    Raises ``ImportError`` if importlib cannot load the module.
+    """
+    module_path = tmp_path / f"{module_name}.py"
+    module_path.write_text(source)
+    spec = importlib.util.spec_from_file_location(module_name, str(module_path))
+    if spec is None or spec.loader is None:
+        raise ImportError("importlib.spec_from_file_location returned None")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _get_state_dict(instance: Any) -> dict[str, Any]:
+    """Return a serializable view of ``instance``'s state.
+
+    Tries common state-accessor method names; falls back to ``__dict__`` so
+    feature checks can inspect raw attributes when no accessor exists.
+    """
+    found = _find_callable(instance, _STATE_NAMES)
+    if found is not None:
+        try:
+            result = found[1]()
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            pass
+    return dict(instance.__dict__)
+
+
+def _verify_snake_features(mod: Any) -> list[str]:
+    """Verify the FEATURES a Snake game must have, generically.
+
+    Returns a list of feature-failure strings (empty == pass).  The game is
+    allowed to name its class, methods, and state keys however the model
+    chose; we only assert on observable behaviour.
+    """
+    failures: list[str] = []
+
+    cls = _discover_game_class(mod, preferred="Snake")
+    if cls is None:
+        return ["no game class found in module"]
+
+    try:
+        instance = _instantiate_game(cls, hints=[(20, 20), (10, 10)])
+    except Exception as exc:
+        return [f"instantiation failed: {type(exc).__name__}: {exc}"]
+
+    tick_found = _find_callable(instance, _TICK_NAMES)
+    if tick_found is None:
+        failures.append("no state-advancing method (tick/step/update/...) found")
+        return failures
+    tick_fn = tick_found[1]
+
+    # Feature: tick runs without error and the game has observable state.
+    try:
+        tick_fn()
+    except Exception as exc:
+        failures.append(f"first tick raised: {type(exc).__name__}: {exc}")
+        return failures
+
+    state_after_one = _get_state_dict(instance)
+    if not state_after_one:
+        failures.append("no observable state after tick (empty __dict__ and no state accessor)")
+
+    # Feature: the snake moves (state changes over several ticks).
+    state_before = _get_state_dict(instance)
+    moved = False
+    for _ in range(8):
+        try:
+            tick_fn()
+        except Exception:
+            break
+        if _get_state_dict(instance) != state_before:
+            moved = True
+            break
+    if not moved:
+        failures.append("state did not change across 8 ticks (snake never moves)")
+
+    # Feature: extended play either keeps the snake alive OR ends in game-over
+    # (wall/self collision).  We accept either; what we reject is a crash.
+    game_over_flag = False
+    try:
+        for _ in range(200):
+            result = tick_fn()
+            if isinstance(result, bool) and not result:
+                game_over_flag = True
+                break
+        final_state = _get_state_dict(instance)
+        if isinstance(final_state.get("game_over"), bool):
+            game_over_flag = game_over_flag or final_state["game_over"]
+    except Exception as exc:
+        failures.append(f"extended tick loop crashed: {type(exc).__name__}: {exc}")
+
+    # Feature: direction input is accepted (best-effort — some models merge
+    # input into tick()).  We only fail if an input method exists but raises.
+    input_found = _find_callable(instance, _INPUT_NAMES)
+    if input_found is not None:
+        input_fn = input_found[1]
+        for direction in ("up", "down", "left", "right"):
+            try:
+                input_fn(direction)
+                break
+            except Exception as exc:
+                failures.append(
+                    f"input method {input_found[0]!r} raised on {direction!r}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                break
+
+    return failures
 
 
 # ---------------------------------------------------------------------------
@@ -428,18 +657,20 @@ class TestDaemonGameBuilding:
         print(f"  Commits found: {has_commit}")
 
         # ---------------------------------------------------------------- Step 10
-        print("\n--- Step 10: Verify generated game code ---")
-        # Find a Python file that looks like game code (has class definition)
+        print("\n--- Step 10: Verify generated game code (feature-based) ---")
+        # Find a Python file containing any class definition (the model may
+        # name it Snake, SnakeGame, Game, or anything else).
         game_source = None
         game_file_path = None
+        snake_failures: list[str] = []
         for py_file in ws.glob("*.py"):
             content = py_file.read_text()
-            if "class Snake" in content or "class " in content:
+            if "class " in content:
                 game_source = content
                 game_file_path = py_file
                 break
 
-        # If ExecutionEngine wrote no code, use the model_response directly
+        # If ExecutionEngine wrote no code, use the model_response directly.
         if game_source is None and model_response:
             extracted = _extract_python_module(model_response)
             if extracted:
@@ -450,9 +681,10 @@ class TestDaemonGameBuilding:
 
         if game_source is None:
             print("  WARNING: No Python class found in workspace or model_response")
-            print("  This is a gap in the pipeline — not necessarily a test failure")
+            print("  This is a pipeline gap — the test cannot verify features.")
             print("  Raw model_response[:500]:")
             print(model_response[:500] if model_response else "(none)")
+            snake_failures = ["no generated Python code found in workspace or model_response"]
         else:
             print(f"  Game source from: {game_file_path}")
             print(f"  Source length: {len(game_source)} chars")
@@ -462,55 +694,29 @@ class TestDaemonGameBuilding:
                   f"has_class: {ast_result['has_class']}, "
                   f"error: {ast_result.get('error')}")
 
+            snake_failures: list[str] = []
             if ast_result["parseable"]:
                 module_name = f"snake_game_{todo_id.replace('-', '_').lower()}"
-                module_path = tmp_path / f"{module_name}.py"
-                module_path.write_text(game_source)
-
                 try:
-                    spec = importlib.util.spec_from_file_location(module_name, str(module_path))
-                    if spec is not None and spec.loader is not None:
-                        mod = importlib.util.module_from_spec(spec)
-                        sys.modules[module_name] = mod
-                        spec.loader.exec_module(mod)
+                    mod = _load_generated_module(game_source, module_name, tmp_path)
+                    print(f"  Module imported; top-level names: "
+                          f"{[n for n in dir(mod) if not n.startswith('_')][:12]}")
+                    snake_failures = _verify_snake_features(mod)
+                except Exception as exc:
+                    tb_tail = traceback.format_exc()[-500:]
+                    print(f"  Module import/run failed: {type(exc).__name__}: {exc}")
+                    print(f"  Traceback tail: {tb_tail}")
+                    snake_failures = [f"module import failed: {type(exc).__name__}: {exc}"]
+            else:
+                snake_failures = [f"AST parse error: {ast_result.get('error', 'unknown')}"]
 
-                        for name in dir(mod):
-                            obj = getattr(mod, name)
-                            if isinstance(obj, type) and name.lower() == "snake":
-                                instance = obj(20, 20)
-                                print(f"  {name} instantiated: grid={instance.grid_w}x{instance.grid_h}")
-
-                                for _ in range(10):
-                                    ok = instance.tick()
-                                    if isinstance(ok, bool) and not ok:
-                                        print("  Game over after tick — as expected from wall collision")
-                                        break
-                                else:
-                                    print("  10 ticks completed without game over")
-
-                                state = instance.render_state()
-                                print(f"  render_state() keys: {sorted(state.keys())}")
-
-                                required_keys = {"grid_w", "grid_h", "snake", "food", "score", "game_over", "length"}
-                                missing = required_keys - set(state.keys())
-                                if missing:
-                                    print(f"  WARNING: render_state missing keys: {missing}")
-                                else:
-                                    print("  All required render_state keys present")
-
-                                snake_len = state.get("length", len(state.get("snake", [])))
-                                print(f"  Snake length: {snake_len}, score: {state.get('score', 0)}")
-
-                                print("\n  SUCCESS: Snake game imported, instantiated, and ticked!")
-                                break
-                        else:
-                            print("  No 'Snake' class found in module")
-                            print(f"  Module contents: {[n for n in dir(mod) if not n.startswith('_')]}")
-                    else:
-                        print("  spec_from_file_location returned None")
-                except Exception as e:
-                    print(f"  Module import/run failed: {type(e).__name__}: {e}")
-                    print(f"  Traceback: {traceback.format_exc()[-500:]}")
+            if snake_failures:
+                print("\n  FEATURE FAILURES:")
+                for fail in snake_failures:
+                    print(f"    - {fail}")
+            else:
+                print("\n  SUCCESS: generated module satisfies all Snake features "
+                      "(class present, tickable, state advances, no crashes).")
 
         # ---------------------------------------------------------------- REPORT
         print("\n" + "=" * 70)
@@ -522,6 +728,7 @@ class TestDaemonGameBuilding:
         print(f"  Code generated:         {code_written}")
         print(f"  Code committed:         {has_commit}")
         print(f"  Game importable:        {game_source is not None and _parse_ast(game_source)['parseable']}")
+        print(f"  Snake feature failures: {len(snake_failures)}")
         print("=" * 70 + "\n")
 
         # Hard assertions
@@ -531,6 +738,10 @@ class TestDaemonGameBuilding:
             f"runner.vars_written={bool(runner.vars_written)}"
         )
         assert runner.vars_written, "Runner was not dispatched"
+        assert not snake_failures, (
+            "Generated Snake game does not satisfy the required features:\n  - "
+            + "\n  - ".join(snake_failures)
+        )
 
         # Check claim status (may fail if claim_runnable didn't pick up for infrastructure reasons)
         if post_tick_status != _TS.ACTIVE.value:

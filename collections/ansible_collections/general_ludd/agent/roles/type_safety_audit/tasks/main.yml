@@ -1,0 +1,280 @@
+---
+# type_safety_audit role — scan Python source for `Any` usage in annotations
+#
+# Wraps scripts/check_type_strictness.py (the AST-based scanner that powers
+# `make check-types`). The scanner detects `Any` in return annotations,
+# parameters, annotated assignments, nested container types, Optional/Union
+# forms, the typing.Any attribute form, and stringified forward refs.
+#
+# Enforces on NEW code: pass a baseline file (config/type_any_baseline.txt)
+# and the role fails only when a violation is NOT in the baseline.
+#
+# Optionally calls gludd_model_call for AI-assisted type-narrowing suggestions
+# on each new violation (gated behind enable_model_call:false).
+#
+# REPORT-ONLY on existing code; FAILS the play when new violations exceed
+# the configurable threshold.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Verify the scanner exists ─────────────────────────────────────────────────
+
+- name: Stat the type-strictness checker
+  ansible.builtin.stat:
+    path: "{{ checker_script }}"
+  register: _tsa_script_stat
+
+- name: Abort when checker script is missing
+  ansible.builtin.fail:
+    msg: >-
+      check_type_strictness.py not found at {{ checker_script }}.
+      Set checker_script to the absolute path of the scanner.
+  when: not _tsa_script_stat.stat.exists
+
+# ── Stat the baseline file (optional) ─────────────────────────────────────────
+
+- name: Stat the baseline file (if baseline_file given)
+  ansible.builtin.stat:
+    path: "{{ baseline_file }}"
+  register: _tsa_baseline_stat
+  when: baseline_file | length > 0
+
+- name: Resolve effective baseline path
+  ansible.builtin.set_fact:
+    _tsa_effective_baseline: >-
+      {{
+        baseline_file
+        if (baseline_file | length > 0 and _tsa_baseline_stat.stat.exists)
+        else ''
+      }}
+
+# ── Run the scanner ───────────────────────────────────────────────────────────
+# Exit codes: 0 = clean, 1 = violations found, 2 = usage/internal error.
+# Both 0 and 1 are valid scan outcomes; only 2 is a tool failure.
+
+- name: Run type-strictness scanner (with baseline)
+  ansible.builtin.command:
+    cmd: >-
+      python3 {{ checker_script }} {{ source_path }}
+      --format json
+      --baseline {{ _tsa_effective_baseline }}
+  register: _tsa_scan_raw
+  changed_when: false
+  failed_when: _tsa_scan_raw.rc not in [0, 1, 2]
+  when: _tsa_effective_baseline | length > 0
+
+- name: Run type-strictness scanner (no baseline)
+  ansible.builtin.command:
+    cmd: >-
+      python3 {{ checker_script }} {{ source_path }}
+      --format json
+  register: _tsa_scan_raw_nobaseline
+  changed_when: false
+  failed_when: _tsa_scan_raw_nobaseline.rc not in [0, 1, 2]
+  when: _tsa_effective_baseline | length == 0
+
+- name: Unify scan result
+  ansible.builtin.set_fact:
+    _tsa_scan_stdout: >-
+      {{
+        _tsa_scan_raw.stdout
+        if (_tsa_effective_baseline | length > 0 and _tsa_scan_raw is defined)
+        else (_tsa_scan_raw_nobaseline.stdout | default(''))
+      }}
+    _tsa_scan_rc: >-
+      {{
+        _tsa_scan_raw.rc
+        if (_tsa_effective_baseline | length > 0 and _tsa_scan_raw is defined)
+        else (_tsa_scan_raw_nobaseline.rc | default(2))
+      }}
+
+- name: Abort on scanner internal error (rc=2)
+  ansible.builtin.fail:
+    msg: >-
+      check_type_strictness.py internal error (rc=2).
+      stdout: {{ _tsa_scan_stdout }}
+  when: _tsa_scan_rc | int == 2
+
+# ── Parse scanner JSON ────────────────────────────────────────────────────────
+
+- name: Parse scanner JSON output
+  ansible.builtin.set_fact:
+    _tsa_scan_data: "{{ _tsa_scan_stdout | from_json }}"
+
+- name: Extract violation lists and counts
+  ansible.builtin.set_fact:
+    _tsa_total_violations: "{{ _tsa_scan_data.violations | default([]) }}"
+    _tsa_total_count: "{{ _tsa_scan_data.total | default(0) | int }}"
+    _tsa_new_count: "{{ _tsa_scan_data.new | default(_tsa_scan_data.total | default(0)) | int }}"
+    _tsa_baselined_count: "{{ _tsa_scan_data.baselined | default(0) | int }}"
+    _tsa_files_scanned: "{{ _tsa_scan_data.files_scanned | default(0) | int }}"
+
+# ── Optional: AI-assisted type suggestions ────────────────────────────────────
+
+- name: Fetch live daemon facts for model call context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _tsa_facts
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - _tsa_total_violations | length > 0
+    - not ansible_check_mode
+
+- name: Request type-narrowing suggestions from model (enable_model_call=true only)
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are a Python type-safety reviewer. For each `Any` usage below, propose
+      the tightest concrete type that preserves the producer's contract. Prefer
+      TypedDict / pydantic.BaseModel for record shapes, Protocol for callables,
+      and T | None for optionals. Never propose `Any` or `object` unless the
+      value genuinely crosses an untyped C-extension boundary.
+
+      Violations (file:line:col kind context):
+      {% for v in _tsa_total_violations %}
+      - {{ v.file }}:{{ v.line }}:{{ v.col }} {{ v.kind }} — {{ v.context }}
+      {% endfor %}
+    model_profile: "{{ model_profile | default('') }}"
+  register: _tsa_model_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - _tsa_total_violations | length > 0
+    - not ansible_check_mode
+
+- name: Set type suggestions from model call
+  ansible.builtin.set_fact:
+    _tsa_suggestions: "{{ _tsa_model_result.answer | default('') }}"
+  when:
+    - enable_model_call | bool
+    - _tsa_model_result is defined
+    - _tsa_model_result.answer is defined
+
+- name: Set empty suggestions (model call disabled)
+  ansible.builtin.set_fact:
+    _tsa_suggestions: ""
+  when: not (enable_model_call | bool)
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON type-safety audit artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'type_safety_audit',
+        'status': 'completed',
+        'source_path': source_path,
+        'baseline_file': _tsa_effective_baseline,
+        'files_scanned': _tsa_files_scanned | int,
+        'total_violations': _tsa_total_count | int,
+        'new_violations': _tsa_new_count | int,
+        'baselined_violations': _tsa_baselined_count | int,
+        'threshold': max_new_violations | int,
+        'violations': _tsa_total_violations,
+        'model_suggestions': _tsa_suggestions,
+        'verdict': 'fail' if (_tsa_new_count | int) > (max_new_violations | int) else ('warn' if (_tsa_new_count | int) > 0 else 'pass')
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/type_safety_audit.json"
+    mode: "0644"
+
+- name: Write markdown type-safety audit report
+  ansible.builtin.copy:
+    content: |
+      # Type Safety Audit Report
+
+      **Source:** `{{ source_path }}`
+      **Baseline:** `{{ _tsa_effective_baseline | default('(none)') }}`
+      **Files scanned:** {{ _tsa_files_scanned }}
+      **Threshold:** {{ max_new_violations }} new violation(s) allowed
+
+      ## Summary
+
+      | Metric | Count |
+      |---|---|
+      | Total `Any` violations | {{ _tsa_total_count }} |
+      | Baselined (pre-existing) | {{ _tsa_baselined_count }} |
+      | **New (this scan)** | **{{ _tsa_new_count }}** |
+
+      ## New Violations
+
+      {% if _tsa_total_violations | length == 0 %}
+      No `Any` usage detected in annotations.
+      {% else %}
+      | File | Line | Col | Kind | Context |
+      |---|---|---|---|---|
+      {% for v in _tsa_total_violations %}
+      | `{{ v.file }}` | {{ v.line }} | {{ v.col }} | {{ v.kind }} | `{{ v.context }}` |
+      {% endfor %}
+      {% endif %}
+
+      {% if _tsa_suggestions | length > 0 %}
+      ## AI-Assisted Type Suggestions
+
+      {{ _tsa_suggestions }}
+      {% endif %}
+
+      ## Policy
+
+      `Any` is acceptable only for untyped C-extension interop (with a
+      documented `# type: ignore`) or a genuinely dynamic dispatcher. Every
+      other `Any` is a bug — trace the producer, consumer, schema, or test to
+      find the real type. See `.opencode/skills/type-safety/SKILL.md`.
+
+      ---
+      *Generated by general_ludd.agent.type_safety_audit — fails when new
+      violations exceed threshold ({{ max_new_violations }}).*
+    dest: "{{ artifact_dir }}/type_safety_audit.md"
+    mode: "0644"
+
+# ── Notify via gludd_message when new violations present ──────────────────────
+
+- name: Send new-violation notification (when new violations exceed threshold)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: type_safety_audit
+    recipient: "{{ handoff_recipient }}"
+    topic: type_safety_new_violations
+    body: >-
+      {{ {
+        'new_count': _tsa_new_count | int,
+        'total_count': _tsa_total_count | int,
+        'threshold': max_new_violations | int,
+        'source_path': source_path
+      } | to_json }}
+    priority: high
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - (_tsa_new_count | int) > (max_new_violations | int)
+    - not ansible_check_mode
+
+# ── Gate: fail the play when new violations exceed threshold ──────────────────
+
+- name: Report type-safety audit completion
+  ansible.builtin.debug:
+    msg: >-
+      Type safety audit complete: total={{ _tsa_total_count }}
+      new={{ _tsa_new_count }} baselined={{ _tsa_baselined_count }}
+      threshold={{ max_new_violations }} verdict={{
+        'fail' if (_tsa_new_count | int) > (max_new_violations | int)
+        else ('warn' if (_tsa_new_count | int) > 0 else 'pass')
+      }}
+
+- name: Fail when new `Any` violations exceed threshold
+  ansible.builtin.fail:
+    msg: >-
+      Type safety gate FAILED: {{ _tsa_new_count }} new `Any` violation(s)
+      detected (threshold allows {{ max_new_violations }}).
+      See {{ artifact_dir }}/type_safety_audit.md for the full report.
+      Either tighten the types, or add the violations to the baseline
+      ({{ _tsa_effective_baseline | default('config/type_any_baseline.txt') }}).
+  when: (_tsa_new_count | int) > (max_new_violations | int)

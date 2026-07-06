@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
@@ -198,7 +199,7 @@ def test_default_runner_uses_list_argv_never_shell(monkeypatch: pytest.MonkeyPat
         stdout = ""
         stderr = ""
 
-    def fake_run(argv, **kwargs):  # type: ignore[no-untyped-def]
+    def fake_run(argv: Any, **kwargs: Any) -> Any:
         captured["argv"] = argv
         captured["kwargs"] = kwargs
         return FakeProc()

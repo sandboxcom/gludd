@@ -5,13 +5,16 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd import __version__
+from general_ludd.db.models import TodoModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore
@@ -52,7 +55,7 @@ class LogLevelRequest(BaseModel):
     level: str
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
@@ -79,7 +82,7 @@ def _validate_project_id(app: FastAPI, project_id: str | None) -> None:
         )
 
 
-def _todo_to_dict(todo: Any) -> dict[str, Any]:
+def _todo_to_dict(todo: TodoModel) -> dict[str, object]:
     return {
         "todo_id": todo.todo_id,
         "title": todo.title,
@@ -96,7 +99,7 @@ def _todo_to_dict(todo: Any) -> dict[str, Any]:
     }
 
 
-def _todo_to_dict_scheduled(todo: Any) -> dict[str, Any]:
+def _todo_to_dict_scheduled(todo: TodoModel) -> dict[str, object]:
     """Serialize a todo including all scheduling fields."""
     base = _todo_to_dict(todo)
     base.update({
@@ -124,7 +127,7 @@ _PRIORITY_MAP: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3
 _MAX_INMEMORY_TODOS = 1000
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     # Replace whatever the daemon factory seeded (a plain list) with a bounded
     # deque, preserving any pre-existing entries. Idempotent if already a deque
     # with the right cap.
@@ -134,17 +137,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         and _existing.maxlen == _MAX_INMEMORY_TODOS
     ):
         _daemon_state["todos"] = collections.deque(
-            _existing, maxlen=_MAX_INMEMORY_TODOS
+            cast(Iterable[object], _existing), maxlen=_MAX_INMEMORY_TODOS
         )
+    _todos: collections.deque[dict[str, object]] = cast(
+        collections.deque[dict[str, object]], _daemon_state["todos"]
+    )
 
     @app.post("/admin/preflight")
-    async def admin_run_preflight() -> dict[str, Any]:
+    async def admin_run_preflight() -> dict[str, object]:
         result = run_preflight()
         _daemon_state["quality_gate"] = result
         return result
 
     @app.post("/api/todos", status_code=201)
-    async def api_add_todo(req: AddTodoRequest) -> dict[str, Any]:
+    async def api_add_todo(req: AddTodoRequest) -> dict[str, object]:
         # Cross-project create guard: a caller could previously pass ANY
         # project_id (including one belonging to a different tenant). When a
         # ProjectManager exists AND has at least one active project, a non-null
@@ -164,7 +170,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 )
         factory = _get_session_factory(app)
         todo_id = f"TODO-{uuid.uuid4().hex[:8].upper()}"
-        todo: dict[str, Any] = {
+        todo: dict[str, object] = {
             "todo_id": todo_id,
             "title": req.title,
             "description": req.description,
@@ -182,7 +188,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 result = await repo.create(todo_data=todo)
                 await session.commit()
                 return _todo_to_dict(result)
-        _daemon_state["todos"].append(todo)
+        _todos.append(todo)
         return todo
 
     @app.get("/api/todos")
@@ -192,7 +198,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         project_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         _limit = max(1, min(limit, 500))
         _offset = max(0, offset)
         # Cross-tenant isolation: when no project_id is supplied in multi-project
@@ -217,7 +223,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                     limit=_limit, offset=_offset,
                 )
                 return [_todo_to_dict(t) for t in todos][:limit]
-        results = list(_daemon_state["todos"])
+        results = list(_todos)
         if queue is not None:
             results = [t for t in results if t.get("queue") == queue]
         if status is not None:
@@ -227,7 +233,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return results[_offset:_offset + _limit]
 
     @app.post("/api/todos/scheduled", status_code=201)
-    async def api_create_scheduled_todo(req: AddScheduledTodoRequest) -> dict[str, Any]:
+    async def api_create_scheduled_todo(req: AddScheduledTodoRequest) -> dict[str, object]:
         """Create a scheduled (one-shot or cron) todo in SCHEDULED status.
 
         ``scheduled_at`` sets the one-shot fire time; ``cron`` makes it
@@ -277,7 +283,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
         factory = _get_session_factory(app)
         todo_id = f"TODO-{uuid.uuid4().hex[:8].upper()}"
-        todo_data: dict[str, Any] = {
+        todo_data: dict[str, object] = {
             "todo_id": todo_id,
             "title": req.title,
             "description": req.description,
@@ -310,7 +316,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         include_paused: bool = True,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         """List todos in SCHEDULED status (both one-shot and cron templates)."""
         _limit = max(1, min(limit, 500))
         _offset = max(0, offset)
@@ -345,7 +351,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return []
 
     @app.post("/api/todos/{todo_id}/schedule/pause")
-    async def api_pause_schedule(todo_id: str, project_id: str) -> dict[str, Any]:
+    async def api_pause_schedule(todo_id: str, project_id: str) -> dict[str, object]:
         """Pause a SCHEDULED todo's schedule. Skips future fires until resumed."""
         _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
@@ -366,7 +372,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"todo_id": todo_id, "schedule_paused": True, "status": "ok"}
 
     @app.post("/api/todos/{todo_id}/schedule/resume")
-    async def api_resume_schedule(todo_id: str, project_id: str) -> dict[str, Any]:
+    async def api_resume_schedule(todo_id: str, project_id: str) -> dict[str, object]:
         """Resume a paused SCHEDULED todo's schedule."""
         _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
@@ -387,7 +393,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"todo_id": todo_id, "schedule_paused": False, "status": "ok"}
 
     @app.get("/api/todos/{todo_id}")
-    async def api_get_todo(todo_id: str, project_id: str | None = None) -> dict[str, Any]:
+    async def api_get_todo(todo_id: str, project_id: str | None = None) -> dict[str, object]:
         _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
         if factory is not None:
@@ -401,21 +407,21 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 if todo is not None:
                     return _todo_to_dict(todo)
                 raise HTTPException(status_code=404, detail="Todo not found")
-        for todo in _daemon_state["todos"]:
+        for _row in _todos:
             if (
-                str(todo.get("todo_id", "")) == todo_id
-                and (project_id is None or todo.get("project_id") == project_id)
+                str(_row.get("todo_id", "")) == todo_id
+                and (project_id is None or _row.get("project_id") == project_id)
             ):
-                return dict(todo)
+                return dict(_row)
         raise HTTPException(status_code=404, detail="Todo not found")
 
     @app.put("/api/todos/{todo_id}")
     async def api_update_todo(
         todo_id: str, req: AddTodoRequest, project_id: str | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
-        updates: dict[str, Any] = {
+        updates: dict[str, object] = {
             "title": req.title,
             "description": req.description,
             "acceptance_criteria": json.dumps(req.acceptance_criteria),
@@ -436,20 +442,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 updated = await repo.get_by_id(todo_id)
                 if updated is not None:
                     return _todo_to_dict(updated)
-        for i, todo in enumerate(_daemon_state["todos"]):
+        for i, _row in enumerate(_todos):
             if (
-                str(todo.get("todo_id", "")) == todo_id
-                and (project_id is None or todo.get("project_id") == project_id)
+                str(_row.get("todo_id", "")) == todo_id
+                and (project_id is None or _row.get("project_id") == project_id)
             ):
-                _daemon_state["todos"][i] = {**todo, **updates}
-                return dict(_daemon_state["todos"][i])
+                _todos[i] = {**_row, **updates}
+                return dict(_todos[i])
         raise HTTPException(status_code=404, detail="Todo not found")
 
     @app.get("/admin/todos")
     async def admin_list_todos(
         status: str | None = None,
         project_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         # ADMIN cross-tenant listing is INTENTIONAL here: this route is NOT in
         # daemon._PUBLIC_PATHS, so it is PSK-gated (operator-only). Unlike the
         # public GET /api/todos — which returns [] when project_id is omitted in
@@ -464,7 +470,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 todos = await repo.list_all(status=status, project_id=project_id)
                 results = [_todo_to_dict(t) for t in todos]
                 return {"todos": results, "count": len(results)}
-        results = list(_daemon_state["todos"])
+        results = list(_todos)
         if status is not None:
             results = [t for t in results if t.get("status") == status]
         if project_id is not None:
@@ -480,7 +486,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "profile. Public GET."
         ),
     )
-    async def api_status() -> dict[str, Any]:
+    async def api_status() -> dict[str, object]:
         factory = _get_session_factory(app)
         queue_depths: dict[str, int] = {}
         todo_count = 0
@@ -497,12 +503,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                         queue_depths.get(q or "unknown", 0) + c
                     )
         else:
-            for todo in _daemon_state["todos"]:
-                q = todo.get("queue", "unknown")
+            for todo in _todos:
+                q = cast(str, todo.get("queue") or "unknown")
                 queue_depths[q] = queue_depths.get(q, 0) + 1
                 todo_count += 1
 
-        bare_binaries: list[dict[str, Any]] = []
+        bare_binaries: list[dict[str, str]] = []
         known_versions: dict[str, str] = {}
         filestore_available = False
         try:
@@ -525,7 +531,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 if f.endswith(".yml") or f.endswith(".yaml")
             )
 
-        elapsed = _daemon_state.get("tick_metrics", {})
+        elapsed = cast(dict[str, object], _daemon_state.get("tick_metrics", {}))
         qg = _daemon_state.get("quality_gate", {})
         if not qg:
             qg = {"overall": "not_run", "passed_count": 0, "total_count": 0}
@@ -544,7 +550,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/api/deployments")
-    async def api_deployments() -> list[dict[str, Any]]:
+    async def api_deployments() -> list[dict[str, str]]:
         instances = getattr(app.state, "_compute_deployments", None) or {}
         return [
             {"instance_id": i.instance_id, "status": i.status}

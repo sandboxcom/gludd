@@ -16,16 +16,39 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal as _signal
-from typing import Any, cast
+from typing import Protocol, cast
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 from general_ludd.process.registry import ProcessRegistryError, default_registry
 
 logger = logging.getLogger(__name__)
 
 
-def _read_proc_locks(pid: int) -> list[dict[str, Any]]:
+class SignalProcessRequest(BaseModel):
+    """Request body for POST /admin/processes/{pid}/signal."""
+
+    signal: str = "SIGTERM"
+    group: bool = False
+
+
+class _ProcessIOCCounters(Protocol):
+    """Structural type for psutil's sdiskio IO-counter namedtuple."""
+
+    read_bytes: int
+    write_bytes: int
+    read_count: int
+    write_count: int
+
+
+class _ProcessWithIOC(Protocol):
+    """Structural type for a Process exposing the Linux/Windows io_counters()."""
+
+    def io_counters(self) -> _ProcessIOCCounters: ...
+
+
+def _read_proc_locks(pid: int) -> list[dict[str, object]]:
     """Best-effort parse of ``/proc/locks`` filtered to ``pid``.
 
     Linux-only; returns ``[]`` on any error or on platforms without
@@ -35,7 +58,7 @@ def _read_proc_locks(pid: int) -> list[dict[str, Any]]:
 
     where field index 4 is the owning PID.
     """
-    locks: list[dict[str, Any]] = []
+    locks: list[dict[str, object]] = []
     try:
         with open("/proc/locks", encoding="utf-8") as fh:
             for line in fh:
@@ -64,7 +87,7 @@ def _read_proc_locks(pid: int) -> list[dict[str, Any]]:
     return locks
 
 
-def _collect_stats(pid: int) -> dict[str, Any]:
+def _collect_stats(pid: int) -> dict[str, object]:
     """Build the psutil snapshot for a single managed pid (runs off-loop).
 
     Every field that may be unavailable on a given platform degrades to ``None``
@@ -84,7 +107,7 @@ def _collect_stats(pid: int) -> dict[str, Any]:
 
     io: dict[str, int] | None
     try:
-        ioc = cast(Any, proc).io_counters()
+        ioc = cast(_ProcessWithIOC, proc).io_counters()
         io = {
             "read_bytes": ioc.read_bytes,
             "write_bytes": ioc.write_bytes,
@@ -126,9 +149,9 @@ def _collect_stats(pid: int) -> dict[str, Any]:
     }
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/admin/processes")
-    async def list_processes() -> dict[str, Any]:
+    async def list_processes() -> dict[str, object]:
         reg = default_registry()
         records = reg.list()
         processes = [
@@ -137,10 +160,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"processes": processes, "count": len(processes)}
 
     @app.post("/admin/processes/{pid}/signal")
-    async def signal_process(pid: int, body: dict[str, Any]) -> dict[str, Any]:
+    async def signal_process(
+        pid: int, body: SignalProcessRequest
+    ) -> dict[str, object]:
         reg = default_registry()
-        sig = body.get("signal", "SIGTERM")
-        group = bool(body.get("group", False))
+        sig = body.signal
+        group = body.group
         try:
             signum = reg.resolve_signal(sig)
             # signal() reads psutil create_time() for the identity guard and then
@@ -175,7 +200,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/processes/{pid}/stats")
-    async def process_stats(pid: int) -> dict[str, Any]:
+    async def process_stats(pid: int) -> dict[str, object]:
         reg = default_registry()
         # Confinement: only managed + live (identity-checked) PIDs are inspectable.
         if reg.get(pid) is None or not reg.is_alive(pid):
@@ -187,6 +212,24 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             # All psutil/proc reads are blocking syscalls; keep them off the loop.
             return await asyncio.to_thread(_collect_stats, pid)
         except Exception as exc:
+            # Distinguish permission denial (403) from absence (404) so callers
+            # can tell a locked-down pid apart from a vanished one. Both carry a
+            # reason but never any internal detail.
+            import psutil
+
+            if isinstance(exc, psutil.AccessDenied):
+                logger.warning(
+                    "access denied collecting stats for pid=%s", pid, exc_info=True
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"permission denied inspecting pid {pid}",
+                ) from exc
+            if isinstance(exc, psutil.NoSuchProcess):
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"pid {pid} is no longer available",
+                ) from exc
             logger.warning(
                 "unexpected error collecting stats for pid=%s", pid, exc_info=True
             )

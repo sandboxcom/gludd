@@ -30,12 +30,57 @@ import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from typing import Any
-from urllib.parse import urlsplit
+from typing import TypedDict, cast
+from urllib.parse import quote, urlsplit
+
+
+class BitbucketAssignee(TypedDict, total=False):
+    """Assignee sub-object on a Bitbucket issue."""
+
+    display_name: str
+    nickname: str
+    uuid: str
+
+
+class BitbucketContent(TypedDict, total=False):
+    """Rich-text content sub-object on a Bitbucket issue."""
+
+    raw: str
+
+
+class BitbucketHtmlLink(TypedDict, total=False):
+    """The ``html`` entry under a Bitbucket issue's ``links`` mapping."""
+
+    href: str
+
+
+class BitbucketLinks(TypedDict, total=False):
+    """Links sub-object on a Bitbucket issue."""
+
+    html: BitbucketHtmlLink
+
+
+class BitbucketIssue(TypedDict, total=False):
+    """A Bitbucket Cloud issue as returned by the v2.0 REST ``/issues`` endpoint.
+
+    All fields are optional (``total=False``) because Bitbucket payloads vary
+    by issue state and projection.
+    """
+
+    id: int | str
+    title: str
+    state: str
+    kind: str
+    priority: str
+    updated_on: str
+    assignee: BitbucketAssignee
+    content: BitbucketContent
+    links: BitbucketLinks
+
 
 Transport = Callable[
-    [str, str, Mapping[str, str], "dict[str, Any] | None", float],
-    "tuple[int, dict[str, Any]]",
+    [str, str, Mapping[str, str], "dict[str, object] | None", float],
+    "tuple[int, dict[str, object]]",
 ]
 
 _DEFAULT_BASE_URL = "https://api.bitbucket.org"
@@ -78,9 +123,9 @@ def _default_transport(
     method: str,
     url: str,
     headers: Mapping[str, str],
-    json_body: dict[str, Any] | None,
+    json_body: dict[str, object] | None,
     timeout: float,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, dict[str, object]]:
     data = None
     if json_body is not None:
         data = json.dumps(json_body).encode("utf-8")
@@ -94,10 +139,10 @@ def _default_transport(
     except urllib.error.HTTPError as exc:  # pragma: no cover - network path
         status = int(exc.code)
         body = exc.read() if hasattr(exc, "read") else b""
-    payload: dict[str, Any] = {}
+    payload: dict[str, object] = {}
     if body:
         try:
-            parsed = json.loads(body.decode("utf-8"))
+            parsed: object = json.loads(body.decode("utf-8"))
             payload = parsed if isinstance(parsed, dict) else {"data": parsed}
         except (ValueError, UnicodeDecodeError):
             payload = {}
@@ -111,12 +156,12 @@ class BitbucketIssueSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any],
+        config: Mapping[str, object],
         *,
         transport: Transport | None = None,
         env: Mapping[str, str] | None = None,
     ) -> None:
-        self._config = dict(config or {})
+        self._config: dict[str, object] = dict(config or {})
         self.name = str(self._config.get("name") or self.SYSTEM)
         self._env: Mapping[str, str] = env if env is not None else os.environ
         self._transport: Transport = transport or _default_transport
@@ -129,7 +174,8 @@ class BitbucketIssueSource:
             raise ValueError(f"base_url host is internal/blocked: {parts.hostname!r}")
         self._base_url = base_url
 
-        self._timeout = float(self._config.get("timeout", _DEFAULT_TIMEOUT))
+        raw_timeout = self._config.get("timeout", _DEFAULT_TIMEOUT)
+        self._timeout = float(raw_timeout) if isinstance(raw_timeout, (int, float, str)) else _DEFAULT_TIMEOUT
         self._workspace = self._config.get("workspace")
         self._repo = self._config.get("repo") or self._config.get("repo_slug")
 
@@ -154,19 +200,19 @@ class BitbucketIssueSource:
             headers["Authorization"] = auth
         return headers
 
-    def _repo_path(self, workspace: Any, repo: Any) -> str:
+    def _repo_path(self, workspace: object, repo: object) -> str:
         if not workspace or not repo:
             raise ValueError("workspace and repo required (spec or config)")
         return f"/2.0/repositories/{workspace}/{repo}"
 
     def _request(
-        self, method: str, path: str, body: dict[str, Any] | None = None
-    ) -> tuple[int, dict[str, Any]]:
+        self, method: str, path: str, body: dict[str, object] | None = None
+    ) -> tuple[int, dict[str, object]]:
         url = f"{self._base_url}{path}"
         return self._transport(method, url, self._headers(), body, self._timeout)
 
     # -- health ----------------------------------------------------------
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the authenticated-user endpoint. Never raises."""
         try:
             status, payload = self._request("GET", "/2.0/user")
@@ -181,7 +227,7 @@ class BitbucketIssueSource:
         return {"ok": True, "detail": "ok"}
 
     # -- normalization ---------------------------------------------------
-    def _normalize(self, issue: Mapping[str, Any]) -> dict[str, Any]:
+    def _normalize(self, issue: BitbucketIssue) -> dict[str, object]:
         issue_id = str(issue.get("id") or "")
         assignee_obj = issue.get("assignee") or {}
         assignee = ""
@@ -218,33 +264,45 @@ class BitbucketIssueSource:
             "raw": dict(issue),
         }
 
-    def fetch_issues(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
-        spec = dict(spec or {})
-        workspace = spec.get("workspace", self._workspace)
-        repo = spec.get("repo", self._repo)
-        path = self._repo_path(workspace, repo) + "/issues"
-        params = []
-        if spec.get("q"):
-            from urllib.parse import quote
+    @staticmethod
+    def _extract_values(payload: object) -> list[BitbucketIssue]:
+        """Narrow a Bitbucket list response to its issue entries."""
+        values: list[BitbucketIssue] = []
+        raw = payload.get("values") if isinstance(payload, Mapping) else None
+        if isinstance(raw, list):
+            for entry in raw:
+                if isinstance(entry, dict):
+                    values.append(cast(BitbucketIssue, entry))
+        return values
 
-            params.append("q=" + quote(str(spec["q"])))
-        if spec.get("pagelen") is not None:
-            params.append(f"pagelen={int(spec['pagelen'])}")
+    def fetch_issues(
+        self, spec: Mapping[str, object] | None = None
+    ) -> list[dict[str, object]]:
+        spec_dict: dict[str, object] = dict(spec or {})
+        workspace = spec_dict.get("workspace", self._workspace)
+        repo = spec_dict.get("repo", self._repo)
+        path = self._repo_path(workspace, repo) + "/issues"
+        params: list[str] = []
+        if spec_dict.get("q"):
+            params.append("q=" + quote(str(spec_dict["q"])))
+        if spec_dict.get("pagelen") is not None:
+            raw_pagelen = spec_dict["pagelen"]
+            if isinstance(raw_pagelen, (int, float, str)):
+                params.append(f"pagelen={int(raw_pagelen)}")
         if params:
             path = path + "?" + "&".join(params)
         status, payload = self._request("GET", path)
         if status != 200:
             raise RuntimeError(f"bitbucket fetch failed: http {status}")
-        values = payload.get("values") or []
-        return [self._normalize(v) for v in values]
+        return [self._normalize(v) for v in self._extract_values(payload)]
 
     # -- write-back ------------------------------------------------------
     def update_status(
         self, external_id: str, status: str, comment: str | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         path = self._repo_path(self._workspace, self._repo) + f"/issues/{external_id}"
         code, payload = self._request("PUT", path, {"state": status})
-        result: dict[str, Any] = {
+        result: dict[str, object] = {
             "ok": code == 200 and not payload.get("error"),
             "external_id": str(external_id),
             "status": status,
@@ -255,7 +313,7 @@ class BitbucketIssueSource:
             result["comment"] = self.add_comment(external_id, comment)
         return result
 
-    def add_comment(self, external_id: str, comment: str) -> dict[str, Any]:
+    def add_comment(self, external_id: str, comment: str) -> dict[str, object]:
         path = self._repo_path(self._workspace, self._repo) + f"/issues/{external_id}/comments"
         code, payload = self._request("POST", path, {"content": {"raw": comment}})
         return {

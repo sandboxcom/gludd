@@ -21,19 +21,78 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
-Row = Mapping[str, Any]
-Executor = Callable[[str], Sequence[Row]]
+
+class MysqlStatusRow(TypedDict, total=False):
+    """Row shape from ``SHOW GLOBAL STATUS`` (MySQL 5.x and 8.x spellings)."""
+
+    Variable_name: str
+    Value: str | int | float
+    variable_name: str
+    value: str | int | float
+
+
+class MysqlPerformanceRow(TypedDict, total=False):
+    """Row shape from ``performance_schema.events_statements_summary_global_by_event_name``."""
+
+    event_name: str
+    count_star: int
+    sum_timer_wait: int | float
+
+
+class MysqlReplicaRow(TypedDict, total=False):
+    """Row shape from ``SHOW REPLICA STATUS`` / ``SHOW SLAVE STATUS``."""
+
+    Replica_IO_Running: str
+    Slave_IO_Running: str
+    Seconds_Behind_Source: int | float
+    Seconds_Behind_Master: int | float
+    Source_Host: str
+    Master_Host: str
+
+
+MysqlRow = MysqlStatusRow | MysqlPerformanceRow | MysqlReplicaRow
+Executor = Callable[[str], Sequence[MysqlRow]]
+
+
+class MysqlConfig(TypedDict, total=False):
+    """Optional constructor config for :class:`MysqlStatsSource`."""
+
+    host_env: str
+    user_env: str
+    password_env: str
+    database_env: str
+    host: str
+    database: str
+
+
+class MysqlRecord(TypedDict):
+    """Normalized metric-record emitted by this source.
+
+    Distinct from :class:`general_ludd.connectors.base.NormalizedRecord` because
+    ``ts`` here is an ISO-8601 string (via :func:`_utc_now_iso`) rather than a
+    POSIX ``float``. Changing the ``ts`` shape would be a runtime behavior
+    change in downstream consumers, so we keep a local record type.
+    """
+
+    ts: str
+    source: str
+    kind: str
+    level_or_status: str
+    message: str
+    value: float | None
+    labels: dict[str, str]
+    raw: dict[str, object]
 
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _to_float(value: Any) -> float | None:
+def _to_float(value: object) -> float | None:
     """Best-effort numeric coercion that never raises."""
     if value is None:
         return None
@@ -71,10 +130,10 @@ class MysqlStatsSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any] | None = None,
+        config: Mapping[str, object] | None = None,
         executor: Executor | None = None,
     ) -> None:
-        self.config: dict[str, Any] = dict(config or {})
+        self.config: dict[str, object] = dict(config or {})
         self._executor = executor
 
     # -- credential / driver plumbing ------------------------------------
@@ -89,8 +148,10 @@ class MysqlStatsSource:
     def _default_executor(self) -> Executor:
         """Build a pymysql-backed executor with a guarded driver import."""
         try:
-            import pymysql  # type: ignore[import-untyped]  # pymysql: optional driver, guarded by try/except
-            import pymysql.cursors  # type: ignore[import-untyped]  # pymysql: optional driver
+            import importlib
+
+            pymysql = importlib.import_module("pymysql")  # pymysql: optional driver, guarded by try/except
+            importlib.import_module("pymysql.cursors")  # pymysql: optional driver
         except ImportError as exc:  # pragma: no cover - exercised via health()
             raise RuntimeError("driver unavailable: pymysql not installed") from exc
 
@@ -101,7 +162,7 @@ class MysqlStatsSource:
         if not user:
             raise RuntimeError("missing user: set config['user_env'] to an env var name")
 
-        def _run(query: str) -> Sequence[Row]:  # pragma: no cover - needs real DB
+        def _run(query: str) -> Sequence[MysqlRow]:  # pragma: no cover - needs real DB
             conn = pymysql.connect(
                 host=str(host),
                 user=str(user),
@@ -125,7 +186,7 @@ class MysqlStatsSource:
 
     # -- health ----------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Report connectivity health. Never raises."""
         try:
             executor = self._get_executor()
@@ -150,10 +211,10 @@ class MysqlStatsSource:
         *,
         message: str,
         value: float | None,
-        labels: Mapping[str, Any],
-        raw: Row,
+        labels: Mapping[str, object],
+        raw: MysqlRow,
         status: str = "ok",
-    ) -> dict[str, Any]:
+    ) -> MysqlRecord:
         clean_labels = {k: str(v) for k, v in labels.items() if v is not None}
         return {
             "ts": _utc_now_iso(),
@@ -166,9 +227,9 @@ class MysqlStatsSource:
             "raw": dict(raw),
         }
 
-    def _normalize_status(self, rows: Sequence[Row]) -> list[dict[str, Any]]:
+    def _normalize_status(self, rows: Sequence[MysqlRow]) -> list[MysqlRecord]:
         """``SHOW GLOBAL STATUS`` rows are ``{Variable_name, Value}`` pairs."""
-        out: list[dict[str, Any]] = []
+        out: list[MysqlRecord] = []
         for row in rows:
             var = row.get("Variable_name") or row.get("variable_name")
             raw_value = row.get("Value") if "Value" in row else row.get("value")
@@ -187,8 +248,8 @@ class MysqlStatsSource:
             )
         return out
 
-    def _normalize_performance(self, rows: Sequence[Row]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+    def _normalize_performance(self, rows: Sequence[MysqlRow]) -> list[MysqlRecord]:
+        out: list[MysqlRecord] = []
         for row in rows:
             event = row.get("event_name")
             out.append(
@@ -204,8 +265,8 @@ class MysqlStatsSource:
             )
         return out
 
-    def _normalize_replica(self, rows: Sequence[Row]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+    def _normalize_replica(self, rows: Sequence[MysqlRow]) -> list[MysqlRecord]:
+        out: list[MysqlRecord] = []
         for row in rows:
             running = row.get("Replica_IO_Running") or row.get("Slave_IO_Running")
             ok = str(running).strip().lower() == "yes"
@@ -230,7 +291,7 @@ class MysqlStatsSource:
 
     # -- query -----------------------------------------------------------
 
-    def query(self, spec: str | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: str | None = None) -> list[MysqlRecord]:
         """Run the selected stat query and return normalized records.
 
         ``spec`` selects: ``status`` (default), ``performance`` or ``replica``.
@@ -245,7 +306,7 @@ class MysqlStatsSource:
         executor = self._get_executor()
         rows = executor(sql)
 
-        normalizers: dict[str, Callable[[Sequence[Row]], list[dict[str, Any]]]] = {
+        normalizers: dict[str, Callable[[Sequence[MysqlRow]], list[MysqlRecord]]] = {
             "status": self._normalize_status,
             "performance": self._normalize_performance,
             "replica": self._normalize_replica,

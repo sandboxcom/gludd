@@ -13,6 +13,7 @@ This is the missing e2e proof for pipeline-controller (features.yml: 85%->100%).
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 
 import pytest
 
@@ -36,7 +37,7 @@ def _cfg(**kw: object) -> PipelineConfig:
         max_worktrees=6,
     )
     base.update(kw)
-    return PipelineConfig(**base)  # type: ignore[arg-type]  # test stub
+    return cast(Any, PipelineConfig)(**base)
 
 
 # ---------------------------------------------------------------------------

@@ -18,11 +18,12 @@ from __future__ import annotations
 import json as _json
 import logging
 from datetime import datetime
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from general_ludd.db.models import HumanTodoModel
 from general_ludd.db.repository import (
     HUMAN_TODO_CATEGORIES,
     HUMAN_TODO_PRIORITIES,
@@ -36,11 +37,11 @@ from general_ludd.schemas.todo import TodoStatus
 logger = logging.getLogger(__name__)
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def _human_todo_to_dict(row: Any) -> dict[str, Any]:
+def _human_todo_to_dict(row: HumanTodoModel) -> dict[str, object]:
     try:
         tags: list[str] = _json.loads(row.tags or "[]")
     except Exception:
@@ -87,9 +88,9 @@ class AddTagRequest(BaseModel):
     tag: str = Field(min_length=1, max_length=128)
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.post("/api/human-todos", status_code=201)
-    async def api_create_human_todo(req: CreateHumanTodoRequest) -> dict[str, Any]:
+    async def api_create_human_todo(req: CreateHumanTodoRequest) -> dict[str, object]:
         if req.category not in HUMAN_TODO_CATEGORIES:
             raise HTTPException(
                 status_code=422,
@@ -151,7 +152,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         agent_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         factory = _get_session_factory(app)
         if factory is None:
             return []
@@ -170,7 +171,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return [_human_todo_to_dict(r) for r in rows]
 
     @app.get("/api/human-todos/feed")
-    async def api_human_todos_feed(since: datetime | None = None) -> list[dict[str, Any]]:
+    async def api_human_todos_feed(since: datetime | None = None) -> list[dict[str, object]]:
         factory = _get_session_factory(app)
         if factory is None:
             return []
@@ -184,7 +185,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return [_human_todo_to_dict(r) for r in rows]
 
     @app.get("/api/human-todos/{human_todo_id}")
-    async def api_get_human_todo(human_todo_id: str) -> dict[str, Any]:
+    async def api_get_human_todo(human_todo_id: str) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database available")
@@ -198,7 +199,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.patch("/api/human-todos/{human_todo_id}")
     async def api_patch_human_todo(
         human_todo_id: str, req: PatchHumanTodoRequest
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database available")
@@ -311,7 +312,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return _human_todo_to_dict(row)
 
     @app.delete("/api/human-todos/{human_todo_id}")
-    async def api_delete_human_todo(human_todo_id: str) -> dict[str, Any]:
+    async def api_delete_human_todo(human_todo_id: str) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database available")
@@ -327,7 +328,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return {"id": human_todo_id, "status": "deleted", "final_status": row.status}
 
     @app.post("/api/human-todos/{human_todo_id}/tags")
-    async def api_add_tag(human_todo_id: str, req: AddTagRequest) -> dict[str, Any]:
+    async def api_add_tag(human_todo_id: str, req: AddTagRequest) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database available")

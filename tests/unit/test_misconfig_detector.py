@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib
 import inspect
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -134,7 +135,7 @@ def test_malformed_input_never_raises() -> None:
     detector = Canonical()
     for bad in [None, "string", 42, []]:
         try:
-            findings = detector.check(bad)  # type: ignore[arg-type]
+            findings = cast(Any, detector).check(bad)
             assert isinstance(findings, list)
         except Exception as exc:  # pragma: no cover
             pytest.fail(f"MisconfigDetector.check raised on {bad!r}: {exc}")

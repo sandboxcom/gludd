@@ -24,9 +24,10 @@ must never break the daemon's admin API).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.db.repository import TodoRepository
 from general_ludd.self_update.apply import apply_plan
@@ -35,11 +36,11 @@ from general_ludd.self_update.model import SelfUpdateRequest
 from general_ludd.self_update.priority import to_todo_spec
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def _request_from_payload(payload: dict[str, Any]) -> SelfUpdateRequest:
+def _request_from_payload(payload: dict[str, object]) -> SelfUpdateRequest:
     """Build a :class:`SelfUpdateRequest` from the JSON payload.
 
     Accepts ``raw_text`` (preferred) or ``text`` as the request body so both
@@ -49,7 +50,7 @@ def _request_from_payload(payload: dict[str, Any]) -> SelfUpdateRequest:
     """
     raw_text = str(payload.get("raw_text") or payload.get("text") or "")
     requested_by = str(payload.get("requested_by") or "user")
-    approval_token = payload.get("approval_token") or None
+    approval_token = cast("str | None", payload.get("approval_token") or None)
     return SelfUpdateRequest(
         raw_text=raw_text,
         requested_by=requested_by,
@@ -57,10 +58,10 @@ def _request_from_payload(payload: dict[str, Any]) -> SelfUpdateRequest:
     )
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/self-update/plan")
-    async def admin_self_update_plan(payload: dict[str, Any]) -> dict[str, Any]:
+    async def admin_self_update_plan(payload: dict[str, object]) -> dict[str, object]:
         try:
             request = _request_from_payload(payload)
             plan = classify(request)
@@ -91,7 +92,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             }
 
     @app.post("/admin/self-update/enqueue")
-    async def admin_self_update_enqueue(payload: dict[str, Any]) -> dict[str, Any]:
+    async def admin_self_update_enqueue(payload: dict[str, object]) -> dict[str, object]:
         try:
             request = _request_from_payload(payload)
             project_id = payload.get("project_id")
@@ -120,7 +121,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             # No DB session factory wired (e.g. boot / fail-soft mode): keep the
             # spec in the in-memory daemon_state backlog so it is not lost and
             # remains observable via /admin/daemon/stats + the admin UI.
-            backlog = _daemon_state.setdefault("todos", [])
+            backlog = cast("list[object]", _daemon_state.setdefault("todos", []))
             backlog.append(spec)
             return {
                 "status": "ok",

@@ -81,9 +81,13 @@ def test_from_profiles_dedupes_providers_sharing_a_name():
     ]
     registry = ProviderRegistry.from_profiles(profiles)
 
-    assert registry.list_providers() == ["openai"]
-    # First profile wins for de-dup.
-    assert registry.get_provider_info("openai").class_hint == "ChatOpenAI"
+    # Presets are registered first; "openai" appears exactly once.
+    assert registry.list_providers().count("openai") == 1
+    # Preset metadata wins for stability (langchain_openai + ChatOpenAI).
+    info = registry.get_provider_info("openai")
+    assert info is not None
+    assert info.package_name == "langchain_openai"
+    assert info.class_hint == "ChatOpenAI"
 
 
 def test_from_profiles_registers_distinct_providers():
@@ -97,7 +101,8 @@ def test_from_profiles_registers_distinct_providers():
     ]
     registry = ProviderRegistry.from_profiles(profiles)
 
-    assert set(registry.list_providers()) == {"openai", "anthropic"}
+    # Both profile-referenced providers are present (plus presets).
+    assert {"openai", "anthropic"}.issubset(set(registry.list_providers()))
     assert registry.get_provider_info("anthropic").package_name == "langchain_anthropic"
 
 
@@ -126,12 +131,18 @@ def test_from_profiles_defaults_provider_name_to_openai():
 
 
 def test_from_profiles_handles_empty_list():
+    """Empty profile list still yields a presets-populated registry."""
+    from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
     registry = ProviderRegistry.from_profiles([])
 
-    assert registry.list_providers() == []
+    assert set(registry.list_providers()) == set(PROVIDER_PRESETS.keys())
 
 
 def test_from_profiles_handles_none():
+    """None profile list still yields a presets-populated registry."""
+    from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
     registry = ProviderRegistry.from_profiles(None)
 
-    assert registry.list_providers() == []
+    assert set(registry.list_providers()) == set(PROVIDER_PRESETS.keys())

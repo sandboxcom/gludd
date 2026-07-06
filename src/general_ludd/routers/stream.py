@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 import uuid
-from typing import Any
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.stream import SUPPORTED_PROCESSOR_TOOLS, RoleCloner
 
@@ -32,9 +34,9 @@ class StreamDispatchRequest(BaseModel):
     """Body for ``POST /admin/stream/dispatch``."""
 
     role: str = Field(min_length=1, max_length=128)
-    source_role_invocation: dict[str, Any] = Field(default_factory=dict)
-    extra_vars: dict[str, Any] = Field(default_factory=dict)
-    processor: dict[str, Any] | None = None
+    source_role_invocation: dict[str, object] = Field(default_factory=dict)
+    extra_vars: dict[str, object] = Field(default_factory=dict)
+    processor: dict[str, object] | None = None
     wait_for_completion: bool = False
     priority: int = Field(default=5, ge=0, le=20)
     work_type: str = Field(default="stream_chunk")
@@ -45,15 +47,13 @@ def _get_role_cloner(app: FastAPI) -> RoleCloner | None:
     return cloner if isinstance(cloner, RoleCloner) else None
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
 # Indirection seam for tests: tests monkeypatch this to stub the subprocess so
 # the wait_for_completion path can be exercised without ansible on PATH.
-def _run_subprocess(args: list[str], cwd: str, timeout: float) -> Any:
-    import subprocess
-
+def _run_subprocess(args: list[str], cwd: str, timeout: float) -> subprocess.Popen[bytes]:
     return subprocess.Popen(
         args,
         cwd=cwd,
@@ -62,7 +62,7 @@ def _run_subprocess(args: list[str], cwd: str, timeout: float) -> Any:
     )
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.post(
         "/admin/stream/dispatch",
         summary="Dispatch a stream chunk to a cloned role instance",
@@ -72,7 +72,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "synchronously. PSK-authenticated."
         ),
     )
-    async def admin_stream_dispatch(req: StreamDispatchRequest) -> dict[str, Any]:
+    async def admin_stream_dispatch(req: StreamDispatchRequest) -> dict[str, object]:
         cloner = _get_role_cloner(app)
         if cloner is None:
             raise HTTPException(
@@ -117,8 +117,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         app: FastAPI,
         task_id: str,
         req: StreamDispatchRequest,
-        clone_path: Any,
-    ) -> dict[str, Any]:
+        clone_path: Path,
+    ) -> dict[str, object]:
         """Enqueue the clone via TodoRepository (mirrors /api/todos)."""
         factory = _get_session_factory(app)
         if factory is None:
@@ -135,7 +135,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             }
         from general_ludd.db.repository import TodoRepository
 
-        todo_data: dict[str, Any] = {
+        todo_data: dict[str, object] = {
             "todo_id": task_id,
             "title": f"stream_chunk:{req.role}:{task_id}",
             "description": (
@@ -161,13 +161,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def _run_clone_sync(
         task_id: str,
         req: StreamDispatchRequest,
-        clone_path: Any,
-    ) -> dict[str, Any]:
+        clone_path: Path,
+    ) -> dict[str, object]:
         """Run ansible-playbook run-clone.yml synchronously in the clone dir."""
         timeout = 60.0
         if req.processor is not None:
+            raw_timeout = req.processor.get("timeout_seconds", 60)
             try:
-                timeout = float(req.processor.get("timeout_seconds", 60))
+                timeout = float(raw_timeout) if isinstance(raw_timeout, (int, float, str)) else 60.0
             except (TypeError, ValueError):
                 timeout = 60.0
 

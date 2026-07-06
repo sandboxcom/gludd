@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from general_ludd.controllers.spend_limiter import SpendLimiter
@@ -143,7 +145,7 @@ class TestRestoreKeepsValidRecords:
     def test_restore_none_is_noop(self) -> None:
         """restore(None) must not raise and must not change spend."""
         sl, _ = _make_limiter()
-        sl.restore(None)  # type: ignore[arg-type]  # test stub
+        cast(Any, sl).restore(None)
         assert sl.window_spend() == pytest.approx(0.0)
 
     def test_restore_empty_list_is_noop(self) -> None:

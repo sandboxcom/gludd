@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.daemon import _get_or_create_extended_subsystems
@@ -12,14 +10,15 @@ from general_ludd.worktree import WorktreeMonitor, WorktreeMonitorConfig
 _MAX_WATCH_PATHS = 100
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/worktree/scan")
     async def admin_worktree_scan(
         watch_paths: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         ext = _get_or_create_extended_subsystems(app)
-        monitor = ext.get("worktree_monitor")
+        monitor_obj = ext.get("worktree_monitor")
+        monitor = monitor_obj if isinstance(monitor_obj, WorktreeMonitor) else None
         if monitor is None:
             paths = watch_paths.split(",") if watch_paths else []
             if len(paths) > _MAX_WATCH_PATHS:
@@ -39,12 +38,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/worktree/status")
-    async def admin_worktree_status() -> dict[str, Any]:
+    async def admin_worktree_status() -> dict[str, object]:
         ext = _get_or_create_extended_subsystems(app)
-        monitor = ext.get("worktree_monitor")
+        monitor_obj = ext.get("worktree_monitor")
+        monitor = monitor_obj if isinstance(monitor_obj, WorktreeMonitor) else None
         if monitor is None:
             return {"tracked_worktrees": [], "tracked_count": 0}
-        tracked = [
+        tracked: list[dict[str, object]] = [
             {
                 "path": wt.path,
                 "todo_id": wt.todo_id,

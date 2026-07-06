@@ -1,0 +1,246 @@
+---
+# guardrail_pattern role — audit/scaffold the 3-layer enforcement for a policy
+#
+# Ports .opencode/skills/guardrail-pattern/SKILL.md to a gludd role.
+# The opencode skill documents the meta-pattern: every agent restriction MUST
+# exist at all three layers or it does not stick:
+#   Layer 1 — opencode.json permission rule (hard gate)
+#   Layer 2 — .opencode/plugin/*.ts runtime hook (contextual feedback)
+#   Layer 3 — AGENTS.md section (proactive agent prompting)
+#
+# This role, given a guardrail name, AUDITS whether all three layers are
+# present and optionally SCAFFOLDS template files for the missing ones.
+# Optionally calls gludd_model_call to draft the guardrail text.
+#
+# REPORT-ONLY when action=audit; action=scaffold writes template files only
+# (never overwrites existing files).
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Layer 1: opencode.json permission rule ────────────────────────────────────
+
+- name: Stat opencode.json
+  ansible.builtin.stat:
+    path: "{{ repo_path }}/opencode.json"
+  register: _gp_oc_stat
+
+- name: Search opencode.json for guardrail permission rule
+  ansible.builtin.command:
+    cmd: "grep -ciE '{{ guardrail_name }}' {{ repo_path }}/opencode.json"
+  register: _gp_oc_grep
+  changed_when: false
+  failed_when: _gp_oc_grep.rc not in [0, 1, 2]
+  when: _gp_oc_stat.stat.exists
+
+- name: Layer 1 present (permission rule)
+  ansible.builtin.set_fact:
+    _gp_layer1_present: "{{ (_gp_oc_grep.stdout | default('0') | int) > 0 }}"
+    _gp_layer1_location: "{{ repo_path }}/opencode.json"
+  when: _gp_oc_stat.stat.exists
+
+- name: Layer 1 absent (opencode.json missing)
+  ansible.builtin.set_fact:
+    _gp_layer1_present: false
+    _gp_layer1_location: "(missing)"
+  when: not _gp_oc_stat.stat.exists
+
+# ── Layer 2: .opencode/plugin/ hook ───────────────────────────────────────────
+
+- name: Stat plugin directory
+  ansible.builtin.stat:
+    path: "{{ repo_path }}/.opencode/plugin"
+  register: _gp_plugin_stat
+
+- name: Search plugin directory for guardrail hook
+  ansible.builtin.command:
+    cmd: >-
+      grep -rliE '{{ guardrail_name }}' {{ repo_path }}/.opencode/plugin/ 2>/dev/null
+  register: _gp_plugin_grep
+  changed_when: false
+  failed_when: _gp_plugin_grep.rc not in [0, 1, 2]
+  when: _gp_plugin_stat.stat.exists
+
+- name: Layer 2 present (runtime hook)
+  ansible.builtin.set_fact:
+    _gp_layer2_present: "{{ (_gp_plugin_grep.stdout | default('') | length) > 0 }}"
+    _gp_layer2_location: "{{ _gp_plugin_grep.stdout | default('') }}"
+  when: _gp_plugin_stat.stat.exists
+
+- name: Layer 2 absent (plugin directory missing)
+  ansible.builtin.set_fact:
+    _gp_layer2_present: false
+    _gp_layer2_location: "(missing)"
+  when: not _gp_plugin_stat.stat.exists
+
+# ── Layer 3: AGENTS.md section ────────────────────────────────────────────────
+
+- name: Stat AGENTS.md
+  ansible.builtin.stat:
+    path: "{{ repo_path }}/AGENTS.md"
+  register: _gp_agents_stat
+
+- name: Search AGENTS.md for guardrail section
+  ansible.builtin.command:
+    cmd: "grep -ciE '{{ guardrail_name }}' {{ repo_path }}/AGENTS.md"
+  register: _gp_agents_grep
+  changed_when: false
+  failed_when: _gp_agents_grep.rc not in [0, 1, 2]
+  when: _gp_agents_stat.stat.exists
+
+- name: Layer 3 present (AGENTS.md section)
+  ansible.builtin.set_fact:
+    _gp_layer3_present: "{{ (_gp_agents_grep.stdout | default('0') | int) > 0 }}"
+    _gp_layer3_location: "{{ repo_path }}/AGENTS.md"
+  when: _gp_agents_stat.stat.exists
+
+- name: Layer 3 absent (AGENTS.md missing)
+  ansible.builtin.set_fact:
+    _gp_layer3_present: false
+    _gp_layer3_location: "(missing)"
+  when: not _gp_agents_stat.stat.exists
+
+# ── Coverage verdict ──────────────────────────────────────────────────────────
+
+- name: Compute layer coverage and verdict
+  ansible.builtin.set_fact:
+    _gp_layers_present: >-
+      {{
+        ([{'layer': 1, 'name': 'permission', 'present': _gp_layer1_present, 'location': _gp_layer1_location},
+          {'layer': 2, 'name': 'runtime-hook', 'present': _gp_layer2_present, 'location': _gp_layer2_location},
+          {'layer': 3, 'name': 'agent-prompt', 'present': _gp_layer3_present, 'location': _gp_layer3_location}])
+      }}
+    _gp_layers_present_count: >-
+      {{
+        ([_gp_layer1_present, _gp_layer2_present, _gp_layer3_present] | select | list | length)
+      }}
+    _gp_verdict: >-
+      {{
+        'complete' if ([_gp_layer1_present, _gp_layer2_present, _gp_layer3_present] | select | list | length == 3)
+        else ('partial' if ([_gp_layer1_present, _gp_layer2_present, _gp_layer3_present] | select | list | length > 0)
+        else 'absent')
+      }}
+
+# ── Optional: AI-assisted guardrail text drafting ─────────────────────────────
+
+- name: Draft guardrail text via model (enable_model_call=true only, when incomplete)
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are an agent-behavior guardrail author. A guardrail must exist at all
+      three layers to be effective. Draft the missing layer content for the
+      guardrail named "{{ guardrail_name }}".
+
+      Current coverage:
+      - Layer 1 (opencode.json permission): {{ 'present' if _gp_layer1_present else 'MISSING' }}
+      - Layer 2 (.opencode/plugin hook): {{ 'present' if _gp_layer2_present else 'MISSING' }}
+      - Layer 3 (AGENTS.md section): {{ 'present' if _gp_layer3_present else 'MISSING' }}
+
+      For each MISSING layer, provide the exact content to add:
+      - Layer 1: a JSON permission block with allow/deny rules.
+      - Layer 2: a TypeScript plugin hook that throws an actionable error
+        explaining what was blocked, why, and what to do instead.
+      - Layer 3: a markdown AGENTS.md section starting with "## CRITICAL:".
+    model_profile: "{{ model_profile | default('') }}"
+  register: _gp_model_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - _gp_verdict != 'complete'
+    - not ansible_check_mode
+
+- name: Set guardrail draft from model
+  ansible.builtin.set_fact:
+    _gp_draft: "{{ _gp_model_result.answer | default('') }}"
+  when:
+    - enable_model_call | bool
+    - _gp_model_result is defined
+    - _gp_model_result.answer is defined
+
+- name: Set empty draft (model call disabled or complete)
+  ansible.builtin.set_fact:
+    _gp_draft: ""
+  when: not (enable_model_call | bool) or _gp_verdict == 'complete'
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON guardrail-pattern artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'guardrail_pattern',
+        'status': 'completed',
+        'guardrail_name': guardrail_name,
+        'repo_path': repo_path,
+        'verdict': _gp_verdict,
+        'layers_present_count': _gp_layers_present_count | int,
+        'layers': _gp_layers_present,
+        'draft': _gp_draft
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/guardrail_pattern.json"
+    mode: "0644"
+
+- name: Write markdown guardrail-pattern report
+  ansible.builtin.copy:
+    content: |
+      # Guardrail Pattern Audit Report
+
+      **Guardrail:** `{{ guardrail_name }}`
+      **Verdict:** {{ _gp_verdict | upper }} ({{ _gp_layers_present_count }}/3 layers)
+
+      ## Layer Coverage
+
+      | Layer | Name | Present | Location |
+      |---|---|---|---|
+      {% for l in _gp_layers_present %}
+      | {{ l.layer }} | {{ l.name }} | {{ 'YES' if l.present else 'NO' }} | `{{ l.location }}` |
+      {% endfor %}
+
+      {% if _gp_draft | length > 0 %}
+      ## Suggested Content for Missing Layers
+
+      {{ _gp_draft }}
+      {% endif %}
+
+      ## The Three-Layer Pattern
+
+      Every agent restriction MUST exist at all three layers:
+
+      1. **Config permission** (`opencode.json`) — the hard gate the agent
+         cannot bypass.
+      2. **Runtime hook** (`.opencode/plugin/*.ts`) — intercepts the action
+         and returns a helpful, actionable error message.
+      3. **Agent prompt** (`AGENTS.md`) — tells the agent the rule BEFORE it
+         tries to violate it.
+
+      A single-layer restriction is insufficient — it will be bypassed or
+      ignored. See `.opencode/skills/guardrail-pattern/SKILL.md`.
+
+      ---
+      *Generated by general_ludd.agent.guardrail_pattern*
+    dest: "{{ artifact_dir }}/guardrail_pattern.md"
+    mode: "0644"
+
+- name: Report guardrail pattern completion
+  ansible.builtin.debug:
+    msg: >-
+      Guardrail pattern audit complete: guardrail={{ guardrail_name }}
+      verdict={{ _gp_verdict }} layers={{ _gp_layers_present_count }}/3
+
+# ── Gate: fail the play when the guardrail is incomplete ──────────────────────
+
+- name: Fail when guardrail is incomplete (enforce three-layer policy)
+  ansible.builtin.fail:
+    msg: >-
+      Guardrail "{{ guardrail_name }}" is INCOMPLETE: {{ _gp_layers_present_count }}/3
+      layers present. Missing layers:
+      {{ _gp_layers_present | rejectattr('present') | map(attribute='name') | list | join(', ') }}.
+      See {{ artifact_dir }}/guardrail_pattern.md for details.
+      Add the missing layer(s) before relying on this guardrail.
+  when:
+    - fail_when_incomplete | bool
+    - _gp_verdict != 'complete'

@@ -27,7 +27,7 @@ Record shape (one dict per sample)::
         "message": str,              # "<__name__>{label="v", ...}"
         "value": float,              # numeric sample value
         "labels": dict[str, str],    # metric labels (incl. __name__)
-        "raw": Any,                  # original series/sample/payload
+        "raw": object,               # original series/sample/payload
     }
 """
 
@@ -38,8 +38,8 @@ import logging
 import os
 import time
 import urllib.request
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import TypedDict, cast
 from urllib.parse import urlencode, urlsplit
 
 from general_ludd.connectors.normalize import sanitize_metric_value
@@ -47,8 +47,11 @@ from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
 
-# Injectable transport signature: (url, params, headers) -> (status, json)
-HttpGet = Callable[..., "tuple[int, Any]"]
+# Injectable transport signature: (url, params, headers) -> (status, json-body).
+# The json body is ``object`` because the wire payload is only narrowable at
+# runtime via ``isinstance``; callers treat it as ``Mapping[str, object]`` after
+# a structural check.
+HttpGet = Callable[..., "tuple[int, object]"]
 
 KIND = "metrics"
 
@@ -57,11 +60,71 @@ MAX_RESULT_SIZE = 10_000
 _DEFAULT_TIMEOUT = 10.0
 
 
+# --------------------------------------------------------------------------- #
+# Typed API-response shapes (Prometheus query API JSON).
+# --------------------------------------------------------------------------- #
+class PromMetric(TypedDict, total=False):
+    """The ``metric`` block on a Prometheus vector/matrix series.
+
+    Label values are strings in Prometheus; ``__name__`` carries the metric
+    name and is rendered specially by :func:`_fmt_labels`.
+    """
+
+    __name__: str
+
+
+class PromVectorSeries(TypedDict, total=False):
+    """One series in a vector result: ``{"metric": {...}, "value": [ts, "val"]}``."""
+
+    metric: dict[str, str]
+    value: list[object]
+
+
+class PromMatrixSeries(TypedDict, total=False):
+    """One series in a matrix result: ``{"metric": {...}, "values": [[ts, "val"], ...]}``."""
+
+    metric: dict[str, str]
+    values: list[list[object]]
+
+
+class PromData(TypedDict, total=False):
+    """The ``data`` block of a Prometheus query response."""
+
+    resultType: str
+    result: list[object]
+
+
+class PromResponse(TypedDict, total=False):
+    """Top-level Prometheus query API response envelope."""
+
+    status: str
+    data: PromData
+    error: str
+    errorType: str
+    warnings: list[str]
+
+
+class PromQuerySpec(TypedDict, total=False):
+    """Caller-supplied query spec accepted by :meth:`PrometheusSource.query`.
+
+    Range mode is selected when ``start``/``end``/``step`` are all present;
+    otherwise an instant query is issued. ``start``/``end``/``step``/``time``
+    are ``object`` because Prometheus accepts epoch floats, RFC3339 strings,
+    or duration strings depending on the field.
+    """
+
+    promql: str
+    start: object
+    end: object
+    step: object
+    time: object
+
+
 def _default_http_get(
     url: str,
-    params: dict[str, Any] | None = None,
+    params: dict[str, object] | None = None,
     headers: dict[str, str] | None = None,
-) -> tuple[int, Any]:
+) -> tuple[int, object]:
     """Real, time-bound stdlib transport used when none is injected.
 
     Matches the connector's ``(url, params, headers) -> (status, json)``
@@ -78,7 +141,7 @@ def _default_http_get(
     with urllib.request.urlopen(req, timeout=_DEFAULT_TIMEOUT) as resp:
         status = int(resp.getcode() or 0)
         body = resp.read()
-    parsed_body: Any = _json.loads(body) if body else {}
+    parsed_body: object = _json.loads(body) if body else {}
     return status, parsed_body
 
 
@@ -97,7 +160,7 @@ def _validate_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _fmt_labels(metric: dict[str, Any]) -> str:
+def _fmt_labels(metric: Mapping[str, str]) -> str:
     """Render ``__name__{k="v", ...}`` with sorted, non-name labels."""
     name = str(metric.get("__name__", ""))
     pairs = sorted((k, v) for k, v in metric.items() if k != "__name__")
@@ -114,20 +177,22 @@ class PrometheusSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: Mapping[str, object],
         http_get: HttpGet | None = None,
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
         base_url = config.get("base_url", "")
-        self._base_url = _validate_base_url(base_url)
-        self._token_env = config.get("token_env")
+        self._base_url = _validate_base_url(str(base_url))
+        token_env_obj = config.get("token_env")
+        self._token_env: str | None = str(token_env_obj) if token_env_obj is not None else None
         self._http_get = http_get or _default_http_get
         self._timeout = float(timeout)
         self.kind = KIND
         # A stable, human-readable name derived from the validated host.
         host = urlsplit(self._base_url).netloc
-        self.name = config.get("name") or f"prometheus:{host}"
+        name_obj = config.get("name")
+        self.name = str(name_obj) if name_obj else f"prometheus:{host}"
 
     # -- helpers ----------------------------------------------------------
 
@@ -139,7 +204,7 @@ class PrometheusSource:
                 headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    def _error_record(self, message: str, raw: Any) -> dict[str, Any]:
+    def _error_record(self, message: str, raw: object) -> dict[str, object]:
         return {
             "ts": time.time(),
             "source": self.name,
@@ -152,11 +217,15 @@ class PrometheusSource:
         }
 
     def _sample_record(
-        self, metric: dict[str, Any], ts: Any, raw_value: Any, raw: Any
-    ) -> dict[str, Any]:
+        self,
+        metric: Mapping[str, str],
+        ts: object,
+        raw_value: object,
+        raw: object,
+    ) -> dict[str, object]:
         value = sanitize_metric_value(raw_value)
         try:
-            ts_f = float(ts)
+            ts_f = float(cast(int | float | str | bool, ts))
         except (TypeError, ValueError):
             ts_f = 0.0
         labels = {str(k): str(v) for k, v in metric.items()}
@@ -173,7 +242,7 @@ class PrometheusSource:
 
     # -- public API -------------------------------------------------------
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: PromQuerySpec) -> list[dict[str, object]]:
         """Run an instant or range PromQL query; return normalized records.
 
         Range mode is selected when ``start``/``end``/``step`` are present.
@@ -181,12 +250,12 @@ class PrometheusSource:
         """
         promql = spec.get("promql")
         if not promql:
-            return [self._error_record("missing 'promql' in spec", {"spec": spec})]
+            return [self._error_record("missing 'promql' in spec", {"spec": dict(spec)})]
 
         is_range = any(k in spec for k in ("start", "end", "step"))
         if is_range:
             endpoint = "/api/v1/query_range"
-            params: dict[str, Any] = {"query": promql}
+            params: dict[str, object] = {"query": promql}
             for key in ("start", "end", "step"):
                 if key in spec:
                     params[key] = spec[key]
@@ -209,22 +278,25 @@ class PrometheusSource:
 
         return self._normalize(status, payload)
 
-    def _normalize(self, status: int, payload: Any) -> list[dict[str, Any]]:
-        if not isinstance(payload, dict):
+    def _normalize(self, status: int, payload: object) -> list[dict[str, object]]:
+        if not isinstance(payload, Mapping):
             return [self._error_record(f"non-dict payload (status {status})", payload)]
 
         if payload.get("status") != "success":
             err = payload.get("error") or f"prometheus returned status {status}"
             return [self._error_record(str(err), payload)]
 
-        data = payload.get("data") or {}
-        result_type = data.get("resultType")
-        result = data.get("result")
+        data_obj = payload.get("data") or {}
+        data: Mapping[str, object] = data_obj if isinstance(data_obj, Mapping) else {}
+        result_type_obj = data.get("resultType")
+        result_type = result_type_obj if isinstance(result_type_obj, str) else None
+        result_obj = data.get("result")
+        result: list[object] = result_obj if isinstance(result_obj, list) else []
 
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
 
         if result_type == "vector":
-            for series in result or []:
+            for series in result:
                 if len(records) >= MAX_RESULT_SIZE:
                     records.append(
                         self._error_record(
@@ -233,17 +305,30 @@ class PrometheusSource:
                         )
                     )
                     break
-                metric = series.get("metric", {})
-                ts, raw_value = series.get("value", [0.0, "0"])
+                if not isinstance(series, Mapping):
+                    continue
+                metric_obj = series.get("metric", {})
+                metric: Mapping[str, str] = metric_obj if isinstance(metric_obj, Mapping) else {}
+                value_obj = series.get("value", [0.0, "0"])
+                value_pair = value_obj if isinstance(value_obj, list) else [0.0, "0"]
+                ts = value_pair[0] if len(value_pair) > 0 else 0.0
+                raw_value = value_pair[1] if len(value_pair) > 1 else "0"
                 records.append(self._sample_record(metric, ts, raw_value, series))
 
         elif result_type == "matrix":
             outer_break = False
-            for series in result or []:
+            for series in result:
                 if outer_break:
                     break
-                metric = series.get("metric", {})
-                for ts, raw_value in series.get("values", []):
+                if not isinstance(series, Mapping):
+                    continue
+                metric_obj = series.get("metric", {})
+                metric = metric_obj if isinstance(metric_obj, Mapping) else {}
+                values_obj = series.get("values", [])
+                values = values_obj if isinstance(values_obj, list) else []
+                for pair in values:
+                    if not isinstance(pair, list):
+                        continue
                     if len(records) >= MAX_RESULT_SIZE:
                         records.append(
                             self._error_record(
@@ -253,11 +338,15 @@ class PrometheusSource:
                         )
                         outer_break = True
                         break
+                    ts = pair[0] if len(pair) > 0 else 0.0
+                    raw_value = pair[1] if len(pair) > 1 else "0"
                     records.append(self._sample_record(metric, ts, raw_value, series))
 
         elif result_type == "scalar":
             # result is [ts, "value"]
-            ts, raw_value = (result or [0.0, "0"])[:2]
+            pair = result if isinstance(result, list) and result else [0.0, "0"]
+            ts = pair[0] if len(pair) > 0 else 0.0
+            raw_value = pair[1] if len(pair) > 1 else "0"
             records.append(self._sample_record({}, ts, raw_value, {"scalar": result}))
 
         else:
@@ -269,7 +358,7 @@ class PrometheusSource:
 
         return records
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Return a health dict. Never raises.
 
         Uses the cheap ``query=1`` instant query as a liveness probe (works on
@@ -285,13 +374,13 @@ class PrometheusSource:
             return {"ok": False, "source": self.name, "error": "health check failed"}
 
         ok = (
-            isinstance(payload, dict)
+            isinstance(payload, Mapping)
             and payload.get("status") == "success"
             and 200 <= int(status) < 300
         )
-        result: dict[str, Any] = {"ok": ok, "source": self.name, "status": status}
+        result: dict[str, object] = {"ok": ok, "source": self.name, "status": status}
         if not ok:
-            if isinstance(payload, dict):
+            if isinstance(payload, Mapping):
                 result["error"] = str(
                     payload.get("error") or f"unhealthy (status {status})"
                 )

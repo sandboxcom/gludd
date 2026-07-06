@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from general_ludd.controllers.environment_advisor import (
     build_advice,
     build_optimization_hints,
@@ -177,8 +179,8 @@ def test_metered_model_with_fallback_yields_hint() -> None:
 
 def test_advisor_is_defensive_on_garbage_input() -> None:
     # None/garbage must not raise and must yield safe empty defaults.
-    out = build_optimization_hints(
-        models=[None, 42, {"profile_id": "x"}],  # type: ignore[list-item]
+    out = cast(Any, build_optimization_hints)(
+        models=[None, 42, {"profile_id": "x"}],
         routing=None,
         budget={"run_spent_usd": "nan", "run_limit_usd": None},
     )
@@ -524,9 +526,9 @@ def test_build_advice_latency_class_small_output_is_fast() -> None:
 
 
 def test_build_advice_never_raises_on_garbage() -> None:
-    out = build_advice(
+    out = cast(Any, build_advice)(
         work_type="feature",
-        recommendation={"composite_score": "nan"},  # type: ignore[dict-item]
+        recommendation={"composite_score": "nan"},
         profile=None,
         est_cost_usd=float("inf"),
     )

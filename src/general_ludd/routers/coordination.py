@@ -13,7 +13,6 @@ Claims are ephemeral (in-memory only); they are lost on daemon restart.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
@@ -49,7 +48,7 @@ def _get_registry(app: FastAPI) -> FileClaimRegistry:
 # Facet helper (callable by facts.py after integration)
 # ---------------------------------------------------------------------------
 
-def _coordination_facet(app: FastAPI) -> dict[str, Any]:
+def _coordination_facet(app: FastAPI) -> dict[str, object]:
     """Return a coordination snapshot suitable for /api/facts.
 
     Wired into routers/facts.py: imported as _coordination_facet and added to
@@ -70,7 +69,7 @@ def _coordination_facet(app: FastAPI) -> dict[str, Any]:
 # Router registration
 # ---------------------------------------------------------------------------
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     """Register coordination endpoints and initialise the FileClaimRegistry.
 
     Called once at daemon startup (or in tests via TestClient fixture).
@@ -81,7 +80,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     app.state._file_claims = registry
 
     @app.post("/api/coordination/claim", status_code=201)
-    async def api_claim(req: ClaimRequest) -> dict[str, Any]:
+    async def api_claim(req: ClaimRequest) -> dict[str, object]:
         """Record that *worker_id* is editing *files*.
 
         Idempotent: calling again with the same worker_id updates its file set.
@@ -91,7 +90,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"worker_id": req.worker_id, "files": list(req.files)}
 
     @app.post("/api/coordination/release")
-    async def api_release(req: ReleaseRequest) -> dict[str, Any]:
+    async def api_release(req: ReleaseRequest) -> dict[str, object]:
         """Drop all file claims for *worker_id*.
 
         No-op (returns success) when the worker was not registered.
@@ -101,7 +100,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"released": True, "worker_id": req.worker_id}
 
     @app.get("/api/coordination/overlaps")
-    async def api_overlaps(worker_id: str) -> dict[str, Any]:
+    async def api_overlaps(worker_id: str) -> dict[str, object]:
         """Return the conflict map and wait-list for *worker_id*.
 
         Response shape:
@@ -116,7 +115,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"worker_id": worker_id, "overlaps": ov, "should_wait": wait}
 
     @app.get("/api/coordination/claims")
-    async def api_claims() -> dict[str, Any]:
+    async def api_claims() -> dict[str, object]:
         """Return the global claim map and merge plan.
 
         Response shape:

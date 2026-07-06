@@ -52,7 +52,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -122,7 +122,7 @@ def _build_gateway(profile_id: str = "zai_self_improve") -> Any:
     return ModelGateway(
         profiles=[profile],
         provider_registry=registry,
-        secrets_manager=secrets,  # type: ignore[arg-type]  # test stub
+        secrets_manager=cast(Any, secrets),
     )
 
 

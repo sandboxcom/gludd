@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import ModuleType
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -62,7 +63,7 @@ class TestProviderRegistryDynamicImport:
     def test_dynamic_import_returns_class(self):
         fake_module = ModuleType("fake_provider_mod")
         FakeClass = type("FakeChatModel", (), {"__init__": lambda self: None})
-        fake_module.FakeChatModel = FakeClass  # type: ignore[attr-defined]
+        cast(Any, fake_module).FakeChatModel = FakeClass
 
         reg = ProviderRegistry()
         reg.register_provider("fake", "fake_provider_mod", "FakeChatModel")

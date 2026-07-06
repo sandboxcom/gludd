@@ -26,8 +26,38 @@ import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from typing import Any
+from email.message import Message
+from typing import IO, TypedDict, cast
 from urllib.parse import urlsplit
+
+
+class MondayColumnValue(TypedDict, total=False):
+    """A single column-value entry on a Monday.com item."""
+
+    id: str
+    title: str
+    text: str
+
+
+class MondayCreator(TypedDict, total=False):
+    """A creator entry on a Monday.com item."""
+
+    id: str
+    name: str
+
+
+class MondayItem(TypedDict, total=False):
+    """A Monday.com board item as returned by the GraphQL v2 ``items_page``.
+
+    All fields are optional (``total=False``) because the GraphQL projection
+    may omit any of them and Monday.com payloads routinely vary.
+    """
+
+    id: str
+    name: str
+    updated_at: str
+    creators: list[MondayCreator]
+    column_values: list[MondayColumnValue]
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -40,10 +70,10 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(
         self,
         req: urllib.request.Request,
-        fp: Any,
+        fp: IO[bytes] | None,
         code: int,
         msg: str,
-        headers: Any,
+        headers: Message,
         newurl: str,
     ) -> None:
         raise urllib.error.HTTPError(
@@ -56,8 +86,8 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 Transport = Callable[
-    [str, str, Mapping[str, str], "dict[str, Any] | None", float],
-    "tuple[int, dict[str, Any]]",
+    [str, str, Mapping[str, str], "dict[str, object] | None", float],
+    "tuple[int, dict[str, object]]",
 ]
 
 _DEFAULT_BASE_URL = "https://api.monday.com"
@@ -101,9 +131,9 @@ def _default_transport(
     method: str,
     url: str,
     headers: Mapping[str, str],
-    json_body: dict[str, Any] | None,
+    json_body: dict[str, object] | None,
     timeout: float,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, dict[str, object]]:
     data = None
     if json_body is not None:
         data = json.dumps(json_body).encode("utf-8")
@@ -118,14 +148,28 @@ def _default_transport(
     except urllib.error.HTTPError as exc:  # pragma: no cover - network path
         status = int(exc.code)
         body = exc.read() if hasattr(exc, "read") else b""
-    payload: dict[str, Any] = {}
+    payload: dict[str, object] = {}
     if body:
         try:
-            parsed = json.loads(body.decode("utf-8"))
+            parsed: object = json.loads(body.decode("utf-8"))
             payload = parsed if isinstance(parsed, dict) else {"data": parsed}
         except (ValueError, UnicodeDecodeError):
             payload = {}
     return status, payload
+
+
+def _as_float(value: object, default: float) -> float:
+    """Coerce ``value`` to float; fall back to ``default`` on unsupported types."""
+    if isinstance(value, (int, float, str)):
+        return float(value)
+    return default
+
+
+def _as_int(value: object, default: int) -> int:
+    """Coerce ``value`` to int; fall back to ``default`` on unsupported types."""
+    if isinstance(value, (int, float, str)):
+        return int(value)
+    return default
 
 
 class MondayIssueSource:
@@ -135,12 +179,12 @@ class MondayIssueSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any],
+        config: Mapping[str, object],
         *,
         transport: Transport | None = None,
         env: Mapping[str, str] | None = None,
     ) -> None:
-        self._config = dict(config or {})
+        self._config: dict[str, object] = dict(config or {})
         self.name = str(self._config.get("name") or self.SYSTEM)
         self._env: Mapping[str, str] = env if env is not None else os.environ
         self._transport: Transport = transport or _default_transport
@@ -153,7 +197,7 @@ class MondayIssueSource:
             raise ValueError(f"base_url host is internal/blocked: {parts.hostname!r}")
         self._base_url = base_url
 
-        self._timeout = float(self._config.get("timeout", _DEFAULT_TIMEOUT))
+        self._timeout = _as_float(self._config.get("timeout", _DEFAULT_TIMEOUT), _DEFAULT_TIMEOUT)
         self._status_column = str(self._config.get("status_column", "status"))
         self._board_id = self._config.get("board_id")
 
@@ -172,7 +216,9 @@ class MondayIssueSource:
     def _endpoint(self) -> str:
         return f"{self._base_url}/v2"
 
-    def _gql(self, query: str, variables: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    def _gql(
+        self, query: str, variables: dict[str, object]
+    ) -> tuple[int, dict[str, object]]:
         return self._transport(
             "POST",
             self._endpoint(),
@@ -182,7 +228,7 @@ class MondayIssueSource:
         )
 
     # -- health ----------------------------------------------------------
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Lightweight reachability/auth probe. Never raises."""
         query = "query { me { id } }"
         try:
@@ -193,26 +239,28 @@ class MondayIssueSource:
             return {"ok": False, "detail": f"http {status}"}
         if payload.get("errors"):
             return {"ok": False, "detail": str(payload["errors"])}
-        me = (payload.get("data") or {}).get("me") or {}
-        if not me.get("id"):
+        data = payload.get("data")
+        me = data.get("me") if isinstance(data, Mapping) else None
+        if not (isinstance(me, Mapping) and me.get("id")):
             return {"ok": False, "detail": "no authenticated user"}
         return {"ok": True, "detail": "ok"}
 
     # -- normalization ---------------------------------------------------
-    def _column_text(self, item: Mapping[str, Any], title_or_id: str) -> str:
+    def _column_text(self, item: MondayItem, title_or_id: str) -> str:
         for col in item.get("column_values") or []:
             if col.get("id") == title_or_id or col.get("title") == title_or_id:
                 return str(col.get("text") or "")
         return ""
 
-    def _normalize(self, item: Mapping[str, Any]) -> dict[str, Any]:
+    def _normalize(self, item: MondayItem) -> dict[str, object]:
         item_id = str(item.get("id") or "")
         creators = item.get("creators") or []
         people = self._column_text(item, "person") or self._column_text(item, "people")
         if people:
             assignee = people
         elif creators:
-            assignee = str((creators[0] or {}).get("name") or "")
+            first = creators[0] or {}
+            assignee = str(first.get("name") or "")
         else:
             assignee = ""
         labels: list[str] = []
@@ -233,12 +281,35 @@ class MondayIssueSource:
             "raw": dict(item),
         }
 
-    def fetch_issues(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
-        spec = dict(spec or {})
-        board_id = spec.get("board_id", self._board_id)
+    @staticmethod
+    def _extract_items(payload: object) -> list[MondayItem]:
+        """Narrow a GraphQL response payload to a list of Monday items.
+
+        Mirrors the ``_extract_builds`` pattern from the connectors layer:
+        each level is narrowed with ``isinstance`` because the transport
+        contract only promises ``dict[str, object]``.
+        """
+        items: list[MondayItem] = []
+        data = payload.get("data") if isinstance(payload, Mapping) else None
+        boards = data.get("boards") if isinstance(data, Mapping) else None
+        if isinstance(boards, list):
+            for board in boards:
+                page = board.get("items_page") if isinstance(board, Mapping) else None
+                board_items = page.get("items") if isinstance(page, Mapping) else None
+                if isinstance(board_items, list):
+                    for entry in board_items:
+                        if isinstance(entry, dict):
+                            items.append(cast(MondayItem, entry))
+        return items
+
+    def fetch_issues(
+        self, spec: Mapping[str, object] | None = None
+    ) -> list[dict[str, object]]:
+        spec_dict: dict[str, object] = dict(spec or {})
+        board_id = spec_dict.get("board_id", self._board_id)
         if board_id is None:
             raise ValueError("board_id required (spec or config)")
-        limit = int(spec.get("limit", 100))
+        limit = _as_int(spec_dict.get("limit", 100), 100)
         query = (
             "query ($board: [ID!], $limit: Int) {"
             "  boards (ids: $board) {"
@@ -257,18 +328,12 @@ class MondayIssueSource:
             raise RuntimeError(f"monday fetch failed: http {status}")
         if payload.get("errors"):
             raise RuntimeError(f"monday fetch errors: {payload['errors']}")
-        boards = (payload.get("data") or {}).get("boards") or []
-        out: list[dict[str, Any]] = []
-        for board in boards:
-            page = board.get("items_page") or {}
-            for item in page.get("items") or []:
-                out.append(self._normalize(item))
-        return out
+        return [self._normalize(item) for item in self._extract_items(payload)]
 
     # -- write-back ------------------------------------------------------
     def update_status(
         self, external_id: str, status: str, comment: str | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         board_id = self._board_id
         if board_id is None:
             raise ValueError("board_id required in config for update_status")
@@ -279,14 +344,14 @@ class MondayIssueSource:
             "}"
         )
         value = json.dumps({"label": status})
-        variables = {
+        variables: dict[str, object] = {
             "board": str(board_id),
             "item": str(external_id),
             "column": self._status_column,
             "value": value,
         }
         code, payload = self._gql(mutation, variables)
-        result: dict[str, Any] = {
+        result: dict[str, object] = {
             "ok": code == 200 and not payload.get("errors"),
             "external_id": str(external_id),
             "status": status,
@@ -297,7 +362,7 @@ class MondayIssueSource:
             result["comment"] = self.add_comment(external_id, comment)
         return result
 
-    def add_comment(self, external_id: str, comment: str) -> dict[str, Any]:
+    def add_comment(self, external_id: str, comment: str) -> dict[str, object]:
         mutation = (
             "mutation ($item: ID!, $body: String!) {"
             "  create_update (item_id: $item, body: $body) { id }"

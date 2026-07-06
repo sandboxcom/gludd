@@ -28,7 +28,7 @@ Features under test:
 from __future__ import annotations
 
 import asyncio
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 
@@ -604,7 +604,7 @@ class TestCAT9AgentToolAdapterWiring:
         captured: dict[str, Any] = {}
         real_cls = tool_loop_mod.ToolCallLoop
 
-        class _SpyToolCallLoop(real_cls):  # type: ignore[valid-type, misc]
+        class _SpyToolCallLoop(cast(Any, real_cls)):
             def __init__(self, **kwargs: Any) -> None:
                 captured["init_kwargs"] = kwargs
                 super().__init__(**kwargs)
@@ -698,7 +698,7 @@ class TestCAT9AgentToolAdapterWiring:
         instantiated: list[Any] = []
         real_cls = tool_loop_mod.ToolCallLoop
 
-        class _SpyToolCallLoop(real_cls):  # type: ignore[valid-type, misc]
+        class _SpyToolCallLoop(cast(Any, real_cls)):
             def __init__(self, **kwargs: Any) -> None:
                 instantiated.append(kwargs)
                 super().__init__(**kwargs)
@@ -785,7 +785,7 @@ class TestCAT16ContextCompactorUsed:
             calls.append(len(messages))
             return original_compact(self, messages, summary_fn)
 
-        context_mod.ContextCompactor.compact = _spy_compact  # type: ignore[assignment]
+        cast(Any, context_mod.ContextCompactor).compact = _spy_compact
         try:
             gw = ModelGateway(
                 profiles=[_make_profile()],
@@ -800,7 +800,7 @@ class TestCAT16ContextCompactorUsed:
                 skill_body="system prompt",
             )
         finally:
-            context_mod.ContextCompactor.compact = original_compact  # type: ignore[assignment]
+            cast(Any, context_mod.ContextCompactor).compact = original_compact
 
         assert content == "generated answer"
         assert calls, (
@@ -825,7 +825,7 @@ class TestCAT16ContextCompactorUsed:
             inits.append(default_budget)
             original_init(self, default_budget)
 
-        tw_mod.TokenWindowManager.__init__ = _spy_init  # type: ignore[assignment]
+        cast(Any, tw_mod.TokenWindowManager).__init__ = _spy_init
         try:
             gw = ModelGateway(
                 profiles=[_make_profile()],
@@ -840,7 +840,7 @@ class TestCAT16ContextCompactorUsed:
                 skill_body="sys",
             )
         finally:
-            tw_mod.TokenWindowManager.__init__ = original_init  # type: ignore[assignment]
+            cast(Any, tw_mod.TokenWindowManager).__init__ = original_init
 
         assert inits, (
             "INERT: TokenWindowManager was never instantiated on the daemon "

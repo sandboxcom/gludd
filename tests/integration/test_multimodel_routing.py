@@ -16,9 +16,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-# imported for side effects — warms the routing_roles <-> schemas.benchmark import
-# cycle so the gateway imports below succeed in any collection order.
-import general_ludd.routing_roles  # noqa: F401
 from general_ludd.config.model_routing import ModelRoutingConfig, build_router_from_config
 from general_ludd.schemas.benchmark import TaskType
 from general_ludd.scoring.router import AdaptiveRouter

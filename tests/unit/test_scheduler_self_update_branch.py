@@ -13,7 +13,7 @@ The ``work_item_for_tier`` helper itself is tested in
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -78,7 +78,7 @@ def _make_loop() -> Any:
     async def _no_op_dispatch(todo: Any, **kwargs: Any) -> None:
         return None
 
-    loop._dispatch_execute_job = _no_op_dispatch  # type: ignore[method-assign]
+    cast(Any, loop)._dispatch_execute_job = _no_op_dispatch
     return loop
 
 
@@ -126,7 +126,7 @@ class TestSchedulerSelfUpdateBranch:
         async def fake_dispatch(todo: Any, **kwargs: Any) -> None:
             return None
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         with ctx:
             await loop._dispatch_jobs_via_scheduler(todos)
@@ -145,7 +145,7 @@ class TestSchedulerSelfUpdateBranch:
         async def fake_dispatch(todo: Any, **kwargs: Any) -> None:
             return None
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         with ctx:
             await loop._dispatch_jobs_via_scheduler(todos)
@@ -175,7 +175,7 @@ class TestSchedulerSelfUpdateBranch:
         async def fake_dispatch(todo: Any, **kwargs: Any) -> None:
             return None
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         captured, ctx = _capture_scheduler_items()
         with ctx:
@@ -203,7 +203,7 @@ class TestSchedulerSelfUpdateBranch:
         async def fake_dispatch(todo: Any, **kwargs: Any) -> None:
             return None
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         captured, ctx = _capture_scheduler_items()
         with ctx:
@@ -229,7 +229,7 @@ class TestSchedulerSelfUpdateBranch:
         async def fake_dispatch(t: Any, **kwargs: Any) -> None:
             return None
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         captured, ctx = _capture_scheduler_items()
         with ctx:
@@ -248,7 +248,7 @@ class TestSchedulerSelfUpdateBranch:
         async def fake_dispatch(t: Any, **kwargs: Any) -> None:
             return None
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         captured, ctx = _capture_scheduler_items()
         with ctx:
@@ -268,7 +268,7 @@ class TestSchedulerSelfUpdateBranch:
         async def fake_dispatch(t: Any, **kwargs: Any) -> None:
             return None
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         captured, ctx = _capture_scheduler_items()
         with ctx:
@@ -299,7 +299,7 @@ class TestSchedulerSelfUpdateBranch:
         async def fake_dispatch(t: Any, **kwargs: Any) -> None:
             return None
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         captured, ctx = _capture_scheduler_items()
         with ctx:
@@ -335,7 +335,7 @@ class TestSchedulerSelfUpdateBranch:
         async def fake_dispatch(t: Any, **kwargs: Any) -> None:
             return None
 
-        loop._dispatch_execute_job = fake_dispatch  # type: ignore[method-assign]
+        cast(Any, loop)._dispatch_execute_job = fake_dispatch
 
         captured, ctx = _capture_scheduler_items()
         with ctx:

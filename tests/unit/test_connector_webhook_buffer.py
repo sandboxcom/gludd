@@ -20,6 +20,7 @@ Contract under test:
 from __future__ import annotations
 
 import threading
+from typing import Any, cast
 
 from general_ludd.connectors.webhook_buffer import WebhookBufferSource
 
@@ -86,7 +87,7 @@ def test_push_accepts_iterable_of_records() -> None:
 
 def test_push_ignores_non_dict_items() -> None:
     src = WebhookBufferSource(maxlen=10)
-    src.push([_rec(message="ok"), "garbage", 42, None])  # type: ignore[list-item]  # test stub
+    cast(Any, src).push([_rec(message="ok"), "garbage", 42, None])
     recs = src.query({})
     assert len(recs) == 1
     assert recs[0]["message"] == "ok"

@@ -2330,8 +2330,14 @@ def check_and_reset() -> dict:
     # ── Gate-status injection: when CI is pending/red and .gate-status is otherwise
     #     clean, write a CI-FAIL line. The enforce-stop.ts plugin reads .gate-status
     #     to compute hasLocalWork. Without this, text-only responses pass through
-    #     unblocked when CI is the only pending work. ──
-    if ci_pending and not gate_red:
+    #     unblocked when CI is the only pending work.
+    #
+    #     ONLY inject when a concrete run_id exists (a real CI run for a pushed
+    #     commit). When run_id is None, ci-verdict found NO run for the local
+    #     HEAD — the commit hasn't been pushed yet, so there is no CI work to
+    #     wait on. Injecting in that case creates a chicken-and-egg: the commit
+    #     can never land (gate red) and CI can never start (no push). ──
+    if ci_pending and ci_run_id is not None and not gate_red:
         try:
             gs = Path(_GATE_STATUS)
             gs.parent.mkdir(parents=True, exist_ok=True)

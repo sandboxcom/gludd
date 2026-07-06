@@ -1,0 +1,25 @@
+---
+# guardrail_pattern role defaults
+
+# Guardrail name to audit (e.g. "bash-make-only", "no-blocking-questions").
+# Searched for across all three layers via case-insensitive grep.
+guardrail_name: ""
+
+# Repository root to scan
+repo_path: "."
+
+# Fail the play when the guardrail is incomplete (fewer than 3 layers present)
+fail_when_incomplete: false
+
+# Artifact output
+artifact_dir: "/tmp/gludd-guardrail-pattern"
+
+# Daemon connectivity (for gludd_model_call)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# SAFE-BY-DEFAULT: do NOT call a model unless explicitly enabled.
+enable_model_call: false
+
+# Model profile hint (empty = daemon default)
+model_profile: ""

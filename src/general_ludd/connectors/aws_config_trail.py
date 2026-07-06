@@ -33,10 +33,117 @@ Design constraints honored here:
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import Any, Protocol, TypedDict, cast, runtime_checkable
 
-ClientFactory = Callable[..., Any]
+__all__ = ["AwsConfigTrailSource"]
+
+
+# --------------------------------------------------------------------------- #
+# AWS API response shapes
+# --------------------------------------------------------------------------- #
+# All response TypedDicts are ``total=False`` because boto3 omits empty/missing
+# fields rather than emitting nulls; every key is therefore optional at runtime.
+
+
+class ConfigResourceIdentifier(TypedDict, total=False):
+    """One row from ``config.list_discovered_resources['resourceIdentifiers]``."""
+
+    resourceType: str
+    resourceId: str
+    resourceName: str
+
+
+class ListDiscoveredResourcesResponse(TypedDict, total=False):
+    """Response of ``config.list_discovered_resources``."""
+
+    resourceIdentifiers: list[ConfigResourceIdentifier]
+
+
+class ConfigurationItem(TypedDict, total=False):
+    """One row from ``config.get_resource_config_history['configurationItems']``."""
+
+    resourceId: str
+    resourceType: str
+    configurationItemStatus: str
+    configurationStateId: str
+    configurationItemCaptureTime: object  # boto3 returns datetime | ISO 8601 str
+    awsRegion: str
+    availabilityZone: str
+
+
+class GetResourceConfigHistoryResponse(TypedDict, total=False):
+    """Response of ``config.get_resource_config_history``."""
+
+    configurationItems: list[ConfigurationItem]
+
+
+class CloudTrailLookupEvent(TypedDict, total=False):
+    """One row from ``cloudtrail.lookup_events['Events']``."""
+
+    EventId: str
+    EventName: str
+    EventTime: object  # boto3 returns datetime | ISO 8601 str
+    Username: str
+    EventSource: str
+    AwsRegion: str
+    awsRegion: str  # AWS API uses both casings across SDK versions
+    CloudTrailEvent: str
+
+
+class LookupEventsResponse(TypedDict, total=False):
+    """Response of ``cloudtrail.lookup_events``."""
+
+    Events: list[CloudTrailLookupEvent]
+
+
+class HealthStatus(TypedDict):
+    """Return shape of :meth:`AwsConfigTrailSource.health`."""
+
+    ok: bool
+    detail: str
+
+
+class NormalizedRecord(TypedDict):
+    """A single infra-state row emitted by :meth:`AwsConfigTrailSource.query`.
+
+    Note: ``ts`` and ``value`` are intentionally ``object`` (not ``float``)
+    because this connector surfaces the upstream AWS timestamp / state-id
+    verbatim (datetime | ISO 8601 str | state token), which the canonical
+    pipeline/log/metric NormalizedRecord shape does not narrow to a number.
+    """
+
+    ts: object
+    source: str
+    kind: str
+    level_or_status: str
+    message: str
+    value: object
+    labels: dict[str, str]
+    raw: object
+
+
+# --------------------------------------------------------------------------- #
+# Client protocol + factory
+# --------------------------------------------------------------------------- #
+
+
+@runtime_checkable
+class _Client(Protocol):
+    """Minimal structural type for an AWS service client.
+
+    boto3 generates one client class per service, each exposing a different
+    method surface. The only honest static type for ``client.<arbitrary_method>``
+    is therefore ``Any`` — this is the documented dynamic-dispatch exception
+    from the type-safety skill. The TypedDicts above re-assert the known shape
+    the moment we bind the response to a name.
+    """
+
+    def __getattr__(self, name: str) -> Any: ...  # pragma: no cover - protocol
+
+
+# A factory turning a service name into a client (or None when boto3 missing).
+ClientFactory = Callable[[str], _Client | None]
 
 
 def _default_factory(region: str | None, timeout: float) -> ClientFactory | None:
@@ -46,19 +153,20 @@ def _default_factory(region: str | None, timeout: float) -> ClientFactory | None
     without boto3 installed.
     """
     try:
-        import boto3  # type: ignore[import-not-found]  # boto3: optional [aws] extra, guarded by try/except
-        from botocore.config import Config  # type: ignore[import-not-found]  # botocore: optional, ships with boto3
+        import importlib
+
+        boto3 = importlib.import_module("boto3")  # boto3: optional [aws] extra, guarded by try/except
+        Config = importlib.import_module("botocore.config").Config  # botocore: optional, ships with boto3
     except Exception:
         return None
 
     cfg = Config(connect_timeout=timeout, read_timeout=timeout, retries={"max_attempts": 2})
 
-    def _factory(service_name: str, **kwargs: Any) -> Any:
-        params: dict[str, Any] = {"config": cfg}
+    def _factory(service_name: str) -> _Client | None:
+        params: dict[str, object] = {"config": cfg}
         if region:
             params["region_name"] = region
-        params.update(kwargs)
-        return boto3.client(service_name, **params)
+        return cast(_Client, boto3.client(service_name, **params))
 
     return _factory
 
@@ -69,129 +177,176 @@ class AwsConfigTrailSource:
     KIND = "infra"
     name = "aws_config_trail"
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self._config = dict(config)
-        self._region: str | None = config.get("region")
-        self._timeout = float(config.get("timeout", 10.0))
-        self._max_results = int(config.get("max_results", 100))
-        self._default_resource_type = str(
-            config.get("resource_type", "AWS::EC2::Instance")
+    def __init__(self, config: Mapping[str, object]) -> None:
+        self._config: dict[str, object] = dict(config)
+        region_raw = config.get("region")
+        self._region: str | None = region_raw if isinstance(region_raw, str) else None
+        timeout_raw = config.get("timeout", 10.0)
+        self._timeout = float(timeout_raw) if isinstance(timeout_raw, (int, float)) else 10.0
+        max_results_raw = config.get("max_results", 100)
+        self._max_results = (
+            int(max_results_raw) if isinstance(max_results_raw, (int, float)) else 100
+        )
+        default_resource_type_raw = config.get("resource_type", "AWS::EC2::Instance")
+        self._default_resource_type = (
+            str(default_resource_type_raw)
+            if not isinstance(default_resource_type_raw, str)
+            else default_resource_type_raw
         )
         # Injectable factory wins; otherwise attempt a guarded boto3 factory.
         if "client_factory" in config:
-            self._client_factory: ClientFactory | None = config["client_factory"]
+            factory_val = config["client_factory"]
+            self._client_factory: ClientFactory | None = (
+                factory_val if callable(factory_val) else None
+            )
         else:
             self._client_factory = _default_factory(self._region, self._timeout)
 
     # -- internals -----------------------------------------------------------
 
-    def _client(self, service_name: str) -> Any:
+    def _client(self, service_name: str) -> _Client | None:
         if self._client_factory is None:
             return None
         return self._client_factory(service_name)
 
     @staticmethod
-    def _first(d: dict[str, Any], *keys: str) -> Any:
+    def _first(d: Mapping[str, object], *keys: str) -> object:
+        """Return the first non-None value at ``keys`` in ``d`` (else None)."""
         for k in keys:
-            if k in d and d[k] is not None:
-                return d[k]
+            v = d.get(k)
+            if v is not None:
+                return v
         return None
 
-    def _normalize_config_item(self, item: dict[str, Any]) -> dict[str, Any]:
-        resource_id = str(self._first(item, "resourceId") or "")
-        resource_type = str(self._first(item, "resourceType") or "")
-        status = self._first(item, "configurationItemStatus") or "UNKNOWN"
-        region = str(self._first(item, "awsRegion") or self._region or "")
+    def _normalize_config_item(self, item: ConfigurationItem) -> NormalizedRecord:
+        resource_id_val = self._first(item, "resourceId")
+        resource_id = str(resource_id_val) if resource_id_val is not None else ""
+        resource_type_val = self._first(item, "resourceType")
+        resource_type = str(resource_type_val) if resource_type_val is not None else ""
+        status_val = self._first(item, "configurationItemStatus")
+        status = str(status_val) if status_val is not None else "UNKNOWN"
+        region_val = self._first(item, "awsRegion")
+        region = (
+            str(region_val)
+            if region_val is not None
+            else (self._region or "")
+        )
         message = " ".join(p for p in (resource_type, resource_id) if p).strip()
-        labels = {
+        az_val = self._first(item, "availabilityZone")
+        labels: dict[str, str] = {
             "awsRegion": region,
             "resourceType": resource_type,
-            "availabilityZone": str(self._first(item, "availabilityZone") or ""),
+            "availabilityZone": str(az_val) if az_val is not None else "",
         }
-        return {
-            "ts": self._first(item, "configurationItemCaptureTime"),
-            "source": self.name,
-            "kind": "infra",
-            "level_or_status": status,
-            "message": message,
-            "value": self._first(item, "configurationStateId"),
-            "labels": labels,
-            "raw": item,
-        }
+        return NormalizedRecord(
+            ts=self._first(item, "configurationItemCaptureTime"),
+            source=self.name,
+            kind="infra",
+            level_or_status=status,
+            message=message,
+            value=self._first(item, "configurationStateId"),
+            labels=labels,
+            raw=item,
+        )
 
-    def _normalize_event(self, event: dict[str, Any]) -> dict[str, Any]:
-        event_name = str(self._first(event, "EventName") or "")
-        username = str(self._first(event, "Username") or "")
-        event_source = str(self._first(event, "EventSource") or "")
-        region = str(self._first(event, "AwsRegion", "awsRegion") or self._region or "")
+    def _normalize_event(self, event: CloudTrailLookupEvent) -> NormalizedRecord:
+        event_name_val = self._first(event, "EventName")
+        event_name = str(event_name_val) if event_name_val is not None else ""
+        username_val = self._first(event, "Username")
+        username = str(username_val) if username_val is not None else ""
+        event_source_val = self._first(event, "EventSource")
+        event_source = str(event_source_val) if event_source_val is not None else ""
+        region_val = self._first(event, "AwsRegion", "awsRegion")
+        region = (
+            str(region_val)
+            if region_val is not None
+            else (self._region or "")
+        )
         message = " ".join(p for p in (event_name, username) if p).strip()
-        labels = {
+        labels: dict[str, str] = {
             "EventSource": event_source,
             "awsRegion": region,
         }
-        return {
-            "ts": self._first(event, "EventTime"),
-            "source": self.name,
-            "kind": "infra",
-            "level_or_status": "audit",
-            "message": message,
-            "value": self._first(event, "EventId"),
-            "labels": labels,
-            "raw": event,
-        }
+        return NormalizedRecord(
+            ts=self._first(event, "EventTime"),
+            source=self.name,
+            kind="infra",
+            level_or_status="audit",
+            message=message,
+            value=self._first(event, "EventId"),
+            labels=labels,
+            raw=event,
+        )
 
     # -- mode handlers -------------------------------------------------------
 
-    def _query_config(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _query_config(self, spec: Mapping[str, object]) -> list[NormalizedRecord]:
         client = self._client("config")
         if client is None:
             return []
-        resource_type = str(spec.get("resourceType", self._default_resource_type))
-        limit = int(spec.get("limit", self._max_results))
-        listed = client.list_discovered_resources(
+        resource_type_val = spec.get("resourceType", self._default_resource_type)
+        resource_type = (
+            resource_type_val
+            if isinstance(resource_type_val, str)
+            else self._default_resource_type
+        )
+        limit_val = spec.get("limit", self._max_results)
+        limit = int(limit_val) if isinstance(limit_val, (int, float)) else self._max_results
+        listed: ListDiscoveredResourcesResponse = client.list_discovered_resources(
             resourceType=resource_type, limit=limit
         )
-        identifiers = listed.get("resourceIdentifiers", []) if isinstance(listed, dict) else []
-        rows: list[dict[str, Any]] = []
-        for ident in identifiers:
-            if not isinstance(ident, dict):
+        identifiers_raw = (
+            listed.get("resourceIdentifiers", []) if isinstance(listed, dict) else []
+        )
+        rows: list[NormalizedRecord] = []
+        for ident in identifiers_raw:
+            resource_id_raw = ident.get("resourceId")
+            if not resource_id_raw:
                 continue
-            resource_id = ident.get("resourceId")
-            if not resource_id:
-                continue
-            history = client.get_resource_config_history(
-                resourceType=ident.get("resourceType", resource_type),
+            resource_id = (
+                resource_id_raw if isinstance(resource_id_raw, str) else str(resource_id_raw)
+            )
+            ident_type_raw = ident.get("resourceType", resource_type)
+            ident_type = (
+                ident_type_raw if isinstance(ident_type_raw, str) else resource_type
+            )
+            history: GetResourceConfigHistoryResponse = client.get_resource_config_history(
+                resourceType=ident_type,
                 resourceId=resource_id,
                 limit=1,
             )
-            items = history.get("configurationItems", []) if isinstance(history, dict) else []
+            items = (
+                history.get("configurationItems", []) if isinstance(history, dict) else []
+            )
             for item in items:
-                if isinstance(item, dict):
-                    rows.append(self._normalize_config_item(item))
+                rows.append(self._normalize_config_item(item))
         return rows
 
-    def _query_cloudtrail(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _query_cloudtrail(self, spec: Mapping[str, object]) -> list[NormalizedRecord]:
         client = self._client("cloudtrail")
         if client is None:
             return []
-        kwargs: dict[str, Any] = {"MaxResults": int(spec.get("limit", self._max_results))}
+        limit_val = spec.get("limit", self._max_results)
+        limit = (
+            int(limit_val) if isinstance(limit_val, (int, float)) else self._max_results
+        )
+        kwargs: dict[str, object] = {"MaxResults": limit}
         if spec.get("lookup_attributes"):
             kwargs["LookupAttributes"] = spec["lookup_attributes"]
         if spec.get("start_time"):
             kwargs["StartTime"] = spec["start_time"]
         if spec.get("end_time"):
             kwargs["EndTime"] = spec["end_time"]
-        result = client.lookup_events(**kwargs)
+        result: LookupEventsResponse = client.lookup_events(**kwargs)
         events = result.get("Events", []) if isinstance(result, dict) else []
-        rows: list[dict[str, Any]] = []
+        rows: list[NormalizedRecord] = []
         for event in events:
-            if isinstance(event, dict):
-                rows.append(self._normalize_event(event))
+            rows.append(self._normalize_event(event))
         return rows
 
     # -- public API ----------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> HealthStatus:
         try:
             if self._client_factory is None:
                 return {"ok": False, "detail": "boto3 unavailable"}
@@ -204,10 +359,11 @@ class AwsConfigTrailSource:
         except Exception as exc:  # pragma: no cover - defensive; never raises
             return {"ok": False, "detail": f"health error: {exc!r}"}
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: Mapping[str, object]) -> list[NormalizedRecord]:
         if self._client_factory is None:
             return []
-        mode = str(spec.get("mode", "config")).lower()
+        mode_raw = spec.get("mode", "config")
+        mode = (str(mode_raw) if not isinstance(mode_raw, str) else mode_raw).lower()
         try:
             if mode == "config":
                 return self._query_config(spec)

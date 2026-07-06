@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from general_ludd.security.fix_not_disable import (
     ActionIntent,
     FixNotDisablePolicy,
@@ -69,8 +71,8 @@ class TestActionIntentWiredIntoProductionModule:
         detector = AdversarialCodeDetector()
         finding = AdversarialFinding(
             pattern_id="test_pattern",
-            category="self_sabotage",  # type: ignore[arg-type]  # test stub
-            severity="high",  # type: ignore[arg-type]  # test stub
+            category=cast(Any, "self_sabotage"),
+            severity=cast(Any, "high"),
             description="Test finding",
             match_text="test match",
             file_path="test.py",

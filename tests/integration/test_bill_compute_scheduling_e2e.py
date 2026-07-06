@@ -13,6 +13,8 @@ Proves end-to-end that:
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from general_ludd.infra.utilization import UtilizationTracker
@@ -255,7 +257,7 @@ class TestComputeSchedulingHintEdgeCases:
     def test_hint_is_immutable(self):
         hint = ComputeSchedulingHint(preferred_gpu_type="a100_80")
         with pytest.raises(AttributeError):
-            hint.preferred_gpu_type = "h100"  # type: ignore[misc]  # frozen dataclass: tests immutability
+            cast(Any, hint).preferred_gpu_type = "h100"
 
     def test_work_type_defaults_are_consistent(self):
         analysis = ComputeSchedulingHint.for_work_type("analysis")

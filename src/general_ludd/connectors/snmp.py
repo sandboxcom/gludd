@@ -78,15 +78,16 @@ def _default_snmp_getter(
     so callers (``health``/``query``) can degrade gracefully rather than crash.
     """
     try:  # pragma: no cover - exercised via injection in tests
-        from pysnmp.hlapi import (  # type: ignore[import-not-found]  # pysnmp: optional, guarded by try/except
-            CommunityData,
-            ContextData,
-            ObjectIdentity,
-            ObjectType,
-            SnmpEngine,
-            UdpTransportTarget,
-            getCmd,
-        )
+        import importlib
+
+        _hlapi = importlib.import_module("pysnmp.hlapi")  # pysnmp: optional, guarded by try/except
+        CommunityData = _hlapi.CommunityData
+        ContextData = _hlapi.ContextData
+        ObjectIdentity = _hlapi.ObjectIdentity
+        ObjectType = _hlapi.ObjectType
+        SnmpEngine = _hlapi.SnmpEngine
+        UdpTransportTarget = _hlapi.UdpTransportTarget
+        getCmd = _hlapi.getCmd
     except Exception as exc:
         raise _PysnmpUnavailable(str(exc)) from exc
 

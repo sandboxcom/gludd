@@ -7,11 +7,16 @@ MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
+GATE_POLL_INTERVAL ?= 60
 
 PYTHON := python3
 UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
+# Export xdist worker-count overrides so command-line NPROC=/GLUDD_XDIST= reach
+# the adaptive_test.py subprocess used by the gate.
+export NPROC
+export GLUDD_XDIST
 # Worker count: env GLUDD_XDIST overrides (CI sets it so the suite isn't run on a
 # single worker — a 4-vCPU runner's cpu//4=1 made the gate sit ~38min near the
 # 40min wall). Local default stays cpu//4. Accepts an int or "auto".
@@ -27,6 +32,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
+        submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
 		feature-start feature-done test-and-commit preflight \
 		git-commit-no-verify git-amend-msg \
@@ -47,11 +53,14 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		repo-visibility \
  		watchdog-start watchdog-status watchdog-stop watchdog-log \
  		task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
-		check-readme-status check-plugin-versions check-plugin-versions-quiet \
+ 		check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
 		check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
 		verify-release-artifact git-tag-rm release-cut release-recut release-create \
 		verify-feature-claims audit-coverage gate-audit coverage-json \
-		deck deck-serve deck-data deck-honesty
+		tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
+		deck deck-serve deck-data deck-honesty \
+		sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
+		sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix
 
 help:
 	@echo "Usage: make [target]"
@@ -66,6 +75,8 @@ help:
 	@echo "  lint                  Run ruff linter"
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  typecheck             Run mypy"
+	@echo "  check-types           Flag `Any` usage in Python annotations (tight types)"
+	@echo "  check-types-baseline  Same scan, tolerating config/type_any_baseline.txt"
 	@echo "  healthcheck           Verify imports work"
 	@echo "  qa                    Run lint + typecheck + test + healthcheck"
 	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
@@ -94,6 +105,13 @@ help:
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
 	@echo "  test-guardrails       Test guardrail infrastructure"
 	@echo ""
+	@echo "  --- Terraform ---"
+	@echo "  tf-cache-warm         Download all providers ONCE into the shared plugin cache"
+	@echo "  tf-init STACK=s/n     Init a stack using the shared cache (no re-download)"
+	@echo "  tf-validate STACK=s/n Validate a stack against the shared cache"
+	@echo "  tf-versions-check     Enforce stacks match infra/terraform/versions.tf"
+	@echo "  tf-clean              Remove the shared plugin cache"
+	@echo ""
 	@echo "  --- Git ---"
 	@echo "  git-status            Show git status"
 	@echo "  git-diff              Show diff stats"
@@ -108,6 +126,10 @@ help:
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
+	@echo "  submodule-init        Initialize all git submodules (recursive)"
+	@echo "  submodule-update      Update submodules to latest remote (--merge)"
+	@echo "  submodule-status      Show status of each submodule"
+	@echo "  submodule-pin REPO=.. TAG=..  Pin a submodule to a tag/commit"
 	@echo ""
 	@echo "  --- Secrets + Security ---"
 	@echo "  scan-secrets          Run detect-secrets scan against baseline"
@@ -1303,6 +1325,13 @@ lint-all:
 	@$(UV) run ruff check src tests collections scripts alembic tools molecule
 typecheck-all:
 	@$(UV) run mypy src scripts tools
+
+# Scoped mypy on explicit files (bypasses tree-wide blockers like graylog.py).
+# Mirrors pyproject.toml [tool.mypy] strict config (picked up automatically).
+# Usage: make typecheck-scope FILES='src/a.py src/b.py'
+typecheck-scope:
+	@if [ -z "$(FILES)" ]; then echo "Usage: make typecheck-scope FILES='src/a.py src/b.py'"; exit 2; fi
+	@$(UV) run mypy --no-incremental --no-namespace-packages $(FILES)
 # Ansible/YAML lint (#36), fail-on-error (no `|| true`).
 yaml-lint:
 	@$(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
@@ -1561,24 +1590,10 @@ dist-path-check:
 	if [ -n "$$HITS" ]; then echo "LEAKED LOCAL PATHS in tarball:"; echo "$$HITS"; exit 1; else echo "Tarball dir(s) path-clean."; fi
 
 # Internal: verify .gate-status is fresh (le 30 min) and green (all phases PASS).
-# GLUDD_CI_IS_GATE=1 allows CI to serve as the gate, but ONLY when `make
-# ci-verdict` returns GREEN for the current HEAD. It is NOT a blank check to
-# skip the gate: ci-verdict is the single source of truth for the CI verdict
-# (exit 0 = verified green, 1 = RED/no-run, 2 = PENDING). Any non-zero verdict
-# denies the bypass with the canonical message. If CI is red, pending, or has
-# no run for HEAD, the local gate check still blocks.
+# There is NO bypass. The gate is the only way to land a commit — if it is
+# missing, incomplete, red, or stale, the commit is DENIED. Run `make gate`.
 _gate-fresh-check:
-	@if [ "$(GLUDD_CI_IS_GATE)" = "1" ]; then \
-		echo "CI-is-gate mode: verifying CI is green for HEAD via 'make ci-verdict'..."; \
-		VERDICT=$$(make -s ci-verdict 2>&1); RC=$$?; \
-		if [ $$RC -eq 0 ]; then \
-			echo "CI-is-gate PASS: $$VERDICT"; \
-		else \
-			echo "CI_IS_GATE bypass denied — CI is not green. Run make gate."; \
-			echo "ci-verdict (rc=$$RC): $$VERDICT"; \
-			exit 1; \
-		fi; \
-	elif [ ! -f .gate-status ]; then \
+	@if [ ! -f .gate-status ]; then \
 		echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; \
 	elif ! $(UV) run python scripts/gate_fresh_check.py is-complete .gate-status; then \
 		echo "ERROR: Gate incomplete — .gate-status missing terminal marker (=== GATE: PASSED === or === GATE: FAILED ===). The gate was likely killed mid-run. Run 'make gate' first."; \
@@ -1610,11 +1625,9 @@ commit-no-verify: _gate-fresh-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 # git-commit-no-verify: commit without pre-commit hook stash, enforcing gate check.
-# GLUDD_CI_IS_GATE=1 is an ESCAPE HATCH (not a recommended default) that allows
-# CI to serve as the gate, but ONLY when `make ci-verdict` returns GREEN for the
-# current HEAD — _gate-fresh-check delegates the verdict to ci-verdict and denies
-# on any non-zero exit (RED, PENDING, or no-run). Default behaviour: the full
-# local gate check runs via _gate-fresh-check.
+# The --no-verify flag skips ONLY the pre-commit hook stash, NOT the gate.
+# There is no GLUDD_CI_IS_GATE bypass — the fresh+green .gate-status check is
+# unconditional. Run `make gate` and have it pass; that is the only path.
 git-commit-no-verify: _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
@@ -1690,6 +1703,25 @@ git-checkout:
 git-merge:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge MSG='branch-name'"; exit 1; fi
 	@git merge --no-ff "$(MSG)"
+
+submodule-init:
+	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi
+	@git submodule update --init --recursive
+
+submodule-update:
+	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi
+	@git submodule update --remote --merge --recursive
+
+submodule-status:
+	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi
+	@git submodule status --recursive
+
+submodule-pin:
+	@if [ -z "$(REPO)" ] || [ -z "$(TAG)" ]; then echo "Usage: make submodule-pin REPO=external/llamacpp TAG=v1.0.0"; exit 1; fi
+	@git -C "$(REPO)" fetch --tags
+	@git -C "$(REPO)" checkout "$(TAG)"
+	@git add .gitmodules
+	@echo "Pinned $(REPO) to $(TAG)"
 
 feature-start:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make feature-start MSG='feature/short-name'"; exit 1; fi
@@ -1773,6 +1805,17 @@ audit-features:
 
 check-readme-status:
 	@$(UV) run python scripts/check_readme_status_current.py $(TAG)
+
+# --- Type strictness: flag `Any` usage in Python annotations (tight types only) ---
+# Scans src/ for Any in return/param/annassign annotations (incl. nested dict[...]/Optional[...]).
+# See .opencode/skills/type-safety/SKILL.md for the full policy.
+check-types:
+	@$(UV) run python scripts/check_type_strictness.py src/
+
+# Same scan, but tolerate pre-existing violations listed one-per-line as `path:line`
+# in the baseline file. Use this to enforce the gate on NEW code only.
+check-types-baseline:
+	@$(UV) run python scripts/check_type_strictness.py src/ --baseline config/type_any_baseline.txt
 
 verify-feature-claims:
 	@echo "=== verify-feature-claims: full evidence verification (pytest for test: refs) ==="
@@ -2090,7 +2133,7 @@ gate-background:
 	      rm -f .gate-background.pid; \
 	      echo "[gate-background-timeout] killed PID $$PID_TO_KILL after $$GATE_TIMEOUT_VAL s timeout"; \
 	    fi; \
-	  fi ) &
+	  fi ) > /dev/null 2>&1 &
 
 # Probe background gate: running/pass/fail + current phase + last 20 log lines + .gate-status.
 gate-status-check:
@@ -2109,6 +2152,26 @@ gate-status-check:
 	else \
 		echo "(no background gate found)"; \
 	fi
+
+# Poll the background gate every GATE_POLL_INTERVAL seconds until it terminates.
+# Emits a timestamped heartbeat each cycle. Exits 0 on PASSED, 1 on FAILED/aborted.
+gate-wait:
+	@while true; do \
+		OUT=$$( $(MAKE) --no-print-directory gate-status-check 2>&1 ); \
+		TS=$$(date +%H:%M:%S); \
+		if echo "$$OUT" | grep -q '=== GATE: PASSED ==='; then \
+			echo "[$$TS] $$OUT" | tail -30; exit 0; \
+		elif echo "$$OUT" | grep -qE '=== GATE: (FAILED|ABORTED) ==='; then \
+			echo "[$$TS] $$OUT" | tail -30; exit 1; \
+		elif echo "$$OUT" | grep -q '^FINISHED'; then \
+			echo "[$$TS] $$OUT" | tail -30; \
+			if echo "$$OUT" | grep -qi PASS; then exit 0; else exit 1; fi; \
+		else \
+			PHASE=$$(echo "$$OUT" | grep -oE 'Phase: .*' | head -1); \
+			echo "[$$TS] still running... $$PHASE"; \
+			sleep $(GATE_POLL_INTERVAL); \
+		fi; \
+	done
 
 # Live tail of the latest gate log (Ctrl-C to stop).
 gate-tail:
@@ -2146,6 +2209,15 @@ gate-kill:
 	else \
 		echo "(no running background gate found)"; \
 	fi
+	@LOCK_PID=$$(cat /tmp/gludd-gate.lock 2>/dev/null || echo ""); \
+	if [ -n "$$LOCK_PID" ] && kill -0 "$$LOCK_PID" 2>/dev/null; then \
+		echo "[gate-kill] killing stale gate lock holder pid=$$LOCK_PID"; \
+		kill -TERM "$$LOCK_PID" 2>/dev/null || true; \
+		sleep 2; \
+		kill -KILL "$$LOCK_PID" 2>/dev/null || true; \
+	fi; \
+	rm -f /tmp/gludd-gate.lock
+	@pkill -f 'gludd-gate' 2>/dev/null || true
 
 # Kill any running background gate, remove stale PID, clean old gate logs (>24h).
 gate-cleanup:
@@ -2220,6 +2292,7 @@ watchdog-stop:
 	else \
 		echo "No watchdog running"; \
 	fi
+	@pkill -f 'agent_watchdog' 2>/dev/null || true
 
 watchdog-auto:
 	@echo "Starting auto-watchdog (persists across sessions)..."
@@ -2328,6 +2401,54 @@ disengage-enforcement:
 static-coverage:
 	@THRESHOLD=$(or $(THRESHOLD),85) $(PYTHON) scripts/static_coverage_audit.py
 
+# --- Terraform: shared provider plugin cache (one download per provider) -----
+# Resolves docs/design/TERRAFORM_INFRA_STRUCTURE.md §10 #3: third-party
+# providers (aws, google, azurerm, kubernetes, vsphere, runpod) used to be
+# re-downloaded once per stack (14 stack-provider downloads for 6 providers).
+# TF_PLUGIN_CACHE_DIR makes `terraform init` fetch each provider binary ONCE
+# into infra/terraform/.plugin-cache/ and share it across every stack.
+# infra/terraform/versions.tf is the canonical version contract; stacks MUST
+# match it (make tf-versions-check).
+TF_ROOT := infra/terraform
+TF_PLUGIN_CACHE := $(abspath $(TF_ROOT)/.plugin-cache)
+TF := TF_PLUGIN_CACHE_DIR=$(TF_PLUGIN_CACHE) terraform
+
+tf-cache-setup:
+	@mkdir -p $(TF_PLUGIN_CACHE)
+	@echo "TF plugin cache: $(TF_PLUGIN_CACHE)"
+
+# Populate the cache with every provider in versions.tf in a single init.
+# Run once after cloning (or after bumping a provider version).
+tf-cache-warm: tf-cache-setup
+	@echo "=== WARMING SHARED PLUGIN CACHE ==="
+	@cd $(TF_ROOT) && $(TF) init -backend=false
+	@echo "=== CACHE WARM — providers shared across all stacks ==="
+	@echo "Cache dir: $(TF_PLUGIN_CACHE)"
+
+# Initialise a single stack using the shared cache (no per-stack re-download).
+#   make tf-init STACK=stacks/aws-vllm
+tf-init: tf-cache-setup
+	@test -n "$(STACK)" || { echo "Usage: make tf-init STACK=stacks/<name>"; exit 2; }
+	@test -d $(TF_ROOT)/$(STACK) || { echo "No such stack: $(TF_ROOT)/$(STACK)"; exit 2; }
+	@cd $(TF_ROOT)/$(STACK) && $(TF) init
+
+# Validates a single stack against the shared cache.
+#   make tf-validate STACK=stacks/aws-vllm
+tf-validate: tf-cache-setup
+	@test -n "$(STACK)" || { echo "Usage: make tf-validate STACK=stacks/<name>"; exit 2; }
+	@test -d $(TF_ROOT)/$(STACK) || { echo "No such stack: $(TF_ROOT)/$(STACK)"; exit 2; }
+	@cd $(TF_ROOT)/$(STACK) && $(TF) validate
+
+# Enforces the canonical provider-version contract (infra/terraform/versions.tf).
+# Every stack's required_providers must match. Run before commit / in CI.
+tf-versions-check:
+	@$(PYTHON) scripts/check_tf_provider_versions.py
+
+# Removes the shared cache (provider binaries); regenerated by tf-cache-warm.
+tf-clean:
+	rm -rf $(TF_PLUGIN_CACHE)
+	@echo "Removed $(TF_PLUGIN_CACHE)"
+
 # --- Presentation deck ---
 #   make deck            — build the reveal.js deck (generate deck-data.json + honesty check)
 #   make deck-serve      — start local HTTP server for preview
@@ -2354,3 +2475,46 @@ deck-honesty:
 
 verify-banana:
 	@$(PYTHON) /tmp/verify_banana.py
+
+# --- SDD workflow targets (DevSpark + DeepSpec integration) ---
+# Each target prints the corresponding DevSpark command file when the
+# .devspark/ scaffolding is populated (via `make setup-devspark`), otherwise
+# prints an install hint. Always exits 0 so the workflow is usable as a
+# reminder even before scaffolding. sdd-implement additionally runs the gate
+# as the verification step (matches the DevSpark implement command contract).
+sdd-constitution:
+	@cat .devspark/defaults/commands/constitution.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-discover:
+	@cat .devspark/defaults/commands/discover-constitution.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-specify:
+	@cat .devspark/defaults/commands/specify.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-plan:
+	@cat .devspark/defaults/commands/plan.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-tasks:
+	@cat .devspark/defaults/commands/tasks.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-implement:
+	@cat .devspark/defaults/commands/implement.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+	@$(MAKE) gate
+
+sdd-pr:
+	@cat .devspark/defaults/commands/create-pr.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-release:
+	@cat .devspark/defaults/commands/release.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-audit:
+	@cat .devspark/defaults/commands/site-audit.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-critic:
+	@cat .devspark/defaults/commands/critic.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-harvest:
+	@cat .devspark/defaults/commands/harvest.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+sdd-quickfix:
+	@cat .devspark/defaults/commands/quickfix.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"

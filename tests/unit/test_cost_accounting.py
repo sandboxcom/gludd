@@ -11,6 +11,7 @@ Validates:
 from __future__ import annotations
 
 import threading
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -258,7 +259,7 @@ class TestInfraTrackerAccumulation:
         catalog = MagicMock()
         spot_price = MagicMock()
         spot_price.usd_per_unit = 0.0005
-        spot_price.granularity = "per_second"  # type: ignore[assignment]
+        cast(Any, spot_price).granularity = "per_second"
         catalog.compute_price.return_value = spot_price
 
         tracker = InfraTracker(catalog=catalog)

@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -49,10 +50,10 @@ def _has_terraform_binary() -> bool:
 
 def _try_import_hcl2():
     try:
-        import hcl2  # type: ignore[import-not-found]
+        import hcl2
     except ImportError:
         return None
-    return hcl2
+    return cast(Any, hcl2)
 
 
 def _strip_comments(text: str) -> str:

@@ -19,15 +19,7 @@ import sys
 from pathlib import Path
 
 import pytest
-
-# Make the scripts directory importable without installing.
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-# E402 suppressed: import requires the sys.path manipulation above to locate
-# the scripts/ directory, which is not an installed package.
-from multitasking_backlog_check import (  # noqa: E402
+from multitasking_backlog_check import (
     _item_is_effectively_done,
     all_done,
     load_backlog,

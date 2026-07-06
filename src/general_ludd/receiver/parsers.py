@@ -418,20 +418,25 @@ def _otlp_load_protobuf(payload: bytes, signal: str) -> dict[str, Any] | None:
     ``ingest_formats``: if ``opentelemetry-proto`` is not installed, fail soft.
     """
     try:
+        import importlib
+
         from google.protobuf.json_format import MessageToDict
 
         if signal == "logs":
-            from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (  # type: ignore[import-not-found]  # opentelemetry-proto: optional, guarded by try/except
-                ExportLogsServiceRequest as _Req,
+            _pb = importlib.import_module(  # opentelemetry-proto: optional, guarded by try/except
+                "opentelemetry.proto.collector.logs.v1.logs_service_pb2"
             )
+            _Req = _pb.ExportLogsServiceRequest
         elif signal == "metrics":
-            from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (  # type: ignore[import-not-found]  # opentelemetry-proto: optional, guarded by try/except
-                ExportMetricsServiceRequest as _Req,
+            _pb = importlib.import_module(  # opentelemetry-proto: optional, guarded by try/except
+                "opentelemetry.proto.collector.metrics.v1.metrics_service_pb2"
             )
+            _Req = _pb.ExportMetricsServiceRequest
         else:
-            from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (  # type: ignore[import-not-found]  # opentelemetry-proto: optional, guarded by try/except
-                ExportTraceServiceRequest as _Req,
+            _pb = importlib.import_module(  # opentelemetry-proto: optional, guarded by try/except
+                "opentelemetry.proto.collector.trace.v1.trace_service_pb2"
             )
+            _Req = _pb.ExportTraceServiceRequest
     except ImportError:
         return None
     try:

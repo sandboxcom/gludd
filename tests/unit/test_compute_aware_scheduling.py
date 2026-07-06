@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from typing import Any, cast
 
 import pytest
 
@@ -63,7 +64,7 @@ class TestComputeSchedulingHintDefaults:
     def test_is_frozen(self):
         hint = ComputeSchedulingHint(preferred_gpu_type="t4")
         with pytest.raises(FrozenInstanceError):
-            hint.preferred_gpu_type = "h100"  # type: ignore[misc]  # frozen dataclass: tests immutability
+            cast(Any, hint).preferred_gpu_type = "h100"
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ from general_ludd.security.capability_lattice import check_dispatch
 
 if TYPE_CHECKING:
     from general_ludd.compaction.aggressive import CompactionLevel
+    from general_ludd.models.gateway import ModelResponse
 
 logger = logging.getLogger(__name__)
 
@@ -374,7 +375,7 @@ class ToolCallLoop:
 
     async def _call_model(
         self, job: JobSpec, system_prompt: str, user_prompt: str,
-    ) -> Any:
+    ) -> ModelResponse:
         profile_id = job.model_profile or "default"
         messages: list[dict[str, Any]] = []
         if system_prompt:
@@ -393,7 +394,7 @@ class ToolCallLoop:
     async def _call_with_tools(
         self, job: JobSpec, messages: list[dict[str, Any]],
         tool_schemas: list[dict[str, Any]],
-    ) -> Any:
+    ) -> ModelResponse:
         profile_id = job.model_profile or "default"
         return await asyncio.to_thread(
             self._gateway.call_model,

@@ -20,7 +20,13 @@ from general_ludd.daemon import create_daemon_app
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
-def app():
+def app(monkeypatch):
+    # /admin/hooks is an authenticated admin path. The daemon is fail-closed
+    # by default (503) when GLUDD_PSK is unset, which would short-circuit the
+    # request before the SSRF/header validators run. Use the documented dev
+    # opt-out so the request reaches the Pydantic guards under test. Mirrors
+    # the pattern in tests/integration/test_g9_plan_critique_wiring.py et al.
+    monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
     return create_daemon_app(tick_interval=0.01)
 
 

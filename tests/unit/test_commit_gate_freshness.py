@@ -51,74 +51,17 @@ class TestCommitTargetsEnforceGate:
         PASS + 30-min freshness check as `git-commit`. The `--no-verify` flag
         only skips the pre-commit HOOK STASH, not the gate.
 
-        The gate check may be skipped ONLY via the documented escape hatch
-        `GLUDD_CI_IS_GATE=1` (see test_commit_no_verify_override_is_escape_hatch).
-        In that case the target must still reference GLUDD_CI_IS_GATE so the
-        skip is explicit, not silent.
+        There is NO bypass. The gate check is unconditional — a red, stale,
+        or missing .gate-status always denies the commit.
         """
         recipe = _recipe("git-commit-no-verify")
         gate_enforced = (
             ".gate-status" in recipe or
-            "_gate-fresh-check" in recipe or
-            "GLUDD_CI_IS_GATE" in recipe
+            "_gate-fresh-check" in recipe
         )
         assert gate_enforced, (
-            "git-commit-no-verify must check .gate-status (or reference the "
-            "GLUDD_CI_IS_GATE escape hatch) — it cannot silently bypass the gate"
-        )
-
-    def test_commit_no_verify_has_ci_is_gate_override(self):
-        """git-commit-no-verify must reference GLUDD_CI_IS_GATE (directly or via _gate-fresh-check).
-
-        The override exists for the specific case where the local gate takes
-        longer than the bash tool timeout (>30 min) and CI shards validate the
-        change faster. The reference must be grep-discoverable and auditable:
-        either inline in the recipe or delegated to _gate-fresh-check (which is
-        the single gate-enforcement target containing the override).
-        """
-        recipe = _recipe("git-commit-no-verify")
-        content = MAKEFILE.read_text()
-        has_override = "GLUDD_CI_IS_GATE" in recipe or (
-            "_gate-fresh-check" in recipe and "GLUDD_CI_IS_GATE" in content
-        )
-        assert has_override, (
-            "git-commit-no-verify must reference GLUDD_CI_IS_GATE (directly or "
-            "via _gate-fresh-check) so the escape hatch is explicit and auditable"
-        )
-
-    def test_commit_no_verify_override_is_escape_hatch_not_default(self):
-        """The GLUDD_CI_IS_GATE override must be documented as an escape hatch.
-
-        The DEFAULT behaviour of git-commit-no-verify is to run the gate check.
-        Skipping the gate is only acceptable as a documented escape hatch for
-        the slow-local-gate / CI-is-gate case — never a silent or default off.
-        This test verifies:
-          1. the comment block documents it as an "escape hatch", and
-          2. the recipe's default branch (no env var set) runs the gate check,
-             so the override is opt-in rather than opt-out.
-        """
-        content = MAKEFILE.read_text()
-        marker = "\ngit-commit-no-verify:"
-        idx = content.index(marker)
-        header_start = idx
-        comment_start = header_start
-        while comment_start > 0:
-            prev_newline = content.rfind("\n", 0, comment_start - 1)
-            line_start = 0 if prev_newline == -1 else prev_newline + 1
-            line = content[line_start:comment_start - 1] if prev_newline != -1 else content[:comment_start]
-            if line.lstrip().startswith("#"):
-                comment_start = line_start
-            else:
-                break
-        block = content[comment_start:idx + len(marker)]
-        assert "escape hatch" in block.lower(), (
-            "git-commit-no-verify comment must document GLUDD_CI_IS_GATE as an "
-            "escape hatch, not as a recommended default"
-        )
-        recipe = _recipe("git-commit-no-verify")
-        assert ".gate-status" in recipe or "_gate-fresh-check" in recipe, (
-            "git-commit-no-verify default branch (no GLUDD_CI_IS_GATE) must "
-            "still run the gate check — the override may only SKIP, not REPLACE"
+            "git-commit-no-verify must check .gate-status — it cannot "
+            "silently bypass the gate"
         )
 
     def test_commit_bootstrap_enforces_gate(self):
@@ -211,58 +154,10 @@ class TestCommitTargetsEnforceGate:
             }
             if target_name in ALLOWLIST_NO_GATE:
                 continue
-            has_gate_check = ".gate-status" in block or "_gate-fresh-check" in block or "GLUDD_CI_IS_GATE" in block
+            has_gate_check = ".gate-status" in block or "_gate-fresh-check" in block
             if not has_gate_check:
                 offenders.append(target_name)
         assert not offenders, "Bypass: " + ", ".join(offenders)
-
-
-class TestCiIsGateDelegatesToCiVerdict:
-    """GLUDD_CI_IS_GATE=1 must verify CI via `make ci-verdict`, not an inline copy.
-
-    The bug: _gate-fresh-check inlined its own `gh run list` verdict logic,
-    duplicating `ci-verdict`. The two paths could drift, and the inline copy
-    was the authority for the bypass — easier to subtly weaken without the
-    canonical verdict target noticing. The fix: the bypass must delegate to
-    `make ci-verdict`, which exits 0 ONLY on a verified-green run (1 on RED
-    or no-run, 2 on PENDING). Any non-zero verdict denies the commit.
-    """
-
-    def test_gate_fresh_check_calls_ci_verdict(self):
-        """_gate-fresh-check must invoke `make ci-verdict` for the CI check.
-
-        Before: inline `gh run list --commit=...` + ad-hoc conclusion parsing
-        that duplicated ci-verdict and could drift. After: delegates to
-        `make ci-verdict` so there is a single verdict path.
-        """
-        recipe = _recipe("_gate-fresh-check")
-        assert "ci-verdict" in recipe, (
-            "_gate-fresh-check must call `make ci-verdict` to verify CI is green "
-            "when GLUDD_CI_IS_GATE=1 — it cannot inline a divergent gh-run-list copy"
-        )
-
-    def test_gate_fresh_check_has_canonical_deny_message(self):
-        """The CI_IS_GATE bypass must emit the canonical deny string on non-green CI.
-
-        A non-green verdict (RED, PENDING, or no-run) must print the exact
-        deny message so the bypass refusal is grep-discoverable in logs.
-        """
-        recipe = _recipe("_gate-fresh-check")
-        assert "CI_IS_GATE bypass denied — CI is not green. Run make gate." in recipe, (
-            "_gate-fresh-check must print the exact deny message when CI is not green"
-        )
-
-    def test_gate_fresh_check_no_inline_gh_run_list(self):
-        """_gate-fresh-check must NOT inline `gh run list` for the CI verdict.
-
-        The inline copy was the bypass authority and could drift from
-        ci-verdict. The single source of truth is `make ci-verdict`.
-        """
-        recipe = _recipe("_gate-fresh-check")
-        assert "gh run list" not in recipe, (
-            "_gate-fresh-check must not inline `gh run list` — delegate to "
-            "`make ci-verdict` instead so verdict logic stays in one place"
-        )
 
 
 class TestMakeGateStatusFile:

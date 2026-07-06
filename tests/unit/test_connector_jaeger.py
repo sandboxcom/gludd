@@ -6,7 +6,7 @@ Transport is a fake injected object — no real network, no DNS, no shell.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -276,7 +276,7 @@ def test_health_never_raises_on_transport_failure() -> None:
         def get(self, *a: Any, **k: Any) -> Any:
             raise ConnectionError("network down")
 
-    src = make_source(BoomTransport())  # type: ignore[arg-type]
+    src = cast(Any, make_source)(BoomTransport())
     h = src.health()
     assert h["ok"] is False
     assert "detail" in h
@@ -303,7 +303,7 @@ def test_token_read_from_env_into_header(monkeypatch: pytest.MonkeyPatch) -> Non
 
     src = JaegerSource(
         {"base_url": "https://jaeger.example.com", "token_env": "JAEGER_API_TOKEN"},
-        transport=HeaderTransport(),  # type: ignore[arg-type]
+        transport=cast(Any, HeaderTransport()),
     )
     src.health()
     assert captured["headers"] is not None

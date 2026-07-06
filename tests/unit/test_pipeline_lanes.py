@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from typing import Any, cast
 
 import pytest
 
@@ -28,7 +29,7 @@ def _cfg(**kw: object) -> PipelineConfig:
         enabled=True, floor=1, target=3, gate_debounce_s=30.0, max_worktrees=6,
     )
     base.update(kw)
-    return PipelineConfig(**base)  # type: ignore[arg-type]
+    return cast(Any, PipelineConfig)(**base)
 
 
 # --------------------------------------------------------------------------- #

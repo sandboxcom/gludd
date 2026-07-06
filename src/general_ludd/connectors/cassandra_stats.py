@@ -7,7 +7,7 @@ scraping a JMX-exporter Prometheus endpoint.
 Design (matches the package contract):
 
   - The executor is INJECTABLE via ``executor=``. It is a callable
-    ``(command: str) -> list[Mapping[str, Any]]`` where ``command`` is a logical
+    ``(command: str) -> list[CassandraRow]`` where ``command`` is a logical
     metric group (``"compactionstats"``, ``"tablestats"``, ``"tpstats"``) and the
     return value is a list of normalized row dicts. The connector NEVER shells
     out to ``nodetool`` itself, and never spawns a subprocess: the executor owns
@@ -27,14 +27,56 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import TypedDict
 
 from general_ludd.connectors.normalize import sanitize_metric_value
 
 logger = logging.getLogger(__name__)
 
-Executor = Callable[[str], "Sequence[Mapping[str, Any]]"]
+
+class CassandraRow(TypedDict, total=False):
+    """One normalized row returned by the executor for a logical metric group."""
+
+    metric: str
+    value: float | int | str
+    keyspace: str
+    table: str
+
+
+class CassandraConfig(TypedDict, total=False):
+    """Connector config accepted by :class:`CassandraStatsSource`."""
+
+    name: str
+    jmx_url: str
+    token_env: str
+
+
+class CassandraQuerySpec(TypedDict, total=False):
+    """Query selector (currently ignored — present for API compatibility)."""
+
+
+class CassandraRecord(TypedDict):
+    """Normalized metric record emitted by :meth:`CassandraStatsSource.query`."""
+
+    ts: float
+    source: str
+    kind: str
+    level_or_status: str
+    message: str
+    value: float | int | None
+    labels: dict[str, object]
+    raw: object
+
+
+class CassandraHealthResult(TypedDict, total=False):
+    """Health probe outcome."""
+
+    ok: bool
+    detail: str
+
+
+Executor = Callable[[str], Sequence[CassandraRow]]
 
 _DRIVER_UNAVAILABLE = "driver unavailable"
 
@@ -47,8 +89,8 @@ class CassandraStatsSource:
 
     KIND = "metrics"
 
-    def __init__(self, config: Mapping[str, Any] | None = None, executor: Executor | None = None) -> None:
-        cfg: dict[str, Any] = dict(config or {})
+    def __init__(self, config: CassandraConfig | None = None, executor: Executor | None = None) -> None:
+        cfg = dict(config or {})
         self.name: str = str(cfg.get("name", "cassandra"))
         self._config = cfg
         self._jmx_url: str = str(cfg.get("jmx_url", "http://localhost:7070/metrics"))
@@ -84,7 +126,7 @@ class CassandraStatsSource:
         token = os.environ.get(self._token_env)
         headers = {"Authorization": f"Bearer {token}"} if token else {}
 
-        def _run(command: str) -> Sequence[Mapping[str, Any]]:
+        def _run(command: str) -> Sequence[CassandraRow]:
             # The JMX exporter publishes ALL metrics at one endpoint; we fetch
             # once and let the parser map Prometheus samples to logical rows.
             with httpx.Client(timeout=20.0) as client:
@@ -96,7 +138,7 @@ class CassandraStatsSource:
 
     # -- health ------------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> CassandraHealthResult:
         """Probe the source. Never raises."""
         executor = self._get_executor()
         if executor is None:
@@ -110,13 +152,13 @@ class CassandraStatsSource:
 
     # -- query -------------------------------------------------------------
 
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: CassandraQuerySpec | None = None) -> list[CassandraRecord]:
         executor = self._get_executor()
         if executor is None:
             return []
 
         ts = time.time()
-        out: list[dict[str, Any]] = []
+        out: list[CassandraRecord] = []
         for command in _COMMANDS:
             try:
                 rows = executor(command)
@@ -133,10 +175,10 @@ class CassandraStatsSource:
         ts: float,
         message: str,
         value: float | int | None,
-        labels: dict[str, Any],
-        raw: Any,
+        labels: dict[str, object],
+        raw: object,
         status: str = "ok",
-    ) -> dict[str, Any]:
+    ) -> CassandraRecord:
         return {
             "ts": ts,
             "source": self.name,
@@ -149,14 +191,14 @@ class CassandraStatsSource:
         }
 
     def _rows_to_records(
-        self, rows: Sequence[Mapping[str, Any]], command: str, ts: float
-    ) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+        self, rows: Sequence[CassandraRow], command: str, ts: float
+    ) -> list[CassandraRecord]:
+        out: list[CassandraRecord] = []
         for row in rows:
             metric = row.get("metric")
             if metric is None:
                 continue
-            labels = {
+            labels: dict[str, object] = {
                 "keyspace": str(row.get("keyspace", "")),
                 "table": str(row.get("table", "")),
                 "command": command,
@@ -173,14 +215,14 @@ class CassandraStatsSource:
         return out
 
 
-def _num(value: Any) -> float | int | None:
+def _num(value: object) -> float | int | None:
     # Unified NaN policy: every numeric metric value (executor-injected rows
     # included) is routed through sanitize_metric_value, so NaN/Inf/bool/
     # unparseable all collapse to None. 0.0 stays a real sample.
     return sanitize_metric_value(value)
 
 
-def _parse_prometheus(text: str, command: str) -> list[Mapping[str, Any]]:
+def _parse_prometheus(text: str, command: str) -> list[CassandraRow]:
     """Map Prometheus-text JMX samples into logical nodetool-style rows.
 
     Only samples whose name contains a fragment associated with ``command`` are
@@ -193,7 +235,7 @@ def _parse_prometheus(text: str, command: str) -> list[Mapping[str, Any]]:
         "tpstats": "threadpool",
     }.get(command, command)
 
-    rows: list[Mapping[str, Any]] = []
+    rows: list[CassandraRow] = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):

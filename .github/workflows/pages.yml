@@ -1,8 +1,10 @@
-name: Deploy Presentation to GitHub Pages
+name: Deploy Presentation to Pages
 
 on:
   push:
     branches: [master]
+    paths:
+      - 'docs/presentation/deck/**'
   workflow_dispatch:
 
 permissions:
@@ -22,15 +24,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Pages
+      - name: Configure Pages
         uses: actions/configure-pages@v5
-
       - name: Upload deck artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/presentation/deck
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

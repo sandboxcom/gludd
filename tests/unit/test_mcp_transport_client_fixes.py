@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -70,7 +71,7 @@ class TestOversizedFrameHandling:
 
         proc = _make_mock_proc(readline_side_effect=[ValueError("line too long")])
         # Inject the mock process directly (bypass start()).
-        client._process = proc  # type: ignore[attr-defined]
+        cast(Any, client)._process = proc
 
         with pytest.raises(MCPTransportError, match="oversized"):
             await client._readline_with_timeout()
@@ -86,7 +87,7 @@ class TestOversizedFrameHandling:
         proc = _make_mock_proc(
             readline_side_effect=[asyncio.LimitOverrunError("chunk too long", 65536)]
         )
-        client._process = proc  # type: ignore[attr-defined]
+        cast(Any, client)._process = proc
 
         with pytest.raises(MCPTransportError, match="oversized"):
             await client._readline_with_timeout()
@@ -100,7 +101,7 @@ class TestOversizedFrameHandling:
         client = MCPStdioClient(config)
 
         proc = _make_mock_proc(readline_side_effect=[ValueError("line too long")])
-        client._process = proc  # type: ignore[attr-defined]
+        cast(Any, client)._process = proc
 
         with pytest.raises(MCPTransportError):
             await client._readline_with_timeout()
@@ -116,7 +117,7 @@ class TestOversizedFrameHandling:
 
         line = b'{"jsonrpc":"2.0","id":1,"result":{}}\n'
         proc = _make_mock_proc(readline_side_effect=[line])
-        client._process = proc  # type: ignore[attr-defined]
+        cast(Any, client)._process = proc
 
         result = await client._readline_with_timeout()
         assert result == line
@@ -217,8 +218,8 @@ class TestCallToolPerServerResolution:
         tool_a.server_id = "server-a"
         tool_b = MCPTool(name="do_thing", description="server B version")
         tool_b.server_id = "server-b"
-        registry._tools[("server-a", "do_thing")] = tool_a  # type: ignore[attr-defined]
-        registry._tools[("server-b", "do_thing")] = tool_b  # type: ignore[attr-defined]
+        cast(Any, registry)._tools[("server-a", "do_thing")] = tool_a
+        cast(Any, registry)._tools[("server-b", "do_thing")] = tool_b
 
         config_a = MCPServerConfig(server_id="server-a", command=["npx", "srv-a@1.0.0"])
         config_b = MCPServerConfig(server_id="server-b", command=["npx", "srv-b@2.0.0"])
@@ -230,8 +231,8 @@ class TestCallToolPerServerResolution:
         transport_b.call_tool = AsyncMock(return_value={"from": "server-b"})
 
         client = MCPClient(configs, registry)
-        client._transports["server-a"] = transport_a  # type: ignore[attr-defined]
-        client._transports["server-b"] = transport_b  # type: ignore[attr-defined]
+        cast(Any, client)._transports["server-a"] = transport_a
+        cast(Any, client)._transports["server-b"] = transport_b
 
         return client, transport_a, transport_b
 

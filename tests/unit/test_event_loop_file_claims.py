@@ -22,7 +22,7 @@ number of failures instead of retrying every tick without limit.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -166,7 +166,7 @@ async def test_facet_reflects_active_claim_during_delivery() -> None:
             # While B's commit "runs", A still holds src/shared.py — snapshot the
             # facet to prove the registry reflects the live claim mid-delivery.
             app = SimpleNamespace(state=SimpleNamespace(_file_claims=registry))
-            captured.update(_coordination_facet(app))  # type: ignore[arg-type]
+            captured.update(cast(Any, _coordination_facet)(app))
             return super().commit(message)
 
     # A holds an unrelated file the whole time.

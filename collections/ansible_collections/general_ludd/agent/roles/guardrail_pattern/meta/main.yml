@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: guardrail_pattern
+  author: Agentic Harness Agent
+  description: >
+    Audits whether a named agent restriction exists at all three enforcement
+    layers: (1) opencode.json permission rule, (2) .opencode/plugin/*.ts
+    runtime hook, (3) AGENTS.md proactive section. Reports layer coverage and
+    optionally drafts missing layer content via gludd_model_call. A guardrail
+    present at fewer than three layers is reported as incomplete. Ports
+    .opencode/skills/guardrail-pattern/SKILL.md to a gludd role — the
+    "guardrail about guardrails."
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

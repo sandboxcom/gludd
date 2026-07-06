@@ -8,7 +8,7 @@ modules and defines no shared base here.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -221,7 +221,7 @@ class TestHealth:
 
         src = _make_source(_RecordingTransport())
         # Replace transport with one that raises.
-        src._transport = boom  # type: ignore[assignment]
+        cast(Any, src)._transport = boom
         result = src.health()
         assert result["ok"] is False
         assert "network down" in result["detail"] or result["detail"]

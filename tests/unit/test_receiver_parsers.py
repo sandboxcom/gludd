@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 from general_ludd.connectors.normalize import normalize_join_keys
 from general_ludd.receiver.parsers import (
@@ -86,7 +87,7 @@ class TestOTLPLogs:
         assert parse_otlp_logs(b"") == []
 
     def test_non_bytes_fails_soft(self) -> None:
-        assert parse_otlp_logs("a string") == []  # type: ignore[arg-type]
+        assert cast(Any, parse_otlp_logs)("a string") == []
 
     def test_oversized_payload_rejected(self) -> None:
         assert parse_otlp_logs(b"{" + b"a" * (MAX_PAYLOAD_BYTES + 1)) == []
@@ -258,7 +259,7 @@ class TestSyslog:
         assert parse_syslog("   \n  ") == []
 
     def test_non_bytes_str_fails_soft(self) -> None:
-        assert parse_syslog(12345) == []  # type: ignore[arg-type]
+        assert cast(Any, parse_syslog)(12345) == []
 
     def test_oversized_rejected(self) -> None:
         big = "<13>" + "a" * (MAX_PAYLOAD_BYTES + 1)

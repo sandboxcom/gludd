@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -72,7 +73,7 @@ class TestServiceConfig:
             token_url="",
         )
         with pytest.raises(dataclasses.FrozenInstanceError):
-            c.name = "other"  # type: ignore[misc]
+            cast(Any, c).name = "other"
 
 
 # ---------------------------------------------------------------------------

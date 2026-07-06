@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -220,7 +221,7 @@ class TestStreamDispatchApi:
             return _FakeProc()
 
         original_popen = getattr(stream_router, "_run_subprocess", None)
-        stream_router._run_subprocess = _fake_popen  # type: ignore[attr-defined]
+        stream_router._run_subprocess = _fake_popen
         try:
             resp = await client.post(
                 "/admin/stream/dispatch",
@@ -239,9 +240,9 @@ class TestStreamDispatchApi:
             assert "clone_path" in data
         finally:
             if original_popen is not None:
-                stream_router._run_subprocess = original_popen  # type: ignore[attr-defined]
+                cast(Any, stream_router)._run_subprocess = original_popen
             else:
-                del stream_router._run_subprocess  # type: ignore[attr-defined]
+                del cast(Any, stream_router)._run_subprocess
             await client.aclose()
             await engine.dispose()
 

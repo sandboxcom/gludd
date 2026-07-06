@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, cast
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.db.repository import ProjectRepository
 from general_ludd.self_improve.harness import SelfImprovementHarness
@@ -35,22 +36,35 @@ class RebalanceRequest(BaseModel):
     weights: dict[str, float]
 
 
+class ProjectSkillRequest(BaseModel):
+    project_id: str
+    skill_name: str
+
+
+class DispatchModeRequest(BaseModel):
+    mode: str = "active"
+
+
+class TuiLogRequest(BaseModel):
+    entries: list[dict[str, object]] = Field(default_factory=list)
+
+
 # DoS caps: admin endpoints accept unbounded client-supplied collections and
 # iterate/store them. Reject oversized input early with HTTP 413.
 _MAX_TUI_LOG_ENTRIES = 1000
 _MAX_REBALANCE_WEIGHTS = 500
 
-_tui_log_entries: list[dict[str, Any]] = []
+_tui_log_entries: list[dict[str, object]] = []
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/projects")
-    async def admin_add_project(req: AddProjectRequest) -> dict[str, Any]:
+    async def admin_add_project(req: AddProjectRequest) -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
         from general_ludd.projects.manager import (
             materialize_project_workspace,
@@ -118,7 +132,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             ) from exc
 
     @app.delete("/admin/projects/{project_id}")
-    async def admin_delete_project(project_id: str) -> dict[str, Any]:
+    async def admin_delete_project(project_id: str) -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
         factory = _get_session_factory(app)
@@ -131,7 +145,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"removed": project_id}
 
     @app.put("/admin/projects/{project_id}/weight")
-    async def admin_set_project_weight(project_id: str, req: SetWeightRequest) -> dict[str, Any]:
+    async def admin_set_project_weight(project_id: str, req: SetWeightRequest) -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
         try:
@@ -145,7 +159,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             ) from exc
 
     @app.post("/admin/projects/rebalance")
-    async def admin_rebalance_projects(req: RebalanceRequest) -> dict[str, Any]:
+    async def admin_rebalance_projects(req: RebalanceRequest) -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
         if len(req.weights) > _MAX_REBALANCE_WEIGHTS:
             raise HTTPException(
@@ -163,11 +177,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             ) from exc
 
     @app.get("/admin/projects")
-    async def admin_list_projects() -> dict[str, Any]:
+    async def admin_list_projects() -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
         factory = _get_session_factory(app)
-        db_projects: list[dict[str, Any]] = []
+        db_projects: list[dict[str, str | bool]] = []
         if factory is not None:
             async with factory() as session:
                 repo = ProjectRepository(session)
@@ -182,12 +196,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         summary = ext["projects"].get_summary()
         if isinstance(summary, dict):
             summary["db_projects"] = db_projects
-        return cast("dict[str, Any]", summary)
+        return cast("dict[str, object]", summary)
 
     @app.post("/admin/projects/skills")
-    async def admin_project_skills(req: dict[str, Any]) -> dict[str, Any]:
-        project_id = req.get("project_id", "")
-        skill_name = req.get("skill_name", "")
+    async def admin_project_skills(req: ProjectSkillRequest) -> dict[str, object]:
+        project_id = req.project_id
+        skill_name = req.skill_name
         if not project_id or not skill_name:
             raise HTTPException(status_code=422, detail="project_id and skill_name required")
         registry = getattr(app.state, "_skill_registry", None)
@@ -215,9 +229,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             registry.register(skill, project_id=project_id)
         return {"status": "ok", "project_id": project_id, "skill": skill_name}
 
-    @app.put("/admin/dispatch/mode")
-    async def admin_dispatch_mode(req: dict[str, Any]) -> Any:
-        mode = req.get("mode", "active")
+    @app.put("/admin/dispatch/mode", response_model=None)
+    async def admin_dispatch_mode(req: DispatchModeRequest) -> JSONResponse | dict[str, str]:
+        mode = req.mode
         valid = ["active", "passive_external", "worktree_monitor"]
         if mode not in valid:
             return JSONResponse(status_code=400, content={"error": f"Invalid mode: {mode}"})
@@ -227,7 +241,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"dispatch_mode": mode}
 
     @app.post("/admin/self-improve")
-    async def admin_self_improve() -> dict[str, Any]:
+    async def admin_self_improve() -> dict[str, object]:
         harness = SelfImprovementHarness()
         result = harness.run_full_cycle()
         return {"status": "ok", "findings_count": result.get("findings_count", 0),
@@ -235,8 +249,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 "todos_enqueued": result.get("todos_enqueued", 0)}
 
     @app.post("/admin/tui-log")
-    async def admin_tui_log(req: dict[str, Any]) -> dict[str, Any]:
-        entries = req.get("entries", [])
+    async def admin_tui_log(req: TuiLogRequest) -> dict[str, object]:
+        entries = req.entries
         if len(entries) > _MAX_TUI_LOG_ENTRIES:
             raise HTTPException(
                 status_code=413,
@@ -248,5 +262,5 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"status": "ok", "stored": len(entries)}
 
     @app.get("/admin/tui-log")
-    async def admin_tui_log_get() -> dict[str, Any]:
+    async def admin_tui_log_get() -> dict[str, object]:
         return {"entries": list(_tui_log_entries[-200:])}

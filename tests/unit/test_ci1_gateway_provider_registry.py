@@ -24,7 +24,7 @@ These tests pin three properties of the fix:
 from __future__ import annotations
 
 import importlib.util
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -169,8 +169,8 @@ def test_gateway_call_model_reaches_provider_not_no_registry_error() -> None:
 
     provider_cls = MagicMock(return_value=chat_instance)
 
-    registry.is_installed = MagicMock(return_value=True)  # type: ignore[method-assign]
-    registry.get_provider_class = MagicMock(return_value=provider_cls)  # type: ignore[method-assign]
+    cast(Any, registry).is_installed = MagicMock(return_value=True)
+    cast(Any, registry).get_provider_class = MagicMock(return_value=provider_cls)
 
     gateway = ModelGateway(
         profiles=[profile],

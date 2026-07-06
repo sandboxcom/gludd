@@ -1,6 +1,7 @@
 """Tests for skills daemon endpoints including remote fetch wiring."""
 from __future__ import annotations
 
+import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -11,7 +12,13 @@ from general_ludd.daemon import create_daemon_app
 
 def _make_test_app(config_dir: str | None = None):
     tmpdir = config_dir or tempfile.mkdtemp()
-    return create_daemon_app(tick_interval=0.01, config_dir=tmpdir)
+    # GLUDD_ALLOW_NO_AUTH=1 disables the PSK fail-closed middleware gate so the
+    # TestClient can reach /admin/skills/* without a Bearer token. The posture
+    # is captured into app.state / closure vars at create_daemon_app() time, so
+    # restoring the env afterwards does not affect the returned app. Mirrors the
+    # canonical pattern in test_daemon.py / test_compaction_daemon_wiring.py.
+    with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
+        return create_daemon_app(tick_interval=0.01, config_dir=tmpdir)
 
 
 class TestSkillsCatalogEndpoint:

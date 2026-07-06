@@ -21,12 +21,19 @@ Options:
 
 Exit codes:
     0   Success / --check: table is current
+    0   README has neither markers nor the heading — table intentionally absent
+        (--write and --check become a no-op; --out / stdout still produce a block)
     1   --check: table is stale, or any generation error
 
 Markers in README.md:
     <!-- STATUS-TABLE:START -->
     ...generated content (do not edit manually)...
     <!-- STATUS-TABLE:END -->
+
+If the README intentionally has no status table (markers absent AND no
+"## Feature & Task Completion Status" heading), --write and --check exit 0
+without modifying or complaining about the README. This lets projects remove
+the table without breaking CI.
 """
 from __future__ import annotations
 
@@ -260,6 +267,19 @@ def _extract_between_markers(text: str) -> str | None:
     return text[start + len(_START_MARKER) : end]
 
 
+def _readme_has_status_section(text: str) -> bool:
+    """Return True if README has STATUS-TABLE markers OR the status-table heading.
+
+    A README with neither is treated as "table intentionally removed" — callers
+    should short-circuit with exit 0 rather than failing.
+    """
+    if _START_MARKER in text and _END_MARKER in text:
+        return True
+    if _HEADING_PATTERN.search(text):
+        return True
+    return False
+
+
 def _inject_into_readme(readme_path: Path, block: str) -> str:
     """Return updated README content with *block* between STATUS-TABLE markers.
 
@@ -366,6 +386,19 @@ def main(argv: list[str] | None = None) -> int:
     if not readme_path.exists():
         print(f"ERROR: README.md not found: {readme_path}", file=sys.stderr)
         return 1
+
+    readme_text = readme_path.read_text(encoding="utf-8")
+
+    # If the README intentionally has no status table (no markers AND no heading),
+    # --write and --check are no-ops that exit 0. This lets projects remove the
+    # table without breaking CI. Default mode (stdout) and --out still work.
+    if (args.write or args.check) and not _readme_has_status_section(readme_text):
+        print(
+            "[gen-status-table] README.md has no STATUS-TABLE markers and no "
+            "'## Feature & Task Completion Status' heading — table intentionally "
+            "absent. Nothing to do.",
+        )
+        return 0
 
     # Load manifest and create verifier.
     try:

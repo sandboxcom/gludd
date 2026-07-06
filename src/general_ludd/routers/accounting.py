@@ -20,9 +20,10 @@ import logging
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.accounting.ledger import Accountant, ProjectAccounting
 from general_ludd.projects.workspace import ProjectWorkspace
@@ -96,11 +97,11 @@ def _project_repo_dir(app: FastAPI, pid: str) -> Path | None:
     return ws.repo_dir
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def _accounting_to_dict(result: ProjectAccounting) -> dict[str, Any]:
+def _accounting_to_dict(result: ProjectAccounting) -> dict[str, object]:
     return asdict(result)
 
 
@@ -114,7 +115,7 @@ async def _build_accountant(app: FastAPI, quota_usd: float = 0.0) -> Accountant:
     """
 
     # 1. Fetch usage records (from MetricsCollector)
-    usage_by_project: dict[str, list[Any]] = {}
+    usage_by_project: dict[str, list[object]] = {}
     collector = getattr(app.state, "_metrics_collector", None)
     if collector is not None:
         try:
@@ -126,7 +127,7 @@ async def _build_accountant(app: FastAPI, quota_usd: float = 0.0) -> Accountant:
                         continue
 
                     class _UsageRecord:
-                        def __init__(self, pid: str, info: dict[str, Any]) -> None:
+                        def __init__(self, pid: str, info: dict[str, object]) -> None:
                             self.project_id = pid
                             mu = info.get("model_usage", {})
                             # Sum real token counts across all models for this agent.
@@ -143,16 +144,16 @@ async def _build_accountant(app: FastAPI, quota_usd: float = 0.0) -> Accountant:
                                 )
                                 for u in (mu.values() if isinstance(mu, dict) else [])
                             )
-                            self.usd_spent = float(info.get("total_cost_usd", 0.0))
-                            self.elapsed_seconds = float(info.get("run_time_seconds", 0.0))
+                            self.usd_spent = float(cast("int | float | str", info.get("total_cost_usd", 0.0)))
+                            self.elapsed_seconds = float(cast("int | float | str", info.get("run_time_seconds", 0.0)))
 
                     usage_by_project.setdefault(pid, []).append(_UsageRecord(pid, agent_info))
         except Exception as exc:
             logger.debug("MetricsCollector usage unavailable: %s", exc)
 
     # 2. Fetch todos and role runs from DB (once, eagerly, into plain lists)
-    todo_by_project: dict[str, list[Any]] = {}
-    role_by_project: dict[str, list[Any]] = {}
+    todo_by_project: dict[str, list[object]] = {}
+    role_by_project: dict[str, list[object]] = {}
 
     factory = _get_session_factory(app)
     if factory is not None:
@@ -210,13 +211,13 @@ async def _build_accountant(app: FastAPI, quota_usd: float = 0.0) -> Accountant:
             logger.debug("ProjectManager unavailable: %s", exc)
 
     # 4. Build callables
-    def _usage_provider(pid: str) -> list[Any]:
+    def _usage_provider(pid: str) -> list[object]:
         return usage_by_project.get(pid, [])
 
-    def _todo_provider(pid: str) -> list[Any]:
+    def _todo_provider(pid: str) -> list[object]:
         return todo_by_project.get(pid, [])
 
-    def _role_provider(pid: str) -> list[Any]:
+    def _role_provider(pid: str) -> list[object]:
         return role_by_project.get(pid, [])
 
     def _loc_provider(pid: str) -> int:
@@ -235,9 +236,9 @@ async def _build_accountant(app: FastAPI, quota_usd: float = 0.0) -> Accountant:
     )
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/api/accounting")
-    async def api_accounting_all() -> list[dict[str, Any]]:
+    async def api_accounting_all() -> list[dict[str, object]]:
         """Return accounting snapshots for all active projects."""
         accountant = await _build_accountant(app)
         # account_all() invokes the loc_provider, which runs a blocking
@@ -247,7 +248,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return [_accounting_to_dict(r) for r in results]
 
     @app.get("/api/accounting/{project_id}")
-    async def api_accounting_project(project_id: str) -> dict[str, Any]:
+    async def api_accounting_project(project_id: str) -> dict[str, object]:
         """Return an accounting snapshot for a single project."""
         accountant = await _build_accountant(app)
         try:

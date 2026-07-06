@@ -38,7 +38,7 @@ import json
 import os
 import textwrap
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -705,7 +705,7 @@ def _build_live_gateway(profile_id: str = "zai_suitability") -> Any:
     return ModelGateway(
         profiles=[profile],
         provider_registry=registry,
-        secrets_manager=secrets,  # type: ignore[arg-type]  # test stub
+        secrets_manager=cast(Any, secrets),
     )
 
 

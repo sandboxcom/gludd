@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TypedDict, cast
 
 # A runner takes an argv list and returns (returncode, stdout, stderr).
 Runner = Callable[[list[str]], "tuple[int, str, str]"]
@@ -45,6 +45,40 @@ _PRIORITY_NAMES: dict[int, str] = {
     6: "info",
     7: "debug",
 }
+
+
+# Caller-supplied __init__ config. Only `name` is read; total=False so any
+# subset (including `{}`) is valid.
+class JournaldConfig(TypedDict, total=False):
+    name: str
+
+
+# Caller-supplied query spec. All keys optional; lines/priority accept str or
+# int because the body coerces via int().
+class JournaldQuerySpec(TypedDict, total=False):
+    lines: int | str
+    unit: str
+    since: str
+    priority: int | str
+
+
+# health() return shape: {'ok': bool, 'detail': str}.
+class JournaldHealthResult(TypedDict, total=False):
+    ok: bool
+    detail: str
+
+
+# One parsed `journalctl -o json` line. Values are heterogeneous (str, int, or
+# list[int] byte-array for MESSAGE) so each field is typed `object`; consumers
+# narrow via isinstance or cast at the call site.
+class JournaldEntry(TypedDict, total=False):
+    __REALTIME_TIMESTAMP: object
+    MESSAGE: object
+    PRIORITY: object
+    _SYSTEMD_UNIT: object
+    _HOSTNAME: object
+    SYSLOG_IDENTIFIER: object
+    _PID: object
 
 
 def _default_runner(argv: list[str]) -> tuple[int, str, str]:
@@ -82,17 +116,17 @@ class JournaldSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any] | None = None,
+        config: JournaldConfig | None = None,
         runner: Runner | None = None,
     ) -> None:
-        config = dict(config or {})
-        self.name: str = str(config.get("name", "journald"))
-        self._config = config
+        cfg: dict[str, object] = dict(config or {})
+        self.name: str = str(cfg.get("name", "journald"))
+        self._config = cfg
         self._runner: Runner = runner if runner is not None else _default_runner
 
     # -- health ---------------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> JournaldHealthResult:
         """Return {'ok': bool, 'detail': str}; never raises."""
         try:
             rc, out, err = self._runner(["journalctl", "--version"])
@@ -106,18 +140,18 @@ class JournaldSource:
 
     # -- query ----------------------------------------------------------------
 
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: JournaldQuerySpec | None = None) -> list[dict[str, object]]:
         """Run journalctl and return normalized log records.
 
         spec keys (all optional): lines (int, default 100), unit (str),
         since (str), priority (int 0..7).
         """
-        spec = dict(spec or {})
-        argv = self._build_argv(spec)
+        spec_dict: dict[str, object] = dict(spec or {})
+        argv = self._build_argv(spec_dict)
         rc, out, _err = self._runner(argv)
         if rc != 0:
             return []
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for line in (out or "").splitlines():
             line = line.strip()
             if not line:
@@ -127,15 +161,15 @@ class JournaldSource:
             except (ValueError, TypeError):
                 continue
             if isinstance(entry, dict):
-                records.append(self._normalize(entry))
+                records.append(self._normalize(cast("JournaldEntry", entry)))
         return records
 
-    def _build_argv(self, spec: Mapping[str, Any]) -> list[str]:
+    def _build_argv(self, spec: Mapping[str, object]) -> list[str]:
         argv: list[str] = ["journalctl", "-o", "json", "--no-pager"]
 
         lines = spec.get("lines", 100)
         try:
-            n = int(lines)
+            n = int(cast("int | float | str | bool", lines))
         except (ValueError, TypeError):
             n = 100
         if n < 1:
@@ -153,7 +187,7 @@ class JournaldSource:
         priority = spec.get("priority")
         if priority is not None:
             try:
-                p = int(priority)
+                p = int(cast("int | float | str | bool", priority))
             except (ValueError, TypeError) as exc:
                 raise ValueError(f"priority must be an int 0..7: {priority!r}") from exc
             if not 0 <= p <= 7:
@@ -162,11 +196,12 @@ class JournaldSource:
 
         return argv
 
-    def _normalize(self, entry: Mapping[str, Any]) -> dict[str, Any]:
-        ts = self._parse_realtime(entry.get("__REALTIME_TIMESTAMP"))
+    def _normalize(self, entry: JournaldEntry) -> dict[str, object]:
+        raw_ts = entry.get("__REALTIME_TIMESTAMP")
+        ts = self._parse_realtime(cast(int | str | None, raw_ts))
 
         prio_raw = entry.get("PRIORITY")
-        level = self._priority_name(prio_raw)
+        level = self._priority_name(cast(int | str | None, prio_raw))
 
         message = entry.get("MESSAGE")
         if isinstance(message, list):  # journald may emit a byte-array MESSAGE
@@ -177,7 +212,7 @@ class JournaldSource:
         elif message is not None:
             message = str(message)
 
-        labels = {
+        labels: dict[str, object] = {
             "_SYSTEMD_UNIT": entry.get("_SYSTEMD_UNIT"),
             "_HOSTNAME": entry.get("_HOSTNAME"),
             "SYSLOG_IDENTIFIER": entry.get("SYSLOG_IDENTIFIER"),
@@ -196,7 +231,7 @@ class JournaldSource:
         }
 
     @staticmethod
-    def _parse_realtime(raw: Any) -> float | None:
+    def _parse_realtime(raw: int | str | None) -> float | None:
         """__REALTIME_TIMESTAMP is microseconds-since-epoch -> seconds float."""
         if raw is None:
             return None
@@ -206,7 +241,7 @@ class JournaldSource:
             return None
 
     @staticmethod
-    def _priority_name(raw: Any) -> str | None:
+    def _priority_name(raw: int | str | None) -> str | None:
         if raw is None:
             return None
         try:

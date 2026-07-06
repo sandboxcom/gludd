@@ -19,6 +19,7 @@ These tests prove:
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,7 +39,7 @@ class TestPortValidation:
     @pytest.mark.parametrize("bad_port", ["8000; rm -rf /", "8000 --bind", "abc", "80a0"])
     def test_non_numeric_port_rejected(self, bad_port: str) -> None:
         with pytest.raises(ValueError, match="port"):
-            cli._build_daemon_start_cmd(host="127.0.0.1", port=bad_port)  # type: ignore[arg-type]
+            cast(Any, cli)._build_daemon_start_cmd(host="127.0.0.1", port=bad_port)
 
     @pytest.mark.parametrize("good_port", [1, 80, 8000, 65535])
     def test_in_range_port_accepted(self, good_port: int) -> None:
