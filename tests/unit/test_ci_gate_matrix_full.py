@@ -21,7 +21,12 @@ _WORKFLOW_PATH = ".github/workflows/build.yml"
 
 def _load_workflow() -> dict:
     with open(_WORKFLOW_PATH) as fh:
-        return yaml.safe_load(fh)
+        raw = yaml.safe_load(fh)
+    # YAML 1.1 (PyYAML) parses the top-level 'on' key as boolean True.
+    # Unpack it so downstream callers get the same dict regardless of parser.
+    if True in raw and "push" in raw[True]:
+        raw["on"] = raw.pop(True)
+    return raw
 
 
 # ---------------------------------------------------------------------------

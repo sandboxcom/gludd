@@ -959,6 +959,18 @@ ci-push: _push-rate-guard
 	@echo "Pushed to sandboxcom/gludd. Waiting for CI..."; \
 	$(MAKE) ci-wait
 
+# CI push then poll until green (single script)
+ci-push-and-verify: _require-gh
+	@bash scripts/ci_push_and_verify.sh
+
+# Verify existing CI on HEAD (dry-run, no push)
+ci-verify-wait: _require-gh
+	@CI_DRY_RUN=1 bash scripts/ci_push_and_verify.sh
+
+# Guard: ensure gh CLI is available
+_require-gh:
+	@command -v gh >/dev/null 2>&1 || { echo "ERROR: gh CLI not found. Install with: make ci-install-gh"; exit 1; }
+
 # Item 17: Poll CI until green with periodic heartbeat
 ci-wait:
 	@INTERVAL=$${CI_WAIT_INTERVAL:-60}; MAX_WAIT=$${CI_WAIT_MAX:-3600}; ELAPSED=0; \

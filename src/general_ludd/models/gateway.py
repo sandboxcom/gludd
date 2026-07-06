@@ -1408,12 +1408,14 @@ class ModelGateway:
 
         # If primary was tripped AND all fallbacks open/failed → clear error
         if not primary_healthy:
-            raise ValueError(
+            raise CircuitBreakerOpenError(
                 f"All circuits open for fallback chain '{profile_id}'"
             )
 
         if last_exc is not None:
-            raise last_exc from None
+            raise CircuitBreakerOpenError(
+                f"All profiles in fallback chain failed for '{profile_id}'"
+            ) from last_exc
 
         raise CircuitBreakerOpenError(
             f"All profiles in fallback chain failed for '{profile_id}'"
