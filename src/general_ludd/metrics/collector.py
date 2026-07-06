@@ -125,6 +125,13 @@ class MetricsCollector:
         self._recent_failures: dict[str, deque[str]] = {}
         self._task_times: dict[str, list[float]] = {}
         self._task_loc: dict[str, list[int]] = {}
+        # Per-task-type metrics (audit recommendation #7): tracks tokens,
+        # success/failure counts, latency stats, and failure-mode categories
+        # keyed by task type string (e.g. "code_generation", "review").
+        # Structure: {task_type: {"total": int, "successes": int, "failures": int,
+        #   "tokens_in": int, "tokens_out": int, "latencies": [float],
+        #   "failure_modes": {error_category: count}, "phases": {phase: [float]}}}
+        self._task_type_metrics: dict[str, dict[str, Any]] = {}
         # Model calls are recorded from worker threads (gateway model calls run
         # off the event loop via asyncio.to_thread), so concurrent
         # record_model_call invocations race on the shared dicts above
@@ -385,3 +392,100 @@ class MetricsCollector:
                 }
                 for pid in all_projects
             }
+
+    # ------------------------------------------------------------------
+    # Per-task-type metrics (audit recommendation #7)
+    # ------------------------------------------------------------------
+
+    def record_task_result(
+        self,
+        task_type: str,
+        success: bool,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        latency_ms: float = 0.0,
+        error: str | None = None,
+        phase_latency_ms: dict[str, float] | None = None,
+    ) -> None:
+        """Record a completed task's outcome, token usage, and timing.
+
+        ``task_type`` is a freeform category (e.g. "code_generation",
+        "review", "game_building"). ``error``, when present, is classified
+        by its first word (e.g. "ImportError", "SyntaxError") and tallied
+        in ``failure_modes`` so operators can see which errors are most
+        common without grepping logs.
+        """
+        with self._lock:
+            entry = self._task_type_metrics.get(task_type)
+            if entry is None:
+                entry = {
+                    "total": 0,
+                    "successes": 0,
+                    "failures": 0,
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "latencies": [],
+                    "failure_modes": {},
+                    "phases": {},
+                }
+                self._task_type_metrics[task_type] = entry
+
+            entry["total"] += 1
+            entry["tokens_in"] += int(tokens_in)
+            entry["tokens_out"] += int(tokens_out)
+            entry["latencies"].append(float(latency_ms))
+
+            if success:
+                entry["successes"] += 1
+            else:
+                entry["failures"] += 1
+                if error:
+                    category = error.split(":")[0].split(" ")[0].strip()
+                    entry["failure_modes"][category] = (
+                        entry["failure_modes"].get(category, 0) + 1
+                    )
+
+            if phase_latency_ms:
+                for phase, ms in phase_latency_ms.items():
+                    entry["phases"].setdefault(phase, []).append(float(ms))
+
+    def get_task_type_summary(self) -> dict[str, dict[str, Any]]:
+        """Return per-task-type aggregate stats suitable for JSON export.
+
+        Returns an empty dict when no task results have been recorded.
+        """
+        with self._lock:
+            summary: dict[str, dict[str, Any]] = {}
+            for task_type, entry in self._task_type_metrics.items():
+                latencies = entry["latencies"]
+                total = entry["total"]
+                result: dict[str, Any] = {
+                    "total": total,
+                    "successes": entry["successes"],
+                    "failures": entry["failures"],
+                    "success_rate": (
+                        entry["successes"] / total if total > 0 else 0.0
+                    ),
+                    "tokens_in": entry["tokens_in"],
+                    "tokens_out": entry["tokens_out"],
+                    "latency_total_ms": sum(latencies) if latencies else 0.0,
+                    "latency_avg_ms": (
+                        sum(latencies) / len(latencies) if latencies else 0.0
+                    ),
+                    "latency_min_ms": min(latencies) if latencies else 0.0,
+                    "latency_max_ms": max(latencies) if latencies else 0.0,
+                    "failure_modes": dict(entry["failure_modes"]),
+                }
+                # Per-phase averages
+                phase_avgs: dict[str, float] = {}
+                for phase, vals in entry["phases"].items():
+                    if vals:
+                        phase_avgs[phase] = sum(vals) / len(vals)
+                result["phase_avg_ms"] = phase_avgs
+                summary[task_type] = result
+            return summary
+
+    def reset_task_metrics(self) -> None:
+        """Clear all per-task-type counters and latencies."""
+        with self._lock:
+            self._task_type_metrics.clear()

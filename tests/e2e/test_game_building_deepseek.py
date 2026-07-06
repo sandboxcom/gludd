@@ -1881,8 +1881,10 @@ class TestGameBuildingGapAnalysis:
         print("""
 1. ITERATIVE CODE GENERATION: The ExecutionEngine only does single-shot generation.
    For complex tasks like game-building, the model needs multiple attempts with
-   feedback from test results. The ToolCallLoop is currently restricted to
-   'analysis'/'audit' work types only.
+   feedback from test results. ToolCallLoop now supports code work types (code,
+   bug_fix, refactor, feature, test) with budget/per-iteration guards — remaining
+   gap is wiring the test-failure feedback loop from ExecutionEngine into
+   ToolCallLoop retries.
 
 2. PROMPT ENGINEERING: Game-building prompts may need refinement for better
    code generation. Consider:
