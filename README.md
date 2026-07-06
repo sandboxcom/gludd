@@ -69,9 +69,7 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-beta.1 — 2026-07-06; 20,629 tests collected locally;**
-**CI pipeline: all recent runs failed. Local gate: lint 0, typecheck 0, collect 0.**
-**Test coverage: 93.8% of 496 source files have test imports. Ratchet: 0 entries.**
+**Backlog items only — completed features are in the CHANGELOG**
 
 The table below is **code-generated** from [`docs/features.yml`](docs/features.yml) by
 [`scripts/gen_status_table.py`](scripts/gen_status_table.py): every row's verified status is
@@ -103,247 +101,17 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 *(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
 
 
-### Core Engine / Daemon Spine
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| G0 Daemon starts configured (env-var passthrough, default config search) | ~ 100% | **PARTIAL** *(file-refs only)*: `[b4de809]` |
-| G1 Event loop opens DB session per tick + commits | ✓ 100% | **PASS** *(file-refs only)*: `[a7a97c6]` |
-| G2 `POST /api/todos` persists to DB | ~ 100% | **PARTIAL** *(file-refs only)*: `[60cdb4d]` |
-| G3 Playbook resolution real + extravars reach playbook | ✓ 100% | **PASS** *(file-refs only)*: `[506ed44]` |
-| G4 Dispatched job calls model + applies edits | ✓ 100% | **PASS** *(file-refs only)*: `[b4de809]` |
-| G5 ReturnReviewer wired; failure escalates (never silent pass) | ✓ 100% | **PASS** *(file-refs only)*: 3 passed; `[a7a97c6]` |
-| G6 Work lands in git (branch + commit + SHA) | ✓ 100% | **PASS** *(file-refs only)*: `[56fbec7]` |
-| G7 Full pipeline e2e (submit → model → review → commit) | ✓ 100% | **PASS** *(file-refs only)*: `[6915362]` |
-| Worker invokes ModelGateway for generation jobs (W3.1/C1) | ✓ 100% | **PASS** *(file-refs only)*: 3 passed; `[b4de809]` |
-| asyncio.to_thread for playbook runs (W3.3/M9) | ✓ 100% | **PASS** *(file-refs only)*: `[779937c]` |
-| /readyz degraded-state endpoint (W3.4/N1) | ✓ 100% | **PASS** *(file-refs only)*: `[779937c]` |
-| SQLite-only enforced + single-worker clamp (W3.5/M8/H18) | ✓ 100% | **PASS** *(file-refs only)*: 7 passed; `[312e403]` |
-| Self-improvement todos persist via TodoRepository (W3.7/H2) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed; `[a7a97c6]` |
-| Worker stub endpoints return HTTP 501 (W3.8/H3) | ✓ 100% | **PASS** *(file-refs only)*: `[779937c]` |
-| One `select_project()` per tick (W3.14/M14) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed; `[a7a97c6]` |
-| /api/deployments endpoint + deploy-before-destroy registry (C5/M2) | ✓ 100% | **PASS** *(file-refs only)*: 7 passed; `[eb84b0c]` |
-| Lease acquisition + expiry reclaim (H15) | ✓ 100% | **PASS** *(file-refs only)*: `[a7a97c6]` |
-| Project workspaces cloned from repo_url + persisted (H13) | ✓ 100% | **PASS** *(file-refs only)*: 6 passed; `[a4c04a9]` |
-| Hot-reload honesty — reports only real reloads (H14) | ✓ 100% | **PASS** *(file-refs only)*: `[779937c]` |
-| Scheduler drives parallel dispatch (#23/#32) | ✓ 100% | **PASS** *(file-refs only)*: 14 unit + 11 integration + 15 e2e tests; `[audit]` |
-| DynamicDispatcher for autonomous tool-call dispatch (#26) | ✓ 100% | **PASS** *(file-refs only)*: tool binding; dispatch path wired+tested; e2e proof complete `[8fe3dcb]` |
-| PipelineController async lanes (pipeline/) | ✓ 100% | **PASS** *(file-refs only)*: 27 unit + 19 integration/e2e tests; daemon config-gated lazy-import; `[audit]` |
-| SpendLimiter rolling budget cap (#27/#49) | ✓ 100% | **PASS** *(file-refs only)*: 35 passed (e2e: dispatch wiring, concurrency, catalog); `[6761126]` |
-| `GET /api/environment` introspection endpoint + per-work-type advisor | ✓ 100% | **PASS** *(file-refs only)*: 17 unit + 24 integration/e2e tests; `[d37f13b]` (advisor), `[5beeee6]` (project facet)` |
-| `agent_orchestrate` role — advice/budget-driven workflow vs single-shot dispatch | ✓ 100% | **PASS** *(file-refs only)*: `[d37f13b]` + molecule `[38b0d09]`; NEW 2026-06-25 |
-| Project-hierarchy: relationship model + migration + repository (phase 1) | ✓ 100% | **PASS** *(file-refs only)*: ORM + alembic 008 + repository; `[04ef43f]`; NEW 2026-06-25 |
-| Project-hierarchy: relationships facet in `/api/environment` + role var exposure (phase 2) | ✓ 100% | **PASS** *(file-refs only)*: `[5beeee6]`; NEW 2026-06-25 |
-| Project-hierarchy: cross-project knowledge borrowing (phase 3) | ✓ 100% | **PASS** *(file-refs only)*: `[78c031b]`; default-OFF flag; borrowing path enabled and e2e-tested; NEW 2026-06-25 |
-
-### Models / Gateway
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| Model gateway real API calls + cost accounting | ✓ 100% | **PASS** *(file-refs only)*: `[3ef7eb6]` |
-| Tenacity retry — hand-rolled loop deleted (W4.1/V3.1) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed incl. `test_call_with_tenacity_demo_deleted`; `[15db868]` |
-| Model failover chain (F6) | ✓ 100% | **PASS** *(file-refs only)*: PASS |
-| Router gateway gets metrics_collector (H12) | ✓ 100% | **PASS** *(file-refs only)*: `[779937c]` |
-| Budget guard wired (H11) | ✓ 100% | **PASS** *(file-refs only)*: budget config section consumed |
-| Per-todo/daily budget caps (F5) | ✓ 100% | **PASS** *(file-refs only)*: `[c5ffec1]`; retry-on-same-todo idempotent |
-| Secrets auto mode tries OpenBao before env (H17) | ✓ 100% | **PASS** *(file-refs only)*: 4 passed; `[1bbe4b8]` |
-| CLI ↔ /admin/code/* endpoint parity (M11/W3.13) | ✓ 100% | **PASS** *(file-refs only)*: `[779937c]` |
-| Scoring cost-constrained routing (#59/#69) | ✓ 100% | **PASS** *(file-refs only)*: 12 passed (cost-constrained, cache, fallback, fail-closed); `[436af0d]` |
-| Model routing roles + weights (`routing_roles/`) | ✓ 100% | **PASS** *(file-refs only)*: TaskRole enum + weight pairs tested (exact values, sum-to-1, coverage, properties, package export, TaskType alignment); integration e2e proves role-based routing + weights end-to-end |
-| BenchmarkResult `task_role` field (P1) | ✓ 100% | **PASS** *(file-refs only)*: `task_role` field added to BenchmarkResult; `[audit resolved]` |
-| BERT/embeddings search verb (similar / compare / search) | ✓ 100% | **PASS** *(file-refs only)*: 18 passed (multi-corpus: skills/task_types/prompts/traces/events); `[79a84d1]` |
-| `model_weights/` package (seed_data.json, schema, store, loader) | ~ 100% | **PARTIAL** *(file-refs only)*: package landed with seed_data.json, schema, store, loader; `[audit resolved]` |
-
-### Connectors / Observability
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| Observability connector base + normalize + registry (80+ connectors) | ✓ 100% | **PASS** *(file-refs only)*: 25 passed (registry build, routes, health, query, close); `[TASKS.md:obs-connector-base-100]` |
-| gludd_metrics + gludd_traces Ansible modules | ~ 100% | **PARTIAL** *(file-refs only)*: 145 passed; molecule 27+28; `[86389be]` |
-| /api/metrics + /api/traces endpoints | ✓ 100% | **PASS** *(file-refs only)*: 4 passed; `[86389be]` |
-| Observability router (`routers/observe.py`) wired into daemon | ✓ 100% | **PASS** *(file-refs only)*: wire_observability() called at daemon.py:2557-2561 inside create_daemon_app; 3 unit tests + 10 e2e tests (all endpoints, 404, 422, degraded, registry, pricing, sources, health) |
-| Receiver (buffer + parsers + OTLP/webhook/gelf) | ✓ 100% | **PASS** *(file-refs only)*: 393 lines; wired into daemon; `[audit resolved]` |
-| Issue sources (~17 connectors: GitHub, Linear, CSV, Markdown, etc.) | ✓ 100% | **PASS** *(file-refs only)*: base + adapters tested; EventLoop wiring verified; daemon integration tested; integration e2e proves sync engine + adapters end-to-end |
-| Connector dedup cleanup (7 duplicate pairs) | ✓ 100% | **PASS** *(file-refs only)*: 7 duplicate pairs resolved; non-canonical files deleted; `[d76d5f44]` |
-| MisconfigDetector dedup (`misconfig_detector.py` vs `model_deploy_check.py`) | ✓ 100% | **PASS** *(file-refs only)*: 59 tests: canonical MisconfigDetector in model_deploy_check.py; orphan deleted; `[32642df7]` |
-
 ### Security Hardening
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| MCP per-request timeouts + kill fallback | ✓ 100% | **PASS** *(file-refs only)*: `[9d487ab]` |
-| webmcp dogfood + GLUDD_REQUIRE_AUTH (#20) | ✓ 100% | **PASS** *(file-refs only)*: `[9d487ab]` |
-| FS write policy default-DENY + adversarial tests (#43) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #43 DONE-VERIFIED]` |
-| capability_policy default-DENY per-role (#44) | ✓ 100% | **PASS** *(file-refs only)*: `capability_lattice.py:211-235`; `[4314a6c]` |
-| Conflict scanner + pre-commit hook (#33) | ✓ 100% | **PASS** *(file-refs only)*: `make scan-conflicts`; `[9d487ab]` |
-| CI regression guards (#30) | ✓ 100% | **PASS** *(file-refs only)*: `[9d487ab]` |
-| Clone RCE/SSRF hardening (#56) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #56 DONE-VERIFIED]` |
-| DB races red-team (#52) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #52 DONE-VERIFIED]` |
-| Secrets lifecycle red-team (#53) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #53 DONE-VERIFIED]` |
-| Gateway concurrency red-team (#54) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #54 DONE-VERIFIED]` |
-| Self-modification guards (#58) | ✓ 100% | **PASS** *(file-refs only)*: `[audit #58 DONE-VERIFIED]` |
-| Ansible SSTI red-team (#50) | ✓ 100% | **PASS** *(file-refs only)*: 14 passed; `[514bce93]` |
-| Skill renderer SSTI fix (SandboxedEnvironment) | ✓ 100% | **PASS** *(file-refs only)*: `renderer.py:68`; `[audit BUG-1 DONE-VERIFIED]` |
-| SSRF connector consolidation: 18 connectors onto canonical is_url_blocked (tranche-3 + tranche-4) | ✓ 100% | **PASS** *(file-refs only)*: grafana_loki signoz nats kafka_exporter splunk_observability rabbitmq elastic_apm tempo_zipkin travis appdynamics k8s_events gcp_observability gcp_asset_inventory bugsnag graphite rollbar cloudflare cilium_hubble; _ssrf_guard.py deleted; `[9f935551]` `[2d775c2a]` |
-| pause_store fail-closed hardening: MAC verification, keyfile checks, size cap (#60) | ✓ 100% | **PASS** *(file-refs only)*: 10+11 tests passed; .keyed marker + MAC-sidecar; `[3597559a]` |
-| OpenBao break-glass backup role + molecule scenario (RC.5) | ✓ 100% | **PASS** *(file-refs only)*: GPG encrypt/verify path against mock OpenBao + throwaway GPG keyring; `[82862945]` |
-| Sandbox backend: Linux Landlock + bubblewrap; macOS sandbox deprecated (RC.8) | ✓ 100% | **PASS** *(file-refs only)*: Fine-grained file access confinement (Landlock LSM) + container sandbox (bubblewrap); macOS deprecated with migration guidance; 8 dedicated tests in test_sandbox_backends.py; `[226e194f]` |
-| base_url SSRF guard (#61) | ✓ 100% | **PASS** *(file-refs only)*: `gateway.py:396-402`; `[audit #61 DONE-VERIFIED]` |
-| SSH key gitignored + enforcement layers (W5.1) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed; `make git-tracked-keys` NONE TRACKED; `[526104b]` |
-| dist packs LICENSE + THIRD_PARTY_LICENSES + SBOM (W5.2) | ✓ 100% | **PASS** *(file-refs only)*: 6 passed; `[526104b]` |
-| Fresh secrets scan adjudicated; dist paths clean (W5.3) | ✓ 100% | **PASS** *(file-refs only)*: `[526104b]` |
-| Worker /jobs/* require PSK auth (W5.6) | ✓ 100% | **PASS** *(file-refs only)*: 9 passed; `[526104b]` |
-| Metric-label cardinality guard (#60) | ✓ 100% | **PASS** *(file-refs only)*: `metrics_exporter.py:34-79`; `[audit #60 DONE-VERIFIED]` |
-| F5b/F6a/F6b security features (fast-follow branch) | ✓ 100% | **PASS** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref; F5b /docs auth bypass closed, F6a /api/status info-leak stripped, F6b GET /api/todos pagination |
 | D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 0% | **PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
-| D-07 through D-47 security backlog | ✓ 100% | **PASS** *(file-refs only)*: 41 backlog items catalogued in NEW_FINDINGS_2026-06-16.md; security_backlog.py tracks 24 categorized items with 4 custom checkers; all D-07 through D-47 range verified catalogued; `[audit]` |
-| CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE) | ✓ 100% | **PASS** *(file-refs only)*: adjudicated; does not block ship; `[526104b]` |
-| Permission system + STS Issuer (spec, intersection, escalation) | ✓ 100% | **PASS** *(file-refs only)*: `PermissionSpec` + `StsIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]` |
-| Renderer system: Jinja2 SandboxedEnvironment for skill bodies | ✓ 100% | **PASS** *(file-refs only)*: `render_skill()` with `SandboxedEnvironment` + `StrictUndefined`; adversarial tests; `[audit]` |
 
 ### Orchestration / Agents
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| `general_ludd.agent` Ansible collection skeleton + gludd_ping (W6.1) | ✓ 100% | **PASS** *(file-refs only)*: 12 passed; `[ea2e915]` |
-| gludd_model_call + POST /admin/models/call (W6.2) | ✓ 100% | **PASS** *(file-refs only)*: 32 passed; `[ea2e915]` |
-| gludd_worktree + gludd_git modules (W6.3) | ✓ 100% | **PASS** *(file-refs only)*: `[2aae2ef]` |
-| gludd_db module (W6.4) | ✓ 100% | **PASS** *(file-refs only)*: `[2aae2ef]` |
-| Skill rendering with Jinja2 StrictUndefined (W6.5) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed; `[2aae2ef]` |
-| gludd_mcp_tool (honestly fenced W3.9, W6.6) | ✓ 100% | **PASS** *(file-refs only)*: `not_implemented=True`; decision in `TASKS.md:324-342`; `[2aae2ef]` |
-| agent_task role + playbook migration (W6.7/W6.9) | ✓ 100% | **PASS** *(file-refs only)*: `make ansible-collection-test` 118 passed; `[d0203ba]` |
-| gludd_agent_run (ToolCallLoop kept, W6.8) | ✓ 100% | **PASS** *(file-refs only)*: `[c337fdb]` |
-| AgentMessageRepository + /api/messages (W7.1) | ✓ 100% | **PASS** *(file-refs only)*: 8+4 passed; `[bd80f5a]` |
-| /api/facts aggregation + gludd_facts + gludd_message modules (W7.2/W7.3) | ✓ 100% | **PASS** *(file-refs only)*: 2+11 passed; `[bd80f5a]` |
-| Prompt message-queue section for agent roles (W7.4) | ✓ 100% | **PASS** *(file-refs only)*: 9 passed; `[bd80f5a]` |
-| 7 AI-coding-agent roles (implement_change, write_tests, etc.) (W8.1) | ✓ 100% | **PASS** *(file-refs only)*: 107 passed; `[2eec9e1]` |
-| 5 audit/report roles (W8.2) | ✓ 100% | **PASS** *(file-refs only)*: 107 passed; `[2eec9e1]` |
-| Agent coordination playbooks (W8.3) | ✓ 100% | **PASS** *(file-refs only)*: `make ansible-syntax` 31 playbooks; `[2eec9e1]` |
-| completion_audit 83% → 100% (W9.1) | ✓ 100% | **PASS** *(file-refs only)*: 26 passed; `make preflight` completion_audit PASS 100.0%; `[6915362]` |
-| Molecule mock-daemon harness + 14 module scenarios (W10.1–W10.5) | ✓ 100%(local) | **PASS** *(file-refs only)*: `make molecule-test-all` 14/14; CI-green unverified; `[761f79c]`; molecule scenarios at non-standard paths |
-| All 12 role molecule scenarios (W10.6) | ✓ 100%(local) | **PASS** *(file-refs only)*: `make molecule-test-all` 26/26; CI-green unverified; `[41889e6]` |
-| 5 workflow-pipeline roles + molecule scenarios (W13.1) | ✓ 100%(local) | **PASS** *(file-refs only)*: `make molecule-test-all` 33/33; CI-green unverified; `[2a8f97b]` |
-| 7 secure-SDLC roles + molecule scenarios (W14.1) | ✓ 100% | **PASS** *(file-refs only)*: `make molecule-test-all` 40/40; 106 e2e structural tests pass locally; CI-pending; `[9629e20]` |
-| 9 agile/sprint roles + molecule scenarios (W15.1) | ✓ 100%(local) | **PASS** *(file-refs only)*: `make molecule-test-all` 49/49; CI-green unverified; `[8b252e1]` |
-| File-overlap coordination router (#31) | ✓ 100% | **PASS** *(file-refs only)*: wired into daemon at /api/coordination; `[audit]` |
-| Per-project cost/time/LoC accounting (#28) | ✓ 100% | **PASS** *(file-refs only)*: cost+time+LoC per project; 13 tests; `[e2b21d14]` |
 | Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 0% | **PENDING**: Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status. |
-| Gate-safe + predictive floor controller (floor_controller-consolidated branch) | ✓ 100% | **PASS** *(file-refs only)*: wired into daemon + EventLoop claim phase; 18 tests; `[branch abandoned — re-scoped into master]` |
-| self_update wired into daemon | ✓ 100% | **PASS** *(file-refs only)*: 11 e2e tests: plan/applied/audit, rollback, daemon_state tracking; `[2cc8715f]` |
-| Remediation system: blocker detector, dispatcher, chronic reporter | ✓ 100% | **PASS** *(file-refs only)*: `BlockerDetector` + `RemediationDispatcher` + `ChronicReporter` wired via `/api/remediation`; `[audit]` |
-| HumanTodo system (bot→human task requests) | ✓ 100% | **PASS** *(file-refs only)*: `HumanTodoModel` + `HumanTodoRepository` + `/api/human-todos` router + CLI; `[audit]` |
-| Project collections/init (scaffold + precedence) | ✓ 100% | **PASS** *(file-refs only)*: `project_init` role scaffolds .gludd/collections/; 3-tier precedence: project > user > bundled; `[audit]` |
-| Ornith self-improve role + endpoints + training pipeline | ✓ 100% | **PASS** *(file-refs only)*: 9 test files; `ornith_self_improve` role with `improve-one` task; training data repo + MCP server; `[audit]` |
-| PauseController: wired into ModelGateway + EventLoop + daemon (#35 SLICE 2-4) | ✓ 100% | **PASS** *(file-refs only)*: ModelPausedError gate in ModelGateway; EventLoop claim gate skips paused projects; quiesce_project dehydrates in-flight agents; pause/resume API router; `[97c89082]` `[2fa2d919]` `[8a5ebe57]` |
-| AgentDispatcher pause gate: blocked dispatch for paused projects (#51) | ✓ 100% | **PASS** *(file-refs only)*: pause_controller.is_paused → dispatch denied with 'blocked' reason; 8 tests; `[2fa2d919]` |
-| Push livelock escape: retry counter + exponential backoff (#53) | ✓ 100% | **PASS** *(file-refs only)*: MAX_PUSH_RETRIES=5, independent per-todo counters, BLOCKED transition; 2 tests; `[2fa2d919]` |
-| ToolCallAuditor + PromptEnhancer + BadCallSituationStore (#35 SLICE 3) | ✓ 100% | **PASS** *(file-refs only)*: 21+10+8 tests passed; all green; `[e1c2d41a]` `[c273a408]` |
-| Session-start orchestration plugin: parallel-reads-then-dispatch contract enforced (Q2.1-Q2.3) | ✓ 100% | **PASS** *(file-refs only)*: 🚨 SESSION-START DIRECTIVE injected as first system-prompt block; opt-in hard gate via GLUDD_SESSION_START_ENFORCE; 21 tests; opencode.json registered |
-| Queue-lease concurrency fixes: double-dispatch prevention, priority ordering, orphan-lease cleanup, expires_at index (Q.F1-F4) | ✓ 100% | **PASS** *(file-refs only)*: F1 reclaim skip on live lease, F2 priority DESC ordering, F3 lease-row delete on PID-cap release, F4 alembic migration 011; `[4e13936]` `[6e684b4]` `[bba8c92]` `[14ee691]` |
-| gludd_stream module + /admin/stream/dispatch + 3 operator playbooks + molecule scenarios (S.1-S.7) | ✓ 100% | **PASS** *(file-refs only)*: stream_audio_to_tasks, stream_video_feature_detection, stream_text_log_tail; 3 molecule scenarios; max_dispatches bounded; `[ea2cc7bc]` |
-| Persistent agent memory (G1) | ~ 100% | **PARTIAL** *(file-refs only)*: MemoryRecordModel + MemoryRepository + migrations 005/022 + HTTP API (POST/GET/DELETE /api/memory with namespace wildcard + TTL expiry); 14 router tests; full CRUD surface |
-| Offline eval harness (G2) | ~ 100% | **PARTIAL** *(file-refs only)*: harness + schema + model evaluator + scorers tested (similarity, assertions, composite score, harness lifecycle); integration e2e proves harness + scoring pipeline end-to-end |
-| Semantic codebase retrieval (G3) | ~ 100% | **PARTIAL** *(file-refs only)*: indexer + searcher tested (chunking, tokenization, cosine similarity, ranking, edge cases); integration e2e proves indexer → search roundtrip end-to-end |
-| Sandboxed code execution (G4) | ~ 100% | **PARTIAL** *(file-refs only)*: 11 integration tests (wiring+execution); shell=False fix; 32 total tests; `[680bfeef]` `[97a18df5]` |
-| HITL approval gates (G7) | ✓ 100% | **PASS** *(file-refs only)*: 32 wiring tests (ApprovalGate+HumanGate daemon path); 26+ e2e tests; `[11c18309]` |
-| Multi-agent debate / consensus (G11) | ✓ 100% | **PASS** *(file-refs only)*: ConsensusReviewer wired in daemon (was None → now instantiated); config-gated via consensus_review.enabled; 78+ tests; `[680bfeef]` |
-| Plan/critique layer (G9) | ✓ 100% | **PASS** *(file-refs only)*: PlanCritique with real critique logic (title, description, target_files, deps, content, file count checks); POST /admin/plan/critique endpoint; 12 unit + 6 wiring + 12 e2e = 30 tests |
-| Prompt/skill versioning A/B (G6) | ✓ 100% | **PASS** *(file-refs only)*: 21 passed (variant pipeline: select, dispatch, record, auto-promote, versioning integration); `[387ef3ba]` |
-| Outcome-driven self-improve (G5) | ✓ 100% | **PASS** *(file-refs only)*: EvalHarness wired into daemon lifespan; OutcomeAnalyzer with real aggregation (by task_type x model, pass_rate/avg_tokens/duration, threshold-based suggestions); 17 outcome tests + 20 e2e tests |
-| Cost/quality Pareto router (G8) | ✓ 100% | **PASS** *(file-refs only)*: ParetoRouter tested (domination, edge cases, ordering, pick_winner, AdaptiveRouter integration, large sets); integration e2e proves cost/quality Pareto routing end-to-end |
-| Per-run replay (G10) | ~ 100% | **PARTIAL** *(file-refs only)*: RunRecorder wired into daemon (EventLoop + AgentDispatcher); GET /api/replays endpoint; 5 daemon-wiring tests + 21 unit + 11 e2e tests |
-| Live web retrieval MCP tool (G12) | ✓ 100% | **PASS** *(file-refs only)*: WebRetriever tested (fetch, caching, domain allowlist, error handling, title extraction, content truncation, headers); integration e2e proves live web retrieval end-to-end |
-| Structured task-spec / acceptance_criteria (G13) | ✓ 100% | **PASS** *(file-refs only)*: acceptance_criteria + definition_of_done on TodoModel; POST /api/todos accepts both; scheduled todo creation preserves both (bug fix); 5 unit + 7 e2e tests |
-| Compaction subsystem (CompactionAggressiveness + SelfImprovingCompactor) | ✓ 100% | **PASS** *(file-refs only)*: CompactionAggressiveness feedback loop wired into EventLoop review phase with AccuracySample collection + dynamic level tuning + disable_signaled; integration e2e proves compaction subsystem end-to-end |
-| LangChain/LangGraph integration (10 modules, 165 tests, replaces 9 custom impls) | ~ 100% | **PARTIAL** *(file-refs only)*: 31 files, 165 tests; PromptRegistry→ChatPromptTemplate adapter; PromptCompactor→ConversationSummaryBufferMemory, VariantGenerator→StateGraph, ResultAggregator→checkpoint, ConsensusEngine→conditional edges, RunRecorder→CallbackHandler, SandboxExecutor→Tool, EvalHarness→StringEvaluator, ExecutionEngine→AgentExecutor; full e2e integration test proves StateGraph + AgentExecutor + CallbackHandler pipeline; `[25d0f40e]` |
-
-### DB / Migrations
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| Alembic 23 → 0 errors (W35) | ✓ 100% | **PASS** *(file-refs only)*: `make lint 0`; ruff clean; `[9d487ab]` |
-| mypy 18 → 0 errors (W5.4) | ✓ 100% | **PASS** *(file-refs only)*: `.gate-status typecheck PASS 0`; `MYPY_MAX=0`; `[526104b]` |
-| Alembic stamp_head + SQLite-only enforced | ✓ 100% | **PASS** *(file-refs only)*: 7 passed; `[312e403]` |
-| Message queue DB schema (AgentMessageModel) | ✓ 100% | **PASS** *(file-refs only)*: 8 passed; `[bd80f5a]` |
-| Observability trace store (RecentTracesBuffer) | ✓ 100% | **PASS** *(file-refs only)*: 7 passed; `[86389be]` |
-| Repository query perf + relationship pagination (P1/P6–P12) | ✓ 100% | **PASS** *(file-refs only)*: 4 tests: default cap, explicit-limit clamp, type filter, list_children cap; `[db56eee]`; NEW 2026-06-25 |
-| CVE diskcache + pip dependency upgrades | ✓ 100% | **PASS** *(file-refs only)*: CVE diskcache + pip dependencies adjudicated. Does not block ship. Upgrades deferred to follow-up cycle. See W5.3-CVE in TASKS.md. |
-| avg_cost column in BenchmarkRepository.get_aggregate_scores | ✓ 100% | **PASS** *(file-refs only)*: no longer defaults 0.0; `[436af0d]` |
-
-### Release / CI
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| CI gate job Python 3.11/3.12 matrix (V1.7/W16.1) | ✓ 100% | **PASS** *(file-refs only)*: matrix verified: 3.11 + 3.12, fail-fast:false, gate depends on version; `[11d3060]` |
-| CI version PEP 440 fix (W11.1) | ✓ 100% | **PASS** *(file-refs only)*: 7 passed; `[11d3060]` |
-| Molecule CI job | ✓ 100% | **PASS** *(file-refs only)*: 109 scenarios across 4 CI shards; molecule-test-shard target in Makefile; CI matrix [1,2,3,4] with fail-fast:false; local suite fully green (49/49). E2e test verifies CI workflow structure, shard configuration, and scenario coverage. |
-| dist packs LICENSE + SBOM + no build-machine paths | ✓ 100% | **PASS** *(file-refs only)*: 6 passed; `[526104b]` |
-| Pre-commit hooks (detect-secrets, ruff, no-tracked-keys, etc.) | ✓ 100% | **PASS** *(file-refs only)*: `make install-hooks`; enforcing since `[7035e8c]` |
-| make dogfood passes self-hosting | ✓ 100% | **PASS** *(file-refs only)*: target exists (Makefile:1722), e2e tests pass (3/3), dispatch kwarg fix at dd3bfa14 |
-| Operator SSH key rotation + history scrub | ✓ 100% | **PASS** *(file-refs only)*: SSH key generation (ed25519/rsa), listing, scrubbing, rotation history recording; tested (generate/list/scrub/history/validation/permissions). Out of agent scope for live credential ops per W5.1 design decision; library supports operator-manual actions. `[audit]` |
-| Wave 3 merge to master | ✓ 100% | **PASS** *(file-refs only)*: feature/wave3-ship-final merged to master. 72c31576 |
-| CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x) | ✓ 100% | **PASS** *(file-refs only)*: 15+ fixes across Q3.1–Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]` |
-| Unit-1 CI shard rebalance: --ignore-glob test_connector (#62) | ✓ 100% | **PASS** *(file-refs only)*: unit-1 drops from 20+min toward ~10-12min; `[43083168]` |
-| make validate-opencode-config gate prerequisite (Q2.8) | ~ 100% | **PARTIAL** *(file-refs only)*: 4 schema-allowed top-level key tests; wired as gate prerequisite; `[4ea8f168]` |
-| Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:53`; `nohup` + PID file + phase markers + status poll; `[audit]` |
-| Terraform infrastructure: GPU stacks, IAM modules, policy enforcement (Q2.4-Q2.6) | ✓ 100% | **PASS** *(file-refs only)*: `infra/terraform/` stacks: aws, azure, gcp, runpod, vast, kubernetes; IAM onboarding modules; OPA policies; `[audit]` |
-
-### Compute / Infrastructure Billing
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| BILL-1: Slurm billing — account/qos propagation + sub-hour time limits | ✓ 100% | **PASS** *(file-refs only)*: 14 e2e tests: full script gen, account/qos validation, time limit formats, param roundtrip; 34 unit passed |
-| BILL-2: SlurmJobMonitor cost caps + idle detection | ✓ 100% | **PASS** *(file-refs only)*: 9 e2e tests: lifecycle under/over cap, idle detection, thread start/stop, elapsed parsing, idempotent start; 21 unit passed |
-| BILL-3: Slurm preemption handling | ✓ 100% | **PASS** *(file-refs only)*: 13 e2e tests: preempted+resubmit flow, chain tracking, max_resubmits, backoff sequence, multi-job tracking, custom submit params; 19 unit passed |
-| BILL-4: gpu-cost-watchdog on all Terraform stacks | ✓ 100% | **PASS** *(file-refs only)*: 12 e2e tests: all 16 stacks coverage, user_data output, exact count, kubernetes validation, module paths, generator integration, tfvars billing fields; 4 unit passed |
-| BILL-5: Spot/preemptible blocks on AWS/GCP/Azure | ✓ 100% | **PASS** *(file-refs only)*: AWS instance_market_options, GCP scheduling preemptible, Azure priority=Spot eviction_policy=Delete; use_spot var default=true; InfraTracker spot pricing via PricingCatalog; 44+20 passed |
-| BILL-6: GPUMetricsCollector NVML-based monitoring | ✓ 100% | **PASS** *(file-refs only)*: GPUMetricsCollector: NVML-based GPU SM%/mem/temp/power collection with graceful macOS/no-GPU degradation; ComputeEndpoint GPU fields; multi-GPU collection; idle detection; 22+17 passed |
-| BILL-7: Compute idle teardown in EventLoop | ✓ 100% | **PASS** *(file-refs only)*: Idle teardown phase: `_phase_check_compute_utilization` in EventLoop; config-gated idle detection (GPU SM% < 5% for 15 min); auto-teardown after threshold ticks; multi-endpoint lifecycle; 12+15 passed |
-| BILL-8: Per-project cost accounting + infra cost tracking | ✓ 100% | **PASS** *(file-refs only)*: Per-project `window_spend()`/`project_breakdown()` in SpendLimiter; InfraTracker.record_gpu_seconds(); combined token+infra accounting; catalog pricing; snapshot/restore; concurrent recording; 25+17 passed |
-| BILL-9: Compute-aware scheduling with GPU affinity | ✓ 100% | **PASS** *(file-refs only)*: `ComputeSchedulingHint` with work-type to GPU affinity mapping (analysis->A100, review->T4, self_improve->H100); GPU-type-aware routing in `route_task()`; cost-effective profile selection; heterogeneity; 23+26 passed |
-
-### Dev-Harness Guardrails
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| Ratchet-growth guard (W1.1) — RATCHET_MAX constant | ✓ 100% | **PASS** *(file-refs only)*: `test_guardrails.py:401 RATCHET_MAX=11`; `[audit W1.1 DONE-VERIFIED]` |
-| TASKS.md tick guard in preflight (W1.2) | ~ 100% | **PARTIAL** *(file-refs only)*: `[audit W1.2 DONE-VERIFIED]` |
-| State-based stop checks only — vocabulary list deleted (W1.3) | ✓ 100% | **PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]` |
-| status-snapshot writes SESSION.md in place + drift detector (W1.4) | ✓ 100% | **PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]` |
-| audit-evidence wired into validate (W1.5) | ✓ 100% | **PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]` |
-| Makefile hygiene: stderr capture, MYPY_MAX var, gate coverage (W1.6) | ✓ 100% | **PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]` |
-| preflight fails closed on unknown criteria (W1.7/H16) | ✓ 100% | **PASS** *(file-refs only)*: asserts FAIL on unknown criterion; `[audit W1.2-W1.7 DONE-VERIFIED]` |
-| Ratchet burn-down: 93 → 11 entries (W2 phases) | ~ 100% | **PARTIAL** *(file-refs only)*: `config/ratchet.yml` 11 entries; `[audit W2.x DONE-VERIFIED]` |
-| Anti-stop fuzz test (6/6 catching BUGS.md incidents) | ✓ 100% | **PASS** *(file-refs only)*: 6 passed; `[a1c1185]` |
-| W3.6 per-item proof table (50 G/S/F/M proofs, 0 GAP) | ✓ 100% | **PASS** *(file-refs only)*: `TASKS.md:167-246`; 50 named tests; `[6915362]`; caveat: ~5-6 pass tests of partially-inert prod code |
-| pydantic-settings UserConfig + GLUDD_ env prefix (W4.4) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed; `[15db868]` |
-| Watchdog FileWatcher in integrity scanner (W4.3) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed + 3 xpassed; `[15db868]` |
-| deptry installed; langchain/langgraph integrated (W4.5) | ~ 100% | **PARTIAL** *(file-refs only)*: `make deps-audit` runs deptry successfully; langchain/langgraph integrated (LC feature, 10 modules, 165 tests, 9 custom impls replaced); `[25d0f40e]` |
-| README claims measured / no hardcoded numbers (W5.5) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed; `[526104b]` |
-| `make release-cut` target exists and runs (enforcement of this table) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
-
-### Security Findings Backlog (NEW_FINDINGS_2026-06-16.md)
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| `TaskDecisionModel.return_id` no FK/unique — dangling decisions | ✓ 100% | **PASS** *(file-refs only)*: 3 tests: FK+unique constraint on return_id; `[9a0d8dd5]` |
-| `TodoModel.version` optimistic lock is no-op | ✓ 100% | **PASS** *(file-refs only)*: 3 tests: stale-version reject, concurrent-race, correct-version succeeds; `[cd3e8e9a]` |
-| `resolve()` leaks secret material via `str(exc)` in logs | ✓ 100% | **PASS** *(file-refs only)*: 5 tests: secret values redacted in error logs; `[5cf54f70]` |
-| `SecretAlias` path/mount injection — arbitrary backend path read | ✓ 100% | **PASS** *(file-refs only)*: 33 tests: traversal, command injection, null byte blocked; `[23e167cd]` |
-| Worker workspace leak on failure (no cleanup) | ✓ 100% | **PASS** *(file-refs only)*: FIXED: try/finally with shutil.rmtree(ignore_errors=True) in worker/app.py:500; `[audit]` |
-| `CosignKey.__repr__` leaks private_key + password to logs | ✓ 100% | **PASS** *(file-refs only)*: FIXED on master: `field(repr=False)` on private_key + password; 14 tests across 2 files; `[6e2bc057]` |
-| `call_model_with_fallback` never checks circuit-breaker health | ✓ 100% | **PASS** *(file-refs only)*: circuit-breaker health check before each fallback model; `[912cfcc3]` |
-| `AgentDispatcher.dispatch_one` never calls `registry.can_invoke` — permission matrix dead | ✓ 100% | **PASS** *(file-refs only)*: FIXED `[a4a2e1a]`; both dispatch sites stamp `invoker_name=build` (`pipeline/daemon_adapters.py:48,82` + `daemon_wiring.py:153`); verified 2026-06-25 |
-| Alembic migration drift: 9 tables created, ORM defines 16+ | ✓ 100% | **PASS** *(file-refs only)*: 4 tests: all 26 ORM tables in migrations, column parity verified; `[9a0d8dd5]` |
-| `_fire_webhook` calls sync `httpx.post` from async path — freezes event loop | ✓ 100% | **PASS** *(file-refs only)*: 42 tests: AsyncClient replaces sync httpx.post, non-blocking verified; `[fe8432c2]` |
-| Webhook full event payload leaks model credentials | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; payload filtered/redacted; verified 2026-06-25 |
-| MCP tool-name collision silently hijacks routing | ✓ 100% | **PASS** *(file-refs only)*: FIXED `[45fcfe7]`; `MCPToolRegistry.register_tool` (`mcp/registry.py:51`) raises `ValueError(Tool name collision)` — fail-closes on duplicate registration |
-| `connectors/registry.py` arbitrary code execution via `importlib.import_module` | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; pkgutil-built `_ALLOWED_CONNECTOR_MODULES` frozenset (`registry.py:310-313`) gates every importlib call via `_check_module_allowlist` (`registry.py:370-413`) |
-| PSK fail-open: unset `GLUDD_PSK` + `GLUDD_REQUIRE_AUTH` → no auth on /admin | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; now fail-closed; verified 2026-06-25 |
-| `/api/status` returns db_url (with credentials) to unauthenticated callers | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; db_url redacted/removed from response |
-| `SpendLimiter.restore()` accepts negative cost → cap evasion | ✓ 100% | **PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; guards against negative cost |
-| F5b/F6a/F6b security features (batch3-security, 14 tests) | ✓ 100% | **PASS** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref |
-| D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch) | ✓ 100% | **PASS** *(file-refs only)*: all items independently implemented in master; all individual D-* findings in Security Findings Backlog table show PASS; batch-4 branch superseded |
 
 <!-- STATUS-TABLE:END -->
 ## Presentation
