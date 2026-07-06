@@ -588,7 +588,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
         print(f"  model_sha:    {res.get('model_sha', '(none)')}")
 
 
-def add_ornith_subparser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+def add_ornith_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = sub.add_parser(
         "ornith",
         help="Ornith training-data collector (scaffold/outcome pairs).",

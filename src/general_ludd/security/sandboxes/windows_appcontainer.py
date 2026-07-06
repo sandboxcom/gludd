@@ -87,7 +87,7 @@ class AppContainerBackend:
         if not sys.platform.startswith("win"):
             return False
         try:
-            import win32security  # type: ignore[import-not-found]  # noqa: F401
+            import win32security  # type: ignore[import-not-found]  # noqa: F401  pywin32: Windows-only, guarded by try/except
         except Exception:
             return False
         return True
@@ -99,7 +99,9 @@ class AppContainerBackend:
         try:
             if not sys.platform.startswith("win"):
                 raise RuntimeError("AppContainer only available on Windows")
-            from win32.api import CreateAppContainerProfile  # type: ignore[import-not-found]
+            from win32.api import (
+                CreateAppContainerProfile,  # type: ignore[import-not-found]  # pywin32: Windows-only, guarded by try/except
+            )
             capabilities: list[Any] = []
             sid, _ = CreateAppContainerProfile(
                 f"gludd-{agent}", f"gludd-{agent}", "gludd sandbox", capabilities,
@@ -164,7 +166,9 @@ class AppContainerBackend:
         if not handle.applied:
             return
         try:
-            from win32.api import DeleteAppContainerProfile  # type: ignore[import-not-found]
+            from win32.api import (
+                DeleteAppContainerProfile,  # type: ignore[import-not-found]  # pywin32: Windows-only, guarded by try/except
+            )
             DeleteAppContainerProfile(handle.extra.get("agent_type", handle.token))
         except Exception as exc:
             logger.warning("AppContainer release failed: %s", exc)

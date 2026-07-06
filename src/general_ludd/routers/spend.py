@@ -4,6 +4,7 @@ Endpoints:
     GET  /api/spend           — current window spend, limit, remaining
     POST /api/spend/configure — update limit_usd and window_seconds at runtime
     GET  /api/costs           — combined model API + infra cost breakdown
+    GET  /api/credits         — prepaid service credit balances (per provider)
     GET  /admin/costs         — administrative cost-accounting summary
 
 PSK authentication is applied globally by the daemon middleware, so these
@@ -14,6 +15,11 @@ The in-process :class:`~general_ludd.controllers.spend_limiter.SpendLimiter`
 instance is stored on ``app.state._spend_limiter``.  If no instance exists
 (daemon not yet started, or limiter not configured), the endpoints return safe
 default values rather than raising.
+
+``GET /api/costs`` prefers a :class:`~general_ludd.budget.combined_cost.CombinedCostTracker`
+on ``app.state._combined_cost_tracker`` (which merges per-project model + infra
+spend); when absent it falls back to reading ``_spend_limiter`` and
+``_infra_cost_tracker`` / ``_infra_tracker`` directly.
 """
 
 from __future__ import annotations
@@ -139,15 +145,24 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def api_costs() -> dict[str, Any]:
         """Return combined model API + infrastructure cost breakdown.
 
-        Pulls from SpendLimiter (model API costs) and InfraCostTracker
-        (cloud infrastructure costs). Also queries InfraCostTracker v2
-        if available on app.state for per-resource-type breakdown.
+        Resolution order:
+          1. ``app.state._combined_cost_tracker`` (:class:`CombinedCostTracker`)
+             — the unified facade over SpendLimiter + InfraCostTracker. Preferred
+             because it merges per-project spend across model and infra sides.
+          2. Inline fallback: SpendLimiter (``_spend_limiter``) for model-API
+             cost + InfraCostTracker v2 (``_infra_cost_tracker``) or v1
+             (``_infra_tracker``) for infra cost.
 
         Returns:
             JSON with ``model_api``, ``infrastructure``, ``total``,
             ``breakdown_by_provider``, ``breakdown_by_resource_type``,
             ``breakdown_by_project``, and ``record_count``.
         """
+        combined = getattr(app.state, "_combined_cost_tracker", None)
+        if combined is not None:
+            breakdown: dict[str, Any] = combined.get_cost_breakdown()
+            return breakdown
+
         limiter = _get_limiter(app)
         infra_tracker = getattr(app.state, "_infra_tracker", None)
         cost_tracker_v2 = getattr(app.state, "_infra_cost_tracker", None)
@@ -179,3 +194,43 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "breakdown_by_project": by_project,
             "record_count": record_count,
         }
+
+    @app.get("/api/credits")
+    async def api_credits(refresh: bool = False) -> dict[str, Any]:
+        """Return prepaid service credit balances across all configured providers.
+
+        Resolves a :class:`~general_ludd.budget.credit_tracker.CreditTracker`
+        from ``app.state._credit_tracker`` (wired by the daemon at startup).
+        When no tracker is wired the endpoint returns an empty dict so callers
+        can always read a stable ``{}`` shape.
+
+        Each value is the dict shape produced by
+        :meth:`CreditTracker.check_balance`:
+        ``{service, balance_usd, currency, fetched_at, error, raw}``.
+
+        The balance figures are read from the tracker's in-memory cache —
+        populated by the EventLoop's periodic ``check_service_credits`` phase
+        (so this endpoint does NOT issue a fresh HTTP request per call in
+        steady-state). When the cache is empty (e.g. before the first tick
+        completes) the endpoint issues a single ``check_all_balances()`` call
+        to seed it. Pass ``?refresh=1`` to force a fresh probe regardless of
+        cache state.
+        """
+        tracker = getattr(app.state, "_credit_tracker", None)
+        if tracker is None:
+            return {}
+        if refresh or not getattr(tracker, "_last_balance", None):
+            try:
+                balances: dict[str, Any] = dict(tracker.check_all_balances())
+                return balances
+            except Exception as exc:
+                logger.warning("balance probe failed: %s", exc)
+                return {}
+        cached: dict[str, Any] = {
+            svc: result
+            for svc, result in (
+                (svc, tracker.last_balance(svc)) for svc in tracker._last_balance
+            )
+            if result is not None
+        }
+        return cached

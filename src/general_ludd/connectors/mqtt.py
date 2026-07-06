@@ -225,7 +225,7 @@ class MqttSource:
         if self._started:
             return
         try:
-            import paho.mqtt.client as mqtt  # type: ignore[import-not-found,import-untyped]
+            import paho.mqtt.client as mqtt  # type: ignore[import-not-found,import-untyped]  # paho-mqtt: optional connector dep, guarded by try/except
         except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
             raise RuntimeError(
                 "paho-mqtt is not installed; install the 'mqtt' extra to run an MQTT source"

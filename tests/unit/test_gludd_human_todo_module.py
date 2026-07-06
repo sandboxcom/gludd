@@ -81,5 +81,6 @@ def test_module_importable():
     assert spec is not None and spec.loader is not None
     # importlib will execute the module; main() is only called under __main__ guard.
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
     assert hasattr(mod, "main")

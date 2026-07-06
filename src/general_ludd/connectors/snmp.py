@@ -78,7 +78,7 @@ def _default_snmp_getter(
     so callers (``health``/``query``) can degrade gracefully rather than crash.
     """
     try:  # pragma: no cover - exercised via injection in tests
-        from pysnmp.hlapi import (  # type: ignore[import-not-found]
+        from pysnmp.hlapi import (  # type: ignore[import-not-found]  # pysnmp: optional, guarded by try/except
             CommunityData,
             ContextData,
             ObjectIdentity,

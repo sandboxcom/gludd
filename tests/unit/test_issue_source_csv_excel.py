@@ -170,7 +170,7 @@ def test_xlsx_path_uses_openpyxl_when_available(
             return self.active
 
     fake_openpyxl = types.ModuleType("openpyxl")
-    fake_openpyxl.load_workbook = lambda *a, **k: _FakeWB()  # type: ignore[attr-defined]
+    fake_openpyxl.load_workbook = lambda *a, **k: _FakeWB()
     monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
 
     p = tmp_path / "issues.xlsx"

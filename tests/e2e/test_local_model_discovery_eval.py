@@ -749,7 +749,7 @@ class TestLocalModelLive:
         return ModelGateway(
             profiles=[profile],
             provider_registry=registry,
-            secrets_manager=secrets,  # type: ignore[arg-type]
+            secrets_manager=secrets,  # type: ignore[arg-type]  # test stub
         )
 
     def test_live_hardware_probe_and_discovery(self) -> None:

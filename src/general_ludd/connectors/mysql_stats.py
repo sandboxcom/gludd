@@ -89,8 +89,8 @@ class MysqlStatsSource:
     def _default_executor(self) -> Executor:
         """Build a pymysql-backed executor with a guarded driver import."""
         try:
-            import pymysql  # type: ignore[import-untyped]  # lazy guarded import
-            import pymysql.cursors  # type: ignore[import-untyped]
+            import pymysql  # type: ignore[import-untyped]  # pymysql: optional driver, guarded by try/except
+            import pymysql.cursors  # type: ignore[import-untyped]  # pymysql: optional driver
         except ImportError as exc:  # pragma: no cover - exercised via health()
             raise RuntimeError("driver unavailable: pymysql not installed") from exc
 

@@ -82,7 +82,7 @@ def _build_zai_gateway() -> ModelGateway:
     return ModelGateway(
         profiles=[profile],
         provider_registry=registry,
-        secrets_manager=secrets,  # type: ignore[arg-type]
+        secrets_manager=secrets,  # type: ignore[arg-type]  # test stub
     )
 
 

@@ -122,7 +122,7 @@ def _build_gateway(profile_id: str = "zai_self_improve") -> Any:
     return ModelGateway(
         profiles=[profile],
         provider_registry=registry,
-        secrets_manager=secrets,  # type: ignore[arg-type]
+        secrets_manager=secrets,  # type: ignore[arg-type]  # test stub
     )
 
 

@@ -83,7 +83,7 @@ def _run_script(
     collect_cmd: str,
     manifest_path: str,
     lock_file: str | None = None,
-) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+) -> subprocess.CompletedProcess[str]:
     """Run gated_merge.sh with given parameters."""
     env = os.environ.copy()
     env.update(

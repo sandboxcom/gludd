@@ -411,7 +411,9 @@ class TestApiCostsEndpoint:
     def test_with_spend_limiter_only_reports_api_cost(
         self, app: FastAPI, client: TestClient
     ) -> None:
-        clock = lambda: 1000.0  # noqa: E731
+        def clock() -> float:
+            return 1000.0
+
         limiter = SpendLimiter(limit_usd=50.0, window_seconds=3600.0, clock=clock)
         limiter.record(12.50, kind="token", at=1000.0)
         app.state._spend_limiter = limiter
@@ -425,7 +427,9 @@ class TestApiCostsEndpoint:
     def test_with_infra_tracker_v2_reports_combined_breakdown(
         self, app: FastAPI, client: TestClient
     ) -> None:
-        clock = lambda: 1000.0  # noqa: E731
+        def clock() -> float:
+            return 1000.0
+
         limiter = SpendLimiter(limit_usd=100.0, window_seconds=3600.0, clock=clock)
         limiter.record(20.0, kind="token", at=1000.0)
         app.state._spend_limiter = limiter
@@ -453,7 +457,9 @@ class TestApiCostsEndpoint:
     def test_falls_back_to_infra_tracker_v1_when_v2_not_present(
         self, app: FastAPI, client: TestClient
     ) -> None:
-        clock = lambda: 1000.0  # noqa: E731
+        def clock() -> float:
+            return 1000.0
+
         limiter = SpendLimiter(limit_usd=50.0, window_seconds=3600.0, clock=clock)
         limiter.record(5.0, kind="token", at=1000.0)
         app.state._spend_limiter = limiter

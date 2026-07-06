@@ -86,7 +86,7 @@ def test_push_accepts_iterable_of_records() -> None:
 
 def test_push_ignores_non_dict_items() -> None:
     src = WebhookBufferSource(maxlen=10)
-    src.push([_rec(message="ok"), "garbage", 42, None])  # type: ignore[list-item]
+    src.push([_rec(message="ok"), "garbage", 42, None])  # type: ignore[list-item]  # test stub
     recs = src.query({})
     assert len(recs) == 1
     assert recs[0]["message"] == "ok"

@@ -1,8 +1,8 @@
 {
   "version": "0.1.0-beta.1",
-  "git_sha": "c362b41",
-  "test_count": 20650,
-  "role_count": 94,
+  "git_sha": "baaf736",
+  "test_count": 20851,
+  "role_count": 97,
   "features": [
     {
       "name": "G0 Daemon starts configured (env-var passthrough, default config search)",
@@ -960,5 +960,5 @@
       "evidence": "**PASS** *(file-refs only)*: all items independently implemented in master; all individual D-* findings in Security Findings Backlog table show PASS; batch-4 branch superseded"
     }
   ],
-  "generated_at": "2026-07-06T09:36:55Z"
+  "generated_at": "2026-07-06T10:37:22Z"
 }

@@ -950,7 +950,7 @@ class TestAccuracySample:
     def test_fields_immutable(self):
         sample = AccuracySample(passed=5, total=10)
         with pytest.raises(AttributeError):
-            sample.passed = 7  # type: ignore[misc]
+            sample.passed = 7  # type: ignore[misc]  # frozen dataclass: tests immutability
 
 
 # ============================================================================ #
@@ -1163,9 +1163,9 @@ class TestAggressiveLevels:
         # None / string / float('inf') all clamp to the default rung (index 1).
         import math
 
-        assert level_at("abc") is LEVELS[1]  # type: ignore[arg-type]
-        assert level_at(None) is LEVELS[1]  # type: ignore[arg-type]
-        assert level_at(math.inf) is LEVELS[1]  # type: ignore[arg-type]
+        assert level_at("abc") is LEVELS[1]  # type: ignore[arg-type]  # test stub: deliberately wrong type to exercise clamping
+        assert level_at(None) is LEVELS[1]  # type: ignore[arg-type]  # test stub: deliberately wrong type to exercise clamping
+        assert level_at(math.inf) is LEVELS[1]  # type: ignore[arg-type]  # test stub: deliberately wrong type to exercise clamping
 
     def test_level_at_zero_preserves_most(self):
         lvl = level_at(0)
@@ -1175,7 +1175,7 @@ class TestAggressiveLevels:
     def test_compaction_level_is_frozen(self):
         lvl = CompactionLevel(preserve_recent=4, threshold=0.8)
         with pytest.raises(AttributeError):
-            lvl.preserve_recent = 2  # type: ignore[misc]
+            lvl.preserve_recent = 2  # type: ignore[misc]  # frozen dataclass: tests immutability
 
 
 # ============================================================================ #

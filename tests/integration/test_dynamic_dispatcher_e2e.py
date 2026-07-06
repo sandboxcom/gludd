@@ -128,7 +128,7 @@ class TestStructuredToolCallsToCalls:
 
     def test_non_dict_tool_call_skipped(self):
         tool_calls = ["not_a_dict"]
-        assert structured_tool_calls_to_calls(tool_calls) == []  # type: ignore[arg-type]
+        assert structured_tool_calls_to_calls(tool_calls) == []  # type: ignore[arg-type]  # test stub
 
 
 # ---------------------------------------------------------------------------

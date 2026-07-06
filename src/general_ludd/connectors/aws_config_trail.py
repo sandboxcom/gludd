@@ -46,8 +46,8 @@ def _default_factory(region: str | None, timeout: float) -> ClientFactory | None
     without boto3 installed.
     """
     try:
-        import boto3  # type: ignore[import-not-found]
-        from botocore.config import Config  # type: ignore[import-not-found]
+        import boto3  # type: ignore[import-not-found]  # boto3: optional [aws] extra, guarded by try/except
+        from botocore.config import Config  # type: ignore[import-not-found]  # botocore: optional, ships with boto3
     except Exception:
         return None
 

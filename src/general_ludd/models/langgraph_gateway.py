@@ -87,7 +87,7 @@ class LangGraphGateway:
                 self._graph = None
 
     def _build_graph(self) -> Any:
-        from langgraph.graph import START, END, StateGraph  # noqa: I001
+        from langgraph.graph import END, START, StateGraph
 
         builder = StateGraph(GraphState)
 

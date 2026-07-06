@@ -1,6 +1,8 @@
 """Regression tests for F6a: /api/status must not leak internal paths/DB info."""
 from __future__ import annotations
 
+import re
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -9,7 +11,6 @@ _LEAKED_KEYS = {"config_dir", "config_files", "filestore_root"}
 _REQUIRED_KEYS = {"version", "filestore_available", "binary_versions", "quality_gate"}
 # db_url / db_engine may be present but must have any password masked (***),
 # never the raw credential. Passwords in a URL look like :<secret>@.
-import re  # noqa: E402
 
 _PASSWORD_PATTERN = re.compile(r":[^:@/]+@")
 

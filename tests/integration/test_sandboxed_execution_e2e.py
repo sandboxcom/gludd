@@ -145,7 +145,7 @@ class TestConstraintHelpers:
         assert constraint_value(cap, "path_prefix") is None
 
     def test_constraint_value_non_dict_constraints_returns_none(self):
-        cap = Capability(name="net", description="", constraints="bad")  # type: ignore[arg-type]
+        cap = Capability(name="net", description="", constraints="bad")  # type: ignore[arg-type]  # test stub
         assert constraint_value(cap, "x") is None
 
     def test_path_prefix_string(self):

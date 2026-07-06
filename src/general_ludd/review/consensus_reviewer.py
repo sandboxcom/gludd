@@ -60,13 +60,14 @@ class ConsensusReviewer:
                 logger.warning("Consensus agent call failed: %s", exc)
                 return "needs_changes\nGateway call failed"
 
+        self._engine: ConsensusEngine | LangGraphConsensusEngine
         if self._use_langgraph:
             self._engine = LangGraphConsensusEngine(
                 reviewer_callable=_gateway_reviewer,
                 judge_callable=_gateway_reviewer,
             )
         else:
-            self._engine = ConsensusEngine(  # type: ignore[assignment]
+            self._engine = ConsensusEngine(
                 reviewer=_gateway_reviewer,
                 judge=_gateway_reviewer,
             )

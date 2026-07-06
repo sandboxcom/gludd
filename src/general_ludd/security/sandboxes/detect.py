@@ -45,7 +45,7 @@ def _landlock_available() -> bool:
     ``Ruleset().abi`` rather than uname so we read the actual LSM state.
     """
     try:
-        from landlock import Ruleset  # type: ignore[import-not-found]
+        from landlock import Ruleset  # type: ignore[import-not-found]  # pylandlock: Linux-only, guarded by try/except
         return Ruleset().abi > 0
     except Exception:
         return False
@@ -59,7 +59,7 @@ def _bubblewrap_present() -> bool:
 def _selinux_enabled() -> bool:
     """True iff SELinux is enabled + the policy toolchain is present."""
     try:
-        import selinux  # type: ignore[import-not-found]
+        import selinux  # type: ignore[import-not-found]  # python3-libselinux: Linux-only, guarded by try/except
     except Exception:
         # python3-libselinux not installed — still check the userland toolchain
         # so an AppArmor-only host doesn't falsely look SELinux-capable.
@@ -116,7 +116,7 @@ def _appcontainer_present() -> bool:
     if not sys.platform.startswith("win"):
         return False
     try:
-        import win32  # type: ignore[import-not-found]  # noqa: F401
+        import win32  # type: ignore[import-not-found]  # noqa: F401  pywin32: Windows-only, guarded by try/except
     except Exception:
         return False
     return True

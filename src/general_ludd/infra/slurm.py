@@ -10,6 +10,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 
@@ -229,7 +230,7 @@ class SlurmAdapter:
         url = (self._api_url or "").rstrip("/")
         return f"{url}/slurm/{_SLURM_API_VERSION}"
 
-    def _request(self, method: str, url: str, **kwargs: object) -> httpx.Response:
+    def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         """Issue an HTTP request, converting transport failures to SlurmConnectionError.
 
         A raw ``httpx.ConnectError``/``TimeoutException`` leaking out of the REST
@@ -238,14 +239,20 @@ class SlurmAdapter:
         an explicit, catchable condition.
         """
         m = method.upper()
+        # httpx's module-level get/post/delete expose precise overloaded
+        # signatures; the local **kwargs bag carries only the subset of those
+        # keyword arguments (headers/json/params/timeout) supplied by internal
+        # call sites, so cast to satisfy mypy without losing runtime flexibility.
+        method_map: dict[str, Callable[..., httpx.Response]] = {
+            "GET": httpx.get,
+            "POST": httpx.post,
+            "DELETE": httpx.delete,
+        }
         try:
-            if m == "GET":
-                return httpx.get(url, **kwargs)  # type: ignore[arg-type]
-            if m == "POST":
-                return httpx.post(url, **kwargs)  # type: ignore[arg-type]
-            if m == "DELETE":
-                return httpx.delete(url, **kwargs)  # type: ignore[arg-type]
-            raise ValueError(f"unsupported method: {method}")
+            handler = method_map.get(m)
+            if handler is None:
+                raise ValueError(f"unsupported method: {method}")
+            return handler(url, **kwargs)
         except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as exc:
             raise SlurmConnectionError(
                 f"Slurm REST API unreachable at {url}: {exc}"

@@ -375,7 +375,11 @@ class UpdateRequestRouter:
         code_paths = self._code_paths(spec)
         if code_paths and self._is_behaviour_change(normalized):
             return "code"
-        return declared  # type: ignore[return-value]
+        if declared == "config":
+            return "config"
+        if declared == "yaml":
+            return "yaml"
+        return "config"
 
     @staticmethod
     def _is_behaviour_change(normalized: str) -> bool:

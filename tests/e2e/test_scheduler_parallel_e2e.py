@@ -139,7 +139,7 @@ class TestEventLoopParallelDispatch:
             dispatched.append(todo.todo_id)
 
         loop = _empty_loop()
-        loop._dispatch_execute_job = record  # type: ignore[method-assign]
+        loop._dispatch_execute_job = record  # type: ignore[method-assign]  # pytest monkeypatch
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
         assert count == 3
@@ -154,7 +154,7 @@ class TestEventLoopParallelDispatch:
             dispatched.append(todo.todo_id)
 
         loop = _empty_loop()
-        loop._dispatch_execute_job = record  # type: ignore[method-assign]
+        loop._dispatch_execute_job = record  # type: ignore[method-assign]  # pytest monkeypatch
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
         assert count == 7
@@ -169,7 +169,7 @@ class TestEventLoopParallelDispatch:
             order.append(todo.todo_id)
 
         loop = _empty_loop()
-        loop._dispatch_execute_job = record_order  # type: ignore[method-assign]
+        loop._dispatch_execute_job = record_order  # type: ignore[method-assign]  # pytest monkeypatch
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
         assert count == 3
@@ -192,7 +192,7 @@ class TestEventLoopParallelDispatch:
                 raise RuntimeError("simulated failure")
 
         loop = _empty_loop()
-        loop._dispatch_execute_job = maybe_fail  # type: ignore[method-assign]
+        loop._dispatch_execute_job = maybe_fail  # type: ignore[method-assign]  # pytest monkeypatch
 
         count = await loop._dispatch_jobs_via_scheduler(todos)
         assert count >= 2

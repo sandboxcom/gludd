@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from general_ludd.git_automation.repo import GitAutomation
 from general_ludd.routers.accounting import _project_loc_changed, _project_repo_dir
 
 _GIT = shutil.which("git")
@@ -141,8 +142,6 @@ def test_loc_changed_skips_binary_rows(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Tests: GitAutomation.lines_changed_in_commit (per-commit delta primitive)
 # ---------------------------------------------------------------------------
-
-from general_ludd.git_automation.repo import GitAutomation  # noqa: E402
 
 
 @_needs_git

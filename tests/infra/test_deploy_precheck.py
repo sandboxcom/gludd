@@ -20,7 +20,7 @@ def _config(**overrides: object) -> ComputeConfig:
         "model_name": "org/model",
     }
     base.update(overrides)
-    return ComputeConfig(**base)  # type: ignore[arg-type]
+    return ComputeConfig(**base)  # type: ignore[arg-type]  # test stub
 
 
 def test_build_deployment_dict_maps_engine_and_serving_knobs() -> None:

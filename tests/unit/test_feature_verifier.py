@@ -4,12 +4,11 @@ All evidence dispatch branches are tested without touching the filesystem or
 running real pytest so the suite stays fast and CPU-light.
 """
 
-from __future__ import annotations  # noqa: I001
+from __future__ import annotations
 
 from pathlib import Path
 
 from general_ludd.quality.feature_verifier import FeatureVerifier
-
 
 # ---------------------------------------------------------------------------
 # Helpers

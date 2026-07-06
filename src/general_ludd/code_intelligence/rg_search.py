@@ -15,6 +15,7 @@ The binary is resolved bundled-first (``dist/binaries/rg`` via
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import logging
 import shutil
@@ -169,7 +170,7 @@ class RgSearch:
         if "bytes" in obj and isinstance(obj["bytes"], str):
             try:
                 return base64.b64decode(obj["bytes"]).decode("utf-8", errors="replace")
-            except (ValueError, base64.binascii.Error):  # type: ignore[attr-defined]
+            except (ValueError, binascii.Error):
                 return None
         return None
 

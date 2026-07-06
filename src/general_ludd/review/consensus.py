@@ -183,11 +183,11 @@ def _check_consensus(votes: list[dict[str, Any]]) -> str | None:
     """Return the verdict if all agents agree, or None if there is dissent."""
     if not votes:
         return None
-    first = votes[0]["verdict"]
+    first: str = votes[0]["verdict"]
     for vote in votes[1:]:
         if vote["verdict"] != first:
             return None
-    return first  # type: ignore[no-any-return]
+    return first
 
 
 def _compute_confidence(votes: list[dict[str, Any]]) -> float:

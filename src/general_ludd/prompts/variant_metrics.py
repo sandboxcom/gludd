@@ -225,7 +225,8 @@ class VariantMetrics:
         tmpl = self._data[template_name]
         if variant not in tmpl:
             tmpl[variant] = {"total": 0, "successes": 0, "latency_sum": 0.0}
-        return tmpl[variant]  # type: ignore[no-any-return]
+        entry = tmpl[variant]
+        return entry if isinstance(entry, dict) else {"total": 0, "successes": 0, "latency_sum": 0.0}
 
     def _load(self) -> dict[str, Any]:
         if os.path.isfile(self._storage_path):

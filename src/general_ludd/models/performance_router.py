@@ -74,7 +74,7 @@ class ModelPerformanceRouter:
 
     def __init__(
         self,
-        perf_repo: ModelPerformanceRepository | None = None,
+        perf_repo: Any | None = None,
         config: dict[str, Any] | None = None,
     ) -> None:
         self._repo = perf_repo

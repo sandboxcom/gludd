@@ -136,7 +136,7 @@ def _cmd_project_paths(args: argparse.Namespace) -> None:
 
 
 def add_project_paths_subparser(
-    proj_sub: argparse._SubParsersAction,  # type: ignore[type-arg]
+    proj_sub: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
     p = proj_sub.add_parser(
         "paths",

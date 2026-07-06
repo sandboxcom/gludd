@@ -194,6 +194,21 @@ COMMANDS
       binaries             List stored binaries
         --daemon-url URL     Daemon URL
 
+    payment             PCI-DSS payment card vault (envelope-encrypted in OpenBao)
+      add                 Store a card under a label
+        --card-number NUM    Card number (prompted via getpass if omitted)
+        --expiry-month MM    Expiry month 01-12 (required)
+        --expiry-year YY     Expiry year 2-digit (required)
+        --cvc CVC            CVC (prompted via getpass if omitted)
+        --holder-name NAME   Cardholder name (required)
+        --label NAME         Storage label (default: default)
+        --processor NAME     Payment processor (default: stripe)
+      list                List stored cards (masked only)
+      show LABEL          Show masked metadata for one card
+      delete LABEL        Delete a stored card (-y to skip confirm)
+      provision SERVICE   Simulate 1-click provisioning using a stored card
+        --label NAME         Card label to use (default: default)
+
 EXAMPLES
     gludd daemon
     gludd add "Fix login bug" --work-type bug_fix
@@ -832,6 +847,11 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     perm_parser = _register_perm(sub)
 
+    # `gludd payment` — PCI-DSS payment card vault (envelope-encrypted).
+    from general_ludd.cli_payment import register as _register_payment
+
+    payment_parser = _register_payment(sub)
+
     # `gludd human-todo` — bot→human task requests.
     from general_ludd.cli_human_todos import add_human_todo_subparser
 
@@ -894,6 +914,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "ornith": ornith_parser,
         "deploy-check": deploy_check_parser,
         "core-changes": core_changes_parser,
+        "payment": payment_parser,
     }
 
     return parser, subcommand_map

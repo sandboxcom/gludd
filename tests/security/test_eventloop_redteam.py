@@ -161,7 +161,7 @@ async def test_pid_cap_release_deletes_lease_row(session_factory):
         loop._tick_state["pid_outputs"] = _CapOutputs(1)
 
         # Skip the actual dispatch path so the test isolates the cap-trim logic.
-        loop._dispatch_jobs_via_scheduler = _noop_dispatch  # type: ignore[assignment]
+        loop._dispatch_jobs_via_scheduler = _noop_dispatch  # type: ignore[assignment]  # pytest monkeypatch
 
         await loop._phase_dispatch_execute_jobs()
         await s.commit()

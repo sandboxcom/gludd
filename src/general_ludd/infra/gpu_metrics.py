@@ -15,7 +15,7 @@ _nvml = None
 def _try_import_nvml() -> None:
     global _NVML_AVAILABLE, _nvml
     try:
-        import pynvml as nvml  # type: ignore[import-not-found]
+        import pynvml as nvml  # type: ignore[import-not-found]  # pynvml: optional, NVIDIA-only, guarded by try/except
 
         nvml.nvmlInit()
         _nvml = nvml

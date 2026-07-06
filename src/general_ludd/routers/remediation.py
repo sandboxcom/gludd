@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import json as _json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeVar
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
@@ -128,7 +129,12 @@ def _build_detector(
     )
 
 
-async def _run_with_session(app: FastAPI, coro_factory: Any) -> Any:
+_T = TypeVar("_T")
+
+
+async def _run_with_session(
+    app: FastAPI, coro_factory: Callable[..., Awaitable[_T]]
+) -> _T:
     """Open a fresh session from app.state._session_factory, run, commit."""
     factory = _get_session_factory(app)
     if factory is None:
@@ -189,7 +195,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
                 "total": len(findings),
             }
 
-        return await _run_with_session(app, _run)  # type: ignore[no-any-return]
+        return await _run_with_session(app, _run)
 
     @app.post("/admin/remediation/remediate", response_model=None)
     async def post_remediate(
@@ -230,7 +236,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
                 "actions": actions,
             }
 
-        return await _run_with_session(app, _run)  # type: ignore[no-any-return]
+        return await _run_with_session(app, _run)
 
     @app.get(
         "/admin/remediation/chronic-blockers",
@@ -261,7 +267,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
                 lookback_days=lookback_days,
             )
 
-        return await _run_with_session(app, _run)  # type: ignore[no-any-return]
+        return await _run_with_session(app, _run)
 
     @app.get("/admin/remediation/history", response_model=None)
     async def get_history(

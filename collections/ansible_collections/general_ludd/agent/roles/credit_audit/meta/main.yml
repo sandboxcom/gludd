@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: credit_audit
+  author: Agentic Harness Agent
+  description: >
+    Audits prepaid service credit balances across model providers
+    (DeepSeek, OpenAI, Z.AI, OpenRouter). Queries the gludd daemon's
+    /api/credits endpoint (backed by CreditTracker) and emits a JSON +
+    markdown artifact flagging providers below their refill threshold.
+    REPORT-ONLY — never mutates.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

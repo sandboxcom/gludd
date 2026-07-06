@@ -16,17 +16,16 @@ from pathlib import Path
 import pytest
 import yaml
 
-# Project root
-ROOT = Path(__file__).parent.parent.parent
-PLAYBOOKS_DIR = ROOT / "playbooks"
-
-# Import the work type map directly from the module
-from general_ludd.ansible.action_policy import (  # noqa: E402
+from general_ludd.ansible.action_policy import (
     ActionPolicyConfig,
     validate_action,
 )
-from general_ludd.ansible.manifest import generate_manifest  # noqa: E402
-from general_ludd.event_loop.loop import _WORK_TYPE_PLAYBOOK_MAP  # noqa: E402
+from general_ludd.ansible.manifest import generate_manifest
+from general_ludd.event_loop.loop import _WORK_TYPE_PLAYBOOK_MAP
+
+# Project root
+ROOT = Path(__file__).parent.parent.parent
+PLAYBOOKS_DIR = ROOT / "playbooks"
 
 # Playbooks that use ansible.builtin.command for user-supplied commands — allowed
 _COMMAND_ALLOWED_PLAYBOOKS = {

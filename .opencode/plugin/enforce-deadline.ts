@@ -11,12 +11,16 @@ import * as fs from "node:fs"
 //   * tool.execute.before (task/agent/workflow)  -> record dispatch timestamp
 //   * tool.execute.before (ANY tool)            -> warn on any task whose
 //                                                  elapsed > GLUDD_TASK_TIMEOUT_MS
+//                                                  AND record to STALE_FILE
 //   * tool.execute.after  (task/agent/workflow)  -> remove completed task
 //
 // It cannot hard-kill a running task (the plugin API has no kill primitive).
 // It surfaces the breach via console.warn so the orchestrator (the main-loop
 // agent reading its own tool stream) sees it and can dispatch a replacement /
-// re-split the work. Observability beats silent hangs.
+// re-split the work. It also writes breached task IDs to STALE_FILE
+// (/tmp/gludd-task-stale.json) so scripts/task_watchdog.py (the killing layer)
+// can read them and kill the associated hung processes. Observability +
+// bridge-to-killer beats silent hangs.
 //
 // NOISE CONTROL (2026-06-28): a lingering breached task used to re-warn on
 // EVERY subsequent tool call, flooding the user UI with the same line. Now
@@ -42,6 +46,7 @@ import * as fs from "node:fs"
 const TASK_TIMEOUT_MS = parseInt(process.env.GLUDD_TASK_TIMEOUT_MS || "300000", 10)
 const DEADLINE_STATE = process.env.GLUDD_TASK_DEADLINE_STATE || "/tmp/gludd-task-deadlines.json"
 const WARNINGS_LOG = process.env.GLUDD_TASK_DEADLINE_WARNINGS || "/tmp/gludd-task-deadlines.warnings.log"
+const STALE_FILE = process.env.GLUDD_TASK_STALE_FILE || "/tmp/gludd-task-stale.json"
 const DEADLINE_ENABLED = (process.env.GLUDD_TASK_DEADLINE_ENABLED || "1") !== "0"
 
 // ============================================================================
@@ -59,6 +64,26 @@ function appendWarning(line: string): void {
   try {
     fs.appendFileSync(WARNINGS_LOG, line + "\n")
   } catch { /* fail open — persistent log is best-effort */ }
+}
+
+// Records a breached task ID to STALE_FILE so scripts/task_watchdog.py can read
+// it and kill associated processes. Shape: JSON list of {task_id, start_ms,
+// stale_at} appended (deduplicated by task_id). Fail-open on any IO error.
+function recordStaleTask(taskId: string, startMs: number, elapsedMs: number): void {
+  try {
+    let entries: any[] = []
+    try {
+      const raw = JSON.parse(fs.readFileSync(STALE_FILE, "utf8"))
+      if (Array.isArray(raw)) entries = raw
+    } catch { /* missing or corrupt — start fresh */ }
+    // Deduplicate: only append if this task_id is not already recorded.
+    if (!entries.some((e: any) => e && e.task_id === taskId)) {
+      entries.push({ task_id: taskId, start_ms: startMs, elapsed_ms: Math.round(elapsedMs), stale_at: Date.now() })
+      const tmp = STALE_FILE + ".tmp"
+      fs.writeFileSync(tmp, JSON.stringify(entries))
+      fs.renameSync(tmp, STALE_FILE)
+    }
+  } catch { /* fail open */ }
 }
 
 // ============================================================================
@@ -191,6 +216,9 @@ export default (async ({ }) => {
             // can poll via `make task-ttl-check` (CLI mirror reads the same
             // state file; this log is the audit trail).
             appendWarning(`${new Date().toISOString()} ${line}`)
+            // Record to STALE_FILE so scripts/task_watchdog.py can kill the
+            // associated hung process. Deduplicated by task_id.
+            recordStaleTask(id, start, elapsed)
             // UI channel — throttled to ONCE per task id per session so a
             // lingering breached task does not flood the user's terminal.
             // The orchestrator still gets the signal (one warn is enough to

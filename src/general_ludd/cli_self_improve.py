@@ -104,7 +104,7 @@ def _cmd_reject(args: argparse.Namespace) -> None:
         print(f"Rejected (cancelled): {args.todo_id}")
 
 
-def add_self_improve_subparser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+def add_self_improve_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = sub.add_parser(
         "self-improve", help="Review + release self-authored self-improve todos"
     )

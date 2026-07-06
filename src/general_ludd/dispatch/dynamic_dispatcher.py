@@ -13,7 +13,7 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from general_ludd.security.capability_lattice import role_may_dispatch
 
@@ -146,7 +146,7 @@ def _parse_single(item: dict[str, Any]) -> ToolCall | None:
     args: dict[str, Any] = args_raw if isinstance(args_raw, dict) else {}
     # We deliberately allow kind values not in the Literal union here so that
     # the dispatcher can handle them at dispatch time (fail-closed).
-    return ToolCall(kind=kind_str, name=name_str, args=args)  # type: ignore[arg-type]
+    return ToolCall(kind=cast(ToolCallKind, kind_str), name=name_str, args=args)
 
 
 def structured_tool_calls_to_calls(

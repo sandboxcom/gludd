@@ -9,6 +9,7 @@ from general_ludd.secrets.manager import (
     SecretAlias,
     SecretsManager,
 )
+from general_ludd.secrets.payment_vault import PaymentVaultError, SecurePaymentVault
 
 __all__ = [
     "AppRoleCreds",
@@ -16,6 +17,8 @@ __all__ = [
     "EnvSecretsManager",
     "ImageUpdateCandidate",
     "OpenBaoConfig",
+    "PaymentVaultError",
     "SecretAlias",
     "SecretsManager",
+    "SecurePaymentVault",
 ]

@@ -580,7 +580,7 @@ class TestAuditEventTypeWiring:
             captured.update(kwargs)
             return MagicMock()
 
-        repo.create = _fake_create  # type: ignore[method-assign]
+        repo.create = _fake_create  # type: ignore[method-assign]  # pytest monkeypatch
 
         await repo.record_typed(
             AuditEventType.TODO_CREATED,

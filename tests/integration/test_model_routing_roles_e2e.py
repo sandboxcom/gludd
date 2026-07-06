@@ -5,6 +5,8 @@ Proves the full pipeline: TaskType -> RoleWeights -> ParetoRouter -> winner.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from general_ludd.routing_roles.weights import (
@@ -397,7 +399,7 @@ class TestE2ERoleBasedParetoRouting:
     can produce different winners from the same candidate pool."""
 
     # Shared candidate pool representing real model options.
-    CANDIDATES: list[dict] = [  # noqa: RUF012
+    CANDIDATES: ClassVar[list[dict]] = [
         {
             "model_id": "gpt-4o",
             "cost": 0.015,
@@ -504,7 +506,7 @@ class TestE2ETaskRoleInformedRouting:
     route through Pareto frontier using task-type-derived weights;
     pick winner that is both frontier-optimal and role-appropriate."""
 
-    ROLE_CANDIDATES: list[dict] = [  # noqa: RUF012
+    ROLE_CANDIDATES: ClassVar[list[dict]] = [
         {
             "model_id": "opus-4.5",
             "cost": 0.075,
@@ -614,7 +616,7 @@ class TestWeightRouterCompositeAlignment:
     correctly scaled composite scores that respect the intended
     cost/quality trade-off for each task type."""
 
-    _CANDIDATES = [  # noqa: RUF012
+    _CANDIDATES: ClassVar[list[dict]] = [
         {"id": "cheap_good", "cost": 0.001, "quality": 0.85},
         {"id": "mid_best", "cost": 0.010, "quality": 0.95},
         {"id": "expensive_ok", "cost": 0.050, "quality": 0.70},

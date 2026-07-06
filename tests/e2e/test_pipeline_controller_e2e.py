@@ -36,7 +36,7 @@ def _cfg(**kw: object) -> PipelineConfig:
         max_worktrees=6,
     )
     base.update(kw)
-    return PipelineConfig(**base)  # type: ignore[arg-type]
+    return PipelineConfig(**base)  # type: ignore[arg-type]  # test stub
 
 
 # ---------------------------------------------------------------------------

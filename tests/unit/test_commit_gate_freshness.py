@@ -217,6 +217,54 @@ class TestCommitTargetsEnforceGate:
         assert not offenders, "Bypass: " + ", ".join(offenders)
 
 
+class TestCiIsGateDelegatesToCiVerdict:
+    """GLUDD_CI_IS_GATE=1 must verify CI via `make ci-verdict`, not an inline copy.
+
+    The bug: _gate-fresh-check inlined its own `gh run list` verdict logic,
+    duplicating `ci-verdict`. The two paths could drift, and the inline copy
+    was the authority for the bypass — easier to subtly weaken without the
+    canonical verdict target noticing. The fix: the bypass must delegate to
+    `make ci-verdict`, which exits 0 ONLY on a verified-green run (1 on RED
+    or no-run, 2 on PENDING). Any non-zero verdict denies the commit.
+    """
+
+    def test_gate_fresh_check_calls_ci_verdict(self):
+        """_gate-fresh-check must invoke `make ci-verdict` for the CI check.
+
+        Before: inline `gh run list --commit=...` + ad-hoc conclusion parsing
+        that duplicated ci-verdict and could drift. After: delegates to
+        `make ci-verdict` so there is a single verdict path.
+        """
+        recipe = _recipe("_gate-fresh-check")
+        assert "ci-verdict" in recipe, (
+            "_gate-fresh-check must call `make ci-verdict` to verify CI is green "
+            "when GLUDD_CI_IS_GATE=1 — it cannot inline a divergent gh-run-list copy"
+        )
+
+    def test_gate_fresh_check_has_canonical_deny_message(self):
+        """The CI_IS_GATE bypass must emit the canonical deny string on non-green CI.
+
+        A non-green verdict (RED, PENDING, or no-run) must print the exact
+        deny message so the bypass refusal is grep-discoverable in logs.
+        """
+        recipe = _recipe("_gate-fresh-check")
+        assert "CI_IS_GATE bypass denied — CI is not green. Run make gate." in recipe, (
+            "_gate-fresh-check must print the exact deny message when CI is not green"
+        )
+
+    def test_gate_fresh_check_no_inline_gh_run_list(self):
+        """_gate-fresh-check must NOT inline `gh run list` for the CI verdict.
+
+        The inline copy was the bypass authority and could drift from
+        ci-verdict. The single source of truth is `make ci-verdict`.
+        """
+        recipe = _recipe("_gate-fresh-check")
+        assert "gh run list" not in recipe, (
+            "_gate-fresh-check must not inline `gh run list` — delegate to "
+            "`make ci-verdict` instead so verdict logic stays in one place"
+        )
+
+
 class TestMakeGateStatusFile:
     """The gate itself must write .gate-status with the expected fields."""
 

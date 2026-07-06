@@ -252,7 +252,7 @@ def _cmd_core_changes_commit(args: argparse.Namespace) -> int:
     return 0
 
 
-def add_core_changes_subparser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+def add_core_changes_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = sub.add_parser(
         "core-changes",
         help="Render agentic changes (change log) as core/user unified diffs",

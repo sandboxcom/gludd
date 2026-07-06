@@ -107,7 +107,7 @@ class SELinuxBackend:
         if shutil.which("semodule") is None:
             return False
         try:
-            import selinux  # type: ignore[import-not-found]
+            import selinux  # type: ignore[import-not-found]  # python3-libselinux: Linux-only, guarded by try/except
             return bool(selinux.is_selinux_enabled())
         except Exception:
             return False

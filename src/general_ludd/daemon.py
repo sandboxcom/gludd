@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from fastapi import FastAPI
@@ -1500,6 +1500,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
         app.state._spend_limiter = spend_limiter
 
+        # Prepaid service credit tracker — queries DeepSeek / OpenAI / Z.AI /
+        # OpenRouter balance APIs on the EventLoop's periodic
+        # check_service_credits phase and exposes results via GET /api/credits.
+        # API keys are read lazily from the conventional env vars per provider
+        # (DEEPSEEK_API_KEY, OPENAI_API_KEY, ZAI_API_KEY, OPENROUTER_API_KEY).
+        from general_ludd.budget.credit_tracker import CreditTracker
+
+        credit_tracker = CreditTracker(
+            thresholds=getattr(uc, "credit_thresholds", None) if uc else None,
+            historical_spend_rates=getattr(uc, "credit_spend_rates", None) if uc else None,
+        )
+        app.state._credit_tracker = credit_tracker
+
         memory_repo = MemoryRepository(session_factory=session_factory)
         app.state._memory_repo = memory_repo
 
@@ -1621,6 +1634,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             compaction_controller=getattr(
                 app.state, "_compaction_aggressiveness_controller", None
             ),
+            credit_tracker=getattr(app.state, "_credit_tracker", None),
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -1659,9 +1673,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         event_loop._model_perf_repo = model_perf_repo
         app.state.model_perf_repo = model_perf_repo
 
-        from general_ludd.models.performance_router import ModelPerformanceRouter
+        from general_ludd.models.performance_router import (
+            ModelPerformanceRepository as _PerfRepoProtocol,
+        )
+        from general_ludd.models.performance_router import (
+            ModelPerformanceRouter,
+        )
         app.state._model_performance_router = ModelPerformanceRouter(
-            perf_repo=model_perf_repo,  # type: ignore[arg-type]
+            perf_repo=cast(_PerfRepoProtocol, model_perf_repo),
         )
 
         from general_ludd.worktree.core import WorktreeMonitor, WorktreeMonitorConfig

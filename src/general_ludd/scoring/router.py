@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from general_ludd.routing_roles import weights_for
 from general_ludd.schemas.benchmark import (
@@ -217,10 +217,18 @@ class AdaptiveRouter:
         shape (``assert_called_with(task_type=...)``) keep passing unchanged.
         The ``project_id`` kwarg is only added when a project is actually set.
         """
+        if self._repo is None:
+            return []
         if project_id is None:
-            return await self._repo.get_aggregate_scores(task_type=task_type)  # type: ignore[union-attr,no-any-return]
-        return await self._repo.get_aggregate_scores(  # type: ignore[union-attr,no-any-return]
-            task_type=task_type, project_id=project_id
+            return cast(
+                "list[dict[str, Any]]",
+                await self._repo.get_aggregate_scores(task_type=task_type),
+            )
+        return cast(
+            "list[dict[str, Any]]",
+            await self._repo.get_aggregate_scores(
+                task_type=task_type, project_id=project_id
+            ),
         )
 
     async def _get_best_from_history(

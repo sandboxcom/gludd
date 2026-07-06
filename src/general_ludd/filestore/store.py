@@ -82,7 +82,11 @@ class FileStore:
     def _resolve_path(self, path: str) -> tuple[OSFS, str]:
         # _overlay_owns() is True only when _overlay_fs is not None, so this
         # narrows to a concrete OSFS for both branches.
-        fs: OSFS = self._overlay_fs if self._overlay_owns(path) else self._fs  # type: ignore[assignment]
+        if self._overlay_owns(path):
+            assert self._overlay_fs is not None
+            fs: OSFS = self._overlay_fs
+        else:
+            fs = self._fs
         self._confine(fs, path)
         return fs, path
 
@@ -121,8 +125,8 @@ class FileStore:
         return self._fs.exists(path)
 
     def is_dir(self, path: str) -> bool:
-        if self._overlay_owns(path):
-            return self._overlay_fs.isdir(path)  # type: ignore[union-attr]
+        if self._overlay_fs is not None and self._overlay_owns(path):
+            return self._overlay_fs.isdir(path)
         return self._fs.isdir(path)
 
     def list_dir(self, path: str = "/") -> list[dict[str, Any]]:
@@ -173,7 +177,8 @@ class FileStore:
         # on an overlay-only entry, and an overlay-only "removed" path no longer
         # resolves afterwards).
         if self._overlay_owns(path):
-            target: OSFS = self._overlay_fs  # type: ignore[assignment]
+            assert self._overlay_fs is not None
+            target: OSFS = self._overlay_fs
         elif self._fs.exists(path):
             target = self._fs
         else:

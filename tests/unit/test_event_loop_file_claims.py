@@ -22,6 +22,7 @@ number of failures instead of retrying every tick without limit.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -42,8 +43,8 @@ class _FakeGit:
     """
 
     # repo_path -> list of changed files (set per test before invocation).
-    files_by_repo: dict[str, list[str]] = {}  # noqa: RUF012 — test fixture
-    commits: list[str] = []  # noqa: RUF012 — test fixture tracking
+    files_by_repo: ClassVar[dict[str, list[str]]] = {}
+    commits: ClassVar[list[str]] = []
 
     def __init__(self, repo_path: str = "") -> None:
         self.repo_path = repo_path

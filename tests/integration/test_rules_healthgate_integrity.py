@@ -97,7 +97,7 @@ def test_rules_engine_works_when_given_rules() -> None:
     self.config["todos"]. The claimed todos are Todo objects, so we seed tick state with
     one directly here instead of running the (DB-backed) claim phase.
     """
-    import general_ludd.routing_roles  # noqa: F401  warm-up import
+    import general_ludd.routing_roles  # noqa: F401  imported for side effects — warms import cycle
     from general_ludd.event_loop.loop import EventLoop
     from general_ludd.rules.engine import Rule
     from general_ludd.schemas.todo import Todo, TodoStatus
@@ -137,7 +137,7 @@ def test_rules_engine_works_when_given_rules() -> None:
 
 def test_daemon_gateway_has_no_health_tracker() -> None:
     """Daemon builds ModelGateway without health_tracker — circuit-breaker is inactive."""
-    import general_ludd.routing_roles  # noqa: F401
+    import general_ludd.routing_roles  # noqa: F401  imported for side effects — warms import cycle
     from general_ludd.models.gateway import ModelGateway, ModelProfile
 
     profile = ModelProfile(
@@ -161,7 +161,7 @@ def test_daemon_gateway_has_no_health_tracker() -> None:
 
 def test_health_gate_works_when_wired() -> None:
     """Circuit-breaker trips correctly when health_tracker IS provided."""
-    import general_ludd.routing_roles  # noqa: F401
+    import general_ludd.routing_roles  # noqa: F401  imported for side effects — warms import cycle
     from general_ludd.models.gateway import ModelGateway, ModelProfile
     from general_ludd.models.timeout_detector import ModelHealthTracker
 
@@ -176,7 +176,7 @@ def test_health_gate_works_when_wired() -> None:
 
     gateway = ModelGateway(
         profiles=[profile],
-        provider_registry=_FakeRegistry(),  # type: ignore[arg-type]
+        provider_registry=_FakeRegistry(),  # type: ignore[arg-type]  # test stub
         secrets_manager=None,
         health_tracker=tracker,
     )
@@ -198,7 +198,7 @@ def test_health_gate_works_when_wired() -> None:
 
 def test_unhealthy_model_not_skipped_when_tracker_none() -> None:
     """record_timeout_on_failure is a no-op when health_tracker is None (daemon mode)."""
-    import general_ludd.routing_roles  # noqa: F401
+    import general_ludd.routing_roles  # noqa: F401  imported for side effects — warms import cycle
     from general_ludd.models.gateway import ModelGateway, ModelProfile
 
     profile = ModelProfile(

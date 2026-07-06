@@ -116,7 +116,7 @@ class LangGraphAgentLoop:
                 "Install with: pip install langgraph"
             ) from exc
 
-        graph = create_react_agent(
+        graph: Any = create_react_agent(
             model,
             langchain_tools,
         )
@@ -133,7 +133,7 @@ class LangGraphAgentLoop:
         }
 
         try:
-            result = await graph.ainvoke(  # type: ignore[call-overload]
+            result = await graph.ainvoke(
                 {"messages": messages},
                 config=config,
             )

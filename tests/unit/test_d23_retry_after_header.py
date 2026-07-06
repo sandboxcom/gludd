@@ -16,15 +16,19 @@ respected.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
+if TYPE_CHECKING:
+    from general_ludd.models.gateway import ModelGateway
+
 
 def _build_gateway_with_always_failing_primary(
     provider_exc: BaseException,
-) -> tuple[object, list[int]]:
+) -> tuple[ModelGateway, list[int]]:
     from general_ludd.models.gateway import ModelGateway, ModelProfile
     from general_ludd.models.timeout_detector import ModelHealthTracker
 
@@ -92,7 +96,7 @@ class TestRetryAfterHeaderHonored:
         with patch("time.sleep", side_effect=_capture_sleep), pytest.raises(
             httpx.HTTPStatusError
         ):
-            gateway.call_model_with_retry(  # type: ignore[attr-defined]
+            gateway.call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,

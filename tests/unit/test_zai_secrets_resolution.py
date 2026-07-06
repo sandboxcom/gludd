@@ -26,6 +26,8 @@ class TestZaiSecretsResolution:
 
     def test_lowercase_alias_direct_env_still_works(self):
         """Regression: lowercase env var still resolves (existing path not broken)."""
+        # SIM112 suppressed: lowercase env var is intentional — this test verifies
+        # the resolver still honours lowercase keys (case-insensitive resolution).
         os.environ["zai_api_key"] = "direct-key-lowercase"  # noqa: SIM112
         mgr = EnvSecretsManager()
         assert mgr.resolve("zai_api_key") == "direct-key-lowercase"

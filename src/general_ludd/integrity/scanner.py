@@ -21,10 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from watchdog.events import (
-    FileCreatedEvent,
-    FileDeletedEvent,
-    FileModifiedEvent,
-    FileMovedEvent,
+    FileSystemEvent,
     FileSystemEventHandler,
 )
 from watchdog.observers import Observer
@@ -539,19 +536,19 @@ class _IntegrityEventHandler(FileSystemEventHandler):
         with self._lock:
             self._changes.append(entry)
 
-    def on_created(self, event: FileCreatedEvent) -> None:  # type: ignore[override]
+    def on_created(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
             self._record("new", str(event.src_path))
 
-    def on_modified(self, event: FileModifiedEvent) -> None:  # type: ignore[override]
+    def on_modified(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
             self._record("modified", str(event.src_path))
 
-    def on_deleted(self, event: FileDeletedEvent) -> None:  # type: ignore[override]
+    def on_deleted(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
             self._record("removed", str(event.src_path))
 
-    def on_moved(self, event: FileMovedEvent) -> None:  # type: ignore[override]
+    def on_moved(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
             self._record("moved", str(event.src_path), str(event.dest_path))
 

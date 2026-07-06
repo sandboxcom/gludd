@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal as _signal
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
 
@@ -84,7 +84,7 @@ def _collect_stats(pid: int) -> dict[str, Any]:
 
     io: dict[str, int] | None
     try:
-        ioc = proc.io_counters()  # type: ignore[attr-defined, unused-ignore]
+        ioc = cast(Any, proc).io_counters()
         io = {
             "read_bytes": ioc.read_bytes,
             "write_bytes": ioc.write_bytes,

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 from sqlalchemy import select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.models import BucketLeaseModel
@@ -125,4 +127,4 @@ async def release_lease(
         stmt = stmt.where(BucketLeaseModel.holder_id == holder_id)
     result = await session.execute(stmt)
     await session.flush()
-    return int(result.rowcount or 0)  # type: ignore[attr-defined]
+    return int(cast("CursorResult[Any]", result).rowcount or 0)

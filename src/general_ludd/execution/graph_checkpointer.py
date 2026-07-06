@@ -25,6 +25,7 @@ except ImportError as exc:
 _HAS_SQLITE_SAVER = False
 if _IMPORT_ERROR is None:
     try:
+        # Optional extra (langgraph-checkpoint-sqlite); may not be installed.
         from langgraph.checkpoint.sqlite import SqliteSaver  # type: ignore[import-not-found]
         _HAS_SQLITE_SAVER = True
     except ImportError:

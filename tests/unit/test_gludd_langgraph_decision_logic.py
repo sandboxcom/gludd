@@ -144,8 +144,8 @@ def _run_main(
         captured["module"] = inst
         return inst
 
-    mod.AnsibleModule = _factory  # type: ignore[attr-defined]
-    mod.GluddClient = FakeClient  # type: ignore[attr-defined]
+    mod.AnsibleModule = _factory
+    mod.GluddClient = FakeClient
 
     with contextlib.suppress(_Unwind):
         mod.main()

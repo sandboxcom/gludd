@@ -399,6 +399,7 @@ class BrowserLoginFlow:
         service: str,
         config: ServiceConfig | None = None,
         store: CredentialStore | None = None,
+        payment_label: str | None = None,
     ) -> None:
         self._service = service
         _cfg = config or SERVICE_PRESETS.get(service)
@@ -406,6 +407,7 @@ class BrowserLoginFlow:
             raise ValueError(f"Unknown service: {service!r}. Known: {list_services()}")
         self._config: ServiceConfig = _cfg
         self._store = store or EnvCredentialStore()
+        self._payment_label = payment_label
 
     @classmethod
     def from_config(cls, config: ServiceConfig, store: CredentialStore | None = None) -> BrowserLoginFlow:
@@ -422,10 +424,37 @@ class BrowserLoginFlow:
     def run(
         self,
         timeout: float = _DEFAULT_TIMEOUT,
+        payment_label: str | None = None,
     ) -> str | None:
+        if payment_label is not None:
+            self._payment_label = payment_label
         if self._config.token_url:
             return self._run_oauth2(timeout=timeout)
         return self._run_api_key(timeout=timeout)
+
+    def _payment_metadata(self) -> dict[str, str]:
+        label = self._payment_label
+        if not label:
+            return {}
+        try:
+            from general_ludd.secrets.payment_vault import SecurePaymentVault
+        except ImportError:
+            return {}
+        sm = getattr(self._store, "_sm", None)
+        if sm is None:
+            return {}
+        try:
+            vault = SecurePaymentVault(sm)
+            token = vault.get_processor_token(label)
+            last4 = vault.get_card_last4(label)
+        except Exception:
+            return {}
+        if token is None:
+            return {}
+        meta: dict[str, str] = {"payment_processor_token": token}
+        if last4 is not None:
+            meta["payment_card_last4"] = last4
+        return meta
 
     # -- OAuth2 + PKCE flow ---------------------------------------------------
 
@@ -517,12 +546,14 @@ class BrowserLoginFlow:
 
         access_token: str | None = body.get("access_token") or body.get("token")
         if access_token:
-            self._store.store(self._service, access_token, metadata={
+            metadata = {
                 "service": self._service,
                 "scope": body.get("scope", ""),
                 "token_type": body.get("token_type", "bearer"),
                 "refresh_token": body.get("refresh_token", ""),
-            })
+            }
+            metadata.update(self._payment_metadata())
+            self._store.store(self._service, access_token, metadata=metadata)
             print(f"  Login to {self._config.display_name} successful.")
             print(f"  Credential stored in {self._config.credential_env}")
             return access_token
@@ -559,11 +590,13 @@ class BrowserLoginFlow:
             print("  No API key entered — login skipped.", file=sys.stderr)
             return None
 
-        self._store.store(self._service, api_key, metadata={
+        metadata = {
             "service": self._service,
             "source": "key_paste",
-        })
-        print(f"  Login to {config.display_name} successful.")
+        }
+        metadata.update(self._payment_metadata())
+        self._store.store(self._service, api_key, metadata=metadata)
+        print(f"  Login to {self._config.display_name} successful.")
         print(f"  Credential stored in {env_var}")
         return api_key
 
@@ -589,3 +622,18 @@ def login(
 ) -> str | None:
     flow = BrowserLoginFlow(service, store=store)
     return flow.run(timeout=timeout)
+
+
+def open_browser_auth(
+    service: str,
+    store: CredentialStore | None = None,
+    timeout: float = 120.0,
+) -> str | None:
+    """Open the default browser to authenticate with ``service``.
+
+    Thin alias for :func:`login` matching the public spec name. Opens the
+    user's default browser via ``xdg-open`` (Linux) or ``open`` (macOS),
+    starts a local HTTP callback server on a random port, drives the OAuth2
+    PKCE flow (or API-key paste fallback), and returns the obtained token.
+    """
+    return login(service, store=store, timeout=timeout)

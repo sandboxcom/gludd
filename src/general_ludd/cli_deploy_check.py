@@ -212,7 +212,7 @@ def _cmd_reject(args: argparse.Namespace) -> None:
         print(f"reason: {data['reason']}")
 
 
-def add_deploy_check_subparser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+def add_deploy_check_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = sub.add_parser(
         "deploy-check", help="Statically lint a model serving config for misconfigs"
     )

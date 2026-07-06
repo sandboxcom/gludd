@@ -10,6 +10,7 @@ counted via ``GitAutomation.lines_changed_in_commit`` and accumulated on the
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -23,7 +24,7 @@ _TICK = "general_ludd.git_automation.repo.GitAutomation"
 class _FakeGit:
     """Stand-in for GitAutomation used inside _try_commit_completed_work."""
 
-    instances: list[object] = []  # noqa: RUF012 — test fixture tracking
+    instances: ClassVar[list[object]] = []
 
     def __init__(self, repo_path: str = "") -> None:
         self.repo_path = repo_path

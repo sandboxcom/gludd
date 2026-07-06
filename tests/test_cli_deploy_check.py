@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 from contextlib import redirect_stdout
+from typing import cast
 
 import pytest
 
@@ -127,13 +128,16 @@ def test_run_subparser_is_registered() -> None:
     assert "deploy-check" in subcommand_map
     dc = subcommand_map["deploy-check"]
     # The 'run' subcommand exists under deploy-check.
+    assert dc._subparsers is not None
     subactions = [
-        a for a in dc._subparsers._group_actions  # type: ignore[union-attr]
+        a for a in dc._subparsers._group_actions
         if hasattr(a, "choices")
     ]
     choices: dict[str, object] = {}
     for a in subactions:
-        choices.update(a.choices)  # type: ignore[attr-defined]
+        ch = getattr(a, "choices", None)
+        if ch is not None:
+            choices.update(ch)
     assert "run" in choices
     # The SLM fix-loop subcommands are also registered.
     assert "suggest-fix" in choices
@@ -175,7 +179,7 @@ def test_approve_prints_status_and_merged_config(monkeypatch) -> None:
     }
     seen: dict[str, object] = {}
 
-    def _fake_http(method, url, *, json_body=None, **k):  # type: ignore[no-untyped-def]
+    def _fake_http(method: str, url: str, *, json_body: object = None, **k: object) -> dict[str, object]:
         seen["url"] = url
         seen["json_body"] = json_body
         return canned
@@ -193,7 +197,7 @@ def test_approve_prints_status_and_merged_config(monkeypatch) -> None:
     out = captured.getvalue()
     assert "approved" in out
     assert "gpu_memory_utilization" in out
-    assert seen["url"].endswith("/admin/deployments/fixes/abc123/approve")  # type: ignore[union-attr]
+    assert cast(str, seen["url"]).endswith("/admin/deployments/fixes/abc123/approve")
     assert seen["json_body"] == {"retry": True}
 
 
@@ -201,7 +205,7 @@ def test_reject_prints_status_and_reason(monkeypatch) -> None:
     canned = {"fix_id": "abc123", "status": "rejected", "reason": "nope"}
     seen: dict[str, object] = {}
 
-    def _fake_http(method, url, *, json_body=None, **k):  # type: ignore[no-untyped-def]
+    def _fake_http(method: str, url: str, *, json_body: object = None, **k: object) -> dict[str, object]:
         seen["json_body"] = json_body
         return canned
 

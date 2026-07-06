@@ -261,7 +261,7 @@ def _cmd_stats(args: argparse.Namespace) -> None:
             print(f"  {k:<24} {v}")
 
 
-def add_human_todo_subparser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+def add_human_todo_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = sub.add_parser("human-todo", help="Manage bot→human requests (HumanTodo)")
     p.set_defaults(func=None)
     hsub = p.add_subparsers(dest="human_todo_command")

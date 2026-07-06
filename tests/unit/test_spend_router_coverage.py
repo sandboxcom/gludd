@@ -52,7 +52,9 @@ class TestSpendStatusNoLimiter:
 class TestSpendStatusWithLimiter:
     def test_status_reports_live_limiter_values(self, app: FastAPI, client: TestClient) -> None:
         # Fixed fake clock so window math is deterministic.
-        clock = lambda: 1000.0  # noqa: E731
+        def clock() -> float:
+            return 1000.0
+
         limiter = SpendLimiter(limit_usd=10.0, window_seconds=3600.0, clock=clock)
         limiter.record(2.5, kind="token", at=1000.0)
         app.state._spend_limiter = limiter
@@ -69,7 +71,9 @@ class TestSpendStatusWithLimiter:
     def test_status_remaining_floors_at_zero_when_over_limit(
         self, app: FastAPI, client: TestClient
     ) -> None:
-        clock = lambda: 500.0  # noqa: E731
+        def clock() -> float:
+            return 500.0
+
         limiter = SpendLimiter(limit_usd=1.0, window_seconds=3600.0, clock=clock)
         limiter.record(5.0, kind="token", at=500.0)
         app.state._spend_limiter = limiter

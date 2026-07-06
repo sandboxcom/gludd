@@ -19,8 +19,8 @@ from typing import ClassVar
 import httpx
 import pytest
 
-# Warm the routing_roles -> schemas.benchmark import cycle (same reason as every
-# gateway-importing test — see test_gateway_circuit_breaker.py for details).
+# imported for side effects — warms the routing_roles import cycle so the
+# gateway imports below succeed in any collection order.
 import general_ludd.routing_roles  # noqa: F401
 from general_ludd.models.gateway import (
     CircuitBreakerOpenError,

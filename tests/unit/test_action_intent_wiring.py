@@ -69,8 +69,8 @@ class TestActionIntentWiredIntoProductionModule:
         detector = AdversarialCodeDetector()
         finding = AdversarialFinding(
             pattern_id="test_pattern",
-            category="self_sabotage",  # type: ignore[arg-type]
-            severity="high",  # type: ignore[arg-type]
+            category="self_sabotage",  # type: ignore[arg-type]  # test stub
+            severity="high",  # type: ignore[arg-type]  # test stub
             description="Test finding",
             match_text="test match",
             file_path="test.py",

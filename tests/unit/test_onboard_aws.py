@@ -79,17 +79,29 @@ class TestTokenAcquisitionGuide:
 # ---------------------------------------------------------------------------
 
 
+class _ClientErrorFallback(Exception):
+    """Stand-in for ``botocore.exceptions.ClientError`` when botocore is absent.
+
+    Botocore ships no inline type stubs; the ``import-not-found`` suppression
+    on the lazy import below is unavoidable until ``types-botocore`` is added.
+    Defining the fallback at module scope (rather than inline in the ``except``
+    branch) means the ``ClientError`` name is bound by an assignment in the
+    fallback path, not a class definition — so there is no ``no-redef``.
+    """
+
+    def __init__(self, error_response: dict, operation_name: str) -> None:
+        super().__init__(error_response.get("Error", {}).get("Message", ""))
+        self.response = error_response
+        self.operation_name = operation_name
+
+
 def _fake_client_error(code: str, message: str = "probe") -> Exception:
     """Build a botocore-shaped ClientError for tests (without importing botocore)."""
     try:
+        # types-botocore not installed; import-not-found is expected here.
         from botocore.exceptions import ClientError  # type: ignore[import-not-found]
     except ImportError:
-        class ClientError(Exception):  # type: ignore[no-redef]
-            def __init__(self, error_response: dict, operation_name: str) -> None:
-                super().__init__(error_response.get("Error", {}).get("Message", ""))
-                self.response = error_response
-                self.operation_name = operation_name
-
+        ClientError = _ClientErrorFallback
     return ClientError({"Error": {"Code": code, "Message": message}}, "DryRun")
 
 

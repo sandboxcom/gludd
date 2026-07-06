@@ -1208,7 +1208,7 @@ class ModelGateway:
 
         if not _exhausted:
             # Should not reach here (return or raise should happen above).
-            return None  # type: ignore[return-value]
+            raise RuntimeError("failover path exited without return or raise")
 
         # Tenacity exhausted (failover_after attempts tried on primary) → walk
         # fallbacks. _walk_fallbacks skips any fallback that fails is_healthy and

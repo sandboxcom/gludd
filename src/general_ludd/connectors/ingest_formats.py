@@ -179,7 +179,7 @@ def _decode_fluent_payload(payload: bytes) -> Any:
         pass
     # Binary (msgpack) mode — only attempt if the optional dep is present.
     try:
-        import msgpack  # type: ignore[import-untyped]
+        import msgpack  # type: ignore[import-untyped]  # msgpack: required dep but ships no py.typed marker
     except ImportError:
         return None
     try:

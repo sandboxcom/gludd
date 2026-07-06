@@ -181,7 +181,7 @@ def test_health_never_raises() -> None:
     def boom(url: str, headers: dict[str, str]) -> tuple[int, Any]:
         raise OSError("connection refused")
 
-    src = _make(boom)  # type: ignore[arg-type]
+    src = _make(boom)  # type: ignore[arg-type]  # test stub
     h = src.health()
     assert h["ok"] is False
     assert "transport error" in h["detail"]

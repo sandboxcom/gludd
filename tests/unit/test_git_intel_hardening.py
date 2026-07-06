@@ -68,7 +68,7 @@ class TestValidateToken:
     @pytest.mark.parametrize("bad", ["", None, 123])
     def test_empty_or_non_str_rejected(self, bad):
         with pytest.raises(GitIntelError):
-            _validate_token(bad)  # type: ignore[arg-type]
+            _validate_token(bad)  # type: ignore[arg-type]  # test stub
 
     @pytest.mark.parametrize(
         "ok",

@@ -115,7 +115,7 @@ class TestExecuteJobDuplicateD10:
         def fake_run(playbook_name: str, **kwargs: Any) -> dict[str, Any]:
             return {"status": "successful", "rc": 0, "events": [], "artifacts": []}
 
-        runner.run_playbook = fake_run  # type: ignore[method-assign]
+        runner.run_playbook = fake_run  # type: ignore[method-assign]  # pytest monkeypatch
 
         client = _make_client(runner)
         resp = client.post("/jobs/execute", json=_make_job(job_id="TESTJOBSUC"))
@@ -140,7 +140,7 @@ class TestCleanupOnFailureD09:
         def failing_run(playbook_name: str, **kwargs: Any) -> dict[str, Any]:
             raise RuntimeError("simulated runner failure")
 
-        runner.run_playbook = failing_run  # type: ignore[method-assign]
+        runner.run_playbook = failing_run  # type: ignore[method-assign]  # pytest monkeypatch
 
         client = _make_client(runner)
         resp = client.post("/jobs/execute", json=_make_job(job_id="TESTJOBFAIL"))
@@ -159,7 +159,7 @@ class TestCleanupOnFailureD09:
         def ok_run(playbook_name: str, **kwargs: Any) -> dict[str, Any]:
             return {"status": "successful", "rc": 0, "events": [], "artifacts": []}
 
-        runner.run_playbook = ok_run  # type: ignore[method-assign]
+        runner.run_playbook = ok_run  # type: ignore[method-assign]  # pytest monkeypatch
 
         client = _make_client(runner)
         resp = client.post("/jobs/execute", json=_make_job(job_id="TESTJOBOK"))
@@ -187,7 +187,7 @@ class TestCleanupOnFailureD09:
             _release.wait(timeout=5.0)
             return {"status": "successful", "rc": 0, "events": [], "artifacts": []}  # pragma: no cover
 
-        runner.run_playbook = stalling_run  # type: ignore[method-assign]
+        runner.run_playbook = stalling_run  # type: ignore[method-assign]  # pytest monkeypatch
 
         client = _make_client(runner)
         try:
@@ -218,8 +218,11 @@ class TestCleanupOnFailureD09:
         def bad_write(*args: Any, **kwargs: Any) -> None:
             raise OSError("simulated write failure")
 
-        runner.run_playbook = lambda **k: {"rc": 0}  # never reached  # type: ignore[method-assign]
-        runner.write_vars = bad_write  # type: ignore[method-assign]
+        def _noop_run(**k: Any) -> dict[str, Any]:
+            return {"rc": 0}  # never reached
+
+        runner.run_playbook = _noop_run  # type: ignore[method-assign]  # pytest monkeypatch
+        runner.write_vars = bad_write  # type: ignore[method-assign]  # pytest monkeypatch
 
         client = _make_client(runner)
         with contextlib.suppress(Exception):
@@ -271,7 +274,7 @@ class TestWaitForTimeoutD35:
             _release.wait(timeout=5.0)
             return {"status": "successful", "rc": 0, "events": [], "artifacts": []}  # pragma: no cover
 
-        runner.run_playbook = stalling_run  # type: ignore[method-assign]
+        runner.run_playbook = stalling_run  # type: ignore[method-assign]  # pytest monkeypatch
 
         client = _make_client(runner)
         # timeout=0.05s — wait_for fires long before the TestClient's own timeout
@@ -309,7 +312,7 @@ class TestWaitForTimeoutD35:
         def ok_run(playbook_name: str, **kwargs: Any) -> dict[str, Any]:
             return {"status": "successful", "rc": 0, "events": [], "artifacts": []}
 
-        runner.run_playbook = ok_run  # type: ignore[method-assign]
+        runner.run_playbook = ok_run  # type: ignore[method-assign]  # pytest monkeypatch
 
         with patch("general_ludd.worker.app.asyncio.wait_for", side_effect=patched_wait_for):
             client = _make_client(runner)

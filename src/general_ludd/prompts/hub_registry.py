@@ -13,6 +13,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 try:
+    # ``hub`` is a dynamically-loaded submodule of langchain, not declared in
+    # its type stubs; the attr-defined ignore is required for this optional dep.
     from langchain import hub as langchain_hub  # type: ignore[attr-defined]
 
     HAS_LANGCHAIN_HUB = True

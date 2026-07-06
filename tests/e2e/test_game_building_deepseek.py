@@ -36,7 +36,7 @@ import textwrap
 import time
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -194,7 +194,7 @@ def _build_deepseek_gateway() -> Any:
     assert _DEEPSEEK_KEY, "key must be set before building gateway"
     secrets.set("DEEPSEEK_API_KEY", _DEEPSEEK_KEY)
     secrets.set("DEEPSEEK_API_BASE", _DS_BASE_URL)
-    return ModelGateway(profiles=[profile], provider_registry=registry, secrets_manager=secrets)  # type: ignore[arg-type]
+    return ModelGateway(profiles=[profile], provider_registry=registry, secrets_manager=secrets)  # type: ignore[arg-type]  # test stub
 
 
 # ---------------------------------------------------------------------------
@@ -1833,7 +1833,7 @@ class TestDeepSeekGameBuilding:
         print(f"RESULT: {game_id} — {passed}/{len(checks)} checks passed")
 
     # ---- Gap tracking ----
-    _gaps: list[dict[str, Any]] = []  # noqa: RUF012
+    _gaps: ClassVar[list[dict[str, Any]]] = []
 
     @classmethod
     def _record_gap(cls, game_id: str, category: str, detail: str) -> None:
@@ -2294,7 +2294,7 @@ class TestGamePersistence:
     validity after extended play. Adds to gap analysis if a game fails.
     """
 
-    _persistence_gaps: list[dict[str, Any]] = []  # noqa: RUF012
+    _persistence_gaps: ClassVar[list[dict[str, Any]]] = []
 
     @classmethod
     def _record_persistence_gap(cls, game_id: str, category: str, detail: str) -> None:

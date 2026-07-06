@@ -74,7 +74,8 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
 
     # Try to pull the last "path:lineno:" reference out of the traceback.
     if hasattr(report, "longrepr") and hasattr(report.longrepr, "reprcrash"):
-        crash = report.longrepr.reprcrash  # type: ignore[union-attr]
+        assert report.longrepr is not None
+        crash = report.longrepr.reprcrash
         if crash:
             file_part = getattr(crash, "path", "") or ""
             line_part = str(getattr(crash, "lineno", "") or "")

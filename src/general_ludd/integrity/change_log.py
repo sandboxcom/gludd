@@ -42,6 +42,9 @@ from typing import Any
 try:
     import fcntl
 except ImportError:  # pragma: no cover - non-POSIX platform (e.g. Windows)
+    # Platform-specific: fcntl is POSIX-only (Linux/macOS). The try/except is
+    # the documented Python idiom for optional stdlib modules; the suppression
+    # is required because mypy sees the import as defining ``fcntl``.
     fcntl = None  # type: ignore[assignment]
 
 from general_ludd.integrity.scanner import (
@@ -144,15 +147,12 @@ class ChangeRecordStore:
             yield
             return
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
-        handle = open(self._lock_path, "w")  # noqa: SIM115 - released in finally
-        try:
+        with open(self._lock_path, "w") as handle:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
             try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                yield
             finally:
-                handle.close()
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     # -- serialization ---------------------------------------------------
 

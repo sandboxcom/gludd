@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -265,7 +266,7 @@ class TodoRepository:
             guard = guard.where(TodoModel.project_id == _pid)
         guard = guard.values(**updates, version=expected_version + 1, updated_at=now)
         res = await self._session.execute(guard)
-        if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
+        if (cast("CursorResult[Any]", res).rowcount or 0) != 1:
             raise ConcurrencyError(
                 f"Lost update on todo {todo_id}: row changed concurrently "
                 f"(expected version {expected_version})"
@@ -444,7 +445,7 @@ class TodoRepository:
                 with contextlib.suppress(Exception):
                     await self._session.refresh(todo)
                 continue
-            if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
+            if (cast("CursorResult[Any]", res).rowcount or 0) != 1:
                 # Lost the race: another caller already claimed this row. Drop our
                 # stale in-memory copy and skip it so it is never returned twice.
                 await self._session.refresh(todo)
@@ -557,7 +558,7 @@ class TodoRepository:
             status=new_status.value, version=expected_version + 1, updated_at=now
         )
         res = await self._session.execute(guard)
-        if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
+        if (cast("CursorResult[Any]", res).rowcount or 0) != 1:
             raise ConcurrencyError(
                 f"Lost transition on todo {todo_id}: row changed concurrently "
                 f"(expected version {expected_version}, status {current.value})"
@@ -702,7 +703,7 @@ class TaskReturnRepository:
                 with contextlib.suppress(Exception):
                     await self._session.refresh(row)
                 continue
-            if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
+            if (cast("CursorResult[Any]", res).rowcount or 0) != 1:
                 # Lost the race: another caller already claimed this return.
                 await self._session.refresh(row)
                 continue
@@ -1482,7 +1483,7 @@ class AgentMessageRepository:
             elapsed_seconds > AgentMessageModel.ttl_seconds,
         )
         result = await self._session.execute(stmt)
-        purged = int(result.rowcount or 0)  # type: ignore[attr-defined]  # CursorResult at runtime
+        purged = int(cast("CursorResult[Any]", result).rowcount or 0)
         if purged:
             await self._session.flush()
         return purged
@@ -1646,7 +1647,7 @@ class FeatureRepository:
             .values(**values)
         )
         res = await self._session.execute(guard)
-        if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
+        if (cast("CursorResult[Any]", res).rowcount or 0) != 1:
             raise KeyError(f"Feature {feature_id!r} not found")
         await self._session.flush()
         await self._session.refresh(row)
@@ -2625,7 +2626,7 @@ class SlurmJobRepository:
         guard = _update(SlurmJobModel).where(SlurmJobModel.job_id == job_id).values(**values)
         res = await self._session.execute(guard)
         await self._session.flush()
-        return (res.rowcount or 0) > 0  # type: ignore[attr-defined]
+        return (cast("CursorResult[Any]", res).rowcount or 0) > 0
 
     async def list_active(
         self, daemon_pid: int | None = None
@@ -2795,7 +2796,7 @@ class MemoryRepository:
                 elapsed_seconds > MemoryRecordModel.ttl_seconds,
             )
             result = await session.execute(stmt)
-            purged = int(result.rowcount or 0)  # type: ignore[attr-defined]
+            purged = int(cast("CursorResult[Any]", result).rowcount or 0)
             if purged:
                 await session.flush()
             return purged

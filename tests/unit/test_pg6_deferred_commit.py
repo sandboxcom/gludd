@@ -23,7 +23,7 @@ def _make_job(**kwargs: object) -> JobSpec:
         queue="core",
     )
     defaults.update(kwargs)
-    return JobSpec(**defaults)  # type: ignore[arg-type]
+    return JobSpec(**defaults)  # type: ignore[arg-type]  # test stub
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ def test_execute_async_defers_commit_not_blocks() -> None:
             commit_calls.append(message)
             original_defer(path, message)
 
-        engine.defer_commit = _spy_defer  # type: ignore[method-assign]
+        engine.defer_commit = _spy_defer  # type: ignore[method-assign]  # pytest monkeypatch
 
         job = _make_job()
 

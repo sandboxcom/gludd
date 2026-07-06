@@ -1,0 +1,168 @@
+---
+# credit_audit role — audit prepaid service credit balances.
+#
+# Queries /api/credits from the gludd daemon for the current balance of every
+# configured provider (DeepSeek, OpenAI, Z.AI, OpenRouter). Performs:
+#   - per-provider balance vs threshold check
+#   - low-balance provider identification
+#   - refill recommendation (2x threshold as a conservative default)
+#   - aggregated verdict (ok / warn / critical)
+#
+# REPORT-ONLY: never mutates the repo or external services.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Fetch /api/credits from the daemon ────────────────────────────────────────
+
+- name: Fetch service credit balances from daemon API
+  ansible.builtin.uri:
+    url: "{{ daemon_url }}/api/credits?refresh=1"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ psk }}"
+      Content-Type: application/json
+    return_content: true
+    status_code: 200
+  register: _cr_response
+  ignore_errors: true
+
+- name: Parse credits response
+  ansible.builtin.set_fact:
+    _cr_credits: "{{ _cr_response.json | default({}) }}"
+  when: _cr_response.status | default(0) == 200
+
+- name: Set empty credits (daemon unreachable)
+  ansible.builtin.set_fact:
+    _cr_credits: {}
+  when: _cr_response.status | default(0) != 200
+
+# ── Per-provider threshold checks ─────────────────────────────────────────────
+
+- name: Initialize findings list
+  ansible.builtin.set_fact:
+    _cr_findings: []
+
+- name: Evaluate each configured provider
+  ansible.builtin.set_fact:
+    _cr_findings: >-
+      {{
+        _cr_findings + [{
+          'provider': item,
+          'balance_usd': (_cr_credits[item].balance_usd | default(None)),
+          'currency': (_cr_credits[item].currency | default('USD')),
+          'error': (_cr_credits[item].error | default(None)),
+          'threshold_usd': (credit_thresholds[item] | default(credit_threshold_usd) | float),
+          'low_balance': (
+            (_cr_credits[item].balance_usd | default(None)) is none
+            or (_cr_credits[item].balance_usd | float
+                < (credit_thresholds[item] | default(credit_threshold_usd) | float))
+          ),
+          'recommended_refill_usd': (
+            (credit_thresholds[item] | default(credit_threshold_usd) | float) * 2.0
+          )
+        }]
+      }}
+  loop: "{{ credit_providers }}"
+  loop_control:
+    loop_var: item
+
+- name: Identify low-balance providers
+  ansible.builtin.set_fact:
+    _cr_low_balance: >-
+      {{ _cr_findings | selectattr('low_balance', 'equalto', true) | list }}
+
+- name: Identify errored providers
+  ansible.builtin.set_fact:
+    _cr_errored: >-
+      {{ _cr_findings | selectattr('error', 'ne', None) | list }}
+
+# ── Verdict ───────────────────────────────────────────────────────────────────
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _cr_verdict: >-
+      {{
+        'critical' if _cr_low_balance | length > 0
+        else ('warn' if _cr_errored | length > 0
+        else 'ok')
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON credit audit artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'credit_audit',
+        'status': 'completed',
+        'verdict': _cr_verdict,
+        'providers_checked': _cr_findings | length,
+        'low_balance_count': _cr_low_balance | length,
+        'errored_count': _cr_errored | length,
+        'findings': _cr_findings,
+        'low_balance_providers': _cr_low_balance,
+        'errored_providers': _cr_errored
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/credit_audit.json"
+    mode: "0644"
+
+- name: Write markdown credit audit report
+  ansible.builtin.copy:
+    content: |
+      # Credit Audit Report
+
+      **Verdict:** {{ _cr_verdict | upper }}
+      **Providers checked:** {{ _cr_findings | length }}
+      **Low-balance providers:** {{ _cr_low_balance | length }}
+      **Errored providers:** {{ _cr_errored | length }}
+
+      ## Per-Provider Balances
+
+      {% if _cr_findings | length == 0 %}
+      No providers configured (or daemon unreachable).
+      {% else %}
+      | Provider | Balance (USD) | Threshold (USD) | Status |
+      |----------|--------------:|----------------:|--------|
+      {% for f in _cr_findings %}
+      | {{ f.provider }} |
+      {% if f.balance_usd is none %}—{% else %}${{ f.balance_usd | float | round(4) }}{% endif %}
+      | ${{ f.threshold_usd | float | round(2) }} |
+      {% if f.error is not none %}ERROR: {{ f.error }}
+      {% elif f.low_balance %}LOW (refill ~${{ f.recommended_refill_usd | float | round(2) }})
+      {% else %}OK{% endif %} |
+      {% endfor %}
+      {% endif %}
+
+      ## Recommended Actions
+
+      {% if _cr_low_balance | length == 0 and _cr_errored | length == 0 %}
+      All configured provider balances are above their thresholds.
+      {% else %}
+      {% for f in _cr_low_balance %}
+      - **{{ f.provider }}**: balance
+        {% if f.balance_usd is none %}unknown{% else %}${{ f.balance_usd | float | round(4) }}{% endif %}
+        at/below threshold ${{ f.threshold_usd | float | round(2) }} — refill ~${{ f.recommended_refill_usd | float | round(2) }}.
+      {% endfor %}
+      {% for f in _cr_errored %}
+      {% if not f.low_balance %}
+      - **{{ f.provider }}**: probe errored ({{ f.error }}) — verify API key and provider status.
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.credit_audit — report-only.*
+    dest: "{{ artifact_dir }}/credit_audit.md"
+    mode: "0644"
+
+- name: Report credit audit completion
+  ansible.builtin.debug:
+    msg: >-
+      Credit audit complete: verdict={{ _cr_verdict }}
+      checked={{ _cr_findings | length }}
+      low_balance={{ _cr_low_balance | length }}
+      errored={{ _cr_errored | length }}

@@ -87,6 +87,7 @@ PHASE_ORDER = [
     "reconcile_completed_decisions",
     "refresh_model_performance",
     "check_compute_utilization",
+    "check_service_credits",
     "self_improve",
     "poll_issue_sources",
     "emit_tick_metrics",
@@ -300,6 +301,7 @@ class EventLoop:
         issue_ingestor: Any | None = None,
         compaction_controller: CompactionAggressivenessController | None = None,
         infra_tracker: Any | None = None,
+        credit_tracker: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -322,6 +324,7 @@ class EventLoop:
         self._floor_controller = floor_controller
         self._compaction_controller = compaction_controller
         self._infra_tracker = infra_tracker
+        self._credit_tracker = credit_tracker
         # Compaction feedback loop: accumulated accuracy samples across ticks.
         self._compaction_passed = 0
         self._compaction_total = 0
@@ -3382,6 +3385,43 @@ class EventLoop:
         no_longer_idle = [eid for eid in idle_tracking if eid not in current_idle_ids]
         for eid in no_longer_idle:
             idle_tracking.pop(eid, None)
+
+    async def _phase_check_service_credits(self) -> None:
+        """Refresh prepaid service credit balances every N ticks.
+
+        Queries the wired :class:`~general_ludd.budget.credit_tracker.CreditTracker`
+        (if any) and stashes the latest per-service balances on
+        ``self._daemon_state["credits"]`` so the ``GET /api/credits`` endpoint
+        can serve them without issuing a fresh HTTP call per request. The
+        tracker handles transport errors / parse failures / missing keys
+        per-provider, so a single bad key never poisons the rest.
+
+        Interval: ``credit_check_interval_ticks`` (default 600 = ~10 minutes at
+        1s/tick). Set to 0 to disable.
+        """
+        if self._credit_tracker is None:
+            return
+        interval = int(self.config.get("credit_check_interval_ticks", 600))
+        if interval <= 0:
+            return
+        if self._total_ticks % interval != 0:
+            return
+        try:
+            results = await asyncio.to_thread(self._credit_tracker.check_all_balances)
+        except Exception as exc:
+            logger.warning("Service-credit balance check failed: %s", exc)
+            return
+        if self._daemon_state is not None:
+            self._daemon_state["credits"] = results
+        # Surface low-balance providers in tick metrics for the dashboard.
+        low = [
+            svc for svc, r in results.items()
+            if r.get("balance_usd") is not None
+            and self._credit_tracker.should_refill(svc)
+        ]
+        if low:
+            self._tick_metrics["low_credit_services"] = low
+            logger.warning("Low service credit balance: %s", ", ".join(low))
 
     async def _phase_self_improve(self) -> None:
         interval = self._self_improve_interval

@@ -215,7 +215,7 @@ class TestOpenAIEmbedderOption:
             # (It may still be hash if the openai package is missing, so we only
             # assert non-hash-when-openai-importable.)
             try:
-                import openai  # noqa: F401
+                import openai  # noqa: F401  import probe — checks if openai is installed
                 assert not isinstance(se._embedder, HashEmbedder)
             except ImportError:
                 assert isinstance(se._embedder, HashEmbedder)

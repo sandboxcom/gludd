@@ -8,6 +8,7 @@ import pytest
 
 ansible = pytest.importorskip("ansible", reason="ansible-core not installed")
 
+# E402 suppressed: import requires the importorskip guard above to succeed.
 from general_ludd.ansible.core_runner import CoreAnsibleRunner  # noqa: E402
 
 

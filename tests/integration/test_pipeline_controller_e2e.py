@@ -45,7 +45,7 @@ def _cfg(**kw: object) -> PipelineConfig:
         heartbeat_interval_s=0.01,
     )
     base.update(kw)
-    return PipelineConfig(**base)  # type: ignore[arg-type]
+    return PipelineConfig(**base)  # type: ignore[arg-type]  # test stub
 
 
 def _controller(
@@ -82,7 +82,7 @@ def _controller(
         dispatch,
         merge,
         gate,
-        heartbeat_sink=(lambda hb: (heartbeat_sink.append(hb) if heartbeat_sink is not None else None))  # type: ignore[arg-type]
+        heartbeat_sink=(lambda hb: (heartbeat_sink.append(hb) if heartbeat_sink is not None else None))  # type: ignore[arg-type]  # test stub
         if heartbeat_sink is not None
         else None,
     )

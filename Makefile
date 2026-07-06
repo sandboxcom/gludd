@@ -6,6 +6,7 @@ TARGET ?= master
 MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 VERIFY_POLLS ?= 30
+GLUDD_TASK_TIMEOUT ?= 300
 
 PYTHON := python3
 UV := uv
@@ -44,7 +45,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
 		gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
 		repo-visibility \
-		watchdog-start watchdog-status watchdog-stop watchdog-log \
+ 		watchdog-start watchdog-status watchdog-stop watchdog-log \
+ 		task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
 		check-readme-status check-plugin-versions check-plugin-versions-quiet \
 		check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
 		verify-release-artifact git-tag-rm release-cut release-recut release-create \
@@ -84,6 +86,7 @@ help:
 	@echo "  test-integration      Integration tests"
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-specific         Single test (TESTFILE='path::TestClass::test_name')"
+	@echo "  task                  Run CMD with timeout (CMD='make test-unit', GLUDD_TASK_TIMEOUT=300)"
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show test failures"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
@@ -226,6 +229,25 @@ test-unit:
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
 	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS)
+
+# --- Generic task runner with built-in timeout (GLUDD_TASK_TIMEOUT, default 300s)
+# Every dispatched task MUST have a timeout. Tasks exceeding the timeout are
+# killed by scripts/task_watchdog.py. Use this target to wrap any command that
+# a subagent might run, ensuring it cannot hang indefinitely.
+task:
+	@if [ -z "$(CMD)" ]; then echo "Usage: make task CMD='make test-unit'"; exit 1; fi
+	@echo "Running task with $(GLUDD_TASK_TIMEOUT)s timeout: $(CMD)"
+	@python3 -c "import subprocess,sys,signal; \
+p=subprocess.Popen('$(CMD)',shell=True); \
+try: \
+  p.wait($(GLUDD_TASK_TIMEOUT)); \
+except subprocess.TimeoutExpired: \
+  p.send_signal(signal.SIGTERM); \
+  try: p.wait(5); \
+  except: p.kill(); \
+  print('TASK TIMEOUT: killed after $(GLUDD_TASK_TIMEOUT)s',file=sys.stderr); \
+  sys.exit(124)"
+	@EXIT=$$?; if [ $$EXIT -eq 124 ]; then echo "TASK TIMEOUT: $(CMD) exceeded $(GLUDD_TASK_TIMEOUT)s"; fi; exit $$EXIT
 
 test-count:
 	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
@@ -1539,25 +1561,22 @@ dist-path-check:
 	if [ -n "$$HITS" ]; then echo "LEAKED LOCAL PATHS in tarball:"; echo "$$HITS"; exit 1; else echo "Tarball dir(s) path-clean."; fi
 
 # Internal: verify .gate-status is fresh (le 30 min) and green (all phases PASS).
-# GLUDD_CI_IS_GATE=1 allows CI to serve as the gate, but ONLY when CI has a
-# verified green run for the current HEAD — it is NOT a blank check to skip the
-# gate. If CI is red, pending, or has no run, the gate check still blocks.
+# GLUDD_CI_IS_GATE=1 allows CI to serve as the gate, but ONLY when `make
+# ci-verdict` returns GREEN for the current HEAD. It is NOT a blank check to
+# skip the gate: ci-verdict is the single source of truth for the CI verdict
+# (exit 0 = verified green, 1 = RED/no-run, 2 = PENDING). Any non-zero verdict
+# denies the bypass with the canonical message. If CI is red, pending, or has
+# no run for HEAD, the local gate check still blocks.
 _gate-fresh-check:
 	@if [ "$(GLUDD_CI_IS_GATE)" = "1" ]; then \
-		echo "CI-is-gate mode: verifying CI is green for HEAD before allowing bypass..."; \
-		SHA=$$(git rev-parse HEAD); \
-		RUN=$$(gh run list --commit=$$SHA --json databaseId,conclusion,headSha,status --jq '.[0]' 2>/dev/null || echo "{}"); \
-		CONCLUSION=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null); \
-		STATUS=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null); \
-		RUN_ID=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('databaseId',''))" 2>/dev/null); \
-		if [ "$$CONCLUSION" = "success" ]; then \
-			echo "CI-is-gate PASS: CI run $$RUN_ID is green for $$SHA. Proceeding."; \
-		elif [ "$$STATUS" = "pending" ] || [ "$$STATUS" = "in_progress" ] || [ "$$STATUS" = "queued" ]; then \
-			echo "CI-is-gate DENIED: CI run $$RUN_ID is still $$STATUS for $$SHA. Wait for CI to complete or run 'make gate' locally."; exit 1; \
-		elif [ -n "$$CONCLUSION" ]; then \
-			echo "CI-is-gate DENIED: CI run $$RUN_ID is RED (conclusion=$$CONCLUSION) for $$SHA. Fix CI or run 'make gate' locally."; exit 1; \
+		echo "CI-is-gate mode: verifying CI is green for HEAD via 'make ci-verdict'..."; \
+		VERDICT=$$(make -s ci-verdict 2>&1); RC=$$?; \
+		if [ $$RC -eq 0 ]; then \
+			echo "CI-is-gate PASS: $$VERDICT"; \
 		else \
-			echo "CI-is-gate DENIED: no CI run found for $$SHA. Push to trigger CI or run 'make gate' locally."; exit 1; \
+			echo "CI_IS_GATE bypass denied — CI is not green. Run make gate."; \
+			echo "ci-verdict (rc=$$RC): $$VERDICT"; \
+			exit 1; \
 		fi; \
 	elif [ ! -f .gate-status ]; then \
 		echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; \
@@ -1591,9 +1610,11 @@ commit-no-verify: _gate-fresh-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 # git-commit-no-verify: commit without pre-commit hook stash, enforcing gate check.
-# GLUDD_CI_IS_GATE=1 allows CI to serve as the gate, but ONLY when CI has a
-# verified green run for the current HEAD — it verifies CI before allowing
-# the bypass. Default behaviour: full local gate check runs.
+# GLUDD_CI_IS_GATE=1 is an ESCAPE HATCH (not a recommended default) that allows
+# CI to serve as the gate, but ONLY when `make ci-verdict` returns GREEN for the
+# current HEAD — _gate-fresh-check delegates the verdict to ci-verdict and denies
+# on any non-zero exit (RED, PENDING, or no-run). Default behaviour: the full
+# local gate check runs via _gate-fresh-check.
 git-commit-no-verify: _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
@@ -2203,15 +2224,57 @@ watchdog-stop:
 watchdog-auto:
 	@echo "Starting auto-watchdog (persists across sessions)..."
 	@if [ -f /tmp/gludd-watchdog.pid ] && kill -0 $$(cat /tmp/gludd-watchdog.pid) 2>/dev/null; then \
-		echo "Watchdog already running PID=$$(cat /tmp/gludd-watchdog.pid)"; \
+		echo "Agent watchdog already running PID=$$(cat /tmp/gludd-watchdog.pid)"; \
 	else \
 		nohup $(UV) run python3 scripts/agent_watchdog.py > /tmp/gludd-watchdog.log 2>&1 & \
 		echo $$! > /tmp/gludd-watchdog.pid; \
-		echo "Watchdog started PID=$$!"; \
+		echo "Agent watchdog started PID=$$!"; \
+	fi
+	@if [ -f /tmp/gludd-task-watchdog.pid ] && kill -0 $$(cat /tmp/gludd-task-watchdog.pid) 2>/dev/null; then \
+		echo "Task watchdog already running PID=$$(cat /tmp/gludd-task-watchdog.pid)"; \
+	else \
+		nohup $(UV) run python3 scripts/task_watchdog.py > /tmp/gludd-task-watchdog.log 2>&1 & \
+		echo $$! > /tmp/gludd-task-watchdog.pid; \
+		echo "Task watchdog started PID=$$!"; \
 	fi
 
 watchdog-log:
 	@tail -50 /tmp/gludd-watchdog.log 2>/dev/null || echo "No log yet"
+
+# --- Task watchdog daemon (5s poll, kills hung tasks > GLUDD_TASK_TIMEOUT_MS) ---
+# Reads /tmp/gludd-task-deadlines.json (written by enforce-deadline.ts plugin).
+# Finds tasks whose elapsed > timeout, kills their child processes (SIGTERM→SIGKILL),
+# records kills in /tmp/gludd-task-killed.json. Prevents indefinite task blocking.
+task-watchdog-start:
+	@echo "Starting task watchdog (5s poll, kills tasks > $$(( ${GLUDD_TASK_TIMEOUT} * 1000 ))ms)..."
+	@nohup $(UV) run python3 scripts/task_watchdog.py > /tmp/gludd-task-watchdog.log 2>&1 & echo $$! > /tmp/gludd-task-watchdog.pid; echo "task watchdog PID=$$(cat /tmp/gludd-task-watchdog.pid)"
+
+task-watchdog-status:
+	@echo "=== Task watchdog status ==="
+	@if [ -f /tmp/gludd-task-watchdog.pid ]; then \
+		echo "PID: $$(cat /tmp/gludd-task-watchdog.pid)"; \
+		ps -p $$(cat /tmp/gludd-task-watchdog.pid) > /dev/null 2>&1 && echo "Status: running" || echo "Status: stopped"; \
+	else \
+		echo "No PID file — task watchdog not started"; \
+	fi
+	@echo "--- Kill log (last 10) ---"
+	@if [ -f /tmp/gludd-task-killed.json ]; then \
+		$(UV) run python3 -c "import json; [print(f'  {e[\"task_id\"]} pid={e[\"pid\"]} elapsed={e[\"elapsed_ms\"]/1000:.0f}s') for e in json.load(open('/tmp/gludd-task-killed.json'))[-10:]]" 2>/dev/null || echo "  (no kills recorded)"; \
+	else \
+		echo "  (no kills recorded)"; \
+	fi
+
+task-watchdog-stop:
+	@if [ -f /tmp/gludd-task-watchdog.pid ]; then \
+		kill $$(cat /tmp/gludd-task-watchdog.pid) 2>/dev/null || true; \
+		rm -f /tmp/gludd-task-watchdog.pid; \
+		echo "Task watchdog stopped"; \
+	else \
+		echo "No task watchdog running"; \
+	fi
+
+task-watchdog-log:
+	@tail -50 /tmp/gludd-task-watchdog.log 2>/dev/null || echo "No log yet"
 
 # --- Plugin version check — detects stale plugin code after .ts file edits ---
 check-plugin-versions:

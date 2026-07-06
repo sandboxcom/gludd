@@ -208,8 +208,8 @@ class TestConfigGatesForComputeAwareScheduling:
 
     def test_hint_is_frozen_dataclass(self):
         hint = ComputeSchedulingHint(preferred_gpu_type="a100_80")
-        with pytest.raises(Exception):  # noqa: B017
-            hint.preferred_gpu_type = "h100"  # type: ignore[misc]
+        with pytest.raises(AttributeError):
+            hint.preferred_gpu_type = "h100"  # type: ignore[misc]  # frozen dataclass: tests immutability
 
     def test_direct_construction_matches_factory(self):
         factory = ComputeSchedulingHint.for_work_type("analysis")

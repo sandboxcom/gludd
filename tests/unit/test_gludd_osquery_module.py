@@ -346,7 +346,7 @@ class TestResolveBinary:
             def get_binary_path(self, name: str) -> None:
                 return None
 
-        fake_pkg.BinaryBootstrapper = _Boot  # type: ignore[attr-defined]
+        fake_pkg.BinaryBootstrapper = _Boot
         monkeypatch.setitem(
             sys.modules, "general_ludd.filestore.bootstrap", fake_pkg
         )
@@ -380,7 +380,7 @@ def test_filestore_probe_exception_warns(
         def __init__(self, *a: Any, **k: Any) -> None:
             raise RuntimeError("filestore unavailable in test")
 
-    fake_pkg.BinaryBootstrapper = _BrokenBoot  # type: ignore[attr-defined]
+    fake_pkg.BinaryBootstrapper = _BrokenBoot
     monkeypatch.setitem(sys.modules, "general_ludd.filestore.bootstrap", fake_pkg)
     monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/osqueryi")
 
@@ -414,7 +414,7 @@ def test_filestore_probe_exception_no_warn_when_no_module(
         def __init__(self, *a: Any, **k: Any) -> None:
             raise RuntimeError("no module passed")
 
-    fake_pkg.BinaryBootstrapper = _BrokenBoot  # type: ignore[attr-defined]
+    fake_pkg.BinaryBootstrapper = _BrokenBoot
     monkeypatch.setitem(sys.modules, "general_ludd.filestore.bootstrap", fake_pkg)
     monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/local/bin/osqueryi")
 

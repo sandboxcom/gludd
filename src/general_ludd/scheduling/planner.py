@@ -29,6 +29,7 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from general_ludd.scheduling.scheduler import Scheduler, WorkItem
 
@@ -70,7 +71,7 @@ class OrchestrationPlanner:
     def __init__(self) -> None:
         self._scheduler = Scheduler()
 
-    def plan_work(self, items: list[dict]) -> dict:  # type: ignore[type-arg]
+    def plan_work(self, items: list[dict[str, Any]]) -> dict[str, Any]:
         """Compute concurrency-safe parallel batches from a list of work-item dicts.
 
         Each item dict must contain:
@@ -107,7 +108,7 @@ class OrchestrationPlanner:
             "explanation": plan.explanation,
         }
 
-    def parallelizable(self, items: list[dict]) -> list[str]:  # type: ignore[type-arg]
+    def parallelizable(self, items: list[dict[str, Any]]) -> list[str]:
         """Return the ids of items that can ALL run concurrently right now (batch 0).
 
         This is a convenience wrapper around plan_work() that returns only the
@@ -126,7 +127,7 @@ class OrchestrationPlanner:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _build_work_items(self, items: list[dict]) -> list[WorkItem]:  # type: ignore[type-arg]
+    def _build_work_items(self, items: list[dict[str, Any]]) -> list[WorkItem]:
         """Convert raw dicts to WorkItem objects, mapping files -> resources."""
         work_items: list[WorkItem] = []
         for raw in items:

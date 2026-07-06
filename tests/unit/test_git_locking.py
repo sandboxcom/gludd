@@ -223,6 +223,7 @@ def test_reentrant_same_repo_same_thread_no_self_deadlock(tmp_path):
 
     def nested() -> None:
         # Intentionally nested (not combined) — that IS the re-entrancy under test.
+        # SIM117 suppressed: combining the with-statements would defeat the test.
         with git_repo_lock(repo):  # noqa: SIM117
             with git_repo_lock(repo):
                 with git_repo_lock(repo):

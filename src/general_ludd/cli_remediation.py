@@ -210,7 +210,7 @@ def _cmd_config_edit(args: argparse.Namespace) -> None:
     print(f"Validated {cfg_path}. Restart the daemon (or reload) to apply.")
 
 
-def add_remediation_subparser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+def add_remediation_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = sub.add_parser(
         "remediation",
         help="Detect blocked agents/tasks and apply remediation.",

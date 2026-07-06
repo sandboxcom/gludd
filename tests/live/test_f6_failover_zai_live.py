@@ -100,7 +100,7 @@ def _build_failover_gateway() -> ModelGateway:
         model_name=good_model,
         api_base_alias="ZAI_BAD_BASE_URL",
         fallback_profiles=["zai_good"],
-        **common,  # type: ignore[arg-type]
+        **common,  # type: ignore[arg-type]  # test stub
     )
     # Fallback: real credential + real base URL + real working model.
     fallback = ModelProfile(
@@ -108,7 +108,7 @@ def _build_failover_gateway() -> ModelGateway:
         model_name=good_model,
         api_base_alias="ZAI_BASE_URL",
         fallback_profiles=[],
-        **common,  # type: ignore[arg-type]
+        **common,  # type: ignore[arg-type]  # test stub
     )
 
     registry = ProviderRegistry()
@@ -123,7 +123,7 @@ def _build_failover_gateway() -> ModelGateway:
     return ModelGateway(
         profiles=[primary, fallback],
         provider_registry=registry,
-        secrets_manager=secrets,  # type: ignore[arg-type]
+        secrets_manager=secrets,  # type: ignore[arg-type]  # test stub
         health_tracker=ModelHealthTracker(),
     )
 

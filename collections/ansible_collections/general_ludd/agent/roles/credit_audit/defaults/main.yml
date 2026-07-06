@@ -1,0 +1,33 @@
+---
+# credit_audit role defaults — AUDIT prepaid service credit balances
+# across DeepSeek, OpenAI, Z.AI, OpenRouter.
+
+# Minimum balance threshold (USD) below which a refill is flagged.
+# Per-provider overrides can be set in vars/; these are the fallback defaults.
+credit_threshold_usd: 1.0
+
+# Per-provider thresholds (USD). When a balance falls at or below the
+# provider's threshold the audit verdict escalates to `critical`.
+credit_thresholds:
+  deepseek: 1.0
+  openai: 5.0
+  zai: 1.0
+  openrouter: 1.0
+
+# Providers included in the audit. Add/remove entries to scope the run.
+credit_providers:
+  - deepseek
+  - openai
+  - zai
+  - openrouter
+
+# Artifact output
+artifact_dir: "/tmp/gludd-credit-audit"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard — REPORT-ONLY
+enable_git_push: false
+apply_changes: false

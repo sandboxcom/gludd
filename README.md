@@ -3,6 +3,8 @@
 The black swan agentic coding system — an autonomous, Ansible-driven, multi-model AI agent
 that submits coding tasks and produces real, committed, reviewed, and reconciled code changes.
 
+## 📊 [Interactive Presentation](https://sandboxcom.github.io/gludd/)
+
 ## What Is This?
 
 General Ludd (`gludd`) is an **autonomous agentic SDLC daemon** (FastAPI). You submit a

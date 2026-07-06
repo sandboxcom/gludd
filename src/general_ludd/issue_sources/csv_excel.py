@@ -117,7 +117,7 @@ class CsvExcelSource(IssueSource):
 
     def _load_xlsx_rows(self) -> tuple[list[str], list[list[str]]]:
         try:
-            import openpyxl  # type: ignore[import-untyped]
+            import openpyxl  # type: ignore[import-untyped]  # openpyxl: optional, only for .xlsx parsing
         except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
             raise RuntimeError(
                 "reading .xlsx requires the optional 'openpyxl' dependency; "

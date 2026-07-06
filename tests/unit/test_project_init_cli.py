@@ -18,7 +18,6 @@ from unittest.mock import patch
 
 import pytest
 
-from general_ludd.ansible.runner import AnsibleRunnerAdapter  # noqa: F401
 from general_ludd.cli import build_parser
 from general_ludd.cli_project_init import _cmd_project_init
 

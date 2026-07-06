@@ -17,7 +17,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import general_ludd.routing_roles  # noqa: F401 — warms import cycle (see test_gateway_circuit_breaker.py)
+# imported for side effects — warms the routing_roles import cycle so the
+# AdaptiveRouter imports below succeed in any collection order.
+import general_ludd.routing_roles  # noqa: F401
 from general_ludd.schemas.benchmark import TaskType
 from general_ludd.scoring.router import AdaptiveRouter
 

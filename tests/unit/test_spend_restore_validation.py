@@ -143,7 +143,7 @@ class TestRestoreKeepsValidRecords:
     def test_restore_none_is_noop(self) -> None:
         """restore(None) must not raise and must not change spend."""
         sl, _ = _make_limiter()
-        sl.restore(None)  # type: ignore[arg-type]
+        sl.restore(None)  # type: ignore[arg-type]  # test stub
         assert sl.window_spend() == pytest.approx(0.0)
 
     def test_restore_empty_list_is_noop(self) -> None:

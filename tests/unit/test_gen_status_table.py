@@ -24,6 +24,8 @@ if str(_SCRIPTS) not in sys.path:
 if str(_REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+# E402 suppressed: the imports below require the sys.path setup above to
+# locate scripts/ and src/ which are not installed packages.
 from gen_status_table import (  # noqa: E402
     _END_MARKER,
     _START_MARKER,

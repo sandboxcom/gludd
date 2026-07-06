@@ -112,11 +112,13 @@ class LandlockBackend:
     def available() -> bool:
         """True iff pylandlock is importable + the kernel ABI is non-zero."""
         try:
-            import landlock  # type: ignore[import-not-found]  # noqa: F401
+            import landlock  # type: ignore[import-not-found]  # noqa: F401  pylandlock: Linux-only, guarded by try/except
         except Exception:
             return False
         try:
-            from landlock import Ruleset  # type: ignore[import-not-found]
+            from landlock import (
+                Ruleset,  # type: ignore[import-not-found]  # pylandlock: Linux-only, guarded by try/except
+            )
             rs = Ruleset()
             abi = rs.abi
         except Exception:
@@ -132,8 +134,10 @@ class LandlockBackend:
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
         ruleset_name = f"gludd-{spec.agent_type}"
         try:
-            import landlock  # type: ignore[import-not-found]
-            from landlock import Ruleset  # type: ignore[import-not-found]
+            import landlock  # type: ignore[import-not-found]  # pylandlock: Linux-only, guarded by try/except
+            from landlock import (
+                Ruleset,  # type: ignore[import-not-found]  # pylandlock: Linux-only, guarded by try/except
+            )
         except Exception as exc:
             logger.warning(
                 "Landlock apply skipped (%s): pylandlock not importable — UNSANDBOXED",

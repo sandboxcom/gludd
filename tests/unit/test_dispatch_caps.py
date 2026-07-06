@@ -5,13 +5,12 @@ FIX 2: A 1000-char tool name is truncated to 256 chars in the parsed ToolCall
         (which flows into DispatchResult name/error strings and log lines).
 """
 
-from __future__ import annotations  # noqa: I001
+from __future__ import annotations
 
 import pytest
 
-from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls, UNRESTRICTED_ROLE
+from general_ludd.dispatch.dynamic_dispatcher import UNRESTRICTED_ROLE, parse_tool_calls
 from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST, register
-
 
 # ---------------------------------------------------------------------------
 # Helpers

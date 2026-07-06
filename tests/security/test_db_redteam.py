@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -67,7 +68,7 @@ def _make_file_engine(db_path: Path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
 
     @event.listens_for(engine.sync_engine, "connect")
-    def _set_pragmas(dbapi_conn, _record):  # type: ignore[no-untyped-def]
+    def _set_pragmas(dbapi_conn: Any, _record: Any) -> None:
         cur = dbapi_conn.cursor()
         cur.execute("PRAGMA foreign_keys=ON")
         cur.execute("PRAGMA busy_timeout=2000")
@@ -146,7 +147,7 @@ class TestClaimContention:
                     )
                 return await real_execute(stmt, *a, **k)
 
-            session.execute = flaky_execute  # type: ignore[method-assign]
+            session.execute = flaky_execute  # type: ignore[method-assign]  # pytest monkeypatch
             # Must not raise: the locked guard is a lost race -> the row is skipped.
             claimed = await repo.claim_runnable(limit=10)
             assert calls["n"] == 1  # we did inject one lock error
@@ -171,7 +172,7 @@ class TestClaimContention:
                     )
                 return await real_execute(stmt, *a, **k)
 
-            session.execute = boom_execute  # type: ignore[method-assign]
+            session.execute = boom_execute  # type: ignore[method-assign]  # pytest monkeypatch
             with pytest.raises(OperationalError):
                 await repo.claim_runnable(limit=10)
 
@@ -215,7 +216,7 @@ class TestClaimContention:
                     )
                 return await real_execute(stmt, *a, **k)
 
-            session.execute = flaky_execute  # type: ignore[method-assign]
+            session.execute = flaky_execute  # type: ignore[method-assign]  # pytest monkeypatch
             claimed = await repo.claim_unreviewed(limit=10)
             assert calls["n"] == 1
             assert all(c.return_id != "R-LK" for c in claimed)

@@ -254,8 +254,8 @@ class TestComputeSchedulingHintEdgeCases:
 
     def test_hint_is_immutable(self):
         hint = ComputeSchedulingHint(preferred_gpu_type="a100_80")
-        with pytest.raises(Exception):  # noqa: B017
-            hint.preferred_gpu_type = "h100"  # type: ignore[misc]
+        with pytest.raises(AttributeError):
+            hint.preferred_gpu_type = "h100"  # type: ignore[misc]  # frozen dataclass: tests immutability
 
     def test_work_type_defaults_are_consistent(self):
         analysis = ComputeSchedulingHint.for_work_type("analysis")

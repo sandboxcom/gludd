@@ -547,6 +547,42 @@ class TestLoginFunction:
 
 
 # ---------------------------------------------------------------------------
+# top-level open_browser_auth() convenience
+# ---------------------------------------------------------------------------
+
+
+class TestOpenBrowserAuth:
+    def test_open_browser_auth_with_api_key(self) -> None:
+        with TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / "creds.env"
+            store = EnvCredentialStore(env_file)
+
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch("builtins.input", return_value="open-browser-auth-key"), \
+                 patch("general_ludd.auth.browser_login._open_browser", return_value=None):
+                from general_ludd.auth.browser_login import open_browser_auth
+
+                token = open_browser_auth("openai", store=store)
+                assert token == "open-browser-auth-key"
+                assert store.retrieve("openai") == "open-browser-auth-key"
+
+    def test_open_browser_auth_unknown_service(self) -> None:
+        from general_ludd.auth.browser_login import open_browser_auth
+
+        with pytest.raises(ValueError, match="Unknown service"):
+            open_browser_auth("nonexistent-service-xyz")
+
+    def test_open_browser_auth_alias_matches_login(self) -> None:
+        from general_ludd.auth.browser_login import login, open_browser_auth
+
+        assert open_browser_auth is not None
+        with pytest.raises(ValueError, match="Unknown service"):
+            open_browser_auth("nonexistent-service-xyz")
+        with pytest.raises(ValueError, match="Unknown service"):
+            login("nonexistent-service-xyz")
+
+
+# ---------------------------------------------------------------------------
 # OpenBaoCredentialStore (import-time existence, not runtime)
 # ---------------------------------------------------------------------------
 

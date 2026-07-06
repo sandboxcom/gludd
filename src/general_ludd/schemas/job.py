@@ -36,8 +36,10 @@ class JobSpec(BaseModel):
     def _validate_timeout(cls, v: object) -> object:
         if v is None:
             return v
+        if not isinstance(v, (int, float, str)):
+            raise ValueError("timeout must be a number or None")
         try:
-            fv = float(v)  # type: ignore[arg-type]
+            fv = float(v)
         except (TypeError, ValueError):
             raise ValueError("timeout must be a number or None") from None
         if fv <= 0:

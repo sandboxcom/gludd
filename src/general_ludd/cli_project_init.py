@@ -95,7 +95,7 @@ def os_cwd() -> str:
     return os.getcwd()
 
 
-def add_project_init_subparser(proj_sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+def add_project_init_subparser(proj_sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     p = proj_sub.add_parser(
         "init",
         help=(

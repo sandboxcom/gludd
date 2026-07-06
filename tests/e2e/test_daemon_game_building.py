@@ -102,7 +102,7 @@ def _build_deepseek_gateway() -> Any:
     assert DEEPSEEK_KEY, "key must be set before building gateway"
     secrets.set("DEEPSEEK_API_KEY", DEEPSEEK_KEY)
     secrets.set("DEEPSEEK_API_BASE", _DS_BASE_URL)
-    return ModelGateway(profiles=[profile], provider_registry=registry, secrets_manager=secrets)  # type: ignore[arg-type]
+    return ModelGateway(profiles=[profile], provider_registry=registry, secrets_manager=secrets)  # type: ignore[arg-type]  # test stub
 
 
 # ---------------------------------------------------------------------------

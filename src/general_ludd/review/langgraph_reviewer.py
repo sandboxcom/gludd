@@ -130,9 +130,9 @@ class LangGraphReflexiveReviewer:
         try:
             result = self._graph.invoke(initial_state)
             decision = result.get("final_decision")
-            if decision is None:
-                decision = self._make_fallback_decision(task_return)
-            return decision  # type: ignore[no-any-return]
+            if isinstance(decision, TaskDecision):
+                return decision
+            return self._make_fallback_decision(task_return)
         except Exception as exc:
             logger.warning("LangGraphReflexiveReviewer graph failed: %s", exc)
             return TaskDecision(

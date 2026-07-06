@@ -16,18 +16,18 @@ Hermetic where it can be (scaffolded tmp repos); the seed-level test reads the
 real repo on disk but performs only presence checks (no subprocess / no pytest).
 """
 
-from __future__ import annotations  # noqa: I001
+from __future__ import annotations
 
 from pathlib import Path
 
-from general_ludd.db.feature_seed import FEATURE_SEED
-from general_ludd.quality.feature_verifier import FeatureVerifier
 from scripts.dogfood_features import (
     REPO_ROOT,
     _file_existence_runner,
     run_dogfood_features,
 )
 
+from general_ludd.db.feature_seed import FEATURE_SEED
+from general_ludd.quality.feature_verifier import FeatureVerifier
 
 # ---------------------------------------------------------------------------
 # 1. module: evidence resolves at the canonical collection path

@@ -367,12 +367,12 @@ class BenchmarkRunner:
 
         from general_ludd.review.reviewer import ReturnReviewer
 
-        mock_gateway = _MockGatewayReview()
-        mock_registry = MagicMockPromptRegistry()
+        mock_gateway: Any = _MockGatewayReview()
+        mock_registry: Any = MagicMockPromptRegistry()
 
         reviewer_custom = ReturnReviewer(
-            gateway=mock_gateway,  # type: ignore[arg-type]
-            prompt_registry=mock_registry,  # type: ignore[arg-type]
+            gateway=mock_gateway,
+            prompt_registry=mock_registry,
         )
 
         def _run_custom() -> TaskDecision:

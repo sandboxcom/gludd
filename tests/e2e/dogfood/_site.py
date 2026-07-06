@@ -29,7 +29,8 @@ def load_app_from_workspace(workspace: Path, entrypoint: str = "app/main.py") ->
                 if added:
                     sys.path.insert(0, pkg_dir)
                 try:
-                    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+                    assert spec.loader is not None
+                    spec.loader.exec_module(mod)
                     # Look for 'app' attribute (FastAPI convention)
                     return getattr(mod, "app", mod)
                 finally:

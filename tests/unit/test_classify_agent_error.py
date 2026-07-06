@@ -27,6 +27,8 @@ _SCRIPT = str(Path(__file__).parent.parent.parent / "scripts" / "classify_agent_
 # Import the module directly so we test the pure classify() function
 # ---------------------------------------------------------------------------
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
+# E402 suppressed: import requires the sys.path manipulation above to locate
+# the scripts/ directory, which is not an installed package.
 from classify_agent_error import classify  # noqa: E402
 
 # ---------------------------------------------------------------------------

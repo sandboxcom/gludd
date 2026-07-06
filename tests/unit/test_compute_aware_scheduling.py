@@ -63,7 +63,7 @@ class TestComputeSchedulingHintDefaults:
     def test_is_frozen(self):
         hint = ComputeSchedulingHint(preferred_gpu_type="t4")
         with pytest.raises(FrozenInstanceError):
-            hint.preferred_gpu_type = "h100"  # type: ignore[misc]
+            hint.preferred_gpu_type = "h100"  # type: ignore[misc]  # frozen dataclass: tests immutability
 
 
 # ---------------------------------------------------------------------------

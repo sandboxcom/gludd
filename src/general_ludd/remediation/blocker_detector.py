@@ -469,7 +469,7 @@ class BlockerDetector:
             return None
         for ht in open_human_todos:
             if str(getattr(ht, "parent_agent_todo_id", "") or "") == todo_id:
-                return ht  # type: ignore[no-any-return]
+                return ht if isinstance(ht, HumanTodoModel) else None
         return None
 
     def _summary_for(
