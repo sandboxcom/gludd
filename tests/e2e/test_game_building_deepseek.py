@@ -2398,4 +2398,3 @@ class TestGamePersistence:
             print(f"  [{g['game']}] {g['category']}: {g['detail'][:200]}")
 
         print("\n" + "=" * 70)
-

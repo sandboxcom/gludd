@@ -67,7 +67,7 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-alpha.5 — 2026-07-06; 192 features tracked, majority local-green, 0 CI-green (pipeline never completed successfully across 25+ recent runs)**
+**Status as of v0.1.0-alpha.5 — 2026-07-06; 192 features tracked, 190 at claimed 100% (file-existence verified), 0 CI-verified (pipeline never green), 2 abandoned. Honest %: unquantified — full pytest verification times out; fast mode proves test files exist but not that tests pass.**
 
 The table below is **code-generated** from [`docs/features.yml`](docs/features.yml) by
 [`scripts/gen_status_table.py`](scripts/gen_status_table.py): every row's verified status is
