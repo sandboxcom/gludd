@@ -1613,7 +1613,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             sandbox_executor=sandbox_executor,
             run_recorder=run_recorder,
             checkpointer=app.state.checkpointer,
-            utilization_tracker=app.state._utilization_tracker,
+            utilization_tracker=getattr(app.state, "_utilization_tracker", None),
             deployment_manager=getattr(app.state, "_deployment_manager", None),
             floor_controller=floor_controller,
             issue_ingestor=issue_ingestor,
@@ -2162,7 +2162,7 @@ def _get_or_create_extended_subsystems(
     return {
         "metrics": app.state._metrics_collector,
         "projects": app.state._project_manager,
-        "utilization": app.state._utilization_tracker,
+        "utilization": getattr(app.state, "_utilization_tracker", None),
         "model_registry": app.state._model_registry,
         "skill_registry": app.state._skill_registry,
         "adaptive_router": adaptive_router,
