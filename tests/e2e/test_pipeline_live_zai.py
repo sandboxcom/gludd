@@ -12,8 +12,8 @@ DISPATCH PATH (G7):
   Ansible runner replaced with _NoopRunner (records calls, no subprocess).
   Model call, git commit, and TaskReturn wiring all use real code paths.
 
-xfail scope: ONLY provider rate-limit/quota (httpx 429, openai RateLimitError,
-  "balance", "quota"). Setup wiring failures are hard failures.
+Rate-limit / quota exhaustion (httpx 429, openai RateLimitError,
+  "balance", "quota") handled as skips. Setup wiring failures are hard failures.
 
 Run:
     make test-live-zai-pipeline
@@ -57,25 +57,6 @@ _SKIP_REASON = (
     "ZAI_API_KEY not set and .zai.key not found — "
     "set ZAI_API_KEY or place key in .zai.key to run live pipeline test"
 )
-
-# ---------------------------------------------------------------------------
-# xfail exception types for rate-limit / quota exhaustion
-# ---------------------------------------------------------------------------
-
-try:
-    from openai import RateLimitError as _OpenAIRateLimitError
-    _RATE_LIMIT_EXC: tuple[type[BaseException], ...] = (_OpenAIRateLimitError,)
-except ImportError:
-    _RATE_LIMIT_EXC = ()
-
-try:
-    import httpx as _httpx
-    _RATE_LIMIT_EXC = (*_RATE_LIMIT_EXC, _httpx.HTTPStatusError)
-except ImportError:
-    pass
-
-if not _RATE_LIMIT_EXC:
-    _RATE_LIMIT_EXC = (Exception,)
 
 
 def _is_rate_limit_error(exc: BaseException) -> bool:
@@ -247,11 +228,6 @@ def _extract_function(text: str, func_name: str = "add") -> str | None:
 class TestLivePipelineZai:
     """G4/G5/G6 pipeline proof + G7 TaskReturn schema; no EventLoop."""
 
-    @pytest.mark.xfail(
-        raises=_RATE_LIMIT_EXC,
-        reason="z.ai rate-limit / quota exhaustion (429) — not a pipeline bug",
-        strict=False,
-    )
     def test_g4_g5_g6_g7_full_pipeline(self, tmp_workspace: Path) -> None:
         """G4/G5/G6/G7 end-to-end: model → edit → tests → git commit SHA."""
         results: dict[str, Any] = {
@@ -442,11 +418,6 @@ class TestLivePipelineZaiG7RealLoop:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        raises=_RATE_LIMIT_EXC,
-        reason="z.ai rate-limit / quota exhaustion (429)",
-        strict=False,
-    )
     async def test_g7_real_event_loop_dispatch(self, tmp_path: Path) -> None:
         """Real EventLoop calls model gateway for 'code' work + runner sees model_response."""
         from general_ludd.event_loop.loop import EventLoop
@@ -546,11 +517,6 @@ class TestLiveSilentSkipFallback:
     """Profile-less generation todo now calls glm-4.6 via synthesized prompt."""
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        raises=_RATE_LIMIT_EXC,
-        reason="z.ai rate-limit / quota exhaustion (429)",
-        strict=False,
-    )
     async def test_profileless_todo_now_calls_model(self, tmp_path: Path) -> None:
         """Todo with title+description but NO prompt_profile -> model IS called."""
         from general_ludd.event_loop.loop import EventLoop

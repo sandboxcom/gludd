@@ -25,23 +25,13 @@ class _GateState(TypedDict, total=False):
 logger = logging.getLogger(__name__)
 
 _LANGGRAPH_AVAILABLE = False
-_HAS_CHECKPOINTER = False
 try:
-    from langgraph.checkpoint.memory import MemorySaver  # noqa: F401
     from langgraph.graph import StateGraph
     from langgraph.types import Command, interrupt
 
     _LANGGRAPH_AVAILABLE = True
-    _HAS_CHECKPOINTER = True
 except ImportError:
-    try:
-        from langgraph.graph import StateGraph
-        from langgraph.types import Command, interrupt
-
-        _LANGGRAPH_AVAILABLE = True
-        _HAS_CHECKPOINTER = False
-    except ImportError:
-        _LANGGRAPH_AVAILABLE = False
+    _LANGGRAPH_AVAILABLE = False
 
 
 _DEFAULT_CONFIDENCE_THRESHOLD = 0.7

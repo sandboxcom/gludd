@@ -28,15 +28,15 @@ from __future__ import annotations
 import os
 from typing import Any
 
-_DEFAULT_BASE_URL = "https://api.github.com"
-_DEFAULT_TIMEOUT = 30.0
+from general_ludd.issue_sources.base import IssueRecord, IssueSource, Transition
 
 # ---------------------------------------------------------------------------
 # IssueSource-compatible adapter (the adapter-family API: SOURCE, fetch,
 # write_back). This class is what the test suite imports as GitHubIssuesSource.
 # ---------------------------------------------------------------------------
 
-from general_ludd.issue_sources.base import IssueRecord, IssueSource, Transition  # noqa: E402
+_DEFAULT_BASE_URL = "https://api.github.com"
+_DEFAULT_TIMEOUT = 30.0
 
 
 class GitHubIssuesSource(IssueSource):

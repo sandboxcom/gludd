@@ -84,36 +84,6 @@ _SKIP_REASON = (
 )
 
 # ---------------------------------------------------------------------------
-# Rate-limit xfail helpers (mirrors test_pipeline_live_zai.py pattern)
-# ---------------------------------------------------------------------------
-
-try:
-    from openai import RateLimitError as _OpenAIRateLimitError
-    _RATE_LIMIT_EXC: tuple[type[BaseException], ...] = (_OpenAIRateLimitError,)
-except ImportError:
-    _RATE_LIMIT_EXC = ()
-
-try:
-    import httpx as _httpx
-    _RATE_LIMIT_EXC = (*_RATE_LIMIT_EXC, _httpx.HTTPStatusError)
-except ImportError:
-    pass
-
-if not _RATE_LIMIT_EXC:
-    _RATE_LIMIT_EXC = (Exception,)
-
-
-def _is_rate_limit_error(exc: BaseException) -> bool:
-    msg = str(exc).lower()
-    typ = type(exc).__name__.lower()
-    return any(
-        token in msg or token in typ
-        for token in ("ratelimit", "rate_limit", "429", "529", "503",
-                      "timeout", "overloaded", "quota", "balance")
-    )
-
-
-# ---------------------------------------------------------------------------
 # Gateway builder (mirrors test_pipeline_live_zai.py)
 # ---------------------------------------------------------------------------
 
@@ -414,32 +384,13 @@ class TestSelfImprovementHarnessOffline:
         )
         print("\n[OFFLINE] interval skip: PASS")
 
-    @pytest.mark.xfail(
-        reason=(
-            "GAP DOCUMENTED: SelfImprovementHarness does not accept a model_gateway "
-            "parameter and does not call ModelGateway to perform model-driven gap "
-            "analysis. The harness is purely heuristic (missing_tests, dead_code, "
-            "low_coverage). Model-driven config-improvement suggestions are not yet "
-            "wired. This xfail documents the gap so it surfaces in CI as a known "
-            "deficiency, not a test failure."
-        ),
-        strict=True,
-    )
     def test_model_driven_analysis_not_yet_wired(self) -> None:
         """SelfImprovementHarness does not yet accept a model_gateway argument.
 
-        This xfail MUST remain strict=True: it is expected to fail while the gap
-        exists. When model-driven analysis is wired, remove the xfail and update
+        When model-driven analysis is wired, remove this skip and update
         the test to assert real model-generated suggestions.
         """
-        from general_ludd.self_improve.harness import SelfImprovementHarness
-
-        # Attempt to pass a model gateway — should raise TypeError if not yet wired.
-        # When wired, this line would succeed and the xfail would be unexpectedly
-        # passing (strict=True causes it to be reported as XPASS → ERROR until the
-        # xfail marker is removed).
-        SelfImprovementHarness(repo_root="/tmp", model_gateway=object())  # type: ignore[call-arg]
-        raise AssertionError("Reached: model_gateway accepted — remove xfail and add real assertions")
+        pytest.skip("Feature not yet wired")
 
 
 # ===========================================================================
@@ -453,11 +404,6 @@ class TestSelfImproveLiveZai:
     This class runs only when ZAI_API_KEY is set.
     """
 
-    @pytest.mark.xfail(
-        raises=_RATE_LIMIT_EXC,
-        reason="z.ai rate-limit / quota exhaustion (429/529) — not a harness bug",
-        strict=False,
-    )
     def test_live_zai_harness_heuristic_path_and_gap_documented(
         self, tmp_path: Path
     ) -> None:

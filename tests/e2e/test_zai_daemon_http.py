@@ -177,13 +177,6 @@ class TestZAIDaemonHTTPStructure:
 class TestZAIDaemonHTTPLiveCall:
     """Full path: TestClient → POST /admin/models/call → ModelGateway → z.ai."""
 
-    @pytest.mark.xfail(
-        raises=Exception,
-        reason=(
-            "z.ai 429 balance/rate-limit: the account may have no balance. "
-            "xfail so quota walls do not block CI."
-        ),
-    )
     def test_zai_model_call_via_daemon_http(self, zai_daemon_client) -> None:
         """POST /admin/models/call → 200, non-empty text, usage tokens > 0, model=glm-4.6.
 
@@ -250,10 +243,6 @@ class TestZAIDaemonHTTPLiveCall:
             f"Expected model_name={_ZAI_MODEL!r}, got {profile.model_name!r}"
         )
 
-    @pytest.mark.xfail(
-        raises=Exception,
-        reason="z.ai 429 balance/rate-limit",
-    )
     def test_zai_daemon_http_usage_both_token_fields_non_zero(self, zai_daemon_client) -> None:
         """Focused assertion: both input_tokens AND output_tokens must be > 0."""
         resp = zai_daemon_client.post(
@@ -271,10 +260,6 @@ class TestZAIDaemonHTTPLiveCall:
         assert int(input_tok) > 0, f"input_tokens is 0 or missing: {usage}"
         assert int(output_tok) > 0, f"output_tokens is 0 or missing: {usage}"
 
-    @pytest.mark.xfail(
-        raises=Exception,
-        reason="z.ai 429 balance/rate-limit",
-    )
     def test_zai_daemon_http_missing_prompt_returns_422(self, zai_daemon_client) -> None:
         """POST /admin/models/call without 'prompt' must return 422 (input validation).
 

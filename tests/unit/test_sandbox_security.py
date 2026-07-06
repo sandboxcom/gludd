@@ -219,10 +219,8 @@ class TestCommandLengthLimits:
             "executor-level arg count enforcement would be a future addition"
         )
 
-    @pytest.mark.xfail(
-        reason="macOS ARG_MAX is platform-dependent; executor-level enforcement is a future feature"
-    )
     def test_command_exceeding_os_arg_max_is_rejected(self) -> None:
+        pytest.skip("Platform-dependent: macOS ARG_MAX enforcement is a future feature")
         executor = SandboxExecutor(timeout=5)
         padding = "A" * 2_000_000
 

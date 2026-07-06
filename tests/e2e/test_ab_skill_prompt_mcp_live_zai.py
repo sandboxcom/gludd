@@ -59,36 +59,6 @@ _SKIP_REASON = (
 )
 
 # ---------------------------------------------------------------------------
-# xfail helpers — rate-limit / quota exhaustion (mirrors test_pipeline_live_zai.py)
-# ---------------------------------------------------------------------------
-
-try:
-    from openai import RateLimitError as _OpenAIRateLimitError
-    _RATE_LIMIT_EXC: tuple[type[BaseException], ...] = (_OpenAIRateLimitError,)
-except ImportError:
-    _RATE_LIMIT_EXC = ()
-
-try:
-    import httpx as _httpx
-    _RATE_LIMIT_EXC = (*_RATE_LIMIT_EXC, _httpx.HTTPStatusError)
-except ImportError:
-    pass
-
-if not _RATE_LIMIT_EXC:
-    _RATE_LIMIT_EXC = (Exception,)
-
-
-def _is_rate_limit_error(exc: BaseException) -> bool:
-    msg = str(exc).lower()
-    typ = type(exc).__name__.lower()
-    return any(
-        token in msg or token in typ
-        for token in ("ratelimit", "rate_limit", "429", "529", "503",
-                      "timeout", "overloaded", "quota", "balance")
-    )
-
-
-# ---------------------------------------------------------------------------
 # Public A/B harness types
 # ---------------------------------------------------------------------------
 
@@ -553,11 +523,6 @@ _LIVE_VARIANTS_PYTHON_LIST = [
 class TestABHarnessLiveZai:
     """Live A/B harness over glm-4.6; scores must be non-zero, winner must be chosen."""
 
-    @pytest.mark.xfail(
-        raises=_RATE_LIMIT_EXC,
-        reason="z.ai rate-limit / quota exhaustion (429) — not a harness bug",
-        strict=False,
-    )
     def test_ab_compare_live_picks_winner_with_nonzero_scores(self) -> None:
         """AB live: all 3 prompt variants for 'python list' get real glm-4.6 responses;
         winner chosen, at least one variant has score > 0 (response non-empty)."""
@@ -606,11 +571,6 @@ class TestABHarnessLiveZai:
             f"{max(v.score for v in result.ranked)}"
         )
 
-    @pytest.mark.xfail(
-        raises=_RATE_LIMIT_EXC,
-        reason="z.ai rate-limit / quota exhaustion (429)",
-        strict=False,
-    )
     def test_ab_compare_live_scores_dict_populated(self) -> None:
         """ABResult.scores dict contains an entry for every variant label."""
         import copy

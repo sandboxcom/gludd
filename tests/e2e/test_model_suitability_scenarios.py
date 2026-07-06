@@ -59,36 +59,6 @@ def _zai_api_key() -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Rate-limit helpers (mirrors existing live tests)
-# ---------------------------------------------------------------------------
-
-try:
-    from openai import RateLimitError as _OpenAIRateLimitError
-    _RATE_LIMIT_EXC: tuple[type[BaseException], ...] = (_OpenAIRateLimitError,)
-except ImportError:
-    _RATE_LIMIT_EXC = ()
-
-try:
-    import httpx as _httpx
-    _RATE_LIMIT_EXC = (*_RATE_LIMIT_EXC, _httpx.HTTPStatusError)
-except ImportError:
-    pass
-
-if not _RATE_LIMIT_EXC:
-    _RATE_LIMIT_EXC = (Exception,)
-
-
-def _is_rate_limit_error(exc: BaseException) -> bool:
-    msg = str(exc).lower()
-    typ = type(exc).__name__.lower()
-    return any(
-        t in msg or t in typ
-        for t in ("ratelimit", "rate_limit", "429", "529", "503",
-                  "timeout", "overloaded", "quota", "balance")
-    )
-
-
-# ---------------------------------------------------------------------------
 # Scenario definitions
 # ---------------------------------------------------------------------------
 
@@ -743,11 +713,6 @@ def _build_live_gateway(profile_id: str = "zai_suitability") -> Any:
 class TestModelSuitabilityLive:
     """Live test: evaluate glm-4.6 on a code-gen scenario with real tokens."""
 
-    @pytest.mark.xfail(
-        raises=_RATE_LIMIT_EXC,
-        reason="z.ai rate-limit / quota exhaustion — not an evaluator bug",
-        strict=False,
-    )
     def test_live_code_gen_suitability_verdict_computed(self) -> None:
         """Live call to glm-4.6: evaluate_suitability returns a SuitabilityVerdict.
 
@@ -798,11 +763,6 @@ class TestModelSuitabilityLive:
         print(f"output_preview: {result.output_preview!r}")
         print("=== END SUITABILITY VERDICT ===\n")
 
-    @pytest.mark.xfail(
-        raises=_RATE_LIMIT_EXC,
-        reason="z.ai rate-limit / quota exhaustion",
-        strict=False,
-    )
     def test_live_glm46_code_gen_passes_suitability(self) -> None:
         """Live: glm-4.6 should produce a valid add() function — assert PASS verdict.
 

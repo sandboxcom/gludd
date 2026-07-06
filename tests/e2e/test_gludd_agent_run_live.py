@@ -166,14 +166,6 @@ class TestRunLocalDefect:
 class TestRunViaDaemonLive:
     """_run_via_daemon -> POST /admin/models/call -> ModelGateway -> glm-4.6."""
 
-    @pytest.mark.xfail(
-        raises=Exception,
-        reason=(
-            "z.ai 429 balance/rate-limit/quota — a quota wall is not a chain bug. "
-            "xfail(strict=False) so a passing live call still reports PASS."
-        ),
-        strict=False,
-    )
     def test_run_via_daemon_returns_real_text(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
 

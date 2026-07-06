@@ -163,14 +163,6 @@ class TestZAILiveStreaming:
     error rather than on import / construction errors.
     """
 
-    @pytest.mark.xfail(
-        reason=(
-            "Z.AI direct API may hit rate limit or balance exhaustion (429 / "
-            "error code 1113); xfail confirms the streaming path reaches the "
-            "provider."
-        ),
-        raises=Exception,
-    )
     def test_stream_yields_multiple_chunks(self):
         """Streaming response produces more than one chunk and non-empty text."""
         chat_model = _build_chat_model()
@@ -188,14 +180,6 @@ class TestZAILiveStreaming:
             "Concatenated streaming output is empty"
         )
 
-    @pytest.mark.xfail(
-        reason=(
-            "Z.AI direct API may hit rate limit or balance exhaustion (429 / "
-            "error code 1113); xfail confirms the streaming path reaches the "
-            "provider."
-        ),
-        raises=Exception,
-    )
     def test_stream_concatenated_text_is_nonempty(self):
         """All chunks concatenated form a non-empty, non-whitespace string."""
         chat_model = _build_chat_model()
@@ -212,14 +196,6 @@ class TestZAILiveStreaming:
             f"Streaming concatenation is empty; {len(collected)} chunks received"
         )
 
-    @pytest.mark.xfail(
-        reason=(
-            "Z.AI direct API may hit rate limit or balance exhaustion (429 / "
-            "error code 1113); xfail confirms the streaming path reaches the "
-            "provider."
-        ),
-        raises=Exception,
-    )
     def test_stream_chunk_objects_have_content_attr(self):
         """Each chunk from .stream() carries a .content attribute (LangChain AIMessageChunk)."""
         chat_model = _build_chat_model()

@@ -64,31 +64,7 @@ _SKIP_REASON = (
 
 _DS_BASE_URL = "https://api.deepseek.com/v1"
 
-# Rate-limit exception types for xfail
-try:
-    from openai import RateLimitError as _OpenAIRateLimitError
-    _RATE_LIMIT_EXC: tuple[type[BaseException], ...] = (_OpenAIRateLimitError,)
-except ImportError:
-    _RATE_LIMIT_EXC = ()
 
-try:
-    import httpx as _httpx
-    _RATE_LIMIT_EXC = (*_RATE_LIMIT_EXC, _httpx.HTTPStatusError)
-except ImportError:
-    pass
-
-if not _RATE_LIMIT_EXC:
-    _RATE_LIMIT_EXC = (Exception,)
-
-
-def _is_rate_limit_error(exc: BaseException) -> bool:
-    msg = str(exc).lower()
-    typ = type(exc).__name__.lower()
-    return any(
-        token in msg or token in typ
-        for token in ("ratelimit", "rate_limit", "429", "529", "503",
-                      "timeout", "overloaded", "quota", "balance")
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1595,73 +1571,61 @@ class TestDeepSeekGameBuilding:
         }
 
     # ---- Snake ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_snake(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Snake game."""
         self._build_and_verify_game(gateway, tmp_path, "snake")
 
     # ---- Tetris ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_tetris(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Tetris game."""
         self._build_and_verify_game(gateway, tmp_path, "tetris")
 
     # ---- Minesweeper ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_minesweeper(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Minesweeper game."""
         self._build_and_verify_game(gateway, tmp_path, "minesweeper")
 
     # ---- Checkers ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_checkers(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Checkers game."""
         self._build_and_verify_game(gateway, tmp_path, "checkers")
 
     # ---- SkiFree ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_skifree(self, gateway, tmp_path):
         """Test: DeepSeek builds a working SkiFree game."""
         self._build_and_verify_game(gateway, tmp_path, "skifree")
 
     # ---- Banana ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_banana(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Banana (Gorillas) game."""
         self._build_and_verify_game(gateway, tmp_path, "banana")
 
     # ---- Pong ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_pong(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Pong game."""
         self._build_and_verify_game(gateway, tmp_path, "pong")
 
     # ---- Breakout ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_breakout(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Breakout game."""
         self._build_and_verify_game(gateway, tmp_path, "breakout")
 
     # ---- Maze Runner ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_maze_runner(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Maze Runner game."""
         self._build_and_verify_game(gateway, tmp_path, "maze_runner")
 
     # ---- Word Guesser ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_word_guesser(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Word Guesser game."""
         self._build_and_verify_game(gateway, tmp_path, "word_guesser")
 
     # ---- Memory Match ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_memory_match(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Memory Match game."""
         self._build_and_verify_game(gateway, tmp_path, "memory_match")
 
     # ---- Tic-Tac-Toe ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_build_tic_tac_toe(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Tic-Tac-Toe game."""
         self._build_and_verify_game(gateway, tmp_path, "tic_tac_toe")
@@ -1680,9 +1644,7 @@ class TestDeepSeekGameBuilding:
         print(f"\n--- Step 1: Calling DeepSeek for {game_id} ---")
         try:
             response = self._call_model(gateway, game_def["prompt"])
-        except Exception as e:
-            if _is_rate_limit_error(e):
-                pytest.xfail(f"Rate limited: {e}")
+        except Exception:
             raise
 
         print(f"  tokens_in={response['tokens_in']} tokens_out={response['tokens_out']}")
@@ -1902,7 +1864,6 @@ class TestDeepSeekFullPipeline:
     # TEST A: ExecutionEngine.execute() — the full code-generation path
     # -------------------------------------------------------------------
 
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_execution_engine_full_pipeline_snake(self, tmp_path: Path) -> None:
         """ExecutionEngine: model → code gen → file write → test → commit."""
         from general_ludd.execution.engine import ExecutionEngine
@@ -2028,7 +1989,6 @@ class TestDeepSeekFullPipeline:
     # -------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     async def test_event_loop_dispatch_snake(self, tmp_path: Path) -> None:
         """EventLoop dispatch wired to DeepSeek — real invoke_model_for_generation.
 
@@ -2236,9 +2196,7 @@ class TestGamePersistence:
         print(f"\n--- Step 1: Calling DeepSeek for {game_id} ---")
         try:
             response = _call_deepseek(gateway, game_def["prompt"])
-        except Exception as e:
-            if _is_rate_limit_error(e):
-                pytest.xfail(f"Rate limited: {e}")
+        except Exception:
             raise
 
         print(f"  tokens_in={response['tokens_in']} tokens_out={response['tokens_out']}")
@@ -2312,62 +2270,50 @@ class TestGamePersistence:
         print(f"{'-'*70}")
 
     # ---- Snake ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_snake(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "snake")
 
     # ---- Tetris ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_tetris(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "tetris")
 
     # ---- Minesweeper ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_minesweeper(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "minesweeper")
 
     # ---- Checkers ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_checkers(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "checkers")
 
     # ---- SkiFree ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_skifree(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "skifree")
 
     # ---- Banana ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_banana(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "banana")
 
     # ---- Pong ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_pong(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "pong")
 
     # ---- Breakout ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_breakout(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "breakout")
 
     # ---- Maze Runner ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_maze_runner(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "maze_runner")
 
     # ---- Word Guesser ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_word_guesser(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "word_guesser")
 
     # ---- Memory Match ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_memory_match(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "memory_match")
 
     # ---- Tic-Tac-Toe ----
-    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
     def test_persistence_tic_tac_toe(self, gateway, tmp_path):
         self._build_and_stress(gateway, tmp_path, "tic_tac_toe")
 

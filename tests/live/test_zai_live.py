@@ -132,10 +132,6 @@ class TestZAIConfigAndConnectivity:
 class TestZAILiveCompletions:
     """Live model completion tests. May xfail on rate-limit or balance errors."""
 
-    @pytest.mark.xfail(
-        reason="Z.AI direct API may hit rate limit or balance exhaustion (429)",
-        raises=Exception,
-    )
     def test_zai_simple_completion(self):
         gw = _build_zai_gateway()
         response = gw.call_model(
@@ -148,10 +144,6 @@ class TestZAILiveCompletions:
         assert len(response.content) > 0
         assert response.model_name == _get_zai_model()
 
-    @pytest.mark.xfail(
-        reason="Z.AI direct API may hit rate limit or balance exhaustion (429)",
-        raises=Exception,
-    )
     def test_zai_structured_json_response(self):
         gw = _build_zai_gateway()
         response = gw.call_model(
@@ -172,10 +164,6 @@ class TestZAILiveCompletions:
         assert "status" in parsed
         assert "count" in parsed
 
-    @pytest.mark.xfail(
-        reason="Z.AI direct API may hit rate limit or balance exhaustion (429)",
-        raises=Exception,
-    )
     def test_zai_code_generation(self):
         gw = _build_zai_gateway()
         response = gw.call_model(
@@ -195,10 +183,6 @@ class TestZAILiveCompletions:
         assert "def " in response.content
         assert "return" in response.content
 
-    @pytest.mark.xfail(
-        reason="Z.AI direct API may hit rate limit or balance exhaustion (429)",
-        raises=Exception,
-    )
     def test_zai_usage_metadata_returned(self):
         gw = _build_zai_gateway()
         response = gw.call_model(
@@ -215,10 +199,6 @@ class TestZAILiveCompletions:
 class TestZAIModelIdentity:
     """Functional test: ask the model to identify itself and verify it is GLM-5.1."""
 
-    @pytest.mark.xfail(
-        reason="Z.AI direct API may hit rate limit or balance exhaustion (429)",
-        raises=Exception,
-    )
     def test_model_identifies_as_glm(self):
         gw = _build_zai_gateway()
         response = gw.call_model(

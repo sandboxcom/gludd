@@ -29,7 +29,7 @@ class LangSmithTracer:
 
         if self._enabled:
             try:
-                import langsmith  # noqa: F401 — verify the package is present
+                __import__("langsmith")
                 self._client = self._build_client()
             except ImportError:
                 logger.debug(

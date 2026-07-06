@@ -24,7 +24,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +64,7 @@ class BackgroundTestRunner:
         Writes a JSON status file with pid, testfile, start_time, phase.
         """
         sanitized = self._sanitize(testfile)
-        timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")  # noqa: UP017
+        timestamp = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
         log_file = self.status_dir / f"test-{sanitized}-{timestamp}.log"
         pid_path = self._pid_path(testfile)
         status_path = self._status_path(testfile)
@@ -93,7 +93,7 @@ class BackgroundTestRunner:
         status: dict[str, Any] = {
             "pid": proc.pid,
             "testfile": testfile,
-            "start_time": datetime.now(tz=timezone.utc).isoformat(),  # noqa: UP017
+            "start_time": datetime.now(tz=UTC).isoformat(),
             "log_file": str(log_file),
             "phase": "running",
             "terminal_marker": None,

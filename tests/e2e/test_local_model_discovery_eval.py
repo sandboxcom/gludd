@@ -786,11 +786,6 @@ class TestLocalModelLive:
 
         print(f"[LIVE DISC] discovery PASSED: {len(runnable)} profile(s) fit this host")
 
-    @pytest.mark.xfail(
-        raises=Exception,
-        reason="provider rate-limit / network failure — not a discovery bug",
-        strict=False,
-    )
     def test_live_model_call_returns_non_empty_completion(self) -> None:
         """Call the live model and assert a non-empty completion is returned."""
         profile_id = os.environ.get("GLUDD_LOCAL_MODEL_PROFILE", "local-zai-lite")

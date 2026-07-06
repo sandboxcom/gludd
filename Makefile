@@ -241,6 +241,9 @@ collect-check:
 	fi; \
 	echo "Collection OK"
 
+collect-check-e2e-live:
+	@$(UV) run python -m pytest tests/e2e/ tests/live/ --collect-only -q 2>&1 | tail -5
+
 gate:
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
