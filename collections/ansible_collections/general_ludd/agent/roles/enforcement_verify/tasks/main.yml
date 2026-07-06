@@ -1,0 +1,404 @@
+---
+# enforcement_verify role — behavioral enforcement verification
+#
+# Validates that enforcement mechanisms are actively producing side effects,
+# not just statically present. Complements process_audit's static measurement
+# with runtime behavioral checks.
+#
+# Flow:
+#   1. Gather daemon state via gludd_facts.
+#   2. Check text.complete counter incrementing (enforce-stop is alive).
+#   3. Check block-counter accumulating (enforcement is active).
+#   4. Verify watchdog heartbeat exists and is recent.
+#   5. Verify .gate-status has terminal marker (gate completion works).
+#   6. Verify force-push track file exists (push guard is tracking).
+#   7. Check /tmp/gludd-*.json state file existence and freshness.
+#   8. Aggregate verdict: pass if all mechanisms show recent activity,
+#      fail if any enforcement mechanism is silent.
+#   9. Optionally run model analysis.
+#  10. Emit JSON + markdown report artifacts.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Step 1: Gather daemon state via gludd_facts ───────────────────────────
+
+- name: Fetch daemon state via gludd_facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _ev_facts
+  ignore_errors: true
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Determine daemon reachability
+  ansible.builtin.set_fact:
+    _ev_daemon_reachable: "{{ _ev_facts is not failed }}"
+
+# ── Step 2: Text-complete counter — enforce-stop is alive ────────────────
+
+- name: Check text-complete counter file
+  ansible.builtin.stat:
+    path: /tmp/gludd-text-complete-counter.json
+  register: _ev_text_complete_stat
+
+- name: Read text-complete counter value
+  ansible.builtin.slurp:
+    src: /tmp/gludd-text-complete-counter.json
+  register: _ev_text_complete_raw
+  failed_when: false
+  when: _ev_text_complete_stat.stat.exists | default(false) | bool
+
+- name: Parse text-complete counter
+  ansible.builtin.set_fact:
+    _ev_text_complete_exists: "{{ _ev_text_complete_stat.stat.exists | default(false) | bool }}"
+    _ev_text_complete_age_seconds: >-
+      {{ ((ansible_date_time.epoch | int) - (_ev_text_complete_stat.stat.mtime | default(0) | int)) | default(999999) | int }}
+    _ev_text_complete_value: >-
+      {{ (_ev_text_complete_raw.content | b64decode | from_json).counter | default(0) | int if _ev_text_complete_stat.stat.exists | default(false) | bool else 0 }}
+    _ev_text_complete_healthy: >-
+      {{ (_ev_text_complete_exists and
+          (_ev_text_complete_value | int) >= (enforcement_verify_min_text_complete_count | int) and
+          (_ev_text_complete_age_seconds | int) <= (enforcement_verify_max_age_seconds | int)) | bool }}
+
+# ── Step 3: Block-counter — enforcement is active ────────────────────────
+
+- name: Check block-counter file
+  ansible.builtin.stat:
+    path: /tmp/gludd-block-counter.json
+  register: _ev_block_counter_stat
+
+- name: Read block-counter value
+  ansible.builtin.slurp:
+    src: /tmp/gludd-block-counter.json
+  register: _ev_block_counter_raw
+  failed_when: false
+  when: _ev_block_counter_stat.stat.exists | default(false) | bool
+
+- name: Parse block-counter
+  ansible.builtin.set_fact:
+    _ev_block_counter_exists: "{{ _ev_block_counter_stat.stat.exists | default(false) | bool }}"
+    _ev_block_counter_age_seconds: >-
+      {{ ((ansible_date_time.epoch | int) - (_ev_block_counter_stat.stat.mtime | default(0) | int)) | default(999999) | int }}
+    _ev_block_counter_value: >-
+      {{ (_ev_block_counter_raw.content | b64decode | from_json).blocks | default(0) | int if _ev_block_counter_stat.stat.exists | default(false) | bool else 0 }}
+    _ev_block_counter_healthy: >-
+      {{ (_ev_block_counter_exists and
+          (_ev_block_counter_value | int) >= (enforcement_verify_min_block_count | int) and
+          (_ev_block_counter_age_seconds | int) <= (enforcement_verify_max_age_seconds | int)) | bool }}
+
+# ── Step 4: Watchdog heartbeat — watchdog is alive ───────────────────────
+
+- name: Check watchdog heartbeat file
+  ansible.builtin.stat:
+    path: /tmp/gludd-watchdog-heartbeat.json
+  register: _ev_watchdog_stat
+
+- name: Read watchdog heartbeat
+  ansible.builtin.slurp:
+    src: /tmp/gludd-watchdog-heartbeat.json
+  register: _ev_watchdog_raw
+  failed_when: false
+  when: _ev_watchdog_stat.stat.exists | default(false) | bool
+
+- name: Parse watchdog heartbeat
+  ansible.builtin.set_fact:
+    _ev_watchdog_exists: "{{ _ev_watchdog_stat.stat.exists | default(false) | bool }}"
+    _ev_watchdog_age_seconds: >-
+      {{ ((ansible_date_time.epoch | int) - (_ev_watchdog_stat.stat.mtime | default(0) | int)) | default(999999) | int }}
+    _ev_watchdog_healthy: >-
+      {{ (_ev_watchdog_exists and
+          (_ev_watchdog_age_seconds | int) <= (enforcement_verify_watchdog_max_age_seconds | int)) | bool }}
+
+# ── Step 5: .gate-status terminal marker — gate completion works ─────────
+
+- name: Check gate status file
+  ansible.builtin.stat:
+    path: "{{ gate_status_path }}"
+  register: _ev_gate_stat
+
+- name: Slurp gate status file for terminal marker
+  ansible.builtin.slurp:
+    src: "{{ gate_status_path }}"
+  register: _ev_gate_content
+  failed_when: false
+  when: _ev_gate_stat.stat.exists | default(false) | bool
+
+- name: Check gate terminal marker
+  ansible.builtin.set_fact:
+    _ev_gate_exists: "{{ _ev_gate_stat.stat.exists | default(false) | bool }}"
+    _ev_gate_age_seconds: >-
+      {{ ((ansible_date_time.epoch | int) - (_ev_gate_stat.stat.mtime | default(0) | int)) | default(999999) | int }}
+    _ev_gate_has_terminal: >-
+      {{ (_ev_gate_exists and
+          (_ev_gate_content.content | default('') | b64decode | regex_search(enforcement_verify_gate_terminal_marker_pattern, multiline=true))) is truthy }}
+    _ev_gate_healthy: >-
+      {{ (_ev_gate_exists and
+          _ev_gate_has_terminal and
+          (_ev_gate_age_seconds | int) <= (enforcement_verify_gate_max_age_seconds | int)) | bool }}
+
+# ── Step 6: Force-push track file — push guard is tracking ───────────────
+
+- name: Check force-push track file
+  ansible.builtin.stat:
+    path: "{{ enforcement_verify_force_push_track_path }}"
+  register: _ev_push_track_stat
+
+- name: Compute push track health
+  ansible.builtin.set_fact:
+    _ev_push_track_exists: "{{ _ev_push_track_stat.stat.exists | default(false) | bool }}"
+    _ev_push_track_age_seconds: >-
+      {{ ((ansible_date_time.epoch | int) - (_ev_push_track_stat.stat.mtime | default(0) | int)) | default(999999) | int }}
+    _ev_push_track_healthy: >-
+      {{ (_ev_push_track_exists and
+          (_ev_push_track_age_seconds | int) <= (enforcement_verify_max_age_seconds | int)) | bool }}
+
+# ── Step 7: /tmp/gludd-*.json state file survey ──────────────────────────
+
+- name: Find all gludd state files
+  ansible.builtin.find:
+    paths: /tmp
+    patterns: "gludd-*.json"
+    file_type: file
+  register: _ev_state_files
+
+- name: Count and age state files
+  ansible.builtin.set_fact:
+    _ev_state_file_count: "{{ _ev_state_files.files | default([]) | length }}"
+    _ev_stale_state_file_count: >-
+      {{ _ev_state_files.files | default([]) |
+          selectattr('mtime', 'defined') |
+          map('extract', 'mtime') |
+          map('float') |
+          select('lt', (ansible_date_time.epoch | float) - (enforcement_verify_max_age_seconds | float)) |
+          list | length }}
+    _ev_state_file_names: >-
+      {{ _ev_state_files.files | default([]) | map(attribute='path') | map('basename') | list }}
+
+- name: Compute state file freshness ratio
+  ansible.builtin.set_fact:
+    _ev_state_file_healthy: >-
+      {{ (_ev_state_file_count | int) > 0 and (_ev_stale_state_file_count | int) == 0 | bool }}
+
+# ── Step 8: Aggregate verdict — all mechanisms must show activity ────────
+
+- name: Build mechanism health map
+  ansible.builtin.set_fact:
+    _ev_mechanisms:
+      text_complete:
+        label: "Text-complete counter (enforce-stop liveness)"
+        exists: "{{ _ev_text_complete_exists | bool }}"
+        healthy: "{{ _ev_text_complete_healthy | bool }}"
+        age_seconds: "{{ _ev_text_complete_age_seconds | int }}"
+        value: "{{ _ev_text_complete_value | int }}"
+        silent: "{{ not _ev_text_complete_healthy | bool }}"
+      block_counter:
+        label: "Block-counter (enforcement activity)"
+        exists: "{{ _ev_block_counter_exists | bool }}"
+        healthy: "{{ _ev_block_counter_healthy | bool }}"
+        age_seconds: "{{ _ev_block_counter_age_seconds | int }}"
+        value: "{{ _ev_block_counter_value | int }}"
+        silent: "{{ not _ev_block_counter_healthy | bool }}"
+      watchdog:
+        label: "Watchdog heartbeat"
+        exists: "{{ _ev_watchdog_exists | bool }}"
+        healthy: "{{ _ev_watchdog_healthy | bool }}"
+        age_seconds: "{{ _ev_watchdog_age_seconds | int }}"
+        silent: "{{ not _ev_watchdog_healthy | bool }}"
+      gate_status:
+        label: "Gate status terminal marker"
+        exists: "{{ _ev_gate_exists | bool }}"
+        healthy: "{{ _ev_gate_healthy | bool }}"
+        age_seconds: "{{ _ev_gate_age_seconds | int }}"
+        has_terminal: "{{ _ev_gate_has_terminal | bool }}"
+        silent: "{{ not _ev_gate_healthy | bool }}"
+      push_track:
+        label: "Force-push track file"
+        exists: "{{ _ev_push_track_exists | bool }}"
+        healthy: "{{ _ev_push_track_healthy | bool }}"
+        age_seconds: "{{ _ev_push_track_age_seconds | int }}"
+        silent: "{{ not _ev_push_track_healthy | bool }}"
+      state_files:
+        label: "/tmp/gludd-*.json state files"
+        count: "{{ _ev_state_file_count | int }}"
+        stale_count: "{{ _ev_stale_state_file_count | int }}"
+        healthy: "{{ _ev_state_file_healthy | bool }}"
+        silent: "{{ not _ev_state_file_healthy | bool }}"
+
+- name: Enumerate silent mechanisms
+  ansible.builtin.set_fact:
+    _ev_silent_mechanisms: >-
+      {{ _ev_mechanisms | dict2items | selectattr('value.silent', 'equalto', true) | map(attribute='key') | list }}
+
+- name: Compute overall verdict
+  ansible.builtin.set_fact:
+    _ev_healthy_count: >-
+      {{ _ev_mechanisms | dict2items | selectattr('value.healthy', 'equalto', true) | list | length }}
+    _ev_total_count: "{{ _ev_mechanisms | dict2items | list | length }}"
+    _ev_all_healthy: >-
+      {{ (_ev_silent_mechanisms | length) == 0 | bool }}
+    _ev_verdict: >-
+      {{ 'PASS' if _ev_all_healthy else 'FAIL' }}
+    enforcement_verify_report:
+      role: enforcement_verify
+      verdict: "{{ _ev_verdict }}"
+      daemon_reachable: "{{ _ev_daemon_reachable }}"
+      mechanisms: "{{ _ev_mechanisms }}"
+      silent_mechanisms: "{{ _ev_silent_mechanisms }}"
+      healthy_count: "{{ _ev_healthy_count | int }}"
+      total_count: "{{ _ev_total_count | int }}"
+      state_files: "{{ _ev_state_file_names }}"
+      state_file_count: "{{ _ev_state_file_count | int }}"
+      stale_state_file_count: "{{ _ev_stale_state_file_count | int }}"
+
+# ── Step 9: Model analysis (optional, off by default) ────────────────────
+
+- name: Run model analysis for enforcement verification
+  general_ludd.agent.gludd_model_call:
+    prompt_profile: "enforcement_verify"
+    model_profile: "{{ model_profile }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    task_type: "{{ analysis_task_type }}"
+    work_type: "enforcement_verify"
+    extra_body:
+      verdict: "{{ _ev_verdict }}"
+      silent_mechanisms: "{{ _ev_silent_mechanisms }}"
+      healthy_count: "{{ _ev_healthy_count | int }}"
+      total_count: "{{ _ev_total_count | int }}"
+  register: _ev_model_analysis
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"
+  when: enable_model_call | bool
+
+- name: Extract model analysis text
+  ansible.builtin.set_fact:
+    _ev_model_response: >-
+      {{ _ev_model_analysis.response | default('') }}
+    _ev_model_confidence: >-
+      {{ _ev_model_analysis.confidence | default(0) | float }}
+  when: enable_model_call | bool
+
+# ── Write artifacts ───────────────────────────────────────────────────────
+
+- name: Write JSON enforcement verify report
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'enforcement_verify',
+        'verdict': _ev_verdict,
+        'daemon_reachable': _ev_daemon_reachable | bool,
+        'mechanisms': _ev_mechanisms,
+        'silent_mechanisms': _ev_silent_mechanisms,
+        'healthy_count': _ev_healthy_count | int,
+        'total_count': _ev_total_count | int,
+        'state_files': {
+          'names': _ev_state_file_names,
+          'count': _ev_state_file_count | int,
+          'stale_count': _ev_stale_state_file_count | int
+        },
+        'model_analysis': {
+          'enabled': enable_model_call | bool,
+          'response': _ev_model_response | default('')
+        } if enable_model_call | bool else {},
+        'thresholds': {
+          'max_age_seconds': enforcement_verify_max_age_seconds | int,
+          'watchdog_max_age_seconds': enforcement_verify_watchdog_max_age_seconds | int,
+          'min_block_count': enforcement_verify_min_block_count | int,
+          'min_text_complete_count': enforcement_verify_min_text_complete_count | int
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/enforcement_verify.json"
+    mode: "0644"
+
+- name: Write markdown enforcement verify report
+  ansible.builtin.copy:
+    content: |
+      # Enforcement Verification Report
+
+      **Verdict:** {{ _ev_verdict }}
+      **Daemon:** {{ 'reachable' if _ev_daemon_reachable else 'unreachable' }}
+      **Mechanisms healthy:** {{ _ev_healthy_count }} / {{ _ev_total_count }}
+
+      ## Mechanism Status
+
+      | Mechanism | Exists | Healthy | Age (s) | Value |
+      |-----------|--------|---------|---------|-------|
+      | Text-complete counter | {{ _ev_text_complete_exists }} | {{ _ev_text_complete_healthy }} | {{ _ev_text_complete_age_seconds }} | {{ _ev_text_complete_value }} |
+      | Block-counter | {{ _ev_block_counter_exists }} | {{ _ev_block_counter_healthy }} | {{ _ev_block_counter_age_seconds }} | {{ _ev_block_counter_value }} |
+      | Watchdog heartbeat | {{ _ev_watchdog_exists }} | {{ _ev_watchdog_healthy }} | {{ _ev_watchdog_age_seconds }} | — |
+      | Gate terminal marker | {{ _ev_gate_exists }} | {{ _ev_gate_healthy }} | {{ _ev_gate_age_seconds }} | terminal={{ _ev_gate_has_terminal }} |
+      | Force-push track | {{ _ev_push_track_exists }} | {{ _ev_push_track_healthy }} | {{ _ev_push_track_age_seconds }} | — |
+      | State files ({{ _ev_state_file_count }}) | {{ _ev_state_file_count > 0 }} | {{ _ev_state_file_healthy }} | stale={{ _ev_stale_state_file_count }} | — |
+
+      ## State Files Found
+
+      {% if _ev_state_file_names | length > 0 %}
+      {% for name in _ev_state_file_names %}
+      - `{{ name }}`
+      {% endfor %}
+      {% else %}
+      *(none)*
+      {% endif %}
+
+      ## Thresholds
+
+      | Threshold | Value |
+      |-----------|-------|
+      | State file max age | {{ enforcement_verify_max_age_seconds }}s |
+      | Watchdog max age | {{ enforcement_verify_watchdog_max_age_seconds }}s |
+      | Min block count | {{ enforcement_verify_min_block_count }} |
+      | Min text-complete count | {{ enforcement_verify_min_text_complete_count }} |
+
+      {% if _ev_silent_mechanisms | length > 0 %}
+      ## Silent Mechanisms
+
+      {% for key in _ev_silent_mechanisms %}
+      - **{{ _ev_mechanisms[key].label }}** — no side effects within threshold window ({{ _ev_mechanisms[key].age_seconds }}s old)
+      {% endfor %}
+      {% endif %}
+
+      {% if enable_model_call %}
+      ## Model Analysis
+
+      {{ _ev_model_response | default('(no response)') }}
+      {% endif %}
+
+      ---
+      {% if _ev_all_healthy %}
+      **ALL ENFORCEMENT MECHANISMS ACTIVE** — every mechanism shows recent activity.
+      {% else %}
+      **ENFORCEMENT VERIFICATION FAILED** — {{ _ev_silent_mechanisms | length }} mechanism(s) are silent.
+      {% endif %}
+
+      *Generated by general_ludd.agent.enforcement_verify*
+    dest: "{{ artifact_dir }}/enforcement_verify.md"
+    mode: "0644"
+
+# ── FAIL on silent enforcement ────────────────────────────────────────────
+
+- name: Fail if enforcement mechanisms are silent
+  ansible.builtin.fail:
+    msg: >-
+      Enforcement verification FAILED: {{ _ev_silent_mechanisms | length }}
+      mechanism(s) silent —
+      {% for key in _ev_silent_mechanisms %}
+      {{ _ev_mechanisms[key].label }} (age={{ _ev_mechanisms[key].age_seconds }}s)
+      {%- if not loop.last %}, {% endif %}
+      {% endfor %}.
+      {{ _ev_healthy_count }}/{{ _ev_total_count }} mechanisms healthy.
+  when:
+    - enforcement_verify_fail_on_silence | bool
+    - not _ev_all_healthy | bool
+
+- name: Report enforcement verification summary
+  ansible.builtin.debug:
+    msg: >-
+      Enforcement verify: verdict={{ _ev_verdict }}
+      healthy={{ _ev_healthy_count }}/{{ _ev_total_count }}
+      silent={{ _ev_silent_mechanisms | length }}
+      daemon={{ 'reachable' if _ev_daemon_reachable else 'unreachable' }}
+      state_files={{ _ev_state_file_count }} ({{ _ev_stale_state_file_count }} stale)

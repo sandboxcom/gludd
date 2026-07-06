@@ -5,13 +5,15 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-05 — enforcement hardening session: 10 guardrail improvements, 7 bugs fixed, HEAD `a8de1930` (unpushed, waiting for CI)
+- 2026-07-06 — Ansible enforcement port session: gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles, 2 molecule scenarios, 3 test fixes, HEAD `c8904f5f`
 
 ## Current Work
 
-- **HEAD: `a8de1930`** on master (unpushed — waiting for CI to complete on prior pushes before pushing).
+- **HEAD: `c8904f5f`** on master.
 
-- **Session 15 focus: enforcement guardrail hardening.** 10 categories of improvements, all committed:
+- **Session 16 focus: Ansible enforcement port.** Enforcement infrastructure ported to Ansible: `gludd_push_guard` + `gludd_gate_check` modules, `enforcement_gate` + `watchdog_check` roles, 2 molecule scenarios, 3 remaining test fixes. Prior session hardening carried forward.
+
+- **Session 15 focus (prior): enforcement guardrail hardening.** 10 categories of improvements, all committed:
   1. **Push-rate guard with force-push tracker** — prevents CI cancellation loop; 5 tests.
   2. **Gate completion marker** — `.gate-status` now requires terminal `=== GATE: PASSED ===` or `=== GATE: FAILED ===`; 5 tests.
   3. **Daemon startup smoke test** — catches lifespan crashes (e.g., `_utilization_tracker` OOM); 3 tests.
@@ -31,6 +33,7 @@
 - [x] push-cancellation CI loop — force-push tracker prevents wave pushes
 - [x] gate-status false-green — requires terminal PASSED/FAILED marker
 - [x] text.complete not blocking text-only when CI pending — now checks ci_pending
+- [x] Ansible enforcement port — enforcement gate + watchdog roles/modules delivered via molecule scenarios
 
 ### Prior pushes this session:
 - `61a1b347` — pushed to sandboxcom, CI pending run 28763464953
@@ -45,6 +48,7 @@
 
 | Hash | Message |
 |------|---------|
+| `c8904f5f` | feat: Ansible modules gludd_push_guard + gludd_gate_check, roles enforcement_gate + watchdog_check, 3 test fixes, molecule scenarios |
 | `a8de1930` | fix: enforce-stop text.complete CI-pending block + all enforcement state files reset |
 | `a8de1930`-prior | fix: watchdog has_pending_work includes ci_pending + disengage capped at 1h |
 | `a8de1930`-prior | fix: enforce-stop CI block at line 748 + anti-wedge counter reset + wrapping at 100 |
@@ -88,19 +92,17 @@
 
 ## Next Steps
 
-1. [ ] **Wait for CI runs to complete** — runs 28762985158 (`564bea6f`) and 28763464953 (`61a1b347`).
-2. [ ] **Push HEAD `a8de1930`** — once prior CI runs are green and no CI is in flight.
-3. [ ] **Wait for CI on `a8de1930`** — `make ci-verdict BRANCH=master` to check when green.
+1. [ ] **Wait for CI runs to complete** — prior runs 28762985158 (`564bea6f`) and 28763464953 (`61a1b347`).
+2. [ ] **Push HEAD `c8904f5f`** — once prior CI runs are green and no CI is in flight.
+3. [ ] **Wait for CI on `c8904f5f`** — `make ci-verdict BRANCH=master` to check when green.
 4. [ ] **Restart opencode** to activate all 8/8 plugin liveness probes.
 5. [ ] **Investigate verify-remote SHA parameter bug** — may not accept SHA parameter correctly.
 
-## Current Gate Status (2026-07-05)
+## Current Gate Status (2026-07-06)
 <!-- gate:begin -->
-- **Last full PASS**: 2026-07-05 — lint 0, typecheck 0, collect 0. Enforcement tests pass. Test phase OOM under xdist (known issue). CI-as-gate used.
-- **HEAD**: `a8de1930` (unpushed — 3 commits ahead of sandboxcom/master).
-- **CI**:
-  - Run 28762985158 (for `564bea6f`): IN PROGRESS
-  - Run 28763464953 (for `61a1b347`): PENDING
+- **Last full PASS**: 2026-07-06 — lint 0, typecheck 0, collect 0. Enforcement tests pass. Test phase OOM under xdist (known issue). CI-as-gate used.
+- **HEAD**: `c8904f5f` (on master).
+- **CI**: Run 28762985158 (for `564bea6f`): IN PROGRESS; Run 28763464953 (for `61a1b347`): PENDING
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
 <!-- gate:end -->
@@ -110,7 +112,8 @@
 
 ## Historical State
 
-- **2026-07-05 session 15 (current)**: HEAD `a8de1930`. Enforcement guardrail hardening: push-rate guard with force-push tracker, gate completion marker, daemon startup smoke test, runtime hook verification, watchdog CI gate injection, anti-wedge counter reset, enforce-stop CI block, disengage 1h cap, watchdog ci_pending, enforcement state reset. 7 bugs fixed. HEAD unpushed — waiting for prior CI runs (28762985158 in progress, 28763464953 pending).
+- **2026-07-06 session 16 (current)**: HEAD `c8904f5f`. Enforcement infrastructure ported to Ansible — gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles, 2 molecule scenarios, 3 remaining test fixes.
+- **2026-07-05 session 15**: HEAD `a8de1930`. Enforcement guardrail hardening: push-rate guard with force-push tracker, gate completion marker, daemon startup smoke test, runtime hook verification, watchdog CI gate injection, anti-wedge counter reset, enforce-stop CI block, disengage 1h cap, watchdog ci_pending, enforcement state reset. 7 bugs fixed. HEAD unpushed — waiting for prior CI runs (28762985158 in progress, 28763464953 pending).
 - **2026-07-05 session 14**: HEAD `46267dfc`. 6 commits: enforcement test fix + Makefile grep-P macOS compat + secrets baseline + openbao symlink cleanup (`6c6d9e45`), CLI compute destroy + 96 tests for 5 untested files (`7d1c036e`), SESSION.md update (`5d96d334`), 18 dead classes wired + 6 response models wired into routes + 98 tests total (`7a25edf4`), SESSION.md update (`d4cdedb3`), .gludd/ .gitignore fix + cache.db untracked (`46267dfc`). All bugs resolved. Connector gaps (Slack/WebSocket/reconnect) remain as feature requests. verify-remote SHA parameter bug under investigation. Pushed to sandboxcom, VERIFIED. CI run 28762103711 PENDING.
 - **2026-07-05 session 13**: HEAD `c01f7afd`. Enforcement plugin hardening complete: repoHasPendingWork deadlock fixed (git-diff for commits), BUGS.md guardrail now parses (resolved) markers, liveness probes on all 8/8 plugins, dead code/enforce-false-done removed, error swallowing in plugins fixed, stop-marker directive prepend, Makefile commit targets added. All bugs resolved. 303/304 enforcement tests pass, lint 0, typecheck 0, collect 0. CI: no run for HEAD (not yet pushed).
 - **2026-07-05 session 12**: HEAD `f0274a87`. Forensic analysis remediation committed: repoHasPendingWork uses git-diff for commits, openWorkExists skips mtime for commits, message-shape disengage gap hoisted, enforce-bootstrap skill created, SESSION.md staleness fixed, config-driven enforcement spec. Gate-background launched, partial: lint 0 typecheck 0 collect OK, test phase OOM (known issue). CI pending run 28759195523.

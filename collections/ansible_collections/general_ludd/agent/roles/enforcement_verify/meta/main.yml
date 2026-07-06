@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: enforcement_verify
+  author: Agentic Harness Agent
+  description: >
+    Behavioral enforcement verification — validates that enforcement
+    mechanisms are actively producing side effects, not just statically
+    present. Checks text.complete counter (enforce-stop liveness),
+    block-counter (enforcement activity), watchdog heartbeat recency,
+    gate status terminal marker, force-push track file, and
+    /tmp/gludd-*.json state file freshness. FAILS if any enforcement
+    mechanism is silent (no side effects within threshold window).
+    Safe-by-default: enable_model_call=false, no mutations.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

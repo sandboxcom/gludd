@@ -1,0 +1,63 @@
+---
+# enforcement_verify role defaults — behavioral enforcement verification
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-enforcement-verify"
+
+# Project root for local filesystem checks
+project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(lookup('env', 'PWD'), true) }}"
+
+# ── Verification thresholds ──────────────────────────────────────────────
+
+# Maximum age in seconds for state files before they are considered stale
+enforcement_verify_max_age_seconds: 300
+
+# Maximum age in seconds for the watchdog heartbeat before it is considered dead
+enforcement_verify_watchdog_max_age_seconds: 60
+
+# Minimum block counter value expected (non-zero = enforcement active)
+enforcement_verify_min_block_count: 1
+
+# Minimum text-complete counter value expected (non-zero = enforce-stop alive)
+enforcement_verify_min_text_complete_count: 1
+
+# ── Gate check ───────────────────────────────────────────────────────────
+
+# Path to the gate status file
+gate_status_path: ".gate-status"
+
+# Terminal marker to search for in gate status (PASS or FAIL)
+enforcement_verify_gate_terminal_marker_pattern: "GATE:.(PASSED|FAILED)"
+
+# Maximum age in seconds for gate status
+enforcement_verify_gate_max_age_seconds: 86400
+
+# ── Push guard ───────────────────────────────────────────────────────────
+
+# Path to force-push track file
+enforcement_verify_force_push_track_path: ".gate-logs/force-push-track.json"
+
+# ── State file glob ──────────────────────────────────────────────────────
+
+# Glob pattern for enforcement state files
+enforcement_verify_state_file_glob: "/tmp/gludd-*.json"
+
+# ── Model analysis ──────────────────────────────────────────────────────
+
+# Enable model call for analysis (safe-by-default: false)
+enable_model_call: false
+
+# Model profile to use when enable_model_call is true
+model_profile: ""
+
+# Task type for adaptive routing
+analysis_task_type: "enforcement_verify"
+
+# ── Fail behavior ───────────────────────────────────────────────────────
+
+# Fail the play when any enforcement mechanism is silent
+enforcement_verify_fail_on_silence: true
