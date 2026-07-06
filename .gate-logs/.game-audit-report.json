@@ -1,5 +1,5 @@
 {
-  "report_generated": "2026-07-06T09:05:02Z",
+  "report_generated": "2026-07-06T09:33:46Z",
   "games": {
     "snake": {
       "game_id": "snake",
@@ -17,7 +17,7 @@
           "desc": "tick() returns bool for 100 frames without error"
         },
         "direction_change": {
-          "passed": false,
+          "passed": true,
           "desc": "input('down') then tick advances snake downward"
         },
         "wall_collision": {
@@ -25,7 +25,7 @@
           "desc": "snake hitting wall returns game_over True"
         },
         "food_eating": {
-          "passed": true,
+          "passed": false,
           "desc": "moving onto food cell increments score and length"
         },
         "render_state": {
@@ -34,15 +34,15 @@
         }
       },
       "tokens_in": 305,
-      "tokens_out": 702,
+      "tokens_out": 633,
       "tool_calls": 0,
-      "content_len": 2694,
+      "content_len": 2352,
       "model": "unknown",
       "phases": {
-        "model_call": 5533.1,
-        "extract_code": 0.1,
-        "ast_parse": 1.0,
-        "game_verify": 2.2
+        "model_call": 5955.0,
+        "extract_code": 0.4,
+        "ast_parse": 1.3,
+        "game_verify": 6.3
       },
       "errors": [],
       "gaps": []
@@ -80,15 +80,15 @@
         }
       },
       "tokens_in": 367,
-      "tokens_out": 2085,
+      "tokens_out": 1883,
       "tool_calls": 0,
-      "content_len": 8185,
+      "content_len": 6887,
       "model": "unknown",
       "phases": {
-        "model_call": 12503.1,
-        "extract_code": 0.2,
-        "ast_parse": 63.0,
-        "game_verify": 2.9
+        "model_call": 11058.0,
+        "extract_code": 0.1,
+        "ast_parse": 91.3,
+        "game_verify": 2.0
       },
       "errors": [],
       "gaps": []
@@ -97,7 +97,7 @@
       "game_id": "minesweeper",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 7,
+      "checks_passed": 5,
       "checks_total": 7,
       "checks": {
         "import_and_instantiate": {
@@ -113,11 +113,11 @@
           "desc": "revealing a mine cell returns 'mine' and game_over=True"
         },
         "flood_fill": {
-          "passed": true,
+          "passed": false,
           "desc": "revealing a 0 cell auto-reveals adjacent cells"
         },
         "flag_toggle": {
-          "passed": true,
+          "passed": false,
           "desc": "flag() toggles between flagged/unflagged"
         },
         "win_detection": {
@@ -130,15 +130,15 @@
         }
       },
       "tokens_in": 362,
-      "tokens_out": 970,
+      "tokens_out": 1017,
       "tool_calls": 0,
-      "content_len": 3745,
+      "content_len": 4113,
       "model": "unknown",
       "phases": {
-        "model_call": 5996.6,
-        "extract_code": 0.1,
-        "ast_parse": 0.9,
-        "game_verify": 1.7
+        "model_call": 6405.2,
+        "extract_code": 0.2,
+        "ast_parse": 4.2,
+        "game_verify": 6.1
       },
       "errors": [],
       "gaps": []
@@ -155,7 +155,7 @@
           "desc": "class imports and instantiates without error"
         },
         "valid_move": {
-          "passed": false,
+          "passed": true,
           "desc": "valid diagonal move returns valid=True"
         },
         "invalid_move": {
@@ -171,7 +171,7 @@
           "desc": "piece reaching back rank becomes king"
         },
         "game_over": {
-          "passed": true,
+          "passed": false,
           "desc": "no valid moves sets game_over=True"
         },
         "render_state": {
@@ -180,15 +180,15 @@
         }
       },
       "tokens_in": 467,
-      "tokens_out": 2889,
+      "tokens_out": 2385,
       "tool_calls": 0,
-      "content_len": 11279,
+      "content_len": 9054,
       "model": "unknown",
       "phases": {
-        "model_call": 19072.9,
+        "model_call": 14626.9,
         "extract_code": 0.1,
-        "ast_parse": 60.6,
-        "game_verify": 6.1
+        "ast_parse": 106.5,
+        "game_verify": 2.5
       },
       "errors": [],
       "gaps": []
@@ -226,15 +226,15 @@
         }
       },
       "tokens_in": 399,
-      "tokens_out": 995,
+      "tokens_out": 910,
       "tool_calls": 0,
-      "content_len": 3383,
+      "content_len": 3430,
       "model": "unknown",
       "phases": {
-        "model_call": 6408.5,
+        "model_call": 6244.0,
         "extract_code": 0.1,
-        "ast_parse": 1.4,
-        "game_verify": 1.9
+        "ast_parse": 6.0,
+        "game_verify": 11.2
       },
       "errors": [],
       "gaps": []
@@ -243,7 +243,7 @@
       "game_id": "banana",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 4,
+      "checks_passed": 6,
       "checks_total": 6,
       "checks": {
         "import_and_instantiate": {
@@ -251,7 +251,7 @@
           "desc": "class imports and instantiates without error"
         },
         "throw_arc": {
-          "passed": false,
+          "passed": true,
           "desc": "throw(45, 10) produces trajectory with multiple points"
         },
         "building_hit": {
@@ -263,7 +263,7 @@
           "desc": "direct hit on gorilla returns hit_type='gorilla1' or 'gorilla2'"
         },
         "turn_alternation": {
-          "passed": false,
+          "passed": true,
           "desc": "current_player changes after each throw"
         },
         "render_state": {
@@ -272,15 +272,15 @@
         }
       },
       "tokens_in": 493,
-      "tokens_out": 1034,
+      "tokens_out": 1155,
       "tool_calls": 0,
-      "content_len": 3847,
+      "content_len": 4315,
       "model": "unknown",
       "phases": {
-        "model_call": 7160.0,
-        "extract_code": 0.0,
-        "ast_parse": 0.9,
-        "game_verify": 1.5
+        "model_call": 7488.6,
+        "extract_code": 0.1,
+        "ast_parse": 2.7,
+        "game_verify": 1.8
       },
       "errors": [],
       "gaps": []
@@ -323,10 +323,10 @@
       "content_len": 2572,
       "model": "unknown",
       "phases": {
-        "model_call": 4786.8,
-        "extract_code": 0.1,
-        "ast_parse": 1.0,
-        "game_verify": 1.2
+        "model_call": 4882.7,
+        "extract_code": 0.8,
+        "ast_parse": 12.7,
+        "game_verify": 15.8
       },
       "errors": [],
       "gaps": []
@@ -335,7 +335,7 @@
       "game_id": "breakout",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 5,
+      "checks_passed": 6,
       "checks_total": 6,
       "checks": {
         "import_and_instantiate": {
@@ -351,7 +351,7 @@
           "desc": "tick loop destroys at least one brick"
         },
         "brk_paddle_bounce": {
-          "passed": false,
+          "passed": true,
           "desc": "ball bounces when hitting paddle area"
         },
         "brk_life_loss": {
@@ -364,15 +364,15 @@
         }
       },
       "tokens_in": 563,
-      "tokens_out": 865,
+      "tokens_out": 902,
       "tool_calls": 0,
-      "content_len": 3137,
+      "content_len": 3566,
       "model": "unknown",
       "phases": {
-        "model_call": 5268.7,
-        "extract_code": 0.0,
-        "ast_parse": 0.8,
-        "game_verify": 1.5
+        "model_call": 5763.0,
+        "extract_code": 0.4,
+        "ast_parse": 7.8,
+        "game_verify": 5.3
       },
       "errors": [],
       "gaps": []
@@ -381,7 +381,7 @@
       "game_id": "maze_runner",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 4,
+      "checks_passed": 5,
       "checks_total": 5,
       "checks": {
         "import_and_instantiate": {
@@ -389,7 +389,7 @@
           "desc": "class imports and instantiates without error"
         },
         "maze_moves": {
-          "passed": false,
+          "passed": true,
           "desc": "input('right') moves player on a path cell"
         },
         "maze_wall_blocks": {
@@ -406,15 +406,15 @@
         }
       },
       "tokens_in": 392,
-      "tokens_out": 863,
+      "tokens_out": 761,
       "tool_calls": 0,
-      "content_len": 3369,
+      "content_len": 2931,
       "model": "unknown",
       "phases": {
-        "model_call": 5982.0,
-        "extract_code": 0.1,
-        "ast_parse": 1.0,
-        "game_verify": 1.4
+        "model_call": 5027.4,
+        "extract_code": 0.2,
+        "ast_parse": 15.5,
+        "game_verify": 2.6
       },
       "errors": [],
       "gaps": []
@@ -452,15 +452,15 @@
         }
       },
       "tokens_in": 436,
-      "tokens_out": 549,
+      "tokens_out": 537,
       "tool_calls": 0,
-      "content_len": 2161,
+      "content_len": 2059,
       "model": "unknown",
       "phases": {
-        "model_call": 4390.5,
-        "extract_code": 0.0,
-        "ast_parse": 0.5,
-        "game_verify": 1.4
+        "model_call": 3996.4,
+        "extract_code": 0.6,
+        "ast_parse": 5.6,
+        "game_verify": 6.4
       },
       "errors": [],
       "gaps": []
@@ -469,7 +469,7 @@
       "game_id": "memory_match",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 5,
+      "checks_passed": 4,
       "checks_total": 6,
       "checks": {
         "import_and_instantiate": {
@@ -481,7 +481,7 @@
           "desc": "flip() reveals a card and returns valid dict"
         },
         "mm_match_pair": {
-          "passed": true,
+          "passed": false,
           "desc": "matching two cards with same value sets matched=True"
         },
         "mm_mismatch_flips": {
@@ -498,15 +498,15 @@
         }
       },
       "tokens_in": 490,
-      "tokens_out": 500,
+      "tokens_out": 499,
       "tool_calls": 0,
-      "content_len": 1969,
+      "content_len": 2099,
       "model": "unknown",
       "phases": {
-        "model_call": 3642.0,
-        "extract_code": 0.0,
-        "ast_parse": 0.7,
-        "game_verify": 1.3
+        "model_call": 3500.2,
+        "extract_code": 0.1,
+        "ast_parse": 3.7,
+        "game_verify": 7.3
       },
       "errors": [],
       "gaps": []
@@ -544,14 +544,14 @@
         }
       },
       "tokens_in": 497,
-      "tokens_out": 1115,
+      "tokens_out": 1090,
       "tool_calls": 0,
-      "content_len": 4410,
+      "content_len": 4060,
       "model": "unknown",
       "phases": {
-        "model_call": 6927.9,
-        "extract_code": 0.2,
-        "ast_parse": 1.5,
+        "model_call": 6356.8,
+        "extract_code": 0.4,
+        "ast_parse": 2.6,
         "game_verify": 2.0
       },
       "errors": [],
@@ -561,11 +561,11 @@
   "summary": {
     "total_games": 12,
     "games_imported": 12,
-    "games_fully_verified": 6,
+    "games_fully_verified": 8,
     "total_tokens_in": 5290,
-    "total_tokens_out": 13349,
-    "total_latency_ms": 87831.5,
-    "total_latency_s": 87.83,
+    "total_tokens_out": 12554,
+    "total_latency_ms": 81636.9,
+    "total_latency_s": 81.64,
     "most_tokens": "checkers",
     "most_latency": "checkers"
   }

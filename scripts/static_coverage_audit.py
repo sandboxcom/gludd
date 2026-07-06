@@ -49,11 +49,11 @@ def find_test_imports(module: str) -> list[str]:
 def main():
     threshold = int(os.environ.get("THRESHOLD", "85"))
     source_files = get_source_files()
-    
+
     untested: list[str] = []
     tested_count = 0
     total = len(source_files)
-    
+
     for fpath in source_files:
         mod = module_name(fpath)
         imports = find_test_imports(mod)
@@ -61,9 +61,9 @@ def main():
             tested_count += 1
         else:
             untested.append(str(fpath.relative_to(ROOT)))
-    
+
     pct = round(100.0 * tested_count / total, 1) if total > 0 else 0
-    
+
     print(f"=== Static Coverage Audit ===")
     print(f"Source files (excl __init__.py): {total}")
     print(f"Files with test imports:         {tested_count}")
@@ -71,12 +71,12 @@ def main():
     print(f"Test coverage (by import):       {pct}%")
     print(f"Threshold:                       {threshold}%")
     print(f"Meets threshold:                 {'YES' if pct >= threshold else 'NO'}")
-    
+
     if untested:
         print(f"\n=== Files with NO test imports ({len(untested)}) ===")
         for f in sorted(untested):
             print(f"  {f}")
-    
+
     sys.exit(0 if pct >= threshold else 1)
 
 

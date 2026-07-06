@@ -48,7 +48,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		check-readme-status check-plugin-versions check-plugin-versions-quiet \
 		check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
 		verify-release-artifact git-tag-rm release-cut release-recut release-create \
-		verify-feature-claims audit-coverage gate-audit coverage-json
+		verify-feature-claims audit-coverage gate-audit coverage-json \
+		deck deck-serve deck-data deck-honesty
 
 help:
 	@echo "Usage: make [target]"
@@ -661,6 +662,12 @@ untrack:
 git-rm:
 	@[ -n "$(FILES)" ] || { echo "Usage: make git-rm FILES='path ...'"; exit 1; }
 	@git rm -r $(FILES) && echo "git-removed: $(FILES)"
+
+git-mv:
+	@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { echo "Usage: make git-mv FROM='old' TO='new'"; exit 1; }
+	@mkdir -p "$$(dirname "$(TO)")"
+	@rm -f "$(TO)"
+	@git mv "$(FROM)" "$(TO)" && echo "git-moved: $(FROM) -> $(TO)"
 
 # Read-only ancestor check: exit=0 means A is a strict ancestor of B (ff-only valid).
 # Usage: make git-is-ancestor A=<commit> B=<commit>
@@ -2229,6 +2236,30 @@ disengage-enforcement:
 #   make static-coverage [THRESHOLD=85]
 static-coverage:
 	@THRESHOLD=$(or $(THRESHOLD),85) $(PYTHON) scripts/static_coverage_audit.py
+
+# --- Presentation deck ---
+#   make deck            — build the reveal.js deck (generate deck-data.json + honesty check)
+#   make deck-serve      — start local HTTP server for preview
+#   make deck-data       — collect live project data → deck-data.json (no render)
+#   make deck-honesty    — lint the deck HTML for banned marketing tokens
+DECK_DIR := docs/presentation/deck
+DECK_DATA := docs/presentation/deck-data.json
+
+deck:
+	@echo "=== BUILDING DECK ==="
+	@$(UV) run python3 scripts/build_deck.py
+	@echo "=== DECK BUILT ==="
+	@echo "View: make deck-serve  or  open $(DECK_DIR)/index.html"
+
+deck-serve:
+	@echo "Serving deck at http://localhost:8080/"
+	@$(UV) run python3 scripts/build_deck.py --serve
+
+deck-data:
+	@$(UV) run python3 scripts/build_deck.py --data
+
+deck-honesty:
+	@$(UV) run python3 scripts/build_deck.py --check
 
 verify-banana:
 	@$(PYTHON) /tmp/verify_banana.py
