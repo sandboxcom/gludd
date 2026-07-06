@@ -256,6 +256,7 @@ class TestExecutionEngine:
             prompt_text="Set x to 1",
         )
 
+        caplog.propagate = True
         with caplog.at_level(logging.WARNING):
             result = engine.execute(job)
 
