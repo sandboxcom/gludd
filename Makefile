@@ -2225,5 +2225,10 @@ disengage-enforcement:
 	@$(UV) run python3 -c "import json,time; json.dump({'last_ci_check':int(time.time()*1000),'last_ci_status':'SUCCESS','run_id':'disengaged','head_sha':'$(shell git rev-parse HEAD)'},open('/tmp/gludd-watchdog-ci.json','w'))"
 	@echo "Disengage files written — enforcement hooks will pass through for 1 hour"
 
+# Static coverage audit: match source → test imports (no pytest run).
+#   make static-coverage [THRESHOLD=85]
+static-coverage:
+	@THRESHOLD=$(or $(THRESHOLD),85) $(PYTHON) scripts/static_coverage_audit.py
+
 verify-banana:
 	@$(PYTHON) /tmp/verify_banana.py
