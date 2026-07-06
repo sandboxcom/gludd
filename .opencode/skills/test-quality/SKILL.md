@@ -1,3 +1,8 @@
+---
+name: test-quality
+description: When writing tests, enforce isolation, determinism, and meaningful assertions. Defines the 10 rules every test in this repo must follow — proof of behavior, AAA structure, 3-layer coverage, edge cases, no mock-only tests, realistic data, naming, one-assertion-concept, mandatory TDD, no coverage gaming.
+---
+
 # Test Quality Skill
 
 When writing tests, follow these rules. This is NOT advisory.

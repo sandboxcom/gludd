@@ -1,0 +1,29 @@
+---
+galaxy_info:
+  role_name: task_deadline_check
+  author: Agentic Harness Agent
+  description: >
+    Read-only audit of subagent task wall-clock deadlines. The ansible/gludd
+    equivalent of the opencode `.opencode/plugin/enforce-deadline.ts` plugin.
+    Reads `/tmp/gludd-task-deadlines.json` (the dispatch-time state file
+    written by the plugin), computes elapsed time per task, cross-references
+    `/tmp/gludd-task-stale.json` (plugin-recorded breaches) and
+    `/tmp/gludd-task-killed.json` (kills recorded by
+    `scripts/task_watchdog.py`), and reports breached tasks.
+
+    Status levels: healthy (0 breached), degraded (1-2), critical (3+).
+    Emits a `gludd_message` priority=high alert on any non-healthy status.
+
+    READ-ONLY: this role does NOT kill tasks. Actual killing is performed by
+    `scripts/task_watchdog.py` (the daemon-side killing layer). This role only
+    surfaces breaches so an orchestrator agent can re-dispatch / re-split work.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

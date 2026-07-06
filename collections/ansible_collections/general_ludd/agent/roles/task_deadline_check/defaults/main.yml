@@ -1,0 +1,32 @@
+---
+# task_deadline_check role defaults — READ-ONLY AUDIT
+#
+# This role never mutates the repo and never kills tasks. It only READS the
+# deadline / stale / killed state files and reports breaches. Killing is the
+# job of scripts/task_watchdog.py (invoked separately via the daemon).
+
+# Daemon connectivity (for gludd_facts + gludd_message)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# State files (must match enforce-deadline.ts / task_watchdog.py defaults)
+#   deadlines: dict {task_id: epoch_ms}     — written by enforce-deadline.ts
+#   stale:    list [{task_id, start_ms, ...}] — written by enforce-deadline.ts
+#   killed:   list [{task_id, pid, ...}]     — written by task_watchdog.py
+task_deadlines_path: "/tmp/gludd-task-deadlines.json"
+task_stale_path: "/tmp/gludd-task-stale.json"
+task_killed_path: "/tmp/gludd-task-killed.json"
+
+# Wall-clock deadline per task in milliseconds.
+# MUST match the plugin default (GLUDD_TASK_TIMEOUT_MS, 300000 = 5 min).
+task_timeout_ms: 300000
+
+# Behavior toggles
+fail_on_breach: false       # fail the play only when status == critical
+emit_alert_message: true    # send gludd_message on non-healthy status
+
+# Artifact output
+artifact_dir: "/tmp/gludd-task-deadline-check-artifacts"
+
+# Message handoff: recipient role/agent to notify (empty = no message sent)
+handoff_recipient: ""

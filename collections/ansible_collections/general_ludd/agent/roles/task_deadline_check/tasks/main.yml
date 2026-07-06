@@ -1,0 +1,286 @@
+---
+# task_deadline_check role — read-only audit of subagent task deadlines.
+#
+# Mirrors .opencode/plugin/enforce-deadline.ts (the plugin that records task
+# dispatch timestamps and warns when elapsed > GLUDD_TASK_TIMEOUT_MS).
+#
+# Pipeline:
+#   1. Gather daemon facts (gludd_facts) for context.
+#   2. Stat + read three state files (graceful on missing):
+#        - /tmp/gludd-task-deadlines.json   dict {task_id: epoch_ms}
+#        - /tmp/gludd-task-stale.json       list  [{task_id, start_ms, ...}]
+#        - /tmp/gludd-task-killed.json      list  [{task_id, pid, ...}]
+#   3. Compute elapsed_ms = now_ms - start_ms for each tracked task.
+#   4. Determine BREACHED: elapsed > task_timeout_ms AND task_id not in killed.
+#   5. Status: healthy (0 breached) | degraded (1-2) | critical (3+).
+#   6. Emit gludd_message priority=high when status != healthy.
+#   7. Write JSON + markdown artifacts.
+#   8. FAIL the play when fail_on_breach AND status == critical.
+#
+# READ-ONLY: this role does not kill tasks. Killing is done by
+# scripts/task_watchdog.py (the daemon-side killing layer that reads the same
+# stale file and SIGTERMs/SIGKILLs the matching processes). This role only
+# surfaces breaches so the orchestrator can re-dispatch / re-split work.
+
+- name: Gather live daemon facts for context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Stat state files (so we can branch on existence) ──────────────────────────
+
+- name: Stat deadlines file
+  ansible.builtin.stat:
+    path: "{{ task_deadlines_path }}"
+  register: _tdc_deadlines_stat
+
+- name: Stat stale file
+  ansible.builtin.stat:
+    path: "{{ task_stale_path }}"
+  register: _tdc_stale_stat
+
+- name: Stat killed file
+  ansible.builtin.stat:
+    path: "{{ task_killed_path }}"
+  register: _tdc_killed_stat
+
+# ── Read state files (default to empty when missing) ──────────────────────────
+
+- name: Read deadlines file
+  ansible.builtin.set_fact:
+    _tdc_deadlines_raw: "{{ lookup('file', task_deadlines_path, errors='ignore') | default('{}', true) }}"
+  when: _tdc_deadlines_stat.stat.exists | bool
+
+- name: Default deadlines when file missing
+  ansible.builtin.set_fact:
+    _tdc_deadlines_raw: '{}'
+  when: not (_tdc_deadlines_stat.stat.exists | bool)
+
+- name: Read stale file
+  ansible.builtin.set_fact:
+    _tdc_stale_raw: "{{ lookup('file', task_stale_path, errors='ignore') | default('[]', true) }}"
+  when: _tdc_stale_stat.stat.exists | bool
+
+- name: Default stale when file missing
+  ansible.builtin.set_fact:
+    _tdc_stale_raw: '[]'
+  when: not (_tdc_stale_stat.stat.exists | bool)
+
+- name: Read killed file
+  ansible.builtin.set_fact:
+    _tdc_killed_raw: "{{ lookup('file', task_killed_path, errors='ignore') | default('[]', true) }}"
+  when: _tdc_killed_stat.stat.exists | bool
+
+- name: Default killed when file missing
+  ansible.builtin.set_fact:
+    _tdc_killed_raw: '[]'
+  when: not (_tdc_killed_stat.stat.exists | bool)
+
+# ── Parse JSON (deadlines: dict, stale/killed: list) ──────────────────────────
+
+- name: Parse deadlines JSON (dict of task_id to epoch_ms)
+  ansible.builtin.set_fact:
+    _tdc_deadlines: "{{ (_tdc_deadlines_raw | from_json) if (_tdc_deadlines_raw | from_json) is mapping else {} }}"
+
+- name: Parse stale JSON (list of breached-task records)
+  ansible.builtin.set_fact:
+    _tdc_stale: "{{ (_tdc_stale_raw | from_json) if (_tdc_stale_raw | from_json) is iterable and (_tdc_stale_raw | from_json) is not mapping else [] }}"
+
+- name: Parse killed JSON (list of kill-audit records)
+  ansible.builtin.set_fact:
+    _tdc_killed: "{{ (_tdc_killed_raw | from_json) if (_tdc_killed_raw | from_json) is iterable and (_tdc_killed_raw | from_json) is not mapping else [] }}"
+
+# ── Compute elapsed per task + determine breached ─────────────────────────────
+# A task is BREACHED when:
+#   - elapsed_ms = now_ms - start_ms > task_timeout_ms
+#   - AND task_id is NOT in the killed list (already handled by the watchdog)
+
+- name: Compute elapsed and determine breached tasks
+  ansible.builtin.set_fact:
+    _tdc_now_ms: "{{ (ansible_date_time.epoch | int) * 1000 }}"
+    _tdc_total_tasks: "{{ _tdc_deadlines | length | int }}"
+    _tdc_killed_ids: "{{ _tdc_killed | map(attribute='task_id') | list }}"
+    _tdc_breached: >-
+      {% set now_ms = (ansible_date_time.epoch | int) * 1000 %}
+      {% set timeout = task_timeout_ms | int %}
+      {% set killed_ids = _tdc_killed | map(attribute='task_id') | list %}
+      {% set ns = namespace(breached=[]) %}
+      {% for tid, start_ms in _tdc_deadlines.items() %}
+        {% set sm = start_ms | int %}
+        {% if sm > 0 %}
+          {% set elapsed_ms = now_ms - sm %}
+          {% if elapsed_ms > timeout and tid not in killed_ids %}
+            {% set ns.breached = ns.breached + [{
+              'task_id': tid,
+              'start_ms': sm,
+              'elapsed_ms': elapsed_ms | round | int,
+              'timeout_ms': timeout,
+              'over_by_ms': (elapsed_ms - timeout) | round | int
+            }] %}
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+      {{ ns.breached }}
+
+# ── Determine status (healthy / degraded / critical) ──────────────────────────
+
+- name: Determine overall status
+  ansible.builtin.set_fact:
+    _tdc_status: >-
+      {% set n = _tdc_breached | length %}
+      {{ 'critical' if n >= 3 else 'degraded' if n >= 1 else 'healthy' }}
+    _tdc_status_note: >-
+      {% if (_tdc_deadlines | length | int) == 0 %}
+      no active tasks
+      {% else %}
+      {{ _tdc_breached | length }} of {{ _tdc_deadlines | length }} tracked task(s) breached the {{ task_timeout_ms }}ms deadline
+      {% endif %}
+
+# ── Alert via gludd_message on non-healthy status ─────────────────────────────
+
+- name: Send task-deadline alert (breached tasks detected)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: task_deadline_check
+    recipient: "{{ handoff_recipient }}"
+    topic: task_deadline
+    body: >-
+      {{ {
+        'status': _tdc_status,
+        'note': _tdc_status_note,
+        'total_tasks': _tdc_total_tasks | int,
+        'breached_count': _tdc_breached | length,
+        'breached_tasks': _tdc_breached,
+        'stale_count': _tdc_stale | length,
+        'killed_count': _tdc_killed | length,
+        'timeout_ms': task_timeout_ms | int,
+        'deadlines_path': task_deadlines_path
+      } | to_json }}
+    priority: high
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - emit_alert_message | bool
+    - _tdc_status != 'healthy'
+    - handoff_recipient | length > 0
+    - not ansible_check_mode
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Build report dictionary
+  ansible.builtin.set_fact:
+    _tdc_report: >-
+      {{ {
+        'role': 'task_deadline_check',
+        'status': _tdc_status,
+        'note': _tdc_status_note,
+        'total_tasks': _tdc_total_tasks | int,
+        'breached_count': _tdc_breached | length,
+        'breached_tasks': _tdc_breached,
+        'stale_count': _tdc_stale | length,
+        'killed_count': _tdc_killed | length,
+        'killed_ids': _tdc_killed_ids,
+        'timeout_ms': task_timeout_ms | int,
+        'now_ms': _tdc_now_ms | int,
+        'deadlines_path': task_deadlines_path,
+        'stale_path': task_stale_path,
+        'killed_path': task_killed_path,
+        'files_present': {
+          'deadlines': _tdc_deadlines_stat.stat.exists | bool,
+          'stale': _tdc_stale_stat.stat.exists | bool,
+          'killed': _tdc_killed_stat.stat.exists | bool
+        }
+      } }}
+
+- name: Write JSON artifact
+  ansible.builtin.copy:
+    content: "{{ _tdc_report | to_nice_json }}"
+    dest: "{{ artifact_dir }}/task_deadline_check.json"
+    mode: "0644"
+
+- name: Write markdown artifact
+  ansible.builtin.copy:
+    content: |
+      # Task Deadline Check Report
+
+      **Status:** {{ _tdc_status | upper }}
+      **Note:** {{ _tdc_status_note }}
+
+      ## Summary
+
+      - Tracked tasks: {{ _tdc_total_tasks }}
+      - Breached (over deadline, not yet killed): {{ _tdc_breached | length }}
+      - Plugin-flagged stale: {{ _tdc_stale | length }}
+      - Watchdog-killed: {{ _tdc_killed | length }}
+      - Timeout (ms): {{ task_timeout_ms }}
+
+      ## Breached Tasks
+
+      {% if (_tdc_breached | length) == 0 %}
+      _None — all tracked tasks are within the {{ task_timeout_ms }}ms deadline._
+      {% else %}
+      | task_id | elapsed_ms | timeout_ms | over_by_ms |
+      |---|---|---|---|
+      {% for t in _tdc_breached %}
+      | `{{ t.task_id }}` | {{ t.elapsed_ms }} | {{ t.timeout_ms }} | {{ t.over_by_ms }} |
+      {% endfor %}
+      {% endif %}
+
+      ## State Files
+
+      - deadlines: `{{ task_deadlines_path }}` (present: {{ _tdc_deadlines_stat.stat.exists }})
+      - stale: `{{ task_stale_path }}` (present: {{ _tdc_stale_stat.stat.exists }})
+      - killed: `{{ task_killed_path }}` (present: {{ _tdc_killed_stat.stat.exists }})
+
+      ## Policy
+
+      This role is **READ-ONLY** — it does not kill tasks. Actual killing is
+      performed by `scripts/task_watchdog.py` (the daemon-side killing layer),
+      which reads the same stale file and SIGTERMs/SIGKILLs the matching
+      processes. This audit surfaces breaches so the orchestrator can
+      re-dispatch / re-split the work.
+
+      Status thresholds: healthy (0 breached) · degraded (1-2) · critical (3+).
+
+      ---
+      *Generated by general_ludd.agent.task_deadline_check — read-only audit*
+    dest: "{{ artifact_dir }}/task_deadline_check.md"
+    mode: "0644"
+
+# ── Report + fail ─────────────────────────────────────────────────────────────
+
+- name: Report task deadline check completion
+  ansible.builtin.debug:
+    msg: >-
+      Task deadline check complete:
+      status={{ _tdc_status | upper }}
+      total={{ _tdc_total_tasks }}
+      breached={{ _tdc_breached | length }}
+      stale={{ _tdc_stale | length }}
+      killed={{ _tdc_killed | length }}
+      note={{ _tdc_status_note }}
+
+- name: FAIL — critical breach threshold reached (3+ tasks over deadline)
+  ansible.builtin.fail:
+    msg: >-
+      TASK DEADLINE CRITICAL: {{ _tdc_breached | length }} task(s) breached the
+      {{ task_timeout_ms }}ms deadline and are not in the killed list.
+      See {{ artifact_dir }}/task_deadline_check.md for details.
+      Re-dispatch or re-split the work; verify scripts/task_watchdog.py is running.
+  when:
+    - fail_on_breach | bool
+    - _tdc_status == 'critical'
+
+- name: ALL CLEAR — no deadline breaches
+  ansible.builtin.debug:
+    msg: "TASK DEADLINE: healthy — no tracked task has breached the {{ task_timeout_ms }}ms timeout"
+  when: _tdc_status == 'healthy'

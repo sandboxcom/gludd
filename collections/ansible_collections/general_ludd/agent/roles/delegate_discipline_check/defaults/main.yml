@@ -1,0 +1,35 @@
+---
+# delegate_discipline_check role defaults — REPORT-ONLY (never enforces)
+
+# Plugin state files (mirrors enforce-delegate.ts config defaults).
+# Both files are fail-open: missing/unreadable => treated as zero/empty.
+model_util_path: "/tmp/gludd-model-util.json"
+mainthread_streak_path: "/tmp/gludd-mainthread-streak.json"
+
+# Worktree disk-discipline (matches GLUDD_WORKTREE_CAP / GLUDD_MIN_FREE_GB
+# from AGENTS.md "Multitasking / Blockers" and the enforce-delegate.ts
+# disk-discipline section).
+worktree_cap: 6
+worktree_root: "{{ lookup('env', 'HOME') }}/.gludd-worktrees"
+
+# Sonnet target share (the 2:1 time-bound target from AGENTS.md
+# "Model Utilization — Keep Sonnet Dominant"). When set to 0.0 the model
+# dimension is DISABLED (treated as healthy regardless of observed share),
+# matching the plugin's "time-bound window disabled" behaviour.
+sonnet_target_share: 0.67
+
+# Minimum free MB on the worktree filesystem before the disk dimension
+# is considered breached. Mirrors GLUDD_MIN_FREE_GB (5.0 GB) but expressed
+# in MB so the role is independent of the plugin's GB-scale constants.
+disk_free_min_mb: 2048
+
+# When true, fail the play on a critical verdict (2+ dimensions breached,
+# sonnet_share < 0.3, or streak >= 4). Otherwise just report.
+fail_on_critical: false
+
+# Artifact output
+artifact_dir: "/tmp/gludd-delegate-check-artifacts"
+
+# Daemon connectivity (for gludd_facts)
+daemon_url: "http://localhost:8000"
+psk: ""

@@ -1,0 +1,282 @@
+---
+# delegate_discipline_check role — read-only audit of delegation discipline
+#
+# Ports the read-side of .opencode/plugin/enforce-delegate.ts into a gludd
+# role. The plugin ENFORCES (denies tool calls); this role REPORTS health
+# across the same three dimensions so playbooks, CI, and operators can
+# observe delegation discipline without running the agent.
+#
+# Dimensions audited (fail-open on every read — missing state => healthy):
+#   1. MODEL  — sonnet_share = sonnet_count / total_count over the rolling
+#               window in model_util_path. Breached when share < target.
+#   2. DISK   — free MB on the worktree filesystem AND worktree directory
+#               count vs worktree_cap.
+#   3. STREAK — consecutive main-thread mutating tool calls with no
+#               intervening dispatch (mainthread_streak_path).
+#
+# Verdicts:
+#   - healthy  : zero dimensions breached
+#   - degraded : exactly one dimension breached
+#   - critical : 2+ dimensions breached, OR sonnet_share < 0.3, OR streak >= 4
+#
+# REPORT-ONLY. Enforcement lives in the plugin layer.
+
+# ── 1. FACTS ──────────────────────────────────────────────────────────────────
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _ddc_facts
+  no_log: "{{ psk | length > 0 }}"
+  failed_when: false
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── 2. MODEL UTILIZATION (sonnet share) ───────────────────────────────────────
+
+- name: Stat model utilization state file
+  ansible.builtin.stat:
+    path: "{{ model_util_path }}"
+  register: _ddc_model_stat
+
+- name: Slurp model utilization history (fail-open)
+  ansible.builtin.slurp:
+    src: "{{ model_util_path }}"
+  register: _ddc_model_slurp
+  when: _ddc_model_stat.stat.exists
+  failed_when: false
+
+- name: Parse model history (fail-open)
+  ansible.builtin.set_fact:
+    _ddc_model_history: "{{ (_ddc_model_slurp.content | b64decode | from_json).history | default([]) }}"
+  when:
+    - sonnet_target_share | float > 0
+    - _ddc_model_stat.stat.exists
+    - _ddc_model_slurp.content is defined
+  failed_when: false
+
+- name: Default model history (disabled / missing / unparseable)
+  ansible.builtin.set_fact:
+    _ddc_model_history: []
+  when: _ddc_model_history is not defined
+
+- name: Compute sonnet share
+  ansible.builtin.set_fact:
+    _ddc_sonnet_count: "{{ _ddc_model_history | select('eq', 'sonnet') | list | length }}"
+    _ddc_total_count: "{{ _ddc_model_history | length }}"
+    _ddc_sonnet_share: >-
+      {{
+        ((_ddc_model_history | select('eq', 'sonnet') | list | length) / (_ddc_model_history | length))
+        if (_ddc_model_history | length) > 0
+        else 1.0
+      }}
+
+# ── 3. MAIN-THREAD STREAK ────────────────────────────────────────────────────
+
+- name: Stat mainthread streak state file
+  ansible.builtin.stat:
+    path: "{{ mainthread_streak_path }}"
+  register: _ddc_streak_stat
+
+- name: Slurp mainthread streak (fail-open)
+  ansible.builtin.slurp:
+    src: "{{ mainthread_streak_path }}"
+  register: _ddc_streak_slurp
+  when: _ddc_streak_stat.stat.exists
+  failed_when: false
+
+- name: Parse streak count from JSON object (fail-open)
+  ansible.builtin.set_fact:
+    _ddc_streak: "{{ (_ddc_streak_slurp.content | b64decode | from_json).count | default(0) | int }}"
+  when:
+    - _ddc_streak_stat.stat.exists
+    - _ddc_streak_slurp.content is defined
+  failed_when: false
+
+- name: Default streak count (missing / unparseable)
+  ansible.builtin.set_fact:
+    _ddc_streak: 0
+  when: _ddc_streak is not defined
+
+# ── 4. DISC FREE (df -m) ──────────────────────────────────────────────────────
+
+- name: Stat worktree root
+  ansible.builtin.stat:
+    path: "{{ worktree_root }}"
+  register: _ddc_wt_stat
+
+- name: Read free disk space (df -m) on worktree filesystem
+  ansible.builtin.command:
+    cmd: "df -m {{ worktree_root }}"
+  register: _ddc_df_result
+  changed_when: false
+  failed_when: false
+  when: _ddc_wt_stat.stat.exists
+
+- name: Parse Avail MB from df output
+  ansible.builtin.set_fact:
+    _ddc_disk_free_mb: "{{ (_ddc_df_result.stdout_lines | last).split()[3] | int }}"
+  when:
+    - _ddc_wt_stat.stat.exists
+    - _ddc_df_result.stdout_lines is defined
+    - _ddc_df_result.stdout_lines | length > 0
+    - _ddc_df_result.rc | default(1) == 0
+
+- name: Fallback disk free via ansible_mounts (df failed or root missing)
+  ansible.builtin.set_fact:
+    _ddc_disk_free_mb: >-
+      {{
+        ((ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | list | first | int) / 1048576) | round(0) | int
+        if (ansible_mounts is defined) and ((ansible_mounts | selectattr('mount', 'equalto', '/') | list | length) > 0)
+        else (disk_free_min_mb | int)
+      }}
+  when: _ddc_disk_free_mb is not defined
+
+# ── 5. WORKTREE COUNT ─────────────────────────────────────────────────────────
+
+- name: Count worktree directories
+  ansible.builtin.find:
+    paths: "{{ worktree_root }}"
+    file_type: directory
+    recurse: false
+  register: _ddc_wt_find
+  when: _ddc_wt_stat.stat.exists
+  failed_when: false
+
+- name: Set worktree count (zero when root missing or find failed)
+  ansible.builtin.set_fact:
+    _ddc_worktree_count: "{{ (_ddc_wt_find.matched | default(0)) | int }}"
+
+# ── 6. DETERMINE STATUS ───────────────────────────────────────────────────────
+
+- name: Evaluate per-dimension breach flags
+  ansible.builtin.set_fact:
+    _ddc_model_breached: >-
+      {{
+        (sonnet_target_share | float > 0)
+        and (_ddc_sonnet_share | float < sonnet_target_share | float)
+      }}
+    _ddc_streak_breached: "{{ (_ddc_streak | int) >= 3 }}"
+    _ddc_disk_breached: "{{ (_ddc_disk_free_mb | int) < (disk_free_min_mb | int) }}"
+    _ddc_worktree_breached: "{{ (_ddc_worktree_count | int) > (worktree_cap | int) }}"
+
+- name: Build breached-dimension list
+  ansible.builtin.set_fact:
+    _ddc_dimensions_breached: >-
+      {{
+        [
+          ('model'    if (_ddc_model_breached | bool)    else None),
+          ('streak'   if (_ddc_streak_breached | bool)   else None),
+          ('disk'     if (_ddc_disk_breached | bool)     else None),
+          ('worktree' if (_ddc_worktree_breached | bool) else None)
+        ] | reject('equalto', None) | list
+      }}
+    _ddc_breach_count: >-
+      {{
+        [_ddc_model_breached, _ddc_streak_breached, _ddc_disk_breached, _ddc_worktree_breached]
+          | map('bool') | select | list | length
+      }}
+    _ddc_critical_override: >-
+      {{
+        ((sonnet_target_share | float > 0) and (_ddc_sonnet_share | float < 0.3))
+        or ((_ddc_streak | int) >= 4)
+      }}
+
+- name: Compute overall status
+  ansible.builtin.set_fact:
+    _ddc_status: >-
+      {{
+        'critical' if (
+          ((_ddc_breach_count | int) >= 2)
+          or ((sonnet_target_share | float) > 0 and (_ddc_sonnet_share | float) < 0.3)
+          or ((_ddc_streak | int) >= 4)
+        )
+        else ('degraded' if (_ddc_breach_count | int) == 1
+        else 'healthy')
+      }}
+
+# ── 7. REPORT — write artifact JSON ───────────────────────────────────────────
+
+- name: Write delegate discipline JSON artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'delegate_discipline_check',
+        'status': _ddc_status,
+        'dimensions_breached': _ddc_dimensions_breached,
+        'breach_count': _ddc_breach_count | int,
+        'critical_override': _ddc_critical_override | bool,
+        'model': {
+          'sonnet_share': (_ddc_sonnet_share | float | round(4)),
+          'sonnet_target_share': sonnet_target_share | float,
+          'sonnet_count': _ddc_sonnet_count | int,
+          'total_count': _ddc_total_count | int,
+          'window_path': model_util_path,
+          'breached': _ddc_model_breached | bool
+        },
+        'streak': {
+          'count': _ddc_streak | int,
+          'threshold_degraded': 3,
+          'threshold_critical': 4,
+          'state_path': mainthread_streak_path,
+          'breached': _ddc_streak_breached | bool
+        },
+        'disk': {
+          'free_mb': _ddc_disk_free_mb | int,
+          'min_free_mb': disk_free_min_mb | int,
+          'worktree_root': worktree_root,
+          'breached': _ddc_disk_breached | bool
+        },
+        'worktree': {
+          'count': _ddc_worktree_count | int,
+          'cap': worktree_cap | int,
+          'breached': _ddc_worktree_breached | bool
+        },
+        'enforcement_layer': '.opencode/plugin/enforce-delegate.ts (this role is report-only)'
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/delegate_discipline_check.json"
+    mode: "0644"
+
+# ── 8. ASSERT — optional fail on critical ─────────────────────────────────────
+
+- name: Report delegate discipline status
+  ansible.builtin.debug:
+    msg: >-
+      Delegate discipline: status={{ _ddc_status }}
+      sonnet_share={{ (_ddc_sonnet_share | float | round(2)) }}
+      (target {{ sonnet_target_share }})
+      streak={{ _ddc_streak }} worktrees={{ _ddc_worktree_count }}/{{ worktree_cap }}
+      disk_free={{ _ddc_disk_free_mb }}MB
+      breached={{ _ddc_dimensions_breached }}
+
+- name: Fail on critical verdict when fail_on_critical=true
+  ansible.builtin.fail:
+    msg: >-
+      DELEGATE DISCIPLINE CRITICAL ({{ _ddc_breach_count }} dimension(s) breached).
+      Dimensions: {{ _ddc_dimensions_breached | join(', ') }}.
+
+      Sonnet share: {{ (_ddc_sonnet_share | float | round(4)) }}
+      (target {{ sonnet_target_share }}, window {{ _ddc_total_count }} samples).
+      Main-thread streak: {{ _ddc_streak }} (critical threshold 4).
+      Worktrees: {{ _ddc_worktree_count }}/{{ worktree_cap }}.
+      Disk free: {{ _ddc_disk_free_mb }}MB / {{ disk_free_min_mb }}MB minimum.
+
+      Recommended remediation:
+        - MODEL: use model:'sonnet' for the next several dispatches that do
+          not specifically require a stronger model.
+        - STREAK: delegate the current chunk to a task/agent — a dispatch
+          resets the streak to zero.
+        - DISK / WORKTREE: run `make clean-worktree-venvs` to reclaim the
+          ~320MB venv from each finished worktree agent.
+
+      Artifact: {{ artifact_dir }}/delegate_discipline_check.json
+      Enforcement lives in .opencode/plugin/enforce-delegate.ts — this role is
+      report-only.
+  when:
+    - fail_on_critical | bool
+    - _ddc_status == 'critical'

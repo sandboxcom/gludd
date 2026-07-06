@@ -1,0 +1,204 @@
+---
+# agent_floor_check role — READ-ONLY observability of the agent floor
+#
+# Mirrors the enforcement intent of the opencode enforce-floor.ts plugin:
+#   1. Gather gludd_facts for system context.
+#   2. Read /tmp/gludd-block-counter.json for streak state.
+#   3. Read /tmp/gludd-plugin-alive.json for enforce-floor last_seen.
+#   4. Probe scripts/agent_liveness.py for ground-truth live-agent count
+#      (fall back to a block-counter-derived estimate if the probe is absent).
+#   5. Classify status: healthy / degraded / critical.
+#   6. Emit gludd_message priority=high on persistent breach.
+#   7. Write floor_check.json artifact.
+#   8. Assert (fail) when fail_on_breach=true and status != healthy.
+#
+# IMPORTANT: This role is OBSERVABILITY + ALERTING ONLY. It CANNOT block
+# tool calls — the actual floor enforcement happens in the opencode plugin
+# layer (.opencode/plugin/enforce-floor.ts). This role only reports and alerts.
+
+# ── Step 1: Gather daemon facts for context ──────────────────────────────────
+
+- name: Gather live daemon facts for context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _afc_live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Step 2: Read block counter ───────────────────────────────────────────────
+
+- name: Stat block counter file
+  ansible.builtin.stat:
+    path: "{{ block_counter_path }}"
+  register: _afc_block_stat
+
+- name: Slurp block counter file
+  ansible.builtin.slurp:
+    src: "{{ block_counter_path }}"
+  register: _afc_block_raw
+  when: _afc_block_stat.stat.exists | bool
+
+- name: Parse block counter
+  ansible.builtin.set_fact:
+    _afc_block_count: >-
+      {{ (_afc_block_raw.content | default('e30=') | b64decode | from_json).get('count', 0) | int }}
+  when: _afc_block_stat.stat.exists | bool
+
+- name: Default block counter to zero when file absent
+  ansible.builtin.set_fact:
+    _afc_block_count: 0
+  when: not (_afc_block_stat.stat.exists | bool)
+
+# ── Step 3: Read plugin alive timestamp ──────────────────────────────────────
+
+- name: Stat plugin alive file
+  ansible.builtin.stat:
+    path: "{{ plugin_alive_path }}"
+  register: _afc_alive_stat
+
+- name: Slurp plugin alive file
+  ansible.builtin.slurp:
+    src: "{{ plugin_alive_path }}"
+  register: _afc_alive_raw
+  when: _afc_alive_stat.stat.exists | bool
+
+- name: Parse plugin last_seen (enforce-floor entry)
+  ansible.builtin.set_fact:
+    _afc_plugin_last_seen: >-
+      {{ (_afc_alive_raw.content | default('e30=') | b64decode | from_json).get('enforce-floor', {}).get('last_seen', 0) | int }}
+  when: _afc_alive_stat.stat.exists | bool
+
+- name: Default plugin last_seen to zero when file absent
+  ansible.builtin.set_fact:
+    _afc_plugin_last_seen: 0
+  when: not (_afc_alive_stat.stat.exists | bool)
+
+# ── Step 4: Compute live agent count ─────────────────────────────────────────
+
+- name: Stat liveness probe
+  ansible.builtin.stat:
+    path: "{{ repo_path }}/{{ liveness_probe_path }}"
+  register: _afc_probe_stat
+
+- name: Run liveness probe (--count)
+  ansible.builtin.command:
+    cmd: "python3 {{ liveness_probe_path }} --count"
+    chdir: "{{ repo_path }}"
+  register: _afc_probe_result
+  changed_when: false
+  failed_when: false
+  when: _afc_probe_stat.stat.exists | bool
+
+- name: Parse probe live count
+  ansible.builtin.set_fact:
+    _afc_live_count: "{{ _afc_probe_result.stdout | default('0') | trim | int }}"
+  when: _afc_probe_stat.stat.exists | bool
+
+- name: Fallback estimate from block counter (probe absent)
+  ansible.builtin.set_fact:
+    _afc_live_count: "{{ (agent_floor | int) - (_afc_block_count | int) }}"
+  when: not (_afc_probe_stat.stat.exists | bool)
+
+# ── Step 5: Determine status (healthy / degraded / critical) ─────────────────
+
+- name: Compute breach duration from plugin last_seen
+  ansible.builtin.set_fact:
+    _afc_breach_duration_sec: >-
+      {{ ((ansible_date_time.epoch | int) - (_afc_plugin_last_seen | int))
+          if (_afc_plugin_last_seen | int) > 0 else 0 }}
+
+- name: Classify status
+  ansible.builtin.set_fact:
+    _afc_status: >-
+      {% if (_afc_live_count | int) >= (agent_floor | int) -%}
+      healthy
+      {%- elif (_afc_block_count | int) > 4 -%}
+      critical
+      {%- elif (_afc_live_count | int) < ((agent_floor | int) // 2) -%}
+      critical
+      {%- else -%}
+      degraded
+      {%- endif %}
+
+- name: Set breach flag
+  ansible.builtin.set_fact:
+    _afc_breached: "{{ _afc_status != 'healthy' }}"
+
+# ── Step 6: Emit alert on breach ─────────────────────────────────────────────
+
+- name: Send floor breach alert
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: agent_floor_check
+    recipient: "{{ handoff_recipient }}"
+    topic: agent_floor
+    body: >-
+      Agent floor breach detected (status={{ _afc_status }}):
+      live_count={{ _afc_live_count | int }} / floor={{ agent_floor | int }};
+      block_counter={{ _afc_block_count | int }};
+      plugin_last_seen={{ _afc_plugin_last_seen | int }};
+      breach_duration_sec={{ _afc_breach_duration_sec | int }}
+    priority: high
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - emit_alert_message | bool
+    - _afc_breached | bool
+    - handoff_recipient | length > 0
+    - not ansible_check_mode
+
+# ── Step 7: Write JSON artifact ──────────────────────────────────────────────
+
+- name: Write floor check JSON artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'agent_floor_check',
+        'status': _afc_status,
+        'live_count': _afc_live_count | int,
+        'floor': agent_floor | int,
+        'block_counter': _afc_block_count | int,
+        'plugin_last_seen': _afc_plugin_last_seen | int,
+        'breach_duration_sec': _afc_breach_duration_sec | int,
+        'breached': _afc_breached | bool,
+        'probe_path': liveness_probe_path,
+        'probe_run': _afc_probe_stat.stat.exists | bool,
+        'daemon_context': {
+          'success_rate': _afc_live_facts.ansible_facts.gludd.history.success_rate | default(0),
+          'backlog_size': _afc_live_facts.ansible_facts.gludd.todos.backlog_size | default(0)
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/floor_check.json"
+    mode: "0644"
+
+# ── Step 8: Report + assert ──────────────────────────────────────────────────
+
+- name: Report floor check result
+  ansible.builtin.debug:
+    msg: >-
+      Agent floor check complete:
+      status={{ _afc_status | upper }}
+      live={{ _afc_live_count | int }} floor={{ agent_floor | int }}
+      block_counter={{ _afc_block_count | int }}
+      breach_duration={{ _afc_breach_duration_sec | int }}s
+
+- name: Assert floor not breached when fail_on_breach
+  ansible.builtin.assert:
+    that:
+      - "not (fail_on_breach | bool and _afc_breached | bool)"
+    fail_msg: >-
+      AGENT FLOOR BREACH DETECTED (status={{ _afc_status | upper }}):
+      live_count={{ _afc_live_count | int }} / floor={{ agent_floor | int }};
+      block_counter={{ _afc_block_count | int }};
+      breach_duration_sec={{ _afc_breach_duration_sec | int }}.
+      Dispatch more subagents to meet the floor, or set fail_on_breach=false
+      (the default) for warn-only observability mode.
+    success_msg: >-
+      Agent floor OK: {{ _afc_live_count | int }} live (floor={{ agent_floor | int }})

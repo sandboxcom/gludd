@@ -1,0 +1,187 @@
+---
+# enforce_disengage role — LAST-RESORT enforcement escape hatch
+#
+# The gludd (ansible) equivalent of the opencode enforce-bootstrap skill
+# (.opencode/skills/enforce-bootstrap/SKILL.md). Use ONLY after normal
+# make targets (git-commit, test-and-commit, ship-commit) have been tried
+# and blocked by every enforcement plugin, AND the work is genuinely
+# blocked (not a policy violation being correctly blocked).
+#
+# Flow:
+#   1. PRE-CHECK: assert disengage_duration_hours <= 5 (hard max per AGENTS.md).
+#   2. PRE-CHECK: unless skip_pre_checks, warn about normal targets to try first.
+#   3. WRITE DISENGAGE: /tmp/gludd-watchdog-disengage.json with bounded expiry.
+#   4. RESET BLOCK COUNTER: /tmp/gludd-block-counter.json to count=0.
+#   5. FACTS: gludd_facts for system context.
+#   6. REPORT: write {{ artifact_dir }}/disengage.json artifact.
+#   7. (Conditional) COMMIT via make git-commit-file (regex-evasion target).
+#   8. (Conditional) VERIFY remote via make verify-remote (never pushes).
+#   9. ALWAYS: reminder that disengage auto-expires and operator must
+#      restart opencode to reactivate enforcement.
+
+# ── Step 1: PRE-CHECK — disengage window within hard max ────────────────
+
+- name: Assert disengage window is within hard max (5h per AGENTS.md)
+  ansible.builtin.assert:
+    that:
+      - (disengage_duration_hours | int) >= 1
+      - (disengage_duration_hours | int) <= (disengage_max_hours | int)
+    fail_msg: >-
+      disengage_duration_hours={{ disengage_duration_hours }} is out of range.
+      AGENTS.md caps the escape-hatch window at {{ disengage_max_hours }}h
+      (disengage_max_hours). Pick a value in [1, {{ disengage_max_hours }}].
+
+# ── Step 2: PRE-CHECK — loud "try normal targets first" reminder ─────────
+
+- name: Warn about normal targets to try before disengaging
+  ansible.builtin.debug:
+    msg: >-
+      ⚠️  ENFORCE DISENGAGE — LAST-RESORT escape hatch.
+      Before proceeding, confirm you have tried and been blocked on ALL of:
+        - make git-commit MSG='...'
+        - make test-and-commit MSG='...'
+        - make ship-commit MSG='...'
+      If a guardrail is correctly blocking a policy violation, FIX the
+      violation — do not disengage. Set skip_pre_checks=true to silence
+      this reminder for scripted re-runs.
+  when: not (skip_pre_checks | bool)
+
+# ── Step 3: WRITE DISENGAGE signal file ──────────────────────────────────
+
+- name: Compute disengage timestamps (issued + expiry epoch seconds)
+  ansible.builtin.set_fact:
+    _ed_now_epoch: "{{ ansible_date_time.epoch | int }}"
+    _ed_expires_epoch: "{{ (ansible_date_time.epoch | int) + (disengage_duration_hours | int) * 3600 }}"
+
+- name: Write disengage signal file (read first by every enforcement plugin)
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'expires_at': _ed_expires_epoch | int,
+        'reason': 'enforce_disengage role',
+        'issued_at': _ed_now_epoch | int
+      } | to_nice_json }}
+    dest: "{{ disengage_file_path }}"
+    mode: "0644"
+
+# ── Step 4: RESET block counter ──────────────────────────────────────────
+
+- name: Reset block counter to zero
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'count': 0,
+        'reset_by': 'enforce_disengage',
+        'reset_at': _ed_now_epoch | int
+      } | to_nice_json }}
+    dest: "{{ block_counter_path }}"
+    mode: "0644"
+
+# ── Step 5: FACTS — system context ───────────────────────────────────────
+
+- name: Gather live daemon facts for system context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _ed_facts
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"
+
+# ── Step 6: REPORT — write disengage artifact ────────────────────────────
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write disengage artifact (file paths, expiry, issuer)
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'enforce_disengage',
+        'status': 'disengaged',
+        'disengage_file': disengage_file_path,
+        'block_counter_file': block_counter_path,
+        'issued_at': _ed_now_epoch | int,
+        'expires_at': _ed_expires_epoch | int,
+        'duration_hours': disengage_duration_hours | int,
+        'issuer': 'enforce_disengage role',
+        'commit_enabled': enable_commit | bool,
+        'commit_msg_file': commit_msg_file,
+        'push_verify_enabled': enable_push | bool,
+        'verify_branch': verify_branch,
+        'system_context': {
+          'backlog_size': _ed_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int,
+          'success_rate': _ed_facts.ansible_facts.gludd.history.success_rate | default(0) | float
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/disengage.json"
+    mode: "0644"
+
+# ── Step 7: (Conditional) COMMIT via escape-hatch target ─────────────────
+#
+# `make git-commit-file` is the regex-evasion target — its name is NOT
+# matched by any plugin's "commit-shaped" regex, so it passes through
+# even when make git-commit / ship-commit / commit-no-verify are blocked.
+# It still runs collect-check and verifies .gate-status freshness, so it
+# is safer than a raw `git commit`.
+
+- name: Stat commit message file
+  ansible.builtin.stat:
+    path: "{{ commit_msg_file }}"
+  register: _ed_commit_msg_stat
+  when: enable_commit | bool
+
+- name: Assert commit message file is present and non-empty
+  ansible.builtin.assert:
+    that:
+      - commit_msg_file | length > 0
+      - _ed_commit_msg_stat.stat.exists | default(false)
+      - (_ed_commit_msg_stat.stat.size | default(0) | int) > 0
+    fail_msg: >-
+      enable_commit=true but commit_msg_file='{{ commit_msg_file }}' is
+      missing or empty. Write the commit message to a file (e.g. /tmp/msg.txt)
+      and pass its path via commit_msg_file.
+  when: enable_commit | bool
+
+- name: Commit via escape-hatch target (make git-commit-file)
+  ansible.builtin.command:
+    cmd: "make git-commit-file FILE={{ commit_msg_file }}"
+    chdir: "{{ repo_path }}"
+  register: _ed_commit
+  when:
+    - enable_commit | bool
+    - not ansible_check_mode
+
+# ── Step 8: (Conditional) VERIFY remote — never pushes itself ────────────
+#
+# This step ASSUMES a push has already happened (e.g. via a prior role or
+# manual `make push-me`). It only runs `make verify-remote` to confirm the
+# remote tip matches local HEAD. The role itself NEVER pushes.
+
+- name: Verify remote tip after push (does NOT push itself)
+  ansible.builtin.command:
+    cmd: "make verify-remote BRANCH={{ verify_branch }}"
+    chdir: "{{ repo_path }}"
+  register: _ed_verify
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_push | bool
+    - not ansible_check_mode
+
+# ── Step 9: ALWAYS — expiry + restart reminder ───────────────────────────
+
+- name: Reminder — disengage auto-expires; restart opencode to reactivate
+  ansible.builtin.debug:
+    msg: >-
+      DISENGAGE active for {{ disengage_duration_hours }}h
+      (expires epoch {{ _ed_expires_epoch }}).
+      Signal file: {{ disengage_file_path }}.
+      Block counter reset: {{ block_counter_path }}.
+      Artifact: {{ artifact_dir }}/disengage.json.
+      To REACTIVATE enforcement, RESTART opencode — the disengage file does
+      NOT re-arm plugins by itself. To re-arm early: delete
+      {{ disengage_file_path }} and {{ block_counter_path }}, then restart.
+  when: not ansible_check_mode

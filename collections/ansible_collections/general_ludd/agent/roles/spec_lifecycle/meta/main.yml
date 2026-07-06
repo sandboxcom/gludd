@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  role_name: spec_lifecycle
+  author: Agentic Harness Agent
+  description: >
+    Spec-Driven Development lifecycle: 3-stage pipeline (drafts -> active ->
+    archive) using A-B-C documentation flow (APPROACH.md, BUSINESS_CONTEXT.md,
+    COMPLETION_REPORT.md). The gludd equivalent of the opencode `spec.md`
+    (deep-spec) skill. Operations: init, create_task, approve_task,
+    complete_task, discard_task, list, revise, repair, interview,
+    map_codebase, diagram_architecture.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags:
+    - specification
+    - development
+    - workflow
+dependencies: []

@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-06 — Ansible enforcement port session: gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles, 2 molecule scenarios, 3 test fixes, HEAD `c8904f5f`
+- 2026-07-06 — Capability audit session: 6 new roles created (spec_lifecycle, enforce_disengage, agent_floor_check, delegate_discipline_check, deletion_gate, task_deadline_check), test-quality SKILL.md frontmatter fix, capability audit report at docs/audit/CAPABILITY_AUDIT_2026-07-06.md. 202/202 collection structural tests pass. Prior: Ansible enforcement port session: gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles, 2 molecule scenarios, 3 test fixes, HEAD `c8904f5f`
 
 ## Current Work
 
@@ -93,10 +93,13 @@
 ## Next Steps
 
 1. [ ] **Wait for CI runs to complete** — prior runs 28762985158 (`564bea6f`) and 28763464953 (`61a1b347`).
-2. [ ] **Push HEAD `c8904f5f`** — once prior CI runs are green and no CI is in flight.
+2. [ ] **Push HEAD `c8904f5f` + capability-audit commits** — once prior CI runs are green and no CI is in flight.
 3. [ ] **Wait for CI on `c8904f5f`** — `make ci-verdict BRANCH=master` to check when green.
 4. [ ] **Restart opencode** to activate all 8/8 plugin liveness probes.
 5. [ ] **Investigate verify-remote SHA parameter bug** — may not accept SHA parameter correctly.
+6. [ ] **Add `make check-skills-frontmatter` target** — scan `.opencode/skills/*/SKILL.md` for valid YAML frontmatter; add to `make gate`. Prevents recurrence of test-quality registration bug.
+7. [ ] **Wire the 6 new roles into a playbook** — single `gludd audit-plugins` command orchestrating all check roles together.
+8. [ ] **Add integration tests for 6 new roles** — `tests/integration/test_audit_roles.py` verifying each reads its target state file and emits expected `gludd_facts` keys.
 
 ## Current Gate Status (2026-07-06)
 <!-- gate:begin -->

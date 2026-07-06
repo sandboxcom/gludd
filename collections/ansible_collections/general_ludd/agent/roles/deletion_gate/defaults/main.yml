@@ -1,0 +1,46 @@
+---
+# deletion_gate role defaults — THRESHOLD-BASED FAIL-CLOSED deletion gate
+
+# ── Required input ───────────────────────────────────────────────────────
+
+# The file being deleted from / shrunk. Caller MUST supply this.
+target_file: ""
+
+# Pre-mutation line count. Caller MUST supply; if 0, role skips the gate
+# with a warning (cannot evaluate without a baseline).
+baseline_lines: 0
+
+# Post-mutation line count. Caller MUST supply; if 0, role skips the gate
+# with a warning (cannot evaluate without the current state).
+current_lines: 0
+
+# ── Escape hatch ─────────────────────────────────────────────────────────
+
+# Reason supplied by the operator/agent for the deletion. Required when
+# removed_lines > threshold. Mirrors the DELETION_REASON env var in the
+# opencode plugin. Empty string means "no reason given" → block on threshold.
+deletion_reason: ""
+
+# ── Thresholds ───────────────────────────────────────────────────────────
+
+# Block when removed_pct > threshold_pct (0.20 = 20% of baseline lines).
+threshold_pct: 0.20
+
+# Block when removed_lines > absolute_threshold, regardless of percentage.
+# Catches small-file wholesale deletions (e.g. 30-line file fully removed
+# is only 100% but 30 < 50 wouldn't trip the absolute gate; tune as needed).
+absolute_threshold: 50
+
+# ── Output ───────────────────────────────────────────────────────────────
+
+# Path to the audit log. Each invocation appends one line.
+audit_log_path: "{{ playbook_dir }}/.deletion-audit.log"
+
+# Directory for the JSON artifact written by the role.
+artifact_dir: "/tmp/gludd-deletion-gate-artifacts"
+
+# ── Enforcement mode ─────────────────────────────────────────────────────
+
+# When true, a 'blocked' verdict fails the playbook (fail-closed).
+# When false, a 'blocked' verdict emits an advisory debug message only.
+fail_closed: true

@@ -1,0 +1,40 @@
+---
+# agent_floor_check role defaults — READ-ONLY OBSERVABILITY
+#
+# This role never mutates the repo, never blocks tool calls, and never
+# dispatches subagents. It only READS floor state and REPORTS / ALERTS.
+# Actual floor enforcement lives in .opencode/plugin/enforce-floor.ts.
+
+# Daemon connectivity (for gludd_facts + gludd_message)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Repo path (where scripts/agent_liveness.py lives)
+repo_path: "."
+
+# Recipient for gludd_message alerts (empty = no message sent)
+handoff_recipient: ""
+
+# ── Floor configuration ──────────────────────────────────────────────────────
+
+# Minimum concurrent subagents the orchestrator must keep live.
+# Mirrors CLAUDE_AGENT_FLOOR (default 10 per AGENTS.md).
+agent_floor: 10
+
+# Plugin state files (written by .opencode/plugin/enforce-floor.ts)
+block_counter_path: "/tmp/gludd-block-counter.json"
+plugin_alive_path: "/tmp/gludd-plugin-alive.json"
+
+# Ground-truth live-subagent probe (scripts/agent_liveness.py --count)
+liveness_probe_path: "scripts/agent_liveness.py"
+
+# ── Behavior knobs ───────────────────────────────────────────────────────────
+
+# If true, fail the play when the floor is breached; otherwise warn only.
+fail_on_breach: false
+
+# If true, send gludd_message priority=high on any non-healthy status.
+emit_alert_message: true
+
+# Artifact output
+artifact_dir: "/tmp/gludd-floor-check-artifacts"

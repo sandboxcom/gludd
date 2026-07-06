@@ -1,0 +1,190 @@
+---
+# deletion_gate role — THRESHOLD-BASED FAIL-CLOSED deletion gate
+#
+# Ansible port of the opencode enforce-deletion-gate.ts plugin. Compares file
+# line counts before and after a mutation. When removed lines exceed a
+# threshold (percentage OR absolute) AND no deletion_reason is supplied,
+# BLOCK (fail-closed). Writes a deletion-audit.log entry and a JSON artifact.
+#
+# Verdict matrix:
+#   skip                  — baseline_lines or current_lines is 0 (caller
+#                           forgot to supply); gate does not evaluate
+#   pass                  — under both thresholds; allow
+#   allowed-with-reason   — over threshold but deletion_reason is set; allow
+#   blocked               — over threshold and no deletion_reason; fails the
+#                           playbook when fail_closed=true (default)
+#
+# Flow:
+#   1. Assert target_file is set.
+#   2. Compute removed_lines and removed_pct.
+#   3. Determine verdict (skip / pass / allowed-with-reason / blocked).
+#   4. Emit advisory debug messages for non-pass verdicts.
+#   5. Append audit log entry.
+#   6. Write JSON artifact with full verdict details.
+#   7. FAIL-CLOSED when blocked AND fail_closed=true.
+
+# ── Validate required input ──────────────────────────────────────────────
+
+- name: Assert target_file is set
+  ansible.builtin.assert:
+    that:
+      - target_file is defined
+      - target_file | length > 0
+    fail_msg: "deletion_gate requires 'target_file' to be set (the file being deleted from / shrunk)"
+    success_msg: "deletion_gate: target_file={{ target_file }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Compute line deltas ──────────────────────────────────────────────────
+
+- name: Set timestamp for audit entries
+  ansible.builtin.set_fact:
+    _dg_timestamp: "{{ ansible_date_time.iso8601 | default(lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')) }}"
+
+- name: Compute removed_lines (baseline - current, floored at 0)
+  ansible.builtin.set_fact:
+    _dg_removed_lines: >-
+      {{ (((baseline_lines | int) - (current_lines | int)) if ((baseline_lines | int) > 0 and (current_lines | int) > 0) else 0) | int }}
+
+- name: Compute removed_pct (removed / baseline)
+  ansible.builtin.set_fact:
+    _dg_removed_pct: >-
+      {{ (((_dg_removed_lines | int) * 1.0) / (baseline_lines | int)) if ((baseline_lines | int) > 0) else 0.0 }}
+
+# ── Determine verdict ────────────────────────────────────────────────────
+
+- name: Determine whether baseline/current were supplied
+  ansible.builtin.set_fact:
+    _dg_inputs_supplied: >-
+      {{ ((baseline_lines | int) > 0) and ((current_lines | int) > 0) }}
+
+- name: Determine whether deletion thresholds were exceeded
+  ansible.builtin.set_fact:
+    _dg_threshold_exceeded: >-
+      {{
+        (_dg_inputs_supplied | bool)
+        and (
+          ((_dg_removed_lines | int) > (absolute_threshold | int))
+          or ((_dg_removed_pct | float) > (threshold_pct | float))
+        )
+      }}
+
+- name: Determine final verdict (skip / pass / allowed-with-reason / blocked)
+  ansible.builtin.set_fact:
+    _dg_verdict: >-
+      {%- if not (_dg_inputs_supplied | bool) -%}
+        skip
+      {%- elif not (_dg_threshold_exceeded | bool) -%}
+        pass
+      {%- elif (deletion_reason | default('') | trim | length > 0) -%}
+        allowed-with-reason
+      {%- else -%}
+        blocked
+      {%- endif -%}
+
+# ── Emit advisory messages for non-pass verdicts ─────────────────────────
+
+- name: Warn that baseline/current must be supplied (gate skipped)
+  ansible.builtin.debug:
+    msg: >-
+      deletion_gate SKIP for {{ target_file }}: baseline_lines={{ baseline_lines }},
+      current_lines={{ current_lines }}. Both MUST be > 0 for the gate to evaluate.
+  when: _dg_verdict == 'skip'
+
+- name: Warn that deletion was blocked but fail_closed=false (advisory only)
+  ansible.builtin.debug:
+    msg: >-
+      deletion_gate ADVISORY BLOCK for {{ target_file }}: removed {{ _dg_removed_lines }}
+      lines ({{ (_dg_removed_pct * 100) | round(2) }}%) without deletion_reason.
+      Set fail_closed=true to enforce, or provide deletion_reason to allow.
+  when:
+    - _dg_verdict == 'blocked'
+    - not (fail_closed | bool)
+
+- name: Report allowed-with-reason verdict
+  ansible.builtin.debug:
+    msg: >-
+      deletion_gate ALLOWED-WITH-REASON for {{ target_file }}: removed {{ _dg_removed_lines }}
+      lines ({{ (_dg_removed_pct * 100) | round(2) }}%). Reason: {{ deletion_reason }}
+  when: _dg_verdict == 'allowed-with-reason'
+
+# ── Write audit log ──────────────────────────────────────────────────────
+# NOTE: ansible.builtin.shell with `printf >> file` is the idiomatic append-only
+# path for audit logs. The copy module is non-atomic for append (read-modify-
+# write race across parallel role invocations), and slurp+copy requires reading
+# the entire file on every invocation. shell append is O(1), atomic per-line,
+# and the standard pattern for log-style outputs. This is the documented
+# exception to the "prefer copy over shell" guideline — the append semantic is
+# not expressible with copy without races.
+
+- name: Ensure audit log directory exists
+  ansible.builtin.file:
+    path: "{{ audit_log_path | dirname }}"
+    state: directory
+    mode: "0755"
+  when: audit_log_path | length > 0
+
+- name: Append audit log entry
+  ansible.builtin.shell: |
+    printf '%s | %s | baseline=%s | current=%s | removed=%s | pct=%s | verdict=%s | reason="%s"\n' \
+      "{{ _dg_timestamp }}" \
+      "{{ target_file }}" \
+      "{{ baseline_lines | int }}" \
+      "{{ current_lines | int }}" \
+      "{{ _dg_removed_lines | int }}" \
+      "{{ (_dg_removed_pct * 100) | round(2) }}" \
+      "{{ _dg_verdict }}" \
+      "{{ deletion_reason | default('') }}" \
+      >> "{{ audit_log_path }}"
+  args:
+    executable: /bin/bash
+  when: audit_log_path | length > 0
+  changed_when: false
+
+# ── Write JSON artifact ──────────────────────────────────────────────────
+
+- name: Write JSON deletion gate artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'deletion_gate',
+        'status': 'completed',
+        'target_file': target_file,
+        'timestamp': _dg_timestamp,
+        'baseline_lines': baseline_lines | int,
+        'current_lines': current_lines | int,
+        'removed_lines': _dg_removed_lines | int,
+        'removed_pct': _dg_removed_pct | float,
+        'threshold_pct': threshold_pct | float,
+        'absolute_threshold': absolute_threshold | int,
+        'threshold_exceeded': _dg_threshold_exceeded | bool,
+        'deletion_reason': deletion_reason | default(''),
+        'verdict': _dg_verdict,
+        'fail_closed': fail_closed | bool,
+        'audit_log_path': audit_log_path
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/deletion_gate.json"
+    mode: "0644"
+
+# ── FAIL-CLOSED: fail when blocked and fail_closed=true ──────────────────
+
+- name: Fail-closed on blocked deletion
+  ansible.builtin.fail:
+    msg: >-
+      deletion_gate BLOCKED: removed {{ _dg_removed_lines }} lines
+      ({{ (_dg_removed_pct * 100) | round(2) }}%) from {{ target_file }}
+      without DELETION_REASON. Set deletion_reason var to override.
+  when:
+    - _dg_verdict == 'blocked'
+    - fail_closed | bool
+
+- name: Report deletion gate completion
+  ansible.builtin.debug:
+    msg: >-
+      deletion_gate: target={{ target_file }} verdict={{ _dg_verdict }}
+      removed={{ _dg_removed_lines }}/{{ baseline_lines }}
+      ({{ (_dg_removed_pct * 100) | round(2) }}%)

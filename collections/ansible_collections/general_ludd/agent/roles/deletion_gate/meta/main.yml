@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: deletion_gate
+  author: Agentic Harness Agent
+  description: >
+    Threshold-based fail-closed deletion gate. Compares file line counts before
+    and after a mutation; blocks when removed lines exceed a percentage or
+    absolute threshold AND no deletion_reason is supplied. Ansible port of the
+    opencode enforce-deletion-gate.ts plugin. Writes a deletion-audit.log entry
+    and a JSON artifact on every invocation. Safe-by-default: fail_closed=true,
+    threshold_pct=0.20, absolute_threshold=50.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

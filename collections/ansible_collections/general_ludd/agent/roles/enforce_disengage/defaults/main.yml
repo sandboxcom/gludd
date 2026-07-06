@@ -1,0 +1,63 @@
+---
+# enforce_disengage role defaults — LAST-RESORT enforcement escape hatch
+#
+# SAFE-BY-DEFAULT:
+#   - enable_commit=false        — commit-via-escape-hatch is opt-in.
+#   - enable_push=false          — push verify (never the push itself) is opt-in.
+#   - disengage_duration_hours=1 — bounded window; hard max 5h per AGENTS.md.
+#   - skip_pre_checks=false      — loud "try normal targets first" reminder.
+#
+# All parameters are overridable at invocation time.
+
+# Daemon connectivity (for system-context facts)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-disengage-artifacts"
+
+# Repository where make targets run (git-commit-file, verify-remote).
+repo_path: "."
+
+# ── Disengage window ────────────────────────────────────────────────────
+
+# Duration in hours for the disengage window (default 1h, hard max 5h).
+disengage_duration_hours: 1
+
+# Hard maximum per AGENTS.md / enforce-bootstrap skill. The tasks/main.yml
+# assert enforces disengage_duration_hours <= disengage_max_hours.
+disengage_max_hours: 5
+
+# Path to the disengage signal file read first by every enforcement plugin's
+# tool.execute.before hook. Presence + unexpired => pass-through.
+disengage_file_path: "/tmp/gludd-watchdog-disengage.json"
+
+# Path to the block-counter file reset to zero on disengage.
+block_counter_path: "/tmp/gludd-block-counter.json"
+
+# ── Pre-checks ──────────────────────────────────────────────────────────
+
+# When false, print a loud reminder to try normal targets (git-commit,
+# test-and-commit) before disengaging. Set true only for scripted re-runs.
+skip_pre_checks: false
+
+# ── Commit (escape-hatch target) ─────────────────────────────────────────
+
+# Opt-in: commit via `make git-commit-file FILE=...`. This target name is
+# NOT matched by any plugin's "commit-shaped" regex, so it passes through
+# even when make git-commit / ship-commit / commit-no-verify are blocked.
+# It still runs collect-check and verifies .gate-status freshness.
+enable_commit: false
+
+# Path to the commit message file (required when enable_commit=true).
+# Write the message here first, e.g. /tmp/msg.txt.
+commit_msg_file: ""
+
+# ── Push verify (the role NEVER performs the push itself) ────────────────
+
+# Opt-in: run `make verify-remote BRANCH=...` AFTER a push has already been
+# performed by another step. This role does not push.
+enable_push: false
+
+# Branch whose remote tip should be verified against local HEAD.
+verify_branch: "master"

@@ -1,0 +1,814 @@
+---
+# spec_lifecycle role — Spec-Driven Development 3-stage pipeline.
+#
+# Gludd equivalent of the opencode `spec.md` (deep-spec) skill. Implements the
+# 3-stage pipeline:
+#
+#   drafts/  --(approve_task)-->  active/  --(Review Gate + complete_task)-->  archive/
+#
+# Each task carries the A-B-C documentation flow:
+#   APPROACH.md            (how — the execution plan; immutable once approved)
+#   BUSINESS_CONTEXT.md    (why + acceptance criteria)
+#   COMPLETION_REPORT.md   (evidence — written on complete_task)
+#
+# Operations dispatched by the `operation` variable:
+#   init                   bootstrap the .spec.md/ tree (dirs + tracking + memory)
+#   create_task            draft a task in drafts/ (NO application code)
+#   approve_task           move drafts/<name> -> active/<name>
+#   complete_task          Review Gate check, then move active -> archive + write C
+#   discard_task           move drafts/active -> archive with status: discarded
+#   list                   enumerate all tasks across stages -> artifact JSON
+#   revise                 move active -> drafts (re-plan)
+#   repair                 rebuild tracking.json from on-disk state
+#   interview              (model) one-question-at-a-time approach refinement
+#   map_codebase           (model) deep-scan repo -> AGENTS.md
+#   diagram_architecture   (model) Mermaid ARCHITECTURE.md per task
+#
+# SAFE-BY-DEFAULT: no git mutations from this role. Model-backed operations
+# require enable_model_call=true. File ops (file/copy/stat/find/slurp) honor
+# ansible_check_mode natively; gludd_facts and gludd_agent_run are skipped
+# in check mode.
+
+# ── Validate inputs ──────────────────────────────────────────────────────────
+
+- name: Assert operation is set and valid
+  ansible.builtin.assert:
+    that:
+      - operation | length > 0
+      - >-
+        operation in ['init', 'create_task', 'approve_task', 'complete_task',
+                      'discard_task', 'list', 'revise', 'repair',
+                      'interview', 'map_codebase', 'diagram_architecture']
+    fail_msg: >-
+      operation must be one of: init, create_task, approve_task, complete_task,
+      discard_task, list, revise, repair, interview, map_codebase,
+      diagram_architecture. Got: '{{ operation }}'.
+
+- name: Assert task_name set for task-scoped operations
+  ansible.builtin.assert:
+    that:
+      - task_name | length > 0
+    fail_msg: "task_name is required for operation '{{ operation }}'."
+  when: >-
+    operation in ['create_task', 'approve_task', 'complete_task',
+                  'discard_task', 'revise']
+
+# ── Gather context ───────────────────────────────────────────────────────────
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+  when: not ansible_check_mode
+
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── operation: init ──────────────────────────────────────────────────────────
+
+- name: "[init] Create spec pipeline directories"
+  ansible.builtin.file:
+    path: "{{ spec_root }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - drafts
+    - active
+    - archive
+    - _artifacts
+  when: operation == 'init'
+
+- name: "[init] Write tracking.json seed"
+  ansible.builtin.copy:
+    content: |
+      {
+        "version": 1,
+        "tasks": {
+          "drafts": [],
+          "active": [],
+          "archive": []
+        },
+        "created_at": "{{ now() }}"
+      }
+    dest: "{{ spec_root }}/tracking.json"
+    mode: "0644"
+  when: operation == 'init'
+
+- name: "[init] Write memory.md seed"
+  ansible.builtin.copy:
+    content: |
+      # Spec Memory
+
+      Index of completed/discarded tasks and lessons learned. Updated by
+      `spec_lifecycle` on `complete_task` and `discard_task`. Mirrors the
+      deep-spec "Segregated Memory" rule — index + lessons only, no task bodies.
+
+      ## Completed
+
+      _(none yet)_
+
+      ## Discarded
+
+      _(none yet)_
+
+      ## Lessons
+
+      _(none yet)_
+    dest: "{{ spec_root }}/memory.md"
+    mode: "0644"
+  when: operation == 'init'
+
+- name: "[init] Write result artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': 'init',
+        'status': 'initialized',
+        'spec_root': spec_root
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_init.json"
+    mode: "0644"
+  when: operation == 'init'
+
+# ── operation: create_task ───────────────────────────────────────────────────
+#
+# Writes the draft A-B-C skeleton under drafts/<task_name>/. NO application
+# code is produced at this stage — that happens after approve_task.
+
+- name: "[create_task] Stat for existing draft collision"
+  ansible.builtin.stat:
+    path: "{{ spec_root }}/drafts/{{ task_name }}"
+  register: _sl_draft_stat
+  when: operation == 'create_task'
+
+- name: "[create_task] Assert no existing draft with same name"
+  ansible.builtin.assert:
+    that:
+      - not _sl_draft_stat.stat.exists
+    fail_msg: >-
+      Draft already exists at drafts/{{ task_name }} — use `revise` to re-draft.
+  when: operation == 'create_task'
+
+- name: "[create_task] Create task directory"
+  ansible.builtin.file:
+    path: "{{ spec_root }}/drafts/{{ task_name }}"
+    state: directory
+    mode: "0755"
+  when: operation == 'create_task'
+
+- name: "[create_task] Write APPROACH.md (the plan — no app code)"
+  ansible.builtin.copy:
+    content: |
+      # APPROACH — {{ task_name }}
+
+      > **How** this task will be implemented. NO application code in this file —
+      > this is the plan, not the implementation.
+
+      ## Summary
+
+      _(describe the approach in 1-3 sentences)_
+
+      ## Execution Plan
+
+      > Immutable once approved. Mid-flight changes go in `## Deviations` and
+      > require a new `approve_task`. Post-implementation review goes in
+      > `## Review Rounds` at the Review Gate.
+
+      1. _(step)_
+      2. _(step)_
+
+      ## Deviations
+
+      _(none yet)_
+
+      ## Review Rounds
+
+      _(added at Review Gate — see BUSINESS_CONTEXT.md for acceptance criteria)_
+
+      ---
+      *Size: {{ task_size }} — generated by general_ludd.agent.spec_lifecycle*
+    dest: "{{ spec_root }}/drafts/{{ task_name }}/APPROACH.md"
+    mode: "0644"
+  when: operation == 'create_task'
+
+- name: "[create_task] Write BUSINESS_CONTEXT.md (why + ACs)"
+  ansible.builtin.copy:
+    content: |
+      # BUSINESS CONTEXT — {{ task_name }}
+
+      > **Why** this task exists, with acceptance criteria. The Review Gate
+      > (complete_task) checks every criterion below before archiving.
+
+      ## Problem
+
+      _(the user/system pain this addresses)_
+
+      ## Outcome
+
+      _(the observable state after completion)_
+
+      ## Acceptance Criteria
+
+      - [ ] _(criterion 1 — must be ticked to pass the Review Gate)_
+      - [ ] _(criterion 2)_
+      - [ ] _(criterion 3)_
+
+      ## Open Questions
+
+      See `OPEN_QUESTIONS.md` (same folder) for blocking user decisions.
+
+      ---
+      *Generated by general_ludd.agent.spec_lifecycle*
+    dest: "{{ spec_root }}/drafts/{{ task_name }}/BUSINESS_CONTEXT.md"
+    mode: "0644"
+  when: operation == 'create_task'
+
+- name: "[create_task] Write task.yml (machine-readable state)"
+  ansible.builtin.copy:
+    content: |
+      ---
+      name: {{ task_name }}
+      size: {{ task_size }}
+      status: draft
+      stage: drafts
+      acceptance_criteria:
+        - description: "(criterion 1)"
+          checked: false
+        - description: "(criterion 2)"
+          checked: false
+        - description: "(criterion 3)"
+          checked: false
+      created_at: "{{ now() }}"
+      ...
+    dest: "{{ spec_root }}/drafts/{{ task_name }}/task.yml"
+    mode: "0644"
+  when: operation == 'create_task'
+
+- name: "[create_task] Write result artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': 'create_task',
+        'status': 'drafted',
+        'task_name': task_name,
+        'stage': 'drafts',
+        'size': task_size
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_{{ task_name }}.json"
+    mode: "0644"
+  when: operation == 'create_task'
+
+# ── operation: approve_task ──────────────────────────────────────────────────
+#
+# Moves drafts/<name> -> active/<name>. Implementation happens in a separate
+# role (e.g. implement_change) AFTER approval — approve != implement in this
+# role; the deep-spec "Approve = execute" chaining is the caller's job.
+
+- name: "[approve_task] Stat draft"
+  ansible.builtin.stat:
+    path: "{{ spec_root }}/drafts/{{ task_name }}"
+  register: _sl_approve_src
+  when: operation == 'approve_task'
+
+- name: "[approve_task] Assert draft exists"
+  ansible.builtin.assert:
+    that:
+      - _sl_approve_src.stat.exists
+    fail_msg: "No draft at drafts/{{ task_name }} — run create_task first."
+  when: operation == 'approve_task'
+
+- name: "[approve_task] Stat target (no collision)"
+  ansible.builtin.stat:
+    path: "{{ spec_root }}/active/{{ task_name }}"
+  register: _sl_approve_dst
+  when: operation == 'approve_task'
+
+- name: "[approve_task] Assert active slot is free"
+  ansible.builtin.assert:
+    that:
+      - not _sl_approve_dst.stat.exists
+    fail_msg: >-
+      active/{{ task_name }} already exists — complete_task or revise the
+      active copy first.
+  when: operation == 'approve_task'
+
+- name: "[approve_task] Move drafts -> active (copy + remove source)"
+  block:
+    - name: "[approve_task] Recursively copy drafts -> active"
+      ansible.builtin.copy:
+        src: "{{ spec_root }}/drafts/{{ task_name }}/"
+        dest: "{{ spec_root }}/active/{{ task_name }}/"
+        remote_src: true
+        mode: preserve
+    - name: "[approve_task] Remove draft source"
+      ansible.builtin.file:
+        path: "{{ spec_root }}/drafts/{{ task_name }}"
+        state: absent
+  when: operation == 'approve_task'
+
+- name: "[approve_task] Mark task.yml stage=active"
+  ansible.builtin.copy:
+    content: |
+      ---
+      name: {{ task_name }}
+      size: {{ task_size }}
+      status: active
+      stage: active
+      approved_at: "{{ now() }}"
+      acceptance_criteria:
+        - description: "(criterion 1)"
+          checked: false
+        - description: "(criterion 2)"
+          checked: false
+        - description: "(criterion 3)"
+          checked: false
+      ...
+    dest: "{{ spec_root }}/active/{{ task_name }}/task.yml"
+    mode: "0644"
+  when: operation == 'approve_task'
+
+- name: "[approve_task] Write result artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': 'approve_task',
+        'status': 'approved',
+        'task_name': task_name,
+        'stage': 'active'
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_{{ task_name }}.json"
+    mode: "0644"
+  when: operation == 'approve_task'
+
+# ── operation: complete_task ─────────────────────────────────────────────────
+#
+# Enforces the Review Gate: every acceptance_criteria[].checked in task.yml
+# must be true. On success, moves active -> archive and writes the C doc
+# (COMPLETION_REPORT.md). On failure, the assert halts the play.
+
+- name: "[complete_task] Stat active task"
+  ansible.builtin.stat:
+    path: "{{ spec_root }}/active/{{ task_name }}"
+  register: _sl_complete_src
+  when: operation == 'complete_task'
+
+- name: "[complete_task] Assert active task exists"
+  ansible.builtin.assert:
+    that:
+      - _sl_complete_src.stat.exists
+    fail_msg: "No active task at active/{{ task_name }} — run approve_task first."
+  when: operation == 'complete_task'
+
+- name: "[complete_task] Stat task.yml for Review Gate"
+  ansible.builtin.stat:
+    path: "{{ spec_root }}/active/{{ task_name }}/task.yml"
+  register: _sl_complete_task_yml
+  when: operation == 'complete_task'
+
+- name: "[complete_task] Assert task.yml present"
+  ansible.builtin.assert:
+    that:
+      - _sl_complete_task_yml.stat.exists
+    fail_msg: >-
+      active/{{ task_name }}/task.yml is missing — cannot run the Review Gate.
+  when: operation == 'complete_task'
+
+- name: "[complete_task] Slurp task.yml"
+  ansible.builtin.slurp:
+    src: "{{ spec_root }}/active/{{ task_name }}/task.yml"
+  register: _sl_task_yml_b64
+  when:
+    - operation == 'complete_task'
+    - _sl_complete_task_yml.stat.exists
+
+- name: "[complete_task] Parse task.yml"
+  ansible.builtin.set_fact:
+    _sl_parsed_task: "{{ (_sl_task_yml_b64.content | b64decode | from_yaml) }}"
+  when:
+    - operation == 'complete_task'
+    - _sl_complete_task_yml.stat.exists
+
+- name: "[complete_task] Review Gate — every AC must be checked"
+  ansible.builtin.assert:
+    that:
+      - _sl_parsed_task.acceptance_criteria is defined
+      - _sl_parsed_task.acceptance_criteria | length > 0
+      - >-
+        (_sl_parsed_task.acceptance_criteria
+           | selectattr('checked', 'equalto', true) | list | length)
+        == (_sl_parsed_task.acceptance_criteria | length)
+    fail_msg: >-
+      Review Gate FAILED — not all acceptance criteria are checked in
+      active/{{ task_name }}/task.yml. Tick every `checked: true`, then re-run
+      complete_task.
+  when:
+    - operation == 'complete_task'
+    - _sl_complete_task_yml.stat.exists
+
+- name: "[complete_task] Move active -> archive (copy + remove source)"
+  block:
+    - name: "[complete_task] Recursively copy active -> archive"
+      ansible.builtin.copy:
+        src: "{{ spec_root }}/active/{{ task_name }}/"
+        dest: "{{ spec_root }}/archive/{{ task_name }}/"
+        remote_src: true
+        mode: preserve
+    - name: "[complete_task] Remove active source"
+      ansible.builtin.file:
+        path: "{{ spec_root }}/active/{{ task_name }}"
+        state: absent
+  when: operation == 'complete_task'
+
+- name: "[complete_task] Write COMPLETION_REPORT.md (the C doc)"
+  ansible.builtin.copy:
+    content: |
+      # COMPLETION REPORT — {{ task_name }}
+
+      > **Evidence** that this task met its acceptance criteria. Required for
+      > archive. Mirrors the deep-spec A-B-C flow's C document.
+
+      ## Outcome
+
+      _(describe the shipped state)_
+
+      ## Acceptance Criteria
+
+      {% for ac in _sl_parsed_task.acceptance_criteria %}
+      - [x] {{ ac.description }}
+      {% endfor %}
+
+      ## Evidence
+
+      _(commit SHAs, test pass counts, artifact URLs, gate output — every claim
+      must be backed by a machine-produced measurement)_
+
+      ## Lessons
+
+      _(optional — also surfaced in memory.md)_
+
+      ---
+      *Completed at {{ now() }} by general_ludd.agent.spec_lifecycle*
+    dest: "{{ spec_root }}/archive/{{ task_name }}/COMPLETION_REPORT.md"
+    mode: "0644"
+  when: operation == 'complete_task'
+
+- name: "[complete_task] Write result artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': 'complete_task',
+        'status': 'archived',
+        'task_name': task_name,
+        'stage': 'archive'
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_{{ task_name }}.json"
+    mode: "0644"
+  when: operation == 'complete_task'
+
+# ── operation: discard_task ──────────────────────────────────────────────────
+#
+# Moves a draft OR active task to archive/ with a DISCARDED.yml marker.
+# The discard_reason is recorded for postmortem.
+
+- name: "[discard_task] Stat draft source"
+  ansible.builtin.stat:
+    path: "{{ spec_root }}/drafts/{{ task_name }}"
+  register: _sl_discard_draft
+  when: operation == 'discard_task'
+
+- name: "[discard_task] Stat active source (fallback)"
+  ansible.builtin.stat:
+    path: "{{ spec_root }}/active/{{ task_name }}"
+  register: _sl_discard_active
+  when:
+    - operation == 'discard_task'
+    - not _sl_discard_draft.stat.exists
+
+- name: "[discard_task] Assert source exists somewhere"
+  ansible.builtin.assert:
+    that:
+      - _sl_discard_draft.stat.exists or _sl_discard_active.stat.exists
+    fail_msg: >-
+      No task '{{ task_name }}' in drafts/ or active/ to discard.
+  when: operation == 'discard_task'
+
+- name: "[discard_task] Determine source path"
+  ansible.builtin.set_fact:
+    _sl_discard_src: >-
+      {{ (_sl_discard_draft.stat.exists)
+         | ternary(spec_root ~ '/drafts/' ~ task_name,
+                   spec_root ~ '/active/' ~ task_name) }}
+  when: operation == 'discard_task'
+
+- name: "[discard_task] Move source -> archive (copy + remove source)"
+  block:
+    - name: "[discard_task] Recursively copy source -> archive"
+      ansible.builtin.copy:
+        src: "{{ _sl_discard_src }}/"
+        dest: "{{ spec_root }}/archive/{{ task_name }}/"
+        remote_src: true
+        mode: preserve
+    - name: "[discard_task] Remove source"
+      ansible.builtin.file:
+        path: "{{ _sl_discard_src }}"
+        state: absent
+  when: operation == 'discard_task'
+
+- name: "[discard_task] Write DISCARDED.yml marker"
+  ansible.builtin.copy:
+    content: |
+      ---
+      name: {{ task_name }}
+      status: discarded
+      stage: archive
+      discard_reason: {{ discard_reason }}
+      discarded_at: "{{ now() }}"
+      ...
+    dest: "{{ spec_root }}/archive/{{ task_name }}/DISCARDED.yml"
+    mode: "0644"
+  when: operation == 'discard_task'
+
+- name: "[discard_task] Write result artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': 'discard_task',
+        'status': 'discarded',
+        'task_name': task_name,
+        'reason': discard_reason,
+        'stage': 'archive'
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_{{ task_name }}.json"
+    mode: "0644"
+  when: operation == 'discard_task'
+
+# ── operation: revise ────────────────────────────────────────────────────────
+#
+# Moves active/<name> -> drafts/<name> so the APPROACH can be re-planned.
+# The deep-spec Review Rounds are for post-impl tweaks; revise is for
+# re-planning before the Review Gate.
+
+- name: "[revise] Stat active task"
+  ansible.builtin.stat:
+    path: "{{ spec_root }}/active/{{ task_name }}"
+  register: _sl_revise_src
+  when: operation == 'revise'
+
+- name: "[revise] Assert active task exists"
+  ansible.builtin.assert:
+    that:
+      - _sl_revise_src.stat.exists
+    fail_msg: "No active task at active/{{ task_name }} — nothing to revise."
+  when: operation == 'revise'
+
+- name: "[revise] Move active -> drafts (copy + remove source)"
+  block:
+    - name: "[revise] Recursively copy active -> drafts"
+      ansible.builtin.copy:
+        src: "{{ spec_root }}/active/{{ task_name }}/"
+        dest: "{{ spec_root }}/drafts/{{ task_name }}/"
+        remote_src: true
+        mode: preserve
+    - name: "[revise] Remove active source"
+      ansible.builtin.file:
+        path: "{{ spec_root }}/active/{{ task_name }}"
+        state: absent
+  when: operation == 'revise'
+
+- name: "[revise] Write result artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': 'revise',
+        'status': 'back_to_drafts',
+        'task_name': task_name,
+        'stage': 'drafts'
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_{{ task_name }}.json"
+    mode: "0644"
+  when: operation == 'revise'
+
+# ── operation: list ──────────────────────────────────────────────────────────
+#
+# Read-only enumeration of every task across the three stages. Writes a JSON
+# index to the artifact dir.
+
+- name: "[list] Find drafts"
+  ansible.builtin.find:
+    paths: "{{ spec_root }}/drafts"
+    file_type: directory
+    depth: 1
+  register: _sl_list_drafts
+  failed_when: false
+  when: operation == 'list'
+
+- name: "[list] Find active"
+  ansible.builtin.find:
+    paths: "{{ spec_root }}/active"
+    file_type: directory
+    depth: 1
+  register: _sl_list_active
+  failed_when: false
+  when: operation == 'list'
+
+- name: "[list] Find archive"
+  ansible.builtin.find:
+    paths: "{{ spec_root }}/archive"
+    file_type: directory
+    depth: 1
+  register: _sl_list_archive
+  failed_when: false
+  when: operation == 'list'
+
+- name: "[list] Assemble task index"
+  ansible.builtin.set_fact:
+    _sl_list_index:
+      drafts: "{{ (_sl_list_drafts.files | default([])) | map(attribute='path') | map('basename') | list }}"
+      active: "{{ (_sl_list_active.files | default([])) | map(attribute='path') | map('basename') | list }}"
+      archive: "{{ (_sl_list_archive.files | default([])) | map(attribute='path') | map('basename') | list }}"
+  when: operation == 'list'
+
+- name: "[list] Write index artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': 'list',
+        'drafts': _sl_list_index.drafts,
+        'active': _sl_list_index.active,
+        'archive': _sl_list_index.archive,
+        'totals': {
+          'drafts': _sl_list_index.drafts | length,
+          'active': _sl_list_index.active | length,
+          'archive': _sl_list_index.archive | length
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_list.json"
+    mode: "0644"
+  when: operation == 'list'
+
+- name: "[list] Report counts"
+  ansible.builtin.debug:
+    msg: >-
+      drafts={{ _sl_list_index.drafts | length }}
+      active={{ _sl_list_index.active | length }}
+      archive={{ _sl_list_index.archive | length }}
+  when: operation == 'list'
+
+# ── operation: repair ────────────────────────────────────────────────────────
+#
+# Realigns tracking.json with the on-disk pipeline. Recomputes the task index
+# from drafts/active/archive/ and rewrites tracking.json. Idempotent. Use after
+# manual renames or moves.
+
+- name: "[repair] Find drafts"
+  ansible.builtin.find:
+    paths: "{{ spec_root }}/drafts"
+    file_type: directory
+    depth: 1
+  register: _sl_repair_drafts
+  failed_when: false
+  when: operation == 'repair'
+
+- name: "[repair] Find active"
+  ansible.builtin.find:
+    paths: "{{ spec_root }}/active"
+    file_type: directory
+    depth: 1
+  register: _sl_repair_active
+  failed_when: false
+  when: operation == 'repair'
+
+- name: "[repair] Find archive"
+  ansible.builtin.find:
+    paths: "{{ spec_root }}/archive"
+    file_type: directory
+    depth: 1
+  register: _sl_repair_archive
+  failed_when: false
+  when: operation == 'repair'
+
+- name: "[repair] Rebuild tracking.json from on-disk state"
+  ansible.builtin.copy:
+    content: |
+      {
+        "version": 1,
+        "repaired_at": "{{ now() }}",
+        "tasks": {
+          "drafts": {{ (_sl_repair_drafts.files | default([])) | map(attribute='path') | map('basename') | list | to_json }},
+          "active": {{ (_sl_repair_active.files | default([])) | map(attribute='path') | map('basename') | list | to_json }},
+          "archive": {{ (_sl_repair_archive.files | default([])) | map(attribute='path') | map('basename') | list | to_json }}
+        }
+      }
+    dest: "{{ spec_root }}/tracking.json"
+    mode: "0644"
+  when: operation == 'repair'
+
+- name: "[repair] Write result artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': 'repair',
+        'status': 'tracking_realigned',
+        'spec_root': spec_root
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_repair.json"
+    mode: "0644"
+  when: operation == 'repair'
+
+# ── operation: interview / map_codebase / diagram_architecture ───────────────
+#
+# Model-backed operations. SAFE-BY-DEFAULT: skipped unless
+# enable_model_call=true. When skipped, a clear opt-in message is emitted and
+# a skip artifact is written so the caller can detect the no-op.
+
+- name: Set model-backed operation flag
+  ansible.builtin.set_fact:
+    _sl_model_op: >-
+      {{ operation in ['interview', 'map_codebase', 'diagram_architecture'] }}
+
+- name: "[model] Skip when enable_model_call=false"
+  ansible.builtin.debug:
+    msg: >-
+      Operation '{{ operation }}' is a model-backed operation but
+      enable_model_call={{ enable_model_call }}. Set enable_model_call=true
+      (and provide daemon_url/psk) to invoke gludd_agent_run.
+  when:
+    - _sl_model_op
+    - not (enable_model_call | bool)
+
+- name: "[model] Write skip artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': operation,
+        'status': 'skipped_model_disabled',
+        'reason': 'enable_model_call is false'
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_{{ operation }}.json"
+    mode: "0644"
+  when:
+    - _sl_model_op
+    - not (enable_model_call | bool)
+
+- name: "[model] Invoke gludd_agent_run when enabled"
+  general_ludd.agent.gludd_agent_run:
+    prompt: >-
+      {% if operation == 'interview' %}
+      You are conducting a one-question-at-a-time interview to refine the
+      APPROACH for task '{{ task_name }}' under {{ spec_root }}.
+      Read {{ spec_root }}/drafts/{{ task_name }}/APPROACH.md (or
+      {{ spec_root }}/active/{{ task_name }}/APPROACH.md if approved).
+      Identify the single highest-leverage open question about the approach.
+      Print ONLY that one question and stop.
+      {% elif operation == 'map_codebase' %}
+      Deep-scan the repository at {{ playbook_dir }} and produce an AGENTS.md
+      style map: entrypoints, hot files, conventions, gotchas, test commands.
+      Write the map to {{ spec_root }}/AGENTS.md.
+      {% elif operation == 'diagram_architecture' %}
+      Produce a Mermaid architecture diagram for task '{{ task_name }}'.
+      Read {{ spec_root }}/active/{{ task_name }}/APPROACH.md if present,
+      else {{ spec_root }}/drafts/{{ task_name }}/APPROACH.md. Emit a Mermaid
+      `graph TD` block plus a short legend. Write the file to
+      {{ spec_root }}/{% if operation == 'diagram_architecture' %}active{% endif %}/{{ task_name }}/ARCHITECTURE.md
+      if approved, else drafts/{{ task_name }}/ARCHITECTURE.md.
+      {% endif %}
+    model_profile: "{{ model_profile }}"
+    max_iterations: "{{ agent_max_iterations }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _sl_model_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - _sl_model_op
+    - enable_model_call | bool
+    - not ansible_check_mode
+
+- name: "[model] Write result artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'spec_lifecycle',
+        'operation': operation,
+        'status': 'invoked',
+        'task_name': task_name,
+        'answer_excerpt': (_sl_model_result.answer | default(''))[:200]
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/spec_lifecycle_{{ operation }}.json"
+    mode: "0644"
+  when:
+    - _sl_model_op
+    - enable_model_call | bool

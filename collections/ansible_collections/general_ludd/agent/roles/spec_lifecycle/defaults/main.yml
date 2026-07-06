@@ -1,0 +1,44 @@
+---
+# spec_lifecycle role defaults — NON-DESTRUCTIVE / REPORT-ONLY by default.
+#
+# The role never mutates git. Model-backed operations (interview,
+# map_codebase, diagram_architecture) require explicit opt-in via
+# enable_model_call=true.
+
+# Operation selector (REQUIRED — user MUST set).
+# Choices: init, create_task, approve_task, complete_task, discard_task,
+#          list, revise, repair, interview, map_codebase, diagram_architecture
+operation: ""
+
+# Spec root directory (the .spec.md/ tree).
+spec_root: "{{ playbook_dir }}/.spec.md"
+
+# Artifact output directory (under spec_root by default).
+artifact_dir: "{{ spec_root }}/_artifacts"
+
+# Task identity (required for create/approve/complete/discard/revise).
+task_name: ""
+
+# Task sizing (small/medium/large) — drives doc ceremony per deep-spec.
+task_size: "medium"
+
+# Reason recorded when a task is discarded.
+discard_reason: "no longer needed"
+
+# Daemon connectivity (used only by model-backed operations).
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Model profile for agent-backed operations (empty = daemon default).
+model_profile: ""
+agent_max_iterations: 10
+
+# SAFE-BY-DEFAULT: model-backed operations (interview/map/diagram) require opt-in.
+enable_model_call: false
+
+# SAFE-BY-DEFAULT: this role never mutates git. The flag exists for forward
+# compatibility with roles that wrap spec_lifecycle and do their own commits.
+enable_git_write: false
+
+# Capability identity for per-role default-DENY db policy (capability_policy.py).
+capability_role: "spec_lifecycle"

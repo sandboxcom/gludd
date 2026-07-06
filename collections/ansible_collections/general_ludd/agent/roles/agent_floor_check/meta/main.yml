@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: agent_floor_check
+  author: Agentic Harness Agent
+  description: >
+    Read-only observability for the agent subagent floor (default 10 concurrent
+    subagents). The ansible-side mirror of the opencode enforce-floor.ts plugin:
+    gathers gludd_facts, reads the plugin block counter and alive-timestamp,
+    probes scripts/agent_liveness.py for the ground-truth live-agent count,
+    classifies status (healthy / degraded / critical), emits a high-priority
+    gludd_message on persistent breach, and writes a JSON artifact. CANNOT
+    enforce (cannot block tool calls) — actual floor enforcement happens in
+    the opencode plugin layer. Set fail_on_breach=true to fail the play on
+    breach; default is warn-only.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

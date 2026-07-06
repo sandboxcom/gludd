@@ -1,0 +1,31 @@
+---
+galaxy_info:
+  role_name: delegate_discipline_check
+  author: Agentic Harness Agent
+  description: >
+    Read-only audit of delegation discipline — the gludd role equivalent of
+    the opencode .opencode/plugin/enforce-delegate.ts plugin. Reads three
+    dimensions of delegation health and reports a status verdict:
+
+      1. Sonnet : non-sonnet model dispatch ratio from
+         /tmp/gludd-model-util.json (the rolling 20-sample window maintained
+         by the plugin).
+      2. Worktree disk-free vs disk_free_min_mb and worktree directory count
+         vs worktree_cap (the disk-discipline contract from AGENTS.md).
+      3. Main-thread streak from /tmp/gludd-mainthread-streak.json — the
+         consecutive mutating-tool-call counter that the plugin's
+         mainthreadBudgetBefore hook blocks at threshold 4.
+
+    Reports a {healthy, degraded, critical} verdict with breached dimensions
+    and recommended remediation. NEVER enforces — the plugin layer is the
+    single source of truth for enforcement. Fail-open on every read.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []
