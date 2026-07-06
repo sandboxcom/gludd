@@ -72,7 +72,13 @@ class TestPushRateGuardForcePushTracking:
         assert tracker.count == 0, "Normal push must reset the bypass counter"
 
     def test_force_push_counter_decays_over_time(self, tmp_path):
-        """Stale bypass entries older than the window must be purged."""
+        """Stale bypass entries older than the window must be purged.
+
+        Uses window_hours=0.0001 (0.36 sec) with time.sleep(0.5) to
+        guarantee entries expire, then verifies _purge_stale removes them.
+        """
+        import time
+
         state_dir = tmp_path / "gludd-state"
         state_dir.mkdir()
         force_track_file = state_dir / "force-push-track.json"
@@ -84,9 +90,10 @@ class TestPushRateGuardForcePushTracking:
         )
 
         tracker.record_bypass()
-        assert tracker.count == 1
+        assert tracker.count == 1, "Entry just recorded must still be within the window"
 
+        time.sleep(0.5)
         tracker._purge_stale()
         assert tracker.count == 0, (
-            "Bypass entries older than window must be purged"
+            "Bypass entries older than window must be purged after sleep"
         )

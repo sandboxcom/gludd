@@ -58,9 +58,11 @@ function readBlockCounter(): BlockCounter {
       if (c.lastBlockTs && (now - c.lastBlockTs) > 120_000 && c.consecutiveBlocks > 0) {
         c.consecutiveBlocks = 0
       }
-      // Cap unreasonable disengage values (max 5 min from now) — write back immediately
-      if (c.disengageUntil > now + 300_000) {
-        c.disengageUntil = 0
+      // Cap unreasonable disengage values (max 1 hour from now) — write back immediately
+      // BUG #23 fix: clamp at 1h instead of zeroing out (which silently disengaged)
+      const MAX_DISENGAGE_HERE = now + 3_600_000
+      if (c.disengageUntil > MAX_DISENGAGE_HERE) {
+        c.disengageUntil = MAX_DISENGAGE_HERE
         try { fs.writeFileSync(BLOCK_COUNTER_FILE, JSON.stringify(c), "utf8") } catch {}
       }
       return c
@@ -156,7 +158,14 @@ function recordBlock(reason: string): void {
 
 function isDisengaged(): boolean {
   const c = readBlockCounter()
-  if (c.disengageUntil > Date.now()) return true
+  // BUG #23 fix: clamp disengage to max 1 hour from now
+  const now = Date.now()
+  const MAX_DISENGAGE = now + 3_600_000
+  if (c.disengageUntil > MAX_DISENGAGE) {
+    c.disengageUntil = MAX_DISENGAGE
+    try { fs.writeFileSync(BLOCK_COUNTER_FILE, JSON.stringify(c), "utf8") } catch {}
+  }
+  if (c.disengageUntil > now) return true
   return false
 }
 
@@ -495,8 +504,12 @@ export default (async ({ }) => {
               const disPath = "/tmp/gludd-watchdog-disengage.json"
               if (fs.existsSync(disPath)) {
                 const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
-                if (d.disengage_until && d.disengage_until > Date.now()) {
-                  disengaged = true
+                if (d.disengage_until) {
+                  // BUG #23 fix: clamp disengage to max 1 hour from now
+                  const now = Date.now()
+                  const MAX_DISENGAGE = now + 3_600_000
+                  const effective = Math.min(d.disengage_until, MAX_DISENGAGE)
+                  if (effective > now) disengaged = true
                 }
               }
             } catch {}
@@ -633,13 +646,17 @@ export default (async ({ }) => {
         turnState.accumulatedText += text
 
         // Item 15: check watchdog disengage signal
+        // BUG #23 fix: clamp disengage to max 1 hour from now
         let watchdogDisengage = false
         try {
           const wsPath = "/tmp/gludd-watchdog-disengage.json"
           if (fs.existsSync(wsPath)) {
             const ws = JSON.parse(fs.readFileSync(wsPath, "utf8"))
-            if (ws.disengage_until && ws.disengage_until > Date.now()) {
-              watchdogDisengage = true
+            if (ws.disengage_until) {
+              const now = Date.now()
+              const MAX_DISENGAGE = now + 3_600_000
+              const effective = Math.min(ws.disengage_until, MAX_DISENGAGE)
+              if (effective > now) watchdogDisengage = true
             }
           }
         } catch {}

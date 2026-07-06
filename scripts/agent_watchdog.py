@@ -230,6 +230,8 @@ VERIFY_REMOTE_TIMEOUT = 10
 
 ORCHESTRATOR_STATE_FILE = "/tmp/gludd-orchestrator-state.json"
 DISENGAGE_FILE = "/tmp/gludd-watchdog-disengage.json"
+BLOCK_COUNTER_FILE = "/tmp/gludd-block-counter.json"
+DISENGAGE_MAX_SECS_CI_NOT_GREEN = 300  # 5 min cap when CI is pending/red
 HEALTH_SCORE_FILE = "/tmp/gludd-health-score.json"
 PUSH_LOOP_FILE = "/tmp/gludd-watchdog-push-timestamps.json"
 CI_LOOP_THRESHOLD_PUSHES = 3
@@ -1839,6 +1841,104 @@ def _is_disengage_active() -> bool:
         return False
 
 
+def _is_push_running() -> bool:
+    push_lock = _WORKSPACE / ".git" / "push.lock"
+    if push_lock.exists():
+        return True
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "command"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            if "git push" in line and "grep" not in line and "ps -eo" not in line:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _auto_reengage_enforcement(mtime_age: float | None) -> None:
+    """Auto-re-engage enforcement after push completes when disengage is active.
+
+    Called every poll cycle from check_and_reset(). If enforcement was disengaged
+    (for a push) and the push has since completed, re-engage by clearing the
+    disengage signal and resetting the block counter. Also enforces a 5-minute
+    hard cap on disengage when CI is not green.
+    """
+    if not _is_disengage_active():
+        return
+
+    now_ms = int(time.time() * 1000)
+    p = Path(DISENGAGE_FILE)
+    disengage_until = 0
+    try:
+        if p.exists():
+            data = json.loads(p.read_text())
+            disengage_until = data.get("disengage_until", 0)
+    except Exception:
+        return
+
+    disengage_age_ms = now_ms - disengage_until  # negative = still active (until > now)
+    disengage_ahead_ms = disengage_until - now_ms  # positive = time remaining
+
+    # Check: has the disengage been active for >5 min? (disengage_until was set far ahead
+    # and we haven't hit it yet, but elapsed since it was set exceeds cap).
+    # We estimate elapsed by reading the file mtime.
+    try:
+        file_age_ms = (time.time() - p.stat().st_mtime) * 1000
+    except Exception:
+        file_age_ms = 0
+
+    ci_pending, ci_run_id = _ci_is_pending_or_red()
+    agent_active = mtime_age is not None and mtime_age < PURE_IDLE_SECS
+    push_running = _is_push_running()
+
+    should_reengage = False
+    reason = ""
+
+    # Rule 1: push completed + agent active → re-engage immediately
+    if not push_running and agent_active:
+        rc = _ci_is_pending_or_red()
+        if not rc[0]:
+            should_reengage = True
+            reason = "push completed, CI green, agent active"
+        elif file_age_ms > DISENGAGE_MAX_SECS_CI_NOT_GREEN * 1000:
+            should_reengage = True
+            reason = f"push completed, disengage capped at {DISENGAGE_MAX_SECS_CI_NOT_GREEN}s (CI pending/red)"
+        # else: push done but CI still pending/red and within 5min cap — leave disengaged
+
+    # Rule 2: 5-minute hard cap — regardless of push state
+    if not should_reengage and file_age_ms > DISENGAGE_MAX_SECS_CI_NOT_GREEN * 1000:
+        if ci_pending or not agent_active:
+            should_reengage = True
+            reason = f"disengage_cap: {DISENGAGE_MAX_SECS_CI_NOT_GREEN}s max (ci={'pending/red' if ci_pending else 'green'}, agent={'active' if agent_active else 'idle'})"
+
+    if not should_reengage:
+        return
+
+    # -- Re-engage: clear block counter and disengage file --
+    try:
+        Path(BLOCK_COUNTER_FILE).write_text(json.dumps({
+            "consecutiveBlocks": 0,
+            "totalBlocks": 0,
+            "lastBlockTs": 0,
+            "disengageUntil": 0,
+        }))
+    except Exception:
+        pass
+
+    try:
+        p.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    _log(f"watchdog: auto-re-engaged enforcement after push completed — {reason}")
+
+    if ci_pending:
+        _log(f"watchdog: CI still pending (run {ci_run_id}) — enforcement re-engaged; agent must fix CI")
+
+
 def _write_continue_directive(
     work_sources: list[str],
     stop_count: int,
@@ -2505,6 +2605,7 @@ def check_and_reset() -> dict:
         stop_detected=result.get("stop_detected", False),
     )
     _clear_disengage_signal()
+    _auto_reengage_enforcement(mtime_age)
 
     return result
 

@@ -408,13 +408,17 @@ export default (async ({ }) => {
         // enforcement, skip ALL blocks including message-shape. Hoisted
         // above message-shape to prevent the gap where disengage-enforcement
         // is silently ignored when prev message had 1-4 dispatches.
+        // BUG #23 fix: clamp disengage to max 1 hour from now
         let disengagedForFloor = false
         try {
           const disPath = "/tmp/gludd-watchdog-disengage.json"
           if (fs.existsSync(disPath)) {
             const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
-            if (d.disengage_until && d.disengage_until > Date.now()) {
-              disengagedForFloor = true
+            if (d.disengage_until) {
+              const now = Date.now()
+              const MAX_FLOOR_DISENGAGE = now + 3_600_000
+              const effective = Math.min(d.disengage_until, MAX_FLOOR_DISENGAGE)
+              if (effective > now) disengagedForFloor = true
             }
           }
         } catch {}
@@ -459,13 +463,17 @@ export default (async ({ }) => {
         // Disengage check: when the operator has explicitly disengaged
         // enforcement, skip the floor-breach block so commits and pushes
         // can proceed.
+        // BUG #23 fix: clamp disengage to max 1 hour from now
         let disengaged = false
         try {
           const disPath = "/tmp/gludd-watchdog-disengage.json"
           if (fs.existsSync(disPath)) {
             const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
-            if (d.disengage_until && d.disengage_until > Date.now()) {
-              disengaged = true
+            if (d.disengage_until) {
+              const now = Date.now()
+              const MAX_FLOOR_DISENGAGE_2 = now + 3_600_000
+              const effective = Math.min(d.disengage_until, MAX_FLOOR_DISENGAGE_2)
+              if (effective > now) disengaged = true
             }
           }
         } catch {}

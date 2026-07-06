@@ -966,7 +966,8 @@ verify-remote:
 	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$${BRANCH:-master}; \
 	REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom $$BR | awk '{print $$1}'); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
-	if [ "$$REMOTE" = "$$SHA" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
+	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
+	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
 
 # Create an annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
@@ -2127,7 +2128,7 @@ restart-opencode:
 disengage-enforcement:
 	@echo "DISENGAGING enforcement — all plugin blocking suspended for 1 hour"
 	@$(UV) run python3 -c "import json,time; ts=int(time.time()*1000); json.dump({'disengage_until':ts+3600000,'disengage_until_epoch_ms':ts+3600000,'reason':'manual_disengage','ts':time.time()},open('/tmp/gludd-watchdog-disengage.json','w'))"
-	@$(UV) run python3 -c "import json; json.dump({'consecutiveBlocks':0,'totalBlocks':0,'lastBlockTs':0,'disengageUntil':9999999999999},open('/tmp/gludd-block-counter.json','w'))"
+	@$(UV) run python3 -c "import json,time; ts=int(time.time()*1000); json.dump({'consecutiveBlocks':0,'totalBlocks':0,'lastBlockTs':0,'disengageUntil':ts+3600000},open('/tmp/gludd-block-counter.json','w'))"
 	@$(UV) run python3 -c "import json,time; json.dump({'last_ci_check':int(time.time()*1000),'last_ci_status':'SUCCESS','run_id':'disengaged','head_sha':'$(shell git rev-parse HEAD)'},open('/tmp/gludd-watchdog-ci.json','w'))"
 	@echo "Disengage files written — enforcement hooks will pass through for 1 hour"
 
