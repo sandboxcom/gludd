@@ -202,192 +202,114 @@ class TestEnforceStopConstraintPatterns:
 
 
 # --------------------------------------------------------------------------- #
-# 3c. enforce-stop.ts — STATE-BASED terminal-response detector (BUGS.md #1)
+# 3c. enforce-stop.ts — text.complete stop detection (simplified plugin)
 # --------------------------------------------------------------------------- #
-# The Whac-A-Mole fix: instead of matching specific completion phrases, ask
-# whether (a) the repo has pending work AND (b) the response looks like a
-# finale. responseLooksTerminal detects tables, uppercase DONE/COMPLETE/SHIPPED,
-# long non-question bodies, and commit-hash patterns.
-class TestEnforceStopResponseLooksTerminal:
-    """responseLooksTerminal must exist and detect completion-shaped responses."""
+# The responseLooksTerminal function was removed. Stop detection is now inline
+# in text.complete: short false-done claims (✅, "Done.", COMPLETION_VERBATIM),
+# direct false-done detection with COMPLETION_HEADER_RE / CHECKED_BOXES_RE, and
+# hasLocalWork blocking all text when TASKS.md unchecked / ratchet entries /
+# gate RED / repo dirty.
+class TestEnforceStopTextCompleteDetection:
+    """text.complete handler must detect completion-shaped responses."""
 
-    def test_function_exists(self):
+    def test_text_complete_detects_completion_verbatim(self):
+        """COMPLETION_VERBATIM regex must exist for short false-done claims."""
         src = ENFORCE_STOP.read_text()
-        assert "function responseLooksTerminal" in src, (
-            "responseLooksTerminal function missing from enforce-stop.ts — "
-            "the state-based terminal-response detector (BUGS.md #1) is gone"
-        )
-
-    def test_detects_markdown_table(self):
-        """A line with | ... | ... | must be flagged as terminal."""
-        src = ENFORCE_STOP.read_text()
-        # The TS regex literal uses pipe chars; just confirm the function body
-        # references a pipe-based table matcher.
-        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
-        assert m, "could not extract responseLooksTerminal body"
-        body = m.group(1)
-        assert "|" in body, (
-            "responseLooksTerminal must include a markdown-table regex matching "
-            "'| ... | ... |' patterns"
+        assert "COMPLETION_VERBATIM" in src, (
+            "COMPLETION_VERBATIM regex missing from enforce-stop.ts — "
+            "the completion-verbatim detector is gone"
         )
 
-    def test_detects_uppercase_done_complete_shipped(self):
-        """Uppercase DONE/COMPLETE banners must be flagged; SHIPPED was removed."""
+    def test_text_complete_detects_direct_false_done_flags(self):
+        """DIRECT_FALSE_DONE_FLAGS must include ✅."""
         src = ENFORCE_STOP.read_text()
-        for word in ("DONE", "COMPLETE"):
-            assert word in src, (
-                f"responseLooksTerminal must detect the uppercase '{word}' banner"
-            )
-        assert "SHIPPED" not in src, (
-            "SHIPPED was removed from responseLooksTerminal — only DONE|COMPLETE "
-            "remain as uppercase terminal signals"
+        assert "DIRECT_FALSE_DONE_FLAGS" in src, (
+            "DIRECT_FALSE_DONE_FLAGS constant missing from enforce-stop.ts"
         )
 
-    def test_detects_commit_hash_pattern(self):
-        """Commit hash regex was removed from responseLooksTerminal."""
+    def test_text_complete_detects_completion_header(self):
+        """COMPLETION_HEADER_RE must detect ## Done / ## Summary headers."""
         src = ENFORCE_STOP.read_text()
-        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
-        assert m, "could not extract responseLooksTerminal body"
-        body = m.group(1)
-        assert not re.search(r"[0-9a-f]\{7,40\}", body), (
-            "responseLooksTerminal no longer includes a commit-hash regex "
-            "([0-9a-f]{7,40}) — it was removed in the simplification"
+        assert "COMPLETION_HEADER_RE" in src, (
+            "COMPLETION_HEADER_RE regex missing from enforce-stop.ts"
         )
 
-    def test_detects_long_non_question_body(self):
-        """A >200-char body not ending in '?' must be flagged as terminal."""
+    def test_text_complete_detects_standalone_done(self):
+        """STANDALONE_DONE_RE must detect 'Done.' on its own line."""
         src = ENFORCE_STOP.read_text()
-        assert re.search(r"length\s*>\s*200", src), (
-            "responseLooksTerminal must check text.length > 200 for the long-body "
-            "terminal signal"
-        )
-        assert re.search(r"\\\?\s*\$", src) or "?\\s*$" in src or "?\\$" in src, (
-            "responseLooksTerminal must check that the body does NOT end with a "
-            "question mark (the long-body signal only fires for non-questions)"
+        assert "STANDALONE_DONE_RE" in src, (
+            "STANDALONE_DONE_RE regex missing from enforce-stop.ts"
         )
 
-    def test_wired_into_text_complete(self):
-        """The experimental.text.complete hook must invoke responseLooksTerminal.
-        The previous detectConstraintAsStop / noWaitBlockResponse functions were
-        deleted as overfitted; only responseLooksTerminal is called."""
+    def test_text_complete_detects_checked_boxes_without_unchecked(self):
+        """CHECKED_BOXES_RE and UNCHECKED_BOXES_RE must be defined for checkbox detection."""
         src = ENFORCE_STOP.read_text()
-        assert re.search(
-            r"responseLooksTerminal\s*\(\s*turnState\.accumulatedText\s*\)",
-            src,
-        ), (
-            "responseLooksTerminal(turnState.accumulatedText) is not called "
-            "inside experimental.text.complete — the state-based guardrail "
-            "is dead code"
+        assert "CHECKED_BOXES_RE" in src, (
+            "CHECKED_BOXES_RE regex missing — checkbox table detection is gone"
         )
-        assert not re.search(r"function detectConstraintAsStop\b", src), (
-            "detectConstraintAsStop must NOT exist — was deleted as overfitted"
-        )
-        assert not re.search(r"function noWaitBlockResponse\b", src), (
-            "noWaitBlockResponse must NOT exist — was deleted as overfitted"
-        )
-        assert re.search(r'"experimental\.text\.complete"', src), (
-            "experimental.text.complete hook registration missing from enforce-stop.ts"
+        assert "UNCHECKED_BOXES_RE" in src, (
+            "UNCHECKED_BOXES_RE regex missing — checkbox table detection is gone"
         )
 
-    def test_detects_qa_recap_bolded_headers(self):
-        """qaHeader pattern was removed from the simplified responseLooksTerminal."""
+    def test_response_looks_terminal_removed(self):
+        """responseLooksTerminal was removed from the simplified plugin."""
         src = ENFORCE_STOP.read_text()
-        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
-        assert m, "could not extract responseLooksTerminal body"
-        body = m.group(1)
-        assert "qaHeader" not in body, (
-            "responseLooksTerminal no longer defines qaHeader — the Q&A-recap "
-            "bolded-question-header pattern was removed in the simplification"
+        assert "function responseLooksTerminal" not in src, (
+            "responseLooksTerminal should NOT be present — it was removed in "
+            "the simplified plugin (stop detection is now inline in text.complete)"
         )
 
-    def test_state_check_blocks_when_ratchet_has_entries(self):
-        """The HARD STOP — STATE-BASED BLOCK message must be present and reference
-        the ratchet entry count."""
+    def test_text_complete_has_local_work_block(self):
+        """text.complete must have a hasLocalWork check that blocks all text."""
         src = ENFORCE_STOP.read_text()
+        assert "hasLocalWork" in src, (
+            "hasLocalWork variable missing from text.complete — the state-based "
+            "block was removed"
+        )
         assert "HARD STOP — STATE-BASED BLOCK" in src, (
-            "The state-based block response is missing its "
-            "'HARD STOP — STATE-BASED BLOCK' header"
-        )
-        assert "ratchetCount" in src, (
-            "The state-based block must report the ratchet entry count via "
-            "the ratchetCount variable (cache-read pattern in text.complete)"
+            "HARD STOP — STATE-BASED BLOCK header missing from text.complete"
         )
 
-    def test_detects_all_checked_checkbox_table(self):
-        """3+ checked checkboxes (- [x]) with zero unchecked (- [ ]) must be
-        flagged as terminal (BUGS.md #2026-06-30: 16-row evidence ledger)."""
+    def test_text_complete_ratchet_block(self):
+        """text.complete must block all text when ratchet has entries."""
         src = ENFORCE_STOP.read_text()
-        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
-        assert m, "could not extract responseLooksTerminal body"
-        body = m.group(1)
-        assert re.search(r"\bchecked\b", body), (
-            "responseLooksTerminal must count checked checkboxes (variable "
-            "'checked')"
-        )
-        assert re.search(r"\bunchecked\b", body), (
-            "responseLooksTerminal must count unchecked checkboxes (variable "
-            "'unchecked')"
-        )
-        assert re.search(r"checked\s*>=\s*3", body), (
-            "responseLooksTerminal must require checked >= 3"
-        )
-        assert re.search(r"unchecked\s*===\s*0", body), (
-            "responseLooksTerminal must require unchecked === 0 for "
-            "the all-checked signal"
+        assert "TEXT BLOCKED — RATCHET HAS PENDING ENTRIES" in src, (
+            "RATCHET block message missing from text.complete"
         )
 
-    def test_detects_item_count_completion_claim(self):
-        """Item count completion pattern was removed from responseLooksTerminal."""
+    def test_text_complete_dispatch_bypass(self):
+        """text.complete must allow text when dispatchCount > 0 or toolCallMade."""
         src = ENFORCE_STOP.read_text()
-        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
-        assert m, "could not extract responseLooksTerminal body"
-        body = m.group(1)
-        assert not re.search(r"\\d\+\\s\+items?", body), (
-            "responseLooksTerminal no longer detects '\\d+ items? (completed|done)' "
-            "— the item-count-completion pattern was removed in the simplification"
+        assert "turnState.dispatchCount" in src, (
+            "dispatchCount tracking missing from text.complete — dispatch bypass is dead"
+        )
+        assert "turnState.toolCallMade" in src, (
+            "toolCallMade tracking missing from text.complete — tool-call bypass is dead"
+        )
+
+    def test_detects_false_done_no_evidence_block(self):
+        """Short false-done claims without structured evidence must be blocked."""
+        src = ENFORCE_STOP.read_text()
+        assert "FALSE-DONE CLAIM BLOCKED" in src, (
+            "FALSE-DONE CLAIM BLOCKED message missing from text.complete"
         )
 
     def test_state_block_message_hard_stop_header(self):
-        """The state-based block response must use a 'HARD STOP — STATE-BASED BLOCK'
-        header (not just 'STATE-BASED STOP BLOCKED') for stronger enforcement."""
+        """The state-based block response must use 'HARD STOP — STATE-BASED BLOCK'."""
         src = ENFORCE_STOP.read_text()
-        assert "HARD STOP" in src, (
-            "State-based block response must begin with 'HARD STOP' — advisory "
-            "wording was the structural gap in BUGS.md #2026-06-30"
-        )
-
-    def test_state_block_message_references_bugs_md_20_incidents(self):
-        """The state-based block message must reference the 20+ BUGS.md incidents
-        to make the agent aware of the historical pattern it is repeating."""
-        src = ENFORCE_STOP.read_text()
-        assert "BUGS.md" in src and "20+" in src, (
-            "State-based block message must reference 'BUGS.md has 20+ incidents' "
-            "so the agent knows this is a recurring failure, not a one-off"
-        )
-
-    def test_state_block_message_demands_subagent_dispatch(self):
-        """The block message must demand 'Dispatch ≥5 subagents' as the immediate
-        action, not just 'MAKE A TOOL CALL'."""
-        src = ENFORCE_STOP.read_text()
-        assert re.search(r"dispatch.*≥\s*5|dispatch.*\\u2265\s*5|≥\s*5\s+subagents", src, re.IGNORECASE) or \
-               "5 subagents" in src.lower(), (
-            "State-based block message must instruct 'Dispatch ≥5 subagents' "
-            "as the immediate corrective action"
+        assert "HARD STOP — STATE-BASED BLOCK" in src, (
+            "State-based block must use 'HARD STOP — STATE-BASED BLOCK' header"
         )
 
     def test_simplified_block_headers(self):
-        """The old 'PENDING-WORK AUDIT' header was replaced with two simplified
-        block headers: STATE-BASED BLOCK and CI-RED DETECTED."""
+        """The old 'PENDING-WORK AUDIT' header and 'CI-RED DETECTED' were removed."""
         src = ENFORCE_STOP.read_text()
         assert "HARD STOP — PENDING-WORK AUDIT" not in src, (
             "'HARD STOP — PENDING-WORK AUDIT' was removed from enforce-stop.ts"
         )
-        assert "HARD STOP — STATE-BASED BLOCK" in src, (
-            "Simplified block must use 'HARD STOP — STATE-BASED BLOCK' header"
-        )
-        assert "HARD STOP — CI-RED DETECTED" in src, (
-            "Simplified block must use 'HARD STOP — CI-RED DETECTED' header for "
-            "responses mentioning CI as red"
+        assert "HARD STOP — CI-RED DETECTED" not in src, (
+            "HARD STOP — CI-RED DETECTED was removed — CI-red is now handled "
+            "via ciVerdictPendingOrRed in hasLocalWork"
         )
 
 
@@ -454,31 +376,31 @@ class TestEnforceStopRepoPendingWork:
         )
 
     def test_repo_has_pending_work_wired_into_state_check(self):
-        """The state-based check must wire repoHasPendingWork into hasPendingWork
-        via the cache-read pattern (repoPending fallback)."""
+        """text.complete reads repoPending from cache or defaults to false (fail-open).
+        Fallback call to repoHasPendingWork() happens in session.idle."""
         src = ENFORCE_STOP.read_text()
-        # repoHasPendingWork() is called as the ?? fallback on cache read
+        # repoPending is read from cache (or) inside text.complete as a simple var
         assert re.search(
-            r"repoPending\s*=\s*cache\?\.repoPending\s*\?\?\s*repoHasPendingWork\(\)",
+            r"repoPending\s*=\s*cache\?\.repoPending\s*\?\?\s*false",
             src,
         ), (
-            "repoPending must be derived as 'cache?.repoPending ?? repoHasPendingWork()' "
-            "so the fallback-to-live-call pattern is intact"
+            "repoPending must be derived as 'cache?.repoPending ?? false' "
+            "in text.complete — fail-open, not calling git inside response transform"
         )
-        # hasPendingWork must OR repoPending
-        assert re.search(
-            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount",
-            src,
-        ), (
-            "hasPendingWork must include 'repoPending' so uncommitted/unpushed "
-            "work is treated as pending regardless of ratchet"
+        # repoHasPendingWork() must be called somewhere (in session.idle or as fallback)
+        assert "repoHasPendingWork" in src, (
+            "repoHasPendingWork must be referenced in enforce-stop.ts"
         )
 
-    def test_repo_has_pending_work_called_in_both_blocks(self):
-        """The terminal check must use hasPendingWork."""
+    def test_repo_has_pending_work_wired_into_has_local_work(self):
+        """hasLocalWork in text.complete must OR repoPending."""
         src = ENFORCE_STOP.read_text()
-        assert re.search(r"hasPendingWork\s*&&\s*responseLooksTerminal", src), (
-            "Terminal check must be 'hasPendingWork && responseLooksTerminal(output)'"
+        assert re.search(
+            r"hasLocalWork\s*=\s*repoPending\s*\|\|",
+            src,
+        ), (
+            "hasLocalWork must include 'repoPending' so uncommitted/unpushed "
+            "work is treated as pending in text.complete"
         )
 
     def test_no_wait_patterns_include_done_answer(self):
@@ -576,14 +498,14 @@ class TestEnforceStopTasksMdUnchecked:
         )
 
     def test_tasks_md_has_unchecked_wired_into_has_pending_work(self):
-        """hasPendingWork must OR tasksMdUnchecked (from cache) with the other checks."""
+        """hasLocalWork in text.complete must OR tasksMdUnchecked with the other checks."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
-            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*ciRed\s*\|\|\s*ciVerdictPendingOrRed",
+            r"hasLocalWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*gateRed",
             src,
         ), (
-            "hasPendingWork must be "
-            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed' "
+            "hasLocalWork in text.complete must be "
+            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed' "
             "so unchecked TASKS.md rows are treated as pending work"
         )
 
@@ -603,83 +525,34 @@ class TestEnforceStopTasksMdUnchecked:
 
 
 # --------------------------------------------------------------------------- #
-# 3f. enforce-stop.ts — gateStatusIsRed + responseMentionsCiRed (BUGS.md #3)
+# 3f. enforce-stop.ts — gateStatusIsRed + CI integration (simplified)
 # --------------------------------------------------------------------------- #
-# BUGS.md structural fix #3: "Make the gate-status / CI integration visible to
-# the stop detector: if CI is RED, a 'done' response should ALWAYS be blocked
-# regardless of phrasing." Two signals: (a) .gate-status has FAIL lines, (b) the
-# response text mentions CI being red/failing. Both wire into hasPendingWork so
-# a red gate is treated as known-unfinished work and blocks any terminal-looking
-# response.
+# responseMentionsCiRed and CI_RED_PATTERNS were removed from the simplified
+# plugin. CI-red detection now uses ciIsPendingOrRed() + watchdog cache.
+# gateStatusIsRed is still present and wires into hasLocalWork in text.complete.
 class TestEnforceStopGateStatusCiRed:
-    """gateStatusIsRed and responseMentionsCiRed must exist and be wired in."""
+    """gateStatusIsRed must exist and be wired in. responseMentionsCiRed / CI_RED_PATTERNS removed."""
 
     def test_gate_status_is_red_function_exists(self):
         src = ENFORCE_STOP.read_text()
         assert "function gateStatusIsRed" in src, (
-            "gateStatusIsRed function missing from enforce-stop.ts — "
-            "BUGS.md structural fix #3 (gate-status CI red detection) was removed"
+            "gateStatusIsRed function missing from enforce-stop.ts"
         )
 
-    def test_response_mentions_ci_red_function_exists(self):
+    def test_response_mentions_ci_red_removed(self):
+        """responseMentionsCiRed was removed from the simplified plugin."""
         src = ENFORCE_STOP.read_text()
-        assert "function responseMentionsCiRed" in src, (
-            "responseMentionsCiRed function missing from enforce-stop.ts — "
-            "BUGS.md structural fix #3 (CI-red text detection) was removed"
+        assert "function responseMentionsCiRed" not in src, (
+            "responseMentionsCiRed should NOT be present — it was removed in "
+            "the simplified plugin (CI-red detection now uses ciIsPendingOrRed)"
         )
 
-    def test_ci_red_patterns_array_exists(self):
+    def test_ci_red_patterns_removed(self):
+        """CI_RED_PATTERNS was removed from the simplified plugin."""
         src = ENFORCE_STOP.read_text()
-        assert "CI_RED_PATTERNS" in src, (
-            "CI_RED_PATTERNS constant missing from enforce-stop.ts — "
-            "the CI-red text detection has no pattern list"
-        )
-
-    def _extract_ci_red_patterns_body(self) -> str:
-        src = ENFORCE_STOP.read_text()
-        m = re.search(
-            r"CI_RED_PATTERNS\s*:\s*RegExp\[\]\s*=\s*\[(.*?)\n\]",
-            src,
-            re.DOTALL,
-        )
-        assert m, (
-            "Could not extract CI_RED_PATTERNS array body — is the declaration "
-            "(CI_RED_PATTERNS: RegExp[] = [...]) intact?"
-        )
-        return m.group(1)
-
-    def test_ci_red_patterns_has_minimum_entries(self):
-        """CI_RED_PATTERNS must have >= 5 entries to cover common CI-red phrasings."""
-        body = self._extract_ci_red_patterns_body()
-        body_no_comments = "\n".join(
-            line for line in body.splitlines()
-            if not line.strip().startswith("//")
-        )
-        count = len(re.findall(r"/i\b", body_no_comments))
-        assert count >= 5, (
-            f"CI_RED_PATTERNS has only {count} entries — expected >= 5 "
-            "to cover common CI-red phrasings"
-        )
-
-    def test_ci_red_patterns_include_core_phrases(self):
-        """Must cover the canonical CI-red phrasings."""
-        body = self._extract_ci_red_patterns_body()
-        # The TS regex literals use \bCI\s+is\s+(?:red|failing|...) etc.
-        # Check for the core tokens that signal CI-red awareness.
-        required = ["CI", "red", "fail"]
-        missing = [s for s in required if s not in body]
-        assert not missing, (
-            f"CI_RED_PATTERNS missing core CI-red tokens: {missing}"
-        )
-
-    def test_response_mentions_ci_red_wired(self):
-        """responseMentionsCiRed must iterate CI_RED_PATTERNS via .some()."""
-        src = ENFORCE_STOP.read_text()
-        assert re.search(
-            r"CI_RED_PATTERNS\.some\s*\(\s*p\s*=>\s*p\.test\s*\(\s*text\s*\)\s*\)",
-            src,
-        ), (
-            "responseMentionsCiRed must call CI_RED_PATTERNS.some(p => p.test(text))"
+        assert "CI_RED_PATTERNS" not in src, (
+            "CI_RED_PATTERNS should NOT be present — it was removed in "
+            "the simplified plugin"
         )
 
     def test_gate_status_is_red_reads_gate_status_file(self):
@@ -725,17 +598,16 @@ class TestEnforceStopGateStatusCiRed:
             "trigger a false positive"
         )
 
-    def test_ci_red_wired_into_has_pending_work(self):
-        """hasPendingWork must OR ciRed (gateRed || responseMentionsCiRed) AND ciVerdictPendingOrRed."""
+    def test_gate_red_wired_into_has_local_work(self):
+        """hasLocalWork in text.complete must OR gateRed."""
         src = ENFORCE_STOP.read_text()
-        # ciRed variable declaration must combine both signals via cache
         assert re.search(
-            r"ciRed\s*=\s*gateRed\s*\|\|\s*responseMentionsCiRed\s*\(\s*turnState\.accumulatedText\s*\)",
+            r"hasLocalWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*gateRed",
             src,
         ), (
-            "ciRed must be declared as "
-            "'gateRed || responseMentionsCiRed(turnState.accumulatedText)' "
-            "where gateRed = cache?.gateStatusRed ?? gateStatusIsRed()"
+            "hasLocalWork in text.complete must be "
+            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed' "
+            "so gate RED triggers the state-based block"
         )
         # ciVerdictPendingOrRed must call ciIsPendingOrRed()
         assert re.search(
@@ -743,41 +615,15 @@ class TestEnforceStopGateStatusCiRed:
             src,
         ), (
             "ciVerdictPendingOrRed must be declared as ciIsPendingOrRed() — "
-            "the CI verdict query (Deficiency A+B)"
-        )
-        # hasPendingWork must OR both ciRed and ciVerdictPendingOrRed
-        assert re.search(
-            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*ciRed\s*\|\|\s*ciVerdictPendingOrRed",
-            src,
-        ), (
-            "hasPendingWork must be "
-            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed' "
-            "so CI verdict (pending/red) triggers the block"
-        )
-
-    def test_state_block_shows_ci_red_line(self):
-        """The state-based block response must include CI-red status when CI is red."""
-        src = ENFORCE_STOP.read_text()
-        assert "gate-status red:" in src, (
-            "State-based block response must include 'gate-status red: yes/no' "
-            "when CI is red"
-        )
-
-    def test_pending_work_audit_block_shows_ci_red_line(self):
-        """The pending-work audit block response was removed — verify only one block remains."""
-        src = ENFORCE_STOP.read_text()
-        occurrences = src.count("gate-status red:")
-        assert occurrences >= 1, (
-            f"'gate-status red:' appears {occurrences} times — expected >= 1 "
-            "(once in state-based block)"
+            "the CI verdict query"
         )
 
 
 # --------------------------------------------------------------------------- #
-# 3e. enforce-stop.ts — CI-is-pending-or-red (Deficiencies A+B+C+D)
+# 3e. enforce-stop.ts — CI-is-pending-or-red (Deficiencies A+B)
 # --------------------------------------------------------------------------- #
 class TestEnforceStopCiPendingOrRed:
-    """CI verdict query and responseLooksTerminal coverage for Deficiencies A-D."""
+    """CI verdict query and COMPLETION_VERBATIM coverage for Deficiencies A-D."""
 
     def test_ci_is_pending_or_red_function_exists(self):
         src = ENFORCE_STOP.read_text()
@@ -789,15 +635,14 @@ class TestEnforceStopCiPendingOrRed:
             r"function\s+ciIsPendingOrRed\b",
             src,
         ), "ciIsPendingOrRed function must be declared in enforce-stop.ts"
-        assert re.search(r"execSync.*make\s+ci-verdict", src, re.DOTALL), (
-            "ciIsPendingOrRed must use execSync with 'make ci-verdict' "
-            "to query CI status"
+        # Current implementation reads from watchdog cache and shared state;
+        # no longer shells out via execSync for ci-verdict.
+        assert re.search(r"gludd-watchdog-ci\.json", src), (
+            "ciIsPendingOrRed must read from watchdog CI cache "
+            "(/tmp/gludd-watchdog-ci.json)"
         )
         assert "60_000" in src, (
             "ciIsPendingOrRed must use 60_000 as the cache TTL (1 minute)"
-        )
-        assert re.search(r"CI\s+GREEN", src), (
-            "ciIsPendingOrRed must check for 'CI GREEN:' pattern in the output"
         )
 
     def test_ci_is_pending_or_red_has_cache(self):
@@ -814,29 +659,25 @@ class TestEnforceStopCiPendingOrRed:
             "'ciVerdictCache && (now - ciVerdictCache.ts) < 60_000'"
         )
 
-    def test_response_looks_terminal_detects_session_summary(self):
-        """responseLooksTerminal must detect session summary patterns."""
+    def test_completion_verbatim_detects_session_summary(self):
+        """COMPLETION_VERBATIM must detect session summary / completion phrases."""
         src = ENFORCE_STOP.read_text()
-        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
-        assert m, "could not extract responseLooksTerminal body"
+        m = re.search(r"const COMPLETION_VERBATIM\s*=\s*/\s*\^?(.*?)\^?\s*\/im", src, re.DOTALL)
+        assert m, "could not extract COMPLETION_VERBATIM body"
         body = m.group(1)
-        assert "session" in body and "summary" in body, (
-            "responseLooksTerminal must detect 'session summary' patterns "
-            "(Deficiency C)"
+        assert len(body) > 30, (
+            f"COMPLETION_VERBATIM is too short ({len(body)} chars) — expected "
+            "comprehensive completion-phrase coverage"
+        )
+        assert "session" in body or "summary" in body or "complete" in body, (
+            "COMPLETION_VERBATIM must detect completion phrases"
         )
 
-    def test_response_looks_terminal_detects_bold_bullet_combo(self):
-        """boldHeaders and bulletPoints were removed from responseLooksTerminal."""
+    def test_text_complete_does_not_use_bold_headers(self):
+        """boldHeaders was removed from the simplified plugin."""
         src = ENFORCE_STOP.read_text()
-        m = re.search(
-            r"function responseLooksTerminal\(.*?\{(.*?)^\}",
-            src,
-            re.DOTALL | re.MULTILINE,
-        )
-        assert m, "could not extract responseLooksTerminal body"
-        body = m.group(1)
-        assert "boldHeaders" not in body, (
-            "responseLooksTerminal must NOT have boldHeaders — it was removed"
+        assert "boldHeaders" not in src, (
+            "boldHeaders must NOT be present — was removed from the simplified plugin"
         )
 
     def test_ci_pending_wired_into_has_pending_work(self):
@@ -1052,43 +893,48 @@ class TestEnforceFloorHardDenyMutating:
             "session where the work is genuinely done"
         )
 
-    def test_floor_plugin_default_on(self):
-        """The FLOOR_ENFORCE flag must default ON via `!== "0"` (not `=== "1"`).
+    def test_floor_plugin_unconditional_enforcement(self):
+        """FLOOR_ENFORCE is now unconditionally `true` (not env-var gated).
 
-        The recurring incident was the agent grinding inline with the floor
-        breached because enforcement was opt-in (`=== "1"`, default OFF). The
-        fix is default-ON polarity: any value other than the literal string
-        "0" keeps enforcement active. This test pins the polarity so a future
-        edit cannot silently revert to opt-in.
+        Previous bug (2026-07-05): `process.env.GLUDD_FLOOR_ENFORCE !== "0"` was
+        default-ON but .claude/settings.json explicitly set GLUDD_FLOOR_ENFORCE=0,
+        silently disabling the guardrail for ALL sessions. Now unconditionally true
+        — the only way to disable is to edit enforce-floor.ts directly.
         """
         src = ENFORCE_FLOOR.read_text()
-        # The load-bearing line: const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
+        # The load-bearing line: const FLOOR_ENFORCE = true
         m = re.search(
-            r"FLOOR_ENFORCE\s*=\s*process\.env\.GLUDD_FLOOR_ENFORCE\s*!==\s*[\"']0[\"']",
+            r"const\s+FLOOR_ENFORCE\s*=\s*true",
             src,
         )
         assert m, (
-            "FLOOR_ENFORCE must be `process.env.GLUDD_FLOOR_ENFORCE !== \"0\"` "
-            "(default ON). Found either opt-in polarity (=== \"1\", which "
-            "defaults OFF — the bug) or the constant was renamed/removed. "
-            "The default-on polarity is the fix for the recurring "
-            "'agent grinds inline despite the floor plugin' complaint."
+            "FLOOR_ENFORCE must be `const FLOOR_ENFORCE = true` (unconditional). "
+            "The env-var-gated !== \"0\" polarity was silently disabled by "
+            ".claude/settings.json setting GLUDD_FLOOR_ENFORCE=0."
         )
-        # Negative assertion: must NOT use the opt-in polarity.
+        # The env var may appear in comments documenting the history (the fix
+        # comment explains why it was changed), but the CODE line must be
+        # unconditional `true`, not an env-var read. Only check non-comment lines.
+        non_comment_lines = [
+            line for line in src.splitlines()
+            if not line.strip().startswith("//") and line.strip() != ""
+        ]
+        non_comment_src = "\n".join(non_comment_lines)
         assert not re.search(
-            r"FLOOR_ENFORCE\s*=\s*process\.env\.GLUDD_FLOOR_ENFORCE\s*===\s*[\"']1[\"']",
-            src,
+            r"process\.env\.GLUDD_FLOOR_ENFORCE",
+            non_comment_src,
         ), (
-            "FLOOR_ENFORCE uses opt-in polarity (=== \"1\") — that defaults OFF "
-            "and is the exact bug this test pins against. Revert to !== \"0\"."
+            "FLOOR_ENFORCE must NOT reference process.env.GLUDD_FLOOR_ENFORCE in "
+            "executable code — env-var gating was the gap."
         )
 
-    def test_floor_plugin_deny_message_loads_spec_phrases(self):
-        """The deny message must carry the user-mandated instruction phrases
-        so the agent gets actionable guidance when blocked."""
+    def test_floor_plugin_deny_message_no_env_escape_hatch(self):
+        """The deny message must NOT reference GLUDD_FLOOR_ENFORCE=0 since
+        enforcement is now unconditional (`const FLOOR_ENFORCE = true`)."""
         src = ENFORCE_FLOOR.read_text()
-        assert "GLUDD_FLOOR_ENFORCE=0 to disable" in src, (
-            "Deny message must surface the GLUDD_FLOOR_ENFORCE=0 escape hatch"
+        assert "GLUDD_FLOOR_ENFORCE=0 to disable" not in src, (
+            "Deny message must NOT surface GLUDD_FLOOR_ENFORCE=0 — enforcement "
+            "is now unconditional (no env-var escape hatch)"
         )
 
     def test_floor_plugin_open_work_checks_todowrite(self):
@@ -1602,18 +1448,16 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
 
     def test_ceiling_deny_message_loads_spec_phrases(self):
         """The simplified plugin removed the separate ceiling-deny message.
-        The GLUDD_FLOOR_ENFORCE=0 disable switch is the relevant escape hatch;
-        accept it OR accept that the ceiling deny may not exist at all."""
+        Enforcement is now unconditional (const FLOOR_ENFORCE = true). Accept
+        permissionDecision deny or streak-based enforcement as evidence."""
         src = ENFORCE_FLOOR.read_text()
-        has_escape_hatch = "GLUDD_FLOOR_ENFORCE=0" in src
         has_permission_deny = re.search(
             r'permissionDecision:\s*"deny"', src,
         ) or re.search(r"permissionDecision:\s*'deny'", src)
         has_streak = "_streakCount" in src and "MAX_STREAK" in src
-        assert has_escape_hatch or has_permission_deny or has_streak, (
-            "Must surface either GLUDD_FLOOR_ENFORCE=0 as the disable switch, "
-            "a permissionDecision deny block, or streak-based enforcement — "
-            "any one is acceptable"
+        assert has_permission_deny or has_streak, (
+            "Must surface either a permissionDecision deny block or "
+            "streak-based enforcement — any one is acceptable"
         )
 
     def test_open_work_message_lists_tasks_md_bugs_md(self):

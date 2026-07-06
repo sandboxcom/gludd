@@ -21,7 +21,6 @@ EXPECTED_PLUGINS = [
     "enforce-stop.ts",
     "enforce-session-start.ts",
     "enforce-deadline.ts",
-    "enforce-false-done.ts",
 ]
 
 

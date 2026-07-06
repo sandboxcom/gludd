@@ -110,12 +110,6 @@
   register: _pa_stop_lines
   changed_when: false
 
-- name: Count enforce-false-done.ts lines
-  ansible.builtin.shell:
-    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-false-done.ts || echo 0"
-  register: _pa_false_done_lines
-  changed_when: false
-
 - name: Count enforce-floor.ts lines
   ansible.builtin.shell:
     cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-floor.ts || echo 0"
@@ -150,7 +144,6 @@
   ansible.builtin.set_fact:
     _pa_plugin_lines_make: "{{ _pa_make_lines.stdout | trim | int }}"
     _pa_plugin_lines_stop: "{{ _pa_stop_lines.stdout | trim | int }}"
-    _pa_plugin_lines_false_done: "{{ _pa_false_done_lines.stdout | trim | int }}"
     _pa_plugin_lines_floor: "{{ _pa_floor_lines.stdout | trim | int }}"
     _pa_plugin_lines_delegate: "{{ _pa_delegate_lines.stdout | trim | int }}"
     _pa_plugin_lines_todos: "{{ _pa_todos_lines.stdout | trim | int }}"
@@ -160,7 +153,7 @@
 - name: Compute total plugin lines
   ansible.builtin.set_fact:
     _pa_plugin_total_lines: >-
-      {{ _pa_plugin_lines_make + _pa_plugin_lines_stop + _pa_plugin_lines_false_done +
+      {{ _pa_plugin_lines_make + _pa_plugin_lines_stop +
          _pa_plugin_lines_floor + _pa_plugin_lines_delegate + _pa_plugin_lines_todos +
          _pa_plugin_lines_session_start + _pa_plugin_lines_deadline }}
 
@@ -170,12 +163,6 @@
   ansible.builtin.shell:
     cmd: "grep -cE '/\\b' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null || echo 0"
   register: _pa_no_wait_patterns
-  changed_when: false
-
-- name: Count CLAIM_PATTERNS entries in enforce-false-done.ts
-  ansible.builtin.shell:
-    cmd: "grep -cE '/\\b' {{ project_root }}/.opencode/plugin/enforce-false-done.ts 2>/dev/null || echo 0"
-  register: _pa_claim_patterns
   changed_when: false
 
 - name: Count COMPLETION_SOUNDING entries in enforce-make.ts
@@ -269,7 +256,6 @@
       |--------|-------|
       | enforce-make | {{ _pa_plugin_lines_make }} |
       | enforce-stop | {{ _pa_plugin_lines_stop }} |
-      | enforce-false-done | {{ _pa_plugin_lines_false_done }} |
       | enforce-floor | {{ _pa_plugin_lines_floor }} |
       | enforce-delegate | {{ _pa_plugin_lines_delegate }} |
       | enforce-todos | {{ _pa_plugin_lines_todos }} |

@@ -195,7 +195,8 @@ export default (async () => {
                 "",
               ].join("\n")
             : ""
-          return tasksNagText + SESSION_START_DIRECTIVE + "\n\n" + output
+          const directive = tasksNagText + SESSION_START_DIRECTIVE
+          return directive + "\n\n" + output
         }
         return output
       } catch {

@@ -141,7 +141,7 @@ function recordBlock(reason: string): void {
   else c.consecutiveBlocks = 1
   if (c.consecutiveBlocks >= 20) {
     c.disengageUntil = now + 120_000
-    console.warn("FALSE-POSITIVE CASCADE: disengaging for 2 min after 20 consecutive blocks")
+    console.error("FALSE-POSITIVE CASCADE: disengaging for 2 min after 20 consecutive blocks")
   }
   writeBlockCounter(c)
   try {
@@ -183,11 +183,9 @@ function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number, extraReaso
   ].join("\n")
 }
 
-// ── TERMINAL RESPONSE DETECTOR (Items 3-5: rewritten heuristics) ────────────
+// ── FALSE-DONE DETECTION PATTERNS ─────────────────────────────────────────
 
-const FUTURE_TENSE = /\b(will|going to|plan to|next|remaining|shall|upcoming|todo)\b/i
 const COMPLETION_VERBATIM = /\b(all done|everything\s+(?:is\s+)?(complete|done|finished)|all tasks?\s+(complete|done|finished)|all objectives?\s+(complete|done|finished)|ready for review|waiting for (your )?feedback|(this|now) is (truly )?done|work finished|no more items|nothing left|all objectives met|all goals achieved|wrapping up|finishing up|closing out|this concludes|in conclusion)\b/i
-const TOOL_CALL_INTENT = /\b(make git-|dispatch|subagent|gludd |pytest |uv run)\b/
 const DIRECT_FALSE_DONE_FLAGS = ["✅", "🗸"]
 const COMPLETION_HEADER_RE = /^##\s*(done|complete|summary|results)\s*$/im
 const STANDALONE_DONE_RE = /(^|\n)Done\.(?:\s|$)/g
@@ -195,37 +193,9 @@ const CHECKED_BOXES_RE = /^[-*]\s*\[x\]/im
 const UNCHECKED_BOXES_RE = /^[-*]\s*\[\s*\]/im
 const COMMIT_HASH_RE = /(?:commit|sha)\s*[:=]?\s*[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]/i
 
-// ── RESULT PROCESSING & DISPATCH TRACKING (Items 1-4) ──────────────────────
-
-const RESULT_PROCESSING = /\b(task\s+result|completed|passed|failed)\b|\d+\s+passed\b|commit\s+[0-9a-f]{7,}/
+// ── DISPATCH TRACKING ─────────────────────────────────────────────────────
 
 const DISPATCH_TOOLS = new Set(["task", "agent", "workflow"])
-
-function responseLooksTerminal(text: string): boolean {
-  if (!text || text.length < 30) return false
-
-  // Completion verbatim phrases — the strongest stop signal
-  if (COMPLETION_VERBATIM.test(text)) return true
-
-  // Item 4: checked boxes only flag if no future-tense verbs present
-  const checked = (text.match(/- \[[xX]\]/g) || []).length
-  const unchecked = (text.match(/- \[ \]/g) || []).length
-  if (checked >= 2 && unchecked === 0) return true
-
-  // Tables are terminal: any markdown table with completion signals or multiple rows
-  if (/\|[^\n|]+\|[^\n|]+\|/.test(text)) {
-    if (COMPLETION_VERBATIM.test(text)) return true
-    const tableChecked = [...text.matchAll(/\|[^|]*\[x\][^|]*\|/gi)]
-    if (tableChecked.length >= 2) return true
-    const tableRows = (text.match(/\|[^\n|]+\|[^\n|]+\|/g) || []).length
-    if (tableRows >= 3) return true
-  }
-
-  // "session summary" without future-tense
-  if (/session\s+summary/i.test(text) && !FUTURE_TENSE.test(text)) return true
-
-  return false
-}
 
 // ── STATE FUNCTIONS ────────────────────────────────────────────────────────
 
@@ -300,7 +270,7 @@ function repoHasPendingWork(mode?: "commit" | "push"): boolean {
   try {
     const { execSync } = require("node:child_process")
     const cwd = process.cwd()
-    if (mode !== "push") {
+    if (mode === undefined) {
       try {
         const unpushed = execSync("git log --oneline @{u}..HEAD", {
           cwd, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
@@ -369,7 +339,7 @@ function bugsMdHasOpenIncidents(): boolean {
     const openIncidents = content
       .split("\n")
       .filter(l => /^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(l))
-      .filter(l => !/\b(resolved|fixed|closed|wontfix|duplicate)\b/i.test(l))
+      .filter(l => !l.includes("(resolved)"))
     return openIncidents.length > 0
   } catch { return false }
 }
@@ -386,15 +356,16 @@ function computeHealthScore(): number {
 
 // ── PLUGIN ─────────────────────────────────────────────────────────────────
 
-export default (async ({ }) => {
-  // ALIVE side effect — proves plugin loaded and its hooks are registered
+function _reportAlive(): void {
   try {
     const alive: Record<string, any> = {}
     try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["enforce-stop"] = { loaded: new Date().toISOString(), ts: Date.now() }
+    alive["enforce-stop"] = { last_seen: Date.now() }
     fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
   } catch {}
+}
 
+export default (async ({ }) => {
   return {
     event: async ({ event }: { event: { type: string } }) => {
       if (event.type === "session.idle") {
@@ -445,6 +416,7 @@ export default (async ({ }) => {
     },
 
     "tool.execute.before": async (input: any, output: any) => {
+      _reportAlive()
       try {
         // Increment tool counter — proves tool.execute.before fires
         try {
@@ -549,6 +521,7 @@ export default (async ({ }) => {
         }
       } catch (e: any) {
         if (e instanceof Error && (e.message.includes("BLOCKED") || e.message.includes("BLOCKING"))) throw e
+        console.error("[enforce-stop] tool.execute.before error (fail-open):", e)
       }
       // Tool passed through — increment allowed counter
       try {

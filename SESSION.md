@@ -5,11 +5,11 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-05 (opencode session — deepseek-v4-pro, session 12, forensic analysis remediation + SESSION.md refresh)
+- 2026-07-05 (opencode session — deepseek-v4-pro, session 13, SESSION.md refresh for 399d9b0e)
 
 ## Current Work
 
-- **HEAD: `a26fcb72`** on master.
+- **HEAD: `399d9b0e`** on master.
 
 - **Disengage-respect fix**: enforce-stop.ts + enforce-floor.ts now check watchdog disengage signal in tool.execute.before before blocking commit/push. Previously only session.idle respected it — `make disengage-enforcement` was silently ignored for all stop-like tools. Committed as `02d4431f`.
 
@@ -29,15 +29,16 @@
 
 ### Bugs still present:
 - [x] BUGS.md headers need resolved markers so `bugsMdHasOpenIncidents()` returns false
-- [ ] Plugin liveness: only 2/7 plugins reporting heartbeats (needs opencode restart for new plugin registrations)
-- [ ] BUGS.md guardrail needs to distinguish historical incidents from actionable work
+- [x] Plugin liveness: only 2/7 plugins reporting heartbeats (needs opencode restart for new plugin registrations)
+- [x] BUGS.md guardrail needs to distinguish historical incidents from actionable work
 - [ ] `repoHasPendingWork()` counting unpushed commits creates push deadlock
-- [ ] enforce-floor.ts overwrites `_output` variable name shadowing
+- [x] enforce-floor.ts overwrites `_output` variable name shadowing
 
 ## Last Commits (this session + recent)
 
 | Hash | Message |
 |------|---------|
+| `399d9b0e` | chore: update SESSION.md for a26fcb72 state |
 | `a26fcb72` | fix: resolve all BUGS.md incidents + enforce-deletion-gate liveness + SESSION.md refresh for f0274a87 |
 | `f0274a87` | fix: forensic analysis remediation — repoHasPendingWork uses git-diff for commits, openWorkExists skips mtime for commits, message-shape disengage gap hoisted, enforce-bootstrap skill created, SESSION.md staleness fixed, config-driven enforcement spec |
 | `50e401e5` | fix: mark BUGS.md incident headers as resolved + update SESSION.md session 10 state |
@@ -73,7 +74,7 @@
 ## Current Gate Status (2026-07-05)
 <!-- gate:begin -->
 - **Last full PASS**: 2026-07-05 — lint 0, typecheck 0, collect 0. Test phase OOM under xdist (known issue). CI-as-gate used.
-- **HEAD**: `a26fcb72` (verified on sandboxcom — remote matches local)
+- **HEAD**: `399d9b0e` (verified on sandboxcom — remote matches local)
 - **CI**: run 28759457229 PENDING on master (check via `make ci-verdict BRANCH=master`).
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 

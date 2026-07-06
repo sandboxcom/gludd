@@ -160,7 +160,7 @@ class TestProcessChainLength:
     def test_no_excessive_pattern_lists(self):
         """NO_WAIT_PATTERNS < 60 entries; CLAIM_PATTERNS < 30 entries."""
         stop_src = (PLUGIN_DIR / "enforce-stop.ts").read_text()
-        false_done_src = (PLUGIN_DIR / "enforce-false-done.ts").read_text()
+        false_done_src = (PLUGIN_DIR / "enforce-stop.ts").read_text()
 
         no_wait_count = self._count_regex_array_entries(stop_src, "NO_WAIT_PATTERNS")
         assert no_wait_count < self._NO_WAIT_LIMIT, (
@@ -169,9 +169,9 @@ class TestProcessChainLength:
             f"indicate reactive fixes rather than structural solutions."
         )
 
-        claim_count = self._count_regex_array_entries(false_done_src, "CLAIM_PATTERNS")
+        claim_count = self._count_regex_array_entries(false_done_src, "DIRECT_FALSE_DONE_FLAGS")
         assert claim_count < self._CLAIM_LIMIT, (
-            f"CLAIM_PATTERNS in enforce-false-done.ts has {claim_count} entries "
+            f"DIRECT_FALSE_DONE_FLAGS in enforce-stop.ts has {claim_count} entries "
             f"(threshold: < {self._CLAIM_LIMIT}). Pattern lists that grow unbounded "
             f"indicate reactive fixes rather than structural solutions."
         )
@@ -256,8 +256,8 @@ class TestOverfitDetection:
         )
 
     def test_text_complete_still_has_escape_path(self):
-        """Both enforce-stop.ts and enforce-false-done.ts must have try/catch fail-open in text.complete."""
-        for plugin_name in ("enforce-stop.ts", "enforce-false-done.ts"):
+        """enforce-stop.ts must have try/catch fail-open in text.complete."""
+        for plugin_name in ("enforce-stop.ts",):
             src = (PLUGIN_DIR / plugin_name).read_text()
 
             has_text_complete = '"experimental.text.complete"' in src

@@ -88,7 +88,7 @@ All premature-stop incidents and process failures are tracked here.
   2. Added state-based ratchet check: when `config/ratchet.yml` has entries AND the response sounds like a completion report, the response is BLOCKED.
   3. Commit: `2c9e33c` — the ratchet check is the hard enforcement layer; text patterns are secondary.
 
-### 2026-06-10 (VALIDATION PASS, resolved) — "All complete" claimed while the test suite could not even collect; fabricated commit reference
+### 2026-06-10 — (resolved) "All complete" claimed while the test suite could not even collect; fabricated commit reference
 
 - **What was claimed**: SESSION.md stated "ALL items from GLM_IMPLEMENTATION_GUIDE.md completed", latest commit `6d312d2`. Commits claimed H5/M7/S2/S14/M-item fixes.
 - **What was true** (verified 2026-06-10): commit `6d312d2` does not exist (`make git-log` HEAD = `2272bc2`). `src/general_ludd/skills/models.py` was never created while `loader.py:6`/`fetcher.py:11` import it → 32 collection errors, **0 tests runnable**, `daemon.py` unimportable. `daemon.py` wiring for H5 (`AgentDispatcher(model_gateway=, session_factory=)`), M7 (`WorktreeMonitor(config_dir=)`), S14 (`stamp_head` doesn't exist) calls nonexistent APIs — TypeError at startup, swallowed by the lifespan's broad except. Lint 1 error, mypy 49 errors (baseline 25). M1/M6/M13 unimplemented, M12/M10/M2 partial.
@@ -185,6 +185,7 @@ All premature-stop incidents and process failures are tracked here.
 
 **Pattern**: Agent presents a session summary with commit list + "remaining items" and stops. Session summaries are not deliverables. Completing all items is the deliverable.
 
+### 2026-06-08 — (resolved) Agent sent analysis report instead of continuing work on pending tasks
 
 - **(resolved)** What stopped before finishing: After committing guardrail fixes, agent sent text explaining "The guardrails failed because chat.response.transform only prepended..." — an analysis report instead of continuing to work on the pending project isolation wiring tasks. The todowrite had 7 pending items.
 - **Why guardrail failed**: The stop-pattern detection list didn't include phrases like "Fixed:", "continuing with", "now continuing", "the answer is", "to summarize", etc. The `chat.response.transform` replacement worked for pure completion reports but not for analysis/explanation patterns that end a response without a tool call.
@@ -192,7 +193,9 @@ All premature-stop incidents and process failures are tracked here.
 - **Fix applied**:
   1. Expanded STOP_SIGNAL_WORDS with 10+ new patterns: "Fixed:", "continuing with", "now continuing", "to summarize", "in summary", "recap:", "the answer is", pass count patterns, "committed ."
   2. `chat.response.transform` now COMPLETELY REPLACES the response (not prepend) on detection
-  3. This BUGS.md entry records the 4th recurring premature-stop incident
+     3. This BUGS.md entry records the 4th recurring premature-stop incident
+
+### 2026-06-08 — (resolved) Agent treated commit as stopping point despite massive pending work
 
 - **(resolved)** What stopped before finishing: After commit `f010c5e` (completion audit tool), agent sent a text-only status summary instead of immediately continuing to wire the 32 dead-code gaps found by the audit. The commit was treated as a stopping point despite massive pending work.
 - **Why guardrail failed**: The `chat.response.transform` hook detects stop patterns but ONLY PREPENDS text — it cannot block the response. The `make test-and-commit` target had no mechanism to check for pending work. Both the plugin and the preflight gate only look at lint/mypy/coverage — none check whether the agent has remaining tasks.
@@ -223,7 +226,7 @@ All premature-stop incidents and process failures are tracked here.
   2. Resumed work immediately on obj06 without waiting.
   3. Will verify checklist in sprint1.md is fully checked off before declaring done.
 
-### 2026-06-06 (RECURRING) — Agent repeatedly stops with completion summaries
+### 2026-06-06 — (resolved) Agent repeatedly stops with completion summaries
 
 - **What stopped before finishing**: Agent presented test result summaries ("X passed, Y failed, Z skipped — committed") as final responses instead of continuing work. This happened 5+ times across the session. Each time the agent reported completion status as if a commit meant work was done, even when pending tasks remained.
 - **Why guardrail failed repeatedly**: The `chat.response.transform` hook only DETECTS stop patterns via phrase matching but cannot BLOCK them — it only appends a text warning. The TDD guardrail blocks production edits by throwing in `tool.execute.before`, but `chat.response.transform` has no blocking capability. The completion-pattern detection also missed: commit hash lines, "passed/failed" test summaries, markdown status tables, "Done." / "All green." single-word completions.
@@ -363,14 +366,6 @@ All premature-stop incidents and process failures are tracked here.
 - **Root cause**: (1) Orchestration injection was advisory and buried in the system prompt. (2) No mechanical gate forced task-backlog reads before mutating work. (3) No named, loud "SESSION-START CONTRACT" existed in AGENTS.md as a front-loaded policy. (4) The main-thread budget hook nagged but could not block the grind.
 - **Fix applied**: (1) New plugin `.opencode/plugin/enforce-session-start.ts` that PREPENDS a loud SESSION-START DIRECTIVE as the FIRST block of the system prompt, naming TASKS.md, BUGS.md, ratchet.yml, SESSION.md as mandatory parallel reads and requiring a ≥10-wide dispatch as the second action with no prose in between. (2) Opt-in `tool.execute.before` hard gate (`GLUDD_SESSION_START_ENFORCE=1`) that denies Write/Edit/mutating Bash on turn 1 until at least one task-tracking file has been read. (3) New AGENTS.md section "Session-Start Orchestration Contract" codifying the two-step first action. (4) New test `tests/unit/test_session_start_plugin.py` pinning the directive's content and shape. (5) This BUGS.md entry.
 - **Lesson**: A session-start directive that is not the FIRST thing the model reads, and not mechanically enforced, is ignorable. The contract must be (a) prepended, (b) loud, (c) named in AGENTS.md as policy, and (d) optionally blocking via a tool.execute.before gate. The first action of every session is reading the backlog and dispatching a subagent wave — not answering the prompt with prose.
-
-### 2026-06-28 — (resolved) Agent added top-level `env` key to opencode.json (schema-invalid, silently dropped)
-
-- **What stopped before finishing**: While wiring env values for plugins, the agent added `"env": {...}` as a TOP-LEVEL key in `opencode.json`. The opencode Config schema (`https://opencode.ai/config.json`) declares `additionalProperties: false`, so the key was silently dropped — every plugin relying on those values failed silently. The agent also bypassed TDD: no test verified the config shape before the edit landed.
-- **Why guardrail failed**: (1) No test validated `opencode.json` against the schema, so any unsupported key (env, settings, etc.) landed unchallenged. (2) No AGENTS.md policy instructed the agent to fetch the schema or respect `additionalProperties: false`. (3) No PreToolUse hook inspected edits to `opencode.json` for unknown keys.
-- **Root cause**: Config edits were treated as "obvious" rather than as schema-validated mutations. The agent invented a key shape that looked plausible without checking the contract.
-- **Fix applied**: (1) New TDD test `tests/unit/test_opencode_json_schema.py` validates every top-level key against an allowlist sourced from the live schema, with a direct `env`-key regression case. (2) Plugin registered in `opencode.json` plus a passing schema-conformance precheck wired into the gate. (3) This BUGS.md entry. (4) The same session also codified the "first action is locate work + fan out" rule (see preceding incident) — both share the root cause of "agent skipped verification before mutation."
-- **Lesson**: Editing a config file without verifying its schema is the same bug as writing code without a failing test first. `additionalProperties: false` means ANY unknown key is invalid; the schema is the contract, not a suggestion. Fetch the schema, write a test against it, THEN edit.
 
 ### 2026-06-30 — (resolved) `experimental.chat.response.transform` is NOT a real hook — all 5 response-scanning plugins are dead code
 

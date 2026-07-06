@@ -256,44 +256,35 @@ class TestNonReleaseClaimWithGeneralEvidence:
 
 
 class TestPluginSourceInSync:
-    """The plugin's TS release-claim and release-evidence regex lists
-    MUST stay in sync with this test's Python port."""
+    """The merged enforce-stop.ts contains the false-done guardrail constants
+    (COMPLETION_VERBATIM, DIRECT_FALSE_DONE_FLAGS, etc.).
+    These MUST stay in sync with this test's Python port."""
 
     def _src(self):
-        plugin = ROOT / ".opencode" / "plugin" / "enforce-false-done.ts"
+        plugin = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
         return plugin.read_text()
 
-    def test_release_claim_patterns_exist(self):
+    def test_completion_verbatim_exists(self):
         src = self._src()
-        for needle in ["shipped", "released", "deployed"]:
-            assert needle in src, (
-                f"RELEASE_CLAIM pattern `{needle}` is missing from the plugin source."
-            )
+        assert "COMPLETION_VERBATIM" in src, (
+            "COMPLETION_VERBATIM must be defined in enforce-stop.ts (merged false-done guardrail)."
+        )
 
-    def test_release_evidence_patterns_exist(self):
+    def test_false_done_blocks_file_exists(self):
         src = self._src()
-        for needle in [
-            "VERIFIED",
-            "verify-release-artifact",
-            "ARTIFACT",
-            "CHECK:\\s*PASS",
-            "gh release view",
-        ]:
-            assert needle in src, (
-                f"RELEASE_EVIDENCE pattern `{needle}` is missing from the plugin source."
-            )
+        assert "FALSE_DONE_BLOCKS_FILE" in src, (
+            "FALSE_DONE_BLOCKS_FILE must be defined in enforce-stop.ts."
+        )
 
-    def test_release_gate_in_classify(self):
+    def test_commit_hash_re_exists(self):
         src = self._src()
-        assert "RELEASE_CLAIM_PATTERNS" in src, (
-            "RELEASE_CLAIM_PATTERNS must be defined in the plugin source."
+        assert "COMMIT_HASH_RE" in src, (
+            "COMMIT_HASH_RE (commit evidence pattern) must be defined in enforce-stop.ts."
         )
-        assert "RELEASE_EVIDENCE_PATTERNS" in src, (
-            "RELEASE_EVIDENCE_PATTERNS must be defined in the plugin source."
-        )
-        assert "hasReleaseClaim" in src, (
-            "The classify() function must contain the release-claim gating logic."
-        )
-        assert "hasReleaseEvidence" in src, (
-            "The classify() function must check for release-specific evidence."
+
+    def test_log_false_done_block_exists(self):
+        src = self._src()
+        assert "logFalseDoneBlock" in src, (
+            "logFalseDoneBlock function must be defined in enforce-stop.ts "
+            "for auditing blocked false-done claims."
         )

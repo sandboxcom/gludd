@@ -339,17 +339,19 @@ function _buildDispatchCommands(): DispatchCommand[] {
 
 const floorTurnState: { accumulatedText: string } = { accumulatedText: "" }
 
-export default (async ({ }) => {
-  // ALIVE side effect — proves plugin loaded and its hooks are registered
+function _reportAlive(): void {
   try {
     const alive: Record<string, any> = {}
     try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["enforce-floor"] = { loaded: new Date().toISOString(), ts: Date.now() }
+    alive["enforce-floor"] = { last_seen: Date.now() }
     fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
   } catch {}
+}
 
+export default (async ({ }) => {
   return {
-    "tool.execute.before": async (input: { tool?: string }, _output: unknown) => {
+    "tool.execute.before": async (input: { tool?: string }, output: unknown) => {
+      _reportAlive()
       try {
         if (!FLOOR_ENFORCE) return
         const tool = (input?.tool ?? "") as string
@@ -379,7 +381,7 @@ export default (async ({ }) => {
         // Task tool instead.
         let commitToolMode = false
         if (tool === "bash") {
-          const outArgs = (_output as Record<string, unknown> | undefined)?.args as { command?: string } | undefined
+          const outArgs = (output as Record<string, unknown> | undefined)?.args as { command?: string } | undefined
           const cmd = typeof outArgs?.command === "string" ? outArgs.command.trim() : ""
           commitToolMode = isCommitBashCommand(cmd)
           if (COMPULSIVE_CHECK_RE.test(cmd) && openWorkExists()) {

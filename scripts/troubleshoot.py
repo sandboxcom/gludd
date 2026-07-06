@@ -57,7 +57,6 @@ _ENFORCEMENT_PLUGINS = [
     "enforce-delegate.ts",
     "enforce-stop.ts",
     "enforce-todos.ts",
-    "enforce-false-done.ts",
     "enforce-session-start.ts",
     "enforce-deadline.ts",
     "enforce-deletion-gate.ts",

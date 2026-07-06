@@ -26,6 +26,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-branch git-checkout git-merge git-staged \
         repo-status repo-diff repo-staged repo-log \
 		feature-start feature-done test-and-commit preflight \
+		git-commit-no-verify git-amend-msg \
 		molecule-version molecule-test molecule-test-all \
 		collection-roles collection-modules molecule-scenarios \
 		container-build container-run container-push \
@@ -104,7 +105,7 @@ help:
 	@echo "  scan-secrets-baseline Create/update detect-secrets baseline"
 	@echo "  clean-untracked       Remove reinvention-of-wheel files"
 	@echo "  clean-hooks           Remove legacy hook scripts"
-	@echo "  clean-plugins         Empty enforce-false-done.ts plugin"
+	@echo "  clean-plugins         No-op (false-done merged into enforce-stop.ts)"
 	@echo ""
 	@echo "  --- Build + Deploy ---"
 	@echo "  dist                  Build distribution tarball"
@@ -750,8 +751,9 @@ git-resolve-ours:
 repo-add-all:
 	@git add -A
 
-commit-bootstrap:
+commit-bootstrap: _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-bootstrap MSG='message'"; exit 1; fi
+	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
 # Commit staged changes using a message FILE (avoids shell quoting of multi-line
@@ -852,7 +854,7 @@ clean-hooks:
 	@echo "Legacy hooks removed"
 
 clean-plugins:
-	printf '' > .opencode/plugin/enforce-false-done.ts 2>&1
+	@echo "No plugin clean operations needed"
 
 clean-untracked:
 	@rm -f scripts/scan-secrets.py
@@ -1450,32 +1452,10 @@ dist-path-check:
 	HITS=$$(grep -rIl -e '/Users/' -e 'Mac.localdomain' $$DIRS 2>/dev/null || true); \
 	if [ -n "$$HITS" ]; then echo "LEAKED LOCAL PATHS in tarball:"; echo "$$HITS"; exit 1; else echo "Tarball dir(s) path-clean."; fi
 
-git-commit:
-	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
-	@echo "Running pre-commit collection check..."
-	@$(MAKE) --no-print-directory collect-check
-	@echo "Collection OK. Checking gate status..."
-	@if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi
-	@for check in lint typecheck collect test smoke; do \
-		if ! grep -q "^$${check} PASS" .gate-status; then \
-			echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
-		fi; \
-	done
-	@EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
-	NOW=$$(date +%s); \
-	AGE=$$((NOW - EPOCH)); \
-	if [ $$AGE -gt 1800 ]; then \
-		echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
-	fi
-	@echo "Gate fresh and green. Committing..."
-	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
-
-commit-no-verify:
-	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
+# Internal: verify .gate-status is fresh (le 30 min) and green (all phases PASS).
+# Skips the check when GLUDD_CI_IS_GATE=1 (escape hatch for CI-as-gate).
+_gate-fresh-check:
 	@if [ "$(GLUDD_CI_IS_GATE)" != "1" ]; then \
-		echo "Running pre-commit collection check..."; \
-		$(MAKE) --no-print-directory collect-check; \
-		echo "Collection OK. Checking gate status..."; \
 		if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi; \
 		for check in lint typecheck collect test smoke; do \
 			if ! grep -q "^$${check} PASS" .gate-status; then \
@@ -1491,7 +1471,34 @@ commit-no-verify:
 	else \
 		echo "CI-is-gate mode: skipping local gate check."; \
 	fi
+
+git-commit: _gate-fresh-check
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
+	@echo "Running pre-commit collection check..."
+	@$(MAKE) --no-print-directory collect-check
+	@echo "Gate fresh and green. Committing..."
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
+
+commit-no-verify: _gate-fresh-check
+	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
+	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
+
+# git-commit-no-verify: commit without pre-commit hook stash, enforcing gate check.
+# GLUDD_CI_IS_GATE=1 is the documented escape hatch for CI-as-gate (skips the
+# local gate check). Default behaviour: gate check runs. The escape hatch is
+# opt-in, never the default.
+git-commit-no-verify: _gate-fresh-check
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-no-verify MSG='message'"; exit 1; fi
+	@$(MAKE) --no-print-directory collect-check
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
+
+# git-amend-msg: amend the last commit message (--amend --no-edit equivalent),
+# enforcing gate check. Cannot bypass the gate via --amend.
+git-amend-msg: _gate-fresh-check
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-amend-msg MSG='message'"; exit 1; fi
+	@$(MAKE) --no-print-directory collect-check
+	@git commit --amend --no-verify -m "$(MSG)"
 
 repo-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi

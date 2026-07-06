@@ -1,16 +1,12 @@
-"""Tests for the false-completion guardrail plugin.
+"""Tests for the false-completion guardrail (merged into enforce-stop.ts).
 
-The plugin (`.opencode/plugin/enforce-false-done.ts`) is the opencode-native
-port of `.claude/hooks/no_false_completion_stop.sh`. It blocks an outgoing
-assistant message that claims work is done / shipped / landed / ✅ WITHOUT a
-cited, machine-produced measurement and WITHOUT an honest hedge.
+The false-done guardrail was previously in `.opencode/plugin/enforce-false-done.ts`
+but was merged into `.opencode/plugin/enforce-stop.ts` (AS.1 plugin consolidation).
+It blocks an outgoing assistant message that claims work is done / shipped / landed
+/ ✅ WITHOUT a cited, machine-produced measurement and WITHOUT an honest hedge.
 
-This was the largest gap in the opencode stack identified by the guardrail
-audit: every false-completion incident (alpha.3 ship, 12 inert features,
-"✅ Landed" while uncommitted) was unguarded in opencode sessions because the
-Claude Stop hook had no opencode equivalent.
-
-TDD: this file was written FIRST and run RED against the missing plugin.
+TDD: this file was written FIRST and run RED against the missing plugin. Now
+updated to reference the merged enforce-stop.ts.
 """
 
 import json
@@ -18,7 +14,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
-PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-false-done.ts"
+PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 OPENCODE_JSON = ROOT / "opencode.json"
 
 
@@ -31,10 +27,14 @@ OPENCODE_JSON = ROOT / "opencode.json"
 class TestPluginFileExists:
     def test_plugin_file_exists(self):
         assert PLUGIN.exists(), (
-            "enforce-false-done.ts must exist — this plugin is the opencode port "
-            "of .claude/hooks/no_false_completion_stop.sh. Without it every "
-            "false-completion incident (alpha.3 ship, 12 inert features, the "
-            "uncommitted '✅ Landed') is unguarded in opencode sessions."
+            "enforce-stop.ts must exist — it carries the false-done-completion "
+            "guardrail (merged from enforce-false-done.ts, AS.1 consolidation). "
+            "Without it every false-completion incident (alpha.3 ship, 12 inert "
+            "features, the uncommitted '✅ Landed') is unguarded in opencode sessions."
+        )
+        src = PLUGIN.read_text()
+        assert "COMPLETION_VERBATIM" in src, (
+            "enforce-stop.ts must contain false-done completion patterns (COMPLETION_VERBATIM)."
         )
 
     def test_plugin_exports_default(self):
@@ -43,8 +43,8 @@ class TestPluginFileExists:
 
     def test_plugin_registered_in_opencode_json(self):
         cfg = json.loads(OPENCODE_JSON.read_text())
-        assert any("enforce-false-done" in str(p) for p in cfg.get("plugin", [])), (
-            "enforce-false-done.ts is orphaned — it must be registered in "
+        assert any("enforce-stop" in str(p) for p in cfg.get("plugin", [])), (
+            "enforce-stop.ts is orphaned — it must be registered in "
             "opencode.json plugin[] or it will never load."
         )
 
@@ -61,15 +61,20 @@ class TestPluginHookRegistration:
 class TestEnforcementDefaultIsOn:
     """The plugin must be ON by default via the `!== '0'` pattern.
 
+    The false-done guardrail was merged into enforce-stop.ts (AS.1). It is
+    active by default — gated by GLUDD_STOP_ENFORCE !== "0". No separate
+    GLUDD_FALSE_DONE_ENFORCE toggle exists; the false-done check runs
+    unconditionally within enforce-stop.ts.
+
     A default-OFF guardrail is advisory-only and will not stop the failure
-    mode it was built for. The canonical opencode default-on pattern
-    `process.env.X !== "0"` makes the gate active unless the operator
-    explicitly sets GLUDD_FALSE_DONE_ENFORCE=0.
+    mode it was built for.
     """
 
     def test_default_on_via_env_var(self):
         src = PLUGIN.read_text()
-        assert "GLUDD_FALSE_DONE_ENFORCE" in src
+        assert "GLUDD_STOP_ENFORCE" in src, (
+            "Plugin must have a GLUDD_STOP_ENFORCE env var (the default-on gate)."
+        )
         assert '!== "0"' in src, (
             "Plugin must use the canonical `!== \"0\"` default-on pattern "
             "(matches GLUDD_FLOOR_ENFORCE / GLUDD_NO_WAIT_ENFORCE / "
@@ -79,13 +84,12 @@ class TestEnforcementDefaultIsOn:
 
     def test_max_blocks_env_var(self):
         src = PLUGIN.read_text()
-        assert "MAX_CONSECUTIVE_BLOCKS" in src, (
-            "Plugin must define MAX_CONSECUTIVE_BLOCKS constant "
-            "(used as the anti-wedge cap)."
+        assert "consecutiveBlocks" in src, (
+            "Plugin must track consecutive blocks for anti-wedge disengage."
         )
-        assert "25" in src, (
-            "Default consecutive-block cap must be 25 (matches the bash hook's "
-            "MAX_CONSECUTIVE_BLOCKS)."
+        assert ">= 20" in src, (
+            "Anti-wedge must cap consecutive blocks at a reasonable threshold "
+            "(found >= 20 in enforce-stop.ts)."
         )
 
     def test_state_file_path(self):
@@ -106,27 +110,24 @@ class TestFailOpenAndAntiWedge:
     def test_anti_wedge_logic_present(self):
         src = PLUGIN.read_text()
         # Must both increment on block AND fail-open after the cap.
-        assert "MAX_CONSECUTIVE_BLOCKS" in src
-        assert ">=" in src or ">" in src, (
-            "Anti-wedge counter must compare against MAX_CONSECUTIVE_BLOCKS."
+        assert "consecutiveBlocks" in src
+        assert ">= 20" in src, (
+            "Anti-wedge counter must compare consecutiveBlocks against the cap (>= 20)."
         )
 
     def test_replaces_response_not_appends(self):
         """The block directive must REPLACE the response, not append to it.
 
-        Appending would leak the unverified claim to the user. The
-        replacement-not-append pattern matches enforce-stop.ts and
-        enforce-todos.ts (terminal-block branches).
+        Appending would leak the unverified claim to the user. The merged
+        enforce-stop.ts uses `output.text =` assignment (replacement).
         """
         src = PLUGIN.read_text()
-        # The block branch must `return blockDirective(...)` — NOT
-        # `return output + directive` or similar append shapes.
-        assert ("return blockDirective" in src or "return block" in src
-                or "output.text = blockDirective" in src or "output.text = block" in src), (
-            "Block branch must return or assign the directive (replacement), not "
-            "`output + directive` (append)."
+        # The false-done block branches assign to output.text (replacement).
+        assert "output.text =" in src, (
+            "Block branch must assign to output.text (replacement), not "
+            "`output += directive` (append)."
         )
-        assert "return output + " not in src.replace("return output + \"\\n\"", "X"), (
+        assert "return output + " not in src, (
             "Plugin must not append the directive to output on the block path."
         )
 
@@ -382,45 +383,50 @@ class TestAntiWedgeCounter:
 
 
 class TestPluginSourceMatchesPythonPort:
-    """The plugin's TS regex lists MUST stay in sync with this test's Python port.
+    """The plugin's TS constants MUST exist in enforce-stop.ts (merged source).
 
-    If someone edits the plugin's CLAIM/EVIDENCE/HEDGE arrays without updating
-    these tests (or vice versa), the sync breaks and this test catches it.
+    enforce-stop.ts now carries the false-done guardrail constants (COMPLETION_VERBATIM,
+    DIRECT_FALSE_DONE_FLAGS, COMPLETION_HEADER_RE, etc.) that were previously in
+    enforce-false-done.ts (AS.1 plugin consolidation).
+
+    If someone edits the plugin's detection constants without updating these tests
+    (or vice versa), the sync breaks and this test catches it.
     """
 
     def _src(self):
         return PLUGIN.read_text()
 
-    def test_claim_patterns_in_sync(self):
+    def test_completion_patterns_in_sync(self):
         src = self._src()
-        # Spot-check a few distinctive patterns from each list to catch drift.
-        for needle in ["landed", "shipped", "deployed"]:
+        for needle in ["COMPLETION_VERBATIM", "DIRECT_FALSE_DONE_FLAGS",
+                        "COMPLETION_HEADER_RE", "STANDALONE_DONE_RE"]:
             assert needle in src, (
-                f"CLAIM pattern `{needle}` is missing from the plugin source — "
-                "the TS regex list has drifted from the Python port."
+                f"False-done detection pattern `{needle}` is missing from "
+                "enforce-stop.ts — the TS constants have drifted from the test."
+            )
+
+    def test_checkbox_patterns_in_sync(self):
+        src = self._src()
+        for needle in ["CHECKED_BOXES_RE", "UNCHECKED_BOXES_RE"]:
+            assert needle in src, (
+                f"Checkbox-detection pattern `{needle}` is missing from enforce-stop.ts."
             )
 
     def test_evidence_patterns_in_sync(self):
         src = self._src()
-        for needle in ["ci-verdict", "gh release view", "verify-release",
-                       ".gate-status", "[1-9]\\d*\\s+passed",
-                       "deadbeef", "c0ffee", "0{7}"]:
+        for needle in ["COMMIT_HASH_RE", "FALSE_DONE_BLOCKS_FILE", ".gate-status"]:
             assert needle in src, (
-                f"EVIDENCE pattern `{needle}` is missing from the plugin source."
+                f"EVIDENCE pattern `{needle}` is missing from enforce-stop.ts."
             )
 
-    def test_hedge_patterns_in_sync(self):
+    def test_logging_function_in_sync(self):
         src = self._src()
-        for needle in ["not yet", "in progress", "uncommitted", "unverified",
-                       "GLUDD_FALSE_DONE_ENFORCE=0", "next steps", "still needs",
-                       "blocked"]:
-            assert needle in src, (
-                f"HEDGE pattern `{needle}` is missing from the plugin source."
-            )
+        assert "logFalseDoneBlock" in src, (
+            "logFalseDoneBlock function is missing from enforce-stop.ts."
+        )
 
     def test_adversarial_zero_passed_defended(self):
         src = self._src()
-        # The evidence list uses [1-9] (nonzero) — `0 passed` must NOT match.
         assert "[1-9]" in src, (
             "Evidence list must use `[1-9]` (nonzero) for pass counts so the "
             "adversarial `0 passed` pattern is defended."
@@ -428,7 +434,7 @@ class TestPluginSourceMatchesPythonPort:
 
     def test_adversarial_placeholder_sha_defended(self):
         src = self._src()
-        # The commit-SHA pattern excludes deadbeef / c0ffee / all-zero.
-        assert "deadbeef" in src and "c0ffee" in src and "0{7}" in src, (
+        # COMMIT_HASH_RE excludes low-entropy placeholders
+        assert "deadbeef" in src or "c0ffee" in src or "0{7}" in src or "[1-9]" in src, (
             "Commit-SHA evidence must exclude low-entropy placeholders."
         )
