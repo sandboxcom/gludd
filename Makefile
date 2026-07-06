@@ -5,6 +5,7 @@ REF ?=
 TARGET ?= master
 MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
+VERIFY_POLLS ?= 30
 
 PYTHON := python3
 UV := uv
@@ -45,7 +46,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		watchdog-start watchdog-status watchdog-stop watchdog-log \
 		check-readme-status check-plugin-versions check-plugin-versions-quiet \
 		check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
-		verify-release-artifact
+		verify-release-artifact git-tag-rm release-cut release-recut release-create
 
 help:
 	@echo "Usage: make [target]"
@@ -971,10 +972,10 @@ verify-remote:
 
 # Create an annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
-#   make git-tag-push TAG=v0.1.0-alpha.1 MSG='alpha release'
+#   make git-tag-push TAG=v0.1.0-alpha.1 COMMIT=<sha> MSG='alpha release'
 git-tag-push:
-	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [MSG='...']"; exit 1; }
-	@git tag -a "$(TAG)" -m "$(if $(MSG),$(MSG),$(TAG))"
+	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [COMMIT=<sha>] [MSG='...']"; exit 1; }
+	@git tag -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
@@ -1018,6 +1019,49 @@ release-view:
 verify-release-artifact:
 	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-artifact TAG=v0.1.0-alpha.1"; exit 1; }
 	@$(PYTHON) scripts/verify_release_artifact.py "$(TAG)"
+
+# Delete a tag both locally and on sandboxcom. Usage:
+#   make git-tag-rm TAG=v0.1.0-alpha.1
+git-tag-rm:
+	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-rm TAG=v0.1.0-alpha.1"; exit 1; }
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
+	@git tag -d "$(TAG)" 2>/dev/null || true
+	@echo "Deleted tag $(TAG) locally and on sandboxcom"
+
+# Re-trigger a release CI job for an existing tag whose release job was skipped.
+# Deletes and re-pushes the tag, then polls verify-release-artifact.
+# Usage: make release-recut TAG=v0.1.0-alpha.1
+release-recut:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.1"; exit 1; }
+	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
+	@echo "Re-cutting release tag $(TAG)..."
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
+	@echo "Tag re-pushed. Polling for artifact publication ($(VERIFY_POLLS) polls)..."
+	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
+		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
+			echo "Artifact verified after $$i polls."; exit 0; \
+		fi; \
+		sleep 10; i=$$((i+1)); \
+	done; \
+	echo "Poll exhausted after $(VERIFY_POLLS) attempts."; exit 1
+
+# The single release command: check-readme-status -> push -> tag -> confirm.
+# Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes'
+release-cut:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...']"; exit 1; }
+	@$(MAKE) -s check-readme-status TAG=$(TAG)
+	@$(MAKE) -s git-push-sandboxcom
+	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
+	@$(MAKE) -s release-view TAG=$(TAG)
+
+# Manual fallback: build artifacts and publish a GitHub Release via gh.
+# Usage: make release-create TAG=v0.1.0-alpha.1
+release-create:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-create TAG=v0.1.0-alpha.1"; exit 1; }
+	@$(MAKE) -s build-executable
+	@gh release create "$(TAG)" -R sandboxcom/gludd dist/gludd --title "$(TAG)" --notes "Release $(TAG)" 2>&1 || echo "release-create-failed"
+	@$(MAKE) -s verify-release-artifact TAG=$(TAG)
 
 ci-faillog:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-faillog RUN=<id>"; exit 1; fi

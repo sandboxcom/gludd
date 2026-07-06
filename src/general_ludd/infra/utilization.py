@@ -121,6 +121,7 @@ class UtilizationTracker:
             return None
         # bill-9: when a scheduling hint specifies a preferred GPU type,
         # filter candidates to those matching the preferred GPU type first.
+        gpu_affinity_applied = False
         if scheduling_hint is not None:
             hint_gpu = getattr(scheduling_hint, "preferred_gpu_type", None)
             if hint_gpu:
@@ -130,6 +131,7 @@ class UtilizationTracker:
                 ]
                 if gpu_matches:
                     candidates = gpu_matches
+                    gpu_affinity_applied = True
         if prefer_model and model:
             model_matches = [e for e in candidates if e.model == model]
             if model_matches:
@@ -161,7 +163,7 @@ class UtilizationTracker:
             endpoint_id=ep.endpoint_id,
             model=ep.model,
             cache_hit=False,
-            reason="least_utilized",
+            reason="gpu_affinity" if gpu_affinity_applied else "least_utilized",
         )
 
     def release_task(self, task_id: str) -> None:
