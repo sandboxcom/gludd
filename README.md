@@ -67,7 +67,9 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-beta.1 — 2026-07-06; 569 source files, 569/569 (100%) have test-file import coverage, 0 ratchet entries (all xfail removed); 5 noqa + 88 type:ignore[intent] suppressions in src/ (0 bare ignores); lint 0, typecheck 0, collect 0; 20,629 tests; 93.8% coverage; CI pipeline stabilized.**
+**Status as of v0.1.0-beta.1 — 2026-07-06; 20,629 tests collected locally;**
+**CI pipeline: all recent runs failed. Local gate: lint 0, typecheck 0, collect 0.**
+**Test coverage: 93.8% of 496 source files have test imports. Ratchet: 0 entries.**
 
 The table below is **code-generated** from [`docs/features.yml`](docs/features.yml) by
 [`scripts/gen_status_table.py`](scripts/gen_status_table.py): every row's verified status is
@@ -85,10 +87,12 @@ in CI (the `gate` job runs `make check-status-table`). Do NOT hand-edit the rows
 `STATUS-TABLE` markers — edit `docs/features.yml` and regenerate.
 
 Honesty note: this project has a documented history of false "done" claims (see `BUGS.md`).
-Every percentage below is a curated maturity estimate from the manifest; the ✓/~/✗ badge in
-the "Verified %" column is the **machine** verdict from `FeatureVerifier` (✓ all evidence
-met, ~ partial, ✗ none met / no evidence — fail-closed). "Local-only" means the gate passes
-on macOS arm64 but CI (ubuntu) is unverified.
+The status line above states only machine-verified facts (test counts, gate results, CI
+verdicts) — no percentage-of-completion claims. The ✓/~/✗ badge in the "Verified %" column
+below is the **machine** verdict from `FeatureVerifier` (✓ all evidence met, ~ partial,
+✗ none met / no evidence — fail-closed). "Local-only" means the gate passes on macOS arm64
+but CI (ubuntu) is unverified. No row claims "100% complete" — completeness is only
+established by passing CI + verified artifact.
 
 Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file or class,
 `[audit]` = `docs/audit/` findings.
