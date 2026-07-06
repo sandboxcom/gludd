@@ -938,7 +938,7 @@ ci-wait:
 		if echo "$$RESULT" | grep -q '^CI GREEN:'; then \
 			echo "$$RESULT"; echo "=== CI GREEN after $$ELAPSED seconds ==="; exit 0; \
 		fi; \
-		STATUS=$$(echo "$$RESULT" | grep -oP "status='\K[^']+" || echo "unknown"); \
+		STATUS=$$(echo "$$RESULT" | $(PYTHON) -c "import sys,re; m=re.search(r\"status='([^']+)'\", sys.stdin.read()); print(m.group(1) if m else 'unknown')"); \
 		echo "[$$ELAPSED s] CI status: $$STATUS"; \
 		sleep $$INTERVAL; \
 		ELAPSED=$$((ELAPSED + INTERVAL)); \

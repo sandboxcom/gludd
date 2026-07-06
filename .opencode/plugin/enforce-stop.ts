@@ -4,6 +4,7 @@ import * as path from "node:path"
 
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
 const STOP_ENFORCE = process.env.GLUDD_STOP_ENFORCE !== "0"
+const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"
 
 const STATE_FILE = process.env.GLUDD_STOP_STATE_FILE || "/tmp/gludd-stop-state.json"
 const BLOCK_REASON_FILE = "/tmp/gludd-block-reason.json"
@@ -605,8 +606,8 @@ export default (async ({ }) => {
         fs.writeFileSync(cPath, JSON.stringify({ count, last_fired: new Date().toISOString(), ts: Date.now() }), "utf8")
       } catch {}
 
-      // Item 18: env var gate — disable enforcement entirely
-      if (!STOP_ENFORCE) return
+      // Item 18: env var gates — disable enforcement entirely
+      if (!STOP_ENFORCE || !NO_WAIT_ENFORCE) return
 
       try {
         const text = output.text

@@ -1,0 +1,46 @@
+---
+# Exercise ai_parallel_dispatch end-to-end against the mock daemon:
+#   * 5 calls, max_in_flight=2 -> THREE concurrency-capped batches (2,2,1).
+#   * join_policy: required -> only the two required:true calls must return.
+#   * Native async (async:/poll:0) fan-out + async_status barrier.
+- name: Converge - run ai_parallel_dispatch role against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8851', true) }}"
+  tasks:
+    - name: Invoke ai_parallel_dispatch with a 5-call fan-out
+      ansible.builtin.include_role:
+        name: general_ludd.agent.ai_parallel_dispatch
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-ai-parallel-dispatch-{{ mock_port }}"
+        max_in_flight: 2
+        join_policy: "required"
+        async_timeout: 60
+        call_request_timeout: 30
+        barrier_retries: 30
+        barrier_delay: 1
+        dispatch_calls:
+          - name: planner
+            prompt: "Plan the migration of module X."
+            model_profile: "mock-profile"
+            required: true
+          - name: reviewer
+            prompt: "Review the plan for module X."
+            model_profile: "mock-profile"
+            required: true
+          - name: tester
+            prompt: "Propose tests for module X."
+            model_profile: "mock-profile"
+            required: false
+          - name: documenter
+            prompt: "Draft docs for module X."
+            route_task_type: "code"
+            required: false
+          - name: poet
+            prompt: "Write a haiku about module X."
+            model_profile: "mock-profile"
+            required: false
