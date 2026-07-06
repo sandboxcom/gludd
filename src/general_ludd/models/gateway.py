@@ -535,6 +535,7 @@ class ModelGateway:
         estimated_cost: float = 0.0,
         budget_remaining: float = float("inf"),
         requested_max_output_tokens: int | None = None,
+        _skip_health_check: bool = False,
         **kwargs: Any,
     ) -> ModelResponse:
         profile = self._profiles.get(profile_id)
@@ -546,7 +547,11 @@ class ModelGateway:
                 f"Model profile '{profile_id}' is paused — call refused"
             )
 
-        if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id, admit_probe=False):
+        if (
+            not _skip_health_check
+            and self._health_tracker is not None
+            and not self._health_tracker.is_healthy(profile_id, admit_probe=False)
+        ):
             raise CircuitBreakerOpenError(
                 f"Profile '{profile_id}' circuit is open; refusing call"
             )
@@ -1175,7 +1180,11 @@ class ModelGateway:
                 with attempt:
                     _attempt_counter[0] = attempt.retry_state.attempt_number
                     try:
-                        result = self.call_model(profile_id, messages, **kwargs)
+                        result = self.call_model(
+                            profile_id, messages,
+                            _skip_health_check=True,
+                            **kwargs,
+                        )
                         # NOTE: record_success is already called inside
                         # _invoke_and_bill (via call_model) on every billed
                         # success. A second call here would double-count and

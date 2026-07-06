@@ -390,7 +390,7 @@ def test_find_caps_across_multiple_sources(caplog: pytest.LogCaptureFixture) -> 
     with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
         results = obs.find({"q": "x"})
 
-    # 2 sources × 10_000 per-source cap = 20_000 total.
+    # 2 sources x 10_000 per-source cap = 20_000 total.
     assert len(results) == 20_000
     assert any("truncated" in r.message for r in caplog.records)
 
