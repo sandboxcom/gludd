@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-05 (opencode session — deepseek-v4-pro, session 13, SESSION.md refresh for 399d9b0e)
+- 2026-07-05 (opencode session — deepseek-v4-pro, session 14, CI force-pushed, polling for verdict)
 
 ## Current Work
 
@@ -31,7 +31,7 @@
 - [x] BUGS.md headers need resolved markers so `bugsMdHasOpenIncidents()` returns false
 - [x] Plugin liveness: only 2/7 plugins reporting heartbeats (needs opencode restart for new plugin registrations)
 - [x] BUGS.md guardrail needs to distinguish historical incidents from actionable work
-- [ ] `repoHasPendingWork()` counting unpushed commits creates push deadlock
+- [x] `repoHasPendingWork()` counting unpushed commits creates push deadlock
 - [x] enforce-floor.ts overwrites `_output` variable name shadowing
 
 ## Last Commits (this session + recent)
@@ -66,7 +66,7 @@
 1. [x] **Mark BUGS.md incidents as resolved** — DONE via `50e401e5` + `a26fcb72` (all incidents now (resolved)).
 2. [x] **Fix `repoHasPendingWork()`** — DONE via `f0274a87` (uses git-diff for commits, openWorkExists skips mtime for commits).
 3. [x] **Wire plugin liveness** — 8/8 plugins have heartbeat (enforce-deletion-gate.ts added in `a26fcb72`). Requires opencode restart to activate.
-4. [ ] **Check CI verdict** — CI pending run 28759457229 for `a26fcb72`.
+4. [in-progress] **Check CI verdict** — CI force-pushed, polling for verdict (run 28759457229).
 5. [x] **Run `make gate-background`** — lint 0, typecheck 0, collect OK, smoke PASS. Test OOM (known issue).
 6. [x] **Remove `push-me` Makefile target** — DONE (committed in `c063f462`).
 7. [x] **Push `a26fcb72` to sandboxcom** — VERIFIED `master@a26fcb72`.
