@@ -67,7 +67,7 @@ class TravisSource:
         self._config = dict(config)
         self.name = str(self._config.get("name", "travis"))
         self.base_url = _guard_base_url(str(self._config.get("base_url", DEFAULT_BASE_URL)))
-        self.slug = str(self._config["slug"])
+        self.slug = str(self._config.get("slug", ""))
         self.timeout = float(self._config.get("timeout", 10.0))
         self._token_env = str(self._config.get("token_env", "TRAVIS_TOKEN"))
         self._token = os.environ.get(self._token_env, "")

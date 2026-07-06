@@ -313,9 +313,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         harness = SelfImprovementHarness()
         result = harness.run_full_cycle()
         _daemon_state["self_improve_last_analysis"] = {
-            "findings": result["findings"],
-            "findings_count": result["findings_count"],
-            "todos_enqueued": result["todos_enqueued"],
+            "findings": result.get("findings", []),
+            "findings_count": result.get("findings_count", 0),
+            "todos_enqueued": result.get("todos_enqueued", 0),
         }
         factory = _get_session_factory(app)
         if factory is not None:
@@ -327,7 +327,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 await session.commit()
                 result["persisted_todo_ids"] = persisted_ids
         else:
-            _daemon_state["todos"].extend(result["todos"])
+            _daemon_state["todos"].extend(result.get("todos", []))
         return result
 
     @app.post("/admin/self-improve/apply")

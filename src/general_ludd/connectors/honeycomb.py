@@ -68,8 +68,8 @@ class HoneycombSource:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.name: str = str(config.get("name") or "honeycomb")
-        self.dataset: str = str(config["dataset"])
-        self._api_key_env: str = str(config["api_key_env"])
+        self.dataset: str = str(config.get("dataset", ""))
+        self._api_key_env: str = str(config.get("api_key_env", ""))
 
         base_url = str(config.get("base_url") or DEFAULT_BASE_URL).rstrip("/")
         if is_url_blocked(base_url, scheme_allowlist=("http", "https")):

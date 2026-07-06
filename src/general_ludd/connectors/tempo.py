@@ -91,7 +91,7 @@ class TempoSource:
         self.name: str = str(config.get("name", "tempo"))
         self.allow_private: bool = bool(config.get("allow_private", False))
         self.base_url: str = _guard_base_url(
-            str(config["base_url"]), allow_private=self.allow_private
+            str(config.get("base_url", "")), allow_private=self.allow_private
         )
         self.timeout: float = float(config.get("timeout", 10.0))
         self.default_tags: str | None = (

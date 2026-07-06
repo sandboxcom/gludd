@@ -1858,8 +1858,8 @@ def _cmd_filestore_list(args: argparse.Namespace) -> None:
         )
         if resp.status_code == 200:
             data = resp.json()
-            print(f"Path: {data['path']} ({data['count']} entries)")
-            for e in data["entries"]:
+            print(f"Path: {data.get('path', '?')} ({data.get('count', '?')} entries)")
+            for e in data.get("entries", []):
                 tag = "[DIR]" if e["is_dir"] else f"[{e['size']}B]"
                 print(f"  {tag} {e['name']}")
         else:
@@ -1881,7 +1881,7 @@ def _cmd_filestore_cat(args: argparse.Namespace) -> None:
                 print(f"Error: {data['error']}", file=sys.stderr)
                 sys.exit(1)
             if data.get("binary"):
-                print(f"[Binary file: {data['path']}]")
+                print(f"[Binary file: {data.get('path', '?')}]")
             else:
                 print(data.get("content", ""))
         else:
@@ -1899,8 +1899,8 @@ def _cmd_filestore_bootstrap(args: argparse.Namespace) -> None:
         )
         if resp.status_code == 200:
             data = resp.json()
-            if data["success"]:
-                print(f"Downloaded {data['binary']} to filestore")
+            if data.get("success"):
+                print(f"Downloaded {data.get('binary', '?')} to filestore")
             else:
                 print(f"Failed: {data.get('error', 'unknown')}")
         else:
@@ -1917,8 +1917,8 @@ def _cmd_filestore_binaries(args: argparse.Namespace) -> None:
         )
         if resp.status_code == 200:
             data = resp.json()
-            print(f"Stored binaries: {data['count']}")
-            for b in data["binaries"]:
+            print(f"Stored binaries: {data.get('count', 0)}")
+            for b in data.get("binaries", []):
                 print(f"  {b['name']} ({b['size']}B)")
     except Exception as exc:
         _handle_connection_error(exc, args.daemon_url)

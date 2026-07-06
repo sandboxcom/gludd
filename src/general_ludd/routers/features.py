@@ -170,7 +170,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
             # Persist results
             from datetime import datetime
-            for result in summary["results"]:
+            for result in summary.get("results", []):
                 feat_id = result.get("id")
                 if feat_id is None:
                     continue

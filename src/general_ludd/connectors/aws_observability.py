@@ -172,7 +172,7 @@ class AwsObservabilitySource:
 
     def _query_logs(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         client = self._client("logs")
-        kwargs: dict[str, Any] = {"logGroupName": spec["logGroupName"]}
+        kwargs: dict[str, Any] = {"logGroupName": spec.get("logGroupName", "")}
         if "filterPattern" in spec:
             kwargs["filterPattern"] = spec["filterPattern"]
         if "startTime" in spec:
@@ -190,7 +190,7 @@ class AwsObservabilitySource:
                     message=event.get("message"),
                     value=None,
                     labels={
-                        "logGroup": spec["logGroupName"],
+                        "logGroup": spec.get("logGroupName", ""),
                         "logStream": event.get("logStreamName"),
                     },
                     raw=event,

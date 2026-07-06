@@ -130,7 +130,7 @@ class OpenTsdbSource:
         self.name: str = str(self.config.get("name", "opentsdb"))
         self.allow_private: bool = bool(self.config.get("allow_private", False))
         self.base_url: str = _guard_base_url(
-            str(self.config["base_url"]), self.allow_private
+            str(self.config.get("base_url", "")), self.allow_private
         )
         self.timeout: float = float(self.config.get("timeout", _DEFAULT_TIMEOUT))
         self.default_aggregator: str = str(

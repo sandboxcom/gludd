@@ -105,7 +105,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         )
 
         result = scanner.scan(paths, exclude_patterns=exclude_patterns)
-        _integrity_changes[:] = result["changes"]
+        _integrity_changes[:] = result.get("changes", [])
         return result
 
     @app.get("/admin/integrity/report")

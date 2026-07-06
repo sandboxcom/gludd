@@ -49,10 +49,10 @@ def _serialize(situation: BadCallSituation) -> dict[str, Any]:
 
 def _deserialize(data: dict[str, Any]) -> BadCallSituation:
     return BadCallSituation(
-        tool_name=data["tool_name"],
+        tool_name=data.get("tool_name", ""),
         tool_args=data.get("tool_args", {}),
-        classification=data["classification"],
-        reason=data["reason"],
+        classification=data.get("classification", "unknown"),
+        reason=data.get("reason", ""),
         task_excerpt=data.get("task_excerpt", ""),
         recent_calls=data.get("recent_calls", []),
         timestamp=data.get("timestamp", 0.0),

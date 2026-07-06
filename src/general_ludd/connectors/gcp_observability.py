@@ -92,7 +92,7 @@ class GcpObservabilitySource:
         token: str | None = None,
     ) -> None:
         self._transport = transport
-        self.project = str(config["project"])
+        self.project = str(config.get("project", ""))
         self.name = str(config.get("name", f"gcp:{self.project}"))
         self._timeout = float(config.get("timeout", DEFAULT_TIMEOUT))
         self._order_by = str(config.get("order_by", "timestamp desc"))

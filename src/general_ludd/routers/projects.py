@@ -230,9 +230,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def admin_self_improve() -> dict[str, Any]:
         harness = SelfImprovementHarness()
         result = harness.run_full_cycle()
-        return {"status": "ok", "findings_count": result["findings_count"],
-                "todos_generated": result["todos_generated"],
-                "todos_enqueued": result["todos_enqueued"]}
+        return {"status": "ok", "findings_count": result.get("findings_count", 0),
+                "todos_generated": result.get("todos_generated", 0),
+                "todos_enqueued": result.get("todos_enqueued", 0)}
 
     @app.post("/admin/tui-log")
     async def admin_tui_log(req: dict[str, Any]) -> dict[str, Any]:

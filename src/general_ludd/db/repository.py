@@ -1034,7 +1034,7 @@ class PromptProfileRepository:
         )
         await self._session.execute(stmt)
         await self._session.flush()
-        row = await self.get_by_name(data["name"])
+        row = await self.get_by_name(data.get("name", ""))
         assert row is not None  # just upserted
         # Core INSERT ... ON CONFLICT bypasses the ORM identity map; refresh any
         # already-loaded instance so callers see the committed (updated) values.
@@ -1231,7 +1231,7 @@ class ProjectRelationshipRepository:
         removed (replace-on-second-parent), so a project never carries two parents.
         Re-declaring the SAME edge tuple updates it in place (no duplicate row).
         """
-        project_id = data["project_id"]
+        project_id = data.get("project_id", "")
         relation_type = str(data.get("relation_type", ""))
         location_kind = str(data.get("location_kind", ""))
 
@@ -1610,7 +1610,7 @@ class FeatureRepository:
             stmt = stmt.on_conflict_do_nothing(index_elements=["name"])
         await self._session.execute(stmt)
         await self._session.flush()
-        row = await self.get_by_name(data["name"])
+        row = await self.get_by_name(data.get("name", ""))
         assert row is not None  # just upserted
         # The core INSERT ... ON CONFLICT bypasses the ORM identity map, so a row
         # already loaded this session is stale after the UPDATE — refresh it.

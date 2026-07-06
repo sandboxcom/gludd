@@ -797,8 +797,8 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                     paths = [info.get("config_dir", ""), info.get("filestore_root", "")]
                     paths = [p for p in paths if p]
                     result: dict[str, Any] = scanner.scan(paths) if paths else {"scanned": 0, "changes": []}
-                    changes: list[Any] = result["changes"]
-                    status_msg = f"Integrity: {result['scanned']} scanned, {len(changes)} changes"
+                    changes: list[Any] = result.get("changes", [])
+                    status_msg = f"Integrity: {result.get('scanned', 0)} scanned, {len(changes)} changes"
                 except Exception as exc:
                     status_msg = f"Integrity error: {exc}"
             else:

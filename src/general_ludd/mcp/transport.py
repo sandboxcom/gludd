@@ -443,7 +443,7 @@ class MCPStdioClient:
         for tool_data in result.get("tools", []):
             tools.append(
                 MCPTool(
-                    name=tool_data["name"],
+                    name=tool_data.get("name", ""),
                     description=tool_data.get("description", ""),
                     input_schema=tool_data.get("inputSchema", {}),
                 )

@@ -92,7 +92,7 @@ class GrafanaLokiSource:
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
         self.name = "grafana_loki"
-        self._base_url = _validate_base_url(str(config["base_url"]))
+        self._base_url = _validate_base_url(str(config.get("base_url", "")))
         self._token_env = str(config.get("token_env", ""))
         self._transport = transport
         self._timeout = float(timeout)

@@ -335,7 +335,7 @@ class PermissionSpecParser:
             subject = PermissionSubject.AGENT
         return PermissionSpec(
             version=int(data.get("version", 1)),
-            agent_type=str(data["agent_type"]),
+            agent_type=str(data.get("agent_type", "unknown")),
             parent_agent_id=data.get("parent_agent_id"),
             parent_human_id=data.get("parent_human_id"),
             capabilities=capabilities,

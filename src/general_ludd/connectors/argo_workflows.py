@@ -78,7 +78,7 @@ class ArgoWorkflowsSource:
         self._config = dict(config)
         self.name = str(self._config.get("name", "argo_workflows"))
         self.allow_private = bool(self._config.get("allow_private", False))
-        self.base_url = _guard_base_url(str(self._config["base_url"]), self.allow_private)
+        self.base_url = _guard_base_url(str(self._config.get("base_url", "")), self.allow_private)
         self.namespace = str(self._config.get("namespace", "argo"))
         self.timeout = float(self._config.get("timeout", 10.0))
         self._token_env = str(self._config.get("token_env", "ARGO_TOKEN"))

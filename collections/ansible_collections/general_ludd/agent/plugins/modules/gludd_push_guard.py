@@ -127,6 +127,23 @@ from pathlib import Path
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
 
 
+def _find_repo_root() -> str | None:
+    """Walk ancestor directories to find the repository root (looks for pyproject.toml)."""
+    start = os.getcwd()
+    try:
+        candidate = os.path.abspath(start)
+    except Exception:
+        candidate = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(10):
+        if os.path.isfile(os.path.join(candidate, "pyproject.toml")):
+            return candidate
+        parent = os.path.dirname(candidate)
+        if parent == candidate:
+            break
+        candidate = parent
+    return None
+
+
 def _import_force_push_tracker():
     """Import ForcePushTracker with fallback for in-tree testing."""
     try:
@@ -134,9 +151,25 @@ def _import_force_push_tracker():
         return ForcePushTracker
     except ImportError:
         pass
-    # Fallback for tests where the module file is not on sys.path
+
+    for root_dir in (
+        os.environ.get("MOLECULE_PROJECT_DIRECTORY"),
+        _find_repo_root(),
+    ):
+        if not root_dir:
+            continue
+        scripts_dir = os.path.join(root_dir, "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        try:
+            from push_rate_guard import ForcePushTracker  # type: ignore[import]
+            return ForcePushTracker
+        except ImportError:
+            pass
+
+    # Last-resort: relative from __file__
     _scripts_dir = os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", "..", "..", "scripts"
+        os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "scripts"
     )
     _scripts_dir = os.path.abspath(_scripts_dir)
     if _scripts_dir not in sys.path:
