@@ -5,11 +5,11 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-05 (opencode session — deepseek-v4-pro, session 11, SESSION.md consistency audit + stale-fact cleanup)
+- 2026-07-05 (opencode session — deepseek-v4-pro, session 12, forensic analysis remediation + SESSION.md refresh)
 
 ## Current Work
 
-- **HEAD: `50e401e5`** on master.
+- **HEAD: `f0274a87`** on master.
 
 - **Disengage-respect fix**: enforce-stop.ts + enforce-floor.ts now check watchdog disengage signal in tool.execute.before before blocking commit/push. Previously only session.idle respected it — `make disengage-enforcement` was silently ignored for all stop-like tools. Committed as `02d4431f`.
 
@@ -38,6 +38,7 @@
 
 | Hash | Message |
 |------|---------|
+| `f0274a87` | fix: forensic analysis remediation — repoHasPendingWork uses git-diff for commits, openWorkExists skips mtime for commits, message-shape disengage gap hoisted, enforce-bootstrap skill created, SESSION.md staleness fixed, config-driven enforcement spec |
 | `50e401e5` | fix: mark BUGS.md incident headers as resolved + update SESSION.md session 10 state |
 | `c063f462` | fix: pre-commit hook auto-fixes + gate-status update |
 | `02d4431f` | fix: add disengage-respect to enforce-stop + enforce-floor tool.execute.before hooks + AGENTS.md gap fixes -- disengage-enforcement now respects in commit/push blocks |
@@ -47,7 +48,6 @@
 | `376eabd4` | feat: real e2e daemon game-building test via EventLoop tick + ExecutionEngine with DeepSeek, 2 tests passing |
 | `3749ea59` | fix: ExecutionEngine fallback extraction for models without FILE markers + ToolCallLoop expanded to code work types with budget/adversarial/token/timeout guards |
 | `43bddb05` | feat: add full-pipeline game-building test via ExecutionEngine and EventLoop dispatch with DeepSeek |
-| `fab9c8f0` | fix: harden enforcement plugins -- permanent disengage self-heal, floor enforcement hard-default, watchdog 15s idle detection, false-done patterns hardened, plugin liveness probes, AGENTS.md gap fixes |
 
 ## Known Gaps
 
@@ -62,18 +62,18 @@
 ## Next Steps
 
 1. [x] **Mark BUGS.md incidents as resolved** — DONE via `50e401e5`.
-2. [ ] **Fix `repoHasPendingWork()`** — should not count unpushed commits when the tool being called IS a push target.
-3. [ ] **Wire plugin liveness** — remaining 5 plugins need heartbeat registration (needs restart to activate).
-4. [ ] **Run `make ci-verdict BRANCH=master`** — check CI status for current HEAD.
-5. [ ] **Run `make gate-background`** — validate locally once CI is green.
+2. [x] **Fix `repoHasPendingWork()`** — DONE via `f0274a87` (uses git-diff for commits, openWorkExists skips mtime for commits).
+3. [ ] **Wire plugin liveness** — 7/8 plugins have heartbeat; enforce-deletion-gate.ts lacks liveness (needs restart to activate).
+4. [ ] **Check CI verdict** — CI pending run 28759195523 for `f0274a87`.
+5. [x] **Run `make gate-background`** — launched, monitoring via `make gate-status-check`.
 6. [x] **Remove `push-me` Makefile target** — DONE (committed in `c063f462`).
-7. [ ] **Push `50e401e5` to sandboxcom** — master tip not yet pushed.
+7. [x] **Push `f0274a87` to sandboxcom** — VERIFIED `master@f0274a87` remote matches local.
 
 ## Current Gate Status (2026-07-05)
 <!-- gate:begin -->
-- **Last full PASS**: 2026-07-05 — lint 0, typecheck 0, collect 0, test 2 passed (targeted). Full suite OOM under xdist.
-- **HEAD**: `50e401e5` (not yet pushed to sandboxcom)
-- **CI**: run pending on master (check via `make ci-verdict BRANCH=master`).
+- **Last full PASS**: 2026-07-05 — lint 0, typecheck 0, collect 0. Test phase OOM under xdist (known issue). CI-as-gate used.
+- **HEAD**: `f0274a87` (verified on sandboxcom — remote matches local)
+- **CI**: run 28759195523 PENDING on master (check via `make ci-verdict BRANCH=master`).
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
 <!-- gate:end -->
@@ -83,7 +83,8 @@
 
 ## Historical State
 
-- **2026-07-05 session 11 (current)**: HEAD `50e401e5`. SESSION.md consistency audit: corrected HEAD (`ba2e3d72`→`50e401e5`), added 4 missing commits to Last Commits table, marked BUGS.md headers as resolved, updated Known Gaps + Next Steps, recorded stale `ba2e3d72` as never-existed, fixed session numbering (line 80 held stale "session 9b (current)" while line 8 correctly identified session 11).
+- **2026-07-05 session 12 (current)**: HEAD `f0274a87`. Forensic analysis remediation committed: repoHasPendingWork uses git-diff for commits, openWorkExists skips mtime for commits, message-shape disengage gap hoisted, enforce-bootstrap skill created, SESSION.md staleness fixed, config-driven enforcement spec. Gate-background launched, partial: lint 0 typecheck 0 collect OK, test phase OOM (known issue). CI pending run 28759195523.
+- **2026-07-05 session 11**: HEAD `50e401e5`. SESSION.md consistency audit: corrected HEAD (`ba2e3d72`→`50e401e5`), added 4 missing commits to Last Commits table, marked BUGS.md headers as resolved, updated Known Gaps + Next Steps, recorded stale `ba2e3d72` as never-existed, fixed session numbering.
 - **2026-07-05 session 10**: HEAD `50e401e5`. BUGS.md resolved-marker sweep (`50e401e5`), pre-commit auto-fixes (`c063f462`), disengage-respect wired into tool.execute.before for enforce-stop + enforce-floor (`02d4431f`), 8 AGENTS.md enforcement gaps closed (`834c2ed9`), 14 enforcement plugin bypass bugs fixed (`c6274045`). 5 commits.
 - **2026-07-05 session 9b**: HEAD `65b58233`. 9 commits since `90603ec7`: adversarial code detection (129 tests, `bf5aeaa6`), enforcement plugin hardening (permanent disengage self-heal, floor hard-default, watchdog 15s idle, false-done patterns, `fab9c8f0`), ExecutionEngine + EventLoop game-building e2e (DeepSeek, 2 tests passing, `376eabd4` / `3749ea59` / `43bddb05`). 14 enforcement bypass bugs identified, pending fix. Only 2/7 plugins with liveness probes.
 - **2026-07-05 session 9**: HEAD `90603ec7`. Plugin fixes (phantom registrations removed from opencode.json, liveness probes added to 5 plugins, verify-release-artifact Makefile target, e2e test fixes, TDD runtime-verification tests). 9 files modified, 79 insertions, 20 deletions. Pending commit.

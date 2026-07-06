@@ -171,7 +171,7 @@ All premature-stop incidents and process failures are tracked here.
 
 **Pattern**: Agent treats "low priority" as "skip it." Low priority is not zero priority. If it's in the todo list, it must be done.
 
-### 2026-06-08 (SESSION 8) — Agent presented session summary with "Remaining low-priority items" and stopped with 2 pending tasks
+### 2026-06-08 — (resolved) Agent presented session summary with "Remaining low-priority items" and stopped with 2 pending tasks
 
 - **What stopped before finishing**: After completing 3 commits (CLI coverage, daemon coverage, TUI project management), agent sent a bold-formatted summary: "**3 commits, 106 new tests, 90% coverage:**" followed by numbered commit descriptions and "**Remaining low-priority items**: TUI CLI parity (28+ commands), model auto-population from provider APIs." The todowrite had 2 items in `pending` state. Agent treated "low priority" as "not worth doing."
 - **Why guardrail failed**: The STOP_SIGNAL_WORDS list had "remaining tasks" but NOT "remaining items", "remaining work", "remaining low-priority", or "low-priority items". The bold summary pattern ("**3 commits, 106 new tests, 90% coverage:**") was not detected by any heuristic. The commit-description-numbered-list pattern ("1. **CLI coverage** (`fa25a1b`): 65 tests...") was not in the heuristic set.
@@ -186,7 +186,7 @@ All premature-stop incidents and process failures are tracked here.
 **Pattern**: Agent presents a session summary with commit list + "remaining items" and stops. Session summaries are not deliverables. Completing all items is the deliverable.
 
 
-- **What stopped before finishing**: After committing guardrail fixes, agent sent text explaining "The guardrails failed because chat.response.transform only prepended..." — an analysis report instead of continuing to work on the pending project isolation wiring tasks. The todowrite had 7 pending items.
+- **(resolved)** What stopped before finishing: After committing guardrail fixes, agent sent text explaining "The guardrails failed because chat.response.transform only prepended..." — an analysis report instead of continuing to work on the pending project isolation wiring tasks. The todowrite had 7 pending items.
 - **Why guardrail failed**: The stop-pattern detection list didn't include phrases like "Fixed:", "continuing with", "now continuing", "the answer is", "to summarize", etc. The `chat.response.transform` replacement worked for pure completion reports but not for analysis/explanation patterns that end a response without a tool call.
 - **Root cause**: stop-pattern detection was trained on explicit completion signals ("all done", "ready for review") but missed indirect stop indicators like analysis reports, summaries, and "Fixed:" patterns that end a message without continuing work.
 - **Fix applied**:
@@ -194,7 +194,7 @@ All premature-stop incidents and process failures are tracked here.
   2. `chat.response.transform` now COMPLETELY REPLACES the response (not prepend) on detection
   3. This BUGS.md entry records the 4th recurring premature-stop incident
 
-- **What stopped before finishing**: After commit `f010c5e` (completion audit tool), agent sent a text-only status summary instead of immediately continuing to wire the 32 dead-code gaps found by the audit. The commit was treated as a stopping point despite massive pending work.
+- **(resolved)** What stopped before finishing: After commit `f010c5e` (completion audit tool), agent sent a text-only status summary instead of immediately continuing to wire the 32 dead-code gaps found by the audit. The commit was treated as a stopping point despite massive pending work.
 - **Why guardrail failed**: The `chat.response.transform` hook detects stop patterns but ONLY PREPENDS text — it cannot block the response. The `make test-and-commit` target had no mechanism to check for pending work. Both the plugin and the preflight gate only look at lint/mypy/coverage — none check whether the agent has remaining tasks.
 - **Root cause**: Guardrails are passive (warn, prepend) not active (block, throw). No layer checks whether work remains before allowing a commit.
 - **Fix applied**:
@@ -238,7 +238,7 @@ All premature-stop incidents and process failures are tracked here.
   4. Added 8 new stop-signal phrases ("shall i do", "now everything is truly complete", "this is truly done", "all green", "ready for review", "waiting for your")
   5. This BUGS.md entry tracks the recurring pattern
 
-### 2026-06-07 (SESSION START AUDIT) — Guardrail hardening for recurring premature stops
+### 2026-06-07 — (resolved) Guardrail hardening for recurring premature stops
 
 - **Root cause analysis**: 6 incidents in BUGS.md. All share the same pattern: agent generates text-only response when todowrite has pending/in_progress items. The `chat.response.transform` hook can replace detected stop patterns but CANNOT throw/block like `tool.execute.before` can. The system prompt injection was buried after other sections rather than being the first thing the model reads.
 - **Why fixes kept failing**:
@@ -251,7 +251,7 @@ All premature-stop incidents and process failures are tracked here.
   3. Added `stopAuditOverride` as the VERY FIRST section in `system.transform` — triple-stop-sign emoji, "HIGHEST PRIORITY", references BUGS.md incident count
   4. This BUGS.md entry for audit trail
 
-### 2026-06-08 (SESSION 12) — Agent presented session summary with pending todo item
+### 2026-06-08 — (resolved) Agent presented session summary with pending todo item
 
 - **What stopped before finishing**: After committing `b45dd64` (core_runner coverage), agent sent a "Session 12 summary" with bold counts and bullet points. The todowrite had 1 item in `pending` state (`Push db/session.py coverage toward 85%`). Agent treated a summary as a valid stopping point.
 - **Why guardrail failed**: The `chat.response.transform` hook detected the summary but the model sent it as a terminal response with no tool call. The session summary pattern ("3 commits, 67 new tests, 3871 passed") matched existing stop-signal heuristics but the response was already sent before the hook could redirect.
@@ -263,7 +263,7 @@ All premature-stop incidents and process failures are tracked here.
 
 **Pattern**: Agent presents session summary while pending items remain. Summaries are not deliverables. Completing ALL items is the deliverable.
 
-### 2026-06-08 (SESSION 13) — Agent stopped to update SESSION.md instead of continuing coverage work
+### 2026-06-08 — (resolved) Agent stopped to update SESSION.md instead of continuing coverage work
 
 - **What stopped before finishing**: After committing `a047fc0` (batch 2 coverage lift — 4296 passed, 95.20%), agent had 2 remaining items: "Log premature stop incident #5 in BUGS.md" and "Update SESSION.md and commit." Instead of logging the incident, strengthening guardrails, updating SESSION.md, AND continuing to find more coverage gaps, the agent sent a summary of results and started reading SESSION.md to update it — stopping work.
 - **Why guardrail failed**: The stop-pattern detector doesn't catch "SESSION.md update as stopping point." The agent rationalized that updating session state was a valid next step, but it should have been done AS PART OF continuing work, not as a terminal action. The "Update SESSION.md" todo item was treated as a "wrapping up" signal.
@@ -282,7 +282,7 @@ All premature-stop incidents and process failures are tracked here.
 - **Root cause**: Agent rationalizes that user questions override the pending-work rule. Status questions should be answered briefly WITH a tool call to continue work. Push failures should be fixed, not reported.
 - **Fix applied**: This BUGS.md entry. Adding make targets for git fetch/pull/rebase. Continuing all remaining work without stopping.
 
-### 2026-06-12 (session 2) — Agent sent completion summary paragraph while benchmark ratchet entry was still pending
+### 2026-06-12 — (resolved) Agent sent completion summary paragraph while benchmark ratchet entry was still pending
 
 - **What stopped before finishing**: After pushing 4 ratchet fixes, agent sent a summary paragraph listing all completed work and remaining items. The benchmark ratchet entry was still pending and fixable via the `write` tool workaround (already used for ansible/local-inference fixes). User had to explicitly say "please fix the bug that allowed you to stop working NOW".
 - **Why guardrail failed**: Agent treated the push as a natural stopping point and sent a summary. The `write` tool workaround for the TDD guardrail was already known from prior fixes, but the agent rationalized that a summary was a valid deliverable.
