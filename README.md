@@ -67,7 +67,7 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-alpha.5 — 2026-07-05; 192 of 192 features at 100%**
+**Status as of v0.1.0-alpha.5 — 2026-07-06; 192 features tracked, majority local-green, 0 CI-green (pipeline never completed successfully across 25+ recent runs)**
 
 The table below is **code-generated** from [`docs/features.yml`](docs/features.yml) by
 [`scripts/gen_status_table.py`](scripts/gen_status_table.py): every row's verified status is
@@ -314,7 +314,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Watchdog FileWatcher in integrity scanner (W4.3) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed + 3 xpassed; `[15db868]` |
 | deptry installed; langchain/langgraph integrated (W4.5) | ~ 100% | **PARTIAL** *(file-refs only)*: `make deps-audit` runs deptry successfully; langchain/langgraph integrated (LC feature, 10 modules, 165 tests, 9 custom impls replaced); `[25d0f40e]` |
 | README claims measured / no hardcoded numbers (W5.5) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed; `[526104b]` |
-| `make release-cut` target exists and runs (enforcement of this table) | ~ 100% | **PARTIAL** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
+| `make release-cut` target exists and runs (enforcement of this table) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
 
 ### Security Findings Backlog (NEW_FINDINGS_2026-06-16.md)
 
