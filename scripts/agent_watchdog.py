@@ -260,9 +260,28 @@ def _log(msg: str) -> None:
 
 
 def _max_out_false_done() -> None:
-    """Write max count to false-done blocks state file to force anti-wedge pass-through."""
+    """Increment false-done anti-wedge counter with wrapping to prevent saturation.
+
+    The counter wraps at 100 so the escalation gradient never collapses:
+    0 → 1 → ... → 100 → 0 → 1 → ... (cycling, not stuck at cap).
+    Counter is reset to 0 when the agent is active (mtime_age < PURE_IDLE_SECS),
+    which means the agent made a recent tool call and the wedge is clearing.
+    """
     try:
-        Path(FALSE_DONE_MAXOUT).write_text(json.dumps({"count": 999}))
+        p = Path(FALSE_DONE_MAXOUT)
+        count = 0
+        if p.exists():
+            try:
+                data = json.loads(p.read_text())
+                count = int(data.get("count", 0))
+            except Exception:
+                count = 0
+        mtime_age = _streak_mtime_age_seconds()
+        if mtime_age is not None and mtime_age < PURE_IDLE_SECS:
+            count = 0
+        else:
+            count = (count % 100) + 1
+        p.write_text(json.dumps({"count": count, "ts": time.time()}))
     except Exception:
         pass
 
@@ -2134,9 +2153,27 @@ def check_and_reset() -> dict:
     tasks_unchecked = _tasks_md_has_unchecked()
     ratchet_count = _ratchet_has_entries()
     gate_red = _gate_status_is_red()
-    has_pending_work = tasks_unchecked or ratchet_count > 0 or gate_red
     ci_pending, ci_run_id = _ci_is_pending_or_red()
+    has_pending_work = tasks_unchecked or ratchet_count > 0 or gate_red or ci_pending
     has_any_work = has_pending_work or ci_pending
+
+    # ── Gate-status injection: when CI is pending/red and .gate-status is otherwise
+    #     clean, write a CI-FAIL line. The enforce-stop.ts plugin reads .gate-status
+    #     to compute hasLocalWork. Without this, text-only responses pass through
+    #     unblocked when CI is the only pending work. ──
+    if ci_pending and not gate_red:
+        try:
+            gs = Path(_GATE_STATUS)
+            gs.parent.mkdir(parents=True, exist_ok=True)
+            gs.write_text(
+                f"=== GATE {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} ===\n"
+                f"CI FAIL pending (run {ci_run_id})\n"
+                f"=== GATE: FAILED ===\n"
+            )
+            gate_red = True
+            has_pending_work = True
+        except Exception:
+            pass
     mtime_age = _streak_mtime_age_seconds()
 
     # ── HEARTBEAT: write every poll cycle so operator can see watchdog is alive ──

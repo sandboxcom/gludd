@@ -745,7 +745,7 @@ export default (async ({ }) => {
 
         // BUG #6 fix: when hasLocalWork, block ALL text (not just terminal-looking).
         // If work is pending and the agent sends text without tool calls, it's a stop.
-        if (hasLocalWork) {
+        if (hasLocalWork || ciVerdictPendingOrRed) {
           logFalseDoneBlock(turnState.accumulatedText, "hasLocalWork-text-only")
           output.text = [
             "HARD STOP — STATE-BASED BLOCK: local work pending.",
