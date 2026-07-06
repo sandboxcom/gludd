@@ -94,6 +94,19 @@ jobs:
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
+      - name: Verify feature claims (full evidence check)
+        # Runs the ansible playbook that loads docs/features.yml and verifies
+        # EVERY evidence ref (test:, file:, role:, module:, molecule:) — including
+        # running pytest for each test: ref.  If any feature with pct=100 has broken
+        # evidence, the generated status table will differ from the committed README
+        # and --check exits non-zero → gate goes RED.  This catches falsely-claimed
+        # 100% features structurally rather than relying on human discipline.
+        # The --check mode also ensures the committed README.md status table matches
+        # the freshly-generated one (table-staleness guard).
+        run: uv run ansible-playbook playbooks/verify_feature_claims.yml
+        env:
+          GLUDD_PSK: ""
+
       - name: Check status table current (fast)
         if: startsWith(github.ref, 'refs/tags/v')
         # Verify README.md status table matches docs/features.yml generation.
@@ -548,6 +561,31 @@ jobs:
           uv run python -m pytest tests/e2e/providers/ -v
         env:
           GLUDD_PSK: ""
+
+  # Game-building E2E tests — verifies gludd can autonomously build simple games
+  # (Snake, Tetris, Checkers, Minesweeper, SkiFree, Banana) via the DeepSeek API.
+  # Non-blocking: API calls can be rate-limited or flaky.  Tests are guarded with
+  # a skipif on missing DEEPSEEK_API_KEY, so they no-op silently until the secret
+  # is provisioned.
+  #
+  # REQUIREMENT: DEEPSEEK_API_KEY must be added as a repository secret.
+  #   Go to: https://github.com/sandboxcom/gludd/settings/secrets/actions
+  #   Add:  DEEPSEEK_API_KEY = sk-...
+  game-building:
+    needs: [version, gate, test-shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Run game-building tests
+        run: |
+          uv sync
+          make test-games
+        env:
+          GLUDD_PSK: ""
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
     needs: [version, gate, test-shard, linux, macos, windows, termux, container]

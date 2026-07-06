@@ -20,6 +20,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg \
+         test-games \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
@@ -46,7 +47,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		watchdog-start watchdog-status watchdog-stop watchdog-log \
 		check-readme-status check-plugin-versions check-plugin-versions-quiet \
 		check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
-		verify-release-artifact git-tag-rm release-cut release-recut release-create
+		verify-release-artifact git-tag-rm release-cut release-recut release-create \
+		verify-feature-claims
 
 help:
 	@echo "Usage: make [target]"
@@ -419,6 +421,9 @@ test-integration:
 
 test-e2e:
 	@$(UV) run python -m pytest tests/e2e/ $(_XD) -v
+
+test-games:
+	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
 
 test-tui-daemon:
 	@$(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
@@ -1704,6 +1709,10 @@ audit-features:
 
 check-readme-status:
 	@$(UV) run python scripts/check_readme_status_current.py $(TAG)
+
+verify-feature-claims:
+	@echo "=== verify-feature-claims: full evidence verification (pytest for test: refs) ==="
+	@$(UV) run ansible-playbook playbooks/verify_feature_claims.yml
 
 dist: build-executable bundle-binaries sbom
 	@echo "Assembling tarball..."

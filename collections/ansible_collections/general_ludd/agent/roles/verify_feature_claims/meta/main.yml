@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: verify_feature_claims
+  author: Agentic Harness Agent
+  description: >
+    Audits docs/features.yml against actual code/test evidence. For every
+    feature claimed at 100%, verifies that each evidence reference (test file,
+    source file, role directory, module file, molecule scenario) exists on
+    disk and that any commit hashes in the notes field are reachable in git
+    log. Features are classified as VERIFIED, PARTIAL, UNVERIFIED, or
+    FALSE_CLAIM. The playbook FAILS if any feature is a FALSE_CLAIM (claimed
+    100% but zero evidence exists). Generates JSON and Markdown reports.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

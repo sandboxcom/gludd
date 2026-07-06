@@ -1,0 +1,32 @@
+---
+# verify_feature_claims role defaults
+# Audits docs/features.yml against actual code/test evidence and fails if
+# any feature is claimed 100% but has no verifiable evidence.
+
+# Path to the project root (where docs/features.yml lives).
+# Defaults to the playbook directory.
+project_root: "{{ playbook_dir | default(lookup('env', 'PWD'), true) }}"
+
+# Path to features.yml relative to project_root.
+features_path: "docs/features.yml"
+
+# Base paths for evidence resolution relative to project_root.
+roles_base: "collections/ansible_collections/general_ludd/agent/roles"
+modules_base: "collections/ansible_collections/general_ludd/agent/plugins/modules"
+
+# Molecule scenario search paths relative to project_root (checked in order).
+molecule_paths:
+  - "molecule/playbooks"
+  - "molecule"
+
+# Only verify features with pct >= this threshold.
+min_pct_to_verify: 100
+
+# When true, also verify commit hashes embedded in notes (pattern [hexsha]).
+check_commits: true
+
+# When true, verify test files have non-zero content (not just existence).
+check_test_content: true
+
+# Artifact output directory.
+artifact_dir: "{{ lookup('env', 'GLUDD_ARTIFACT_DIR') | default('/tmp/gludd-verify-feature-claims', true) }}"

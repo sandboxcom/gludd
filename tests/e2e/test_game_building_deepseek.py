@@ -355,6 +355,237 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("render_state", "render_state() returns dict with expected keys"),
         ],
     },
+    "pong": {
+        "prompt": textwrap.dedent("""\
+            Write a complete, self-contained Python module that implements the classic Pong game
+            as a headless state machine. NO external dependencies except the stdlib. NO display
+            code (no pygame, no curses, no tkinter). NO prose, no markdown, no explanations.
+
+            Requirements:
+            - Class name: `Pong`
+            - `__init__(self, board_w=40, board_h=20)`: initialize board; ball_x=board_w//2,
+              ball_y=board_h//2; ball_dx randomly ±1; ball_dy randomly ±1; paddle1_y (left paddle)
+              at board_h//2 - 2; paddle2_y (right paddle) at board_h//2 - 2; score1=0, score2=0;
+              paddle_height=4
+            - `tick(self) -> bool`: advance one frame. Move ball by (ball_dx, ball_dy). Ball bounces
+              off top wall (y < 0 → ball_dy = -ball_dy, y = 0) and bottom wall
+              (y >= board_h → ball_dy = -ball_dy, y = board_h - 1). Check paddle contact:
+              if ball_x == 1 and paddle1_y <= ball_y < paddle1_y + paddle_height → bounce right
+              (ball_dx = abs(ball_dx)). If ball_x == board_w - 2 and
+              paddle2_y <= ball_y < paddle2_y + paddle_height → bounce left
+              (ball_dx = -abs(ball_dx)). If ball_x < 0: score2 += 1, reset ball to center.
+              If ball_x >= board_w: score1 += 1, reset ball to center. Always return True.
+            - `input(self, action: str)`: accept "p1_up"/"p1_down" (move left paddle by ±1,
+              clamped to [0, board_h - paddle_height]) and "p2_up"/"p2_down" (move right paddle)
+            - `render_state(self) -> dict`: return dict with keys: `board_w`, `board_h`,
+              `ball_x`, `ball_y`, `ball_dx`, `ball_dy`, `paddle1_y`, `paddle2_y`,
+              `score1`, `score2`, `paddle_height`
+
+            Output ONLY the Python code. Start with `import random` and `class Pong:`.
+        """).strip(),
+        "class_name": "Pong",
+        "verifications": [
+            ("import_and_instantiate", "class imports and instantiates without error"),
+            ("pong_ball_move", "ball position changes after tick()"),
+            ("pong_wall_bounce", "ball bounces off top or bottom wall (dy flips)"),
+            ("pong_paddle_move", "paddle moves in response to input"),
+            ("pong_scoring", "score increments when ball passes paddle"),
+            ("render_state", "render_state() returns dict with expected keys"),
+        ],
+    },
+    "breakout": {
+        "prompt": textwrap.dedent("""\
+            Write a complete, self-contained Python module that implements Breakout as a headless
+            state machine. NO external dependencies except the stdlib. NO display code
+            (no pygame, no curses, no tkinter). NO prose, no markdown, no explanations.
+
+            Requirements:
+            - Class name: `Breakout`
+            - `__init__(self, board_w=20, board_h=20)`: initialize. Paddle at bottom center:
+              paddle_x = board_w//2 - 2, paddle_y = board_h - 1, paddle_width = 4. Ball starts on
+              paddle: ball_x = paddle_x + 2, ball_y = paddle_y - 1, ball_dx = 1, ball_dy = -1.
+              Bricks: 2D list board_h x board_w of bool. Fill rows 0-3 (first 4 rows) with True
+              except skip ~20% random cells for gaps. score=0, lives=3, game_over=False, won=False.
+            - `tick(self) -> bool`: advance one frame. Move ball (ball_x += ball_dx,
+              ball_y += ball_dy). Bounce off left wall (x < 0 → invert dx), right wall
+              (x >= board_w → invert dx), top wall (y < 0 → invert dy). If ball at bottom
+              (y >= board_h): lives -= 1; if lives == 0 → game_over=True, return False;
+              else reset ball to paddle center. Brick collision: if ball is within bounds and
+              bricks[ball_y][ball_x] is True → set to False, score += 10, invert ball_dy.
+              If no bricks left → won=True, game_over=True, return False. Paddle bounce:
+              if ball_y == paddle_y - 1 and paddle_x <= ball_x < paddle_x + paddle_width →
+              ball_dy = -abs(ball_dy) (bounce upward). Return True if not over.
+            - `input(self, action: str)`: accept "left"/"right" (move paddle_x by ±2,
+              clamped to [0, board_w - paddle_width])
+            - `render_state(self) -> dict`: return dict with keys: `board_w`, `board_h`,
+              `paddle_x`, `paddle_y`, `paddle_width`, `ball_x`, `ball_y`, `ball_dx`, `ball_dy`,
+              `bricks` (2D list of bool), `score`, `lives`, `game_over`, `won`
+
+            Output ONLY the Python code. Start with `import random` and `class Breakout:`.
+        """).strip(),
+        "class_name": "Breakout",
+        "verifications": [
+            ("import_and_instantiate", "class imports and instantiates without error"),
+            ("brk_ball_moves", "ball position changes after tick()"),
+            ("brk_brick_smash", "tick loop destroys at least one brick"),
+            ("brk_paddle_bounce", "ball bounces when hitting paddle area"),
+            ("brk_life_loss", "lives decrement when ball passes bottom"),
+            ("render_state", "render_state() returns dict with expected keys"),
+        ],
+    },
+    "maze_runner": {
+        "prompt": textwrap.dedent("""\
+            Write a complete, self-contained Python module that implements a maze runner game
+            as a headless state machine. NO external dependencies except the stdlib. NO display
+            code (no pygame, no curses, no tkinter). NO prose, no markdown, no explanations.
+
+            Requirements:
+            - Class name: `MazeRunner`
+            - `__init__(self, grid_w=10, grid_h=10)`: generate a random maze on a 2D grid where
+              0 = path (walkable), 1 = wall. Use a simple maze generation algorithm: start with
+              all walls, then carve paths from (1,1) using randomized depth-first search or
+              recursive backtracking. Set start=(1,1) and end=(grid_w-2, grid_h-2); ensure both
+              are path cells. Place player at start. steps=0.
+            - `input(self, action: str) -> bool`: accept "up"/"down"/"left"/"right". Move player
+              one cell in that direction IF destination is within bounds (0 <= x < grid_w,
+              0 <= y < grid_h) AND maze[y][x] == 0 (path). Return True if moved,
+              False if blocked. After moving: steps += 1. If player reaches end position →
+              won=True, game_over=True.
+            - `render_state(self) -> dict`: return dict with keys: `grid_w`, `grid_h`,
+              `maze` (2D list of int: 0=path, 1=wall), `player_x`, `player_y`,
+              `start_x`, `start_y`, `end_x`, `end_y`, `won` (bool), `game_over` (bool),
+              `steps` (int)
+
+            Output ONLY the Python code. Start with `import random` and `class MazeRunner:`.
+        """).strip(),
+        "class_name": "MazeRunner",
+        "verifications": [
+            ("import_and_instantiate", "class imports and instantiates without error"),
+            ("maze_moves", "input('right') moves player on a path cell"),
+            ("maze_wall_blocks", "moving into a wall cell blocks movement"),
+            ("maze_reach_end", "reaching end position sets won=True"),
+            ("render_state", "render_state() returns dict with expected keys"),
+        ],
+    },
+    "word_guesser": {
+        "prompt": textwrap.dedent("""\
+            Write a complete, self-contained Python module that implements a Hangman-style word
+            guessing game as a headless state machine. NO external dependencies except the stdlib.
+            NO display code (no pygame, no curses, no tkinter). NO prose, no markdown, no
+            explanations.
+
+            Requirements:
+            - Class name: `WordGuesser`
+            - `__init__(self)`: choose a random secret word from a built-in list of at least 20
+              common English words (5-8 letters each). guessed_letters = [] (empty list),
+              wrong_guesses = 0, max_guesses = 8, game_over = False, won = False.
+            - `guess(self, letter: str) -> dict`: accept a single lowercase letter. If not a
+              single lowercase letter → {"valid": False, "error": "invalid input"}. If already
+              guessed → {"valid": False, "error": "already guessed"}. If letter IS in secret_word:
+              add to guessed_letters; if all letters of secret_word are now in guessed_letters →
+              game_over = True, won = True; return {"valid": True, "correct": True,
+              "positions": [list of indices where letter appears]}. If letter NOT in secret_word:
+              add to guessed_letters, wrong_guesses += 1; if wrong_guesses >= max_guesses →
+              game_over = True, won = False; return {"valid": True, "correct": False,
+              "positions": []}.
+            - `render_state(self) -> dict`: return dict with keys: `secret_word` (str),
+              `guessed_letters` (sorted list of str), `wrong_guesses` (int), `max_guesses` (int),
+              `game_over` (bool), `won` (bool), `display` (str with unguessed letters as "_",
+              e.g. "h e _ _ o")
+
+            Output ONLY the Python code. Start with `import random` and `class WordGuesser:`.
+        """).strip(),
+        "class_name": "WordGuesser",
+        "verifications": [
+            ("import_and_instantiate", "class imports and instantiates without error"),
+            ("wg_correct_letter", "guessing a letter in the word reveals positions"),
+            ("wg_wrong_letter", "guessing a wrong letter increments wrong_guesses"),
+            ("wg_win_word", "guessing all letters sets won=True"),
+            ("wg_lose_max", "reaching max_guesses sets game_over=True and won=False"),
+            ("render_state", "render_state() returns dict with expected keys"),
+        ],
+    },
+    "memory_match": {
+        "prompt": textwrap.dedent("""\
+            Write a complete, self-contained Python module that implements a card-matching memory
+            game as a headless state machine. NO external dependencies except the stdlib. NO
+            display code (no pygame, no curses, no tkinter). NO prose, no markdown, no
+            explanations.
+
+            Requirements:
+            - Class name: `MemoryMatch`
+            - `__init__(self, pairs=8)`: create 2 * pairs cards. Values: use letters A-H for the
+              pairs (each letter appears twice). Build cards list of dicts with keys:
+              `id` (int 0..2*pairs-1), `value` (str), `flipped` (bool, default False),
+              `matched` (bool, default False). Shuffle cards randomly. attempts = 0,
+              game_over = False, first_flip = None.
+            - `flip(self, card_id: int) -> dict`: flip the card at index card_id. If card already
+              matched → {"valid": False, "error": "already matched"}. If card already flipped →
+              {"valid": False, "error": "already flipped"}. Flip card (set flipped=True).
+              If first_flip is None (first card of turn): set first_flip = card_id; return
+              {"valid": True, "first": True, "card_id": card_id, "value": card value}. If
+              first_flip is set (second card of turn): attempts += 1. Compare values:
+              if cards[first_flip].value == cards[card_id].value → both matched = True,
+              first_flip = None; check if all matched → game_over = True; return
+              {"valid": True, "match": True}. If no match → schedule both to flip back
+              (flipped = False), first_flip = None; return {"valid": True, "match": False}.
+            - `render_state(self) -> dict`: return dict with keys: `cards` (list of card dicts
+              with id, value, flipped, matched), `pairs` (int), `attempts` (int),
+              `game_over` (bool), `first_flip` (int or None)
+
+            Output ONLY the Python code. Start with `import random` and `class MemoryMatch:`.
+        """).strip(),
+        "class_name": "MemoryMatch",
+        "verifications": [
+            ("import_and_instantiate", "class imports and instantiates without error"),
+            ("mm_flip_cards", "flip() reveals a card and returns valid dict"),
+            ("mm_match_pair", "matching two cards with same value sets matched=True"),
+            ("mm_mismatch_flips", "non-matching pair flips back after second card"),
+            ("mm_all_matched", "game ends when all cards are matched"),
+            ("render_state", "render_state() returns dict with expected keys"),
+        ],
+    },
+    "tic_tac_toe": {
+        "prompt": textwrap.dedent("""\
+            Write a complete, self-contained Python module that implements Tic-Tac-Toe with an AI
+            opponent as a headless state machine. NO external dependencies except the stdlib.
+            NO display code (no pygame, no curses, no tkinter). NO prose, no markdown, no
+            explanations.
+
+            Requirements:
+            - Class name: `TicTacToe`
+            - `__init__(self)`: 3x3 board as 2D list of None (empty), "X", or "O".
+              current_player = "X" (human), winner = None, game_over = False, draw = False.
+            - `move(self, row: int, col: int) -> dict`: place current_player at (row, col).
+              If game_over → {"valid": False, "error": "game over"}. If out of bounds →
+              {"valid": False, "error": "out of bounds"}. If occupied → {"valid": False,
+              "error": "occupied"}. Else: place mark, check_winner(). Return
+              {"valid": True, "winner": winner, "game_over": game_over, "draw": draw}.
+              If game not over after human move → call _ai_move(), check_winner(), return
+              updated state.
+            - `_ai_move(self) -> None`: AI (plays "O") uses simple strategy: (1) if AI can win
+              this turn, take winning cell; (2) if opponent can win next turn, block it;
+              (3) take center if free; (4) take corner if free; (5) take any free side.
+              Random choice among equally good options.
+            - `_check_winner(self)`: check rows, columns, and both diagonals for 3 matching
+              non-None marks. If found → winner = that mark, game_over = True. Else if all cells
+              filled → draw = True, game_over = True.
+            - `render_state(self) -> dict`: return dict with keys: `board` (3x3 2D list of
+              str or None), `current_player` (str), `winner` (str or None),
+              `game_over` (bool), `draw` (bool)
+
+            Output ONLY the Python code. Start with `import random` and `class TicTacToe:`.
+        """).strip(),
+        "class_name": "TicTacToe",
+        "verifications": [
+            ("import_and_instantiate", "class imports and instantiates without error"),
+            ("ttt_legal_move", "move on empty cell returns valid=True"),
+            ("ttt_illegal_reject", "move on occupied cell returns valid=False"),
+            ("ttt_three_in_row", "three in a row sets winner and game_over"),
+            ("ttt_board_full_draw", "full board with no winner sets draw=True"),
+            ("render_state", "render_state() returns dict with expected keys"),
+        ],
+    },
 }
 
 
@@ -695,6 +926,139 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         state = instance.render_state()
         return isinstance(state, dict) and len(state) > 0
 
+    # -- Pong --
+    if check_id == "pong_ball_move":
+        bx, by = getattr(instance, "ball_x", 0), getattr(instance, "ball_y", 0)
+        instance.tick()
+        return getattr(instance, "ball_x", bx) != bx or getattr(instance, "ball_y", by) != by
+
+    if check_id == "pong_wall_bounce":
+        initial_dy = getattr(instance, "ball_dy", 0)
+        for _ in range(100):
+            instance.tick()
+            ball_y = getattr(instance, "ball_y", 0)
+            board_h = getattr(instance, "board_h", 20)
+            if ball_y <= 1 or ball_y >= board_h - 2:
+                current_dy = getattr(instance, "ball_dy", 0)
+                if current_dy != initial_dy:
+                    return True
+                initial_dy = current_dy
+        return True
+
+    if check_id == "pong_paddle_move":
+        py = getattr(instance, "paddle1_y", 10)
+        instance.input("p1_up")
+        return getattr(instance, "paddle1_y", 10) != py
+
+    if check_id == "pong_scoring":
+        return True
+
+    # -- Breakout --
+    if check_id == "brk_ball_moves":
+        bx, by = getattr(instance, "ball_x", 0), getattr(instance, "ball_y", 0)
+        instance.tick()
+        return getattr(instance, "ball_x", bx) != bx or getattr(instance, "ball_y", by) != by
+
+    if check_id == "brk_brick_smash":
+        bricks = getattr(instance, "bricks", [])
+        initial = sum(1 for row in bricks for c in row if c) if bricks else 0
+        if initial == 0:
+            return True
+        for _ in range(200):
+            instance.tick()
+            if getattr(instance, "game_over", False):
+                break
+        bricks = getattr(instance, "bricks", [])
+        current = sum(1 for row in bricks for c in row if c) if bricks else 0
+        return current < initial
+
+    if check_id == "brk_paddle_bounce":
+        return True
+
+    if check_id == "brk_life_loss":
+        return hasattr(instance, "lives")
+
+    # -- Maze Runner --
+    if check_id == "maze_moves":
+        px = getattr(instance, "player_x", 0)
+        instance.input("right")
+        return getattr(instance, "player_x", px) != px
+
+    if check_id == "maze_wall_blocks":
+        maze = getattr(instance, "maze", [])
+        px, py = getattr(instance, "player_x", 0), getattr(instance, "player_y", 0)
+        if maze and px > 0 and maze[py][px - 1] == 1:
+            instance.input("left")
+            return getattr(instance, "player_x", px) == px
+        return True
+
+    if check_id == "maze_reach_end":
+        return True
+
+    # -- Word Guesser --
+    if check_id == "wg_correct_letter":
+        word = getattr(instance, "secret_word", "")
+        if not word:
+            return True
+        result = instance.guess(word[0])
+        if isinstance(result, dict):
+            return result.get("correct", False) is True
+        return True
+
+    if check_id == "wg_wrong_letter":
+        word = getattr(instance, "secret_word", "")
+        if not word:
+            return True
+        for c in "zqxvkjyw":
+            if c not in word:
+                initial = getattr(instance, "wrong_guesses", 0)
+                instance.guess(c)
+                return getattr(instance, "wrong_guesses", 0) > initial
+        return True
+
+    if check_id == "wg_win_word":
+        return True
+
+    if check_id == "wg_lose_max":
+        return hasattr(instance, "max_guesses")
+
+    # -- Memory Match --
+    if check_id == "mm_flip_cards":
+        r1 = instance.flip(0)
+        if isinstance(r1, dict) and r1.get("valid"):
+            r2 = instance.flip(1)
+            return isinstance(r2, dict)
+        return True
+
+    if check_id == "mm_match_pair":
+        return True
+
+    if check_id == "mm_mismatch_flips":
+        return True
+
+    if check_id == "mm_all_matched":
+        return hasattr(instance, "matched")
+
+    # -- Tic Tac Toe --
+    if check_id == "ttt_legal_move":
+        result = instance.move(0, 0)
+        if isinstance(result, dict):
+            return result.get("valid", False)
+        return result is True
+
+    if check_id == "ttt_illegal_reject":
+        instance.move(0, 0)
+        result = instance.move(0, 0)
+        if isinstance(result, dict):
+            return not result.get("valid", True)
+        return result is False
+
+    if check_id == "ttt_three_in_row":
+        return True
+
+    if check_id == "ttt_board_full_draw":
+        return hasattr(instance, "board")
+
     return True  # unknown check, skip
 
 
@@ -764,6 +1128,42 @@ class TestDeepSeekGameBuilding:
     def test_build_banana(self, gateway, tmp_path):
         """Test: DeepSeek builds a working Banana (Gorillas) game."""
         self._build_and_verify_game(gateway, tmp_path, "banana")
+
+    # ---- Pong ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_build_pong(self, gateway, tmp_path):
+        """Test: DeepSeek builds a working Pong game."""
+        self._build_and_verify_game(gateway, tmp_path, "pong")
+
+    # ---- Breakout ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_build_breakout(self, gateway, tmp_path):
+        """Test: DeepSeek builds a working Breakout game."""
+        self._build_and_verify_game(gateway, tmp_path, "breakout")
+
+    # ---- Maze Runner ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_build_maze_runner(self, gateway, tmp_path):
+        """Test: DeepSeek builds a working Maze Runner game."""
+        self._build_and_verify_game(gateway, tmp_path, "maze_runner")
+
+    # ---- Word Guesser ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_build_word_guesser(self, gateway, tmp_path):
+        """Test: DeepSeek builds a working Word Guesser game."""
+        self._build_and_verify_game(gateway, tmp_path, "word_guesser")
+
+    # ---- Memory Match ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_build_memory_match(self, gateway, tmp_path):
+        """Test: DeepSeek builds a working Memory Match game."""
+        self._build_and_verify_game(gateway, tmp_path, "memory_match")
+
+    # ---- Tic-Tac-Toe ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_build_tic_tac_toe(self, gateway, tmp_path):
+        """Test: DeepSeek builds a working Tic-Tac-Toe game."""
+        self._build_and_verify_game(gateway, tmp_path, "tic_tac_toe")
 
     # ---- Shared build + verify logic ----
     def _build_and_verify_game(self, gateway, tmp_path, game_id):

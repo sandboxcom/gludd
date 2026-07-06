@@ -1,0 +1,194 @@
+---
+# verify_feature_claims — audit docs/features.yml against real code/test evidence.
+#
+# Flow:
+#   1. Slurp + parse docs/features.yml
+#   2. For every feature claimed at 100%, verify each evidence reference
+#      (test files, source files, roles, modules, molecule scenarios) exists.
+#   3. Optionally verify commit hashes embedded in notes.
+#   4. Classify each feature: VERIFIED / PARTIAL / UNVERIFIED / FALSE_CLAIM.
+#   5. Generate JSON + Markdown reports.
+#   6. FAIL if any feature is a FALSE_CLAIM; WARN for PARTIAL/UNVERIFIED.
+#
+# Safe: read-only — no mutations, no model calls.
+
+- name: "Read features.yml"
+  ansible.builtin.slurp:
+    src: "{{ project_root }}/{{ features_path }}"
+  register: _vfc_raw
+
+- name: "Parse features YAML"
+  ansible.builtin.set_fact:
+    _vfc_data: "{{ _vfc_raw.content | b64decode | from_yaml }}"
+
+- name: "Create artifact directory"
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: "Extract flat feature list"
+  ansible.builtin.set_fact:
+    _vfc_all_features: >-
+      {%- set features = [] -%}
+      {%- for section in _vfc_data.sections -%}
+        {%- for feature in section.features -%}
+          {%- set _ = features.append(feature) -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ features }}
+
+- name: "Select features to verify (pct >= min_pct_to_verify)"
+  ansible.builtin.set_fact:
+    _vfc_verify_features: >-
+      {{ _vfc_all_features | selectattr('pct', 'ge', min_pct_to_verify | int) | list }}
+
+- name: "Report verification scope"
+  ansible.builtin.debug:
+    msg: >-
+      verify_feature_claims: {{ _vfc_verify_features | length }} features
+      at pct >= {{ min_pct_to_verify }} (of {{ _vfc_all_features | length }}
+      total) will be verified against disk evidence.
+
+- name: "Verify each candidate feature"
+  ansible.builtin.include_tasks: verify_feature.yml
+  loop: "{{ _vfc_verify_features }}"
+  loop_control:
+    loop_var: _vfc_feature
+    label: "{{ _vfc_feature.id }}"
+  when: _vfc_verify_features | length > 0
+
+- name: "Ensure verdicts list exists"
+  ansible.builtin.set_fact:
+    _vfc_verdicts: "{{ _vfc_verdicts | default([]) }}"
+
+- name: "Compute aggregate counts"
+  ansible.builtin.set_fact:
+    _vfc_verified: >-
+      {{ _vfc_verdicts | selectattr('verdict', 'equalto', 'VERIFIED') | list | length }}
+    _vfc_partial: >-
+      {{ _vfc_verdicts | selectattr('verdict', 'equalto', 'PARTIAL') | list | length }}
+    _vfc_unverified: >-
+      {{ _vfc_verdicts | selectattr('verdict', 'equalto', 'UNVERIFIED') | list | length }}
+    _vfc_false_claims: >-
+      {{ _vfc_verdicts | selectattr('verdict', 'equalto', 'FALSE_CLAIM') | list | length }}
+    _vfc_total_verified: "{{ _vfc_verify_features | length }}"
+
+- name: "Generate JSON report artifact"
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'verify_feature_claims',
+        'timestamp': ansible_date_time.iso8601,
+        'project_root': project_root,
+        'features_path': features_path,
+        'min_pct_to_verify': min_pct_to_verify,
+        'summary': {
+          'total_features_in_manifest': _vfc_all_features | length,
+          'features_verified': _vfc_total_verified,
+          'VERIFIED': _vfc_verified,
+          'PARTIAL': _vfc_partial,
+          'UNVERIFIED': _vfc_unverified,
+          'FALSE_CLAIM': _vfc_false_claims
+        },
+        'verdicts': _vfc_verdicts
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/verify_feature_claims_report.json"
+    mode: "0644"
+
+- name: "Generate Markdown report artifact"
+  ansible.builtin.copy:
+    content: >-
+      # verify_feature_claims — Evidence Audit Report
+      **Generated:** {{ ansible_date_time.iso8601 }}
+      **Project:** `{{ project_root }}`
+      **Manifest:** `{{ features_path }}`
+      **Threshold:** pct >= {{ min_pct_to_verify }}
+
+      ## Summary
+      | Category       | Count |
+      |----------------|-------|
+      | VERIFIED       | {{ _vfc_verified }} |
+      | PARTIAL        | {{ _vfc_partial }} |
+      | UNVERIFIED     | {{ _vfc_unverified }} |
+      | FALSE_CLAIM    | {{ _vfc_false_claims }} |
+      | **Total verified** | **{{ _vfc_total_verified }}** |
+      {# ---- FALSE_CLAIM section ---- #}
+      {% if _vfc_false_claims | int > 0 %}
+      ## FALSE_CLAIMs (PLAYBOOK FAILS)
+      These features are claimed at 100% but have NO verifiable evidence:
+      {% for v in _vfc_verdicts | selectattr('verdict', 'equalto', 'FALSE_CLAIM') %}
+      - **{{ v.id }}**: {{ v.title }}
+        - Evidence refs: {{ v.evidence_refs_count }}
+        - Passed checks: {{ v.passed_checks }} / {{ v.total_checks }}
+        - Missing files: {{ v.missing_files | join(', ') or '(none listed - zero evidence refs)' }}
+        - Missing commits: {{ v.missing_commits | join(', ') or '(none)' }}
+      {% endfor %}
+      {% endif %}
+      {# ---- PARTIAL section ---- #}
+      {% if _vfc_partial | int > 0 %}
+      ## PARTIAL (some evidence missing)
+      {% for v in _vfc_verdicts | selectattr('verdict', 'equalto', 'PARTIAL') %}
+      - **{{ v.id }}**: {{ v.title }}
+        - Passed: {{ v.passed_checks }} / {{ v.total_checks }}
+        - Missing files: {{ v.missing_files | join(', ') or '(none)' }}
+        - Missing commits: {{ v.missing_commits | join(', ') or '(none)' }}
+      {% endfor %}
+      {% endif %}
+      {# ---- UNVERIFIED section ---- #}
+      {% if _vfc_unverified | int > 0 %}
+      ## UNVERIFIED (no evidence refs provided)
+      {% for v in _vfc_verdicts | selectattr('verdict', 'equalto', 'UNVERIFIED') %}
+      - **{{ v.id }}**: {{ v.title }}
+      {% endfor %}
+      {% endif %}
+      {# ---- VERIFIED section ---- #}
+      {% if _vfc_verified | int > 0 %}
+      ## VERIFIED
+      {% for v in _vfc_verdicts | selectattr('verdict', 'equalto', 'VERIFIED') %}
+      - **{{ v.id }}**: {{ v.title }}
+      {% endfor %}
+      {% endif %}
+    dest: "{{ artifact_dir }}/verify_feature_claims_report.md"
+    mode: "0644"
+
+- name: "Report summary"
+  ansible.builtin.debug:
+    msg: >-
+      verify_feature_claims complete: {{ _vfc_verified }} VERIFIED,
+      {{ _vfc_partial }} PARTIAL, {{ _vfc_unverified }} UNVERIFIED,
+      {{ _vfc_false_claims }} FALSE_CLAIM.
+      Reports: {{ artifact_dir }}/verify_feature_claims_report.{json,md}
+
+- name: "WARN — PARTIAL features exist"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ _vfc_partial }} feature(s) have PARTIAL evidence.
+      Some evidence references or commit hashes could not be verified.
+      Review {{ artifact_dir }}/verify_feature_claims_report.json for details.
+  when: _vfc_partial | int > 0
+
+- name: "WARN — UNVERIFIED features exist"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ _vfc_unverified }} feature(s) claim 100% but have
+      NO evidence references in features.yml. These features cannot be
+      verified and should either be removed, downgraded, or given evidence.
+  when: _vfc_unverified | int > 0
+
+- name: "FAIL — FALSE_CLAIM features detected"
+  ansible.builtin.fail:
+    msg: >-
+      FAIL: {{ _vfc_false_claims }} feature(s) are FALSE_CLAIMs — claimed 100%
+      but ALL evidence references point to nonexistent files or commits.
+      Every FALSE_CLAIM feature must be fixed before this gate can pass.
+      Review {{ artifact_dir }}/verify_feature_claims_report.json for details.
+      FALSE_CLAIM ids: {{ _vfc_verdicts | selectattr('verdict', 'equalto', 'FALSE_CLAIM') | map(attribute='id') | join(', ') }}
+  when: _vfc_false_claims | int > 0
+
+- name: "PASS — all verified features are VERIFIED"
+  ansible.builtin.debug:
+    msg: >-
+      PASS: All {{ _vfc_verified }} verified features have complete evidence.
+      Zero FALSE_CLAIMs, {{ _vfc_partial }} PARTIAL, {{ _vfc_unverified }} UNVERIFIED.
+  when: _vfc_false_claims | int == 0
