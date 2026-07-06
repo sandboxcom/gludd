@@ -1,0 +1,4 @@
+push-wait:
+	@echo "Waiting for cooldown to expire..."
+	@sleep 300
+	@$(MAKE) git-push-sandboxcom
