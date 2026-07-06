@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -118,7 +116,7 @@ def test_ci_pending_sets_gate_red(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     activity_path.write_text(json.dumps({"last_activity_ts": time.time()}))
     monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(activity_path))
 
-    result = check_and_reset()
+    check_and_reset()
 
     assert gate_status.exists()
     content = gate_status.read_text()
@@ -146,7 +144,7 @@ def test_ci_green_does_not_modify_gate(tmp_path: Path, monkeypatch: pytest.Monke
     activity_path.write_text(json.dumps({"last_activity_ts": time.time()}))
     monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(activity_path))
 
-    result = check_and_reset()
+    check_and_reset()
 
     assert gate_status.exists()
     content = gate_status.read_text()
@@ -183,7 +181,7 @@ def test_gate_already_red_not_overwritten(tmp_path: Path, monkeypatch: pytest.Mo
     activity_path.write_text(json.dumps({"last_activity_ts": time.time()}))
     monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(activity_path))
 
-    result = check_and_reset()
+    check_and_reset()
 
     assert gate_status.exists()
     content = gate_status.read_text()
@@ -248,7 +246,7 @@ def test_heartbeat_reflects_ci_state(tmp_path: Path, monkeypatch: pytest.MonkeyP
     activity_path.write_text(json.dumps({"last_activity_ts": time.time()}))
     monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(activity_path))
 
-    result = check_and_reset()
+    check_and_reset()
 
     heartbeat_path = tmp_path / "heartbeat.json"
     assert heartbeat_path.exists(), "Heartbeat file should be written"
