@@ -21,7 +21,9 @@ class TestEventLoopE2E:
             "dispatch_execute_jobs",
             "reconcile_completed_decisions",
             "refresh_model_performance",
+            "check_compute_utilization",
             "self_improve",
+            "poll_issue_sources",
             "emit_tick_metrics",
         ]
         assert expected == PHASE_ORDER

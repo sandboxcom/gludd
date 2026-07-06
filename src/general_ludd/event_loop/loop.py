@@ -204,6 +204,9 @@ _WORK_TYPE_TASK_TYPE_MAP: dict[str, str] = {
     "audit": "feature", "release": "feature", "dependency": "feature",
     "security": "security_fix", "model": "feature", "unknown": "feature",
     "model_decision": "feature", "langgraph_generate": "feature",
+    "enforcement_gate": "feature",
+    "enforcement_gate_push_guard": "feature",
+    "enforcement_gate_check": "feature",
 }
 
 
@@ -224,6 +227,9 @@ _WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
     "model": "noop.yml", "release": "noop.yml",
     "model_decision": "langgraph_decide.yml",
     "langgraph_generate": "langchain_generate.yml",
+    "enforcement_gate": "enforcement_gate.yml",
+    "enforcement_gate_push_guard": "enforcement_gate.yml",
+    "enforcement_gate_check": "enforcement_gate.yml",
 }
 
 

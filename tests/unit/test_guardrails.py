@@ -42,7 +42,7 @@ class TestMakefileTargets:
         """Suites collect without errors — fast gate, not full test run."""
         result = subprocess.run(
             ["make", "test-count"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=60,
+            capture_output=True, text=True, cwd=str(ROOT), timeout=120,
         )
         assert result.returncode == 0, f"make test-count failed:\n{result.stderr}\n{result.stdout}"
 

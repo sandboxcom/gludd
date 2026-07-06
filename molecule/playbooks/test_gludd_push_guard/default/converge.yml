@@ -1,0 +1,118 @@
+---
+# Exercise gludd_push_guard across all three states.
+- name: Converge - test push guard module
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    state_file: "/tmp/gludd-push-guard-test/force-push-track.json"
+  tasks:
+    # ---- check: fresh state ------------------------------------------------
+    - name: Check bypass allowed on fresh state
+      general_ludd.agent.gludd_push_guard:
+        state: check
+        state_file: "{{ state_file }}"
+        max_bypasses: 2
+        window_hours: 1.0
+      register: check_fresh
+
+    - name: Persist check-fresh result
+      ansible.builtin.copy:
+        content: "{{ check_fresh | to_nice_json }}"
+        dest: "/tmp/gludd-push-guard-check-fresh.json"
+        mode: "0644"
+
+    - name: Debug check-fresh
+      ansible.builtin.debug:
+        var: check_fresh
+
+    # ---- record: two bypasses (should be allowed) --------------------------
+    - name: Record first bypass
+      general_ludd.agent.gludd_push_guard:
+        state: record
+        state_file: "{{ state_file }}"
+        max_bypasses: 2
+        window_hours: 1.0
+      register: record_1
+
+    - name: Record second bypass
+      general_ludd.agent.gludd_push_guard:
+        state: record
+        state_file: "{{ state_file }}"
+        max_bypasses: 2
+        window_hours: 1.0
+      register: record_2
+
+    # ---- check: after two bypasses, third should be blocked ----------------
+    - name: Check bypass blocked after reaching max
+      general_ludd.agent.gludd_push_guard:
+        state: check
+        state_file: "{{ state_file }}"
+        max_bypasses: 2
+        window_hours: 1.0
+      register: check_blocked
+
+    - name: Persist check-blocked result
+      ansible.builtin.copy:
+        content: "{{ check_blocked | to_nice_json }}"
+        dest: "/tmp/gludd-push-guard-check-blocked.json"
+        mode: "0644"
+
+    - name: Debug check-blocked
+      ansible.builtin.debug:
+        var: check_blocked
+
+    # ---- reset: normal push clears the counter -----------------------------
+    - name: Reset bypass counter (normal push)
+      general_ludd.agent.gludd_push_guard:
+        state: reset
+        state_file: "{{ state_file }}"
+        max_bypasses: 2
+        window_hours: 1.0
+      register: reset_result
+
+    # ---- check: after reset, bypass should be allowed again ----------------
+    - name: Check bypass allowed after reset
+      general_ludd.agent.gludd_push_guard:
+        state: check
+        state_file: "{{ state_file }}"
+        max_bypasses: 2
+        window_hours: 1.0
+      register: check_after_reset
+
+    - name: Persist check-after-reset result
+      ansible.builtin.copy:
+        content: "{{ check_after_reset | to_nice_json }}"
+        dest: "/tmp/gludd-push-guard-check-after-reset.json"
+        mode: "0644"
+
+    - name: Debug check-after-reset
+      ansible.builtin.debug:
+        var: check_after_reset
+
+    # ---- check-mode: record and reset should report changed=true -----------
+    - name: Check-mode record should report changed
+      general_ludd.agent.gludd_push_guard:
+        state: record
+        state_file: "{{ state_file }}"
+      check_mode: true
+      register: checkmode_record
+
+    - name: Persist checkmode-record result
+      ansible.builtin.copy:
+        content: "{{ checkmode_record | to_nice_json }}"
+        dest: "/tmp/gludd-push-guard-checkmode-record.json"
+        mode: "0644"
+
+    - name: Check-mode reset should report changed
+      general_ludd.agent.gludd_push_guard:
+        state: reset
+        state_file: "{{ state_file }}"
+      check_mode: true
+      register: checkmode_reset
+
+    - name: Persist checkmode-reset result
+      ansible.builtin.copy:
+        content: "{{ checkmode_reset | to_nice_json }}"
+        dest: "/tmp/gludd-push-guard-checkmode-reset.json"
+        mode: "0644"

@@ -1,0 +1,340 @@
+---
+# enforcement_gate role — COMPOSING FAIL-CLOSED enforcement gate
+#
+# Codifies the "no commit without a green gate, no push past the rate guard"
+# policy. Runs gludd_gate_check to verify .gate-status completion and
+# freshness; runs gludd_push_guard to validate push readiness (CI-pending,
+# cooldown, cancelled-run cap). Optionally runs model analysis.
+# FAIL-CLOSED: fails the playbook if any enforcement check blocks.
+# Safe-by-default: enable_model_call=false, enable_git_push=false.
+#
+# Flow:
+#   1. Gather live daemon facts for system context.
+#   2. Check gate completion and freshness via gludd_gate_check.
+#   3. Verify per-phase gate results (lint, typecheck, collect, test).
+#   4. Check push readiness via gludd_push_guard (when enabled).
+#   5. Optionally run model call for analysis.
+#   6. Optionally send gludd_message on block.
+#   7. Write enforcement gate artifact (JSON + markdown).
+#   8. FAIL-CLOSED decision: fail when any enforcement check blocks.
+
+- name: Gather live daemon facts for context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Gate completion and freshness check ──────────────────────────────────
+
+- name: Check gate status file
+  general_ludd.agent.gludd_gate_check:
+    gate_path: "{{ gate_status_path }}"
+    state: check
+  register: _eg_gate_result
+
+- name: Determine gate age (seconds since last modification)
+  ansible.builtin.stat:
+    path: "{{ gate_status_path }}"
+  register: _eg_gate_stat
+  failed_when: false
+
+- name: Compute gate freshness verdict
+  ansible.builtin.set_fact:
+    _eg_gate_file_exists: "{{ _eg_gate_stat.stat.exists | default(false) | bool }}"
+    _eg_gate_age_seconds: >-
+      {{ ((ansible_date_time.epoch | int) - (_eg_gate_stat.stat.mtime | default(0) | int)) | default(999999) | int }}
+    _eg_gate_complete: "{{ _eg_gate_result.gate_complete | default(false) | bool }}"
+    _eg_gate_passed: "{{ _eg_gate_result.gate_passed | default(false) | bool }}"
+    _eg_gate_fresh: >-
+      {{ (_eg_gate_file_exists and (_eg_gate_age_seconds | int) <= (gate_max_age_seconds | int)) | bool }}
+    _eg_gate_complete_and_fresh: >-
+      {{ (_eg_gate_complete and _eg_gate_fresh) | bool }}
+
+# ── Per-phase gate result parsing ────────────────────────────────────────
+
+- name: Slurp gate status file for per-phase results
+  ansible.builtin.slurp:
+    src: "{{ gate_status_path }}"
+  register: _eg_gate_content
+  failed_when: false
+  when: _eg_gate_file_exists
+
+- name: Parse per-phase gate results
+  ansible.builtin.set_fact:
+    _eg_gate_phases: >-
+      {%- set phases = {
+        'lint_pass': True,
+        'typecheck_pass': True,
+        'collect_pass': True,
+        'test_pass': True
+      } -%}
+      {%- if _eg_gate_file_exists and _eg_gate_content.content is defined -%}
+        {%- set content = _eg_gate_content.content | b64decode | default('') -%}
+        {%- set _ = phases.update({'lint_pass': 'LINT: 0' in content or 'lint: 0' in content.lower()}) -%}
+        {%- set _ = phases.update({'typecheck_pass': 'typecheck: 0 baseline' not in content.lower()}) -%}
+        {%- set _ = phases.update({'collect_pass': 'COLLECT: 0' not in content}) -%}
+        {%- set _ = phases.update({'test_pass': 'failed' not in content.lower()}) -%}
+      {%- endif -%}
+      {{ phases }}
+
+- name: Compute per-phase enforcement checks
+  ansible.builtin.set_fact:
+    _eg_lint_pass: >-
+      {{ (not require_lint_pass | bool) or (_eg_gate_phases.lint_pass | bool) }}
+    _eg_typecheck_pass: >-
+      {{ (not require_typecheck_pass | bool) or (_eg_gate_phases.typecheck_pass | bool) }}
+    _eg_collect_pass: >-
+      {{ (not require_collect_pass | bool) or (_eg_gate_phases.collect_pass | bool) }}
+    _eg_test_pass: >-
+      {{ (not require_test_pass | bool) or (_eg_gate_phases.test_pass | bool) }}
+
+# ── Push guard check ─────────────────────────────────────────────────────
+
+- name: Check if force-push bypass is currently allowed
+  general_ludd.agent.gludd_push_guard:
+    state: check
+    state_file: "{{ repo_path }}/.gate-logs/force-push-track.json"
+  register: _eg_push_guard
+  when: enable_push_guard | bool
+
+- name: Compute push guard verdict
+  ansible.builtin.set_fact:
+    _eg_push_bypass_allowed: >-
+      {{ _eg_push_guard.bypass_allowed | default(true) | bool }}
+    _eg_push_bypass_count: >-
+      {{ _eg_push_guard.current_count | default(0) | int }}
+    _eg_push_guard_pass: >-
+      {{ (not enable_push_guard | bool) or (_eg_push_bypass_allowed | bool) }}
+
+# ── Model analysis (optional, off by default) ────────────────────────────
+
+- name: Run model analysis for enforcement context
+  general_ludd.agent.gludd_model_call:
+    prompt_profile: "enforcement_gate"
+    model_profile: "{{ model_profile }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    task_type: "{{ analysis_task_type }}"
+    work_type: "enforcement_gate"
+    extra_body:
+      gate_complete: "{{ _eg_gate_complete }}"
+      gate_passed: "{{ _eg_gate_passed }}"
+      gate_fresh: "{{ _eg_gate_fresh }}"
+      gate_age_seconds: "{{ _eg_gate_age_seconds }}"
+      push_bypass_allowed: "{{ _eg_push_bypass_allowed }}"
+      push_bypass_count: "{{ _eg_push_bypass_count }}"
+  register: _eg_model_analysis
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"
+  when: enable_model_call | bool
+
+- name: Extract model analysis text
+  ansible.builtin.set_fact:
+    _eg_model_response: >-
+      {{ _eg_model_analysis.response | default('') }}
+    _eg_model_confidence: >-
+      {{ _eg_model_analysis.confidence | default(0) | float }}
+  when: enable_model_call | bool
+
+# ── FAIL-CLOSED gate decision ────────────────────────────────────────────
+
+- name: Determine enforcement gate passed (fail-closed)
+  ansible.builtin.set_fact:
+    _eg_gate_result_pass: >-
+      {{
+        (
+          (not require_gate_passed | bool)
+          or (_eg_gate_complete_and_fresh and _eg_gate_passed)
+        )
+        and _eg_lint_pass | bool
+        and _eg_typecheck_pass | bool
+        and _eg_collect_pass | bool
+        and _eg_test_pass | bool
+        and _eg_push_guard_pass | bool
+      }}
+
+- name: Build block reasons list
+  ansible.builtin.set_fact:
+    _eg_block_reasons: >-
+      {%- set reasons = [] -%}
+      {%- if require_gate_passed | bool and not _eg_gate_passed -%}
+        {%- set _ = reasons.append('gate_not_passed') -%}
+      {%- endif -%}
+      {%- if require_gate_passed | bool and not _eg_gate_complete -%}
+        {%- set _ = reasons.append('gate_incomplete') -%}
+      {%- endif -%}
+      {%- if require_gate_passed | bool and not _eg_gate_fresh -%}
+        {%- set _ = reasons.append('gate_stale') -%}
+      {%- endif -%}
+      {%- if require_lint_pass | bool and not _eg_lint_pass -%}
+        {%- set _ = reasons.append('lint_blocked') -%}
+      {%- endif -%}
+      {%- if require_typecheck_pass | bool and not _eg_typecheck_pass -%}
+        {%- set _ = reasons.append('typecheck_blocked') -%}
+      {%- endif -%}
+      {%- if require_collect_pass | bool and not _eg_collect_pass -%}
+        {%- set _ = reasons.append('collect_blocked') -%}
+      {%- endif -%}
+      {%- if require_test_pass | bool and not _eg_test_pass -%}
+        {%- set _ = reasons.append('test_blocked') -%}
+      {%- endif -%}
+      {%- if enable_push_guard | bool and not _eg_push_bypass_allowed -%}
+        {%- set _ = reasons.append('push_guard_blocked') -%}
+      {%- endif -%}
+      {{ reasons }}
+
+# ── Write artifacts ──────────────────────────────────────────────────────
+
+- name: Write JSON enforcement gate artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'enforcement_gate',
+        'status': 'completed',
+        'repo_path': repo_path,
+        'gate_complete': _eg_gate_complete,
+        'gate_passed': _eg_gate_passed,
+        'gate_fresh': _eg_gate_fresh,
+        'gate_age_seconds': _eg_gate_age_seconds | int,
+        'gate_max_age_seconds': gate_max_age_seconds | int,
+        'per_phase': {
+          'lint_pass': _eg_lint_pass | bool,
+          'typecheck_pass': _eg_typecheck_pass | bool,
+          'collect_pass': _eg_collect_pass | bool,
+          'test_pass': _eg_test_pass | bool
+        },
+        'push_guard': {
+          'enabled': enable_push_guard | bool,
+          'bypass_allowed': _eg_push_bypass_allowed | bool,
+          'bypass_count': _eg_push_bypass_count | int
+        },
+        'model_analysis': {
+          'enabled': enable_model_call | bool,
+          'response': _eg_model_response | default('')
+        } if enable_model_call | bool else {},
+        'gate_result': 'PASS' if (_eg_gate_result_pass | bool) else 'BLOCK',
+        'block_reasons': _eg_block_reasons,
+        'system_context': {
+          'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int,
+          'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0) | float
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/enforcement_gate.json"
+    mode: "0644"
+
+- name: Write markdown enforcement gate report
+  ansible.builtin.copy:
+    content: |
+      # Enforcement Gate Report
+
+      **Repo:** `{{ repo_path }}`
+      **Gate Result:** {{ 'PASS' if (_eg_gate_result_pass | bool) else 'BLOCK' }}
+      **Gate file:** `{{ gate_status_path }}`
+
+      ## Gate Status
+
+      | Check | Result |
+      |-------|--------|
+      | Gate complete | {{ _eg_gate_complete }} |
+      | Gate passed | {{ _eg_gate_passed }} |
+      | Gate fresh (≤{{ gate_max_age_seconds }}s) | {{ _eg_gate_fresh }} (age={{ _eg_gate_age_seconds }}s) |
+
+      ## Per-Phase Results
+
+      | Phase | Required | Passed |
+      |-------|----------|--------|
+      | Lint | {{ require_lint_pass }} | {{ _eg_lint_pass }} |
+      | Typecheck | {{ require_typecheck_pass }} | {{ _eg_typecheck_pass }} |
+      | Collect | {{ require_collect_pass }} | {{ _eg_collect_pass }} |
+      | Test | {{ require_test_pass }} | {{ _eg_test_pass }} |
+
+      ## Push Guard
+
+      | Check | Value |
+      |-------|-------|
+      | Enabled | {{ enable_push_guard }} |
+      | Bypass allowed | {{ _eg_push_bypass_allowed }} |
+      | Bypass count | {{ _eg_push_bypass_count }} |
+
+      {% if _eg_block_reasons | length > 0 %}
+      ## Block Reasons
+
+      {% for reason in _eg_block_reasons %}
+      - `{{ reason }}`
+      {% endfor %}
+      {% endif %}
+
+      {% if enable_model_call %}
+      ## Model Analysis
+
+      {{ _eg_model_response | default('(no response)') }}
+      {% endif %}
+
+      ---
+      {% if _eg_gate_result_pass %}
+      **ENFORCEMENT GATE PASSED** — safe to proceed.
+      {% else %}
+      **ENFORCEMENT GATE BLOCKED** — resolve issues above before proceeding.
+      {% endif %}
+
+      *Generated by general_ludd.agent.enforcement_gate — fail-closed.*
+    dest: "{{ artifact_dir }}/enforcement_gate.md"
+    mode: "0644"
+
+# ── Emit gludd_message on block ──────────────────────────────────────────
+
+- name: Send block notification
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: enforcement_gate
+    recipient: "{{ handoff_recipient }}"
+    topic: enforcement_gate_blocked
+    body: >-
+      {{ {
+        'gate_passed': false,
+        'next_action': 'BLOCK',
+        'block_reasons': _eg_block_reasons,
+        'gate_complete': _eg_gate_complete,
+        'gate_passed': _eg_gate_passed,
+        'gate_fresh': _eg_gate_fresh,
+        'push_bypass_allowed': _eg_push_bypass_allowed
+      } | to_json }}
+    priority: "high"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - not (_eg_gate_result_pass | bool)
+    - not ansible_check_mode
+
+# ── FAIL-CLOSED: fail the playbook when enforcement blocks ───────────────
+
+- name: Fail on enforcement gate block (FAIL-CLOSED)
+  ansible.builtin.fail:
+    msg: >-
+      Enforcement gate BLOCKED for {{ repo_path }}:
+      {{ _eg_block_reasons | join(', ') }}.
+      Gate complete={{ _eg_gate_complete }}, passed={{ _eg_gate_passed }},
+      fresh={{ _eg_gate_fresh }}, age={{ _eg_gate_age_seconds }}s,
+      lint={{ _eg_lint_pass }}, typecheck={{ _eg_typecheck_pass }},
+      collect={{ _eg_collect_pass }}, test={{ _eg_test_pass }},
+      push_guard={{ _eg_push_guard_pass }},
+      bypass_count={{ _eg_push_bypass_count }}.
+  when: not (_eg_gate_result_pass | bool)
+
+- name: Report enforcement gate completion
+  ansible.builtin.debug:
+    msg: >-
+      Enforcement gate: result={{ 'PASS' if (_eg_gate_result_pass | bool) else 'BLOCK' }}
+      gate_complete={{ _eg_gate_complete }}, gate_passed={{ _eg_gate_passed }},
+      lint={{ _eg_lint_pass }}, typecheck={{ _eg_typecheck_pass }},
+      collect={{ _eg_collect_pass }}, test={{ _eg_test_pass }},
+      push_guard={{ _eg_push_guard_pass }}

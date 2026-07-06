@@ -1,0 +1,62 @@
+---
+- name: Verify - gludd_gate_check returned correct flags for each fixture
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Load persisted results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-test-gate-check-results.json"
+      register: results_raw
+
+    - name: Parse results
+      ansible.builtin.set_fact:
+        all_results: "{{ results_raw.content | b64decode | from_json }}"
+
+    - name: Assert gate-passed fixture
+      ansible.builtin.assert:
+        that:
+          - all_results.passed.gate_complete == true
+          - all_results.passed.gate_passed == true
+          - all_results.passed.changed == false
+          - all_results.passed.failed == false
+        fail_msg: "passed gate expected complete=true passed=true: {{ all_results.passed }}"
+        success_msg: "gate-passed fixture: complete=true, passed=true"
+
+    - name: Assert gate-failed fixture
+      ansible.builtin.assert:
+        that:
+          - all_results.failed.gate_complete == true
+          - all_results.failed.gate_passed == false
+          - all_results.failed.changed == false
+          - all_results.failed.failed == false
+        fail_msg: "failed gate expected complete=true passed=false: {{ all_results.failed }}"
+        success_msg: "gate-failed fixture: complete=true, passed=false"
+
+    - name: Assert gate-missing fixture
+      ansible.builtin.assert:
+        that:
+          - all_results.missing.gate_complete == false
+          - all_results.missing.gate_passed == false
+          - all_results.missing.changed == false
+          - all_results.missing.failed == false
+        fail_msg: "missing gate expected complete=false passed=false: {{ all_results.missing }}"
+        success_msg: "gate-missing fixture: complete=false, passed=false"
+
+    - name: Assert default path returns a result
+      ansible.builtin.assert:
+        that:
+          - all_results.default.gate_path is defined
+          - all_results.default.changed == false
+          - all_results.default.failed == false
+        fail_msg: "default gate check failed to return valid result: {{ all_results.default }}"
+        success_msg: "default gate check returned structured result"
+
+    - name: Cleanup fixture files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/gludd-test-gate-passed.status"
+        - "/tmp/gludd-test-gate-failed.status"
+        - "/tmp/gludd-test-gate-check-results.json"

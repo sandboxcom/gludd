@@ -1,0 +1,36 @@
+---
+- name: Prepare - create gate status fixture files
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Create a passing gate-status fixture
+      ansible.builtin.copy:
+        content: |
+          === GATE PHASE: lint ===
+          PASS
+          === GATE PHASE: typecheck ===
+          PASS
+          === GATE PHASE: test ===
+          PASS
+          === GATE: PASSED ===
+        dest: "/tmp/gludd-test-gate-passed.status"
+        mode: "0644"
+
+    - name: Create a failed gate-status fixture
+      ansible.builtin.copy:
+        content: |
+          === GATE PHASE: lint ===
+          PASS
+          === GATE PHASE: typecheck ===
+          PASS
+          === GATE PHASE: test ===
+          FAIL
+          === GATE: FAILED ===
+        dest: "/tmp/gludd-test-gate-failed.status"
+        mode: "0644"
+
+    - name: Ensure missing fixture path does not exist
+      ansible.builtin.file:
+        path: "/tmp/gludd-test-gate-missing.status"
+        state: absent

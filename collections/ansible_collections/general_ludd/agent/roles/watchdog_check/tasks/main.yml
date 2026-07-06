@@ -1,0 +1,485 @@
+---
+# watchdog_check role — wrap agent_watchdog.py health checks in Ansible
+#
+# Mirrors the stop-detection logic from scripts/agent_watchdog.py:
+#   1. Read daemon state via gludd_facts for system context.
+#   2. Check .gate-status: red? stale (>1h)?
+#   3. Check CI state (make ci-verdict): pending >30min? red?
+#   4. Check unpushed commits (git log @{u}..HEAD).
+#   5. Check stop count from /tmp/gludd-watchdog-stop-count.json.
+#   6. Check pending work: TASKS.md unchecked items, ratchet.yml entries.
+#   7. Write JSON + MD health report artifacts.
+#   8. Send gludd_message priority=high on critical conditions.
+#   9. FAIL the play when critical conditions met; PASS when all green.
+#
+# SAFE-BY-DEFAULT: enable_model_call=false, no mutations, no gate run.
+
+- name: Gather live daemon facts for context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Extract facts for branching ──────────────────────────────────────────────
+
+- name: Set fact variables from live facts
+  ansible.builtin.set_fact:
+    _wc_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(0) | float }}"
+    _wc_backlog: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
+    _wc_total_work: "{{ live_facts.ansible_facts.gludd.work.total | default(0) | int }}"
+    _wc_total_runs: "{{ live_facts.ansible_facts.gludd.history.total_runs | default(0) | int }}"
+    _wc_health_status: "unknown"
+    _wc_health_reason: ""
+
+# ── Check 1: Stop count from watchdog ────────────────────────────────────────
+
+- name: Read stop count file
+  ansible.builtin.set_fact:
+    _wc_stop_count_file: "{{ lookup('file', stop_count_file, errors='ignore') | default('{}') }}"
+
+- name: Parse stop count
+  ansible.builtin.set_fact:
+    _wc_stop_count: >-
+      {{ (_wc_stop_count_file | from_json).get('count', 0) | int }}
+
+- name: Flag stop count escalation
+  ansible.builtin.set_fact:
+    _wc_checks:
+      stop_count:
+        value: "{{ _wc_stop_count }}"
+        threshold: "{{ stop_count_escalate }}"
+        severity: "{{ 'critical' if _wc_stop_count | int >= stop_count_escalate | int else 'warning' if _wc_stop_count | int > 0 else 'ok' }}"
+        message: >-
+          {% if _wc_stop_count | int >= stop_count_escalate | int %}
+          STOP COUNT ESCALATED: agent stopped {{ _wc_stop_count }} times (threshold={{ stop_count_escalate }})
+          {% elif _wc_stop_count | int > 0 %}
+          Stop count {{ _wc_stop_count }} — below escalation threshold
+          {% else %}
+          No stops detected
+          {% endif %}
+
+# ── Check 2: Gate status (.gate-status) ──────────────────────────────────────
+
+- name: Check if gate status file exists
+  ansible.builtin.stat:
+    path: "{{ repo_path }}/{{ gate_status_file }}"
+  register: _wc_gate_stat
+
+- name: Read gate status
+  ansible.builtin.set_fact:
+    _wc_gate_content: "{{ lookup('file', repo_path + '/' + gate_status_file, errors='ignore') | default('') }}"
+  when: _wc_gate_stat.stat.exists | bool
+
+- name: Parse gate status
+  ansible.builtin.set_fact:
+    _wc_gate_red: >-
+      {{ 'FAIL' in _wc_gate_content if _wc_gate_content is defined else false }}
+    _wc_gate_passed: >-
+      {{ 'PASS' in _wc_gate_content if _wc_gate_content is defined else false }}
+    _wc_gate_stale: >-
+      {{ ((ansible_date_time.epoch | int) - (_wc_gate_stat.stat.mtime | int))
+          > (gate_stale_hours | int * 3600)
+          if (_wc_gate_stat.stat.exists | bool) else false }}
+    _wc_gate_age_seconds: >-
+      {{ ((ansible_date_time.epoch | int) - (_wc_gate_stat.stat.mtime | int))
+          if (_wc_gate_stat.stat.exists | bool) else 0 }}
+    _wc_gate_red_hours: >-
+      {{ ((ansible_date_time.epoch | int) - (_wc_gate_stat.stat.mtime | int)) / 3600.0 | round(1)
+          if (_wc_gate_stat.stat.exists | bool) else 0 }}
+
+- name: Flag gate status
+  ansible.builtin.set_fact:
+    _wc_gate_check:
+      red: "{{ _wc_gate_red | bool }}"
+      passed: "{{ _wc_gate_passed | bool }}"
+      stale: "{{ _wc_gate_stale | bool }}"
+      age_hours: "{{ _wc_gate_red_hours }}"
+      file_exists: "{{ _wc_gate_stat.stat.exists | bool }}"
+      severity: >-
+        {% if _wc_gate_red | bool and _wc_gate_red_hours | float >= gate_red_max_hours | float %}
+        critical
+        {% elif _wc_gate_red | bool %}
+        warning
+        {% elif _wc_gate_stale | bool %}
+        warning
+        {% elif _wc_gate_passed | bool %}
+        ok
+        {% else %}
+        ok
+        {% endif %}
+      message: >-
+        {% if _wc_gate_red | bool and _wc_gate_red_hours | float >= gate_red_max_hours | float %}
+        GATE RED FOR >{{ gate_red_max_hours }}h: gate has been failing for {{ _wc_gate_red_hours }} hours
+        {% elif _wc_gate_red | bool %}
+        Gate is RED — needs triage
+        {% elif _wc_gate_stale | bool %}
+        Gate status is STALE (> {{ _wc_gate_age_seconds }}s old) with no running gate
+        {% elif _wc_gate_passed | bool %}
+        Gate PASSED — all checks green
+        {% else %}
+        Gate status file not found
+        {% endif %}
+
+# ── Check 3: CI state (make ci-verdict) ──────────────────────────────────────
+
+- name: Run CI verdict check
+  ansible.builtin.command:
+    cmd: "make ci-verdict BRANCH=master"
+    chdir: "{{ repo_path }}"
+  register: _wc_ci_run
+  changed_when: false
+  failed_when: false
+
+- name: Parse CI verdict output
+  ansible.builtin.set_fact:
+    _wc_ci_output: "{{ _wc_ci_run.stdout | default('') + _wc_ci_run.stderr | default('') }}"
+    _wc_ci_rc: "{{ _wc_ci_run.rc | default(0) }}"
+
+- name: Flag CI state
+  ansible.builtin.set_fact:
+    _wc_ci_pending: >-
+      {{ ('PENDING' in _wc_ci_output.upper() or 'IN_PROGRESS' in _wc_ci_output.upper()
+          or 'QUEUED' in _wc_ci_output.upper()) }}
+    _wc_ci_red: >-
+      {{ ('FAILURE' in _wc_ci_output.upper() or 'RED' in _wc_ci_output.upper()) }}
+    _wc_ci_green: >-
+      {{ 'SUCCESS' in _wc_ci_output.upper() }}
+
+# ── Check 3b: CI cache (pending duration) ─────────────────────────────────────
+
+- name: Read watchdog CI cache
+  ansible.builtin.set_fact:
+    _wc_ci_cache_raw: "{{ lookup('file', ci_cache_file, errors='ignore') | default('{}') }}"
+
+- name: Parse CI cache for pending duration
+  ansible.builtin.set_fact:
+    _wc_ci_pending_minutes: >-
+      {{ (((ansible_date_time.epoch | int) -
+          ((_wc_ci_cache_raw | from_json).get('pending_first_seen', 0) | int)) / 60.0 | round(1))
+          if ((_wc_ci_cache_raw | from_json).get('pending_first_seen', 0) | int) > 0
+          else 0 }}
+
+- name: Determine CI check severity
+  ansible.builtin.set_fact:
+    _wc_ci_check:
+      pending: "{{ _wc_ci_pending | bool }}"
+      red: "{{ _wc_ci_red | bool }}"
+      green: "{{ _wc_ci_green | bool }}"
+      pending_minutes: "{{ _wc_ci_pending_minutes }}"
+      pending_stalled: >-
+        {{ _wc_ci_pending | bool and (_wc_ci_pending_minutes | float) >= (ci_pending_stall_minutes | float) }}
+      severity: >-
+        {% if _wc_ci_red | bool %}
+        critical
+        {% elif _wc_ci_pending | bool and (_wc_ci_pending_minutes | float) >= (ci_pending_stall_minutes | float) %}
+        critical
+        {% elif _wc_ci_pending | bool %}
+        warning
+        {% elif _wc_ci_green | bool %}
+        ok
+        {% else %}
+        unknown
+        {% endif %}
+      message: >-
+        {% if _wc_ci_red | bool %}
+        CI is RED — failures need investigation
+        {% elif _wc_ci_pending | bool and (_wc_ci_pending_minutes | float) >= (ci_pending_stall_minutes | float) %}
+        CI STALLED: pending for {{ _wc_ci_pending_minutes }}min (threshold={{ ci_pending_stall_minutes }}min)
+        {% elif _wc_ci_pending | bool %}
+        CI is PENDING — awaiting completion ({{ _wc_ci_pending_minutes }}min)
+        {% elif _wc_ci_green | bool %}
+        CI is GREEN
+        {% else %}
+        CI state UNKNOWN — could not determine
+        {% endif %}
+
+# ── Check 4: Unpushed commits ────────────────────────────────────────────────
+
+- name: Check unpushed commits
+  ansible.builtin.shell:
+    cmd: "git log @{u}..HEAD 2>&1 | wc -l | tr -d ' '"
+    chdir: "{{ repo_path }}"
+  register: _wc_unpushed_run
+  changed_when: false
+  failed_when: false
+
+- name: Parse unpushed count
+  ansible.builtin.set_fact:
+    _wc_unpushed_count: >-
+      {{ _wc_unpushed_run.stdout | default('0') | trim | int }}
+
+- name: Flag unpushed commits
+  ansible.builtin.set_fact:
+    _wc_unpushed_check:
+      count: "{{ _wc_unpushed_count }}"
+      severity: >-
+        {% if _wc_unpushed_count > 5 %}
+        warning
+        {% elif _wc_unpushed_count > 0 %}
+        info
+        {% else %}
+        ok
+        {% endif %}
+      message: >-
+        {% if _wc_unpushed_count > 5 %}
+        {{ _wc_unpushed_count }} unpushed commits — push needed
+        {% elif _wc_unpushed_count > 0 %}
+        {{ _wc_unpushed_count }} unpushed commit(s)
+        {% else %}
+        No unpushed commits
+        {% endif %}
+
+# ── Check 5: Pending work (TASKS.md unchecked, ratchet.yml entries) ──────────
+
+- name: Check TASKS.md for unchecked items
+  ansible.builtin.shell:
+    cmd: "grep -cE '^\\s*-\\s+\\[\\s*\\]' TASKS.md 2>/dev/null || echo 0"
+    chdir: "{{ repo_path }}"
+  register: _wc_tasks_run
+  changed_when: false
+  failed_when: false
+
+- name: Check ratchet.yml for entries
+  ansible.builtin.shell:
+    cmd: "grep -cE '^\\s*[a-zA-Z_-]+:' config/ratchet.yml 2>/dev/null || echo 0"
+    chdir: "{{ repo_path }}"
+  register: _wc_ratchet_run
+  changed_when: false
+  failed_when: false
+
+- name: Parse pending work counts
+  ansible.builtin.set_fact:
+    _wc_unchecked_tasks: "{{ _wc_tasks_run.stdout | default('0') | trim | int }}"
+    _wc_ratchet_entries: "{{ _wc_ratchet_run.stdout | default('0') | trim | int }}"
+
+- name: Flag pending work
+  ansible.builtin.set_fact:
+    _wc_pending_work_check:
+      unchecked_tasks: "{{ _wc_unchecked_tasks }}"
+      ratchet_entries: "{{ _wc_ratchet_entries }}"
+      has_pending: >-
+        {{ (_wc_unchecked_tasks > 0) or (_wc_ratchet_entries > 0) }}
+      severity: >-
+        {% if _wc_unchecked_tasks > 10 %}
+        warning
+        {% elif (_wc_unchecked_tasks > 0) or (_wc_ratchet_entries > 0) %}
+        info
+        {% else %}
+        ok
+        {% endif %}
+      message: >-
+        {% if _wc_unchecked_tasks > 10 %}
+        {{ _wc_unchecked_tasks }} unchecked tasks in TASKS.md, {{ _wc_ratchet_entries }} ratchet entries — backlog building
+        {% elif (_wc_unchecked_tasks > 0) or (_wc_ratchet_entries > 0) %}
+        {{ _wc_unchecked_tasks }} unchecked task(s), {{ _wc_ratchet_entries }} ratchet entries
+        {% else %}
+        No pending work
+        {% endif %}
+
+# ── Aggregate results ────────────────────────────────────────────────────────
+
+- name: Determine overall severity and pass/fail
+  ansible.builtin.set_fact:
+    _wc_overall_severity: >-
+      {% set sevs = [
+        _wc_checks.stop_count.severity,
+        _wc_gate_check.severity,
+        _wc_ci_check.severity,
+        _wc_unpushed_check.severity,
+        _wc_pending_work_check.severity
+      ] %}
+      {% if 'critical' in sevs %}
+      critical
+      {% elif 'warning' in sevs %}
+      warning
+      {% elif 'info' in sevs %}
+      info
+      {% elif 'unknown' in sevs %}
+      unknown
+      {% else %}
+      ok
+      {% endif %}
+    _wc_all_green: >-
+      {{ _wc_stop_count | int == 0
+          and not _wc_gate_red | bool
+          and _wc_ci_green | bool
+          and _wc_unpushed_check.severity == 'ok'
+          and _wc_pending_work_check.severity == 'ok' }}
+
+- name: Determine critical fail conditions
+  ansible.builtin.set_fact:
+    _wc_critical_failures: >-
+      {% set failures = [] %}
+      {% if _wc_stop_count | int >= stop_count_escalate | int %}
+        {% set _ = failures.append('stop_count_escalated') %}
+      {% endif %}
+      {% if _wc_gate_red | bool and _wc_gate_red_hours | float >= gate_red_max_hours | float %}
+        {% set _ = failures.append('gate_red_critical') %}
+      {% endif %}
+      {% if _wc_ci_check.pending_stalled | bool %}
+        {% set _ = failures.append('ci_pending_stalled') %}
+      {% endif %}
+      {{ failures }}
+
+# ── Send watchdog alert via gludd_message when critical ───────────────────────
+
+- name: Send watchdog alert (critical conditions)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: watchdog_check
+    recipient: "{{ handoff_recipient }}"
+    topic: watchdog_alert
+    body: >-
+      {{ {
+        'overall_severity': _wc_overall_severity,
+        'all_green': _wc_all_green | bool,
+        'critical_failures': _wc_critical_failures,
+        'stop_count': _wc_stop_count | int,
+        'gate_red': _wc_gate_red | bool,
+        'gate_red_hours': _wc_gate_red_hours,
+        'ci_pending': _wc_ci_pending | bool,
+        'ci_red': _wc_ci_red | bool,
+        'ci_green': _wc_ci_green | bool,
+        'unpushed_count': _wc_unpushed_count | int,
+        'unchecked_tasks': _wc_unchecked_tasks | int,
+        'ratchet_entries': _wc_ratchet_entries | int,
+        'daemon_success_rate': _wc_success_rate,
+        'daemon_backlog': _wc_backlog
+      } | to_json }}
+    priority: "{{ 'high' if _wc_overall_severity == 'critical' else 'normal' }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - not ansible_check_mode
+
+# ── Write artifacts ──────────────────────────────────────────────────────────
+
+- name: Build health report dictionary
+  ansible.builtin.set_fact:
+    _wc_report: >-
+      {{ {
+        'role': 'watchdog_check',
+        'status': 'completed',
+        'overall_severity': _wc_overall_severity,
+        'all_green': _wc_all_green | bool,
+        'critical_failures': _wc_critical_failures,
+        'checks': {
+          'stop_count': _wc_checks.stop_count,
+          'gate': _wc_gate_check,
+          'ci': _wc_ci_check,
+          'unpushed': _wc_unpushed_check,
+          'pending_work': _wc_pending_work_check
+        },
+        'daemon_context': {
+          'success_rate': _wc_success_rate,
+          'backlog_size': _wc_backlog,
+          'total_work': _wc_total_work,
+          'total_runs': _wc_total_runs
+        }
+      } }}
+
+- name: Write JSON health report artifact
+  ansible.builtin.copy:
+    content: "{{ _wc_report | to_nice_json }}"
+    dest: "{{ artifact_dir }}/watchdog_check.json"
+    mode: "0644"
+
+- name: Write markdown health report
+  ansible.builtin.copy:
+    content: |
+      # Watchdog Health Check Report
+
+      **Overall:** {{ _wc_overall_severity | upper }}
+      **All green:** {{ _wc_all_green }}
+      {% if _wc_critical_failures | length > 0 %}
+      **Critical failures:** {{ _wc_critical_failures | join(', ') }}
+      {% endif %}
+
+      ## Checks
+
+      ### Stop Count
+      - Count: {{ _wc_stop_count }} (escalate at {{ stop_count_escalate }})
+      - Severity: **{{ _wc_checks.stop_count.severity | upper }}**
+      - {{ _wc_checks.stop_count.message }}
+
+      ### Gate Status
+      - Red: {{ _wc_gate_red }} | Passed: {{ _wc_gate_passed }} | Stale: {{ _wc_gate_stale }}
+      - Age: {{ _wc_gate_red_hours }}h
+      - Severity: **{{ _wc_gate_check.severity | upper }}**
+      - File exists: {{ _wc_gate_check.file_exists }}
+      - {{ _wc_gate_check.message }}
+
+      ### CI State
+      - Pending: {{ _wc_ci_pending }} | Red: {{ _wc_ci_red }} | Green: {{ _wc_ci_green }}
+      - Severity: **{{ _wc_ci_check.severity | upper }}**
+      - {{ _wc_ci_check.message }}
+
+      ### Unpushed Commits
+      - Count: {{ _wc_unpushed_count }}
+      - Severity: **{{ _wc_unpushed_check.severity | upper }}**
+      - {{ _wc_unpushed_check.message }}
+
+      ### Pending Work
+      - Unchecked TASKS.md items: {{ _wc_unchecked_tasks }}
+      - Ratchet.yml entries: {{ _wc_ratchet_entries }}
+      - Severity: **{{ _wc_pending_work_check.severity | upper }}**
+      - {{ _wc_pending_work_check.message }}
+
+      ## Daemon Context
+      - Success rate: {{ _wc_success_rate }}%
+      - Backlog: {{ _wc_backlog }}
+      - Total work: {{ _wc_total_work }}
+      - Total runs: {{ _wc_total_runs }}
+
+      ---
+      *Generated by general_ludd.agent.watchdog_check — read-only health check*
+    dest: "{{ artifact_dir }}/watchdog_check.md"
+    mode: "0644"
+
+# ── Report and fail/pass ─────────────────────────────────────────────────────
+
+- name: Report watchdog check completion
+  ansible.builtin.debug:
+    msg: >-
+      Watchdog check complete:
+      overall={{ _wc_overall_severity | upper }}
+      all_green={{ _wc_all_green }}
+      stop_count={{ _wc_stop_count }}
+      gate_red={{ _wc_gate_red }}
+      ci_green={{ _wc_ci_green }}
+      unpushed={{ _wc_unpushed_count }}
+      pending_work={{ (_wc_unchecked_tasks > 0) or (_wc_ratchet_entries > 0) }}
+
+- name: FAIL — critical conditions detected (stop count escalated)
+  ansible.builtin.fail:
+    msg: "WATCHDOG CRITICAL: agent stopped {{ _wc_stop_count }} times (threshold={{ stop_count_escalate }}). Agent repeatedly stalled — investigate."
+  when:
+    - _wc_stop_count | int >= stop_count_escalate | int
+
+- name: FAIL — critical conditions detected (gate red too long)
+  ansible.builtin.fail:
+    msg: "WATCHDOG CRITICAL: gate has been RED for {{ _wc_gate_red_hours }} hours (threshold={{ gate_red_max_hours }}h). Investigate and fix immediately."
+  when:
+    - _wc_gate_red | bool
+    - _wc_gate_red_hours | float >= gate_red_max_hours | float
+
+- name: FAIL — critical conditions detected (CI pending too long)
+  ansible.builtin.fail:
+    msg: "WATCHDOG CRITICAL: CI has been PENDING for {{ _wc_ci_pending_minutes }}min without progress (threshold={{ ci_pending_stall_minutes }}min). CI may be wedged."
+  when:
+    - _wc_ci_pending | bool
+    - _wc_ci_pending_minutes | float >= ci_pending_stall_minutes | float
+
+- name: ALL CHECKS PASSED — system healthy
+  ansible.builtin.debug:
+    msg: "WATCHDOG: all checks green — system healthy"
+  when: _wc_all_green | bool

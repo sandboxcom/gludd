@@ -1,0 +1,39 @@
+---
+# watchdog_check role defaults — SAFE-BY-DEFAULT
+#
+# HEALTH CHECK: never mutates the repo, never calls external models.
+# Checks daemon state + local watchdog files and reports health status.
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-watchdog-check"
+
+# Repo path (where to check .gate-status, git, etc.)
+repo_path: "."
+
+# Watchdog state files
+stop_count_file: "/tmp/gludd-watchdog-stop-count.json"
+gate_status_file: ".gate-status"
+tasks_file: "TASKS.md"
+ratchet_file: "config/ratchet.yml"
+
+# Thresholds
+stop_count_escalate: 3
+ci_pending_stall_minutes: 30
+gate_red_max_hours: 1
+gate_stale_hours: 1
+ci_check_timeout: 15
+
+# SAFE-BY-DEFAULT: no model calls, no mutations
+enable_model_call: false
+enable_git_push: false
+enable_gate_run: false
+
+# Watchdog CI cache file (tracks pending_first_seen for stall detection)
+ci_cache_file: "/tmp/gludd-watchdog-ci.json"
+
+# Message handoff: recipient role/agent to notify (empty = no message sent)
+handoff_recipient: ""

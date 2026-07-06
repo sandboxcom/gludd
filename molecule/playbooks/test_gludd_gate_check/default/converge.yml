@@ -1,0 +1,46 @@
+---
+- name: Converge - exercise gludd_gate_check against gate status fixtures
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Check passed gate
+      general_ludd.agent.gludd_gate_check:
+        gate_path: "/tmp/gludd-test-gate-passed.status"
+        state: check
+      register: passed_result
+
+    - name: Check failed gate
+      general_ludd.agent.gludd_gate_check:
+        gate_path: "/tmp/gludd-test-gate-failed.status"
+        state: check
+      register: failed_result
+
+    - name: Check missing gate file
+      general_ludd.agent.gludd_gate_check:
+        gate_path: "/tmp/gludd-test-gate-missing.status"
+        state: check
+      register: missing_result
+
+    - name: Check default path (should find nothing)
+      general_ludd.agent.gludd_gate_check:
+        state: check
+      register: default_result
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: "{{ { 'passed': passed_result, 'failed': failed_result, 'missing': missing_result, 'default': default_result } | to_nice_json }}"
+        dest: "/tmp/gludd-test-gate-check-results.json"
+        mode: "0644"
+
+    - name: Show results
+      ansible.builtin.debug:
+        var: passed_result
+
+    - name: Show results
+      ansible.builtin.debug:
+        var: failed_result
+
+    - name: Show results
+      ansible.builtin.debug:
+        var: missing_result

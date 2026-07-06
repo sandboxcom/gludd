@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: enforcement_gate
+  author: Agentic Harness Agent
+  description: >
+    Composing fail-closed enforcement gate for pre-commit/pre-push workflows.
+    Gathers daemon facts, verifies gate completion and freshness via
+    gludd_gate_check, validates push readiness via gludd_push_guard,
+    optionally runs model analysis, and emits gludd_message on block.
+    FAIL-CLOSED: fails the playbook if any enforcement check blocks.
+    Codifies the "no commit without a green gate, no push past the rate guard"
+    policy. Safe-by-default: enable_model_call=false, enable_git_push=false.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

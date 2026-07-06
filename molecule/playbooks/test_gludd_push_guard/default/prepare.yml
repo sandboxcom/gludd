@@ -1,0 +1,20 @@
+---
+# Prepare: ensure a clean temporary state directory and state file.
+- name: Prepare - setup push-guard test environment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    state_dir: "/tmp/gludd-push-guard-test"
+    state_file: "/tmp/gludd-push-guard-test/force-push-track.json"
+  tasks:
+    - name: Remove any stale state directory
+      ansible.builtin.file:
+        path: "{{ state_dir }}"
+        state: absent
+
+    - name: Create fresh state directory
+      ansible.builtin.file:
+        path: "{{ state_dir }}"
+        state: directory
+        mode: "0755"

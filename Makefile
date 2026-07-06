@@ -1699,6 +1699,9 @@ check-status-table:
 verify-status:
 	@$(UV) run python scripts/verify_status.py
 
+audit-features:
+	@$(UV) run python scripts/audit_features.py
+
 check-readme-status:
 	@$(UV) run python scripts/check_readme_status_current.py $(TAG)
 

@@ -1,0 +1,29 @@
+---
+- name: Enforcement gate — fail-closed pre-commit/pre-push compliance
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    job_id: "{{ job_id | default('EG-00000000') }}"
+    todo_id: "{{ todo_id | default('none') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-enforcement-gate') }}"
+    repo_path: "{{ repo_path | default('.') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    model_profile: "{{ model_profile | default('') }}"
+    work_type: "{{ work_type | default('enforcement_gate') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Run enforcement gate role
+      ansible.builtin.include_role:
+        name: general_ludd.agent.enforcement_gate
+      vars:
+        repo_path: "{{ repo_path }}"
+        artifact_dir: "{{ artifact_dir }}"
+        daemon_url: "{{ daemon_url }}"
+        model_profile: "{{ model_profile }}"

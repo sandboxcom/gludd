@@ -1,0 +1,103 @@
+---
+- name: Verify - gludd_push_guard module works correctly
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    # ---- Load persisted results -------------------------------------------
+    - name: Load check-fresh result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-push-guard-check-fresh.json"
+      register: raw_check_fresh
+
+    - name: Parse check-fresh
+      ansible.builtin.set_fact:
+        r_check_fresh: "{{ raw_check_fresh.content | b64decode | from_json }}"
+
+    - name: Load check-blocked result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-push-guard-check-blocked.json"
+      register: raw_check_blocked
+
+    - name: Parse check-blocked
+      ansible.builtin.set_fact:
+        r_check_blocked: "{{ raw_check_blocked.content | b64decode | from_json }}"
+
+    - name: Load check-after-reset result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-push-guard-check-after-reset.json"
+      register: raw_check_after_reset
+
+    - name: Parse check-after-reset
+      ansible.builtin.set_fact:
+        r_check_after_reset: "{{ raw_check_after_reset.content | b64decode | from_json }}"
+
+    - name: Load checkmode-record result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-push-guard-checkmode-record.json"
+      register: raw_checkmode_record
+
+    - name: Parse checkmode-record
+      ansible.builtin.set_fact:
+        r_checkmode_record: "{{ raw_checkmode_record.content | b64decode | from_json }}"
+
+    - name: Load checkmode-reset result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-push-guard-checkmode-reset.json"
+      register: raw_checkmode_reset
+
+    - name: Parse checkmode-reset
+      ansible.builtin.set_fact:
+        r_checkmode_reset: "{{ raw_checkmode_reset.content | b64decode | from_json }}"
+
+    # ---- Assertions -------------------------------------------------------
+    - name: Fresh state must allow bypass
+      ansible.builtin.assert:
+        that:
+          - r_check_fresh.bypass_allowed | bool
+          - r_check_fresh.current_count == 0
+          - r_check_fresh.max_bypasses == 2
+          - r_check_fresh.window_hours == 1.0
+          - not r_check_fresh.changed | bool
+        fail_msg: "Fresh state should allow bypass: {{ r_check_fresh }}"
+        success_msg: "Fresh state correctly allows bypass"
+
+    - name: After max bypasses, further bypasses must be blocked
+      ansible.builtin.assert:
+        that:
+          - not r_check_blocked.bypass_allowed | bool
+          - r_check_blocked.current_count == 2
+          - r_check_blocked.max_bypasses == 2
+        fail_msg: "After 2 bypasses, bypass should be blocked: {{ r_check_blocked }}"
+        success_msg: "Max bypasses correctly blocks further bypasses"
+
+    - name: After reset, bypass must be allowed again
+      ansible.builtin.assert:
+        that:
+          - r_check_after_reset.bypass_allowed | bool
+          - r_check_after_reset.current_count == 0
+        fail_msg: "After reset, bypass should be allowed: {{ r_check_after_reset }}"
+        success_msg: "Reset correctly clears the bypass counter"
+
+    - name: Check-mode record must report changed=true and recorded=true
+      ansible.builtin.assert:
+        that:
+          - r_checkmode_record.changed | bool
+          - r_checkmode_record.recorded | bool
+        fail_msg: "Check-mode record should report changed: {{ r_checkmode_record }}"
+        success_msg: "Check-mode record correctly reports changed"
+
+    - name: Check-mode reset must report changed=true and reset=true
+      ansible.builtin.assert:
+        that:
+          - r_checkmode_reset.changed | bool
+          - r_checkmode_reset.reset | bool
+        fail_msg: "Check-mode reset should report changed: {{ r_checkmode_reset }}"
+        success_msg: "Check-mode reset correctly reports changed"
+
+    # ---- cleanup ----------------------------------------------------------
+    - name: Remove test state directory
+      ansible.builtin.file:
+        path: "/tmp/gludd-push-guard-test"
+        state: absent
+      changed_when: false

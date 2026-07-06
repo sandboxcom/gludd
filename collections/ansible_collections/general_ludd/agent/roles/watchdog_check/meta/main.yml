@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: watchdog_check
+  author: Agentic Harness Agent
+  description: >
+    Wraps the agent_watchdog.py health check functionality as an Ansible role.
+    Checks daemon state (via gludd_facts), local gate status (.gate-status),
+    CI state (pending/red), unpushed commits, and watchdog stop count.
+    Emits gludd_message priority=high on critical conditions (stop_count >= 3,
+    CI pending >30min, gate red >1h). SAFE-BY-DEFAULT: enable_model_call=false,
+    no mutations. FAILS the play when critical conditions are met; PASSES when
+    all checks are green.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

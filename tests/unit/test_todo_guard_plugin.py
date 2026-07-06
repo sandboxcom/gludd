@@ -165,17 +165,17 @@ class TestProgressiveEscalation:
 
     def test_escalation_level_1_message(self):
         src = PLUGIN.read_text()
-        assert "Fix pending work. Dispatch subagents." in src, (
+        assert "Fix pending work first, then retry." in src, (
             "Level 1 (first block): must show the base warning message."
         )
 
     def test_escalation_level_2_message(self):
         src = PLUGIN.read_text()
-        assert "SECOND WARNING" in src, (
-            "Level 2 (second consecutive block): must escalate with a second-warning message."
+        assert "HARD STOP" in src, (
+            "Level 2 (second consecutive block): must escalate to a hard stop message."
         )
-        assert "forced dispatch" in src.lower(), (
-            "Level 2 warning must reference forced dispatch as the next step."
+        assert "DISPATCH SUBAGENTS NOW" in src, (
+            "Level 2 warning must demand immediate subagent dispatch."
         )
 
     def test_escalation_level_3_emergency_override(self):

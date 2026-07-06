@@ -1,0 +1,74 @@
+---
+# enforcement_gate role defaults — FAIL-CLOSED enforcement gate
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-enforcement-gate"
+
+# Repo path (where .gate-status and git repo live)
+repo_path: "."
+
+# ── Gate check ──────────────────────────────────────────────────────────
+
+# Path to the gate status file (written by make gate / make gate-background)
+gate_status_path: ".gate-status"
+
+# Maximum age in seconds for a valid gate result (default: 24 hours)
+gate_max_age_seconds: 86400
+
+# Require the gate to have passed (not just present + fresh)
+require_gate_passed: true
+
+# Require lint to have passed (0 errors)
+require_lint_pass: true
+
+# Require typecheck to be at or below baseline
+require_typecheck_pass: true
+
+# Require collect-check to have passed (0 collection errors)
+require_collect_pass: true
+
+# Require test phase to have passed
+require_test_pass: true
+
+# ── Push guard ──────────────────────────────────────────────────────────
+
+# Enforce push rate guard (CI-pending, cooldown, cancelled-run cap)
+enable_push_guard: true
+
+# Enforce CI-green before push (requires green CI conclusion)
+require_ci_green: false
+
+# Push target to validate (for guard checks)
+push_target: "sandboxcom"
+
+# Minimum seconds between pushes (cooldown)
+push_cooldown_seconds: 1800
+
+# Maximum cancelled CI runs allowed in lookback window before blocking
+max_cancelled_runs: 3
+
+# Lookback window in hours for cancelled run detection
+cancelled_lookback_hours: 2
+
+# ── Model analysis ─────────────────────────────────────────────────────
+
+# Enable model call for analysis (safe-by-default: false)
+enable_model_call: false
+
+# Model profile to use when enable_model_call is true
+model_profile: ""
+
+# Task type for adaptive routing (alternative to explicit model_profile)
+analysis_task_type: "enforcement_gate"
+
+# ── Message handoff ────────────────────────────────────────────────────
+
+# Recipient role/agent to notify on block (empty = no message)
+handoff_recipient: ""
+
+# Destructive ops guard — report-only, never push
+enable_git_push: false
