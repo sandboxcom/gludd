@@ -191,7 +191,8 @@ const COMPLETION_HEADER_RE = /^##\s*(done|complete|summary|results)\s*$/im
 const STANDALONE_DONE_RE = /(^|\n)Done\.(?:\s|$)/g
 const CHECKED_BOXES_RE = /^[-*]\s*\[x\]/im
 const UNCHECKED_BOXES_RE = /^[-*]\s*\[\s*\]/im
-const COMMIT_HASH_RE = /(?:commit|sha)\s*[:=]?\s*[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]/i
+const COMMIT_HASH_RE = /(?:commit|sha)\s*[:=]?\s*(?!0{7}|deadbeef|c0ffee)[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]/i
+const PASS_COUNT_EVIDENCE_RE = /\b[1-9]\d*\s+(?:passed|passing)\b/
 
 // ── DISPATCH TRACKING ─────────────────────────────────────────────────────
 
@@ -681,7 +682,7 @@ export default (async ({ }) => {
 
         if (hasDirectFalseDone) {
           // Only bypass if STRUCTURED evidence AND this response dispatches work
-          const hasStructuredEvidence = COMMIT_HASH_RE.test(combinedText) && combinedText.length < 500
+          const hasStructuredEvidence = (COMMIT_HASH_RE.test(combinedText) || PASS_COUNT_EVIDENCE_RE.test(combinedText)) && combinedText.length < 500
           const isWorkResponse = turnState.dispatchCount > 0 || turnState.toolCallMade
           if (!hasStructuredEvidence || !isWorkResponse) {
             recordBlock("direct-false-done-no-evidence")
