@@ -5,11 +5,11 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-05 — enforcement test 303/304→5/5 fixed, macOS grep-P compat, secrets baseline refresh, openbao symlink cleanup, role_ai_parallel_dispatch molecule scenario
+- 2026-07-05 — enforcement test fixed (5/5), macOS grep-P compat, CLI compute destroy + 96 new tests
 
 ## Current Work
 
-- **HEAD: `6c6d9e45`** on master.
+- **HEAD: `7d1c036e`** on master.
 
 - **Enforcement test fix**: 303/304 → 5/5 enforcement tests pass. The 1 stale assertion after plugin hardening is now fixed.
 
@@ -40,6 +40,8 @@
 - [x] Makefile grep-P: macOS incompatibility fixed
 - [x] secrets baseline: stale entries refreshed
 - [x] openbao symlinks: stale symlinks cleaned up
+- [x] CLI compute destroy: missing `gludd compute destroy` command added
+- [x] 5 untested source files: 96 tests added (cli_perm, cli_remediation, cli_self_improve, remediation/reporter, routing_roles/roles)
 
 ### Bugs still present:
 - None — all bugs resolved.
@@ -48,6 +50,7 @@
 
 | Hash | Message |
 |------|---------|
+| `7d1c036e` | feat: gludd compute destroy CLI + 96 tests covering 5 previously-untested source files |
 | `6c6d9e45` | fix: enforcement test 303/304→5/5, Makefile grep-P macOS compat, secrets baseline refresh, openbao symlink cleanup, role_ai_parallel_dispatch molecule scenario |
 | `a90ef8d0` | chore: add watchdog.ts to plugin-hashes, refresh SESSION.md state |
 | `c01f7afd` | chore: update SESSION.md — all bugs resolved, enforcement hardening complete |
