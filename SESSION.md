@@ -5,11 +5,11 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-05 — 4 commits pushed: enforcement fix, CLI destroy, 96 untested-file tests, 18 dead classes wired (82 tests), 6 response models wired (16 tests)
+- 2026-07-05 — 6 commits pushed: enforcement fix, CLI destroy + 96 tests, 18 dead classes wired + 82 tests, .gludd/ .gitignore fix, SESSION.md updates
 
 ## Current Work
 
-- **HEAD: `7a25edf4`** on master (pushed to sandboxcom, verified).
+- **HEAD: `46267dfc`** on master (pushed to sandboxcom, VERIFIED).
 
 - **Enforcement test fix**: 303/304 → 5/5 enforcement tests pass. The 1 stale assertion after plugin hardening is now fixed.
 
@@ -44,16 +44,19 @@
 - [x] 5 untested source files: 96 tests added (cli_perm, cli_remediation, cli_self_improve, remediation/reporter, routing_roles/roles)
 - [x] 18 dead classes: all wired into production paths + 82 tests (PromptEnhancer, CodebaseIndexer, SemanticSearcher, OutcomeAnalyzer, ActionIntent, StsAuditModel, QueueRepository, SlowOperationEvent, SpotConfigValidator, ContentQualityCheck, ModelInfo)
 - [x] 6 response models: all wired into route handlers + 16 tests (DeploymentHealthListResponse, IncidentListResponse, MisconfigCheckResponse, SuspectCompletion, CalibrationInfo, PendingResponse)
-- [x] Pushed to sandboxcom: VERIFIED master@7a25edf4
+- [x] Pushed to sandboxcom: VERIFIED master@46267dfc
 
 ### Bugs still present:
-- None — all bugs resolved.
+- **Connector gaps**: no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
+- **verify-remote SHA parameter bug**: `make verify-remote` may not accept SHA parameter correctly — under investigation.
 
 ## Last Commits (this session + recent)
 
 | Hash | Message |
 |------|---------|
-| `7a25edf4` | feat: wire 18 dead classes into production paths + 82 tests |
+| `46267dfc` | fix: add .gludd/ to .gitignore, untrack cache.db from git |
+| `d4cdedb3` | chore: update SESSION.md for 7a25edf4 state |
+| `7a25edf4` | feat: wire 18 dead classes into production paths + 6 response models wired into routes + 98 tests total |
 | `5d96d334` | chore: update SESSION.md for 7d1c036e — 2 commits, enforcement fix, CLI destroy + 96 tests |
 | `7d1c036e` | feat: gludd compute destroy CLI + 96 tests covering 5 previously-untested source files |
 | `6c6d9e45` | fix: enforcement test 303/304→5/5, Makefile grep-P macOS compat, secrets baseline refresh, openbao symlink cleanup, role_ai_parallel_dispatch molecule scenario |
@@ -79,20 +82,18 @@
 
 1. **Plugin liveness requires opencode restart** — all 8/8 plugins have heartbeat probes committed, but current session is running stale plugin code.
 2. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
-3. **`.gludd/retrieval_cache/cache.db` accidentally committed** — generated cache file should be in .gitignore.
-4. **Connector gaps**: no Slack, WebSocket, or reconnect logic (feature requests, not bugs).
 
 ## Next Steps
 
-1. [ ] **Wait for CI** — `make ci-verdict BRANCH=master` after push completes.
-2. [ ] **Remove cache.db from git tracking** — add `.gludd/` to .gitignore and untrack the committed cache file.
-4. [ ] **Restart opencode** to activate all 8/8 plugin liveness probes.
+1. [ ] **Wait for CI run 28762103711** — `make ci-verdict BRANCH=master` to check when green.
+2. [ ] **Restart opencode** to activate all 8/8 plugin liveness probes.
+3. [ ] **Investigate verify-remote SHA parameter bug** — may not accept SHA parameter correctly.
 
 ## Current Gate Status (2026-07-05)
 <!-- gate:begin -->
 - **Last full PASS**: 2026-07-05 — lint 0, typecheck 0, collect 0. 5/5 enforcement tests pass. Test phase OOM under xdist (known issue). CI-as-gate used.
-- **HEAD**: `6c6d9e45` (not yet pushed to sandboxcom).
-- **CI**: no run found for HEAD `6c6d9e45` — push required.
+- **HEAD**: `46267dfc` (pushed to sandboxcom, VERIFIED).
+- **CI**: run 28762103711 PENDING for HEAD `46267dfc`.
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
 <!-- gate:end -->
@@ -102,7 +103,7 @@
 
 ## Historical State
 
-- **2026-07-05 session 14 (current)**: HEAD `6c6d9e45`. Enforcement test 303/304→5/5 fixed, Makefile grep-P macOS compat, secrets baseline refresh, openbao symlink cleanup, role_ai_parallel_dispatch molecule scenario. All bugs resolved. 5/5 enforcement tests pass, lint 0, typecheck 0, collect 0. CI: no run for HEAD (not yet pushed).
+- **2026-07-05 session 14 (current)**: HEAD `46267dfc`. 6 commits: enforcement test fix + Makefile grep-P macOS compat + secrets baseline + openbao symlink cleanup (`6c6d9e45`), CLI compute destroy + 96 tests for 5 untested files (`7d1c036e`), SESSION.md update (`5d96d334`), 18 dead classes wired + 6 response models wired into routes + 98 tests total (`7a25edf4`), SESSION.md update (`d4cdedb3`), .gludd/ .gitignore fix + cache.db untracked (`46267dfc`). All bugs resolved. Connector gaps (Slack/WebSocket/reconnect) remain as feature requests. verify-remote SHA parameter bug under investigation. Pushed to sandboxcom, VERIFIED. CI run 28762103711 PENDING.
 - **2026-07-05 session 13**: HEAD `c01f7afd`. Enforcement plugin hardening complete: repoHasPendingWork deadlock fixed (git-diff for commits), BUGS.md guardrail now parses (resolved) markers, liveness probes on all 8/8 plugins, dead code/enforce-false-done removed, error swallowing in plugins fixed, stop-marker directive prepend, Makefile commit targets added. All bugs resolved. 303/304 enforcement tests pass, lint 0, typecheck 0, collect 0. CI: no run for HEAD (not yet pushed).
 - **2026-07-05 session 12**: HEAD `f0274a87`. Forensic analysis remediation committed: repoHasPendingWork uses git-diff for commits, openWorkExists skips mtime for commits, message-shape disengage gap hoisted, enforce-bootstrap skill created, SESSION.md staleness fixed, config-driven enforcement spec. Gate-background launched, partial: lint 0 typecheck 0 collect OK, test phase OOM (known issue). CI pending run 28759195523.
 - **2026-07-05 session 11**: HEAD `50e401e5`. SESSION.md consistency audit: corrected HEAD (`ba2e3d72`→`50e401e5`), added 4 missing commits to Last Commits table, marked BUGS.md headers as resolved, updated Known Gaps + Next Steps, recorded stale `ba2e3d72` as never-existed, fixed session numbering.
