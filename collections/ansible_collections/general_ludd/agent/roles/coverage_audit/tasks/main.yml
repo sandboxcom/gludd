@@ -1,0 +1,70 @@
+---
+# coverage_audit role — run per-file coverage audit and write artifact.
+#
+# Runs pytest with --cov on the target project, parses coverage.json, and
+# flags any file below the configured threshold. Writes a structured JSON
+# report to the artifact directory. The play fails when files fall below
+# threshold unless fail_on_below is set to false.
+#
+# Invoked via FQCN: general_ludd.agent.coverage_audit
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run pytest with coverage (generate coverage.json)
+  ansible.builtin.command:
+    cmd: >
+      {{ python_bin | default('python3') }} -m pytest
+      {{ test_path | default('tests/') }}
+      --cov={{ source_path | default('src') }}
+      --cov-report=json
+      --cov-report=term-missing
+      -q
+    chdir: "{{ project_dir | default('.') }}"
+  register: cov_run
+  failed_when: false
+  changed_when: false
+
+- name: Report pytest failure
+  ansible.builtin.debug:
+    msg: "pytest exited non-zero (rc={{ cov_run.rc }}); coverage results may be incomplete"
+  when: cov_run.rc != 0
+
+- name: Parse coverage.json with audit script
+  ansible.builtin.command:
+    cmd: >
+      {{ python_bin | default('python3') }}
+      {{ audit_script | default(project_dir | default('.') + '/scripts/audit_coverage.py') }}
+      --json-file={{ project_dir | default('.') }}/coverage.json
+      --threshold={{ threshold | default(85) }}
+      --source={{ source_path | default('src') }}
+      --json-out={{ artifact_dir }}/coverage_audit.json
+    chdir: "{{ project_dir | default('.') }}"
+  register: parse_result
+  changed_when: false
+  failed_when: false
+
+- name: Load audit result
+  ansible.builtin.set_fact:
+    coverage_audit_result: "{{ lookup('file', artifact_dir + '/coverage_audit.json') | from_json }}"
+
+- name: Report audit summary
+  ansible.builtin.debug:
+    msg: >
+      Coverage audit: {{ coverage_audit_result.files_below_threshold }} of
+      {{ coverage_audit_result.total_files }} files below {{ coverage_audit_result.threshold }}%
+      threshold.
+      {% if not coverage_audit_result.passed %}FILES UNDER: {{ coverage_audit_result.files_under_threshold | join(', ') }}{% endif %}
+
+- name: Fail when files are below threshold
+  ansible.builtin.fail:
+    msg: >
+      Coverage audit FAILED: {{ coverage_audit_result.files_below_threshold }}
+      file(s) below {{ coverage_audit_result.threshold }}% threshold.
+      See {{ artifact_dir }}/coverage_audit.json for details.
+  when:
+    - not coverage_audit_result.passed
+    - fail_on_below | default(true) | bool

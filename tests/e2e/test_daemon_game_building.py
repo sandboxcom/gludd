@@ -626,3 +626,81 @@ class TestDaemonGameBuilding:
 
         assert runner.vars_written, "Runner should have been called"
         assert model_response, "Model should have been called"
+
+    @pytest.mark.asyncio
+    async def test_self_improve_fires_during_game_building(self, tmp_path: Path) -> None:
+        """Self-improvement phase runs during game-building ticks.
+
+        When gludd is used via the daemon, self-improvement is default-on
+        (interval=10 ticks).  But EventLoop.__init__ defaults interval=0
+        (disabled), and the game-building tests never pass a non-zero interval.
+        This test proves that when self_improve_interval is set to 1, the
+        self-improvement phase runs on every tick — including ticks that also
+        claim and dispatch a game-build todo.
+
+        Gap: the regular game-building tests don't exercise this because they
+        create EventLoop directly (bypassing the daemon) without setting
+        self_improve_interval.  The daemon defaults to interval=10, so in
+        production self-improvement WOULD fire after 10 ticks — but the game
+        tests never get there.
+        """
+        from unittest.mock import patch
+
+        from general_ludd.db.repository import TodoRepository
+        from general_ludd.event_loop.loop import EventLoop
+        from general_ludd.prompts.registry import PromptRegistry
+        from general_ludd.schemas.todo import TodoStatus as _TS
+
+        session_factory = await _make_session_factory()
+        gateway = _build_deepseek_gateway()
+        runner = _NoopRunner(str(tmp_path / "si-runner"))
+        prompt_registry = PromptRegistry()
+        prompt_registry.register("snake_build.md.j2", SNAKE_PROMPT)
+
+        loop = EventLoop(
+            session=None,
+            model_gateway=gateway,
+            runner=runner,
+            prompt_registry=prompt_registry,
+            self_improve_interval=1,
+            daemon_state={},
+        )
+        loop._session_factory = session_factory
+        loop._total_ticks = 1
+        loop._tick_state = {}
+        loop._config_snapshot = {}
+
+        async with session_factory() as session:
+            repo = TodoRepository(session)
+            await repo.create({
+                "title": "Build a Snake game",
+                "description": SNAKE_PROMPT,
+                "status": _TS.QUEUED.value,
+                "queue": "core",
+                "work_type": "code",
+                "model_profile": "deepseek_coder",
+                "prompt_profile": "snake_build.md.j2",
+                "created_by": "test",
+            })
+            await session.commit()
+
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        with patch.object(SelfImprovementHarness, "run_gap_analysis", return_value=[
+            {"type": "missing_tests", "file": "src/mod.py", "severity": "high",
+             "message": "no tests"},
+        ]), patch.object(SelfImprovementHarness, "generate_fix_todos", return_value=[
+            {"title": "Add tests for mod.py", "work_type": "test", "priority": "high"},
+        ]):
+            metrics = await loop.tick()
+
+        assert runner.vars_written, "Game-build todo should have been dispatched"
+        assert metrics.get("self_improve_gaps") == 1, (
+            f"Self-improvement phase did not run on the game-building tick; "
+            f"self_improve_interval={loop._self_improve_interval}, "
+            f"_total_ticks={loop._total_ticks}, "
+            f"metrics={ {k: v for k, v in metrics.items() if 'self_improve' in k} }"
+        )
+        assert metrics.get("self_improve_todos_persisted") == 1, (
+            "Self-improvement todo was not persisted"
+        )

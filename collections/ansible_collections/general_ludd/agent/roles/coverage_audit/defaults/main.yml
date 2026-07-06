@@ -1,0 +1,26 @@
+---
+# coverage_audit role defaults
+
+# Project to audit
+project_dir: "."
+
+# Source tree to measure coverage on
+source_path: "src"
+
+# Test path — pytest test dir/pattern
+test_path: "tests/"
+
+# Per-file coverage % threshold
+threshold: 85
+
+# Python binary for pytest + audit script invocation
+python_bin: "python3"
+
+# Path to the audit_coverage.py script (uses the project's own when not set)
+# audit_script: "/path/to/scripts/audit_coverage.py"
+
+# Fail the play when files fall below threshold
+fail_on_below: true
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-coverage-audit"

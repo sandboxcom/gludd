@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: coverage_audit
+  author: Agentic Harness Agent
+  description: >
+    Run per-file coverage audit on any project. Executes pytest with --cov,
+    parses coverage.json, flags files below a configurable threshold (default
+    85%), and writes a structured JSON report. Fails the play when files fall
+    below threshold.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

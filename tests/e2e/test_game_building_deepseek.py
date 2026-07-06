@@ -27,11 +27,13 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
 import os
 import re
 import subprocess
 import sys
 import textwrap
+import time
 import traceback
 from pathlib import Path
 from typing import Any
@@ -65,6 +67,95 @@ _SKIP_REASON = (
 _DS_BASE_URL = "https://api.deepseek.com/v1"
 
 
+
+
+# ---------------------------------------------------------------------------
+# Observability data collector
+# ---------------------------------------------------------------------------
+
+_OBSERVABILITY_DATA: dict[str, Any] = {}
+_OBS_REPORT_PATH = Path(__file__).parent.parent.parent / ".game-audit-report.json"
+
+
+def _export_observability_report() -> None:
+    """Write the accumulated observability data to a JSON report file."""
+    report = {
+        "report_generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "games": _OBSERVABILITY_DATA,
+        "summary": _compute_obs_summary(),
+    }
+    _OBS_REPORT_PATH.write_text(json.dumps(report, indent=2))
+    print(f"\nObservability report written to {_OBS_REPORT_PATH}")
+
+
+def _compute_obs_summary() -> dict[str, Any]:
+    total_games = len(_OBSERVABILITY_DATA)
+    if total_games == 0:
+        return {"total_games": 0}
+
+    games_imported = sum(1 for g in _OBSERVABILITY_DATA.values() if g.get("imported"))
+    games_verified = sum(
+        1 for g in _OBSERVABILITY_DATA.values()
+        if g.get("checks_passed", 0) == g.get("checks_total", 0)
+    )
+    total_tokens_in = sum(g.get("tokens_in", 0) for g in _OBSERVABILITY_DATA.values())
+    total_tokens_out = sum(g.get("tokens_out", 0) for g in _OBSERVABILITY_DATA.values())
+    total_latency_ms = sum(
+        (g.get("phases", {}).get("model_call", 0) +
+         g.get("phases", {}).get("extract_code", 0) +
+         g.get("phases", {}).get("ast_parse", 0) +
+         g.get("phases", {}).get("game_verify", 0))
+        for g in _OBSERVABILITY_DATA.values()
+    )
+
+    games_by_tokens = sorted(
+        _OBSERVABILITY_DATA.items(),
+        key=lambda kv: kv[1].get("tokens_out", 0),
+        reverse=True,
+    )
+    games_by_latency = sorted(
+        _OBSERVABILITY_DATA.items(),
+        key=lambda kv: sum(kv[1].get("phases", {}).values()),
+        reverse=True,
+    )
+
+    return {
+        "total_games": total_games,
+        "games_imported": games_imported,
+        "games_fully_verified": games_verified,
+        "total_tokens_in": total_tokens_in,
+        "total_tokens_out": total_tokens_out,
+        "total_latency_ms": total_latency_ms,
+        "total_latency_s": round(total_latency_ms / 1000, 2),
+        "most_tokens": games_by_tokens[0][0] if games_by_tokens else None,
+        "most_latency": games_by_latency[0][0] if games_by_latency else None,
+    }
+
+
+def _init_game_obs(game_id: str) -> dict[str, Any]:
+    entry = {
+        "game_id": game_id,
+        "imported": False,
+        "instantiated": False,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "tool_calls": 0,
+        "content_len": 0,
+        "model": "",
+        "phases": {
+            "model_call": 0.0,
+            "extract_code": 0.0,
+            "ast_parse": 0.0,
+            "game_verify": 0.0,
+        },
+        "errors": [],
+        "gaps": [],
+    }
+    _OBSERVABILITY_DATA[game_id] = entry
+    return entry
 
 
 # ---------------------------------------------------------------------------
@@ -1522,12 +1613,14 @@ def _run_persistence_tests(
 # ---- Module-level helper: call DeepSeek for game generation ----
 def _call_deepseek(gateway: Any, prompt: str) -> dict[str, Any]:
     """Call DeepSeek and return response metadata + content."""
+    t0 = time.time()
     response = gateway.call_model(
         "deepseek_coder",
         messages=[{"role": "user", "content": prompt}],
         estimated_cost=0.0,
         budget_remaining=5.0,
     )
+    latency_ms = (time.time() - t0) * 1000
     usage = response.usage_metadata or {}
     return {
         "content": response.content,
@@ -1536,6 +1629,7 @@ def _call_deepseek(gateway: Any, prompt: str) -> dict[str, Any]:
         "tool_calls": len(response.tool_calls) if response.tool_calls else 0,
         "content_len": len(response.content),
         "model": getattr(response, "model_profile_id", "unknown"),
+        "latency_ms": latency_ms,
     }
 
 
@@ -1554,12 +1648,14 @@ class TestDeepSeekGameBuilding:
     @staticmethod
     def _call_model(gateway: Any, prompt: str) -> dict[str, Any]:
         """Call DeepSeek and return response metadata + content."""
+        t0 = time.time()
         response = gateway.call_model(
             "deepseek_coder",
             messages=[{"role": "user", "content": prompt}],
             estimated_cost=0.0,
             budget_remaining=5.0,
         )
+        latency_ms = (time.time() - t0) * 1000
         usage = response.usage_metadata or {}
         return {
             "content": response.content,
@@ -1568,6 +1664,7 @@ class TestDeepSeekGameBuilding:
             "tool_calls": len(response.tool_calls) if response.tool_calls else 0,
             "content_len": len(response.content),
             "model": getattr(response, "model_profile_id", "unknown"),
+            "latency_ms": latency_ms,
         }
 
     # ---- Snake ----
@@ -1636,6 +1733,8 @@ class TestDeepSeekGameBuilding:
         class_name = game_def["class_name"]
         verifications = game_def["verifications"]
 
+        obs = _init_game_obs(game_id)
+
         print(f"\n\n{'='*70}")
         print(f"BUILDING: {game_id} ({class_name})")
         print(f"{'='*70}")
@@ -1649,14 +1748,22 @@ class TestDeepSeekGameBuilding:
 
         print(f"  tokens_in={response['tokens_in']} tokens_out={response['tokens_out']}")
         print(f"  content_len={response['content_len']} tool_calls={response['tool_calls']}")
+        obs["tokens_in"] = response["tokens_in"]
+        obs["tokens_out"] = response["tokens_out"]
+        obs["tool_calls"] = response["tool_calls"]
+        obs["content_len"] = response["content_len"]
+        obs["model"] = response["model"]
+        obs["phases"]["model_call"] = round(response["latency_ms"], 1)
 
         # Step 2: Extract code
         print("\n--- Step 2: Extracting Python code ---")
+        t0 = time.time()
         source = _extract_python_module(response["content"])
+        obs["phases"]["extract_code"] = round((time.time() - t0) * 1000, 1)
         if source is None:
             print("  FAIL: Could not extract Python module from model output")
             print(f"  Raw output (first 500): {response['content'][:500]!r}")
-            # Don't fail the test — this is a gap finding
+            obs["errors"].append("Could not extract Python module from model output")
             self._record_gap(game_id, "code_extraction", "Model did not produce extractable Python code")
             return
 
@@ -1664,7 +1771,9 @@ class TestDeepSeekGameBuilding:
 
         # Step 3: Parse AST
         print("\n--- Step 3: AST parsing ---")
+        t0 = time.time()
         ast_result = _parse_ast(source)
+        obs["phases"]["ast_parse"] = round((time.time() - t0) * 1000, 1)
         print(f"  parseable={ast_result['parseable']} has_class={ast_result['has_class']}")
         if ast_result["error"]:
             print(f"  AST error: {ast_result['error']}")
@@ -1673,7 +1782,12 @@ class TestDeepSeekGameBuilding:
         print("\n--- Step 4: Game verification ---")
         game_dir = tmp_path / game_id
         game_dir.mkdir(exist_ok=True)
+        t0 = time.time()
         test_results = _run_game_tests(source, class_name, verifications, game_id, game_dir)
+        obs["phases"]["game_verify"] = round((time.time() - t0) * 1000, 1)
+
+        obs["imported"] = test_results["module_imported"]
+        obs["instantiated"] = test_results["instantiated"]
 
         print(f"  module_written={test_results['module_written']}")
         print(f"  module_imported={test_results['module_imported']}")
@@ -1681,10 +1795,14 @@ class TestDeepSeekGameBuilding:
         if test_results["errors"]:
             for err in test_results["errors"]:
                 print(f"  ERROR: {err[:200]}")
+                obs["errors"].append(err[:200])
 
         checks = test_results.get("checks", {})
         passed = sum(1 for c in checks.values() if c["passed"])
         failed = len(checks) - passed
+        obs["checks_passed"] = passed
+        obs["checks_total"] = len(checks)
+        obs["checks"] = {k: {"passed": v["passed"], "desc": v.get("desc", "")} for k, v in checks.items()}
         print(f"  Checks: {passed} passed, {failed} failed out of {len(checks)}")
 
         for check_id, check_data in checks.items():
@@ -1735,25 +1853,27 @@ class TestGameBuildingGapAnalysis:
         gaps = TestDeepSeekGameBuilding._gaps
         if not gaps:
             print("\nNo gaps recorded yet — run game-building tests first")
-            return
+        else:
+            print("\n\n" + "="*70)
+            print("GAME-BUILDING GAP REPORT")
+            print("="*70)
+            print(f"\nTotal gaps found: {len(gaps)}")
 
-        print("\n\n" + "="*70)
-        print("GAME-BUILDING GAP REPORT")
-        print("="*70)
-        print(f"\nTotal gaps found: {len(gaps)}")
+            by_category: dict[str, list[dict]] = {}
+            for g in gaps:
+                by_category.setdefault(g["category"], []).append(g)
 
-        by_category: dict[str, list[dict]] = {}
-        for g in gaps:
-            by_category.setdefault(g["category"], []).append(g)
+            print("\nBy category:")
+            for cat, items in sorted(by_category.items()):
+                games = sorted(set(i["game"] for i in items))
+                print(f"  {cat}: {len(items)} gaps across {len(games)} games ({', '.join(games)})")
 
-        print("\nBy category:")
-        for cat, items in sorted(by_category.items()):
-            games = sorted(set(i["game"] for i in items))
-            print(f"  {cat}: {len(items)} gaps across {len(games)} games ({', '.join(games)})")
+            print("\nDetailed gaps:")
+            for g in gaps:
+                print(f"  [{g['game']}] {g['category']}: {g['detail'][:200]}")
 
-        print("\nDetailed gaps:")
-        for g in gaps:
-            print(f"  [{g['game']}] {g['category']}: {g['detail'][:200]}")
+        # Always export observability report
+        _export_observability_report()
 
         print("\n" + "="*70)
         print("PIPELINE IMPROVEMENT RECOMMENDATIONS")
@@ -2188,6 +2308,10 @@ class TestGamePersistence:
         class_name = game_def["class_name"]
         interaction_count = _GAME_PERSISTENCE_PARAMS.get(game_id, 500)
 
+        obs = _OBSERVABILITY_DATA.get(game_id, {})
+        if not obs:
+            obs = _init_game_obs(game_id)
+
         print(f"\n\n{'='*70}")
         print(f"PERSISTENCE TEST: {game_id} ({class_name}) — {interaction_count} interactions")
         print(f"{'='*70}")
@@ -2200,6 +2324,9 @@ class TestGamePersistence:
             raise
 
         print(f"  tokens_in={response['tokens_in']} tokens_out={response['tokens_out']}")
+        obs["tokens_in"] = obs.get("tokens_in", 0) or response["tokens_in"]
+        obs["tokens_out"] = obs.get("tokens_out", 0) or response["tokens_out"]
+        obs["phases"]["model_call"] = round(response.get("latency_ms", 0), 1)
 
         # Step 2: Extract code
         source = _extract_python_module(response["content"])
@@ -2323,24 +2450,26 @@ class TestGamePersistence:
         gaps = TestGamePersistence._persistence_gaps
         if not gaps:
             print("\nNo persistence gaps recorded — all tested games survived extended play")
-            return
+        else:
+            print("\n\n" + "=" * 70)
+            print("GAME PERSISTENCE GAP REPORT")
+            print("=" * 70)
+            print(f"\nTotal persistence gaps found: {len(gaps)}")
 
-        print("\n\n" + "=" * 70)
-        print("GAME PERSISTENCE GAP REPORT")
-        print("=" * 70)
-        print(f"\nTotal persistence gaps found: {len(gaps)}")
+            by_game: dict[str, list[dict]] = {}
+            for g in gaps:
+                by_game.setdefault(g["game"], []).append(g)
 
-        by_game: dict[str, list[dict]] = {}
-        for g in gaps:
-            by_game.setdefault(g["game"], []).append(g)
+            print("\nBy game:")
+            for game, items in sorted(by_game.items()):
+                cats = sorted(set(i["category"] for i in items))
+                print(f"  {game}: {len(items)} gaps ({', '.join(cats)})")
 
-        print("\nBy game:")
-        for game, items in sorted(by_game.items()):
-            cats = sorted(set(i["category"] for i in items))
-            print(f"  {game}: {len(items)} gaps ({', '.join(cats)})")
+            print("\nDetailed gaps:")
+            for g in gaps:
+                print(f"  [{g['game']}] {g['category']}: {g['detail'][:200]}")
 
-        print("\nDetailed gaps:")
-        for g in gaps:
-            print(f"  [{g['game']}] {g['category']}: {g['detail'][:200]}")
+        # Always export observability report
+        _export_observability_report()
 
         print("\n" + "=" * 70)

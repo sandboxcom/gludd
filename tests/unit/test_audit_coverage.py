@@ -1,0 +1,200 @@
+"""Tests for the make audit-coverage target and coverage audit tooling."""
+
+import json
+import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent.parent
+MAKEFILE = ROOT / "Makefile"
+AUDIT_SCRIPT = ROOT / "scripts" / "audit_coverage.py"
+
+
+class TestAuditCoverageScript:
+    """Unit tests for the coverage audit parser (no pytest run)."""
+
+    def test_script_exists(self):
+        assert AUDIT_SCRIPT.exists(), "scripts/audit_coverage.py must exist"
+
+    def test_all_files_above_threshold(self, tmp_path):
+        coverage_json = tmp_path / "coverage.json"
+        coverage_json.write_text(json.dumps({
+            "files": {
+                "src/general_ludd/foo.py": {
+                    "summary": {"num_statements": 100, "covered_lines": 95, "num_lines_covered": 95},
+                },
+                "src/general_ludd/bar.py": {
+                    "summary": {"num_statements": 50, "covered_lines": 45, "num_lines_covered": 45},
+                },
+            }
+        }))
+
+        result = subprocess.run(
+            ["python3", str(AUDIT_SCRIPT), f"--json-file={coverage_json}", "--threshold=85"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        assert result.returncode == 0, f"Expected exit 0, got {result.returncode}\n{result.stdout}\n{result.stderr}"
+        assert "All" in result.stdout and "meet the" in result.stdout
+
+    def test_some_files_below_threshold(self, tmp_path):
+        coverage_json = tmp_path / "coverage.json"
+        coverage_json.write_text(json.dumps({
+            "files": {
+                "src/general_ludd/foo.py": {
+                    "summary": {"num_statements": 100, "covered_lines": 95},
+                },
+                "src/general_ludd/bar.py": {
+                    "summary": {"num_statements": 100, "covered_lines": 42},
+                },
+            }
+        }))
+
+        result = subprocess.run(
+            ["python3", str(AUDIT_SCRIPT), f"--json-file={coverage_json}", "--threshold=85"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        assert result.returncode == 1, f"Expected exit 1, got {result.returncode}\n{result.stdout}\n{result.stderr}"
+        assert "bar.py" in result.stdout
+
+    def test_empty_files_skipped(self, tmp_path):
+        coverage_json = tmp_path / "coverage.json"
+        coverage_json.write_text(json.dumps({
+            "files": {
+                "src/general_ludd/foo.py": {
+                    "summary": {"num_statements": 100, "covered_lines": 90},
+                },
+                "src/general_ludd/empty.py": {
+                    "summary": {"num_statements": 0, "covered_lines": 0},
+                },
+            }
+        }))
+
+        result = subprocess.run(
+            ["python3", str(AUDIT_SCRIPT), f"--json-file={coverage_json}", "--threshold=85"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        assert result.returncode == 0
+
+    def test_json_report_written(self, tmp_path):
+        coverage_json = tmp_path / "coverage.json"
+        out_json = tmp_path / "out.json"
+        coverage_json.write_text(json.dumps({
+            "files": {
+                "src/general_ludd/foo.py": {
+                    "summary": {"num_statements": 100, "covered_lines": 95},
+                },
+            }
+        }))
+
+        subprocess.run(
+            ["python3", str(AUDIT_SCRIPT), f"--json-file={coverage_json}", "--threshold=85", f"--json-out={out_json}"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        assert out_json.exists()
+        parsed = json.loads(out_json.read_text())
+        assert "threshold" in parsed
+        assert parsed["threshold"] == 85
+        assert parsed["passed"] is True
+        assert parsed["total_files"] == 1
+
+    def test_missing_coverage_json_exits_two(self, tmp_path):
+        missing = tmp_path / "nope.json"
+        result = subprocess.run(
+            ["python3", str(AUDIT_SCRIPT), f"--json-file={missing}", "--threshold=85"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        assert result.returncode == 2
+
+
+class TestMakefileTargets:
+    """Integration-level tests that the Make targets exist and are wired."""
+
+    def test_audit_coverage_target_exists(self):
+        content = MAKEFILE.read_text()
+        assert "audit-coverage:" in content, "Makefile missing audit-coverage target"
+
+    def test_gate_audit_target_exists(self):
+        content = MAKEFILE.read_text()
+        assert "gate-audit:" in content, "Makefile missing gate-audit target"
+
+    def test_coverage_json_target_exists(self):
+        content = MAKEFILE.read_text()
+        assert "coverage-json:" in content, "Makefile missing coverage-json target"
+
+    def test_targets_in_phony(self):
+        content = MAKEFILE.read_text()
+        assert "audit-coverage" in content
+        assert "gate-audit" in content
+
+    def test_uses_python_variable(self):
+        content = MAKEFILE.read_text()
+        lines = content.splitlines()
+        # Find the audit-coverage target section
+        in_target = False
+        python_found = False
+        for line in lines:
+            if line.startswith("audit-coverage:"):
+                in_target = True
+                continue
+            if in_target and line and not line.startswith("\t") and not line.startswith("    "):
+                in_target = False
+            if in_target and "$(PYTHON)" in line:
+                python_found = True
+                break
+        assert python_found, "audit-coverage target must use $(PYTHON) variable in its recipe"
+
+    def test_make_audit_coverage_help_listed(self):
+        content = MAKEFILE.read_text()
+        assert "audit-coverage" in content
+        assert "Run coverage audit" in content
+
+    def test_make_coverage_json_uses_nox_test(self, tmp_path):
+        coverage_json = tmp_path / "coverage.json"
+        coverage_json.write_text(json.dumps({
+            "files": {
+                "src/general_ludd/foo.py": {
+                    "summary": {"num_statements": 100, "covered_lines": 95},
+                },
+            }
+        }))
+
+        result = subprocess.run(
+            ["python3", str(AUDIT_SCRIPT), f"--json-file={coverage_json}", "--threshold=85"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        assert result.returncode == 0
+
+
+class TestCoverageAuditRole:
+    """Verify the coverage_audit Ansible role exists and is well-formed."""
+
+    def test_role_directory_exists(self):
+        role = ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles" / "coverage_audit"
+        assert role.is_dir(), f"Role directory missing: {role}"
+
+    def test_tasks_main_yml_exists(self):
+        tasks = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/tasks/main.yml"
+        assert tasks.exists(), "tasks/main.yml missing"
+
+    def test_defaults_main_yml_exists(self):
+        defaults = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/defaults/main.yml"
+        assert defaults.exists(), "defaults/main.yml missing"
+
+    def test_meta_main_yml_exists(self):
+        meta = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/meta/main.yml"
+        assert meta.exists(), "meta/main.yml missing"
+
+    def test_defaults_contain_threshold(self):
+        defaults = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/defaults/main.yml"
+        content = defaults.read_text()
+        assert "threshold" in content
+        assert "85" in content or "threshold:" in content
+
+    def test_meta_role_name(self):
+        meta = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/meta/main.yml"
+        content = meta.read_text()
+        assert "coverage_audit" in content
+
+    def test_tasks_use_artifact_dir(self):
+        tasks = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/tasks/main.yml"
+        content = tasks.read_text()
+        assert "artifact_dir" in content

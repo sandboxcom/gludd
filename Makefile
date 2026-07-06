@@ -20,7 +20,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg \
-         test-games \
+         test-games game-audit \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
@@ -48,7 +48,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		check-readme-status check-plugin-versions check-plugin-versions-quiet \
 		check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
 		verify-release-artifact git-tag-rm release-cut release-recut release-create \
-		verify-feature-claims
+		verify-feature-claims audit-coverage gate-audit coverage-json
 
 help:
 	@echo "Usage: make [target]"
@@ -67,6 +67,7 @@ help:
 	@echo "  qa                    Run lint + typecheck + test + healthcheck"
 	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
+	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
@@ -85,6 +86,7 @@ help:
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show test failures"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
+	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
 	@echo "  test-guardrails       Test guardrail infrastructure"
 	@echo ""
@@ -427,6 +429,9 @@ test-e2e:
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
+
+game-audit:
+	@$(PYTHON) scripts/game_audit.py
 
 test-tui-daemon:
 	@$(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
@@ -2095,8 +2100,37 @@ gate-cleanup:
 	@echo "[gate-cleanup] done"
 
 # ---------------------------------------------------------------------------
-# Activate the BLOCKING gate-safe agent-floor Stop hook (#79/#78)
+# Coverage audit: per-file coverage check with configurable threshold.
+#   make audit-coverage [THRESHOLD=85] [SOURCE=src/general_ludd]
+#
+# Steps:
+#   1. Run pytest with --cov=src/general_ludd --cov-report=json --cov-report=term-missing
+#   2. Parse coverage.json, extract per-file percentages
+#   3. Flag any file below THRESHOLD (default 85)
+#   4. Write structured report to .gate-logs/coverage-<ts>.json
+#   5. Exit 0 if all files > threshold, exit 1 if any below
+#
+#   make coverage-json          Parse existing coverage.json (skip pytest run)
 # ---------------------------------------------------------------------------
+THRESHOLD ?= 85
+SOURCE ?= src/general_ludd
+
+audit-coverage:
+	@mkdir -p .gate-logs
+	@$(PYTHON) scripts/audit_coverage.py --threshold=$(THRESHOLD) --source=$(SOURCE)
+
+coverage-json:
+	@mkdir -p .gate-logs
+	@$(PYTHON) scripts/audit_coverage.py --json-file=coverage.json --threshold=$(THRESHOLD) --source=$(SOURCE)
+
+# Gate + coverage audit: runs the full gate then checks per-file coverage >=85%.
+# Exits non-zero if gate fails OR any source file is below threshold.
+gate-audit:
+	@echo "=== GATE-AUDIT $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+	@$(MAKE) --no-print-directory gate
+	@echo ""
+	@echo "--- coverage check ---"
+	@$(MAKE) --no-print-directory audit-coverage
 # Regenerates .claude/hooks/agent_floor_stop.sh from scripts/gen_gate_safe_hook.py.
 # The generator is the sanctioned writer of the hook (do NOT hand-edit the hook).
 # Gate-safe rule: a running gate does NOT lower the read-only floor -- only heavy
