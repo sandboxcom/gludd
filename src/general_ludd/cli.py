@@ -158,6 +158,14 @@ COMMANDS
       unregister          Remove a compute endpoint
         ENDPOINT_ID         Endpoint to remove
         --daemon-url URL    Daemon URL
+      launch              Launch a GPU compute instance
+        --provider NAME     Cloud provider (aws, azure, gcp, runpod, etc.)
+        --gpu TYPE          GPU type (t4, a100_80, h100, etc.)
+        --model MODEL       Model name to serve
+        --daemon-url URL    Daemon URL
+      destroy             Destroy a GPU compute instance
+        INSTANCE_ID         Instance ID to destroy
+        --daemon-url URL    Daemon URL
 
     scores              View benchmark scores
       --task-type TYPE    Filter by task type
@@ -504,6 +512,11 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_launch.add_argument("--engine", default="vllm", help="Inference engine (vllm or llamacpp)")
     compute_launch.add_argument("--daemon-url", default="http://localhost:8000")
     compute_launch.set_defaults(func=_cmd_compute_launch)
+
+    compute_destroy = compute_sub.add_parser("destroy", help="Destroy a GPU compute instance")
+    compute_destroy.add_argument("instance_id", help="Instance ID to destroy")
+    compute_destroy.add_argument("--daemon-url", default="http://localhost:8000")
+    compute_destroy.set_defaults(func=_cmd_compute_destroy)
 
     scores_parser = sub.add_parser("scores", help="View benchmark scores")
     scores_parser.add_argument("--task-type", default=None, help="Filter by task type")
@@ -1783,6 +1796,16 @@ def _cmd_compute_launch(args: argparse.Namespace) -> None:
     if data is None:
         return
     print(json.dumps(data, indent=2))
+
+
+def _cmd_compute_destroy(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "DELETE", f"{args.daemon_url}/admin/compute/destroy/{args.instance_id}",
+        timeout=300.0, ok_codes=(200,),
+    )
+    if data is None:
+        return
+    print(f"Destroyed: {data.get('destroyed', args.instance_id)}")
 
 
 def _cmd_scores(args: argparse.Namespace) -> None:
