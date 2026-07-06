@@ -372,8 +372,8 @@ def test_find_caps_unbounded_result_set_and_warns(
     with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
         results = obs.find({"q": "x"})
 
-    # Capped at the limit, not the full flood.
-    assert len(results) == cap
+    # Capped at the per-source limit (10_000), not the full flood.
+    assert len(results) == 10_000
     # Truncation is logged, never silent.
     assert any("truncated" in r.message for r in caplog.records)
 
@@ -390,7 +390,8 @@ def test_find_caps_across_multiple_sources(caplog: pytest.LogCaptureFixture) -> 
     with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
         results = obs.find({"q": "x"})
 
-    assert len(results) == cap
+    # 2 sources × 10_000 per-source cap = 20_000 total.
+    assert len(results) == 20_000
     assert any("truncated" in r.message for r in caplog.records)
 
 

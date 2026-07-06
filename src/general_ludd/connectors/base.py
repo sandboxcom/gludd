@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 # D-30: per-source and global fan-out caps to prevent OOM from a runaway source.
 _GLOBAL_CAP = 50_000
-_PER_SOURCE_CAP = _GLOBAL_CAP  # per-source cap mirrors the global cap
+_PER_SOURCE_CAP = 10_000  # per-source cap is tighter than the global cap
 _BYTE_BUDGET = 50 * 1024 * 1024  # 50 MB
 
 
