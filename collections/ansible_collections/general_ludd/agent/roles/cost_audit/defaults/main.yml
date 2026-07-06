@@ -1,0 +1,26 @@
+---
+# cost_audit role defaults — AUDIT total project spend (model API + infra)
+
+# Cost alert threshold (USD) — flag when any category exceeds this
+cost_threshold_usd: 0.01
+
+# Focus areas for the audit
+focus_areas:
+  - "model_api_spend"
+  - "aws_infra"
+  - "gcp_infra"
+  - "azure_infra"
+  - "runpod_gpu_rentals"
+  - "vast_ai_gpu_rentals"
+  - "terraform_resources"
+
+# Artifact output
+artifact_dir: "/tmp/gludd-cost-audit"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard — REPORT-ONLY
+enable_git_push: false
+apply_changes: false

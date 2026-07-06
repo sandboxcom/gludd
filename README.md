@@ -691,6 +691,92 @@ OpenBao supports three modes:
 On macOS, the daemon automatically prefers Docker over Podman for container-based
 OpenBao (Docker Desktop handles port forwarding transparently on macOS).
 
+## Service Login
+
+`gludd login <service>` opens your browser for XDG-compliant OAuth2 / API-key login.
+
+### Quick Start
+
+```bash
+gludd login --list                    # show available services
+gludd login openai                   # paste your API key
+gludd login github                   # OAuth2 + PKCE flow (requires OAuth app)
+```
+
+### Supported Services
+
+| Service    | Command              | Auth method   | Credential env var      |
+|------------|---------------------|---------------|--------------------------|
+| OpenAI     | `gludd login openai`    | API key       | `OPENAI_API_KEY`          |
+| DeepSeek   | `gludd login deepseek`  | API key       | `DEEPSEEK_API_KEY`        |
+| Z.AI       | `gludd login zai`       | API key       | `ZAI_API_KEY`             |
+| Anthropic  | `gludd login anthropic` | API key       | `ANTHROPIC_API_KEY`       |
+| OpenRouter | `gludd login openrouter`| API key       | `OPENROUTER_API_KEY`      |
+| GitHub     | `gludd login github`    | OAuth2 + PKCE | `GITHUB_TOKEN`            |
+| Google     | `gludd login gemini`    | OAuth2 + PKCE | `GOOGLE_API_KEY`          |
+
+Credentials are stored in `~/.config/gludd/credentials.env` (permissions 600).
+Use `--store openbao` to store in OpenBao instead.
+
+### Non-automatable Setup (OAuth2 services only)
+
+OAuth2 services (GitHub, Google Gemini) require a one-time **OAuth application registration**
+before the browser flow can complete. The daemon cannot create these for you:
+
+#### GitHub
+
+1. Go to [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers)
+2. Click **New OAuth App**
+3. Set **Authorization callback URL** to `http://localhost:<random-port>/callback`
+   (the port is random — this is fine; the client constructs it at login time)
+4. Export the client ID and secret:
+   ```bash
+   export GITHUB_OAUTH_CLIENT_ID="Iv23li..."
+   export GITHUB_OAUTH_CLIENT_SECRET="secret..."
+   ```
+5. Run `gludd login github`
+
+#### Google Gemini
+
+1. Go to [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials)
+2. Create an **OAuth 2.0 Client ID** (Web application type)
+3. Add `http://localhost` to **Authorized redirect URIs**
+4. Export:
+   ```bash
+   export GOOGLE_OAUTH_CLIENT_ID="..."
+   export GOOGLE_OAUTH_CLIENT_SECRET="..."
+   ```
+5. Run `gludd login gemini`
+
+### Ansible Role
+
+The `general_ludd.agent.service_login` role automates login in playbooks:
+
+```yaml
+- hosts: localhost
+  roles:
+    - role: general_ludd.agent.service_login
+      vars:
+        login_service: github
+        login_store: env
+```
+
+Non-interactive mode (CI / headless):
+```yaml
+login_non_interactive: true
+login_api_key: "{{ lookup('env', 'GITHUB_TOKEN') }}"
+```
+
+### Architecture
+
+1. Generates PKCE `code_verifier` + `code_challenge` (S256)
+2. Opens default browser via `xdg-open` (Linux) or `open` (macOS)
+3. Starts local HTTP server on `127.0.0.1:<random-port>` for OAuth callback
+4. Exchanges authorization code for tokens at the service's token endpoint
+5. Stores credential: `env` → `~/.config/gludd/credentials.env`; `openbao` → `secret/gludd/auth/<service>`
+
+The redirect server binds **only** on loopback (127.0.0.1) — it is never reachable off-host.
+
 ## Contributing
 
 Pull requests are welcome. Please follow these guidelines:

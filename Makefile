@@ -1539,14 +1539,32 @@ dist-path-check:
 	if [ -n "$$HITS" ]; then echo "LEAKED LOCAL PATHS in tarball:"; echo "$$HITS"; exit 1; else echo "Tarball dir(s) path-clean."; fi
 
 # Internal: verify .gate-status is fresh (le 30 min) and green (all phases PASS).
-# Skips the check when GLUDD_CI_IS_GATE=1 (escape hatch for CI-as-gate).
+# GLUDD_CI_IS_GATE=1 allows CI to serve as the gate, but ONLY when CI has a
+# verified green run for the current HEAD — it is NOT a blank check to skip the
+# gate. If CI is red, pending, or has no run, the gate check still blocks.
 _gate-fresh-check:
-	@if [ "$(GLUDD_CI_IS_GATE)" != "1" ]; then \
-		if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi; \
-		if ! $(UV) run python scripts/gate_fresh_check.py is-complete .gate-status; then \
-			echo "ERROR: Gate incomplete — .gate-status missing terminal marker (=== GATE: PASSED === or === GATE: FAILED ===). The gate was likely killed mid-run. Run 'make gate' first."; \
-			exit 1; \
+	@if [ "$(GLUDD_CI_IS_GATE)" = "1" ]; then \
+		echo "CI-is-gate mode: verifying CI is green for HEAD before allowing bypass..."; \
+		SHA=$$(git rev-parse HEAD); \
+		RUN=$$(gh run list --commit=$$SHA --json databaseId,conclusion,headSha,status --jq '.[0]' 2>/dev/null || echo "{}"); \
+		CONCLUSION=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null); \
+		STATUS=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null); \
+		RUN_ID=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('databaseId',''))" 2>/dev/null); \
+		if [ "$$CONCLUSION" = "success" ]; then \
+			echo "CI-is-gate PASS: CI run $$RUN_ID is green for $$SHA. Proceeding."; \
+		elif [ "$$STATUS" = "pending" ] || [ "$$STATUS" = "in_progress" ] || [ "$$STATUS" = "queued" ]; then \
+			echo "CI-is-gate DENIED: CI run $$RUN_ID is still $$STATUS for $$SHA. Wait for CI to complete or run 'make gate' locally."; exit 1; \
+		elif [ -n "$$CONCLUSION" ]; then \
+			echo "CI-is-gate DENIED: CI run $$RUN_ID is RED (conclusion=$$CONCLUSION) for $$SHA. Fix CI or run 'make gate' locally."; exit 1; \
+		else \
+			echo "CI-is-gate DENIED: no CI run found for $$SHA. Push to trigger CI or run 'make gate' locally."; exit 1; \
 		fi; \
+	elif [ ! -f .gate-status ]; then \
+		echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; \
+	elif ! $(UV) run python scripts/gate_fresh_check.py is-complete .gate-status; then \
+		echo "ERROR: Gate incomplete — .gate-status missing terminal marker (=== GATE: PASSED === or === GATE: FAILED ===). The gate was likely killed mid-run. Run 'make gate' first."; \
+		exit 1; \
+	else \
 		for check in lint typecheck collect test smoke; do \
 			if ! grep -q "^$${check} PASS" .gate-status; then \
 				echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
@@ -1558,8 +1576,6 @@ _gate-fresh-check:
 		if [ $$AGE -gt 1800 ]; then \
 			echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
 		fi; \
-	else \
-		echo "CI-is-gate mode: skipping local gate check."; \
 	fi
 
 git-commit: _gate-fresh-check
@@ -1575,9 +1591,9 @@ commit-no-verify: _gate-fresh-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 # git-commit-no-verify: commit without pre-commit hook stash, enforcing gate check.
-# GLUDD_CI_IS_GATE=1 is the documented escape hatch for CI-as-gate (skips the
-# local gate check). Default behaviour: gate check runs. The escape hatch is
-# opt-in, never the default.
+# GLUDD_CI_IS_GATE=1 allows CI to serve as the gate, but ONLY when CI has a
+# verified green run for the current HEAD — it verifies CI before allowing
+# the bypass. Default behaviour: full local gate check runs.
 git-commit-no-verify: _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check

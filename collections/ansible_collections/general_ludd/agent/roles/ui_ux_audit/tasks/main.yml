@@ -1,0 +1,486 @@
+---
+# ui_ux_audit role — a11y + UX audit for HTML presentations
+#
+# Flow:
+#   1. Gather live facts (gludd_facts) for system context.
+#   2. Read HTML content (slurp file or use override).
+#   3. Run a11y regex/grep checks against the HTML.
+#   4. Optionally call gludd_model_call for AI-powered UX analysis.
+#   5. Write JSON + MD report artifact.
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Gather system context via gludd_facts ───────────────────────────────────
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _uua_facts
+  no_log: "{{ psk | length > 0 }}"
+
+# ── Read HTML content ───────────────────────────────────────────────────────
+
+- name: Stat HTML file path
+  ansible.builtin.stat:
+    path: "{{ html_path }}"
+  register: _uua_html_stat
+  when: html_path | length > 0
+
+- name: Slurp HTML file
+  ansible.builtin.slurp:
+    src: "{{ html_path }}"
+  register: _uua_html_raw
+  when:
+    - html_path | length > 0
+    - _uua_html_stat.stat.exists | default(false)
+
+- name: Decode HTML content from file
+  ansible.builtin.set_fact:
+    _uua_html: "{{ _uua_html_raw.content | b64decode }}"
+  when:
+    - html_path | length > 0
+    - _uua_html_raw is defined
+    - _uua_html_raw.content is defined
+
+- name: Use HTML content override
+  ansible.builtin.set_fact:
+    _uua_html: "{{ html_content_override }}"
+  when:
+    - html_path | length == 0 or not (_uua_html_stat.stat.exists | default(false))
+    - html_content_override | length > 0
+
+- name: Write HTML content to temp file for grep scans
+  ansible.builtin.copy:
+    content: "{{ _uua_html }}"
+    dest: "{{ artifact_dir }}/_audit_input.html"
+    mode: "0644"
+  when: _uua_html is defined
+
+- name: Compute HTML line count
+  ansible.builtin.set_fact:
+    _uua_html_lines: "{{ _uua_html.split('\n') | length if _uua_html is defined else 0 }}"
+
+# ── A11y grep patterns ─────────────────────────────────────────────────────
+
+- name: Check for missing alt text on img tags
+  ansible.builtin.shell:
+    cmd: >-
+      grep -c '<img[^>]*>' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_img_total_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set total img count
+  ansible.builtin.set_fact:
+    _uua_img_total: "{{ _uua_img_total_raw.stdout | trim | int if _uua_img_total_raw is defined else 0 }}"
+
+- name: Check for images WITH alt text
+  ansible.builtin.shell:
+    cmd: >-
+      grep -c '<img[^>]*alt="[^"]*"[^>]*>' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_img_alt_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set img with alt count
+  ansible.builtin.set_fact:
+    _uua_img_with_alt: "{{ _uua_img_alt_raw.stdout | trim | int if _uua_img_alt_raw is defined else 0 }}"
+
+- name: Check for ARIA landmark roles (banner/navigation/main/contentinfo)
+  ansible.builtin.shell:
+    cmd: >-
+      grep -cE 'role="(banner|navigation|main|contentinfo|complementary|search|form)"' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_aria_roles_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set ARIA roles count
+  ansible.builtin.set_fact:
+    _uua_aria_roles: "{{ _uua_aria_roles_raw.stdout | trim | int if _uua_aria_roles_raw is defined else 0 }}"
+
+- name: Check for aria-label attributes
+  ansible.builtin.shell:
+    cmd: >-
+      grep -c 'aria-label=' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_aria_label_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set aria-label count
+  ansible.builtin.set_fact:
+    _uua_aria_labels: "{{ _uua_aria_label_raw.stdout | trim | int if _uua_aria_label_raw is defined else 0 }}"
+
+- name: Check for semantic nav element
+  ansible.builtin.shell:
+    cmd: >-
+      grep -c '<nav[ >]' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_sem_nav_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set nav count
+  ansible.builtin.set_fact:
+    _uua_has_nav: "{{ (_uua_sem_nav_raw.stdout | trim | int > 0) if _uua_sem_nav_raw is defined else false }}"
+
+- name: Check for semantic main element
+  ansible.builtin.shell:
+    cmd: >-
+      grep -c '<main[ >]' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_sem_main_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set main count
+  ansible.builtin.set_fact:
+    _uua_has_main: "{{ (_uua_sem_main_raw.stdout | trim | int > 0) if _uua_sem_main_raw is defined else false }}"
+
+- name: Check for semantic header element
+  ansible.builtin.shell:
+    cmd: >-
+      grep -c '<header[ >]' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_sem_header_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set header count
+  ansible.builtin.set_fact:
+    _uua_has_header: "{{ (_uua_sem_header_raw.stdout | trim | int > 0) if _uua_sem_header_raw is defined else false }}"
+
+- name: Check for semantic footer element
+  ansible.builtin.shell:
+    cmd: >-
+      grep -c '<footer[ >]' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_sem_footer_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set footer count
+  ansible.builtin.set_fact:
+    _uua_has_footer: "{{ (_uua_sem_footer_raw.stdout | trim | int > 0) if _uua_sem_footer_raw is defined else false }}"
+
+- name: Check for lang attribute on html element
+  ansible.builtin.shell:
+    cmd: >-
+      grep -c '<html[^>]*lang="' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_lang_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set lang count
+  ansible.builtin.set_fact:
+    _uua_has_lang: "{{ (_uua_lang_raw.stdout | trim | int > 0) if _uua_lang_raw is defined else false }}"
+
+- name: Check for viewport meta tag (responsive layout)
+  ansible.builtin.shell:
+    cmd: >-
+      grep -c 'viewport' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_viewport_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set viewport count
+  ansible.builtin.set_fact:
+    _uua_has_viewport: "{{ (_uua_viewport_raw.stdout | trim | int > 0) if _uua_viewport_raw is defined else false }}"
+
+- name: Check for skip-to-content link (a11y best practice)
+  ansible.builtin.shell:
+    cmd: >-
+      grep -cE 'skip.to.content|skip-navigation|skip-to-main' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
+  register: _uua_skip_link_raw
+  changed_when: false
+  failed_when: false
+  when: _uua_html is defined
+
+- name: Set skip link count
+  ansible.builtin.set_fact:
+    _uua_has_skip_link: "{{ (_uua_skip_link_raw.stdout | trim | int > 0) if _uua_skip_link_raw is defined else false }}"
+
+# ── Build a11y findings list ───────────────────────────────────────────────
+
+- name: Collate a11y findings
+  ansible.builtin.set_fact:
+    _uua_a11y_findings: >-
+      {{
+        (
+          ([{
+            'area': 'a11y',
+            'check': 'alt_text',
+            'issue': 'Missing alt text on images: ' ~ (_uua_img_total | int - _uua_img_with_alt | int) ~ '/' ~ _uua_img_total | int ~ ' images lack alt attributes',
+            'severity': 'high',
+            'rule': 'WCAG-1.1.1'
+          }] if (_uua_img_total | int > _uua_img_with_alt | int) else [])
+          + ([{
+            'area': 'a11y',
+            'check': 'aria_roles',
+            'issue': 'No ARIA landmark roles found (banner, navigation, main, contentinfo)',
+            'severity': 'medium',
+            'rule': 'WCAG-4.1.2'
+          }] if (_uua_aria_roles | default(0) | int == 0) else [])
+          + ([{
+            'area': 'a11y',
+            'check': 'aria_labels',
+            'issue': 'No aria-label attributes found on interactive elements',
+            'severity': 'medium',
+            'rule': 'WCAG-4.1.2'
+          }] if (_uua_aria_labels | default(0) | int == 0) else [])
+          + ([{
+            'area': 'a11y',
+            'check': 'semantic_nav',
+            'issue': 'No <nav> element — navigation assist unclear for screen readers',
+            'severity': 'medium',
+            'rule': 'WCAG-1.3.1'
+          }] if not (_uua_has_nav | default(false) | bool) else [])
+          + ([{
+            'area': 'a11y',
+            'check': 'semantic_main',
+            'issue': 'No <main> element — content region not labeled for AT',
+            'severity': 'high',
+            'rule': 'WCAG-1.3.1'
+          }] if not (_uua_has_main | default(false) | bool) else [])
+          + ([{
+            'area': 'a11y',
+            'check': 'semantic_header',
+            'issue': 'No <header> element — missing top-of-page landmark',
+            'severity': 'medium',
+            'rule': 'WCAG-1.3.1'
+          }] if not (_uua_has_header | default(false) | bool) else [])
+          + ([{
+            'area': 'a11y',
+            'check': 'semantic_footer',
+            'issue': 'No <footer> element — missing bottom-of-page landmark',
+            'severity': 'low',
+            'rule': 'WCAG-1.3.1'
+          }] if not (_uua_has_footer | default(false) | bool) else [])
+          + ([{
+            'area': 'a11y',
+            'check': 'html_lang',
+            'issue': 'No lang attribute on <html> element — screen readers cannot determine language',
+            'severity': 'high',
+            'rule': 'WCAG-3.1.1'
+          }] if not (_uua_has_lang | default(false) | bool) else [])
+          + ([{
+            'area': 'a11y',
+            'check': 'skip_link',
+            'issue': 'No skip-to-content link — keyboard users must tab through all navigation',
+            'severity': 'medium',
+            'rule': 'WCAG-2.4.1'
+          }] if not (_uua_has_skip_link | default(false) | bool) else [])
+          + ([{
+            'area': 'a11y',
+            'check': 'viewport',
+            'issue': 'No viewport meta tag — presentation may not render responsively on mobile',
+            'severity': 'high',
+            'rule': 'UX-RESP-01'
+          }] if not (_uua_has_viewport | default(false) | bool) else [])
+        )
+      }}
+
+# ── Optional AI-powered UX analysis via gludd_model_call ───────────────────
+
+- name: Draft UX analysis via model call (enable_model_call=true only)
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are a UX/accessibility expert auditing an HTML presentation. Analyze the
+      HTML below for the following aspects and return a JSON array of findings
+      with keys: area, check, issue, severity (high/medium/low), rule.
+
+      Checks to perform:
+      1. Readable fonts: are font sizes adequate (>= 16px for body text)?
+         Are heading sizes hierarchical?
+      2. Clear navigation: are there navigation controls visible? Is the slide
+         structure logical? Are slide numbers present?
+      3. Responsive layout: does it use relative units (em/rem/vw) instead of
+         fixed px? Are there media queries? Is the viewport meta tag present?
+      4. Color contrast warning: are there light-on-light or dark-on-dark patterns?
+         Are all text colors paired with background colors?
+      5. Interactive elements: are buttons/focusable elements large enough for
+         touch targets (>= 44px)?
+      6. Presentation structure: is there a title slide? Are there section
+         headers? Is the content structured logically?
+
+      Return ONLY valid JSON — no markdown, no explanation outside the JSON.
+      Format: {"findings": [{"area": "...", "check": "...", "issue": "...",
+      "severity": "...", "rule": "..."}, ...]}
+
+      HTML content to analyze (first 8000 chars):
+      {{ _uua_html[:8000] }}
+    model_profile: "{{ model_profile | default('') }}"
+  register: _uua_model_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+    - _uua_html is defined
+    - _uua_html | length > 0
+
+- name: Parse model result as JSON (if available)
+  ansible.builtin.set_fact:
+    _uua_model_parsed: >-
+      {{ _uua_model_result.answer | default('{}') | from_json }}
+  when:
+    - enable_model_call | bool
+    - _uua_model_result is defined
+    - _uua_model_result.answer is defined
+    - _uua_model_result.answer | length > 0
+  failed_when: false
+
+- name: Extract UX findings from model result
+  ansible.builtin.set_fact:
+    _uua_ux_findings: >-
+      {{ _uua_model_parsed.findings | default([]) if _uua_model_parsed is defined else [] }}
+
+- name: Set empty UX findings (model call disabled or check_mode)
+  ansible.builtin.set_fact:
+    _uua_ux_findings: []
+  when: not (enable_model_call | bool) or ansible_check_mode
+
+# ── Compute score and verdict ──────────────────────────────────────────────
+
+- name: Combine all findings
+  ansible.builtin.set_fact:
+    _uua_all_findings: "{{ _uua_a11y_findings | default([]) + _uua_ux_findings | default([]) }}"
+
+- name: Compute accessibility score (100 - penalty per finding)
+  ansible.builtin.set_fact:
+    _uua_score: >-
+      {{
+        [100 - (
+          (_uua_all_findings | selectattr('severity', 'equalto', 'high') | list | length * 20)
+          + (_uua_all_findings | selectattr('severity', 'equalto', 'medium') | list | length * 10)
+          + (_uua_all_findings | selectattr('severity', 'equalto', 'low') | list | length * 5)
+        ), 0] | max
+      }}
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _uua_verdict: >-
+      {{
+        'good' if _uua_score | int >= 80
+        else ('needs_work' if _uua_score | int >= 50
+        else 'poor')
+      }}
+
+# ── Write artifacts ────────────────────────────────────────────────────────
+
+- name: Write JSON accessibility audit artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'ui_ux_audit',
+        'status': 'completed',
+        'note': 'Report-only — a11y heuristics + optional AI analysis',
+        'score': _uua_score | int,
+        'verdict': _uua_verdict,
+        'findings_count': _uua_all_findings | length,
+        'a11y_findings_count': _uua_a11y_findings | default([]) | length,
+        'ux_findings_count': _uua_ux_findings | default([]) | length,
+        'a11y_findings': _uua_a11y_findings | default([]),
+        'ux_findings': _uua_ux_findings | default([]),
+        'scanned': {
+          'html_file': html_path,
+          'html_lines': _uua_html_lines | default(0) | int,
+          'model_call_enabled': enable_model_call | bool
+        },
+        'system_context': {
+          'backlog_size': _uua_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int,
+          'success_rate': _uua_facts.ansible_facts.gludd.history.success_rate | default(0) | float
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/ui_ux_audit.json"
+    mode: "0644"
+
+- name: Write markdown accessibility audit report
+  ansible.builtin.copy:
+    content: |
+      # Accessibility & UX Audit Report
+
+      > **Note:** This analysis combines a11y pattern heuristics with optional
+      > AI-powered UX review. Findings are actionable improvement suggestions.
+
+      **Verdict:** {{ _uua_verdict | upper }}
+      **Accessibility Score:** {{ _uua_score }}/100
+      **Total Findings:** {{ _uua_all_findings | length }}
+      ({{ _uua_a11y_findings | default([]) | length }} a11y, {{ _uua_ux_findings | default([]) | length }} UX)
+
+      ## A11y Heuristic Findings
+
+      {% if _uua_a11y_findings | default([]) | length == 0 %}
+      No a11y issues detected heuristically.
+      {% else %}
+      {% for finding in _uua_a11y_findings | default([]) %}
+      ### [{{ finding.severity | upper }}] {{ finding.rule }} — {{ finding.check }}
+
+      **Issue:** {{ finding.issue }}
+
+      {% endfor %}
+      {% endif %}
+
+      {% if _uua_ux_findings | default([]) | length > 0 %}
+      ## AI UX Analysis Findings
+
+      {% for finding in _uua_ux_findings %}
+      ### [{{ finding.severity | upper }}] {{ finding.rule | default('UX-GENERAL') }} — {{ finding.check | default('ux') }}
+
+      **Issue:** {{ finding.issue }}
+
+      {% endfor %}
+      {% endif %}
+
+      ## Scan Coverage
+
+      - HTML file: {{ html_path if html_path | length > 0 else '(override)' }}
+      - HTML lines: {{ _uua_html_lines | default(0) }}
+      - Total img tags: {{ _uua_img_total | default(0) }}
+      - Images with alt text: {{ _uua_img_with_alt | default(0) }}
+      - ARIA landmark roles: {{ _uua_aria_roles | default(0) }}
+      - ARIA labels: {{ _uua_aria_labels | default(0) }}
+      - Semantic `<nav>`: {{ 'YES' if _uua_has_nav | default(false) else 'NO' }}
+      - Semantic `<main>`: {{ 'YES' if _uua_has_main | default(false) else 'NO' }}
+      - Semantic `<header>`: {{ 'YES' if _uua_has_header | default(false) else 'NO' }}
+      - Semantic `<footer>`: {{ 'YES' if _uua_has_footer | default(false) else 'NO' }}
+      - `<html lang>`: {{ 'YES' if _uua_has_lang | default(false) else 'NO' }}
+      - Viewport meta tag: {{ 'YES' if _uua_has_viewport | default(false) else 'NO' }}
+      - Skip-to-content link: {{ 'YES' if _uua_has_skip_link | default(false) else 'NO' }}
+      - Model call: {{ 'YES' if enable_model_call | bool else 'NO' }}
+
+      ## System Context
+
+      - Backlog size: {{ _uua_facts.ansible_facts.gludd.todos.backlog_size | default(0) }}
+      - Success rate: {{ _uua_facts.ansible_facts.gludd.history.success_rate | default(0) }}%
+
+      ---
+      *Generated by general_ludd.agent.ui_ux_audit — report-only, never mutates the repo.*
+    dest: "{{ artifact_dir }}/ui_ux_audit.md"
+    mode: "0644"
+
+- name: Clean up temp HTML input
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}/_audit_input.html"
+    state: absent
+  failed_when: false
+
+- name: Report UI/UX audit completion
+  ansible.builtin.debug:
+    msg: >-
+      UI/UX audit complete:
+      score={{ _uua_score }} findings={{ _uua_all_findings | length }}
+      verdict={{ _uua_verdict }}

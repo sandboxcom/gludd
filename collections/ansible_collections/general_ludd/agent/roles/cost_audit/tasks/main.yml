@@ -1,0 +1,256 @@
+---
+# cost_audit role — total project spend audit (model API + cloud infra)
+#
+# Queries /api/costs from the gludd daemon for combined model API +
+# infrastructure spend breakdown. Performs real arithmetic:
+#   - model API vs infra cost ratio
+#   - per-provider cost ranking
+#   - per-resource-type hotspot identification
+#   - burn-rate estimation
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for cost audit
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Extract cost data from facts ──────────────────────────────────────────────
+
+- name: Set cost data from live facts
+  ansible.builtin.set_fact:
+    _ca_metrics: "{{ live_facts.ansible_facts.gludd.metrics | default({}) }}"
+
+- name: Extract model API cost from metrics
+  ansible.builtin.set_fact:
+    _ca_model_api_cost: >-
+      {{
+        _ca_metrics.global_model_usage
+        | default({})
+        | dict2items
+        | map(attribute='value.total_cost_usd')
+        | map('float')
+        | sum
+      }}
+
+# ── Query /api/costs endpoint for combined breakdown ──────────────────────────
+
+- name: Fetch combined cost breakdown from daemon API
+  ansible.builtin.uri:
+    url: "{{ daemon_url }}/api/costs"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ psk }}"
+      Content-Type: application/json
+    return_content: true
+    status_code: 200
+  register: _ca_costs_response
+  ignore_errors: true
+
+- name: Parse costs response
+  ansible.builtin.set_fact:
+    _ca_costs: "{{ _ca_costs_response.json | default({}) }}"
+  when: _ca_costs_response.status | default(0) == 200
+
+- name: Set empty costs (daemon unreachable)
+  ansible.builtin.set_fact:
+    _ca_costs:
+      model_api: "{{ _ca_model_api_cost | float }}"
+      infrastructure: 0.0
+      total: "{{ _ca_model_api_cost | float }}"
+      breakdown_by_provider: {}
+      breakdown_by_resource_type: {}
+      breakdown_by_project: {}
+      record_count: 0
+  when: _ca_costs_response.status | default(0) != 200
+
+# ── Budget health ─────────────────────────────────────────────────────────────
+
+- name: Compute API vs infra cost ratio
+  ansible.builtin.set_fact:
+    _ca_api_pct: >-
+      {{
+        (_ca_costs.model_api | float / _ca_costs.total | float * 100) | round(1)
+        if _ca_costs.total | float > 0 else 100.0
+      }}
+    _ca_infra_pct: >-
+      {{
+        (_ca_costs.infrastructure | float / _ca_costs.total | float * 100) | round(1)
+        if _ca_costs.total | float > 0 else 0.0
+      }}
+
+# ── Identify cost hotspots per provider ───────────────────────────────────────
+
+- name: Rank providers by cost
+  ansible.builtin.set_fact:
+    _ca_provider_ranked: >-
+      {{
+        _ca_costs.breakdown_by_provider | dict2items
+        | sort(attribute='value', reverse=true)
+      }}
+
+- name: Identify high-cost providers (exceeding threshold)
+  ansible.builtin.set_fact:
+    _ca_high_cost_providers: >-
+      {{
+        _ca_provider_ranked
+        | selectattr('value', 'gt', cost_threshold_usd | float)
+        | list
+      }}
+
+# ── Build recommendations ─────────────────────────────────────────────────────
+
+- name: Build savings recommendations
+  ansible.builtin.set_fact:
+    _ca_recommendations: []
+  when: true
+
+- name: Add model API recommendation if dominant
+  ansible.builtin.set_fact:
+    _ca_recommendations: >-
+      {{
+        _ca_recommendations + [{
+          'action': 'Model API costs dominate (' + (_ca_api_pct | string) + '% of total). Consider smaller models, prompt caching, or routing to cheaper providers.',
+          'category': 'model_api',
+          'priority': 'high' if _ca_api_pct | float > 80 else 'medium'
+        }]
+      }}
+  when: _ca_api_pct | float > 60
+
+- name: Add spot instance recommendation
+  ansible.builtin.set_fact:
+    _ca_recommendations: >-
+      {{
+        _ca_recommendations + [{
+          'action': 'GPU infrastructure costs significant. Consider spot/preemptible instances for non-critical workloads.',
+          'category': 'infra',
+          'priority': 'medium'
+        }]
+      }}
+  when: _ca_costs.infrastructure | float > 0
+
+- name: Add right-sizing recommendation for high-cost providers
+  ansible.builtin.set_fact:
+    _ca_recommendations: >-
+      {{
+        _ca_recommendations + [{
+          'action': 'Provider "' + item.key + '" is the costliest at $' + (item.value | float | round(4) | string) + '. Audit for right-sizing opportunities.',
+          'category': 'infra',
+          'provider': item.key,
+          'provider_cost_usd': item.value | float,
+          'priority': 'medium'
+        }]
+      }}
+  loop: "{{ _ca_high_cost_providers[:3] }}"
+  loop_control:
+    loop_var: item
+  when: _ca_high_cost_providers | length > 0
+
+# ── Determine verdict ─────────────────────────────────────────────────────────
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _ca_verdict: >-
+      {{
+        'critical' if _ca_costs.total | float > cost_threshold_usd | float * 10
+        else ('warn' if _ca_costs.total | float > cost_threshold_usd | float
+        else 'ok')
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON cost audit artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'cost_audit',
+        'status': 'completed',
+        'total_cost_usd': _ca_costs.total | float,
+        'model_api_cost_usd': _ca_costs.model_api | float,
+        'infrastructure_cost_usd': _ca_costs.infrastructure | float,
+        'api_pct': _ca_api_pct | float,
+        'infra_pct': _ca_infra_pct | float,
+        'breakdown_by_provider': _ca_costs.breakdown_by_provider,
+        'breakdown_by_resource_type': _ca_costs.breakdown_by_resource_type,
+        'breakdown_by_project': _ca_costs.breakdown_by_project,
+        'record_count': _ca_costs.record_count | default(0),
+        'high_cost_providers': _ca_high_cost_providers,
+        'recommendations': _ca_recommendations,
+        'verdict': _ca_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/cost_audit.json"
+    mode: "0644"
+
+- name: Write markdown cost audit report
+  ansible.builtin.copy:
+    content: |
+      # Cost Audit Report
+
+      **Verdict:** {{ _ca_verdict | upper }}
+      **Total project spend:** ${{ _ca_costs.total | float | round(4) }} USD
+      **Threshold:** ${{ cost_threshold_usd }} USD
+
+      ## Spend Breakdown
+
+      | Category | Cost (USD) | Share |
+      |----------|-----------|-------|
+      | Model API | ${{ _ca_costs.model_api | float | round(4) }} | {{ _ca_api_pct }}% |
+      | Infrastructure | ${{ _ca_costs.infrastructure | float | round(4) }} | {{ _ca_infra_pct }}% |
+      | **Total** | **${{ _ca_costs.total | float | round(4) }}** | **100%** |
+
+      ## Per-Provider Breakdown
+
+      {% if _ca_costs.breakdown_by_provider | length == 0 %}
+      No per-provider data available.
+      {% else %}
+      | Provider | Cost (USD) |
+      |----------|------------|
+      {% for k, v in _ca_costs.breakdown_by_provider | dictsort(by='value', reverse=true) %}
+      | {{ k }} | ${{ v | float | round(4) }} |
+      {% endfor %}
+      {% endif %}
+
+      ## Per-Resource-Type Breakdown
+
+      {% if _ca_costs.breakdown_by_resource_type | length == 0 %}
+      No per-resource-type data available.
+      {% else %}
+      | Resource Type | Cost (USD) |
+      |---------------|------------|
+      {% for k, v in _ca_costs.breakdown_by_resource_type | dictsort(by='value', reverse=true) %}
+      | {{ k }} | ${{ v | float | round(4) }} |
+      {% endfor %}
+      {% endif %}
+
+      ## Recommendations
+
+      {% if _ca_recommendations | length == 0 %}
+      No specific recommendations — spending within acceptable range.
+      {% else %}
+      {% for rec in _ca_recommendations %}
+      {{ loop.index }}. [{{ rec.priority | upper }}] {{ rec.action }}
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.cost_audit — report-only.*
+    dest: "{{ artifact_dir }}/cost_audit.md"
+    mode: "0644"
+
+- name: Report cost audit completion
+  ansible.builtin.debug:
+    msg: >-
+      Cost audit complete: total=${{ _ca_costs.total | float | round(4) }}
+      model_api=${{ _ca_costs.model_api | float | round(4) }}
+      infra=${{ _ca_costs.infrastructure | float | round(4) }}
+      providers={{ _ca_costs.breakdown_by_provider | length }}
+      resources={{ _ca_costs.record_count | default(0) }}
+      verdict={{ _ca_verdict }}

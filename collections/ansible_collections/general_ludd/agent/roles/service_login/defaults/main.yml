@@ -1,0 +1,6 @@
+---
+login_service: ""
+login_store: "env"
+login_timeout: 120
+login_non_interactive: false
+login_api_key: ""

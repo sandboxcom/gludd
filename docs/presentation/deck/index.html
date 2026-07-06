@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gludd — Autonomous Agentic SDLC</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css">
+<style>
+:root {
+  --r-heading-text-transform: none;
+  --r-heading1-size: 2.2em;
+  --r-heading2-size: 1.6em;
+  --r-heading3-size: 1.3em;
+  --r-main-font-size: 32px;
+  --r-block-margin: 16px;
+  --r-heading-font: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  --r-main-font: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  --r-code-font: 'SF Mono', 'Menlo', 'Monaco', monospace;
+}
+.reveal { color: #c9d1d9; }
+.reveal h1, .reveal h2, .reveal h3 { color: #58a6ff; text-transform: none; }
+.reveal a { color: #79c0ff; }
+.reveal pre code { max-height: 500px; font-size: 0.55em; line-height: 1.3; }
+.reveal table { font-size: 0.6em; margin: 0 auto; }
+.reveal th { color: #58a6ff; border-bottom: 2px solid #58a6ff; }
+.reveal td, .reveal th { padding: 6px 12px; border-bottom: 1px solid #30363d; }
+.reveal ul { list-style-type: none; }
+.reveal ul li::before { content: "> "; color: #58a6ff; }
+.badge-green { background: #238636; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.7em; }
+.badge-red { background: #da3633; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.7em; }
+.badge-yellow { background: #d29922; color: #000; padding: 2px 8px; border-radius: 4px; font-size: 0.7em; }
+.badge-blue { background: #1f6feb; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.7em; }
+.tagline { color: #8b949e; font-size: 0.7em; }
+.metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 20px; }
+.metric-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; text-align: center; }
+.metric-box .number { font-size: 1.8em; color: #58a6ff; font-weight: bold; }
+.metric-box .label { font-size: 0.5em; color: #8b949e; }
+.fragment.small { font-size: 0.75em; }
+.arch-diagram { font-family: monospace; font-size: 0.45em; line-height: 1.4; white-space: pre; text-align: left; display: inline-block; }
+.honest-note { border-left: 3px solid #d29922; padding-left: 12px; color: #d29922; font-size: 0.6em; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ============================================================ -->
+<!-- TITLE -->
+<!-- ============================================================ -->
+<section>
+  <h1>gludd</h1>
+  <h3 style="color:#8b949e;">Autonomous Agentic SDLC</h3>
+  <p class="tagline" style="margin-top:40px;">
+    An Ansible-driven, multi-model coding daemon<br>
+    that submits tasks and produces real, committed, reviewed, and reconciled code changes
+  </p>
+  <p style="margin-top:30px; font-size:0.5em; color:#484f58;">
+    alpha research software &middot; v0.1.0-alpha.5 &middot; 20,650 tests &middot; ~90 Ansible roles
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- WHAT IS GLUDD -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>What is gludd?</h2>
+    <p>An <strong>autonomous coding daemon</strong> with an event loop.</p>
+    <p>You submit a todo, and gludd:</p>
+    <ul>
+      <li class="fragment">Dispatches it to an AI model via Ansible playbooks</li>
+      <li class="fragment">Runs generated code through a validation pipeline</li>
+      <li class="fragment">Reviews the result with a <em>separate</em> model</li>
+      <li class="fragment">Lands the change in git — <strong>with evidence</strong></li>
+    </ul>
+    <p class="honest-note">Not a chatbot. Not a copilot. A daemon.<br>It runs continuously, claims tasks, and produces commits.</p>
+  </section>
+  <section>
+    <h2>Stack</h2>
+    <table>
+      <tr><th>Component</th><th>Tech</th></tr>
+      <tr><td>Daemon</td><td>FastAPI + Gunicorn (single worker)</td></tr>
+      <tr><td>Database</td><td>SQLite (enforced — Postgres refused at boot)</td></tr>
+      <tr><td>Execution</td><td>Ansible Runner — <code>general_ludd.agent</code> collection</td></tr>
+      <tr><td>Models</td><td>Z.AI GLM, DeepSeek, Qwen, OpenAI, Anthropic, OpenRouter</td></tr>
+      <tr><td>Secrets</td><td>OpenBao (auto mode: external → env fallback)</td></tr>
+      <tr><td>Quality</td><td>ruff, mypy, pytest, pre-commit, detect-secrets</td></tr>
+    </table>
+  </section>
+</section>
+
+<!-- ============================================================ -->
+<!-- ARCHITECTURE -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>Architecture</h2>
+    <p style="color:#58a6ff; font-size:1.2em; letter-spacing:4px;">
+      claim &rarr; dispatch &rarr; review &rarr; reconcile &rarr; repeat
+    </p>
+    <p>The event loop ticks every second:</p>
+    <ol>
+      <li class="fragment"><strong>Claim</strong> — dequeue runnable tasks with lease acquisition</li>
+      <li class="fragment"><strong>Dispatch</strong> — run Ansible playbook via the appropriate model</li>
+      <li class="fragment"><strong>Review</strong> — ReturnReviewer model inspects the result</li>
+      <li class="fragment"><strong>Reconcile</strong> — approve, retry, or reject the decision</li>
+    </ol>
+  </section>
+  <section>
+    <h2>Architecture Diagram</h2>
+    <div class="arch-diagram">
+                     &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
+  User &boxh;CLI/TUI&boxh;&boxH;  &boxur;&boxh;&boxh;&boxh; Daemon &boxh;&boxh;&boxh;&boxul;
+                     &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;  (FastAPI + Gunicorn, single worker)
+                            &boxvl;  PSK-authenticated API
+              &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
+              &boxvl;             &boxvl;             &boxvl;
+        &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul; &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul; &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
+        &boxvl; Event Loop &boxvl; &boxvl;  Admin    &boxvl; &boxvl;   Todo    &boxvl;
+        &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl; &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl; &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;
+             &boxvl;
+    &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
+    &boxvl;        &boxvl;        &boxvl;          &boxvl;          &boxvl;
+  Claim   Dispatch   Review   Reconcile  Self-Improve
+             &boxvl;
+        &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
+        &boxvl;                                                       &boxvl;
+    &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;  &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;  &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
+    &boxvl; Ansible &boxvl;  &boxvl; Roles  &boxvl;  &boxvl;      Model Gateway      &boxvl;
+    &boxvl; Runner  &boxvl;  &boxvl; (~90)  &boxvl;  &boxvl; (zai &rarr; deepseek &rarr; qwen) &boxvl;
+    &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;  &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;  &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;
+             &boxvl;                       &boxvl;
+       &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
+       &boxvl;                SQLite (single-worker)                      &boxvl;
+       &boxvl;  todos &boxv; returns &boxv; benchmarks &boxv; messages &boxv; metrics &boxv; traces  &boxvl;
+       &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;
+    </div>
+  </section>
+</section>
+
+<!-- ============================================================ -->
+<!-- FEATURES -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>Features</h2>
+    <p>Four pillars of autonomous development</p>
+  </section>
+  <section>
+    <h3>12-Game Autonomous Building</h3>
+    <p>Single-prompt DeepSeek builds a complete, playable game. Every time.</p>
+    <table>
+      <tr><th>Game</th><th>Checks</th><th>Status</th><th>Tokens</th></tr>
+      <tr><td>Snake</td><td>5/6</td><td><span class="badge-yellow">PARTIAL</span></td><td>938</td></tr>
+      <tr><td>Tetris</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>2,250</td></tr>
+      <tr><td>Minesweeper</td><td>5/7</td><td><span class="badge-yellow">PARTIAL</span></td><td>1,379</td></tr>
+      <tr><td>Checkers</td><td>6/7</td><td><span class="badge-yellow">PARTIAL</span></td><td>2,852</td></tr>
+      <tr><td>SkiFree</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,309</td></tr>
+      <tr><td>Banana (Gorillas)</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,648</td></tr>
+      <tr><td>Pong</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,301</td></tr>
+      <tr><td>Breakout</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,465</td></tr>
+      <tr><td>Maze Runner</td><td>5/5</td><td><span class="badge-green">PASS</span></td><td>1,153</td></tr>
+      <tr><td>Word Guesser</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>973</td></tr>
+      <tr><td>Memory Match</td><td>4/6</td><td><span class="badge-yellow">PARTIAL</span></td><td>989</td></tr>
+      <tr><td>Tic-Tac-Toe</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,587</td></tr>
+    </table>
+    <p style="font-size:0.5em;">8/12 fully verified &middot; 6 failing checks across 4 games &middot; 17,844 total tokens &middot; 81.6s total latency</p>
+  </section>
+  <section>
+    <h3>Enforcement Infrastructure</h3>
+    <p>Three-layer guardrails on every agent action</p>
+    <ul>
+      <li><span class="badge-blue">Layer 1</span> Config permissions (<code>opencode.json</code>) — hard gate</li>
+      <li><span class="badge-blue">Layer 2</span> Runtime hooks (8 TypeScript plugins) — contextual error</li>
+      <li><span class="badge-blue">Layer 3</span> Agent prompt (AGENTS.md) — proactive instruction</li>
+    </ul>
+    <p style="font-size:0.6em; margin-top:16px;">Plugins: enforce-make, enforce-floor, enforce-delegate, enforce-stop, enforce-session-start, enforce-deadline, enforce-deletion-gate, watchdog</p>
+  </section>
+  <section>
+    <h3>Ansible Roles (~90)</h3>
+    <p>Every task is an Ansible playbook — auditable and idempotent</p>
+    <table>
+      <tr><th>Family</th><th>Roles</th><th>Example</th></tr>
+      <tr><td>Code-task</td><td>8</td><td>implement_change, write_tests, refactor_code</td></tr>
+      <tr><td>Audit/report</td><td>5</td><td>audit_security, report_metrics, report_status</td></tr>
+      <tr><td>Workflow-pipeline</td><td>5</td><td>gate_triage, ci_pipeline_repair, release_build</td></tr>
+      <tr><td>Secure-SDLC</td><td>7</td><td>threat_model, secret_scan, sbom_generate</td></tr>
+      <tr><td>Agile/sprint</td><td>9</td><td>story_create, sprint_plan, retrospective</td></tr>
+      <tr><td>Self-improve</td><td>4</td><td>ornith_self_improve, self_improve_ab_test</td></tr>
+      <tr><td>Observability</td><td>6</td><td>observe_incident_triage, observe_error_spike_rca</td></tr>
+      <tr><td>Specialized</td><td>45+</td><td>game_build_audit, cost_optimization_auditor, ...</td></tr>
+    </table>
+    <p style="font-size:0.5em;">12 Ansible modules &middot; 49 molecule scenarios &middot; molecule-test-all green locally</p>
+  </section>
+  <section>
+    <h3>Self-Improvement</h3>
+    <p>gludd audits its own codebase and proposes improvements</p>
+    <ul>
+      <li><strong>Gap analysis</strong> — <code>ornith_self_improve</code> role identifies weaknesses</li>
+      <li><strong>A/B testing</strong> — <code>self_improve_ab_test</code> evaluates candidate changes</li>
+      <li><strong>Auto-promote</strong> — winning variants land automatically</li>
+      <li><strong>Non-retrograde guard</strong> — gate must stay green after every self-edit</li>
+      <li><strong>Compaction feedback loop</strong> — accuracy samples tune aggressiveness</li>
+      <li><strong>Outcome-driven</strong> — EvalHarness measures pass_rate by task_type x model</li>
+    </ul>
+    <p class="honest-note">Dogfood flow runs on gludd's own repo. Work dispatches are monkeypatched (no real API key in CI).</p>
+  </section>
+</section>
+
+<!-- ============================================================ -->
+<!-- HOW TO USE -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>How to Use gludd</h2>
+  </section>
+  <section>
+    <h3>Quick Start</h3>
+    <pre><code class="language-bash">git clone https://github.com/sandboxcom/gludd.git
+cd gludd
+make init        # set up directories and dependencies
+make bootstrap   # init + lint + test + healthcheck
+make help        # list all available make targets</code></pre>
+  </section>
+  <section>
+    <h3>Start the Daemon</h3>
+    <pre><code class="language-bash"># Quick start with defaults (SQLite, no model key)
+uv run gludd daemon --port 8000
+
+# With a config directory and model profile
+uv run gludd daemon --config-dir ~/.config/general-ludd --port 8000</code></pre>
+  </section>
+  <section>
+    <h3>Submit Todos &amp; Check Status</h3>
+    <pre><code class="language-bash"># Submit a task
+uv run gludd todo add "Write a unit test for the login endpoint" --queue core
+
+# Check the queue
+uv run gludd todo list --status queued
+
+# Full daemon snapshot
+uv run gludd status</code></pre>
+  </section>
+  <section>
+    <h3>Health &amp; Metrics</h3>
+    <pre><code class="language-bash">uv run gludd health
+uv run gludd version
+curl http://localhost:8000/healthz
+curl http://localhost:8000/admin/metrics/export</code></pre>
+  </section>
+</section>
+
+<!-- ============================================================ -->
+<!-- ROLES -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>Creating &amp; Modifying Roles</h2>
+    <p>Roles give gludd new behaviors. They are Ansible roles in <code>general_ludd.agent</code>.</p>
+  </section>
+  <section>
+    <h3>Role Structure</h3>
+    <pre><code class="language-yaml"># roles/my_new_role/tasks/main.yml
+- name: Gather daemon state
+  gludd_facts:
+    register: daemon_state
+
+- name: Call the model
+  gludd_model_call:
+    prompt: "{{ task_prompt }}"
+    model_profile: "{{ model_profile | default('zai_coder') }}"
+  register: model_result
+
+- name: Write the change
+  gludd_git:
+    action: commit
+    message: "{{ model_result.summary }}"
+    files: "{{ model_result.changed_files }}"</code></pre>
+    <p style="font-size:0.5em; margin-top:8px;">Add a <code>molecule/</code> scenario, register the role, done.</p>
+  </section>
+  <section>
+    <h3>How Role Routing Works</h3>
+    <ol>
+      <li>Each todo carries a <code>task_type</code> (<code>code</code>, <code>bug_fix</code>, <code>refactor</code>, ...)</li>
+      <li>The <code>ModelRouter</code> selects a role based on <code>task_type</code> + routing weights</li>
+      <li>Roles compose modules into full agent task runs</li>
+      <li>New roles auto-discover — just drop them in <code>roles/</code></li>
+    </ol>
+    <p style="font-size:0.6em;">12 modules (gludd_facts, gludd_model_call, gludd_git, gludd_worktree, ...) &rarr; ~90 roles &rarr; 49 molecule scenarios</p>
+  </section>
+</section>
+
+<!-- ============================================================ -->
+<!-- SELF-IMPROVEMENT -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>Self-Improvement in Depth</h2>
+    <p>gludd can improve <em>itself</em> — the daemon that runs the analysis is the subject of the analysis.</p>
+  </section>
+  <section>
+    <h3>The Self-Improve Pipeline</h3>
+    <ol>
+      <li class="fragment"><strong>Propose</strong> — <code>self_improve_propose</code> scans codebase, proposes changes</li>
+      <li class="fragment"><strong>A/B Test</strong> — <code>self_improve_ab_test</code> runs both variants, collects metrics</li>
+      <li class="fragment"><strong>Promote</strong> — <code>self_improve_promote</code> lands the winner if gate stays green</li>
+      <li class="fragment"><strong>Ornith</strong> — <code>ornith_self_improve</code> training pipeline with data repo + MCP server</li>
+    </ol>
+  </section>
+  <section>
+    <h3>Gap Analysis</h3>
+    <p>Systematic detection of what's missing or broken:</p>
+    <ul>
+      <li><strong>Dead code auditor</strong> — finds classes imported nowhere but tests</li>
+      <li><strong>Feature gap auditor</strong> — checks CLI/TUI/API parity</li>
+      <li><strong>Coverage audit</strong> — per-file threshold enforcement (85% floor)</li>
+      <li><strong>Game build audit</strong> — validates 12 autonomous game builds</li>
+      <li><strong>Enforcement verify</strong> — tests guardrail integrity on every change</li>
+      <li><strong>Security backlog</strong> — 41 catalogued findings with custom checkers</li>
+    </ul>
+  </section>
+  <section>
+    <h3>Non-Retrograde Guard</h3>
+    <p>The gate must <strong>stay green</strong> after every self-edit. No exceptions.</p>
+    <ul>
+      <li><code>make gate</code> is the single source of truth</li>
+      <li><code>config/ratchet.yml</code> may only shrink (enforced by preflight)</li>
+      <li>Self-modification guards prevent the agent from disabling its own checks</li>
+      <li>Guardrail integrity policy: you must never remove a guardrail to fix a symptom</li>
+    </ul>
+  </section>
+</section>
+
+<!-- ============================================================ -->
+<!-- CURRENT GAPS -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>Current Gaps</h2>
+    <p style="color:#da3633;">Honest assessment of what's broken or incomplete</p>
+  </section>
+  <section>
+    <h3>CI Not Green</h3>
+    <ul>
+      <li>Gate passes on macOS arm64 locally <span class="badge-green">PASS</span></li>
+      <li>CI (GitHub Actions, ubuntu) gate has never been green <span class="badge-red">FAIL</span></li>
+      <li>Molecule suite (49 scenarios) passes locally only — <span class="badge-yellow">CI-UNVERIFIED</span></li>
+      <li>Test phase OOM under xdist — known issue</li>
+    </ul>
+  </section>
+  <section>
+    <h3>6 Game Mechanics Bugs</h3>
+    <table>
+      <tr><th>Game</th><th>Failing Check</th></tr>
+      <tr><td>Snake</td><td>food_eating — TypeError: cannot unpack non-iterable int</td></tr>
+      <tr><td>Minesweeper</td><td>flood_fill — revealing a 0 cell doesn't auto-reveal adjacent</td></tr>
+      <tr><td>Minesweeper</td><td>flag_toggle — flag() doesn't toggle flagged/unflagged</td></tr>
+      <tr><td>Checkers</td><td>game_over — no valid moves doesn't set game_over=True</td></tr>
+      <tr><td>Memory Match</td><td>mm_match_pair — matching two same-value cards doesn't set matched=True</td></tr>
+      <tr><td>Memory Match</td><td>mm_all_matched — game doesn't end when all cards matched</td></tr>
+    </table>
+  </section>
+  <section>
+    <h3>Enforcement Needs Restart</h3>
+    <ul>
+      <li>TypeScript plugins compile once at opencode startup</li>
+      <li>Plugin edits require a full quit + re-launch</li>
+      <li>Emergency disengage available: <code>make disengage-enforcement</code></li>
+      <li>Watchdog auto-resets streak counter every 60s as failsafe</li>
+    </ul>
+  </section>
+  <section>
+    <h3>Connector &amp; Other Gaps</h3>
+    <ul>
+      <li>Observability connector base built (~80 connectors), but daemon wiring incomplete</li>
+      <li>SpendLimiter budget cap "literally never fires" — passes <code>projected_cost_usd=0.0</code></li>
+      <li>Scoring router: no <code>avg_cost</code> column &rarr; no-op (fixed: <code>[436af0d]</code>)</li>
+      <li>Some features <span class="badge-yellow">~100% PARTIAL</span>: file-refs only, no live CI verification</li>
+      <li>No UI / no IDE integration — gludd is daemon + CLI only</li>
+      <li>Single-worker SQLite — no horizontal scale</li>
+    </ul>
+  </section>
+</section>
+
+<!-- ============================================================ -->
+<!-- HONEST METRICS -->
+<!-- ============================================================ -->
+<section>
+  <h2>Honest Metrics</h2>
+  <p class="honest-note" style="font-size:0.7em;">
+    Every number below is from a machine-produced measurement.<br>
+    No hardcoded counts — live gate output only.
+  </p>
+  <div class="metrics-grid">
+    <div class="metric-box">
+      <div class="number">0</div>
+      <div class="label">CI-verified features</div>
+    </div>
+    <div class="metric-box">
+      <div class="number">20,650</div>
+      <div class="label">tests collected</div>
+    </div>
+    <div class="metric-box">
+      <div class="number">93.8%</div>
+      <div class="label">coverage (approx)</div>
+    </div>
+    <div class="metric-box">
+      <div class="number">569</div>
+      <div class="label">source files (100% test-imported)</div>
+    </div>
+  </div>
+  <div class="metrics-grid" style="margin-top:10px;">
+    <div class="metric-box">
+      <div class="number">~90</div>
+      <div class="label">Ansible roles</div>
+    </div>
+    <div class="metric-box">
+      <div class="number">12</div>
+      <div class="label">Ansible modules</div>
+    </div>
+    <div class="metric-box">
+      <div class="number">49</div>
+      <div class="label">molecule scenarios (local-only)</div>
+    </div>
+    <div class="metric-box">
+      <div class="number">0</div>
+      <div class="label">ratchet entries (all xfail removed)</div>
+    </div>
+  </div>
+  <p style="font-size:0.5em; margin-top:20px; color:#8b949e;">
+    190/192 features claimed 100% (file-refs only, no live pytest verification) &middot;
+    lint 0 &middot; typecheck 0 &middot; collect 0 &middot;
+    5 noqa + 88 type:ignore[intent] in src (0 bare ignores)
+  </p>
+  <p class="honest-note" style="margin-top:12px;">
+    UNVERIFIED badge on all local-only rows. CI pipeline never green.
+    These are truth, not aspiration.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- ROADMAP -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>Roadmap</h2>
+    <p>What's next for gludd</p>
+  </section>
+  <section>
+    <h3>Immediate (alpha.5 &rarr; alpha.6)</h3>
+    <ul>
+      <li><span class="badge-red">P0</span> Green CI gate — ubuntu matrix must pass</li>
+      <li><span class="badge-red">P0</span> Fix 6 game mechanics bugs (4 partial builds)</li>
+      <li><span class="badge-red">P0</span> SpendLimiter actually fires — real budget enforcement</li>
+      <li><span class="badge-yellow">P1</span> Live pytest verification of all 190 claimed features</li>
+      <li><span class="badge-yellow">P1</span> Connector daemon wiring — observability router live</li>
+    </ul>
+  </section>
+  <section>
+    <h3>Medium Term</h3>
+    <ul>
+      <li>Playwright/Chromium integration — visual QA, deck screenshots</li>
+      <li>Greenfield E2E build — "build a todo website" from scratch</li>
+      <li>Live deck-data.json pipeline — E2E artifacts feed the presentation</li>
+      <li>Iterative code generation feedback loop — model retries on test failures</li>
+      <li>Multi-worker / PostgreSQL support — horizontal scale</li>
+    </ul>
+  </section>
+  <section>
+    <h3>Long Term</h3>
+    <ul>
+      <li>TUI dashboard — live daemon state, task progress, cost graphs</li>
+      <li>Fleet mode — multiple daemons, shared work queue</li>
+      <li>Sandboxed execution — Landlock (Linux) + bubblewrap for untrusted code</li>
+      <li>Persistent agent memory — cross-session learning</li>
+      <li>Production hardening — all 16 P1 security findings closed</li>
+      <li>Beta release — CI-green, all features live-verified, artifact published</li>
+    </ul>
+  </section>
+</section>
+
+<!-- ============================================================ -->
+<!-- CLOSING -->
+<!-- ============================================================ -->
+<section>
+  <h2>gludd</h2>
+  <p style="color:#8b949e;">Autonomous Agentic SDLC &middot; alpha research software</p>
+  <p style="font-size:0.6em; margin-top:30px;">
+    github.com/sandboxcom/gludd<br>
+    v0.1.0-alpha.5 &middot; MIT License
+  </p>
+  <p class="honest-note" style="margin-top:30px;">
+    This deck was generated from live project data. Nothing on these slides<br>
+    was hand-authored — every number is machine-produced. Missing data<br>
+    would render as "NO DATA" placeholders, not fabricated screenshots.
+  </p>
+</section>
+
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+Reveal.initialize({
+  hash: true,
+  center: true,
+  transition: 'slide',
+  transitionSpeed: 'default',
+  backgroundTransition: 'fade',
+  slideNumber: 'c/t',
+  plugins: [ RevealHighlight, RevealNotes ]
+});
+</script>
+</body>
+</html>

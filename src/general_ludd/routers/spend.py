@@ -1,8 +1,10 @@
 """Spend-limiter API endpoints.
 
 Endpoints:
-    GET  /api/spend          — current window spend, limit, remaining
+    GET  /api/spend           — current window spend, limit, remaining
     POST /api/spend/configure — update limit_usd and window_seconds at runtime
+    GET  /api/costs           — combined model API + infra cost breakdown
+    GET  /admin/costs         — administrative cost-accounting summary
 
 PSK authentication is applied globally by the daemon middleware, so these
 endpoints follow the same pattern as the rest of the router modules: they are
@@ -131,4 +133,49 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "breakdown_by_project": by_project,
             "breakdown_by_provider": by_provider,
             "burn_rate_24h": burn_rate_24h,
+        }
+
+    @app.get("/api/costs")
+    async def api_costs() -> dict[str, Any]:
+        """Return combined model API + infrastructure cost breakdown.
+
+        Pulls from SpendLimiter (model API costs) and InfraCostTracker
+        (cloud infrastructure costs). Also queries InfraCostTracker v2
+        if available on app.state for per-resource-type breakdown.
+
+        Returns:
+            JSON with ``model_api``, ``infrastructure``, ``total``,
+            ``breakdown_by_provider``, ``breakdown_by_resource_type``,
+            ``breakdown_by_project``, and ``record_count``.
+        """
+        limiter = _get_limiter(app)
+        infra_tracker = getattr(app.state, "_infra_tracker", None)
+        cost_tracker_v2 = getattr(app.state, "_infra_cost_tracker", None)
+
+        model_api_cost = limiter.window_spend() if limiter is not None else 0.0
+        infra_cost = 0.0
+        by_provider: dict[str, float] = {}
+        by_resource_type: dict[str, float] = {}
+        by_project: dict[str, float] = {}
+        record_count = 0
+
+        if cost_tracker_v2 is not None:
+            infra_cost = cost_tracker_v2.total_cost()
+            by_provider = cost_tracker_v2.cost_by_provider()
+            by_resource_type = cost_tracker_v2.cost_by_resource_type()
+            by_project = cost_tracker_v2.cost_by_project()
+            record_count = len(cost_tracker_v2.records())
+        elif infra_tracker is not None:
+            infra_cost = infra_tracker.get_total_infra_cost()
+            by_provider = infra_tracker.get_infra_cost_by_provider()
+            by_project = infra_tracker.get_infra_cost_by_project()
+
+        return {
+            "model_api": model_api_cost,
+            "infrastructure": infra_cost,
+            "total": model_api_cost + infra_cost,
+            "breakdown_by_provider": by_provider,
+            "breakdown_by_resource_type": by_resource_type,
+            "breakdown_by_project": by_project,
+            "record_count": record_count,
         }

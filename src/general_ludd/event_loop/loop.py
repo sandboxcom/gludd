@@ -38,6 +38,9 @@ from general_ludd.execution.situation_store import BadCallSituationStore
 from general_ludd.execution.tool_auditor import ToolCallAuditor
 from general_ludd.mcp.client import MCPClient
 from general_ludd.mcp.registry import MCPToolRegistry
+from general_ludd.memory.consolidation import MemoryConsolidator
+from general_ludd.memory.cross_task import CrossTaskLearner
+from general_ludd.memory.episodic import EpisodicMemoryRecorder
 from general_ludd.models.job_invocation import (
     invoke_model_for_generation,
     is_generation_work_type,
@@ -2950,6 +2953,10 @@ class EventLoop:
             # P3: bounded LRU insert — evicts the oldest id (FIFO) past the cap.
             self._ledger_add(self._applied_decisions, decision_id)
             reconciled += 1
+            # AutoMemory: record an episodic memory for this task outcome.
+            self._track_background_task(
+                asyncio.create_task(self._auto_record_episode(todo, new_status, d))
+            )
             if (
                 new_status == TodoStatus.COMPLETE
                 and d.decision == "complete"
@@ -3446,6 +3453,14 @@ class EventLoop:
                 training_recorded = 0
             self._tick_metrics["self_improve_training_recorded"] = training_recorded
             try:
+                await self._auto_consolidate_memory()
+            except Exception:
+                logger.warning("AutoMemory consolidation failed", exc_info=True)
+            try:
+                await self._auto_cross_task_learn()
+            except Exception:
+                logger.warning("AutoMemory cross-task learning failed", exc_info=True)
+            try:
                 await self._apply_self_improvements()
             except Exception:
                 logger.warning(
@@ -3930,6 +3945,122 @@ class EventLoop:
     async def claim_runnable_todos(self, todos: list[Todo]) -> list[Todo]:
         runnable = [t for t in todos if t.status == TodoStatus.QUEUED]
         return runnable
+
+    # ------------------------------------------------------------------
+    # AutoMemory — episodic recording, consolidation, cross-task learning
+    # ------------------------------------------------------------------
+
+    async def _auto_record_episode(
+        self, todo: Any, new_status: Any, decision: Any,
+    ) -> None:
+        if self._memory_repo is None:
+            return
+        try:
+            recorder = EpisodicMemoryRecorder(self._memory_repo)
+            agent_id = (
+                getattr(todo, "assigned_agent", None)
+                or getattr(todo, "work_type", None)
+                or "agent"
+            )
+            work_type = getattr(todo, "work_type", "code") or "code"
+            outcome = (
+                "success" if str(new_status.value).upper() == "COMPLETE"
+                else "failure" if str(new_status.value).upper() == "FAILED"
+                else "partial"
+            )
+            takeaway = (
+                getattr(decision, "summary", None)
+                or getattr(todo, "title", None)
+                or ""
+            )
+            error_msg = (
+                getattr(decision, "failure_reason", None)
+                or getattr(todo, "last_error", None)
+                or ""
+            )
+            await recorder.record_completion(
+                agent_id=str(agent_id),
+                task_type=getattr(todo, "task_type", None) or work_type,
+                work_type=work_type,
+                priority=getattr(todo, "priority", "medium") or "medium",
+                outcome=outcome,
+                context={
+                    "todo_id": getattr(todo, "todo_id", ""),
+                    "decision": getattr(decision, "decision", ""),
+                    "project_id": getattr(todo, "project_id", None),
+                },
+                takeaway=str(takeaway)[:500] if takeaway else "",
+                error_message=str(error_msg)[:500] if error_msg else "",
+            )
+            self._tick_metrics.setdefault("episodes_recorded", 0)
+            self._tick_metrics["episodes_recorded"] += 1
+        except Exception as exc:
+            logger.warning("Episodic memory recording failed: %s", exc)
+
+    async def _auto_consolidate_memory(self) -> None:
+        if self._memory_repo is None:
+            return
+        try:
+            consolidator = MemoryConsolidator(
+                self._memory_repo,
+                model_gateway=self._model_gateway,
+                min_episodes_to_consolidate=10,
+            )
+            agent_id = str(self._tick_project_id or "gludd")
+            result = await consolidator.consolidate(agent_id)
+            if result["consolidated"] > 0:
+                self._tick_metrics["memory_consolidated"] = result["consolidated"]
+                self._tick_metrics["memory_episodes_consolidated"] = result.get(
+                    "episodes_consolidated", 0
+                )
+                logger.info(
+                    "Memory consolidation: %d summaries from %d episodes",
+                    result["consolidated"], result.get("episodes_consolidated", 0),
+                )
+        except Exception as exc:
+            logger.warning("Memory consolidation failed: %s", exc)
+
+    async def _auto_cross_task_learn(self) -> None:
+        if self._memory_repo is None:
+            return
+        try:
+            learner = CrossTaskLearner(
+                self._memory_repo,
+                model_gateway=self._model_gateway,
+            )
+            agent_id = str(self._tick_project_id or "gludd")
+            report = await learner.generate_improvement_report(agent_id)
+            improvements = report.get("improvements_needed", [])
+            if improvements:
+                self._tick_metrics["cross_task_improvements"] = len(improvements)
+                logger.info(
+                    "Cross-task learning: %d improvements identified across %d episodes",
+                    len(improvements), report.get("total_episodes", 0),
+                )
+                # Fold cross-task improvement suggestions into self-improve todos
+                # so they get tracked and actioned like gap-analysis findings.
+                cross_todos: list[dict[str, Any]] = []
+                for imp in improvements:
+                    cross_todos.append({
+                        "title": f"AutoMemory: {imp.get('suggested_action', 'Improve task performance')}",
+                        "description": json.dumps(imp, default=str),
+                        "work_type": "self_improve",
+                        "priority": "medium",
+                        "source": "cross_task_learner",
+                        "gap_type": "cross_task_insight",
+                    })
+                if cross_todos:
+                    try:
+                        enqueued = await self._persist_self_improve_todos(
+                            cross_todos, project_id=self._tick_project_id,
+                        )
+                        self._tick_metrics["cross_task_todos_persisted"] = enqueued
+                    except Exception as exc:
+                        logger.warning(
+                            "Cross-task todo persistence failed: %s", exc,
+                        )
+        except Exception as exc:
+            logger.warning("Cross-task learning failed: %s", exc)
 
     async def reconcile_decision(self, decision: TaskDecision, todo: Todo) -> Todo:
         if decision.decision == "complete":

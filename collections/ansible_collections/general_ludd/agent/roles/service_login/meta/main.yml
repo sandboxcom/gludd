@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: service_login
+  author: Agentic Harness Agent
+  description: >
+    Automate XDG browser-based OAuth2 + API-key login flows for gludd services
+    (GitHub, OpenAI, DeepSeek, Z.AI, Anthropic, Gemini, OpenRouter). Opens the
+    user's default browser, starts a local HTTP redirect server, receives the
+    OAuth2 callback or API key, and stores credentials. Codifies the recurring
+    login workflow used by agents to authenticate with external services.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

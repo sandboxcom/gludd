@@ -1,0 +1,25 @@
+---
+# ui_ux_audit role defaults — REPORT-ONLY, accessibility + UX analysis for HTML presentations
+
+# Path to the HTML presentation file to audit
+html_path: ""
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-ui-ux-audit"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Override for HTML content (for testing without a real file; used when html_path is empty)
+html_content_override: ""
+
+# Model profile for AI analysis (empty = daemon default)
+model_profile: ""
+
+# Enable model call for AI-powered UX analysis
+enable_model_call: false
+
+# Destructive ops guard — audit is report-only
+enable_git_push: false
+apply_changes: false

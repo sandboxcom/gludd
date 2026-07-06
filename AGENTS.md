@@ -970,19 +970,21 @@ The 2026-06-22 incident: an agent committed `50dbd1b` with a red gate via `make 
 
 ### CI-as-Gate Override
 
-When the local gate takes too long to complete (>30 min, common for large suites) and CI is the real validation mechanism, use:
+When the local gate is too slow but CI has ALREADY validated the commit, use:
 
 ```
 make commit-no-verify MSG='...' GLUDD_CI_IS_GATE=1
 ```
 
-This skips the local .gate-status freshness check (CI IS the gate) but STILL skips pre-commit hooks (--no-verify for stash conflicts). Use ONLY when:
+This does NOT blindly skip the gate — it queries `gh run list` for the current HEAD
+and only allows the bypass when CI is `conclusion: success`. If CI is red, pending, or
+has no run, the commit is DENIED (same as a red local gate). Use ONLY when:
 1. The local gate has timed out repeatedly (>2 attempts)
 2. Lint + typecheck pass locally
 3. Targeted tests pass locally
-4. CI will run on push/PR to validate
+4. CI is VERIFIED GREEN for the exact commit being committed
 
-This is NOT a bypass for a red gate — if tests are failing, fix them first.
+This is NOT a blank check. A red CI = a blocked commit.
 
 ## CRITICAL: Don't Push Every Commit — Batch Locally, Push Once
 

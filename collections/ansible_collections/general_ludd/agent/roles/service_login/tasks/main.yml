@@ -1,0 +1,93 @@
+---
+# service_login role — automate browser-based OAuth2 / API-key login flows.
+#
+# This role opens the user's default browser, starts a local HTTP redirect
+# server, receives the OAuth2 callback / pastes the API key, and stores
+# the credential via an environment-variable file or OpenBao.
+#
+# Supported services:
+#   github, openai, deepseek, zai, anthropic, gemini, openrouter
+#
+# Example playbook:
+#
+#   - name: Log into GitHub
+#     hosts: localhost
+#     gather_facts: false
+#     roles:
+#       - role: general_ludd.agent.service_login
+#         vars:
+#           login_service: github
+#           login_store: env
+#           login_timeout: 120
+#
+# Pre-requisites:
+#   For OAuth2 services (github, gemini), the operator must first create an
+#   OAuth application and export the client ID/secret as environment variables.
+#   See README.md for details.
+
+- name: Validate login_service variable
+  ansible.builtin.assert:
+    that:
+      - login_service in ['github', 'openai', 'deepseek', 'zai', 'anthropic', 'gemini', 'openrouter']
+    fail_msg: "login_service must be one of the supported services"
+  when: login_service is defined
+
+- name: Validate login_store variable
+  ansible.builtin.assert:
+    that:
+      - login_store in ['env', 'openbao']
+    fail_msg: "login_store must be 'env' or 'openbao'"
+  when: login_store is defined
+
+- name: Set login facts
+  ansible.builtin.set_fact:
+    _login_service: "{{ login_service | default('openai') }}"
+    _login_store: "{{ login_store | default('env') }}"
+    _login_timeout: "{{ login_timeout | default(120) }}"
+    _login_non_interactive: "{{ login_non_interactive | default(false) }}"
+    _login_api_key: "{{ login_api_key | default('') }}"
+
+- name: Run browser login via gludd CLI
+  ansible.builtin.command:
+    cmd: >-
+      python3 -m general_ludd.cli login {{ _login_service }}
+      --store {{ _login_store }}
+      --timeout {{ _login_timeout }}
+    chdir: "{{ repo_path | default(playbook_dir) }}"
+  register: _login_result
+  changed_when: true
+  failed_when: false
+  when:
+    - not _login_non_interactive | bool
+    - _login_api_key | length == 0
+
+- name: Store API key directly (non-interactive)
+  ansible.builtin.set_fact:
+    _login_token: "{{ _login_api_key }}"
+  when:
+    - _login_non_interactive | bool or _login_api_key | length > 0
+
+- name: Extract token from interactive result
+  ansible.builtin.set_fact:
+    _login_token: "{{ _login_result.stdout_lines | select('search', 'successful') | first | default('') }}"
+  when:
+    - _login_result is defined
+    - _login_result.stdout is defined
+
+- name: Write login result artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'service_login',
+        'service': _login_service,
+        'store': _login_store,
+        'status': 'completed',
+        'interactive': not (_login_non_interactive | bool),
+        'command_rc': _login_result.rc | default(0)
+      } | to_nice_json }}
+    dest: "{{ artifact_dir | default('/tmp') }}/service_login_{{ _login_service }}.json"
+    mode: "0644"
+
+- name: Report login outcome
+  ansible.builtin.debug:
+    msg: "service_login: service={{ _login_service }} store={{ _login_store }} rc={{ _login_result.rc | default(0) }}"

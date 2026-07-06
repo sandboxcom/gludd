@@ -1,0 +1,17 @@
+---
+- name: Converge - run ui_ux_audit role against the HTML fixture
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}"
+  tasks:
+    - name: Invoke ui_ux_audit (enable_model_call=false; fixture seeded in prepare)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.ui_ux_audit
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        html_path: "/tmp/gludd-ui-ux-audit-fixture-{{ mock_port }}.html"
+        artifact_dir: "/tmp/gludd-ui-ux-audit-{{ mock_port }}"
+        enable_model_call: false

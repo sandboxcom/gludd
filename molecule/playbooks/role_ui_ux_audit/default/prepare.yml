@@ -1,0 +1,75 @@
+---
+# Prepare: start mock daemon + seed a reveal.js-style HTML presentation fixture
+- name: Prepare - mock daemon + HTML fixture for ui_ux_audit
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}.pid"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Seed a reveal.js HTML presentation fixture
+      ansible.builtin.copy:
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Sample Presentation</title>
+            <link rel="stylesheet" href="reveal.css">
+            <style>
+              body { font-size: 14px; background: #fff; color: #ccc; }
+              .slides section { padding: 20px; }
+              button { width: 30px; height: 30px; }
+            </style>
+          </head>
+          <body>
+            <div class="reveal">
+              <div class="slides">
+                <section>
+                  <h1>Welcome</h1>
+                  <p>This is a sample reveal.js presentation.</p>
+                  <img src="logo.png">
+                  <img src="chart.png">
+                  <img src="photo.jpg" alt="Team photo">
+                </section>
+                <section>
+                  <h2>Agenda</h2>
+                  <ul>
+                    <li>Introduction</li>
+                    <li>Features</li>
+                    <li>Q&A</li>
+                  </ul>
+                  <button>Click me</button>
+                </section>
+                <section>
+                  <h2>Contact</h2>
+                  <p>Email us at hello@example.com</p>
+                </section>
+              </div>
+            </div>
+            <script src="reveal.js"></script>
+          </body>
+          </html>
+        dest: "/tmp/gludd-ui-ux-audit-fixture-{{ mock_port }}.html"
+        mode: "0644"

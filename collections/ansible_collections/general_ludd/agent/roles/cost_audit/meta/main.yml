@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: cost_audit
+  author: Agentic Harness Agent
+  description: >
+    Audits total project spend — model API costs from SpendLimiter +
+    cloud infrastructure costs from InfraCostTracker (AWS, GCP, Azure,
+    RunPod, Vast.ai, Terraform). Emits a JSON artifact with per-provider
+    and per-resource-type breakdown. REPORT-ONLY — never mutates.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

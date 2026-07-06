@@ -1,6 +1,7 @@
 """Infrastructure — compute, deployment, Slurm, local inference, terraform."""
 
 __all__ = (
+    "CloudProvider",
     "ComputeConfig",
     "ComputeEndpoint",
     "ComputeInstance",
@@ -10,6 +11,8 @@ __all__ = (
     "GPUMetricsCollector",
     "GPUType",
     "InferenceEngine",
+    "InfraCostRecord",
+    "InfraCostTracker",
     "LocalInferenceManager",
     "LocalServer",
     "LocalServerConfig",
@@ -33,6 +36,11 @@ from general_ludd.infra.compute import (
     ComputeProvider,
     GPUType,
     InferenceEngine,
+)
+from general_ludd.infra.cost_tracker import (
+    CloudProvider,
+    InfraCostRecord,
+    InfraCostTracker,
 )
 from general_ludd.infra.deployment import DeploymentManager, SecretsResolver
 from general_ludd.infra.gpu_metrics import GPUMetrics, GPUMetricsCollector

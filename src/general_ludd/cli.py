@@ -175,6 +175,12 @@ COMMANDS
       --task-type TYPE    Filter by task type
       --daemon-url URL    Daemon URL
 
+    login               Browser-based OAuth2 / API key login for services
+      <service>            Service to log into (github, openai, deepseek, zai, anthropic, gemini, openrouter)
+      --list               List available services
+      --timeout N          OAuth2 callback timeout in seconds (default: 120)
+      --store {env,openbao}  Credential storage backend (default: env)
+
     help                Show this manual
 
     filestore           Filestore management commands
@@ -762,6 +768,26 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     connectors_query.add_argument("--daemon-url", default="http://localhost:8000")
     connectors_query.set_defaults(func=_cmd_connectors_query)
 
+    login_parser = sub.add_parser("login", help="Browser-based OAuth2 / API key login for services")
+    login_parser.add_argument(
+        "service",
+        nargs="?",
+        default=None,
+        help="Service to log into (github, openai, deepseek, zai, anthropic, gemini, openrouter). "
+        "Use '--list' to see available services.",
+    )
+    login_parser.add_argument(
+        "--list", action="store_true", help="List available login services and exit"
+    )
+    login_parser.add_argument(
+        "--timeout", type=float, default=120.0, help="OAuth2 callback timeout in seconds (default: 120)"
+    )
+    login_parser.add_argument(
+        "--store", default="env", choices=["env", "openbao"],
+        help="Credential storage backend (default: env)"
+    )
+    login_parser.set_defaults(func=_cmd_login)
+
     onboard_parser = sub.add_parser(
         "onboard",
         help="Interactively set up the IAM role + API token gludd needs to run "
@@ -843,6 +869,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     core_changes_parser = sub.choices["core-changes"]
 
     subcommand_map = {
+        "login": login_parser,
         "models": models_parser,
         "mcp": mcp_parser,
         "skills": skills_parser,
@@ -870,6 +897,63 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     }
 
     return parser, subcommand_map
+
+
+def _cmd_login(args: argparse.Namespace) -> None:
+    from general_ludd.auth.browser_login import (
+        SERVICE_PRESETS,
+        BrowserLoginFlow,
+        EnvCredentialStore,
+        OpenBaoCredentialStore,
+        list_services,
+    )
+    from general_ludd.secrets.manager import SecretsManager
+
+    store: EnvCredentialStore | OpenBaoCredentialStore
+
+    if getattr(args, "list", False):
+        services = list_services()
+        print("Available login services:")
+        for svc in services:
+            cfg = SERVICE_PRESETS[svc]
+            kind = "OAuth2" if cfg.token_url else "API key"
+            print(f"  {svc:14}  {cfg.display_name:18}  {kind}")
+        return
+
+    service = getattr(args, "service", None)
+    if not service:
+        print("Usage: gludd login <service>", file=sys.stderr)
+        print("Use --list to see available services.", file=sys.stderr)
+        sys.exit(2)
+
+    service_lower = service.lower()
+    if service_lower not in SERVICE_PRESETS:
+        print(f"Unknown service: {service!r}", file=sys.stderr)
+        print(f"Available: {', '.join(list_services())}", file=sys.stderr)
+        sys.exit(2)
+
+    store_kind = getattr(args, "store", "env")
+    timeout = getattr(args, "timeout", 120.0)
+
+    if store_kind == "openbao":
+        try:
+            sm = SecretsManager()
+            sm.connect()
+            store = OpenBaoCredentialStore(sm)
+        except Exception as exc:
+            print(
+                f"OpenBao not available: {exc}\n"
+                "Use --store=env or start the OpenBao container first.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    else:
+        store = EnvCredentialStore()
+
+    flow = BrowserLoginFlow(service_lower, store=store)
+    token = flow.run(timeout=timeout)
+    if token is None:
+        sys.exit(1)
 
 
 def _cmd_onboard(args: argparse.Namespace) -> None:

@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: ui_ux_audit
+  author: Agentic Harness Agent
+  description: >
+    Accessibility and UX audit for HTML presentations (reveal.js or any HTML).
+    Checks: missing alt text, ARIA labels, semantic HTML (nav/main/header),
+    contrast heuristics, readable fonts, clear navigation, responsive layout.
+    Uses gludd_facts for system context and gludd_model_call for AI analysis.
+    Generates a full accessibility report. REPORT-ONLY: never mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

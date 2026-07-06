@@ -1,0 +1,138 @@
+---
+- name: Verify - ui_ux_audit wrote accessibility report artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}.pid"
+    artifact: "/tmp/gludd-ui-ux-audit-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}/ui_ux_audit.json"
+    artifact_md: "/tmp/gludd-ui-ux-audit-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}/ui_ux_audit.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields — role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'ui_ux_audit'
+          - result.status == 'completed'
+          - result.verdict is defined
+          - result.score is defined
+          - result.score | int >= 0
+          - result.score | int <= 100
+        fail_msg: "ui_ux_audit artifact wrong: {{ result }}"
+
+    - name: Assert a11y findings array present
+      ansible.builtin.assert:
+        that:
+          - result.a11y_findings is defined
+          - result.a11y_findings is iterable
+        fail_msg: "a11y_findings missing or not a list"
+        success_msg: "a11y_findings present"
+
+    - name: Assert alt-text missing detected (3 imgs, only 1 with alt)
+      ansible.builtin.assert:
+        that:
+          - result.a11y_findings | selectattr('check', 'equalto', 'alt_text') | list | length > 0
+        fail_msg: "Expected alt_text missing finding for fixture (3 imgs, 1 alt)"
+        success_msg: "alt_text finding present"
+
+    - name: Assert lang attribute missing detected
+      ansible.builtin.assert:
+        that:
+          - result.a11y_findings | selectattr('check', 'equalto', 'html_lang') | list | length > 0
+        fail_msg: "Expected html_lang missing finding"
+        success_msg: "html_lang finding present"
+
+    - name: Assert no main element detected
+      ansible.builtin.assert:
+        that:
+          - result.a11y_findings | selectattr('check', 'equalto', 'semantic_main') | list | length > 0
+        fail_msg: "Expected semantic_main missing finding"
+        success_msg: "semantic_main finding present"
+
+    - name: Assert no navigation element detected
+      ansible.builtin.assert:
+        that:
+          - result.a11y_findings | selectattr('check', 'equalto', 'semantic_nav') | list | length > 0
+        fail_msg: "Expected semantic_nav missing finding"
+        success_msg: "semantic_nav finding present"
+
+    - name: Assert no viewport meta tag detected
+      ansible.builtin.assert:
+        that:
+          - result.a11y_findings | selectattr('check', 'equalto', 'viewport') | list | length > 0
+        fail_msg: "Expected viewport missing finding"
+        success_msg: "viewport finding present"
+
+    - name: Assert ARIA checks fired (no roles, no labels in fixture)
+      ansible.builtin.assert:
+        that:
+          - result.a11y_findings | selectattr('check', 'equalto', 'aria_roles') | list | length > 0
+          - result.a11y_findings | selectattr('check', 'equalto', 'aria_labels') | list | length > 0
+        fail_msg: "Expected ARIA findings"
+        success_msg: "ARIA findings present"
+
+    - name: Assert score reflects a11y issues
+      ansible.builtin.assert:
+        that:
+          - result.score | int < 50
+        fail_msg: "Expected poor score given fixture a11y gaps, got {{ result.score }}"
+        success_msg: "Score {{ result.score }} reflects a11y gaps"
+
+    - name: Assert verdict is poor
+      ansible.builtin.assert:
+        that:
+          - result.verdict == 'poor'
+        fail_msg: "Expected 'poor' verdict, got {{ result.verdict }}"
+        success_msg: "Verdict: poor (correct)"
+
+    - name: Assert model call was not used
+      ansible.builtin.assert:
+        that:
+          - result.scanned.model_call_enabled == false
+        fail_msg: "Model call should be disabled for this test"
+
+    - name: Assert UX findings empty (model call disabled)
+      ansible.builtin.assert:
+        that:
+          - result.ux_findings | length == 0
+        fail_msg: "UX findings should be empty when model call disabled"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-ui-ux-audit-{{ mock_port }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove HTML fixture
+      ansible.builtin.file:
+        path: "/tmp/gludd-ui-ux-audit-fixture-{{ mock_port }}.html"
+        state: absent
+      failed_when: false
