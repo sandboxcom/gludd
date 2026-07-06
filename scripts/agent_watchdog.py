@@ -143,6 +143,8 @@ POLL_SECS = 10
 
 STREAK_THRESHOLD = 3  # with 10s polling, threshold is reached in ~30s of sustained grinding
 STOP_IDLE_SECS = 15  # streak file mtime older than this + pending work = text-only stop
+AUTO_REENGAGE_AGENT_ACTIVE_SECS = 60  # agent active < this → eligible for auto-re-engage
+AUTO_REENGAGE_DISENGAGE_AGE_SECS = 120  # disengage > this old → auto-re-engage when agent active
 STOP_COUNT_FILE = "/tmp/gludd-watchdog-stop-count.json"
 STOP_ESCALATE_THRESHOLD = 3
 
@@ -1861,12 +1863,28 @@ def _is_push_running() -> bool:
 def _auto_reengage_enforcement(mtime_age: float | None) -> None:
     """Auto-re-engage enforcement after push completes when disengage is active.
 
-    Called every poll cycle from check_and_reset(). If enforcement was disengaged
-    (for a push) and the push has since completed, re-engage by clearing the
-    disengage signal and resetting the block counter. Also enforces a 5-minute
-    hard cap on disengage when CI is not green.
+    Called every poll cycle from check_and_reset(). Re-engages under three rules:
+    1. Push completed + agent active + CI green → re-engage immediately.
+    2. Disengage >2 min + agent active (<60s mtime) → re-engage regardless of push.
+    3. Hard cap: >5 min → re-engage regardless of agent state.
+    Also reads block-counter.json directly so a stale disengage file alone does
+    not block re-engagement.
     """
-    if not _is_disengage_active():
+    # ── Read block-counter.json for disengageUntil ──
+    block_disengage_active = False
+    block_file_age_s = 0
+    try:
+        bp = Path(BLOCK_COUNTER_FILE)
+        if bp.exists():
+            block_data = json.loads(bp.read_text())
+            du = block_data.get("disengageUntil", 0)
+            if du > (time.time() * 1000):
+                block_disengage_active = True
+            block_file_age_s = time.time() - bp.stat().st_mtime
+    except Exception:
+        pass
+
+    if not _is_disengage_active() and not block_disengage_active:
         return
 
     now_ms = int(time.time() * 1000)
@@ -1877,21 +1895,21 @@ def _auto_reengage_enforcement(mtime_age: float | None) -> None:
             data = json.loads(p.read_text())
             disengage_until = data.get("disengage_until", 0)
     except Exception:
-        return
+        pass
 
     disengage_age_ms = now_ms - disengage_until  # negative = still active (until > now)
     disengage_ahead_ms = disengage_until - now_ms  # positive = time remaining
 
-    # Check: has the disengage been active for >5 min? (disengage_until was set far ahead
-    # and we haven't hit it yet, but elapsed since it was set exceeds cap).
-    # We estimate elapsed by reading the file mtime.
     try:
-        file_age_ms = (time.time() - p.stat().st_mtime) * 1000
+        file_age_ms = (time.time() - p.stat().st_mtime) * 1000 if p.exists() else 0
     except Exception:
         file_age_ms = 0
 
+    # Use block-counter file age as fallback if disengage file missing
+    effective_age_ms = file_age_ms if file_age_ms > 0 else block_file_age_s * 1000
+
     ci_pending, ci_run_id = _ci_is_pending_or_red()
-    agent_active = mtime_age is not None and mtime_age < PURE_IDLE_SECS
+    agent_active = mtime_age is not None and mtime_age < AUTO_REENGAGE_AGENT_ACTIVE_SECS
     push_running = _is_push_running()
 
     should_reengage = False
@@ -1903,16 +1921,25 @@ def _auto_reengage_enforcement(mtime_age: float | None) -> None:
         if not rc[0]:
             should_reengage = True
             reason = "push completed, CI green, agent active"
-        elif file_age_ms > DISENGAGE_MAX_SECS_CI_NOT_GREEN * 1000:
+        elif effective_age_ms > DISENGAGE_MAX_SECS_CI_NOT_GREEN * 1000:
             should_reengage = True
             reason = f"push completed, disengage capped at {DISENGAGE_MAX_SECS_CI_NOT_GREEN}s (CI pending/red)"
         # else: push done but CI still pending/red and within 5min cap — leave disengaged
 
-    # Rule 2: 5-minute hard cap — regardless of push state
-    if not should_reengage and file_age_ms > DISENGAGE_MAX_SECS_CI_NOT_GREEN * 1000:
-        if ci_pending or not agent_active:
+    # Rule 2: disengage >2 min + agent active — re-engage regardless of push state
+    if not should_reengage and agent_active:
+        if effective_age_ms > AUTO_REENGAGE_DISENGAGE_AGE_SECS * 1000:
             should_reengage = True
-            reason = f"disengage_cap: {DISENGAGE_MAX_SECS_CI_NOT_GREEN}s max (ci={'pending/red' if ci_pending else 'green'}, agent={'active' if agent_active else 'idle'})"
+            reason = (
+                f"disengage >{AUTO_REENGAGE_DISENGAGE_AGE_SECS}s, agent active "
+                f"(mtime_age={mtime_age:.0f}s, ci={'pending/red' if ci_pending else 'green'}, "
+                f"push={'running' if push_running else 'done'})"
+            )
+
+    # Rule 3: 5-minute hard cap — regardless of push state or agent activity
+    if not should_reengage and effective_age_ms > DISENGAGE_MAX_SECS_CI_NOT_GREEN * 1000:
+        should_reengage = True
+        reason = f"disengage_cap: {DISENGAGE_MAX_SECS_CI_NOT_GREEN}s max (ci={'pending/red' if ci_pending else 'green'}, agent={'active' if agent_active else 'idle'})"
 
     if not should_reengage:
         return
@@ -1929,11 +1956,12 @@ def _auto_reengage_enforcement(mtime_age: float | None) -> None:
         pass
 
     try:
-        p.unlink(missing_ok=True)
+        if p.exists():
+            p.unlink(missing_ok=True)
     except Exception:
         pass
 
-    _log(f"watchdog: auto-re-engaged enforcement after push completed — {reason}")
+    _log(f"watchdog: auto-re-engaged enforcement — {reason}")
 
     if ci_pending:
         _log(f"watchdog: CI still pending (run {ci_run_id}) — enforcement re-engaged; agent must fix CI")
