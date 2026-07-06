@@ -5,13 +5,16 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-06 — Capability audit session: 6 new roles created (spec_lifecycle, enforce_disengage, agent_floor_check, delegate_discipline_check, deletion_gate, task_deadline_check), test-quality SKILL.md frontmatter fix, capability audit report at docs/audit/CAPABILITY_AUDIT_2026-07-06.md. 202/202 collection structural tests pass. Prior: Ansible enforcement port session: gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles, 2 molecule scenarios, 3 test fixes, HEAD `c8904f5f`
+- 2026-07-06 ~22:50 PT — Gate launched in background via `make gate-background` (PID emitted, writing to `.gate-logs/`). HEAD advanced `52b13ee7` → `4e9d97fc` after lint-cleanup + provider + guardrail wave landed. Lint clean, typecheck clean (580 files), collect clean. Gate result PENDING (background). Prior: capability audit session (6 new roles, test-quality frontmatter fix, docs/audit/CAPABILITY_AUDIT_2026-07-06.md, HEAD `c8904f5f`).
 
 ## Current Work
 
-- **HEAD: `c8904f5f`** on master.
+- **HEAD: `4e9d97fc`** on master (was `52b13ee7` before the lint-cleanup + provider + guardrail wave landed).
+- **Gate running in background** — launched ~22:50 PT via `make gate-background`. PID written to `.gate-background.pid`; log streaming to `.gate-logs/gate-<ts>.log`.
+- **Local state (pre-gate-completion)**: lint clean, typecheck clean (580 files), collect clean, gate result PENDING.
 
-- **Session 16 focus: Ansible enforcement port.** Enforcement infrastructure ported to Ansible: `gludd_push_guard` + `gludd_gate_check` modules, `enforcement_gate` + `watchdog_check` roles, 2 molecule scenarios, 3 remaining test fixes. Prior session hardening carried forward.
+- **Session 17 focus: lint-cleanup + provider + guardrail wave.** Multiple parallel landings reconciled onto master: lint suppressions cleared, provider-side fixes, guardrail tightening. HEAD advanced to `4e9d97fc` and pushed to sandboxcom.
+- **Session 16 focus (prior): Ansible enforcement port.** Enforcement infrastructure ported to Ansible: `gludd_push_guard` + `gludd_gate_check` modules, `enforcement_gate` + `watchdog_check` roles, 2 molecule scenarios, 3 remaining test fixes.
 
 - **Session 15 focus (prior): enforcement guardrail hardening.** 10 categories of improvements, all committed:
   1. **Push-rate guard with force-push tracker** — prevents CI cancellation loop; 5 tests.
@@ -85,16 +88,18 @@
 
 ## Known Gaps
 
-1. **Plugin liveness requires opencode restart** — all 8/8 plugins have heartbeat probes committed, but current session is running stale plugin code.
-2. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
-3. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests).
-4. **verify-remote SHA parameter bug** — `make verify-remote` may not accept SHA parameter correctly.
+1. **Alpha release NOT yet shipped (v0.1.0-beta.2)** — still need: CI green on `4e9d97fc`, coverage lift, remaining strict-typing burn-down. Do NOT mark complete until `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+2. **Gate result PENDING** — background gate launched ~22:50 PT; expected completion ~23:50 PT. Check `make gate-status-check`.
+3. **Plugin liveness requires opencode restart** — all 8/8 plugins have heartbeat probes committed, but current session is running stale plugin code.
+4. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
+5. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests).
+6. **verify-remote SHA parameter bug** — `make verify-remote` may not accept SHA parameter correctly.
 
 ## Next Steps
 
-1. [ ] **Wait for CI runs to complete** — prior runs 28762985158 (`564bea6f`) and 28763464953 (`61a1b347`).
-2. [ ] **Push HEAD `c8904f5f` + capability-audit commits** — once prior CI runs are green and no CI is in flight.
-3. [ ] **Wait for CI on `c8904f5f`** — `make ci-verdict BRANCH=master` to check when green.
+1. [ ] **Check gate-status-check at ~23:50 PT** — background gate launched ~22:50 PT should be done; if green, run `make verify-release-artifact TAG=v0.1.0-beta.2`.
+2. [ ] **If gate green: ship v0.1.0-beta.2** — `make release-cut TAG='v0.1.0-beta.2' MSG='...'` once CI green on `4e9d97fc` and `verify-release-artifact` passes.
+3. [ ] **Lift coverage** to gate threshold (strict-typing burn-down still open).
 4. [ ] **Restart opencode** to activate all 8/8 plugin liveness probes.
 5. [ ] **Investigate verify-remote SHA parameter bug** — may not accept SHA parameter correctly.
 6. [ ] **Add `make check-skills-frontmatter` target** — scan `.opencode/skills/*/SKILL.md` for valid YAML frontmatter; add to `make gate`. Prevents recurrence of test-quality registration bug.
@@ -103,9 +108,9 @@
 
 ## Current Gate Status (2026-07-06)
 <!-- gate:begin -->
-- **Last full PASS**: 2026-07-06 — lint 0, typecheck 0, collect 0. Enforcement tests pass. Test phase OOM under xdist (known issue). CI-as-gate used.
-- **HEAD**: `c8904f5f` (on master).
-- **CI**: Run 28762985158 (for `564bea6f`): IN PROGRESS; Run 28763464953 (for `61a1b347`): PENDING
+- **Background gate PENDING** — launched ~22:50 PT via `make gate-background`; expected completion ~23:50 PT. Pre-gate local state: lint 0, typecheck 0 (580 files), collect 0.
+- **HEAD**: `4e9d97fc` (on master).
+- **CI**: awaiting green verdict on `4e9d97fc` (prerequisite for beta.2 release cut).
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
 <!-- gate:end -->
