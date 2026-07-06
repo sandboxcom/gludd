@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## [0.1.0-beta.1] — 2026-07-06
+
+Beta 1: enforcement infrastructure, game building, CI fixes, and honesty cleanup.
+30+ commits, 20,629 tests, 93.8% coverage.
+
+### Added
+
+- **Enforcement infrastructure** — push-rate guard, gate completion tracking, daemon smoke
+  tests, hook verification, watchdog CI injection. These ensure CI pipelines complete and
+  guardrails are mechanically enforced, not just advisory.
+- **Ansible enforcement port** — 2 new modules (`gludd_push_guard`, `gludd_gate_check`)
+  plus 4 new roles: `enforcement_gate`, `watchdog_check`, `enforcement_verify`,
+  `verify_feature_claims`. Molecule scenarios cover all new modules and roles.
+- **Autonomous game building** — 12 games (pong, breakout, maze_runner, word_guesser,
+  memory_match, tic_tac_toe, and 6 more) built autonomously via DeepSeek single prompt,
+  with 8 weak game checks strengthened to real e2e verifications.
+- **Game audit** — game audit role with self-improvement analysis and permanent coverage
+  tooling.
+- **7 new roles from scripts.**
+- **Permanent coverage tooling** for tracking test coverage across the codebase.
+- **Type audit** with coverage audit across source files.
+
+### Fixed
+
+- **CI failure fixes** — KeyError in build pipeline, GPU metrics collection on headless
+  nodes, compute scheduling edge cases, release target wiring, circuit breaker double-count,
+  caplog propagation, per-source cap enforcement.
+- **Molecule scenarios** — fixed for `gludd_push_guard` and `gludd_gate_check` enforcement
+  modules.
+
+### Changed
+
+- **Cleanup wave** — all xfail markers removed (every test must pass), ratchet cleared
+  (0 entries), lint suppressions audited (0 bare ignores), honest README status
+  acknowledging 190/192 claimed-100% were file-existence-only with 0 CI-verified.
+- **Honest README** — status table now distinguishes machine-verified from file-existence-only
+  claims; no hardcoded test counts or coverage percentages.
+
 ## [0.1.0-alpha.5]
 
 Security hardening wave plus the langchain/langgraph dispatch feature.

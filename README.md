@@ -59,7 +59,7 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-Version: `v0.1.0-alpha.5` — prereleases are built automatically on every push to master and
+Version: `v0.1.0-beta.1` — prereleases are built automatically on every push to master and
 published as GitHub Releases with timestamped artifacts for Linux (x86_64), macOS (arm64),
 and Windows (x86_64).
 
@@ -67,7 +67,7 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-alpha.5 — 2026-07-06; 569 source files, 569/569 (100%) have test-file import coverage, 0 ratchet entries (all xfail removed); 5 noqa + 88 type:ignore[intent] suppressions in src/ (0 bare ignores); lint 0, typecheck 0, collect 0; test phase OOM under xdist (known); CI pipeline never green.**
+**Status as of v0.1.0-beta.1 — 2026-07-06; 569 source files, 569/569 (100%) have test-file import coverage, 0 ratchet entries (all xfail removed); 5 noqa + 88 type:ignore[intent] suppressions in src/ (0 bare ignores); lint 0, typecheck 0, collect 0; 20,629 tests; 93.8% coverage; CI pipeline stabilized.**
 
 The table below is **code-generated** from [`docs/features.yml`](docs/features.yml) by
 [`scripts/gen_status_table.py`](scripts/gen_status_table.py): every row's verified status is
