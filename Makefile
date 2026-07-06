@@ -282,9 +282,11 @@ gate:
 	@if [ -f .gate-failed ]; then \
 		rm -f .gate-failed; \
 		echo "=== GATE: FAILED ==="; \
+		echo "=== GATE: FAILED ===" >> .gate-status; \
 		exit 1; \
 	else \
 		echo "=== GATE: PASSED ==="; \
+		echo "=== GATE: PASSED ===" >> .gate-status; \
 	fi
 
 # Process-hygiene check: list any running pytest/molecule/gate so we never launch
@@ -873,6 +875,13 @@ PUSH_COOLDOWN_SECS ?= 1800
 MAX_CANCELLED_RUNS ?= 3
 
 _push-rate-guard:
+	@# Force-push tracker: prevent GLUDD_FORCE_PUSH abuse (max 5 consecutive bypasses in 12h window)
+	@if [ "$$GLUDD_FORCE_PUSH" = "1" ]; then \
+		$(PYTHON) scripts/push_rate_guard.py check-bypass || exit 1; \
+		$(PYTHON) scripts/push_rate_guard.py record-bypass; \
+	else \
+		$(PYTHON) scripts/push_rate_guard.py record-normal; \
+	fi
 	@# Check if CI is currently pending
 	@CI_STATUS=$$(make ci-verdict BRANCH=master 2>&1 || true); \
 	if echo "$$CI_STATUS" | grep -qi 'PENDING\|IN_PROGRESS\|QUEUED'; then \
@@ -1457,6 +1466,10 @@ dist-path-check:
 _gate-fresh-check:
 	@if [ "$(GLUDD_CI_IS_GATE)" != "1" ]; then \
 		if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi; \
+		if ! $(UV) run python scripts/gate_fresh_check.py is-complete .gate-status; then \
+			echo "ERROR: Gate incomplete — .gate-status missing terminal marker (=== GATE: PASSED === or === GATE: FAILED ===). The gate was likely killed mid-run. Run 'make gate' first."; \
+			exit 1; \
+		fi; \
 		for check in lint typecheck collect test smoke; do \
 			if ! grep -q "^$${check} PASS" .gate-status; then \
 				echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
