@@ -2117,12 +2117,51 @@ def _build_continue_directive(
 
 
 LIVENESS_CHECK_COOLDOWN_SECS = 300
+LIVENESS_STARTUP_BACKOFF_FILE = "/tmp/gludd-watchdog-liveness-backoff.json"
+LIVENESS_STARTUP_BACKOFF_SECS = 60
 _last_liveness_check: float = 0.0
 
 
+def _liveness_startup_in_backoff() -> bool:
+    """Check if startup liveness check should be skipped due to recent run.
+
+    File-based backoff persists across watchdog restarts. If liveness was
+    checked in the last LIVENESS_STARTUP_BACKOFF_SECS, skip the check to
+    prevent a tight crash-restart loop from hammering make check-plugin-liveness.
+    """
+    try:
+        p = Path(LIVENESS_STARTUP_BACKOFF_FILE)
+        if p.exists():
+            data = json.loads(p.read_text())
+            last_ts = float(data.get("last_check_ts", 0))
+            if time.time() - last_ts < LIVENESS_STARTUP_BACKOFF_SECS:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _liveness_write_backoff_ts() -> None:
+    try:
+        Path(LIVENESS_STARTUP_BACKOFF_FILE).write_text(
+            json.dumps({"last_check_ts": time.time()})
+        )
+    except Exception:
+        pass
+
+
 def _check_plugin_liveness_on_startup() -> None:
-    """Run the plugin liveness check once at startup and log the result."""
+    """Run the plugin liveness check once at startup and log the result.
+
+    Skips the check if it was already run within LIVENESS_STARTUP_BACKOFF_SECS
+    (file-based backoff persists across watchdog restarts).
+    """
     global _last_liveness_check
+    if _liveness_startup_in_backoff():
+        _log("plugin-liveness: backoff active — skipping startup check "
+             f"(last check <{LIVENESS_STARTUP_BACKOFF_SECS}s ago)")
+        _last_liveness_check = time.time()
+        return
     _log("plugin-liveness: running startup check...")
     try:
         result = subprocess.run(
@@ -2137,10 +2176,13 @@ def _check_plugin_liveness_on_startup() -> None:
                  f"enforce-stop.ts may be dead or silently disabled")
             _log(f"  stderr: {result.stderr.strip()[:300]}")
         _last_liveness_check = time.time()
+        _liveness_write_backoff_ts()
     except subprocess.TimeoutExpired:
         _log("plugin-liveness: TIMEOUT — check took >30s")
+        _liveness_write_backoff_ts()
     except Exception as e:
         _log(f"plugin-liveness: ERROR running check: {e}")
+        _liveness_write_backoff_ts()
 
 
 def _check_plugin_liveness_periodic() -> None:

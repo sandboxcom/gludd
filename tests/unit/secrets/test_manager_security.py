@@ -70,14 +70,14 @@ def test_resolve_does_not_leak_exception_body_in_log(caplog: pytest.LogCaptureFi
 def test_register_alias_rejects_path_traversal_dotdot() -> None:
     """Absolute path traversal via leading '..' must be rejected."""
     manager = SecretsManager()
-    with pytest.raises(ValueError, match="invalid secret path"):
+    with pytest.raises(ValueError, match=r"contains '\.\.' traversal segment"):
         manager.register_alias(SecretAlias("alias", "../../etc/passwd", "secret"))
 
 
 def test_register_alias_rejects_path_with_dotdot_segment() -> None:
     """Embedded '..' segment must be rejected even when path starts validly."""
     manager = SecretsManager()
-    with pytest.raises(ValueError, match="invalid secret path"):
+    with pytest.raises(ValueError, match=r"contains '\.\.' traversal segment"):
         manager.register_alias(SecretAlias("alias", "a/../../b", "secret"))
 
 
