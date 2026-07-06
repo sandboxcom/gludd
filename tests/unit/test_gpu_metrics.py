@@ -145,11 +145,11 @@ class TestGPUMetricsCollectorMocked:
 
 
 class TestComputeEndpointGPUFields:
-    def test_default_gpu_fields_are_none(self):
+    def test_default_gpu_fields_are_zero(self):
         ep = ComputeEndpoint(endpoint_id="e1", url="http://e1")
-        assert ep.gpu_sm_util is None
-        assert ep.gpu_mem_util is None
-        assert ep.gpu_temp_c is None
+        assert ep.gpu_sm_util == 0.0
+        assert ep.gpu_mem_util == 0.0
+        assert ep.gpu_temp_c == 0.0
 
 
 class TestUtilizationTrackerGPUIntegration:
@@ -178,8 +178,8 @@ class TestUtilizationTrackerGPUIntegration:
         ep = tracker.get_endpoint("e1")
         assert ep is not None
         assert ep.gpu_sm_util == 50.0
-        assert ep.gpu_mem_util is None
-        assert ep.gpu_temp_c is None
+        assert ep.gpu_mem_util == 0.0
+        assert ep.gpu_temp_c == 0.0
 
     def test_get_utilization_report_includes_gpu_metrics(self):
         tracker = UtilizationTracker()
@@ -195,64 +195,64 @@ class TestUtilizationTrackerGPUIntegration:
         assert ep_report["gpu_mem_util"] == 60.0
         assert ep_report["gpu_temp_c"] == 75.0
 
-    def test_get_utilization_report_gpu_defaults_none(self):
+    def test_get_utilization_report_gpu_defaults_zero(self):
         tracker = UtilizationTracker()
         tracker.register_endpoint("e1", "http://e1")
         report = tracker.get_utilization_report()
         ep_report = report["endpoints"][0]
-        assert ep_report["gpu_sm_util"] is None
-        assert ep_report["gpu_mem_util"] is None
-        assert ep_report["gpu_temp_c"] is None
+        assert ep_report["gpu_sm_util"] == 0.0
+        assert ep_report["gpu_mem_util"] == 0.0
+        assert ep_report["gpu_temp_c"] == 0.0
 
     def test_find_idle_gpus_below_threshold(self):
         tracker = UtilizationTracker(max_history=10)
-        tracker.register_endpoint("e1", "http://e1")
-        tracker.register_endpoint("e2", "http://e2")
+        tracker.register_endpoint("e1", "http://e1", gpu_type="A100")
+        tracker.register_endpoint("e2", "http://e2", gpu_type="A100")
         tracker.update_gpu_metrics("e1", {"gpu_sm_util_pct": 3.0})
         tracker.update_gpu_metrics("e2", {"gpu_sm_util_pct": 95.0})
-        idle = tracker.find_idle_gpus(threshold_pct=10.0, window_seconds=60.0)
+        idle = tracker.find_idle_gpus(threshold=10.0, window=60.0)
         assert len(idle) == 1
         assert idle[0].endpoint_id == "e1"
 
     def test_find_idle_gpus_none_below_threshold(self):
         tracker = UtilizationTracker(max_history=10)
-        tracker.register_endpoint("e1", "http://e1")
-        tracker.register_endpoint("e2", "http://e2")
+        tracker.register_endpoint("e1", "http://e1", gpu_type="A100")
+        tracker.register_endpoint("e2", "http://e2", gpu_type="A100")
         tracker.update_gpu_metrics("e1", {"gpu_sm_util_pct": 95.0})
         tracker.update_gpu_metrics("e2", {"gpu_sm_util_pct": 88.0})
-        idle = tracker.find_idle_gpus(threshold_pct=10.0, window_seconds=60.0)
+        idle = tracker.find_idle_gpus(threshold=10.0, window=60.0)
         assert len(idle) == 0
 
     def test_find_idle_gpus_requires_all_window_below_threshold(self):
         tracker = UtilizationTracker(max_history=10)
-        tracker.register_endpoint("e1", "http://e1")
+        tracker.register_endpoint("e1", "http://e1", gpu_type="A100")
         tracker.update_gpu_metrics("e1", {"gpu_sm_util_pct": 5.0})
         tracker.update_gpu_metrics("e1", {"gpu_sm_util_pct": 95.0})
-        idle = tracker.find_idle_gpus(threshold_pct=10.0, window_seconds=60.0)
+        idle = tracker.find_idle_gpus(threshold=10.0, window=60.0)
         assert len(idle) == 0
 
     def test_find_idle_gpus_no_history(self):
         tracker = UtilizationTracker()
-        tracker.register_endpoint("e1", "http://e1")
-        idle = tracker.find_idle_gpus(threshold_pct=10.0, window_seconds=60.0)
+        tracker.register_endpoint("e1", "http://e1", gpu_type="A100")
+        idle = tracker.find_idle_gpus(threshold=10.0, window=60.0)
         assert len(idle) == 0
 
     def test_find_idle_gpus_excludes_inactive(self):
         tracker = UtilizationTracker(max_history=10)
-        tracker.register_endpoint("e1", "http://e1")
+        tracker.register_endpoint("e1", "http://e1", gpu_type="A100")
         tracker.update_gpu_metrics("e1", {"gpu_sm_util_pct": 3.0})
         tracker.unregister_endpoint("e1")
-        idle = tracker.find_idle_gpus(threshold_pct=10.0, window_seconds=60.0)
+        idle = tracker.find_idle_gpus(threshold=10.0, window=60.0)
         assert len(idle) == 0
 
     def test_find_idle_gpus_respects_window(self):
         tracker = UtilizationTracker(max_history=10)
-        tracker.register_endpoint("e1", "http://e1")
+        tracker.register_endpoint("e1", "http://e1", gpu_type="A100")
         tracker.update_gpu_metrics("e1", {"gpu_sm_util_pct": 5.0})
         now = time.time()
         st_mock = mock.MagicMock(return_value=now + 120.0)
         with mock.patch("general_ludd.infra.utilization.time.time", st_mock):
-            idle = tracker.find_idle_gpus(threshold_pct=10.0, window_seconds=60.0)
+            idle = tracker.find_idle_gpus(threshold=10.0, window=60.0)
             assert len(idle) == 0
 
     def test_update_gpu_metrics_truncates_history(self):

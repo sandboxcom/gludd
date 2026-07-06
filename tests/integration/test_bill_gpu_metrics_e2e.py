@@ -295,7 +295,7 @@ class TestUtilizationTrackerGPUIdleIntegration:
         tracker.update_gpu_metrics("idle", {"gpu_sm_util_pct": 2.0})
         tracker.update_gpu_metrics("medium", {"gpu_sm_util_pct": 50.0})
 
-        idle = tracker.find_idle_gpus(threshold_pct=10.0, window_seconds=60.0)
+        idle = tracker.find_idle_gpus(threshold=10.0, window=60.0)
         assert len(idle) == 1
         assert idle[0].endpoint_id == "idle"
 
@@ -307,14 +307,14 @@ class TestUtilizationTrackerGPUIdleIntegration:
         tracker.update_gpu_metrics("gpu0", {"gpu_sm_util_pct": 90.0})
         tracker.update_gpu_metrics("gpu0", {"gpu_sm_util_pct": 3.0})
 
-        idle = tracker.find_idle_gpus(threshold_pct=10.0, window_seconds=60.0)
+        idle = tracker.find_idle_gpus(threshold=10.0, window=60.0)
         assert len(idle) == 0
 
     def test_idle_excludes_non_gpu_endpoints(self):
         tracker = UtilizationTracker(max_history=10)
         tracker.register_endpoint("cpu0", "http://cpu0:8000", gpu_type="")
         tracker.update_gpu_metrics("cpu0", {"gpu_sm_util_pct": 3.0})
-        idle = tracker.find_idle_gpus(threshold_pct=10.0, window_seconds=60.0)
+        idle = tracker.find_idle_gpus(threshold=10.0, window=60.0)
         assert len(idle) == 0
 
     def test_gpu_history_ages_out(self):

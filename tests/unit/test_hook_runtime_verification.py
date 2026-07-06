@@ -21,11 +21,12 @@ import pytest
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 def _plugin_ts_files():
-    return sorted(PLUGIN_DIR.glob("*.ts"))
+    return sorted(list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts")))
 
 
 def _read_state_file(path_str: str):

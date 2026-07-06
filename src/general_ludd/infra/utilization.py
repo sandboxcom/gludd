@@ -193,6 +193,9 @@ class UtilizationTracker:
                     "max_concurrent": e.max_concurrent,
                     "available_slots": e.available_slots,
                     "cache_hit_rate": e.cache_hit_rate,
+                    "gpu_sm_util": e.gpu_sm_util,
+                    "gpu_mem_util": e.gpu_mem_util,
+                    "gpu_temp_c": e.gpu_temp_c,
                     "active": e.active,
                 }
                 for e in endpoints

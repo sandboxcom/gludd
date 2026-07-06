@@ -149,7 +149,7 @@ ACTION_MAKE_TARGETS: dict[str, str] = {
 
 
 def _build_cmd(action: str, params: dict) -> str:
-    target = ACTION_MAKE_TARGETS[action]
+    target = ACTION_MAKE_TARGETS.get(action, "")
     repo_path = params.get("repo_path", ".")
     cmd_parts = ["make", "-C", repo_path, target]
 
@@ -190,13 +190,13 @@ def run_module() -> dict[str, Any]:
         supports_check_mode=True,
     )
 
-    action: str = module.params["action"]
-    repo_path: str = module.params["repo_path"]
-    commit_msg: str = module.params["commit_msg"]
-    test_files: list[str] = module.params["test_files"]
-    branch: str = module.params["branch"]
-    wait_for_ci: bool = module.params["wait_for_ci"]
-    ci_timeout: int = module.params["ci_timeout"]
+    action: str = module.params.get("action", "")
+    repo_path: str = module.params.get("repo_path", ".")
+    commit_msg: str = module.params.get("commit_msg", "")
+    test_files: list[str] = module.params.get("test_files", [])
+    branch: str = module.params.get("branch", "master")
+    wait_for_ci: bool = module.params.get("wait_for_ci", True)
+    ci_timeout: int = module.params.get("ci_timeout", 600)
 
     cmd = _build_cmd(action, module.params)
 
@@ -239,7 +239,7 @@ def run_module() -> dict[str, Any]:
     result["skipped"] = False
 
     if rc != 0:
-        module.fail_json(msg=f"make {ACTION_MAKE_TARGETS[action]} failed (rc={rc})", **result)
+        module.fail_json(msg=f"make {ACTION_MAKE_TARGETS.get(action, action)} failed (rc={rc})", **result)
 
     module.exit_json(**result)
 
