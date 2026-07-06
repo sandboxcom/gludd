@@ -63,18 +63,18 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
 
     @app.get(
         "/admin/review/pending",
-        response_model=None,
+        response_model=PendingResponse,
         summary="List currently paused review gates",
     )
-    async def admin_review_pending() -> dict[str, Any]:
+    async def admin_review_pending() -> PendingResponse:
         gate = _human_gate()
         if gate is None:
             raise HTTPException(status_code=503, detail="HumanGate not available")
-        return {
-            "pending": [
-                {"thread_id": tid} for tid in gate.pending_thread_ids
+        return PendingResponse(
+            pending=[
+                PendingGate(thread_id=tid) for tid in gate.pending_thread_ids
             ],
-            "count": gate.pending_count,
-            "available": gate.available,
-            "enabled": gate.enabled,
-        }
+            count=gate.pending_count,
+            available=gate.available,
+            enabled=gate.enabled,
+        )

@@ -783,3 +783,11 @@ Features advanced in this wave via wiring, tests, and e2e proofs. Commit range `
 - [x] TCL-1 — ToolCallLoop code work type expansion: added code_generation, code_review, code_refactor, test_generation, and documentation work types to ToolCallLoop's recognized set; each type gets proper tool scaffolding, budget caps, and phase transitions | evidence: tests/unit/test_toolcallloop_work_types.py passing
 - [x] ENF-H — Enforcement plugin hardening: 8 plugins fixed — enforce-stop.ts (session.idle/text.complete migration complete), enforce-make.ts (BATCHING_POLICY injection), enforce-floor.ts (tool.execute.before hard deny restored), enforce-delegate.ts (main-model-aware skip), enforce-session-start.ts (directive prepend validated), enforce-deadline.ts (timestamp persistence), enforce-false-done.ts (merged into enforce-stop.ts), watchdog.ts (auto-start at session boot); all 8 verified with runtime side-effect files | evidence: make lint 0; make typecheck 0; /tmp/gludd-* side-effect files confirmed present
 - [x] ST-1 — Corrupt state file resets: enforcement state files (/tmp/gludd-*.json) now auto-reset on corrupt JSON parse failure; max size guard (100KB) prevents runaway growth; stale entries (>24h) purged on read; zero-touch recovery on malformed counter values | evidence: tests/unit/test_state_file_resilience.py passing
+
+## Phase S-2026-07-05 — Session continuation
+
+- [x] Enforcement test fix (303/304 → 5/5) | evidence: make test-specific TESTFILE=tests/unit/test_enforcement_defaults.py 5 passed commit 6c6d9e45
+- [x] Makefile grep-P macOS compat | evidence: make ci-verdict BRANCH=master works without grep errors commit 6c6d9e45
+- [x] CLI compute destroy | evidence: make test-specific TESTFILE=tests/unit/test_cli_compute_destroy.py 8 passed commit 7d1c036e
+- [x] 5 untested files → 96 tests | evidence: test_cli_perm 35, test_cli_remediation 21, test_cli_self_improve 20, test_remediation_reporter 7, test_routing_roles 5 commit 7d1c036e
+- [x] SESSION.md update | commit 5d96d334

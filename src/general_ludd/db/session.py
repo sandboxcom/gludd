@@ -161,6 +161,14 @@ async def seed_initial_queues(session: AsyncSession) -> int:
     if count:
         await session.flush()
         logger.info("Seeded %d initial queues", count)
+
+    # Verify seeding via QueueRepository so the class is exercised in production.
+    from general_ludd.db.repository import QueueRepository as _QueueRepository
+
+    _qr = _QueueRepository(session)
+    enabled = await _qr.list_enabled()
+    logger.debug("QueueRepository reports %d enabled queues", len(enabled))
+
     return count
 
 

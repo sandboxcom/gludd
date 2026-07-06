@@ -24,7 +24,6 @@ from general_ludd.infra.gpu_info_adapter import gpu_info_from_gpu_type
 from general_ludd.infra.model_deploy_check import Finding, MisconfigDetector
 from general_ludd.models.deployment_health import (
     DeploymentHealthChecker,
-    DeploymentHealthIncident,
     DeploymentStatus,
     SelfHealingRouter,
 )
@@ -131,17 +130,6 @@ def _dict_to_finding(d: dict[str, Any]) -> Finding:
     )
 
 
-def _finding_to_dict(f: Finding) -> dict[str, Any]:
-    return {
-        "rule_id": f.rule_id,
-        "severity": f.severity,
-        "engine": f.engine,
-        "message": f.message,
-        "remediation": f.remediation,
-        "evidence": f.evidence,
-    }
-
-
 def _get_health_checker(app: FastAPI) -> DeploymentHealthChecker | None:
     router: SelfHealingRouter | None = getattr(
         app.state, "_deployment_health_router", None
@@ -161,16 +149,6 @@ def _status_to_dict(s: DeploymentStatus) -> dict[str, Any]:
     }
 
 
-def _incident_to_dict(i: DeploymentHealthIncident) -> dict[str, Any]:
-    return {
-        "deployment_id": i.deployment_id,
-        "timestamp": i.timestamp,
-        "kind": i.kind,
-        "detail": i.detail,
-        "was_remediated": i.was_remediated,
-    }
-
-
 def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     # One approval manager per app, held on app.state so state survives across
     # requests (suggest-fix -> approve/reject) and is isolated per app instance.
@@ -183,9 +161,9 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
 
     @app.get(
         "/admin/deployments/health",
-        response_model=None,
+        response_model=DeploymentHealthListResponse,
     )
-    async def get_deployment_health() -> dict[str, Any]:
+    async def get_deployment_health() -> DeploymentHealthListResponse:
         """Return current health status of all tracked deployments."""
         checker = _get_health_checker(app)
         if checker is None:
@@ -194,12 +172,20 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
                 detail="DeploymentHealthChecker not wired",
             )
         statuses = checker.all_statuses()
-        return {
-            "deployments": [
-                _status_to_dict(s) for s in statuses.values()
-            ],
-            "total": len(statuses),
-        }
+        deployment_responses = [
+            DeploymentHealthResponse(
+                deployment_id=s.deployment_id,
+                healthy=s.healthy,
+                consecutive_failures=s.consecutive_failures,
+                last_error=s.last_error,
+                last_check=s.last_check,
+            )
+            for s in statuses.values()
+        ]
+        return DeploymentHealthListResponse(
+            deployments=deployment_responses,
+            total=len(statuses),
+        )
 
     @app.post(
         "/admin/deployments/{deployment_id}/remediate",
@@ -222,11 +208,11 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
 
     @app.get(
         "/admin/deployments/incidents",
-        response_model=None,
+        response_model=IncidentListResponse,
     )
     async def get_deployment_incidents(
         limit: int = Query(default=100, ge=1, le=1000),
-    ) -> dict[str, Any]:
+    ) -> IncidentListResponse:
         """Return the incident log for deployment health events."""
         checker = _get_health_checker(app)
         if checker is None:
@@ -235,18 +221,26 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
                 detail="DeploymentHealthChecker not wired",
             )
         incidents = checker.get_incidents(limit=limit)
-        return {
-            "incidents": [
-                _incident_to_dict(i) for i in incidents
-            ],
-            "total": len(incidents),
-        }
+        incident_responses = [
+            IncidentResponse(
+                deployment_id=i.deployment_id,
+                timestamp=i.timestamp,
+                kind=i.kind,
+                detail=i.detail,
+                was_remediated=i.was_remediated,
+            )
+            for i in incidents
+        ]
+        return IncidentListResponse(
+            incidents=incident_responses,
+            total=len(incidents),
+        )
 
     @app.post(
         "/admin/deployments/misconfig-check",
-        response_model=None,
+        response_model=MisconfigCheckResponse,
     )
-    async def post_misconfig_check(body: MisconfigCheckRequest) -> dict[str, Any]:
+    async def post_misconfig_check(body: MisconfigCheckRequest) -> MisconfigCheckResponse:
         """Statically lint a serving config for misconfigurations.
 
         Never returns 500 on a malformed ``deployment``: the detector surfaces
@@ -260,11 +254,33 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
         else:
             gpu_info = {}
         findings = detector.check(body.deployment, gpu_info)
-        return {
-            "findings": [_finding_to_dict(f) for f in findings],
-            "remediations": [detector.remediate(f) for f in findings],
-            "has_critical": any(f.severity == "critical" for f in findings),
-        }
+        finding_responses = [
+            FindingResponse(
+                rule_id=f.rule_id,
+                severity=f.severity,
+                engine=f.engine,
+                message=f.message,
+                remediation=f.remediation,
+                evidence=f.evidence,
+            )
+            for f in findings
+        ]
+        remediation_dicts = [detector.remediate(f) for f in findings]
+        remediation_responses = [
+            RemediationResponse(
+                rule_id=r["rule_id"],
+                format=r["format"],
+                config_patch=r["config_patch"],
+                requires_restart=r["requires_restart"],
+                notes=r["notes"],
+            )
+            for r in remediation_dicts
+        ]
+        return MisconfigCheckResponse(
+            findings=finding_responses,
+            remediations=remediation_responses,
+            has_critical=any(f.severity == "critical" for f in findings),
+        )
 
     @app.post(
         "/admin/deployments/suggest-fix",

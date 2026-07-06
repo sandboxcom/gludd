@@ -230,6 +230,22 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             },
         }
 
+    @app.get("/api/pricing/info")
+    async def pricing_model_info(provider: str | None = None) -> dict[str, Any]:
+        """Return ModelInfo records combining pricing with model metadata.
+
+        PSK-gated by the daemon middleware. Optional ``?provider=`` filter.
+        Degrades to empty results when no catalog is wired.
+        """
+        cat = _get_pricing_catalog(app)
+        if cat is None:
+            return {"models": [], "count": 0}
+        infos = cat.all_model_info(provider=provider)
+        return {
+            "models": [asdict(i) for i in infos],
+            "count": len(infos),
+        }
+
 
 def wire_observability(
     app: FastAPI,

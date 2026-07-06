@@ -19,7 +19,6 @@ from fastapi import FastAPI, Query
 from pydantic import BaseModel
 
 from general_ludd.review.estimation_tracker import (
-    EstimateVariance,
     EstimationCalibration,
     EstimationTracker,
 )
@@ -70,19 +69,6 @@ class CalibrationInfo(BaseModel):
     last_adjusted: str | None
 
 
-def _variance_to_dict(v: EstimateVariance) -> dict[str, Any]:
-    return {
-        "todo_id": v.todo_id,
-        "work_type": v.work_type,
-        "cost_variance": v.cost_variance,
-        "time_variance": v.time_variance,
-        "loc_variance": v.loc_variance,
-        "accuracy": v.accuracy.value if hasattr(v.accuracy, "value") else str(v.accuracy),
-        "is_suspect": v.is_suspect,
-        "suspect_reasons": v.suspect_reasons,
-    }
-
-
 def _calibration_to_dict(c: EstimationCalibration) -> dict[str, Any]:
     return {
         "work_type": c.work_type,
@@ -112,31 +98,43 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
             generated_at=report.generated_at.isoformat(),
         )
 
-    @app.get("/admin/estimation/suspect", response_model=None)
-    async def get_suspect_completions() -> dict[str, object]:
+    @app.get("/admin/estimation/suspect", response_model=list[SuspectCompletion])
+    async def get_suspect_completions() -> list[SuspectCompletion]:
         """List all tasks flagged as suspect completions."""
         tracker = _get_tracker(app)
         suspect = tracker.get_suspect_tasks()
-        return {
-            "count": len(suspect),
-            "items": [_variance_to_dict(v) for v in suspect],
-        }
+        return [
+            SuspectCompletion(
+                todo_id=v.todo_id,
+                work_type=v.work_type,
+                cost_variance=v.cost_variance,
+                time_variance=v.time_variance,
+                loc_variance=v.loc_variance,
+                accuracy=v.accuracy.value if hasattr(v.accuracy, "value") else str(v.accuracy),
+                is_suspect=v.is_suspect,
+                suspect_reasons=v.suspect_reasons,
+            )
+            for v in suspect
+        ]
 
     @app.get("/admin/estimation/calibrations", response_model=None)
     async def get_calibrations(
         work_type: str | None = Query(default=None),
-    ) -> dict[str, object]:
+    ) -> CalibrationInfo | dict[str, object]:
         """Return per-work-type calibration parameters."""
         tracker = _get_tracker(app)
         if work_type is not None:
             cal = tracker.get_calibration(work_type)
             if cal is None:
                 return {"work_type": work_type, "found": False}
-            return {
-                "work_type": work_type,
-                "found": True,
-                "calibration": _calibration_to_dict(cal),
-            }
+            return CalibrationInfo(
+                work_type=cal.work_type,
+                cost_multiplier=cal.cost_multiplier,
+                time_multiplier=cal.time_multiplier,
+                loc_multiplier=cal.loc_multiplier,
+                sample_count=cal.sample_count,
+                last_adjusted=cal.last_adjusted.isoformat() if cal.last_adjusted else None,
+            )
 
         report = tracker.generate_report()
         return {

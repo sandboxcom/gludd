@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from general_ludd.security.fix_not_disable import ActionIntent
+
 
 class Severity(StrEnum):
     CRITICAL = "critical"  # immediate block, no model review
@@ -461,6 +463,13 @@ class AdversarialCodeDetector:
             self._patterns_by_category.setdefault(p.category, []).append(p)
 
     # ---- public API ----
+
+    def create_action_intent(self, finding: AdversarialFinding) -> ActionIntent:
+        return ActionIntent(
+            action_type="fix",
+            target=finding.pattern_id,
+            reason=finding.remediation or "Fix the adversarial pattern",
+        )
 
     def scan_text(
         self, text: str, file_path: str | None = None, base_line: int = 1

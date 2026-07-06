@@ -3626,6 +3626,7 @@ class EventLoop:
             return
         try:
             from general_ludd.ornith.training_data import TrainingDataCollector
+            from general_ludd.self_improve.outcomes import OutcomeAnalyzer
 
             async with factory() as session:
                 collector = TrainingDataCollector(session)
@@ -3689,6 +3690,25 @@ class EventLoop:
                         "Self-improve: no error patterns detected in %d "
                         "rejected examples",
                         len(rejected),
+                    )
+
+                outcome_analyzer = OutcomeAnalyzer()
+                outcome_records: list[dict[str, Any]] = []
+                for ex in rejected:
+                    outcome_records.append({
+                        "task_type": getattr(ex, "work_type", "unknown"),
+                        "model": getattr(ex, "model", "unknown"),
+                        "passed": getattr(ex, "exit_code", 1) == 0,
+                        "tokens_used": getattr(ex, "tokens_used", 0),
+                        "duration_ms": getattr(ex, "duration_ms", 0),
+                    })
+                suggestions = outcome_analyzer.analyze(
+                    outcomes=outcome_records,
+                )
+                if suggestions["suggestions"]:
+                    logger.info(
+                        "OutcomeAnalyzer: %d improvement suggestions",
+                        len(suggestions["suggestions"]),
                     )
         except Exception as exc:
             logger.warning(

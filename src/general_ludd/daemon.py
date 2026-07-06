@@ -46,7 +46,7 @@ from general_ludd.eval.model import ModelEvaluator
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.events.bus import EventBus
 from general_ludd.events.hooks import HookSystem
-from general_ludd.events.types import StallDetectedEvent
+from general_ludd.events.types import SlowOperationEvent, StallDetectedEvent
 from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.execution.graph_checkpointer import get_checkpointer
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
@@ -69,10 +69,12 @@ from general_ludd.observability.recorder import AutoBenchmarkRecorder
 from general_ludd.observability.timing import StallWatchdog, default_tracker
 from general_ludd.projects.manager import seed_from_config
 from general_ludd.projects.workspace import ProjectWorkspace
+from general_ludd.prompts.enhancer import PromptEnhancer
 from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.quality.preflight import run_preflight
 from general_ludd.reload.worker_broadcast import WorkerBroadcaster
 from general_ludd.replay.recorder import RunRecorder
+from general_ludd.retrieval.searcher import SemanticSearcher
 from general_ludd.review.estimation_tracker import EstimationTracker
 from general_ludd.sandbox_exec.executor import SandboxExecutor
 from general_ludd.scoring.pareto import ParetoRouter
@@ -886,6 +888,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await seed_initial_queues(session)
             await session.commit()
 
+        app.state._sts_audit_logger = _build_sts_audit_logger(session_factory)
+
         # Orphan detection: flag Slurm jobs from a prior daemon instance.
         import os as _os
         _current_pid = _os.getpid()
@@ -963,6 +967,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from general_ludd.infra.terraform_watchdog import TerraformWatchdog
         app.state._terraform_watchdog = TerraformWatchdog(stacks_dir=stacks_dir)
         logger.info("Terraform watchdog initialised for stacks: %s", stacks_dir)
+
+        from general_ludd.infra.spot_validator import SpotConfigValidator
+        app.state._spot_config_validator = SpotConfigValidator(default_spot=True)
+
+        # G3: Construct a shared CodebaseIndexer for semantic codebase retrieval.
+        # Uses diskcache in .gludd/retrieval_cache by default.
+        from general_ludd.retrieval.indexer import CodebaseIndexer
+        _codebase_indexer = CodebaseIndexer()
+        app.state._codebase_indexer = _codebase_indexer
+        logger.info("CodebaseIndexer initialised (cache: %s)", _codebase_indexer.cache_dir)
 
         def _update_ansible_env(
             paths: list[Any], env: dict[str, str]
@@ -1092,6 +1106,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # is caught by the outer startup try/except → degraded mode).
         await asyncio.to_thread(prompt_registry.refresh)
         app.state._prompt_registry = prompt_registry
+        app.state._prompt_enhancer = PromptEnhancer()
 
         # Build budget guard from config
         budget_guard = None
@@ -1160,11 +1175,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state._model_gateway = model_gateway
 
+            semantic_searcher = SemanticSearcher()
             execution_engine = ExecutionEngine(
                 model_gateway=model_gateway,
                 benchmark_recorder=None,
                 metrics_collector=ext.get("metrics_collector"),
                 budget_guard=budget_guard,
+                searcher=semantic_searcher,
             )
             app.state._execution_engine = execution_engine
 
@@ -1829,14 +1846,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         app.state._stall_watchdog = StallWatchdog(
             default_tracker(),
-            on_stall=lambda r: subsys["bus"].publish(
-                StallDetectedEvent(
-                    operation=r.key,
-                    elapsed_s=r.elapsed_s,
-                    deadline_s=r.deadline_s,
-                    thread_stacks=r.thread_stacks,
-                )
-            ),
+            on_stall=lambda r: (
+                subsys["bus"].publish(
+                    StallDetectedEvent(
+                        operation=r.key,
+                        elapsed_s=r.elapsed_s,
+                        deadline_s=r.deadline_s,
+                        thread_stacks=r.thread_stacks,
+                    )
+                ),
+                subsys["bus"].publish(
+                    SlowOperationEvent(
+                        operation=r.key,
+                        duration_s=r.elapsed_s,
+                        baseline_s=r.deadline_s,
+                        factor=(r.elapsed_s / r.deadline_s) if r.deadline_s > 0 else 0.0,
+                    )
+                ),
+            )[0],
         )
         app.state._stall_watchdog.start_sweeper()
 
@@ -1982,6 +2009,51 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 _ornith_proc.kill()
                 with contextlib.suppress(Exception):
                     await _ornith_proc.wait()
+
+
+def _build_sts_audit_logger(session_factory: Any) -> Any:
+    """Build a callable that records STS token usage events to sts_audit rows."""
+
+    async def _log_sts_usage(token_id: str, event: str, agent_id: str) -> None:
+        import json as _json
+
+        from sqlalchemy import select
+
+        from general_ludd.db.models import StsAuditModel
+
+        async with session_factory() as session:
+            result = await session.execute(
+                select(StsAuditModel).where(StsAuditModel.token_id == token_id)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                return
+            row.use_count = (row.use_count or 0) + 1
+            try:
+                events_list = _json.loads(row.events)
+            except Exception:
+                events_list = []
+            events_list.append(event)
+            row.events = _json.dumps(events_list)
+            row.last_used_at = __import__("time").time()
+            await session.commit()
+
+    return _log_sts_usage
+
+
+def _build_slow_op_publisher(bus: Any) -> Any:
+    """Build a callable that publishes SlowOperationEvent to the event bus."""
+
+    def _publish_slow(operation: str, duration_s: float, baseline_s: float, factor: float) -> None:
+        from general_ludd.events.types import SlowOperationEvent
+        bus.publish(SlowOperationEvent(
+            operation=operation,
+            duration_s=duration_s,
+            baseline_s=baseline_s,
+            factor=factor,
+        ))
+
+    return _publish_slow
 
 
 def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:

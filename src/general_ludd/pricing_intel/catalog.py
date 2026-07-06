@@ -36,6 +36,7 @@ from collections.abc import Sequence
 
 from general_ludd.pricing_intel.models import (
     ComputePrice,
+    ModelInfo,
     ModelPrice,
     ProviderBilling,
 )
@@ -291,3 +292,23 @@ class PricingCatalog:
     def provider_slugs(self) -> list[str]:
         """Return slugs of all registered providers."""
         return [src.provider_slug() for src in self._sources]
+
+    def all_model_info(
+        self, provider: str | None = None, refresh: bool = False
+    ) -> list[ModelInfo]:
+        """Return ModelInfo records combining pricing, context windows, and quality descriptors.
+
+        Each ModelInfo pairs a ModelPrice with metadata from the provider source.
+        """
+        prices = self.all_model_prices(provider=provider, refresh=refresh)
+        result: list[ModelInfo] = []
+        for p in prices:
+            info = ModelInfo(
+                model_id=p.model_id,
+                provider=p.provider,
+                context_window=p.context_window,
+                pricing=p,
+                notes=p.notes,
+            )
+            result.append(info)
+        return result

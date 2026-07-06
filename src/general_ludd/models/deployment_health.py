@@ -227,6 +227,7 @@ class DeploymentHealthChecker:
         max_avg_latency_s: float | None = None,
         max_latency_samples: int = 50,
         incident_log: DeploymentIncidentLog | None = None,
+        content_quality: ContentQualityCheck | None = None,
     ) -> None:
         self._failure_threshold = failure_threshold
         self._recovery_interval = recovery_interval
@@ -234,6 +235,7 @@ class DeploymentHealthChecker:
         self._check_json = check_json
         self._max_avg_latency_s = max_avg_latency_s
         self._max_incidents = 1000
+        self._content_quality = content_quality
 
         self._model_tracker = ModelHealthTracker(
             failure_threshold=failure_threshold,
@@ -291,6 +293,11 @@ class DeploymentHealthChecker:
     # -- content quality ----------------------------------------------------
 
     def check_content(self, deployment_id: str, content: Any) -> tuple[bool, str]:
+        if self._content_quality is not None and isinstance(content, str):
+            ok, reason = self._content_quality.evaluate(content)
+            if not ok:
+                return False, reason
+
         if content is None:
             return False, "Content is None"
 
@@ -324,6 +331,16 @@ class DeploymentHealthChecker:
                 )
 
         return True, "Content passes quality checks"
+
+    def validate_content(self, content: Any) -> None:
+        """Validate content and raise InvalidContentError on failure."""
+        if self._content_quality is not None and isinstance(content, str):
+            ok, reason = self._content_quality.evaluate(content)
+            if not ok:
+                raise InvalidContentError(reason)
+        ok, reason = self.check_content("", content)
+        if not ok:
+            raise InvalidContentError(reason)
 
     # -- latency tracking ---------------------------------------------------
 

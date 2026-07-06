@@ -141,9 +141,13 @@ class BehaviorRenderer:
     the key because :meth:`render` never reads it — including it would defeat
     the cache as assumptions accumulate without changing the output."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        prompt_enhancer: Any | None = None,
+    ) -> None:
         # Cache of rendered behavior bodies keyed by render-determining content.
         self._render_cache: dict[str, str] = {}
+        self._prompt_enhancer = prompt_enhancer
 
     @staticmethod
     def _cache_key(behavior: AgentBehavior) -> str:
@@ -326,7 +330,10 @@ class BehaviorRenderer:
     ) -> str:
         base = self.render(behavior)
         header = f"You are agent **{agent_name}**. Your current task: {task}\n\n"
-        return header + base
+        result = header + base
+        if self._prompt_enhancer is not None:
+            result = self._prompt_enhancer.enhance_prompt(result)
+        return result
 
 
 def default_primary_behavior() -> AgentBehavior:
