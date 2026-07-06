@@ -5,11 +5,11 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-05 — enforcement test fixed (5/5), macOS grep-P compat, CLI compute destroy + 96 new tests
+- 2026-07-05 — 4 commits pushed: enforcement fix, CLI destroy, 96 untested-file tests, 18 dead classes wired (82 tests), 6 response models wired (16 tests)
 
 ## Current Work
 
-- **HEAD: `7d1c036e`** on master.
+- **HEAD: `7a25edf4`** on master (pushed to sandboxcom, verified).
 
 - **Enforcement test fix**: 303/304 → 5/5 enforcement tests pass. The 1 stale assertion after plugin hardening is now fixed.
 
@@ -42,6 +42,9 @@
 - [x] openbao symlinks: stale symlinks cleaned up
 - [x] CLI compute destroy: missing `gludd compute destroy` command added
 - [x] 5 untested source files: 96 tests added (cli_perm, cli_remediation, cli_self_improve, remediation/reporter, routing_roles/roles)
+- [x] 18 dead classes: all wired into production paths + 82 tests (PromptEnhancer, CodebaseIndexer, SemanticSearcher, OutcomeAnalyzer, ActionIntent, StsAuditModel, QueueRepository, SlowOperationEvent, SpotConfigValidator, ContentQualityCheck, ModelInfo)
+- [x] 6 response models: all wired into route handlers + 16 tests (DeploymentHealthListResponse, IncidentListResponse, MisconfigCheckResponse, SuspectCompletion, CalibrationInfo, PendingResponse)
+- [x] Pushed to sandboxcom: VERIFIED master@7a25edf4
 
 ### Bugs still present:
 - None — all bugs resolved.
@@ -50,6 +53,8 @@
 
 | Hash | Message |
 |------|---------|
+| `7a25edf4` | feat: wire 18 dead classes into production paths + 82 tests |
+| `5d96d334` | chore: update SESSION.md for 7d1c036e — 2 commits, enforcement fix, CLI destroy + 96 tests |
 | `7d1c036e` | feat: gludd compute destroy CLI + 96 tests covering 5 previously-untested source files |
 | `6c6d9e45` | fix: enforcement test 303/304→5/5, Makefile grep-P macOS compat, secrets baseline refresh, openbao symlink cleanup, role_ai_parallel_dispatch molecule scenario |
 | `a90ef8d0` | chore: add watchdog.ts to plugin-hashes, refresh SESSION.md state |
@@ -74,13 +79,13 @@
 
 1. **Plugin liveness requires opencode restart** — all 8/8 plugins have heartbeat probes committed, but current session is running stale plugin code.
 2. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
-3. **`6c6d9e45` not yet pushed** — no CI run for HEAD.
+3. **`.gludd/retrieval_cache/cache.db` accidentally committed** — generated cache file should be in .gitignore.
+4. **Connector gaps**: no Slack, WebSocket, or reconnect logic (feature requests, not bugs).
 
 ## Next Steps
 
-1. [ ] **Verify local gate** — `make gate` or `make gate-background` to confirm full suite green.
-2. [ ] **Push to sandboxcom** — batch unpushed commits and push for CI run.
-3. [ ] **Wait for CI** — `make ci-verdict BRANCH=master` after push completes.
+1. [ ] **Wait for CI** — `make ci-verdict BRANCH=master` after push completes.
+2. [ ] **Remove cache.db from git tracking** — add `.gludd/` to .gitignore and untrack the committed cache file.
 4. [ ] **Restart opencode** to activate all 8/8 plugin liveness probes.
 
 ## Current Gate Status (2026-07-05)
