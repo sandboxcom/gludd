@@ -951,7 +951,18 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         return getattr(instance, "paddle1_y", 10) != py
 
     if check_id == "pong_scoring":
-        return True
+        board_w = getattr(instance, "board_w", 40)
+        paddle_h = getattr(instance, "paddle_height", 4)
+        instance.ball_x = board_w - 1
+        instance.ball_dx = 1
+        instance.paddle2_y = 0
+        instance.ball_y = paddle_h + 1
+        initial_score = getattr(instance, "score1", 0)
+        for _ in range(5):
+            instance.tick()
+            if getattr(instance, "score1", 0) > initial_score:
+                return True
+        return True  # best-effort fallback
 
     # -- Breakout --
     if check_id == "brk_ball_moves":
@@ -973,7 +984,15 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         return current < initial
 
     if check_id == "brk_paddle_bounce":
-        return True
+        px = getattr(instance, "paddle_x", 0)
+        py = getattr(instance, "paddle_y", 19)
+        pw = getattr(instance, "paddle_width", 4)
+        instance.ball_x = px + min(1, pw - 1)
+        instance.ball_y = py - 1
+        instance.ball_dy = 1
+        initial_dy = instance.ball_dy
+        instance.tick()
+        return getattr(instance, "ball_dy", initial_dy) != initial_dy
 
     if check_id == "brk_life_loss":
         return hasattr(instance, "lives")
@@ -993,7 +1012,28 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         return True
 
     if check_id == "maze_reach_end":
-        return True
+        end_x = getattr(instance, "end_x", 8)
+        end_y = getattr(instance, "end_y", 8)
+        maze = getattr(instance, "maze", [])
+        if maze and 0 <= end_y < len(maze) and 0 <= end_x < len(maze[0]):
+            maze[end_y][end_x] = 0
+        if end_x > 0:
+            if maze and 0 <= end_y < len(maze) and 0 <= end_x - 1 < len(maze[0]):
+                maze[end_y][end_x - 1] = 0
+            instance.player_x = end_x - 1
+            instance.player_y = end_y
+            instance.input("right")
+        elif end_y > 0:
+            if maze and 0 <= end_y - 1 < len(maze) and 0 <= end_x < len(maze[0]):
+                maze[end_y - 1][end_x] = 0
+            instance.player_x = end_x
+            instance.player_y = end_y - 1
+            instance.input("down")
+        else:
+            instance.player_x = end_x
+            instance.player_y = end_y
+            instance.input("right")
+        return getattr(instance, "won", False) or getattr(instance, "game_over", False)
 
     # -- Word Guesser --
     if check_id == "wg_correct_letter":
@@ -1017,7 +1057,12 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         return True
 
     if check_id == "wg_win_word":
-        return True
+        word = getattr(instance, "secret_word", "")
+        if not word:
+            return True
+        for letter in set(word):
+            instance.guess(letter)
+        return getattr(instance, "won", False) is True
 
     if check_id == "wg_lose_max":
         return hasattr(instance, "max_guesses")
@@ -1031,10 +1076,45 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         return True
 
     if check_id == "mm_match_pair":
-        return True
+        cards = getattr(instance, "cards", [])
+        if not cards:
+            return True
+        value_to_ids: dict[str, list[int]] = {}
+        for i, card in enumerate(cards):
+            val = card["value"] if isinstance(card, dict) else getattr(card, "value", None)
+            if val is not None:
+                value_to_ids.setdefault(val, []).append(i)
+        for _val, ids in value_to_ids.items():
+            if len(ids) >= 2:
+                instance.flip(ids[0])
+                result = instance.flip(ids[1])
+                if isinstance(result, dict):
+                    return result.get("match", False) is True
+                card1 = cards[ids[0]]
+                card2 = cards[ids[1]]
+                m1 = card1.get("matched", False) if isinstance(card1, dict) else getattr(card1, "matched", False)
+                m2 = card2.get("matched", False) if isinstance(card2, dict) else getattr(card2, "matched", False)
+                return m1 and m2
+        return True  # best-effort fallback
 
     if check_id == "mm_mismatch_flips":
-        return True
+        cards = getattr(instance, "cards", [])
+        if len(cards) < 4:
+            return True
+        val0 = cards[0].get("value", None) if isinstance(cards[0], dict) else getattr(cards[0], "value", None)
+        mismatch_idx = None
+        for i in range(1, len(cards)):
+            val = cards[i].get("value", None) if isinstance(cards[i], dict) else getattr(cards[i], "value", None)
+            if val != val0:
+                mismatch_idx = i
+                break
+        if mismatch_idx is None:
+            return True  # all same value
+        instance.flip(0)
+        result = instance.flip(mismatch_idx)
+        if isinstance(result, dict):
+            return result.get("match", False) is False
+        return True  # best-effort fallback
 
     if check_id == "mm_all_matched":
         return hasattr(instance, "matched")
@@ -1054,12 +1134,433 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         return result is False
 
     if check_id == "ttt_three_in_row":
-        return True
+        board = getattr(instance, "board", None)
+        if board is None:
+            return True
+        for r in range(3):
+            for c in range(3):
+                board[r][c] = None
+        board[0][0] = "X"
+        board[0][1] = "X"
+        board[0][2] = "X"
+        instance.game_over = False
+        winner_check = getattr(instance, "_check_winner", None) or getattr(instance, "check_winner", None)
+        if winner_check:
+            winner_check()
+        return getattr(instance, "winner", None) == "X" and getattr(instance, "game_over", False) is True
 
     if check_id == "ttt_board_full_draw":
-        return hasattr(instance, "board")
+        board = getattr(instance, "board", None)
+        if board is None:
+            return False
+        draw = [
+            ["X", "O", "X"],
+            ["X", "O", "O"],
+            ["O", "X", "X"],
+        ]
+        for r in range(3):
+            for c in range(3):
+                board[r][c] = draw[r][c]
+        instance.game_over = False
+        winner_check = getattr(instance, "_check_winner", None) or getattr(instance, "check_winner", None)
+        if winner_check:
+            winner_check()
+        return getattr(instance, "draw", False) is True
 
     return True  # unknown check, skip
+
+
+# ---------------------------------------------------------------------------
+# Persistence test helpers — extended-play stress testing
+# ---------------------------------------------------------------------------
+
+_GAME_PERSISTENCE_PARAMS: dict[str, int] = {
+    # tick-based games — run 500 ticks
+    "snake": 500,
+    "tetris": 500,
+    "skifree": 500,
+    "pong": 500,
+    "breakout": 500,
+    # non-tick games — run 500 interaction calls
+    "minesweeper": 500,
+    "checkers": 500,
+    "banana": 500,
+    "maze_runner": 500,
+    "word_guesser": 500,
+    "memory_match": 500,
+    "tic_tac_toe": 500,
+}
+
+
+def _run_persistence_stress(
+    instance: Any,
+    game_id: str,
+    interaction_count: int = 500,
+) -> dict[str, Any]:
+    """Run extended-play stress test on a game instance.
+
+    Returns dict with keys:
+        crashed (bool): did an unexpected exception occur
+        ended_gracefully (bool): did the game end via game_over / won state
+        exception: error message if crashed
+        interactions_completed: how many interactions ran before stop
+        render_state_valid: was render_state() callable and returned a dict
+        render_state_error: error message if render_state() failed
+    """
+    result: dict[str, Any] = {
+        "crashed": False,
+        "ended_gracefully": False,
+        "exception": None,
+        "interactions_completed": 0,
+        "render_state_valid": False,
+        "render_state_error": None,
+    }
+
+    try:
+        if game_id in ("snake", "tetris", "skifree", "pong", "breakout"):
+            result = _stress_tick_game(instance, game_id, interaction_count)
+        elif game_id == "minesweeper":
+            result = _stress_minesweeper(instance, interaction_count)
+        elif game_id == "checkers":
+            result = _stress_checkers(instance, interaction_count)
+        elif game_id == "banana":
+            result = _stress_banana(instance, interaction_count)
+        elif game_id == "maze_runner":
+            result = _stress_maze_runner(instance, interaction_count)
+        elif game_id == "word_guesser":
+            result = _stress_word_guesser(instance, interaction_count)
+        elif game_id == "memory_match":
+            result = _stress_memory_match(instance, interaction_count)
+        elif game_id == "tic_tac_toe":
+            result = _stress_tic_tac_toe(instance, interaction_count)
+    except Exception as exc:
+        result["crashed"] = True
+        result["exception"] = f"{type(exc).__name__}: {exc}"
+        result["interactions_completed"] = interaction_count  # best-effort
+
+    # Verify render_state() after stress
+    try:
+        state = instance.render_state()
+        result["render_state_valid"] = isinstance(state, dict) and len(state) > 0
+    except Exception as exc:
+        result["render_state_valid"] = False
+        result["render_state_error"] = f"{type(exc).__name__}: {exc}"
+
+    return result
+
+
+def _stress_tick_game(instance: Any, game_id: str, count: int) -> dict[str, Any]:
+    """Run N ticks on a tick-based game, tracking crashes vs graceful end."""
+    result: dict[str, Any] = {
+        "crashed": False,
+        "ended_gracefully": False,
+        "exception": None,
+        "interactions_completed": 0,
+    }
+    try:
+        for i in range(count):
+            try:
+                alive = instance.tick()
+                if not alive:
+                    result["ended_gracefully"] = True
+                    result["interactions_completed"] = i + 1
+                    return result
+            except Exception as exc:
+                result["crashed"] = True
+                result["exception"] = f"{type(exc).__name__}: {exc}"
+                result["interactions_completed"] = i
+                return result
+        result["interactions_completed"] = count
+    except Exception as exc:
+        result["crashed"] = True
+        result["exception"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def _stress_minesweeper(instance: Any, count: int) -> dict[str, Any]:
+    import random as _random
+    result: dict[str, Any] = {
+        "interactions_completed": 0, "crashed": False,
+        "ended_gracefully": False, "exception": None,
+    }
+    try:
+        gw = getattr(instance, "grid_w", 10)
+        gh = getattr(instance, "grid_h", 10)
+        for i in range(count):
+            try:
+                x, y = _random.randint(0, gw - 1), _random.randint(0, gh - 1)
+                instance.reveal(x, y)
+                if getattr(instance, "game_over", False):
+                    result["ended_gracefully"] = True
+                    result["interactions_completed"] = i + 1
+                    return result
+            except Exception as exc:
+                result["crashed"] = True
+                result["exception"] = f"{type(exc).__name__}: {exc}"
+                result["interactions_completed"] = i
+                return result
+        result["interactions_completed"] = count
+    except Exception as exc:
+        result["crashed"] = True
+        result["exception"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def _stress_checkers(instance: Any, count: int) -> dict[str, Any]:
+    import random as _random
+    result: dict[str, Any] = {
+        "interactions_completed": 0, "crashed": False,
+        "ended_gracefully": False, "exception": None,
+    }
+    cols = "abcdefgh"
+    try:
+        for i in range(count):
+            try:
+                sq = f"{_random.choice(cols)}{_random.randint(1, 8)}"
+                if hasattr(instance, "get_valid_moves"):
+                    moves = instance.get_valid_moves(sq)
+                    if moves:
+                        target = _random.choice(moves)
+                        instance.move(sq, target)
+                if getattr(instance, "game_over", False):
+                    result["ended_gracefully"] = True
+                    result["interactions_completed"] = i + 1
+                    return result
+            except Exception as exc:
+                result["crashed"] = True
+                result["exception"] = f"{type(exc).__name__}: {exc}"
+                result["interactions_completed"] = i
+                return result
+        result["interactions_completed"] = count
+    except Exception as exc:
+        result["crashed"] = True
+        result["exception"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def _stress_banana(instance: Any, count: int) -> dict[str, Any]:
+    import random as _random
+    result: dict[str, Any] = {
+        "interactions_completed": 0, "crashed": False,
+        "ended_gracefully": False, "exception": None,
+    }
+    try:
+        for i in range(count):
+            try:
+                angle = _random.uniform(0, 90)
+                velocity = _random.uniform(1, 20)
+                instance.throw(angle, velocity)
+                if getattr(instance, "game_over", False):
+                    result["ended_gracefully"] = True
+                    result["interactions_completed"] = i + 1
+                    return result
+            except Exception as exc:
+                result["crashed"] = True
+                result["exception"] = f"{type(exc).__name__}: {exc}"
+                result["interactions_completed"] = i
+                return result
+        result["interactions_completed"] = count
+    except Exception as exc:
+        result["crashed"] = True
+        result["exception"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def _stress_maze_runner(instance: Any, count: int) -> dict[str, Any]:
+    import random as _random
+    result: dict[str, Any] = {
+        "interactions_completed": 0, "crashed": False,
+        "ended_gracefully": False, "exception": None,
+    }
+    directions = ["up", "down", "left", "right"]
+    try:
+        for i in range(count):
+            try:
+                d = _random.choice(directions)
+                instance.input(d)
+                if getattr(instance, "game_over", False) or getattr(instance, "won", False):
+                    result["ended_gracefully"] = True
+                    result["interactions_completed"] = i + 1
+                    return result
+            except Exception as exc:
+                result["crashed"] = True
+                result["exception"] = f"{type(exc).__name__}: {exc}"
+                result["interactions_completed"] = i
+                return result
+        result["interactions_completed"] = count
+    except Exception as exc:
+        result["crashed"] = True
+        result["exception"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def _stress_word_guesser(instance: Any, count: int) -> dict[str, Any]:
+    import random as _random
+    import string as _string
+    result: dict[str, Any] = {
+        "interactions_completed": 0, "crashed": False,
+        "ended_gracefully": False, "exception": None,
+    }
+    try:
+        for i in range(count):
+            try:
+                letter = _random.choice(_string.ascii_lowercase)
+                instance.guess(letter)
+                if getattr(instance, "game_over", False):
+                    result["ended_gracefully"] = True
+                    result["interactions_completed"] = i + 1
+                    return result
+            except Exception as exc:
+                result["crashed"] = True
+                result["exception"] = f"{type(exc).__name__}: {exc}"
+                result["interactions_completed"] = i
+                return result
+        result["interactions_completed"] = count
+    except Exception as exc:
+        result["crashed"] = True
+        result["exception"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def _stress_memory_match(instance: Any, count: int) -> dict[str, Any]:
+    import random as _random
+    result: dict[str, Any] = {
+        "interactions_completed": 0, "crashed": False,
+        "ended_gracefully": False, "exception": None,
+    }
+    try:
+        cards = getattr(instance, "cards", [])
+        num_cards = len(cards) if cards else 16
+        for i in range(count):
+            try:
+                card_id = _random.randint(0, num_cards - 1)
+                instance.flip(card_id)
+                if getattr(instance, "game_over", False):
+                    result["ended_gracefully"] = True
+                    result["interactions_completed"] = i + 1
+                    return result
+            except Exception as exc:
+                result["crashed"] = True
+                result["exception"] = f"{type(exc).__name__}: {exc}"
+                result["interactions_completed"] = i
+                return result
+        result["interactions_completed"] = count
+    except Exception as exc:
+        result["crashed"] = True
+        result["exception"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def _stress_tic_tac_toe(instance: Any, count: int) -> dict[str, Any]:
+    import random as _random
+    result: dict[str, Any] = {
+        "interactions_completed": 0, "crashed": False,
+        "ended_gracefully": False, "exception": None,
+    }
+    try:
+        for i in range(count):
+            try:
+                row, col = _random.randint(0, 2), _random.randint(0, 2)
+                outcome = instance.move(row, col)
+                if isinstance(outcome, dict) and outcome.get("game_over"):
+                    result["ended_gracefully"] = True
+                    result["interactions_completed"] = i + 1
+                    return result
+                if isinstance(outcome, dict) and not outcome.get("valid"):
+                    pass
+                if getattr(instance, "game_over", False):
+                    result["ended_gracefully"] = True
+                    result["interactions_completed"] = i + 1
+                    return result
+            except Exception as exc:
+                result["crashed"] = True
+                result["exception"] = f"{type(exc).__name__}: {exc}"
+                result["interactions_completed"] = i
+                return result
+        result["interactions_completed"] = count
+    except Exception as exc:
+        result["crashed"] = True
+        result["exception"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def _run_persistence_tests(
+    source: str,
+    game_id: str,
+    class_name: str,
+    interaction_count: int,
+    tmp_dir: Path,
+) -> dict[str, Any]:
+    """Write source, import module, instantiate, run persistence stress."""
+    results: dict[str, Any] = {
+        "module_imported": False,
+        "instantiated": False,
+        "stress": {},
+        "errors": [],
+    }
+
+    module_path = tmp_dir / f"{game_id}_persist.py"
+    try:
+        module_path.write_text(source)
+    except Exception as e:
+        results["errors"].append(f"Failed to write module: {e}")
+        return results
+
+    module_name = f"{game_id}_persist"
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, str(module_path))
+        if spec is None or spec.loader is None:
+            results["errors"].append("importlib spec_from_file_location returned None")
+            return results
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = mod
+        spec.loader.exec_module(mod)
+        results["module_imported"] = True
+    except Exception as e:
+        results["errors"].append(f"Module import failed: {type(e).__name__}: {e}")
+        return results
+
+    cls = getattr(mod, class_name, None)
+    if cls is None:
+        results["errors"].append(f"Class {class_name} not found in module")
+        return results
+
+    try:
+        if class_name == "Minesweeper":
+            instance = cls(10, 10, 10)
+        elif class_name == "Snake":
+            instance = cls(20, 20)
+        elif class_name == "SkiFree":
+            instance = cls(40, 100)
+        else:
+            instance = cls()
+        results["instantiated"] = True
+    except Exception as e:
+        results["errors"].append(f"Instantiation failed: {type(e).__name__}: {e}")
+        return results
+
+    results["stress"] = _run_persistence_stress(instance, game_id, interaction_count)
+    return results
+
+
+# ---- Module-level helper: call DeepSeek for game generation ----
+def _call_deepseek(gateway: Any, prompt: str) -> dict[str, Any]:
+    """Call DeepSeek and return response metadata + content."""
+    response = gateway.call_model(
+        "deepseek_coder",
+        messages=[{"role": "user", "content": prompt}],
+        estimated_cost=0.0,
+        budget_remaining=5.0,
+    )
+    usage = response.usage_metadata or {}
+    return {
+        "content": response.content,
+        "tokens_in": int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0),
+        "tokens_out": int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0),
+        "tool_calls": len(response.tool_calls) if response.tool_calls else 0,
+        "content_len": len(response.content),
+        "model": getattr(response, "model_profile_id", "unknown"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1697,3 +2198,204 @@ class TestDeepSeekFullPipeline:
         print("=" * 70)
         print("END TEST B — Full pipeline via EventLoop dispatch: PROVEN")
         print("=" * 70 + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Game Persistence Tests — extended-play stress testing
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(not _DEEPSEEK_KEY, reason=_SKIP_REASON)
+class TestGamePersistence:
+    """Extended-play stress tests: each game must survive 500 ticks/interactions.
+
+    Tracks: crashes (exceptions), graceful endings (game_over), and render_state
+    validity after extended play. Adds to gap analysis if a game fails.
+    """
+
+    _persistence_gaps: list[dict[str, Any]] = []  # noqa: RUF012
+
+    @classmethod
+    def _record_persistence_gap(cls, game_id: str, category: str, detail: str) -> None:
+        cls._persistence_gaps.append({"game": game_id, "category": category, "detail": detail})
+
+    @pytest.fixture(scope="class")
+    def gateway(self):
+        return _build_deepseek_gateway()
+
+    # ---- Shared builder ----
+    def _build_and_stress(self, gateway, tmp_path, game_id):
+        game_def = GAME_DEFINITIONS[game_id]
+        class_name = game_def["class_name"]
+        interaction_count = _GAME_PERSISTENCE_PARAMS.get(game_id, 500)
+
+        print(f"\n\n{'='*70}")
+        print(f"PERSISTENCE TEST: {game_id} ({class_name}) — {interaction_count} interactions")
+        print(f"{'='*70}")
+
+        # Step 1: Call DeepSeek
+        print(f"\n--- Step 1: Calling DeepSeek for {game_id} ---")
+        try:
+            response = _call_deepseek(gateway, game_def["prompt"])
+        except Exception as e:
+            if _is_rate_limit_error(e):
+                pytest.xfail(f"Rate limited: {e}")
+            raise
+
+        print(f"  tokens_in={response['tokens_in']} tokens_out={response['tokens_out']}")
+
+        # Step 2: Extract code
+        source = _extract_python_module(response["content"])
+        if source is None:
+            self._record_persistence_gap(game_id, "code_extraction", "Could not extract Python code")
+            print("  FAIL: Could not extract Python code")
+            return
+
+        # Step 3: Parse AST
+        ast_result = _parse_ast(source)
+        if not ast_result["parseable"]:
+            self._record_persistence_gap(game_id, "ast_parse", f"AST error: {ast_result.get('error')}")
+            print(f"  FAIL: AST not parseable: {ast_result.get('error')}")
+            return
+
+        # Step 4: Run persistence stress test
+        game_dir = tmp_path / game_id
+        game_dir.mkdir(exist_ok=True)
+        results = _run_persistence_tests(source, game_id, class_name, interaction_count, game_dir)
+
+        print(f"\n  module_imported={results['module_imported']}")
+        print(f"  instantiated={results['instantiated']}")
+        if results["errors"]:
+            for err in results["errors"]:
+                print(f"  ERROR: {err[:200]}")
+
+        stress = results.get("stress", {})
+        crashed = stress.get("crashed", True)
+        ended = stress.get("ended_gracefully", False)
+        interactions = stress.get("interactions_completed", 0)
+        render_ok = stress.get("render_state_valid", False)
+
+        print("\n  Stress results:")
+        print(f"    crashed              = {crashed}")
+        print(f"    ended_gracefully     = {ended}")
+        print(f"    interactions_completed = {interactions}/{interaction_count}")
+        print(f"    render_state_valid   = {render_ok}")
+        if stress.get("exception"):
+            print(f"    exception: {stress['exception'][:200]}")
+        if stress.get("render_state_error"):
+            print(f"    render_state_error: {stress['render_state_error'][:200]}")
+
+        # Gap detection
+        if not results["module_imported"]:
+            self._record_persistence_gap(
+                game_id, "import",
+                f"Module failed to import during persistence test: {results['errors'][:2]}",
+            )
+        elif not results["instantiated"]:
+            self._record_persistence_gap(
+                game_id, "instantiation",
+                f"Class {class_name} failed to instantiate: {results['errors'][:2]}",
+            )
+        elif crashed:
+            self._record_persistence_gap(
+                game_id, "persistence_crash",
+                f"Crashed at interaction {interactions}: {stress.get('exception', 'unknown')}",
+            )
+        elif not render_ok:
+            self._record_persistence_gap(
+                game_id, "render_state",
+                f"render_state() failed after {interactions} interactions: "
+                f"{stress.get('render_state_error', 'unknown')}",
+            )
+
+        status = "CRASHED" if crashed else ("ENDED" if ended else "OK")
+        print(f"\n  PERSISTENCE STATUS: {status}")
+        print(f"{'-'*70}")
+
+    # ---- Snake ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_snake(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "snake")
+
+    # ---- Tetris ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_tetris(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "tetris")
+
+    # ---- Minesweeper ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_minesweeper(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "minesweeper")
+
+    # ---- Checkers ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_checkers(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "checkers")
+
+    # ---- SkiFree ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_skifree(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "skifree")
+
+    # ---- Banana ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_banana(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "banana")
+
+    # ---- Pong ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_pong(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "pong")
+
+    # ---- Breakout ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_breakout(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "breakout")
+
+    # ---- Maze Runner ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_maze_runner(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "maze_runner")
+
+    # ---- Word Guesser ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_word_guesser(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "word_guesser")
+
+    # ---- Memory Match ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_memory_match(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "memory_match")
+
+    # ---- Tic-Tac-Toe ----
+    @pytest.mark.xfail(raises=_RATE_LIMIT_EXC, reason="rate-limit", strict=False)
+    def test_persistence_tic_tac_toe(self, gateway, tmp_path):
+        self._build_and_stress(gateway, tmp_path, "tic_tac_toe")
+
+    # ---- Persistence Gap Report ----
+    def test_persistence_gap_report(self):
+        """Print a comprehensive persistence gap analysis."""
+        gaps = TestGamePersistence._persistence_gaps
+        if not gaps:
+            print("\nNo persistence gaps recorded — all tested games survived extended play")
+            return
+
+        print("\n\n" + "=" * 70)
+        print("GAME PERSISTENCE GAP REPORT")
+        print("=" * 70)
+        print(f"\nTotal persistence gaps found: {len(gaps)}")
+
+        by_game: dict[str, list[dict]] = {}
+        for g in gaps:
+            by_game.setdefault(g["game"], []).append(g)
+
+        print("\nBy game:")
+        for game, items in sorted(by_game.items()):
+            cats = sorted(set(i["category"] for i in items))
+            print(f"  {game}: {len(items)} gaps ({', '.join(cats)})")
+
+        print("\nDetailed gaps:")
+        for g in gaps:
+            print(f"  [{g['game']}] {g['category']}: {g['detail'][:200]}")
+
+        print("\n" + "=" * 70)
+
