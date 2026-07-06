@@ -1,0 +1,80 @@
+---
+# token_window_monitor role — monitor 5h token window + throttle subagent floor
+#
+# Wraps scripts/token_window_monitor.py to sum token usage over a rolling
+# 5-hour window from Claude Code session transcript JSONL files and write
+# a subagent floor override when spend approaches the budget threshold.
+#
+# Modes:
+#   - once: evaluate once, write floor override, write artifact, exit
+#   - loop: evaluate continuously (separate long-running process)
+#   - calibrate: anchor the budget to a known percentage
+#   - breakdown: print per-component token breakdown (diagnostic)
+#   - probe: discover rate-limit keys in transcript (diagnostic)
+#   - status: check current floor and recent spend
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run token window monitor (once)
+  ansible.builtin.command:
+    cmd: "uv run python scripts/token_window_monitor.py --once"
+    chdir: "{{ repo_path }}"
+  register: _twm_result
+  changed_when: false
+  failed_when: false
+  when: twm_mode == "once"
+
+- name: Run token window monitor (calibrate)
+  ansible.builtin.command:
+    cmd: "uv run python scripts/token_window_monitor.py --calibrate {{ calibrate_pct }}"
+    chdir: "{{ repo_path }}"
+  register: _twm_result
+  changed_when: false
+  failed_when: false
+  when: twm_mode == "calibrate"
+
+- name: Run token window monitor (breakdown)
+  ansible.builtin.command:
+    cmd: "uv run python scripts/token_window_monitor.py --breakdown"
+    chdir: "{{ repo_path }}"
+  register: _twm_result
+  changed_when: false
+  failed_when: false
+  when: twm_mode == "breakdown"
+
+- name: Run token window monitor (probe)
+  ansible.builtin.command:
+    cmd: "uv run python scripts/token_window_monitor.py --probe"
+    chdir: "{{ repo_path }}"
+  register: _twm_result
+  changed_when: false
+  failed_when: false
+  when: twm_mode == "probe"
+
+- name: Read current floor override
+  ansible.builtin.set_fact:
+    _twm_current_floor: "{{ lookup('file', '/tmp/gludd-floor-override', errors='ignore') | default(twm_normal_floor | string) | trim }}"
+
+- name: Write token window monitor JSON artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'token_window_monitor',
+        'mode': twm_mode,
+        'current_floor': _twm_current_floor,
+        'exit_code': _twm_result.rc | default(-1),
+        'stdout': _twm_result.stdout_lines | default([]),
+        'stderr': _twm_result.stderr_lines | default([])
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/token_window_monitor.json"
+    mode: "0644"
+
+- name: Report token window monitor completion
+  ansible.builtin.debug:
+    msg: >-
+      Token window monitor ({{ twm_mode }}) complete.
+      Current floor: {{ _twm_current_floor }}.

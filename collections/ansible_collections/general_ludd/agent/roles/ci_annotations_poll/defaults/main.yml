@@ -1,0 +1,16 @@
+---
+# ci_annotations_poll role defaults — poll live CI annotations
+
+# GitHub Actions run ID to poll
+ci_run_id: ""
+
+# Repo path (for running the script in the right directory)
+repo_path: "."
+
+# Artifact output
+artifact_dir: "/tmp/gludd-ci-annotations-poll"
+
+# Polling config
+poll_interval_seconds: "20"
+poll_max_seconds: "3600"
+early_exit_on_failure: "0"

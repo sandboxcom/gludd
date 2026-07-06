@@ -1,0 +1,13 @@
+---
+- name: Generate/check the README Feature & Task Completion Status table
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    gen_mode: "{{ gen_mode | default('check') }}"
+    repo_path: "{{ playbook_dir }}/.."
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-status-table') }}"
+    manifest_path: "{{ manifest_path | default('') }}"
+    output_path: "{{ output_path | default('') }}"
+  roles:
+    - general_ludd.agent.generate_status_table

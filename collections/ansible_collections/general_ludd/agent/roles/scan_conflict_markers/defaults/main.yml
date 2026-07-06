@@ -1,0 +1,11 @@
+---
+# scan_conflict_markers role defaults — scan for git conflict markers
+
+# Repo path
+repo_path: "."
+
+# Files to scan (empty = all git-tracked files via git ls-files)
+scan_paths: []
+
+# Artifact output
+artifact_dir: "/tmp/gludd-conflict-scan"

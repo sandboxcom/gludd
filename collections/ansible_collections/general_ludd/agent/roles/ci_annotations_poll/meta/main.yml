@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: ci_annotations_poll
+  author: Agentic Harness Agent
+  description: >
+    Polls live GitHub Actions CI run annotations via gh api to surface
+    per-line failure annotations as they appear. Wraps scripts/ci_annotations_poll.py.
+    Read-only — never mutates.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

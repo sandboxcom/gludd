@@ -1,0 +1,12 @@
+---
+- name: Inspect the gludd multitasking backlog
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    backlog_check_mode: "{{ backlog_check_mode | default('assert-done') }}"
+    repo_path: "{{ playbook_dir }}/.."
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-multitasking-backlog-check') }}"
+    backlog_file: "{{ backlog_file | default('') }}"
+  roles:
+    - general_ludd.agent.multitasking_backlog_check

@@ -1,0 +1,14 @@
+---
+# game_build_audit role defaults
+
+# Repository root path
+gludd_repo_root: "{{ lookup('env', 'GLUDD_REPO_ROOT') | default(lookup('env', 'PWD'), true) }}"
+
+# Make command (gludd make wrapper)
+gludd_make: "make"
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-game-build-audit"
+
+# DeepSeek API key (loaded from env or .deepseek.key by the test itself)
+# DEEPSEEK_API_KEY: ""

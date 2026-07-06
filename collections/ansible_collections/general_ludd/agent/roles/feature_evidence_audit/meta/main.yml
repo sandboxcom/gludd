@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: feature_evidence_audit
+  author: Agentic Harness Agent
+  description: >
+    Audits docs/features.yml for false 100% claims by classifying evidence quality
+    (test vs code vs none vs molecule). Wraps scripts/audit_features.py.
+    Audit-only — never mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

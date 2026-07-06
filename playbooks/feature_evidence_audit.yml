@@ -1,0 +1,10 @@
+---
+- name: Audit features.yml for false claims via evidence quality analysis
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo_path: "{{ playbook_dir }}/.."
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-feature-evidence-audit') }}"
+  roles:
+    - general_ludd.agent.feature_evidence_audit

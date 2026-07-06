@@ -1,0 +1,15 @@
+---
+# generate_status_table role defaults — generate README feature status table
+
+# Repo path
+repo_path: "."
+
+# Operation mode: "check" (verify current), "write" (update README), "print" (stdout)
+gen_mode: "check"
+
+# Optional paths
+manifest_path: ""
+output_path: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-status-table"

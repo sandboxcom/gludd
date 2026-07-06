@@ -1,0 +1,79 @@
+---
+# multitasking_backlog_check role — inspect the gludd multitasking backlog
+#
+# Wraps scripts/multitasking_backlog_check.py to load and inspect the
+# multitasking_backlog.json file. Supports --open-count, --list-open,
+# and --assert-done (anti-rubber-stamp: "done" with empty evidence = still open).
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run multitasking backlog check (assert-done)
+  ansible.builtin.command:
+    cmd: "uv run python scripts/multitasking_backlog_check.py --assert-done"
+    chdir: "{{ repo_path }}"
+  environment:
+    GLUDD_MT_BACKLOG: "{{ backlog_file | default('') }}"
+  register: _mbc_result
+  changed_when: false
+  failed_when: false
+  when: backlog_check_mode == "assert-done"
+
+- name: Run multitasking backlog check (open-count)
+  ansible.builtin.command:
+    cmd: "uv run python scripts/multitasking_backlog_check.py --open-count"
+    chdir: "{{ repo_path }}"
+  environment:
+    GLUDD_MT_BACKLOG: "{{ backlog_file | default('') }}"
+  register: _mbc_result
+  changed_when: false
+  failed_when: false
+  when: backlog_check_mode == "open-count"
+
+- name: Run multitasking backlog check (list-open)
+  ansible.builtin.command:
+    cmd: "uv run python scripts/multitasking_backlog_check.py --list-open"
+    chdir: "{{ repo_path }}"
+  environment:
+    GLUDD_MT_BACKLOG: "{{ backlog_file | default('') }}"
+  register: _mbc_result
+  changed_when: false
+  failed_when: false
+  when: backlog_check_mode == "list-open"
+
+- name: Parse result
+  ansible.builtin.set_fact:
+    _mbc_exit_code: "{{ _mbc_result.rc }}"
+    _mbc_open_count: "{{ _mbc_result.stdout_lines | default(['0']) | first if backlog_check_mode == 'open-count' else '0' }}"
+    _mbc_all_done: "{{ backlog_check_mode == 'assert-done' and _mbc_result.rc == 0 }}"
+    _mbc_output: "{{ _mbc_result.stdout_lines | default([]) }}"
+    _mbc_has_issues: "{{ _mbc_result.rc != 0 }}"
+
+- name: Write multitasking backlog check JSON artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'multitasking_backlog_check',
+        'mode': backlog_check_mode,
+        'exit_code': _mbc_exit_code,
+        'all_done': _mbc_all_done,
+        'open_count': _mbc_open_count,
+        'has_issues': _mbc_has_issues,
+        'stdout': _mbc_output,
+        'stderr': _mbc_result.stderr_lines | default([])
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/multitasking_backlog_check.json"
+    mode: "0644"
+
+- name: Report multitasking backlog check completion
+  ansible.builtin.debug:
+    msg: >-
+      Multitasking backlog {{ backlog_check_mode }} complete.
+      {% if backlog_check_mode == 'assert-done' %}
+        {% if _mbc_all_done | bool %}All items done.{% else %}Items remain open.{% endif %}
+      {% elif backlog_check_mode == 'open-count' %}
+        Open items: {{ _mbc_open_count }}
+      {% endif %}

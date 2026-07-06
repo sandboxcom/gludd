@@ -1,0 +1,14 @@
+---
+# multitasking_backlog_check role defaults — inspect the multitasking backlog
+
+# Repo path
+repo_path: "."
+
+# Backlog check mode: assert-done / open-count / list-open
+backlog_check_mode: "assert-done"
+
+# Override backlog file path (empty = default scripts/multitasking_backlog.json)
+backlog_file: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-multitasking-backlog-check"

@@ -1,0 +1,13 @@
+---
+- name: Monitor 5h token window and throttle subagent floor
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    twm_mode: "{{ twm_mode | default('once') }}"
+    repo_path: "{{ playbook_dir }}/.."
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-token-window-monitor') }}"
+    calibrate_pct: "{{ calibrate_pct | default('90') }}"
+    twm_normal_floor: "{{ twm_normal_floor | default('7') }}"
+  roles:
+    - general_ludd.agent.token_window_monitor

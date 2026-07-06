@@ -1,0 +1,8 @@
+---
+# feature_evidence_audit role defaults — audit docs/features.yml evidence quality
+
+# Repo path
+repo_path: "."
+
+# Artifact output
+artifact_dir: "/tmp/gludd-feature-evidence-audit"

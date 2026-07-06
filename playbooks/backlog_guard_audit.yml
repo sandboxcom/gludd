@@ -1,0 +1,11 @@
+---
+- name: Bug-class sweep + guard-coverage audit
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo_path: "{{ playbook_dir }}/.."
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-backlog-guard-audit') }}"
+    skip_collect: "{{ skip_collect | default(false) }}"
+  roles:
+    - general_ludd.agent.backlog_guard_audit

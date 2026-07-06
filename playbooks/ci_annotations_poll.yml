@@ -1,0 +1,14 @@
+---
+- name: Poll live CI annotations for a GitHub Actions run
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ci_run_id: "{{ ci_run_id | default('') }}"
+    repo_path: "{{ playbook_dir }}/.."
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-ci-annotations-poll') }}"
+    poll_interval_seconds: "{{ poll_interval_seconds | default('20') }}"
+    poll_max_seconds: "{{ poll_max_seconds | default('3600') }}"
+    early_exit_on_failure: "{{ early_exit_on_failure | default('0') }}"
+  roles:
+    - general_ludd.agent.ci_annotations_poll

@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: game_build_audit
+  author: Agentic Harness Agent
+  description: >
+    Programmatic audit of the game-building pipeline (DeepSeek → code gen →
+    Python verification → persistence stress). Validates model gateway,
+    execution engine, event loop dispatch, and captures observability data.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: backlog_guard_audit
+  author: Agentic Harness Agent
+  description: >
+    System-wide bug-class sweep + guard-coverage report. Wraps
+    scripts/backlog_audit.py and uses the bug_class_registry to detect
+    known-bug occurrences and guard-test gaps. Audit-only — never mutates.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

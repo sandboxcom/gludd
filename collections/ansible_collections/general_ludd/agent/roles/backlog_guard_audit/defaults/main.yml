@@ -1,0 +1,11 @@
+---
+# backlog_guard_audit role defaults — bug-class sweep + guard-coverage
+
+# Repo path
+repo_path: "."
+
+# Artifact output
+artifact_dir: "/tmp/gludd-backlog-guard-audit"
+
+# Skip pytest --co collection (faster; every guard shows as a gap)
+skip_collect: false

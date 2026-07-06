@@ -1,0 +1,11 @@
+---
+- name: Scan for unresolved git conflict markers
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo_path: "{{ playbook_dir }}/.."
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-conflict-scan') }}"
+    scan_paths: "{{ scan_paths | default([]) }}"
+  roles:
+    - general_ludd.agent.scan_conflict_markers

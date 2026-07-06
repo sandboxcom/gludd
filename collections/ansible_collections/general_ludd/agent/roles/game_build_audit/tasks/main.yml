@@ -1,0 +1,300 @@
+---
+# game_build_audit role — programmatic game-building pipeline audit
+#
+# Runs the DeepSeek game-building e2e test suite, parses results,
+# captures observability data (timing, tokens, gaps), and writes
+# structured audit artifacts.
+#
+# AUDIT-ONLY: never mutates the repo. Reads test output, writes reports.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Capture audit start time
+  ansible.builtin.set_fact:
+    _gba_start_epoch: "{{ ansible_date_time.epoch }}"
+
+# ── Run game-building e2e tests ───────────────────────────────────────────
+
+- name: Run game-building e2e test suite
+  ansible.builtin.command:
+    cmd: "{{ gludd_make }} test-specific TESTFILE='tests/e2e/test_game_building_deepseek.py'"
+    chdir: "{{ gludd_repo_root }}"
+  register: _gba_test_run
+  changed_when: false
+  failed_when: false
+
+- name: Compute test elapsed time
+  ansible.builtin.set_fact:
+    _gba_end_epoch: "{{ ansible_date_time.epoch }}"
+    _gba_elapsed_s: >-
+      {{ (ansible_date_time.epoch | float) - (_gba_start_epoch | float) }}
+
+# ── Parse test output ─────────────────────────────────────────────────────
+
+- name: Extract pass/fail/skip counts
+  ansible.builtin.set_fact:
+    _gba_raw_output: "{{ _gba_test_run.stdout }}"
+    _gba_stderr: "{{ _gba_test_run.stderr }}"
+    _gba_exit_code: "{{ _gba_test_run.rc }}"
+
+- name: Match pytest summary line
+  ansible.builtin.set_fact:
+    _gba_summary_line: >-
+      {{ _gba_raw_output | regex_search('(\\d+) passed.*(\\d+) failed.*(\\d+) skipped') }}
+    _gba_passed: >-
+      {{ _gba_raw_output | regex_search('(\\d+) passed', '\\1') | first | default('0') }}
+    _gba_failed: >-
+      {{ _gba_raw_output | regex_search('(\\d+) failed', '\\1') | first | default('0') }}
+    _gba_skipped: >-
+      {{ _gba_raw_output | regex_search('(\\d+) skipped', '\\1') | first | default('0') }}
+  when: _gba_exit_code | default(1) | int == 0
+
+- name: Extract duration from output
+  ansible.builtin.set_fact:
+    _gba_duration: >-
+      {{ _gba_raw_output | regex_search('in ([0-9.]+s)') | default('unknown') }}
+
+# ── Parse per-game results ─────────────────────────────────────────────────
+
+- name: Extract game build results (PASS/FAIL per game)
+  ansible.builtin.set_fact:
+    _gba_game_results: >-
+      {{ _gba_raw_output | regex_findall('test_build_(\\w+).*?(PASSED|FAILED)') }}
+    _gba_persistence_results: >-
+      {{ _gba_raw_output | regex_findall('test_persistence_(\\w+).*?(PASSED|FAILED)') }}
+
+# ── Extract gap report output ──────────────────────────────────────────────
+
+- name: Check for gap report content
+  ansible.builtin.set_fact:
+    _gba_gap_report_text: >-
+      {{ _gba_raw_output | regex_search('GAME-BUILDING GAP REPORT.*?===+', multiline=True) | default('') }}
+    _gba_persistence_gap_text: >-
+      {{ _gba_raw_output | regex_search('GAME PERSISTENCE GAP REPORT.*?===+', multiline=True) | default('') }}
+
+- name: Determine gap status
+  ansible.builtin.set_fact:
+    _gba_has_gaps: >-
+      {{ _gba_gap_report_text | length > 0 and 'No gaps recorded' not in _gba_gap_report_text }}
+    _gba_has_persistence_gaps: >-
+      {{ _gba_persistence_gap_text | length > 0 and 'No persistence gaps recorded' not in _gba_persistence_gap_text }}
+
+- name: Count gaps by category
+  ansible.builtin.set_fact:
+    _gba_gap_counts:
+      code_extraction: >-
+        {{ _gba_gap_report_text | regex_findall('code_extraction') | length }}
+      import: >-
+        {{ _gba_gap_report_text | regex_findall('"import"') | length }}
+      instantiation: >-
+        {{ _gba_gap_report_text | regex_findall('"instantiation"') | length }}
+      game_logic: >-
+        {{ _gba_gap_report_text | regex_findall('game_logic') | length }}
+      persistence_crash: >-
+        {{ _gba_persistence_gap_text | regex_findall('persistence_crash') | length }}
+      render_state: >-
+        {{ _gba_persistence_gap_text | regex_findall('render_state') | length }}
+
+# ── Extract token usage from output ────────────────────────────────────────
+# (Token counts are printed per-game: "tokens_in=N tokens_out=M")
+
+- name: Extract per-game token data
+  ansible.builtin.set_fact:
+    _gba_token_pairs: >-
+      {{ _gba_raw_output | regex_findall('tokens_in=(\\d+)\\s+tokens_out=(\\d+)') }}
+
+- name: Compute aggregate token usage
+  ansible.builtin.set_fact:
+    _gba_total_tokens_in: >-
+      {{ _gba_token_pairs | map('first') | map('int') | sum }}
+    _gba_total_tokens_out: >-
+      {{ _gba_token_pairs | map('last') | map('int') | sum }}
+  when: _gba_token_pairs | length > 0
+
+# ── Extract full pipeline results ──────────────────────────────────────────
+
+- name: Extract pipeline test results
+  ansible.builtin.set_fact:
+    _gba_pipeline_exec: >-
+      {{ _gba_raw_output | regex_search('FULL PIPELINE TEST A.*?END TEST A', multiline=True) | default('') }}
+    _gba_pipeline_loop: >-
+      {{ _gba_raw_output | regex_search('FULL PIPELINE TEST B.*?END TEST B', multiline=True) | default('') }}
+
+- name: Check pipeline wiring
+  ansible.builtin.set_fact:
+    _gba_pipeline_a_ok: >-
+      {{ 'SUCCESS' in _gba_pipeline_exec or 'test_execution_engine_full_pipeline_snake.*PASSED' in _gba_raw_output | regex_replace('\\n', ' ') }}
+    _gba_pipeline_b_ok: >-
+      {{ 'PROVEN' in _gba_pipeline_loop or 'test_event_loop_dispatch_snake.*PASSED' in _gba_raw_output | regex_replace('\\n', ' ') }}
+
+# ── Compute audit verdict ──────────────────────────────────────────────────
+
+- name: Determine audit verdict
+  ansible.builtin.set_fact:
+    _gba_verdict: >-
+      {{
+        'FAIL' if (_gba_failed | int) > 0 else
+        'PASS_ALL_CLEAN' if (_gba_passed | int) > 0 and not _gba_has_gaps and not _gba_has_persistence_gaps else
+        'PASS_WITH_GAPS' if (_gba_passed | int) > 0 else
+        'NO_RESULTS'
+      }}
+    _gba_pipelin_verdict: >-
+      {{
+        'green' if _gba_pipeline_a_ok | bool and _gba_pipeline_b_ok | bool else
+        'partial' if _gba_pipeline_a_ok | bool or _gba_pipeline_b_ok | bool else
+        'red'
+      }}
+    _gba_observability_verdict: >-
+      {{
+        'absent' if _gba_token_pairs | length == 0 else
+        'partial_stdout_only' if (_gba_total_tokens_in | default(0)) > 0 else
+        'instrumented'
+      }}
+
+# ── Identify subsystem improvement areas ───────────────────────────────────
+
+- name: Determine subsystems needing improvement
+  ansible.builtin.set_fact:
+    _gba_subsystem_findings:
+      observability:
+        verdict: "{{ _gba_observability_verdict }}"
+        recommendation: >-
+          {{ 'Token consumption tracked only via stdout. Wire ExecutionTracer (observability/tracer.py)
+          into the game-building path to capture per-phase spans with timing, token count, and cost.' if _gba_observability_verdict == 'partial_stdout_only' else
+          'No token data captured. Add tracer instrumentation to game-building tests.' }}
+      model_gateway:
+        verdict: "{{ 'green' if _gba_passed | int > 0 and _gba_failed | int == 0 else 'red' }}"
+        recommendation: >-
+          {{ 'ModelGateway correctly wired with DeepSeek via ChatOpenAI. All games generated valid Python.' if _gba_passed | int > 0 and _gba_failed | int == 0 else
+          'Model output or code extraction issues detected. Check gateway configuration.' }}
+      execution_engine:
+        verdict: "{{ _gba_pipelin_verdict }}"
+        recommendation: >-
+          {{ 'ExecutionEngine.execute() and EventLoop._dispatch_execute_job_isolated() both wired correctly.' if _gba_pipelin_verdict == 'green' else
+          'Pipeline wiring gap detected. Check ExecutionEngine executor and EventLoop dispatch path.' }}
+      verification_checks:
+        verdict: >-
+          {{ 'best_effort_gaps' if _gba_has_gaps | bool or _gba_has_persistence_gaps | bool else 'green' }}
+        recommendation: >-
+          {{ 'All verification checks passed. Some checks use best-effort defaults (capture, king_promotion, line_clear, win_detection). Consider programmatic verification for these.' if not (_gba_has_gaps | bool or _gba_has_persistence_gaps | bool) else
+          'Verification checks failed for some games. Review per-game gap details.' }}
+
+# ── Write audit artifacts ──────────────────────────────────────────────────
+
+- name: Write game build audit JSON
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'game_build_audit',
+        'timestamp': ansible_date_time.iso8601,
+        'verdict': _gba_verdict,
+        'summary': {
+          'passed': _gba_passed | int,
+          'failed': _gba_failed | int,
+          'skipped': _gba_skipped | int,
+          'elapsed_s': _gba_elapsed_s,
+          'duration': _gba_duration,
+          'has_gaps': _gba_has_gaps | bool,
+          'has_persistence_gaps': _gba_has_persistence_gaps | bool
+        },
+        'pipeline': {
+          'execution_engine_wired': _gba_pipeline_a_ok | bool,
+          'event_loop_wired': _gba_pipeline_b_ok | bool,
+          'verdict': _gba_pipelin_verdict
+        },
+        'observability': {
+          'verdict': _gba_observability_verdict,
+          'total_tokens_in': _gba_total_tokens_in | default(0),
+          'total_tokens_out': _gba_total_tokens_out | default(0),
+          'token_data_available': _gba_token_pairs | length > 0
+        },
+        'gaps': {
+          'total': _gba_gap_counts.values() | sum,
+          'by_category': _gba_gap_counts
+        },
+        'subsystems': _gba_subsystem_findings,
+        'game_results': _gba_game_results,
+        'raw_summary_line': _gba_summary_line | default('')
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/game_build_audit.json"
+    mode: "0644"
+
+- name: Write game build audit markdown report
+  ansible.builtin.copy:
+    content: |
+      # Game Building Pipeline Audit — {{ ansible_date_time.date }}
+
+      **Verdict:** {{ _gba_verdict }}
+
+      ## Test Results
+
+      | Metric | Value |
+      |--------|-------|
+      | Passed | {{ _gba_passed }} |
+      | Failed | {{ _gba_failed }} |
+      | Skipped | {{ _gba_skipped }} |
+      | Duration | {{ _gba_duration }} |
+      | Elapsed (wall) | {{ _gba_elapsed_s }}s |
+
+      ## Pipeline Wiring
+
+      - ExecutionEngine.execute(): {{ 'GREEN' if _gba_pipeline_a_ok | bool else 'RED' }}
+      - EventLoop dispatch: {{ 'GREEN' if _gba_pipeline_b_ok | bool else 'RED' }}
+      - Verdict: **{{ _gba_pipelin_verdict }}**
+
+      ## Gap Analysis
+
+      {% if not (_gba_has_gaps | bool or _gba_has_persistence_gaps | bool) %}
+      **No gaps detected.** All games built, imported, verified, and survived persistence stress testing.
+      {% else %}
+      ### Building Gaps
+      {{ _gba_gap_report_text | default('(none)') }}
+
+      ### Persistence Gaps
+      {{ _gba_persistence_gap_text | default('(none)') }}
+
+      #### Gap Counts by Category
+      | Category | Count |
+      |----------|-------|
+      | code_extraction | {{ _gba_gap_counts.code_extraction }} |
+      | import | {{ _gba_gap_counts.import }} |
+      | instantiation | {{ _gba_gap_counts.instantiation }} |
+      | game_logic | {{ _gba_gap_counts.game_logic }} |
+      | persistence_crash | {{ _gba_gap_counts.persistence_crash }} |
+      | render_state | {{ _gba_gap_counts.render_state }} |
+      {% endif %}
+
+      ## Observability
+
+      **Status:** {{ _gba_observability_verdict }}
+
+      {% if _gba_token_pairs | length > 0 %}
+      - Total input tokens: {{ _gba_total_tokens_in | default(0) }}
+      - Total output tokens: {{ _gba_total_tokens_out | default(0) }}
+      {% else %}
+      - No token usage data captured from test output.
+      - Token consumption data is printed to stdout but not stored/aggregated by the observability subsystem.
+      {% endif %}
+
+      ## Subsystem Recommendations
+
+      {% for name, finding in _gba_subsystem_findings.items() %}
+      ### {{ name }} ({{ finding.verdict }})
+      {{ finding.recommendation }}
+      {% endfor %}
+
+      ---
+      *Generated by general_ludd.agent.game_build_audit at {{ ansible_date_time.iso8601 }}*
+    dest: "{{ artifact_dir }}/game_build_audit.md"
+    mode: "0644"
+
+- name: Report audit completion
+  ansible.builtin.debug:
+    msg: >-
+      Game build audit complete — {{ _gba_passed }} passed, {{ _gba_failed }} failed, {{ _gba_skipped }} skipped.
+      Verdict: {{ _gba_verdict }}.
+      Artifacts written to {{ artifact_dir }}/game_build_audit.{json,md}

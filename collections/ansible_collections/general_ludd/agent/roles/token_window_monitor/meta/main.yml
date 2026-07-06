@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: token_window_monitor
+  author: Agentic Harness Agent
+  description: >
+    5-hour token-window monitor: sums token usage from Claude Code session
+    transcript JSONL files over a rolling 5h window and writes a subagent
+    floor override with hysteresis (>=95% → floor=1, <90% → floor=7,
+    between → hold). Wraps scripts/token_window_monitor.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

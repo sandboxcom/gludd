@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: generate_status_table
+  author: Agentic Harness Agent
+  description: >
+    Generates the README Feature & Task Completion Status table from
+    docs/features.yml via FeatureVerifier. Supports --check (gate),
+    --write (update README), and --print (stdout) modes. Wraps
+    scripts/gen_status_table.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

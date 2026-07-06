@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: scan_conflict_markers
+  author: Agentic Harness Agent
+  description: >
+    Scans git-tracked text files for unresolved conflict markers (<<<<<<<,
+    |||||||, =======, >>>>>>>) with false-positive suppression for markdown
+    horizontal rules and RST section underlines. Wraps scripts/scan_conflicts.py.
+    Stdlib-only — no project imports. Audit-only, never mutates.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

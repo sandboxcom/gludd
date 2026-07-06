@@ -1,0 +1,80 @@
+---
+# generate_status_table role — generate/check the README feature status table
+#
+# Wraps scripts/gen_status_table.py which reads docs/features.yml, verifies
+# evidence refs via FeatureVerifier, renders a Markdown table per section, and
+# either checks that the README table is current (--check) or writes it (--write).
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Generate status table (check mode)
+  ansible.builtin.command:
+    cmd: >-
+      uv run python scripts/gen_status_table.py
+      --check
+      --fast
+      {% if manifest_path | length > 0 %}--manifest {{ manifest_path }}{% endif %}
+      {% if output_path | length > 0 %}--out {{ output_path }}{% endif %}
+    chdir: "{{ repo_path }}"
+  register: _gst_result
+  changed_when: false
+  failed_when: false
+  when: gen_mode == "check"
+
+- name: Generate status table (write mode)
+  ansible.builtin.command:
+    cmd: >-
+      uv run python scripts/gen_status_table.py
+      --write
+      --fast
+      {% if manifest_path | length > 0 %}--manifest {{ manifest_path }}{% endif %}
+      {% if output_path | length > 0 %}--out {{ output_path }}{% endif %}
+    chdir: "{{ repo_path }}"
+  register: _gst_result
+  changed_when: false
+  failed_when: false
+  when: gen_mode == "write"
+
+- name: Generate status table (print mode)
+  ansible.builtin.command:
+    cmd: >-
+      uv run python scripts/gen_status_table.py
+      {% if manifest_path | length > 0 %}--manifest {{ manifest_path }}{% endif %}
+      {% if output_path | length > 0 %}--out {{ output_path }}{% endif %}
+    chdir: "{{ repo_path }}"
+  register: _gst_result
+  changed_when: false
+  failed_when: false
+  when: gen_mode == "print"
+
+- name: Parse result
+  ansible.builtin.set_fact:
+    _gst_exit_code: "{{ _gst_result.rc }}"
+    _gst_table_current: "{{ _gst_result.rc == 0 and gen_mode == 'check' }}"
+    _gst_output: "{{ _gst_result.stdout_lines | default([]) }}"
+
+- name: Write status table JSON artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'generate_status_table',
+        'mode': gen_mode,
+        'exit_code': _gst_exit_code,
+        'table_current': _gst_table_current,
+        'stdout': _gst_output,
+        'stderr': _gst_result.stderr_lines | default([])
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/generate_status_table.json"
+    mode: "0644"
+
+- name: Report status table generation completion
+  ansible.builtin.debug:
+    msg: >-
+      Status table {{ gen_mode }} complete.
+      {% if gen_mode == 'check' %}
+        {% if _gst_table_current | bool %}Table is CURRENT.{% else %}Table is STALE.{% endif %}
+      {% endif %}

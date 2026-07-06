@@ -1,0 +1,17 @@
+---
+# token_window_monitor role defaults — 5h token-window monitoring
+
+# Repo path
+repo_path: "."
+
+# Monitor mode: once / calibrate / breakdown / probe
+twm_mode: "once"
+
+# Calibration percentage (only used when twm_mode == calibrate)
+calibrate_pct: "90"
+
+# Normal subagent floor (read by the script, configurable here)
+twm_normal_floor: "7"
+
+# Artifact output
+artifact_dir: "/tmp/gludd-token-window-monitor"
