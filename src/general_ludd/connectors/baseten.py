@@ -53,7 +53,7 @@ HttpRequest = Callable[
 _DEFAULT_TIMEOUT_SECONDS = 30.0
 _DEFAULT_BASE_URL = "https://inference.baseten.co/v1"
 _DEFAULT_MANAGEMENT_URL = "https://api.baseten.co"
-_DEFAULT_API_KEY_ENV = "BASETEN_API_KEY"
+_DEFAULT_API_KEY_ENV = "BASETEN_API_KEY"  # pragma: allowlist secret (env-var NAME, not a secret value)
 
 # Connector kind — deployments + invocations are a CI/CD-ish pipeline surface.
 KIND = "pipeline"
