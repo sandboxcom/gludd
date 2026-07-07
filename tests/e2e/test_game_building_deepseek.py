@@ -41,6 +41,8 @@ from typing import Any, ClassVar, cast
 
 import pytest
 
+from tests.e2e._game_lifecycle import run_lifecycle_checks
+
 # ---------------------------------------------------------------------------
 # Key loading — read from env or .deepseek.key file
 # ---------------------------------------------------------------------------
@@ -223,6 +225,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - `spawn_food(self)`: place food at random empty cell
             - Eating food: when head overlaps food, grow by 1, increment score, spawn new food
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score` (int) starts at 0 and increments on positive events (eating food).
+            - Game-over detection: when a lose condition triggers (wall or self collision), `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()` after game_over is a no-op (returns without changing state).
+            - `restart()` method: resets ALL state (score=0, game_over=False, snake to initial center position, food respawned, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class Snake:`.
         """).strip(),
         "class_name": "Snake",
@@ -233,6 +242,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("wall_collision", "snake hitting wall returns game_over True"),
             ("food_eating", "moving onto food cell increments score and length"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "tetris": {
@@ -257,6 +273,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Wall kick: basic wall kick on rotation near walls
             - Piece preview: next piece shown via render_state
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score` (int) starts at 0 and increments on positive events (clearing one or more rows).
+            - Game-over detection: when a lose condition triggers (piece locks above visible grid), `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()` after game_over is a no-op (returns without changing state).
+            - `restart()` method: resets ALL state (score=0, game_over=False, grid cleared, new piece spawned, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class Tetris:`.
         """).strip(),
         "class_name": "Tetris",
@@ -267,6 +290,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("rotation", "rotate_cw changes piece orientation"),
             ("hard_drop", "hard_drop instantly places piece"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "minesweeper": {
@@ -292,6 +322,14 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Win condition: all non-mine cells revealed
             - Game over: mine revealed
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": revealing cells advances the game; `score` (int, e.g. cells_revealed) starts at 0 and increments on positive events (revealing a safe cell).
+            - Game-over detection: when a lose condition triggers (mine revealed), `state` transitions to "game_over" and `game_over` (bool) becomes True. Revealing cells after game_over is a no-op.
+            - Win detection: when a win condition triggers (all non-mine cells revealed), `state` transitions to "won" and `won` (bool) becomes True.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, grid reset with new random mines, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class Minesweeper:`.
         """).strip(),
         "class_name": "Minesweeper",
@@ -303,6 +341,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("flag_toggle", "flag() toggles between flagged/unflagged"),
             ("win_detection", "revealing all non-mine cells sets won=True"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "checkers": {
@@ -333,6 +378,14 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `winner` (int or None), `p1_pieces` (int), `p2_pieces` (int)
             - Game over: when a player has no valid moves
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `move()` advances the game; `score` (int, e.g. opponent pieces captured) starts at 0 and increments on positive events (capturing an opponent piece).
+            - Game-over detection: when a lose condition triggers (current player has no valid moves), `state` transitions to "game_over" and `game_over` (bool) becomes True. `move()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (opponent has no pieces or no valid moves), `state` transitions to "won" and `won` (bool) becomes True.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, board to standard starting position with 12 pieces per player, current_player=1, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `class Checkers:`.
         """).strip(),
         "class_name": "Checkers",
@@ -344,6 +397,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("king_promotion", "piece reaching back rank becomes king"),
             ("game_over", "no valid moves sets game_over=True"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "skifree": {
@@ -370,6 +430,14 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Trees are 1 cell wide; rocks can be 2 cells wide (2 adjacent positions)
             - Difficulty curve: obstacle density increases as distance_traveled increases
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score` (int, e.g. distance_traveled) starts at 0 and increments on positive events (each row traveled).
+            - Game-over detection: when a lose condition triggers (collision with tree or rock), `state` transitions to "game_over" and `crashed`/`game_over` (bool) becomes True. `tick()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (reaching course bottom / y >= course_h), `state` transitions to "won" and `finished`/`won` (bool) becomes True.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, crashed=False, skier at center-top, obstacles regenerated, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class SkiFree:`.
         """).strip(),
         "class_name": "SkiFree",
@@ -380,6 +448,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("tree_collision", "overlapping a tree sets crashed=True"),
             ("course_completion", "reaching bottom sets finished=True"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "banana": {
@@ -411,6 +486,14 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Game over: when a gorilla is hit
             - Banana must travel in an arc; angle 0=right, 90=straight up; velocity in m/s
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `throw()` advances the game; `score` (int, e.g. successful hits) starts at 0 and increments on positive events (hitting opponent gorilla).
+            - Game-over detection: when a lose condition triggers (your gorilla is hit), `state` transitions to "game_over" and `game_over` (bool) becomes True. `throw()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (opponent gorilla is hit), `state` transitions to "won", `won` (bool) becomes True, and `winner` is set.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, winner=None, skyline regenerated, gorillas repositioned, current_player=1, wind randomized, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import math` and `class Banana:`.
         """).strip(),
         "class_name": "Banana",
@@ -421,6 +504,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("gorilla_hit", "direct hit on gorilla returns hit_type='gorilla1' or 'gorilla2'"),
             ("turn_alternation", "current_player changes after each throw"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "pong": {
@@ -449,6 +539,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `ball_x`, `ball_y`, `ball_dx`, `ball_dy`, `paddle1_y`, `paddle2_y`,
               `score1`, `score2`, `paddle_height`
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score1`/`score2` (ints) start at 0 and increment on positive events (ball passes opponent paddle).
+            - Game-over detection: Pong is endless by default; `game_over` stays False. (Optional: if a score cap is implemented, transition to "game_over" when reached.)
+            - `restart()` method: resets ALL state (score1=0, score2=0, ball centered with random direction, paddles centered, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class Pong:`.
         """).strip(),
         "class_name": "Pong",
@@ -459,6 +556,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("pong_paddle_move", "paddle moves in response to input"),
             ("pong_scoring", "score increments when ball passes paddle"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "breakout": {
@@ -489,6 +593,14 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `paddle_x`, `paddle_y`, `paddle_width`, `ball_x`, `ball_y`, `ball_dx`, `ball_dy`,
               `bricks` (2D list of bool), `score`, `lives`, `game_over`, `won`
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score` (int) starts at 0 and increments on positive events (destroying a brick).
+            - Game-over detection: when a lose condition triggers (lives reach 0), `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (all bricks destroyed), `state` transitions to "won" and `won` (bool) becomes True.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, ball on paddle, bricks regenerated, lives=3, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class Breakout:`.
         """).strip(),
         "class_name": "Breakout",
@@ -499,6 +611,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("brk_paddle_bounce", "ball bounces when hitting paddle area"),
             ("brk_life_loss", "lives decrement when ball passes bottom"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "maze_runner": {
@@ -524,6 +643,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `start_x`, `start_y`, `end_x`, `end_y`, `won` (bool), `game_over` (bool),
               `steps` (int)
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `input()` advances the player; `score` (int, e.g. negative of steps or efficiency metric) starts at 0 and is tracked alongside `steps`.
+            - Win detection: when a win condition triggers (player reaches end position), `state` transitions to "won" and `won` (bool) becomes True. `input()` after won is a no-op.
+            - `restart()` method: resets ALL state (player at start, steps=0, won=False, game_over=False, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class MazeRunner:`.
         """).strip(),
         "class_name": "MazeRunner",
@@ -533,6 +659,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("maze_wall_blocks", "moving into a wall cell blocks movement"),
             ("maze_reach_end", "reaching end position sets won=True"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "word_guesser": {
@@ -561,6 +694,14 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `game_over` (bool), `won` (bool), `display` (str with unguessed letters as "_",
               e.g. "h e _ _ o")
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `guess()` advances the game; `score` (int, e.g. correct letter count) starts at 0 and increments on positive events (guessing a correct letter).
+            - Game-over detection: when a lose condition triggers (wrong_guesses reaches max_guesses), `state` transitions to "game_over" and `game_over` (bool) becomes True with `won=False`. `guess()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (all letters of secret_word guessed), `state` transitions to "won" and `won` (bool) becomes True.
+            - `restart()` method: resets ALL state (new secret word chosen, guessed_letters cleared, wrong_guesses=0, game_over=False, won=False, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class WordGuesser:`.
         """).strip(),
         "class_name": "WordGuesser",
@@ -571,6 +712,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("wg_win_word", "guessing all letters sets won=True"),
             ("wg_lose_max", "reaching max_guesses sets game_over=True and won=False"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "memory_match": {
@@ -601,6 +749,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               with id, value, flipped, matched), `pairs` (int), `attempts` (int),
               `game_over` (bool), `first_flip` (int or None)
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `flip()` advances the game; `score` (int, e.g. pairs matched) starts at 0 and increments on positive events (matching a pair).
+            - Win detection: when a win condition triggers (all pairs matched), `state` transitions to "won" and `won`/`game_over` (bool) becomes True.
+            - `restart()` method: resets ALL state (cards reshuffled, flipped=False, matched=False, attempts=0, first_flip=None, game_over=False, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class MemoryMatch:`.
         """).strip(),
         "class_name": "MemoryMatch",
@@ -611,6 +766,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("mm_mismatch_flips", "non-matching pair flips back after second card"),
             ("mm_all_matched", "game ends when all cards are matched"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
     "tic_tac_toe": {
@@ -642,6 +804,14 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               str or None), `current_player` (str), `winner` (str or None),
               `game_over` (bool), `draw` (bool)
 
+            Lifecycle requirements (MANDATORY — tests will verify each transition):
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+            - During "playing": `move()` advances the game; `score` (int, e.g. marks placed by human) starts at 0 and increments on positive events (placing a mark).
+            - Game-over detection: when an end condition triggers (win or draw), `state` transitions to "game_over" and `game_over` (bool) becomes True. `move()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (three in a row), `winner` is set and `state` becomes "won" (or "game_over" with winner populated).
+            - `restart()` method: resets ALL state (board cleared, current_player="X", winner=None, game_over=False, draw=False, state="ready"). The instance is reusable.
+
             Output ONLY the Python code. Start with `import random` and `class TicTacToe:`.
         """).strip(),
         "class_name": "TicTacToe",
@@ -652,6 +822,13 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             ("ttt_three_in_row", "three in a row sets winner and game_over"),
             ("ttt_board_full_draw", "full board with no winner sets draw=True"),
             ("render_state", "render_state() returns dict with expected keys"),
+            ("lifecycle_initial_state", "fresh instance state is 'ready'/'menu' (NOT 'playing')"),
+            ("lifecycle_start", "calling start() transitions state to 'playing'"),
+            ("lifecycle_score_starts_zero", "score is 0 at start of play"),
+            ("lifecycle_score_increments", "score increases after positive event"),
+            ("lifecycle_game_over", "triggering lose condition sets game_over=True and state='game_over'"),
+            ("lifecycle_game_over_idempotent", "tick()/move() after game_over does not change state"),
+            ("lifecycle_restart", "restart() resets score to 0, game_over to False, state to 'ready'"),
         ],
     },
 }
@@ -756,10 +933,17 @@ _MOVE_NAMES: tuple[str, ...] = (
 _THROW_NAMES: tuple[str, ...] = ("throw", "shoot", "fire", "launch", "toss")
 _FLIP_NAMES: tuple[str, ...] = ("flip", "select", "reveal_card", "turn", "pick")
 _GUESS_NAMES: tuple[str, ...] = ("guess", "try_letter", "guess_letter", "submit", "attempt")
+_START_NAMES: tuple[str, ...] = (
+    "start", "begin", "play", "launch", "run", "resume", "new_game", "start_game",
+)
+_RESTART_NAMES: tuple[str, ...] = (
+    "restart", "reset", "new_game", "start_new", "reinitialize", "reset_game",
+)
 
 _SYNONYM_GROUPS: tuple[tuple[str, ...], ...] = (
     _TICK_NAMES, _INPUT_NAMES, _STATE_NAMES, _REVEAL_NAMES,
     _FLAG_NAMES, _MOVE_NAMES, _THROW_NAMES, _FLIP_NAMES, _GUESS_NAMES,
+    _START_NAMES, _RESTART_NAMES,
 )
 
 
@@ -905,20 +1089,180 @@ def _load_generated_module(source: str, module_name: str, tmp_dir: Path) -> Any:
 
 
 def _get_state_dict(instance: Any) -> dict[str, Any]:
-    """Return a dict view of ``instance``'s state.
+    """Return a DEEP-COPIED snapshot of ``instance``'s state.
 
-    Tries common state-accessor method names; falls back to ``__dict__``
-    so feature checks can inspect raw attributes.
+    The deep copy is critical: many Snake implementations mutate ``self.body``
+    in place via ``insert()``/``pop()``. If we returned the live reference,
+    a before/after equality check would see both sides as the same object
+    (post-mutation) and report ``moved=False`` even though tick() advanced.
+
+    Tries common state-accessor method names; always MERGES with ``__dict__``
+    so feature checks see raw attributes even when an accessor returns a
+    partial dict.
     """
+    import copy as _copy
+
+    merged: dict[str, Any] = dict(instance.__dict__)
     found = _find_callable_attr(instance, _STATE_NAMES)
     if found is not None:
         try:
             result = found[1]()
             if isinstance(result, dict):
-                return result
+                merged.update(result)
         except Exception:
             pass
-    return dict(instance.__dict__)
+    return _copy.deepcopy(merged)
+
+
+# ---------------------------------------------------------------------------
+# Semantic attribute discovery (name-agnostic feature verification)
+# ---------------------------------------------------------------------------
+#
+# The model emits different state-attribute names each run.  These helpers
+# locate attributes BY SHAPE (list-of-pairs, 2D-grid, score-like int,
+# game-over-like bool) so feature verification does not depend on the
+# model's naming choices.  Each helper scans a state dict and returns
+# ``(attr_name, value)`` or ``None``.
+
+_COORD_PAIR = tuple[float, float] | tuple[int, int] | list[float] | list[int]
+
+
+def _is_coord_pair(value: Any) -> bool:
+    """True if ``value`` looks like a single [x, y] coordinate."""
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        return all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in value)
+    type_name = type(value).__name__
+    if type_name in ("Vec2", "Vector2", "Point", "Coord", "Cell") and hasattr(value, "x") and hasattr(value, "y"):
+        return isinstance(value.x, (int, float)) and isinstance(value.y, (int, float))
+    return False
+
+
+def _is_sequence_like(value: Any) -> bool:
+    """True for list, tuple, deque, or any non-str/non-dict sequence."""
+    if isinstance(value, (list, tuple)):
+        return True
+    type_name = type(value).__name__
+    return type_name in ("deque", "LinkedList", "Chain", "ChainMap")
+
+
+def _find_body_attribute(state: dict[str, Any]) -> tuple[str, list[Any]] | None:
+    """Find an attribute that looks like a snake body: sequence of >=1 coord pairs.
+
+    Accepts list, tuple, or deque as the outer container (models commonly use
+    ``collections.deque`` for O(1) popleft, and some implementations start
+    with a length-1 body that grows on eating). Selects the LONGEST such
+    sequence (the body) over shorter candidates (food, obstacles).  Returns
+    ``(attr_name, value)`` or ``None``.
+    """
+    candidates: list[tuple[str, list[Any]]] = []
+    for name, value in state.items():
+        if not _is_sequence_like(value) or len(value) < 1:
+            continue
+        if all(_is_coord_pair(p) for p in value):
+            candidates.append((name, list(value)))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda kv: len(kv[1]))
+
+
+def _find_food_attribute(
+    state: dict[str, Any], exclude: str | None = None
+) -> tuple[str, Any] | None:
+    """Find an attribute that looks like food: a single coord pair OR a
+    list/tuple containing exactly one coord pair.  ``exclude`` is the body
+    attribute name so we don't match a length-1 body as food (ambiguous
+    by shape alone)."""
+    for name, value in state.items():
+        if name == exclude:
+            continue
+        if _is_coord_pair(value):
+            return name, value
+        if (
+            isinstance(value, (list, tuple))
+            and len(value) == 1
+            and _is_coord_pair(value[0])
+        ):
+            return name, value
+    return None
+
+
+def _find_board_attribute(state: dict[str, Any]) -> tuple[str, list[Any]] | None:
+    """Find a 2D grid/board attribute: list of >=3 rows, each a list of >=3 cells."""
+    best: tuple[str, list[Any]] | None = None
+    best_cells = 0
+    for name, value in state.items():
+        if not isinstance(value, list) or len(value) < 3:
+            continue
+        if not all(isinstance(row, list) for row in value):
+            continue
+        row_len = len(value[0])
+        if row_len < 3:
+            continue
+        if not all(len(row) == row_len for row in value):
+            continue
+        cell_count = len(value) * row_len
+        if cell_count > best_cells:
+            best = (name, value)
+            best_cells = cell_count
+    return best
+
+
+def _find_score_attribute(state: dict[str, Any]) -> str | None:
+    """Find a score-like numeric attribute (name contains score/points/length/...)."""
+    score_words = ("score", "points", "length", "lines", "attempts", "distance")
+    for name in score_words:
+        if name in state and isinstance(state[name], (int, float)) and not isinstance(state[name], bool):
+            return name
+    for name, value in state.items():
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        nlow = name.lower()
+        if any(word in nlow for word in score_words):
+            return name
+    return None
+
+
+def _find_position_attribute(state: dict[str, Any], axis: str) -> str | None:
+    """Find an x/y position attribute by axis suffix (``x``/``y``/``row``/``col``)."""
+    suffixes = {"x": ("x", "col", "column"), "y": ("y", "row")}[axis]
+    for name in state:
+        nlow = name.lower()
+        if nlow.endswith(suffixes):
+            value = state[name]
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return name
+    for name, value in state.items():
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        nlow = name.lower()
+        if any(s in nlow for s in suffixes):
+            return name
+    return None
+
+
+def _find_game_over_attribute(state: dict[str, Any]) -> str | None:
+    """Find a game-over-like boolean attribute (over/crashed/finished/ended)."""
+    over_words = ("over", "crashed", "finished", "ended", "dead", "done")
+    for name in state:
+        if isinstance(state[name], bool):
+            nlow = name.lower()
+            if any(word in nlow for word in over_words):
+                return name
+    return None
+
+
+def _find_player_attribute(state: dict[str, Any]) -> str | None:
+    """Find a current-player-like attribute (numeric or 'X'/'O' marker)."""
+    for name in ("current_player", "player", "turn", "active_player", "active"):
+        if name in state:
+            return name
+    for name, value in state.items():
+        nlow = name.lower()
+        is_player_attr = "player" in nlow or nlow == "turn"
+        is_valid_value = isinstance(value, (int, str)) and not isinstance(value, bool)
+        if is_player_attr and is_valid_value:
+            return name
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -927,10 +1271,12 @@ def _get_state_dict(instance: Any) -> dict[str, Any]:
 #
 # Each verifier returns a list of feature-failure strings (empty == pass).
 # These check the FLOOR of behaviour a game must demonstrate to count as
-# "implements the requested features".  Richer per-feature checks (line
-# clearing, king promotion, flood fill, etc.) remain in _run_single_check
-# as best-effort diagnostics; the verifiers below are the hard contract
-# asserted at test time.
+# "implements the requested features" — the model is free to name the class,
+# its methods, and its state attributes however it likes, as long as the
+# observable FEATURES are present.  Richer per-feature diagnostics (line
+# clearing, king promotion, flood fill) remain in _run_single_check as
+# best-effort informational checks; the verifiers below are the hard
+# contract asserted at test time.
 
 
 def _verify_game_skeleton(
@@ -949,11 +1295,13 @@ def _verify_game_skeleton(
     return failures, instance
 
 
-def _verify_tick_game_features(mod: Any, preferred: str | None) -> list[str]:
-    """Floor features for tick-based games: snake, tetris, skifree, pong, breakout."""
-    failures, instance = _verify_game_skeleton(mod, preferred=preferred)
-    if instance is None:
-        return failures
+def _check_tick_advances_state(instance: Any) -> list[str]:
+    """Floor features for tick-based games: tick runs, state changes, no crash.
+
+    Shared by snake/tetris/skifree/pong/breakout verifiers.  Returns a list
+    of feature-failure strings (empty == pass).
+    """
+    failures: list[str] = []
     tick = _find_callable_attr(instance, _TICK_NAMES)
     if tick is None:
         failures.append("no state-advancing method (tick/step/update/...) found")
@@ -984,20 +1332,127 @@ def _verify_tick_game_features(mod: Any, preferred: str | None) -> list[str]:
     return failures
 
 
+def _verify_tick_game_features(mod: Any, preferred: str | None) -> list[str]:
+    """Generic skeleton + tick floor (kept for non-user-mentioned tick games)."""
+    failures, instance = _verify_game_skeleton(mod, preferred=preferred)
+    if instance is None:
+        return failures
+    failures.extend(_check_tick_advances_state(instance))
+    return failures
+
+
 def _verify_snake_features(mod: Any) -> list[str]:
-    return _verify_tick_game_features(mod, preferred="Snake")
+    """Snake feature contract (name-agnostic).
+
+    Required features:
+      - Game class with callable state-advancing method (tick/step/update/...).
+      - Tick advances state without crashing across an extended loop.
+      - A "body" attribute exists: a list of >=2 coordinate pairs.
+      - A "food" attribute exists: a single [x,y] pair or 1-element list of pairs.
+      - A score/length/points numeric attribute exists.
+      - A game-over-like boolean attribute exists (or tick returns False).
+    """
+    failures, instance = _verify_game_skeleton(mod, preferred="Snake")
+    if instance is None:
+        return failures
+    failures.extend(_check_tick_advances_state(instance))
+    state = _get_state_dict(instance)
+    body_attr = _find_body_attribute(state)
+    if body_attr is None:
+        failures.append(
+            "no body-like attribute found (list of >=1 coordinate pairs); "
+            "snake state must track body segments"
+        )
+    if _find_food_attribute(state, exclude=body_attr[0] if body_attr else None) is None:
+        failures.append(
+            "no food-like attribute found (single [x,y] pair); "
+            "snake state must track food position"
+        )
+    if _find_score_attribute(state) is None:
+        failures.append(
+            "no score-like numeric attribute found; "
+            "snake must track score/length"
+        )
+    failures.extend(run_lifecycle_checks("snake", mod))
+    return failures
 
 
 def _verify_tetris_features(mod: Any) -> list[str]:
-    return _verify_tick_game_features(mod, preferred="Tetris")
+    """Tetris feature contract (name-agnostic).
+
+    Required features:
+      - Game class with callable state-advancing method.
+      - Tick advances state without crashing.
+      - A 2D grid/board attribute exists (list of >=3 rows of >=3 cells).
+      - A "current piece" attribute exists (any non-scalar state describing
+        the active piece), OR piece-position info appears in the board state.
+      - A line-clear counter exists (numeric attribute with score/lines).
+    """
+    failures, instance = _verify_game_skeleton(mod, preferred="Tetris")
+    if instance is None:
+        return failures
+    failures.extend(_check_tick_advances_state(instance))
+    state = _get_state_dict(instance)
+    if _find_board_attribute(state) is None:
+        failures.append(
+            "no 2D board/grid attribute found (list of >=3 equal-length rows); "
+            "tetris state must track the playfield"
+        )
+    if _find_score_attribute(state) is None:
+        failures.append(
+            "no score-like numeric attribute found; "
+            "tetris must track score/lines cleared"
+        )
+    failures.extend(run_lifecycle_checks("tetris", mod))
+    return failures
 
 
 def _verify_skifree_features(mod: Any) -> list[str]:
-    return _verify_tick_game_features(mod, preferred="SkiFree")
+    """SkiFree feature contract (name-agnostic).
+
+    Required features:
+      - Game class with callable state-advancing method.
+      - Tick advances state without crashing.
+      - A 1D position attribute exists for both axes (x and y of the skier).
+      - A crashed/over boolean attribute exists OR tick returns False on crash.
+      - A list attribute exists for obstacles (trees/rocks), OR the state
+        includes some iterable of obstacle positions.
+    """
+    failures, instance = _verify_game_skeleton(mod, preferred="SkiFree")
+    if instance is None:
+        return failures
+    failures.extend(_check_tick_advances_state(instance))
+    state = _get_state_dict(instance)
+    if _find_position_attribute(state, "x") is None:
+        failures.append(
+            "no x-axis position attribute found; skifree must track skier x"
+        )
+    if _find_position_attribute(state, "y") is None:
+        failures.append(
+            "no y-axis position attribute found; skifree must track skier y"
+        )
+    if _find_game_over_attribute(state) is None:
+        failures.append(
+            "no crashed/over boolean attribute found; skifree must track crash state"
+        )
+    has_obstacle_list = any(
+        isinstance(v, list) and len(v) >= 1
+        and all(_is_coord_pair(item) for item in v if not isinstance(item, (int, float)))
+        for v in state.values()
+    )
+    if not has_obstacle_list:
+        failures.append(
+            "no obstacle-list attribute found (trees/rocks); "
+            "skifree must track obstacle positions"
+        )
+    failures.extend(run_lifecycle_checks("skifree", mod))
+    return failures
 
 
 def _verify_pong_features(mod: Any) -> list[str]:
-    return _verify_tick_game_features(mod, preferred="Pong")
+    failures = _verify_tick_game_features(mod, preferred="Pong")
+    failures.extend(run_lifecycle_checks("pong", mod))
+    return failures
 
 
 def _verify_breakout_features(mod: Any) -> list[str]:
@@ -1005,43 +1460,93 @@ def _verify_breakout_features(mod: Any) -> list[str]:
 
 
 def _verify_minesweeper_features(mod: Any) -> list[str]:
+    """Minesweeper feature contract (name-agnostic).
+
+    Required features:
+      - Game class instantiable.
+      - A reveal-like method exists (reveal/click/open/dig/uncover).
+      - reveal() returns a status string (ok/mine/already_revealed/out_of_bounds)
+        OR a dict — does not raise on a corner cell.
+      - A 2D grid attribute exists.
+      - A flag/mark-like method exists (flag/mark/toggle_flag/set_flag).
+      - A game-over boolean attribute appears after revealing a mine (best-effort).
+    """
     failures, instance = _verify_game_skeleton(mod, preferred="Minesweeper")
     if instance is None:
         return failures
     reveal = _find_callable_attr(instance, _REVEAL_NAMES)
     if reveal is None:
         failures.append("no reveal-like method (reveal/click/open/dig) found")
-        return failures
-    try:
-        result = reveal[1](0, 0)
-        if isinstance(result, str) and result not in (
-            "ok", "mine", "already_revealed", "out_of_bounds",
-        ):
-            failures.append(f"reveal returned unexpected value: {result!r}")
-    except Exception as exc:
-        failures.append(f"reveal raised: {type(exc).__name__}: {exc}")
+    else:
+        try:
+            result = reveal[1](0, 0)
+            if isinstance(result, str) and result not in (
+                "ok", "mine", "already_revealed", "out_of_bounds",
+            ):
+                failures.append(f"reveal returned unexpected value: {result!r}")
+        except Exception as exc:
+            failures.append(f"reveal(0,0) raised: {type(exc).__name__}: {exc}")
+    state = _get_state_dict(instance)
+    if _find_board_attribute(state) is None:
+        failures.append(
+            "no 2D grid attribute found (list of >=3 equal-length rows); "
+            "minesweeper must track cell grid"
+        )
+    if _find_callable_attr(instance, _FLAG_NAMES) is None:
+        failures.append(
+            "no flag-like method found (flag/mark/toggle_flag/set_flag); "
+            "minesweeper must support flagging"
+        )
     return failures
 
 
 def _verify_checkers_features(mod: Any) -> list[str]:
+    """Checkers feature contract (name-agnostic).
+
+    Required features:
+      - Game class instantiable.
+      - A move-like method exists (move/play/make_move/do_move/submit_move).
+      - A 2D board attribute exists (8x8 expected, but any >=3x3 grid accepted).
+      - A current-player-like attribute exists (numeric turn tracker).
+      - A game-over-like boolean attribute exists (or move() reports it).
+    """
     failures, instance = _verify_game_skeleton(mod, preferred="Checkers")
     if instance is None:
         return failures
     move = _find_callable_attr(instance, _MOVE_NAMES)
     if move is None:
         failures.append("no move-like method (move/play/make_move) found")
-    else:
-        try:
-            move[1]("a1", "a1")
-        except Exception as exc:
-            failures.append(f"move raised on invalid input: {type(exc).__name__}: {exc}")
-    state_method = _find_callable_attr(instance, _STATE_NAMES)
-    if state_method is None and not hasattr(instance, "board"):
-        failures.append("no state accessor and no 'board' attribute")
+    state = _get_state_dict(instance)
+    board = _find_board_attribute(state)
+    if board is None:
+        failures.append(
+            "no 2D board attribute found (list of >=3 equal-length rows); "
+            "checkers must track the 8x8 board"
+        )
+    elif len(board[1]) < 8 or any(len(row) < 8 for row in board[1]):
+        failures.append(
+            f"board attribute {board[0]!r} is smaller than 8x8 "
+            f"(got {len(board[1])}x{len(board[1][0])}); checkers requires 8x8"
+        )
+    if _find_player_attribute(state) is None:
+        failures.append(
+            "no current-player-like attribute found; checkers must track whose turn"
+        )
     return failures
 
 
 def _verify_banana_features(mod: Any) -> list[str]:
+    """Banana (Gorillas) feature contract (name-agnostic).
+
+    Required features:
+      - Game class instantiable.
+      - A throw-like method exists (throw/shoot/fire/launch/toss).
+      - throw() returns a dict with at least one of: trajectory, hit, hit_type,
+        winner, distance — the throw result must be structured.
+      - A current-player-like attribute exists (turn alternation).
+      - Either a skyline attribute (list of building heights) OR a list of
+        gorilla positions exists.
+    """
     failures, instance = _verify_game_skeleton(mod, preferred="Banana")
     if instance is None:
         return failures
@@ -1051,12 +1556,42 @@ def _verify_banana_features(mod: Any) -> list[str]:
         return failures
     try:
         result = throw[1](45, 10)
+    except Exception as exc:
+        failures.append(f"throw(45, 10) raised: {type(exc).__name__}: {exc}")
+        result = None
+    if result is not None:
         if not isinstance(result, dict):
             failures.append(
-                f"throw did not return a dict: {type(result).__name__}"
+                f"throw did not return a dict (got {type(result).__name__}); "
+                "banana throw result must be a structured dict"
             )
-    except Exception as exc:
-        failures.append(f"throw raised: {type(exc).__name__}: {exc}")
+        else:
+            throw_keys = ("trajectory", "hit", "hit_type", "winner", "distance")
+            if not any(k in result for k in throw_keys):
+                failures.append(
+                    f"throw dict lacks all of {throw_keys}; "
+                    f"got keys {sorted(result.keys())}"
+                )
+            traj = result.get("trajectory")
+            if traj is not None and (not isinstance(traj, list) or len(traj) < 1):
+                failures.append(
+                    f"throw trajectory must be a non-empty list, got {traj!r}"
+                )
+    state = _get_state_dict(instance)
+    if _find_player_attribute(state) is None:
+        failures.append(
+            "no current-player-like attribute found; banana must track turn"
+        )
+    has_skyline = any(
+        isinstance(v, list) and len(v) >= 3
+        and all(isinstance(h, (int, float)) and not isinstance(h, bool) for h in v)
+        for v in state.values()
+    )
+    if not has_skyline:
+        failures.append(
+            "no skyline-like attribute found (list of >=3 building heights); "
+            "banana must track the city skyline"
+        )
     return failures
 
 
@@ -1830,6 +2365,133 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         if winner_check:
             winner_check()
         return getattr(instance, "draw", False) is True
+
+    # -- Lifecycle (open -> play -> close -> restart) --
+    if check_id == "lifecycle_initial_state":
+        state = _get_state_dict(instance)
+        st = state.get("state") or getattr(instance, "state", None)
+        if st is None:
+            return True  # state attribute absent — best-effort skip
+        return str(st).lower() in ("ready", "menu", "idle", "start", "not_started", "initialized")
+
+    if check_id == "lifecycle_start":
+        start_found = _find_callable_attr(instance, _START_NAMES)
+        if start_found is None:
+            return True  # no start method — best-effort skip
+        try:
+            start_found[1]()
+        except Exception:
+            return False
+        st = getattr(instance, "state", None) or _get_state_dict(instance).get("state")
+        return st is not None and str(st).lower() in ("playing", "active", "running", "in_progress", "play")
+
+    if check_id == "lifecycle_score_starts_zero":
+        try:
+            start_found = _find_callable_attr(instance, _START_NAMES)
+            if start_found is not None:
+                start_found[1]()
+        except Exception:
+            pass
+        state = _get_state_dict(instance)
+        score_name = _find_score_attribute(state)
+        if score_name is None:
+            return True  # best-effort skip
+        try:
+            return float(state.get(score_name, 0)) == 0
+        except (TypeError, ValueError):
+            return True
+
+    if check_id == "lifecycle_score_increments":
+        try:
+            start_found = _find_callable_attr(instance, _START_NAMES)
+            if start_found is not None:
+                start_found[1]()
+        except Exception:
+            pass
+        state_before = _get_state_dict(instance)
+        score_name = _find_score_attribute(state_before)
+        if score_name is None:
+            return True
+        before = state_before.get(score_name, 0)
+        tick_found = _find_callable_attr(instance, _TICK_NAMES)
+        if tick_found is None:
+            return True
+        try:
+            for _ in range(50):
+                tick_found[1]()
+                if getattr(instance, "game_over", False):
+                    break
+        except Exception:
+            pass
+        state_after = _get_state_dict(instance)
+        after = state_after.get(score_name, 0)
+        try:
+            return float(after) > float(before)
+        except (TypeError, ValueError):
+            return True
+
+    if check_id == "lifecycle_game_over":
+        try:
+            start_found = _find_callable_attr(instance, _START_NAMES)
+            if start_found is not None:
+                start_found[1]()
+        except Exception:
+            pass
+        tick_found = _find_callable_attr(instance, _TICK_NAMES)
+        if tick_found is None:
+            return True
+        try:
+            for _ in range(300):
+                tick_found[1]()
+                if getattr(instance, "game_over", False):
+                    return True
+        except Exception:
+            pass
+        return getattr(instance, "game_over", False)
+
+    if check_id == "lifecycle_game_over_idempotent":
+        if not getattr(instance, "game_over", False):
+            tick_found = _find_callable_attr(instance, _TICK_NAMES)
+            if tick_found is not None:
+                try:
+                    for _ in range(300):
+                        tick_found[1]()
+                        if getattr(instance, "game_over", False):
+                            break
+                except Exception:
+                    pass
+        if not getattr(instance, "game_over", False):
+            return True
+        state_before = _get_state_dict(instance)
+        tick_found = _find_callable_attr(instance, _TICK_NAMES)
+        if tick_found is not None:
+            try:
+                tick_found[1]()
+            except Exception:
+                pass
+        state_after = _get_state_dict(instance)
+        return state_after.get("game_over") == state_before.get("game_over")
+
+    if check_id == "lifecycle_restart":
+        restart_found = _find_callable_attr(instance, _RESTART_NAMES)
+        if restart_found is None:
+            return True
+        try:
+            restart_found[1]()
+        except Exception:
+            return False
+        state = _get_state_dict(instance)
+        score_name = _find_score_attribute(state)
+        score_zero = True
+        if score_name is not None:
+            try:
+                score_zero = float(state.get(score_name, 0)) == 0
+            except (TypeError, ValueError):
+                pass
+        game_over_false = state.get("game_over") is False or getattr(instance, "game_over", None) is False
+        st = state.get("state") or getattr(instance, "state", None)
+        state_reset = st is None or str(st).lower() in ("ready", "menu", "idle", "start", "not_started", "initialized")
+        return score_zero and game_over_false and state_reset
 
     return True  # unknown check, skip
 

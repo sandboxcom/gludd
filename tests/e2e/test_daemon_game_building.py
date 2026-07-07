@@ -39,6 +39,8 @@ from typing import Any, cast
 
 import pytest
 
+from tests.e2e._game_lifecycle import run_lifecycle_checks
+
 # ---------------------------------------------------------------------------
 # Key loading
 # ---------------------------------------------------------------------------
@@ -128,6 +130,13 @@ SNAKE_PROMPT = textwrap.dedent("""\
     - `spawn_food(self)`: place food at random empty cell
     - Eating food: when head overlaps food, grow by 1, increment score, spawn new food
     - Head coordinate is grid position: [x, y] where x is column, y is row
+
+    Lifecycle requirements (MANDATORY — tests will verify each transition):
+    - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
+    - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
+    - During "playing": `tick()` advances the game; `score` (int) starts at 0 and increments on positive events (eating food).
+    - Game-over detection: when a lose condition triggers (wall or self collision), `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()` after game_over is a no-op (returns without changing state).
+    - `restart()` method: resets ALL state (score=0, game_over=False, snake to initial center position, food respawned, state="ready"). The instance is reusable.
 
     Output ONLY the Python code in a ```python fenced block. Start with `import random` and `class Snake:`.
     Include the closing ``` after the code.
@@ -370,20 +379,111 @@ def _load_generated_module(source: str, module_name: str, tmp_path: Path) -> Any
 
 
 def _get_state_dict(instance: Any) -> dict[str, Any]:
-    """Return a serializable view of ``instance``'s state.
+    """Return a DEEP-COPIED snapshot of ``instance``'s state.
 
-    Tries common state-accessor method names; falls back to ``__dict__`` so
-    feature checks can inspect raw attributes when no accessor exists.
+    The deep copy is critical: many Snake implementations mutate ``self.body``
+    in place via ``insert()``/``pop()``. If we returned the live reference,
+    a before/after equality check would see both sides as the same object
+    (post-mutation) and report ``moved=False`` even though tick() advanced.
+
+    Tries common state-accessor method names; always MERGES with ``__dict__``
+    so feature checks see raw attributes even when an accessor returns a
+    partial dict.
     """
+    import copy as _copy
+
+    merged: dict[str, Any] = dict(instance.__dict__)
     found = _find_callable(instance, _STATE_NAMES)
     if found is not None:
         try:
             result = found[1]()
             if isinstance(result, dict):
-                return result
+                merged.update(result)
         except Exception:
             pass
-    return dict(instance.__dict__)
+    return _copy.deepcopy(merged)
+
+
+# ---------------------------------------------------------------------------
+# Semantic attribute discovery (name-agnostic feature verification)
+# ---------------------------------------------------------------------------
+#
+# The model emits different state-attribute names each run.  These helpers
+# locate attributes BY SHAPE so feature verification does not depend on the
+# model's naming choices.  Used by the snake verifier to check that the
+# generated game actually tracks a body, food, and a score — not just that
+# it has a tick() method that mutates SOMETHING.
+
+def _is_coord_pair(value: Any) -> bool:
+    """True if ``value`` looks like a single [x, y] coordinate pair."""
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        return all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in value)
+    type_name = type(value).__name__
+    if type_name in ("Vec2", "Vector2", "Point", "Coord", "Cell") and hasattr(value, "x") and hasattr(value, "y"):
+        return isinstance(value.x, (int, float)) and isinstance(value.y, (int, float))
+    return False
+
+
+def _is_sequence_like(value: Any) -> bool:
+    """True for list, tuple, deque, or any non-str/non-dict sequence."""
+    if isinstance(value, (list, tuple)):
+        return True
+    type_name = type(value).__name__
+    return type_name in ("deque", "LinkedList", "Chain", "ChainMap")
+
+
+def _find_body_attribute(state: dict[str, Any]) -> str | None:
+    """Find an attribute that looks like a snake body: sequence of >=1 coord pairs.
+
+    Accepts list, tuple, or deque as the outer container (models commonly use
+    ``collections.deque`` for O(1) popleft, and some implementations start
+    with a length-1 body that grows on eating). Selects the longest such
+    sequence (the body) over shorter candidates (food, obstacles).
+    """
+    candidates: list[tuple[str, int]] = []
+    for name, value in state.items():
+        if not _is_sequence_like(value) or len(value) < 1:
+            continue
+        if all(_is_coord_pair(p) for p in value):
+            candidates.append((name, len(value)))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda kv: kv[1])[0]
+
+
+def _find_food_attribute(state: dict[str, Any], exclude: str | None = None) -> str | None:
+    """Find an attribute that looks like food: a single coord pair OR a
+    1-element list/tuple containing a coord pair.  ``exclude`` is the body
+    attribute name — passed by callers so we don't match a length-1 body as
+    food (a 1-segment body and a wrapped-food coord pair are otherwise
+    ambiguous by shape alone)."""
+    for name, value in state.items():
+        if name == exclude:
+            continue
+        if _is_coord_pair(value):
+            return name
+        if (
+            isinstance(value, (list, tuple))
+            and len(value) == 1
+            and _is_coord_pair(value[0])
+        ):
+            return name
+    return None
+
+
+def _find_score_attribute(state: dict[str, Any]) -> str | None:
+    """Find a score-like numeric attribute (name contains score/points/length/...)."""
+    score_words = ("score", "points", "length", "lines", "attempts")
+    for name in score_words:
+        if name in state and isinstance(state[name], (int, float)) and not isinstance(state[name], bool):
+            return name
+    for name, value in state.items():
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        nlow = name.lower()
+        if any(word in nlow for word in score_words):
+            return name
+    return None
 
 
 def _verify_snake_features(mod: Any) -> list[str]:
@@ -391,7 +491,8 @@ def _verify_snake_features(mod: Any) -> list[str]:
 
     Returns a list of feature-failure strings (empty == pass).  The game is
     allowed to name its class, methods, and state keys however the model
-    chose; we only assert on observable behaviour.
+    chose; we only assert on observable behaviour AND on the presence of
+    the required state (body, food, score) — located by shape, not name.
     """
     failures: list[str] = []
 
@@ -437,16 +538,11 @@ def _verify_snake_features(mod: Any) -> list[str]:
 
     # Feature: extended play either keeps the snake alive OR ends in game-over
     # (wall/self collision).  We accept either; what we reject is a crash.
-    game_over_flag = False
     try:
         for _ in range(200):
             result = tick_fn()
             if isinstance(result, bool) and not result:
-                game_over_flag = True
                 break
-        final_state = _get_state_dict(instance)
-        if isinstance(final_state.get("game_over"), bool):
-            game_over_flag = game_over_flag or final_state["game_over"]
     except Exception as exc:
         failures.append(f"extended tick loop crashed: {type(exc).__name__}: {exc}")
 
@@ -465,6 +561,29 @@ def _verify_snake_features(mod: Any) -> list[str]:
                     f"{type(exc).__name__}: {exc}"
                 )
                 break
+
+    # Feature: snake state must track BODY segments (list of coord pairs),
+    # FOOD position (single coord pair), and a SCORE/length counter.
+    # Located by shape so the model is free to name them however it likes.
+    state = _get_state_dict(instance)
+    body_name = _find_body_attribute(state)
+    if body_name is None:
+        failures.append(
+            "no body-like attribute found (list of >=1 coordinate pairs); "
+            "snake state must track body segments"
+        )
+    if _find_food_attribute(state, exclude=body_name) is None:
+        failures.append(
+            "no food-like attribute found (single [x,y] pair or 1-element list); "
+            "snake state must track food position"
+        )
+    if _find_score_attribute(state) is None:
+        failures.append(
+            "no score-like numeric attribute found; "
+            "snake must track score/length"
+        )
+
+    failures.extend(run_lifecycle_checks("snake", mod))
 
     return failures
 
@@ -714,6 +833,29 @@ class TestDaemonGameBuilding:
                 print("\n  FEATURE FAILURES:")
                 for fail in snake_failures:
                     print(f"    - {fail}")
+                # Dump source + state for offline root-cause analysis.
+                debug_dir = Path("/tmp/gludd-snake-debug")
+                debug_dir.mkdir(parents=True, exist_ok=True)
+                (debug_dir / "last_source.py").write_text(game_source)
+                try:
+                    mod_dbg = _load_generated_module(game_source, f"{module_name}_dbg", tmp_path)
+                    cls_dbg = _discover_game_class(mod_dbg, preferred="Snake")
+                    if cls_dbg is not None:
+                        inst_dbg = _instantiate_game(cls_dbg, hints=[(20, 20), (10, 10)])
+                        state_dbg = _get_state_dict(inst_dbg)
+                        dump_lines = [
+                            "== state keys + repr(value) ==",
+                        ]
+                        for k, v in state_dbg.items():
+                            length = len(v) if hasattr(v, "__len__") else "n/a"
+                            value_repr = repr(v)[:200]
+                            dump_lines.append(
+                                f"{k} ({type(v).__name__}, len={length}): {value_repr}"
+                            )
+                        (debug_dir / "last_state.txt").write_text("\n".join(dump_lines))
+                        print(f"  DEBUG: source + state dumped to {debug_dir}")
+                except Exception as exc:
+                    print(f"  DEBUG dump failed: {type(exc).__name__}: {exc}")
             else:
                 print("\n  SUCCESS: generated module satisfies all Snake features "
                       "(class present, tickable, state advances, no crashes).")
