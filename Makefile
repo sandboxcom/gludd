@@ -26,7 +26,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg \
-         test-games game-audit \
+         test-games game-audit gen-mcp-tools mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
@@ -239,7 +239,11 @@ typecheck:
 	@$(UV) run mypy src
 
 test:
-	@$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v
+	@if [ -n "$(TESTFILE)" ]; then \
+		$(UV) run python -m pytest $(TESTFILE) -v; \
+	else \
+		$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v; \
+	fi
 
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
@@ -477,6 +481,12 @@ test-games:
 
 game-audit:
 	@$(PYTHON) scripts/game_audit.py
+
+gen-mcp-tools:
+	@$(UV) run python scripts/gen_mcp_tools.py
+
+mcp-docs-check:
+	@$(UV) run python scripts/mcp_docs_check.py
 
 test-tui-daemon:
 	@$(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
@@ -1061,7 +1071,7 @@ git-fetch-sandboxcom:
 	@echo "Fetched from sandboxcom/gludd"
 
 verify-remote:
-	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$${BRANCH:-master}; \
+	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$(or $(BRANCH),master); \
 	REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom $$BR | awk '{print $$1}'); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
@@ -1664,6 +1674,17 @@ git-amend-msg: _gate-fresh-check
 repo-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
+
+# ship-commit: commit staged changes then batch-push. Designed for subagent
+# dispatch (per AGENTS.md "Dispatch commit+push AS a subagent") so the main
+# thread stays free while the commit + push runs in parallel. Allowlisted
+# from the local _gate-fresh-check (CI is the gate for subagent-dispatched
+# pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
+ship-commit:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
+	@$(MAKE) --no-print-directory collect-check
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
+	@$(MAKE) --no-print-directory batch-push
 
 delete-file:
 	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }
@@ -2271,6 +2292,42 @@ audit-coverage:
 coverage-json:
 	@mkdir -p .gate-logs
 	@$(PYTHON) scripts/audit_coverage.py --json-file=coverage.json --threshold=$(THRESHOLD) --source=$(SOURCE)
+
+# Targeted coverage check on key files (user-requested coverage report).
+coverage-key-files:
+	@PYYAML_FORCE_LIBYAML=0 $(UV) run python -m pytest \
+		tests/unit/test_abtest_child.py \
+		tests/unit/test_routers_web_search.py \
+		tests/unit/test_renderers_runner.py \
+		tests/unit/test_routers_features_endpoints.py \
+		tests/unit/test_routers_quantization_endpoints.py \
+		tests/unit/test_routers_integrity_endpoints.py \
+		tests/unit/test_routers_processes_coverage.py \
+		tests/unit/test_linux_landlock.py \
+		tests/unit/test_connector_sentry.py \
+		tests/unit/test_routers_registration.py \
+		--cov=general_ludd.abtest._child \
+		--cov=general_ludd.routers.web_search \
+		--cov=general_ludd.renderers.runner \
+		--cov=general_ludd.routers.features \
+		--cov=general_ludd.routers.quantization \
+		--cov=general_ludd.routers.integrity \
+		--cov=general_ludd.routers.processes \
+		--cov=general_ludd.security.sandboxes.linux_landlock \
+		--cov=general_ludd.connectors.sentry \
+		--cov=general_ludd.routers \
+		--cov-report=term-missing
+
+# Non-ansible coverage check (skips routers that import ansible).
+coverage-key-files-noansible:
+	@$(UV) run python -m pytest \
+		tests/unit/test_abtest_child.py \
+		tests/unit/test_renderers_runner.py \
+		tests/unit/test_linux_landlock.py \
+		--cov=general_ludd.abtest._child \
+		--cov=general_ludd.renderers.runner \
+		--cov=general_ludd.security.sandboxes.linux_landlock \
+		--cov-report=term-missing
 
 # Gate + coverage audit: runs the full gate then checks per-file coverage >=85%.
 # Exits non-zero if gate fails OR any source file is below threshold.

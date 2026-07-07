@@ -31,8 +31,8 @@ import os
 import threading
 import time
 from collections import deque
+from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any
 
 from general_ludd.security.ssrf import host_is_blocked
 
@@ -52,18 +52,18 @@ class MqttSource:
 
     KIND: str = _DEFAULT_KIND
 
-    def __init__(self, config: dict[str, Any] | None = None, **kwargs: Any) -> None:
+    def __init__(self, config: dict[str, object] | None = None, **kwargs: object) -> None:
         # Support BOTH construction contracts: the ConnectorRegistry calls
         # ``Cls(config)`` with a single positional config dict (keys read off it),
         # while direct/test callers pass ergonomic keyword args. Keyword args win
         # over config-dict keys; unknown keys (e.g. the registry's "module") are
         # ignored so extra config is harmless.
-        settings: dict[str, Any] = {**(config or {}), **kwargs}
+        settings: dict[str, object] = {**(config or {}), **kwargs}
         name = str(settings.get("name") or "mqtt")
         broker_host = str(settings.get("broker_host") or "").strip()
-        broker_port = int(settings.get("broker_port", _DEFAULT_PORT))
+        broker_port = int(str(settings.get("broker_port", _DEFAULT_PORT)))
         topics = settings.get("topics")
-        maxlen = int(settings.get("maxlen", _DEFAULT_MAXLEN))
+        maxlen = int(str(settings.get("maxlen", _DEFAULT_MAXLEN)))
         kind = str(settings.get("kind") or _DEFAULT_KIND)
         if maxlen <= 0:
             raise ValueError("maxlen must be positive")
@@ -83,16 +83,16 @@ class MqttSource:
         self._broker_port = broker_port
         # Default to the wildcard topic so an operator who omits `topics` still
         # receives everything, matching mosquitto_sub's default behavior.
-        self._topics = list(topics) if topics else ["#"]
+        self._topics = list(topics) if isinstance(topics, list) else ["#"]
         self._maxlen = maxlen
         self._kind = kind
         self._username_env = settings.get("username_env")
         self._password_env = settings.get("password_env")
         self._client_id = str(settings.get("client_id") or "gludd-mqtt")
-        self._qos = int(settings.get("qos", 0))
-        self._buffer: deque[dict[str, Any]] = deque(maxlen=self._maxlen)
+        self._qos = int(str(settings.get("qos", 0)))
+        self._buffer: deque[dict[str, object]] = deque(maxlen=self._maxlen)
         self._lock = threading.Lock()
-        self._client: Any = None
+        self._client: object = None
         self._started = False
         # Guards lazy-connect so a failed first connect is not retried on every
         # query (see query()). The ConnectorRegistry builds sources but never
@@ -114,7 +114,7 @@ class MqttSource:
             return len(self._buffer)
 
     # -- ingest (driven by the paho on_message callback) ------------------- #
-    def _record_from_message(self, topic: str, payload: bytes) -> dict[str, Any]:
+    def _record_from_message(self, topic: str, payload: bytes) -> dict[str, object]:
         """Normalize one MQTT message into the connector record schema."""
         try:
             message = payload.decode("utf-8", errors="replace")
@@ -159,7 +159,7 @@ class MqttSource:
             except Exception as exc:  # missing dep / unreachable broker → stay empty
                 logger.warning("mqtt lazy connect failed for %s: %s", self.name, exc)
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Return buffered records (deep-copied), filtered by ``spec``.
 
         On first call this lazily starts the background subscriber (the
@@ -176,24 +176,29 @@ class MqttSource:
 
         kind = spec.get("kind")
         kinds = spec.get("kinds")
-        kinds_set: set[Any] | None = set(kinds) if kinds is not None else None
+        kinds_set: set[object] | None = set(kinds) if kinds is not None and isinstance(kinds, list) else None
         topic = spec.get("topic")
         since = spec.get("since")
         since_f: float | None = None
         if since is not None:
             try:
-                since_f = float(since)
+                since_f = float(str(since))
             except (TypeError, ValueError):
                 since_f = None
 
-        out: list[dict[str, Any]] = []
+        out: list[dict[str, object]] = []
         for record in snapshot:
             if kind is not None and record.get("kind") != kind:
                 continue
             if kinds_set is not None and record.get("kind") not in kinds_set:
                 continue
-            if topic is not None and record.get("labels", {}).get("topic") != topic:
-                continue
+            if topic is not None:
+                labels = record.get("labels")
+                record_topic: object = None
+                if isinstance(labels, Mapping):
+                    record_topic = labels.get("topic")
+                if record_topic != topic:
+                    continue
             if since_f is not None:
                 ts = record.get("ts")
                 if not isinstance(ts, (int, float)) or float(ts) < since_f:
@@ -202,7 +207,7 @@ class MqttSource:
         return out
 
     # -- health ------------------------------------------------------------ #
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Return a health dict. Never raises."""
         with self._lock:
             size = len(self._buffer)
@@ -236,16 +241,18 @@ class MqttSource:
 
         client = mqtt.Client(client_id=self._client_id)
         if self._username_env:
-            user = os.environ.get(self._username_env)
-            pw = os.environ.get(self._password_env) if self._password_env else None
+            user = os.environ.get(str(self._username_env)) if self._username_env else None
+            pw = os.environ.get(str(self._password_env)) if self._password_env else None
             if user:
                 client.username_pw_set(user, pw)
 
-        def _on_connect(cl: Any, userdata: Any, flags: Any, rc: Any, *args: Any) -> None:
+        def _on_connect(cl: object, userdata: object, flags: object, rc: object, *args: object) -> None:
+            assert hasattr(cl, "subscribe")
             for topic in self._topics:
                 cl.subscribe(topic, qos=self._qos)
 
-        def _on_message(cl: Any, userdata: Any, msg: Any) -> None:
+        def _on_message(cl: object, userdata: object, msg: object) -> None:
+            assert hasattr(msg, "topic") and hasattr(msg, "payload")
             self.push_message(msg.topic, msg.payload)
 
         client.on_connect = _on_connect
@@ -270,6 +277,7 @@ class MqttSource:
         client = self._client
         if client is not None:
             try:
+                assert hasattr(client, "loop_stop") and hasattr(client, "disconnect")
                 client.loop_stop()
                 client.disconnect()
             except Exception:  # pragma: no cover - best-effort teardown

@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
+from general_ludd.models.gateway import ModelProfile
 from general_ludd.models.provider_presets import (
     PROVIDER_FLAGSHIP_MODELS,
     PROVIDER_PRESETS,
@@ -33,7 +34,7 @@ class AutoConfigurator:
     def auto_configure_from_env(
         self,
         environ: dict[str, str] | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         """Build one ModelProfile dict per provider whose credential env var is set.
 
         Iterates every entry in PROVIDER_PRESETS. For each provider whose
@@ -49,10 +50,10 @@ class AutoConfigurator:
             List of profile dicts (valid kwargs for ``ModelProfile(**d)``).
         """
         env = environ if environ is not None else dict(os.environ)
-        profiles: list[dict[str, Any]] = []
+        profiles: list[dict[str, object]] = []
 
         for provider_name, preset in PROVIDER_PRESETS.items():
-            credential_env_var = preset["credential_env_var"]
+            credential_env_var = cast(str, preset["credential_env_var"])
             credential_value = env.get(credential_env_var, "")
             if not credential_value:
                 continue
@@ -110,33 +111,31 @@ class AutoConfigurator:
     def auto_configure_profiles(
         self,
         environ: dict[str, str] | None = None,
-    ) -> list[Any]:
+    ) -> list[ModelProfile]:
         """Like ``auto_configure_from_env`` but returns ModelProfile objects.
 
         The daemon and worker build gateways from ``ModelProfile`` instances;
         this helper returns those directly so the gateway construction site
         stays unchanged when an operator relies on env-var auto-config.
         """
-        from general_ludd.models.gateway import ModelProfile
-
-        return [ModelProfile(**p) for p in self.auto_configure_from_env(environ)]
+        return [ModelProfile(**cast(Any, p)) for p in self.auto_configure_from_env(environ)]
 
     def generate_profiles(
         self,
         provider: str,
-        scraped_models: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
+        scraped_models: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
         """Generate model profile dicts from scraped model data."""
         preset = get_provider_preset(provider)
         if preset is None:
             logger.warning("No preset for provider '%s', skipping auto-config", provider)
             return []
 
-        profiles: list[dict[str, Any]] = []
+        profiles: list[dict[str, object]] = []
         seen_ids: set[str] = set()
 
         for model in scraped_models:
-            model_id = model.get("id", "")
+            model_id = cast(str, model.get("id", ""))
             if not model_id:
                 continue
             profile_id = f"{provider}-{_safe_profile_id(model_id)}"
@@ -144,9 +143,9 @@ class AutoConfigurator:
                 continue
             seen_ids.add(profile_id)
 
-            pricing = model.get("pricing", {}) or {}
-            input_cost = _safe_float(pricing.get("prompt", "0"))
-            output_cost = _safe_float(pricing.get("completion", "0"))
+            pricing = cast(dict[str, Any], model.get("pricing", {}) or {})
+            input_cost = _safe_float(cast(str, pricing.get("prompt", "0")))
+            output_cost = _safe_float(cast(str, pricing.get("completion", "0")))
 
             roles = self._assign_roles(model)
             quality_class = self._assign_quality(model)
@@ -157,7 +156,7 @@ class AutoConfigurator:
                 "model_name": model_id,
                 "display_name": model.get("name", model_id),
                 "description": model.get("description", ""),
-                "context_window": int(model.get("context_length", 8192)),
+                "context_window": int(cast(int, model.get("context_length", 8192))),
                 "max_output_tokens": model.get("max_completion_tokens"),
                 "cost_per_input_token": input_cost,
                 "cost_per_output_token": output_cost,
@@ -181,10 +180,10 @@ class AutoConfigurator:
 
     def merge_profiles(
         self,
-        existing: list[dict[str, Any]],
-        scraped: list[dict[str, Any]],
+        existing: list[dict[str, object]],
+        scraped: list[dict[str, object]],
         provider: str,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         """Merge scraped models into existing profiles, preserving user overrides.
 
         New models are added. Existing models are updated with fresh metadata
@@ -194,7 +193,7 @@ class AutoConfigurator:
         existing_by_id = {p["model_profile_id"]: p for p in existing}
         user_fields = {"enabled", "user_priority", "role_names", "credential_alias"}
 
-        merged: list[dict[str, Any]] = []
+        merged: list[dict[str, object]] = []
         for new_p in new_profiles:
             pid = new_p["model_profile_id"]
             if pid in existing_by_id:
@@ -210,9 +209,9 @@ class AutoConfigurator:
         return merged
 
     @staticmethod
-    def _assign_roles(model: dict[str, Any]) -> list[str]:
-        model_name = model.get("name", "").lower()
-        model_id = model.get("id", "").lower()
+    def _assign_roles(model: dict[str, object]) -> list[str]:
+        model_name = cast(str, model.get("name", "")).lower()
+        model_id = cast(str, model.get("id", "")).lower()
         combined = f"{model_name} {model_id}"
 
         if any(w in combined for w in ("coder", "code-", "dev")):
@@ -226,11 +225,11 @@ class AutoConfigurator:
         return ["coder", "reviewer"]
 
     @staticmethod
-    def _assign_quality(model: dict[str, Any]) -> str:
-        model_name = model.get("name", "").lower()
-        model_id = model.get("id", "").lower()
+    def _assign_quality(model: dict[str, object]) -> str:
+        model_name = cast(str, model.get("name", "")).lower()
+        model_id = cast(str, model.get("id", "")).lower()
         combined = f"{model_name} {model_id}"
-        context = int(model.get("context_length", 0))
+        context = int(cast(int, model.get("context_length", 0)))
 
         if any(w in combined for w in ("pro", "ultra", "max", "opus", "sonnet")):
             return "high"
@@ -253,7 +252,7 @@ class ModelPrioritizer:
             raise ValueError(f"Invalid strategy '{strategy}'. Use one of: {self.VALID_STRATEGIES}")
         self._strategy = strategy
 
-    def rank(self, models: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def rank(self, models: list[dict[str, object]]) -> list[dict[str, object]]:
         """Rank models by the configured strategy. User priority overrides all."""
         if not models:
             return []
@@ -261,7 +260,7 @@ class ModelPrioritizer:
         sorted_models = sorted(models, key=self._score, reverse=True)
         return sorted_models
 
-    def _score(self, model: dict[str, Any]) -> float:
+    def _score(self, model: dict[str, object]) -> float:
         user_priority = model.get("user_priority", "")
         if user_priority == "prioritized":
             return 1e9
@@ -271,16 +270,16 @@ class ModelPrioritizer:
             return -500.0
 
         if self._strategy == "cheapest_first":
-            input_cost = float(model.get("cost_per_input_token", 0))
-            output_cost = float(model.get("cost_per_output_token", 0))
+            input_cost = float(cast(float, model.get("cost_per_input_token", 0)))
+            output_cost = float(cast(float, model.get("cost_per_output_token", 0)))
             return 1.0 / max(input_cost + output_cost, 1e-12)
 
         if self._strategy == "largest_context_first":
-            return float(model.get("context_window", 0))
+            return float(cast(float, model.get("context_window", 0)))
 
-        context = float(model.get("context_window", 8192))
+        context = float(cast(float, model.get("context_window", 8192)))
         context_score = min(context / 200000.0, 1.0)
-        input_cost = float(model.get("cost_per_input_token", 1e-6))
+        input_cost = float(cast(float, model.get("cost_per_input_token", 1e-6)))
         cost_score = 1.0 / max(input_cost * 1e6, 1.0)
         return context_score * 0.4 + cost_score * 0.6
 

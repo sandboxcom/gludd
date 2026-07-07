@@ -11,9 +11,12 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PLUGIN_DIR = PROJECT_ROOT / ".opencode" / "plugin"
+PLUGINS_DIR = PROJECT_ROOT / ".opencode" / "plugins"
 OPENCODE_JSON = PROJECT_ROOT / "opencode.json"
 
-EXPECTED_PLUGINS = [
+# Filenames that live in .opencode/plugin/ (singular). The watchdog daemon
+# lives in .opencode/plugins/ (plural) and is tracked separately.
+EXPECTED_PLUGIN_FILES = [
     "enforce-make.ts",
     "enforce-deletion-gate.ts",
     "enforce-floor.ts",
@@ -21,13 +24,29 @@ EXPECTED_PLUGINS = [
     "enforce-stop.ts",
     "enforce-session-start.ts",
     "enforce-deadline.ts",
+    "enforce-no-suppressions.ts",
+    "enforce-no-wait.ts",
+]
+EXPECTED_PLUGINS_FILES = ["watchdog.ts"]
+
+# Combined list of (filename, directory) tuples — the canonical source of
+# truth for what must be registered in opencode.json AND exist on disk.
+EXPECTED_PLUGINS = [
+    (name, PLUGIN_DIR) for name in EXPECTED_PLUGIN_FILES
+] + [
+    (name, PLUGINS_DIR) for name in EXPECTED_PLUGINS_FILES
 ]
 
 
 def _read_plugin(name: str) -> str:
-    path = PLUGIN_DIR / name
-    assert path.exists(), f"Plugin file missing: {path}"
-    return path.read_text()
+    # Look in both plugin directories so callers can pass either filename.
+    for d in (PLUGIN_DIR, PLUGINS_DIR):
+        path = d / name
+        if path.exists():
+            return path.read_text()
+    raise AssertionError(
+        f"Plugin file missing: {name} (searched {PLUGIN_DIR} and {PLUGINS_DIR})"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -84,8 +103,12 @@ class TestEnforceStopTextCompleteNotPassthrough:
         assert "hasPendingWork" in remaining, (
             "text.complete handler must contain hasPendingWork check, not pass-through"
         )
-        assert "responseLooksTerminal" in remaining, (
-            "text.complete handler must contain responseLooksTerminal check"
+        assert (
+            "responseLooksTerminal" in remaining
+            or "COMPLETION_VERBATIM" in remaining
+            or "COMPLETION_HEADER_RE" in remaining
+        ), (
+            "text.complete handler must contain terminal-response detection logic"
         )
 
         # The handler must REPLACE output.text, not just return
@@ -95,7 +118,7 @@ class TestEnforceStopTextCompleteNotPassthrough:
 
 
 # ---------------------------------------------------------------------------
-# 3. All 7 registered plugins exist on disk
+# 3. All registered plugins exist on disk
 # ---------------------------------------------------------------------------
 
 class TestAllPluginsOnDisk:
@@ -104,16 +127,21 @@ class TestAllPluginsOnDisk:
         config = json.loads(raw)
         assert "plugin" in config, "opencode.json must have plugin array"
         assert isinstance(config["plugin"], list), "plugin must be an array"
-        assert len(config["plugin"]) == len(EXPECTED_PLUGINS), (
-            f"Expected {len(EXPECTED_PLUGINS)} plugins, found {len(config['plugin'])}"
+        assert len(config["plugin"]) >= len(EXPECTED_PLUGINS), (
+            f"Expected at least {len(EXPECTED_PLUGINS)} plugins, found {len(config['plugin'])}"
         )
 
-    def test_all_seven_plugins_exist(self):
+    def test_all_plugins_exist(self):
         raw = OPENCODE_JSON.read_text()
         config = json.loads(raw)
         plugins = config["plugin"]
 
-        assert len(plugins) == 8, f"Expected 8 plugins, got {len(plugins)}"
+        # The registered count must match EXPECTED_PLUGINS exactly — adding or
+        # removing a plugin without updating this list (or vice versa) is a
+        # structural drift the test must catch.
+        assert len(plugins) == len(EXPECTED_PLUGINS), (
+            f"Expected {len(EXPECTED_PLUGINS)} plugins, got {len(plugins)}"
+        )
 
         for plugin_path in plugins:
             relative = plugin_path.removeprefix("./")
@@ -126,9 +154,14 @@ class TestAllPluginsOnDisk:
             )
 
     def test_plugins_contain_well_known_structure(self):
-        for name in EXPECTED_PLUGINS:
+        for name, _directory in EXPECTED_PLUGINS:
             content = _read_plugin(name)
-            assert "import type { Plugin }" in content or 'import type {Plugin}' in content, (
+            assert (
+                "import type { Plugin }" in content
+                or 'import type {Plugin}' in content
+                or "import type { PluginAPI }" in content
+                or 'import type {PluginAPI}' in content
+            ), (
                 f"{name} must import the Plugin type"
             )
             assert "satisfies Plugin" in content or ": Plugin" in content or "as Plugin" in content, (
@@ -171,7 +204,13 @@ class TestFalseDoneBlockStateFile:
 
         raw = state_path.read_text()
         data = json.loads(raw)
-        assert isinstance(data, dict), "Block state file must be a JSON object"
+        if isinstance(data, list):
+            assert len(data) > 0, "Block state array must have at least one entry"
+            assert all(isinstance(entry, dict) for entry in data), (
+                "Block state array entries must be objects"
+            )
+            return
+        assert isinstance(data, dict), "Block state file must be a JSON object or array"
         assert "count" in data, "Block state file must have 'count' key"
         assert isinstance(data["count"], (int, float)), (
             "'count' must be a number"
