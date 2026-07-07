@@ -132,11 +132,17 @@ SNAKE_PROMPT = textwrap.dedent("""\
     - Head coordinate is grid position: [x, y] where x is column, y is row
 
     Lifecycle requirements (MANDATORY — tests will verify each transition):
-    - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-    - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-    - During "playing": `tick()` advances the game; `score` (int) starts at 0 and increments on positive events (eating food).
-    - Game-over detection: when a lose condition triggers (wall or self collision), `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()` after game_over is a no-op (returns without changing state).
-    - `restart()` method: resets ALL state (score=0, game_over=False, snake to initial center position, food respawned, state="ready"). The instance is reusable.
+    - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+      "playing". The constructor does NOT immediately begin play.
+    - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+      If called when already playing, no-ops or raises.
+    - During "playing": `tick()` advances the game; `score` (int) starts at 0 and
+      increments on positive events (eating food).
+    - Game-over detection: when a lose condition triggers (wall or self collision),
+      `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()`
+      after game_over is a no-op (returns without changing state).
+    - `restart()` method: resets ALL state (score=0, game_over=False, snake to initial
+      center position, food respawned, state="ready"). The instance is reusable.
 
     Output ONLY the Python code in a ```python fenced block. Start with `import random` and `class Snake:`.
     Include the closing ``` after the code.

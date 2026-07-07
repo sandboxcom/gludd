@@ -226,11 +226,17 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Eating food: when head overlaps food, grow by 1, increment score, spawn new food
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `tick()` advances the game; `score` (int) starts at 0 and increments on positive events (eating food).
-            - Game-over detection: when a lose condition triggers (wall or self collision), `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()` after game_over is a no-op (returns without changing state).
-            - `restart()` method: resets ALL state (score=0, game_over=False, snake to initial center position, food respawned, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score` (int) starts at 0 and
+              increments on positive events (eating food).
+            - Game-over detection: when a lose condition triggers (wall or self collision),
+              `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()`
+              after game_over is a no-op (returns without changing state).
+            - `restart()` method: resets ALL state (score=0, game_over=False, snake to initial
+              center position, food respawned, state="ready"). The instance is reusable.
 
             Output ONLY the Python code. Start with `import random` and `class Snake:`.
         """).strip(),
@@ -274,11 +280,17 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Piece preview: next piece shown via render_state
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `tick()` advances the game; `score` (int) starts at 0 and increments on positive events (clearing one or more rows).
-            - Game-over detection: when a lose condition triggers (piece locks above visible grid), `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()` after game_over is a no-op (returns without changing state).
-            - `restart()` method: resets ALL state (score=0, game_over=False, grid cleared, new piece spawned, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score` (int) starts at 0 and
+              increments on positive events (clearing one or more rows).
+            - Game-over detection: when a lose condition triggers (piece locks above visible
+              grid), `state` transitions to "game_over" and `game_over` (bool) becomes True.
+              `tick()` after game_over is a no-op (returns without changing state).
+            - `restart()` method: resets ALL state (score=0, game_over=False, grid cleared,
+              new piece spawned, state="ready"). The instance is reusable.
 
             Output ONLY the Python code. Start with `import random` and `class Tetris:`.
         """).strip(),
@@ -323,12 +335,19 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Game over: mine revealed
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": revealing cells advances the game; `score` (int, e.g. cells_revealed) starts at 0 and increments on positive events (revealing a safe cell).
-            - Game-over detection: when a lose condition triggers (mine revealed), `state` transitions to "game_over" and `game_over` (bool) becomes True. Revealing cells after game_over is a no-op.
-            - Win detection: when a win condition triggers (all non-mine cells revealed), `state` transitions to "won" and `won` (bool) becomes True.
-            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, grid reset with new random mines, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": revealing cells advances the game; `score` (int, e.g.
+              cells_revealed) starts at 0 and increments on positive events (revealing safe cell).
+            - Game-over detection: when a lose condition triggers (mine revealed), `state`
+              transitions to "game_over" and `game_over` (bool) becomes True. Revealing cells
+              after game_over is a no-op.
+            - Win detection: when a win condition triggers (all non-mine cells revealed),
+              `state` transitions to "won" and `won` (bool) becomes True.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, grid
+              reset with new random mines, state="ready"). The instance is reusable.
 
             Output ONLY the Python code. Start with `import random` and `class Minesweeper:`.
         """).strip(),
@@ -379,12 +398,19 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Game over: when a player has no valid moves
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `move()` advances the game; `score` (int, e.g. opponent pieces captured) starts at 0 and increments on positive events (capturing an opponent piece).
-            - Game-over detection: when a lose condition triggers (current player has no valid moves), `state` transitions to "game_over" and `game_over` (bool) becomes True. `move()` after game_over is a no-op.
-            - Win detection: when a win condition triggers (opponent has no pieces or no valid moves), `state` transitions to "won" and `won` (bool) becomes True.
-            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, board to standard starting position with 12 pieces per player, current_player=1, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `move()` advances the game; `score` (int, e.g. opponent pieces
+              captured) starts at 0 and increments on positive events (capturing piece).
+            - Game-over detection: when a lose condition triggers (current player has no valid
+              moves), `state` transitions to "game_over" and `game_over` (bool) becomes True.
+              `move()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (opponent has no pieces or no valid
+              moves), `state` transitions to "won" and `won` (bool) becomes True.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, board
+              to standard starting position, current_player=1, state="ready"). Reusable.
 
             Output ONLY the Python code. Start with `class Checkers:`.
         """).strip(),
@@ -431,12 +457,20 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Difficulty curve: obstacle density increases as distance_traveled increases
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `tick()` advances the game; `score` (int, e.g. distance_traveled) starts at 0 and increments on positive events (each row traveled).
-            - Game-over detection: when a lose condition triggers (collision with tree or rock), `state` transitions to "game_over" and `crashed`/`game_over` (bool) becomes True. `tick()` after game_over is a no-op.
-            - Win detection: when a win condition triggers (reaching course bottom / y >= course_h), `state` transitions to "won" and `finished`/`won` (bool) becomes True.
-            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, crashed=False, skier at center-top, obstacles regenerated, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score` (int, e.g.
+              distance_traveled) starts at 0 and increments on positive events (row traveled).
+            - Game-over detection: when a lose condition triggers (collision with tree or
+              rock), `state` transitions to "game_over" and `crashed`/`game_over` (bool) is
+              True. `tick()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (reaching course bottom / y >=
+              course_h), `state` transitions to "won" and `finished`/`won` (bool) becomes True.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False,
+              crashed=False, skier at center-top, obstacles regenerated, state="ready").
+              The instance is reusable.
 
             Output ONLY the Python code. Start with `import random` and `class SkiFree:`.
         """).strip(),
@@ -487,12 +521,20 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Banana must travel in an arc; angle 0=right, 90=straight up; velocity in m/s
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `throw()` advances the game; `score` (int, e.g. successful hits) starts at 0 and increments on positive events (hitting opponent gorilla).
-            - Game-over detection: when a lose condition triggers (your gorilla is hit), `state` transitions to "game_over" and `game_over` (bool) becomes True. `throw()` after game_over is a no-op.
-            - Win detection: when a win condition triggers (opponent gorilla is hit), `state` transitions to "won", `won` (bool) becomes True, and `winner` is set.
-            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, winner=None, skyline regenerated, gorillas repositioned, current_player=1, wind randomized, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `throw()` advances the game; `score` (int, e.g. successful
+              hits) starts at 0 and increments on positive events (hitting opponent gorilla).
+            - Game-over detection: when a lose condition triggers (your gorilla is hit),
+              `state` transitions to "game_over" and `game_over` (bool) becomes True.
+              `throw()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (opponent gorilla is hit), `state`
+              transitions to "won", `won` (bool) becomes True, and `winner` is set.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False,
+              winner=None, skyline regenerated, gorillas repositioned, current_player=1,
+              wind randomized, state="ready"). The instance is reusable.
 
             Output ONLY the Python code. Start with `import math` and `class Banana:`.
         """).strip(),
@@ -540,11 +582,16 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `score1`, `score2`, `paddle_height`
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `tick()` advances the game; `score1`/`score2` (ints) start at 0 and increment on positive events (ball passes opponent paddle).
-            - Game-over detection: Pong is endless by default; `game_over` stays False. (Optional: if a score cap is implemented, transition to "game_over" when reached.)
-            - `restart()` method: resets ALL state (score1=0, score2=0, ball centered with random direction, paddles centered, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score1`/`score2` (ints) start at 0
+              and increment on positive events (ball passes opponent paddle).
+            - Game-over detection: Pong is endless by default; `game_over` stays False.
+              (Optional: if a score cap is implemented, transition to "game_over" when reached.)
+            - `restart()` method: resets ALL state (score1=0, score2=0, ball centered with
+              random direction, paddles centered, state="ready"). The instance is reusable.
 
             Output ONLY the Python code. Start with `import random` and `class Pong:`.
         """).strip(),
@@ -594,12 +641,19 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `bricks` (2D list of bool), `score`, `lives`, `game_over`, `won`
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `tick()` advances the game; `score` (int) starts at 0 and increments on positive events (destroying a brick).
-            - Game-over detection: when a lose condition triggers (lives reach 0), `state` transitions to "game_over" and `game_over` (bool) becomes True. `tick()` after game_over is a no-op.
-            - Win detection: when a win condition triggers (all bricks destroyed), `state` transitions to "won" and `won` (bool) becomes True.
-            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, ball on paddle, bricks regenerated, lives=3, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `tick()` advances the game; `score` (int) starts at 0 and
+              increments on positive events (destroying a brick).
+            - Game-over detection: when a lose condition triggers (lives reach 0), `state`
+              transitions to "game_over" and `game_over` (bool) becomes True. `tick()` after
+              game_over is a no-op.
+            - Win detection: when a win condition triggers (all bricks destroyed), `state`
+              transitions to "won" and `won` (bool) becomes True.
+            - `restart()` method: resets ALL state (score=0, game_over=False, won=False, ball
+              on paddle, bricks regenerated, lives=3, state="ready"). The instance is reusable.
 
             Output ONLY the Python code. Start with `import random` and `class Breakout:`.
         """).strip(),
@@ -644,11 +698,17 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `steps` (int)
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `input()` advances the player; `score` (int, e.g. negative of steps or efficiency metric) starts at 0 and is tracked alongside `steps`.
-            - Win detection: when a win condition triggers (player reaches end position), `state` transitions to "won" and `won` (bool) becomes True. `input()` after won is a no-op.
-            - `restart()` method: resets ALL state (player at start, steps=0, won=False, game_over=False, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `input()` advances the player; `score` (int, e.g. negative of
+              steps or efficiency metric) starts at 0 and is tracked alongside `steps`.
+            - Win detection: when a win condition triggers (player reaches end position),
+              `state` transitions to "won" and `won` (bool) becomes True. `input()` after won
+              is a no-op.
+            - `restart()` method: resets ALL state (player at start, steps=0, won=False,
+              game_over=False, state="ready"). The instance is reusable.
 
             Output ONLY the Python code. Start with `import random` and `class MazeRunner:`.
         """).strip(),
@@ -695,12 +755,19 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               e.g. "h e _ _ o")
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `guess()` advances the game; `score` (int, e.g. correct letter count) starts at 0 and increments on positive events (guessing a correct letter).
-            - Game-over detection: when a lose condition triggers (wrong_guesses reaches max_guesses), `state` transitions to "game_over" and `game_over` (bool) becomes True with `won=False`. `guess()` after game_over is a no-op.
-            - Win detection: when a win condition triggers (all letters of secret_word guessed), `state` transitions to "won" and `won` (bool) becomes True.
-            - `restart()` method: resets ALL state (new secret word chosen, guessed_letters cleared, wrong_guesses=0, game_over=False, won=False, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `guess()` advances the game; `score` (int, e.g. correct letter
+              count) starts at 0 and increments on positive events (correct letter guessed).
+            - Game-over detection: when a lose condition triggers (wrong_guesses reaches
+              max_guesses), `state` transitions to "game_over" and `game_over` (bool) becomes
+              True with `won=False`. `guess()` after game_over is a no-op.
+            - Win detection: when a win condition triggers (all letters of secret_word
+              guessed), `state` transitions to "won" and `won` (bool) becomes True.
+            - `restart()` method: resets ALL state (new secret word chosen, guessed_letters
+              cleared, wrong_guesses=0, game_over=False, won=False, state="ready"). Reusable.
 
             Output ONLY the Python code. Start with `import random` and `class WordGuesser:`.
         """).strip(),
@@ -750,11 +817,17 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `game_over` (bool), `first_flip` (int or None)
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `flip()` advances the game; `score` (int, e.g. pairs matched) starts at 0 and increments on positive events (matching a pair).
-            - Win detection: when a win condition triggers (all pairs matched), `state` transitions to "won" and `won`/`game_over` (bool) becomes True.
-            - `restart()` method: resets ALL state (cards reshuffled, flipped=False, matched=False, attempts=0, first_flip=None, game_over=False, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `flip()` advances the game; `score` (int, e.g. pairs matched)
+              starts at 0 and increments on positive events (matching a pair).
+            - Win detection: when a win condition triggers (all pairs matched), `state`
+              transitions to "won" and `won`/`game_over` (bool) becomes True.
+            - `restart()` method: resets ALL state (cards reshuffled, flipped=False,
+              matched=False, attempts=0, first_flip=None, game_over=False, state="ready").
+              The instance is reusable.
 
             Output ONLY the Python code. Start with `import random` and `class MemoryMatch:`.
         """).strip(),
@@ -805,12 +878,19 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               `game_over` (bool), `draw` (bool)
 
             Lifecycle requirements (MANDATORY — tests will verify each transition):
-            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT "playing". The constructor does NOT immediately begin play.
-            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None. If called when already playing, no-ops or raises.
-            - During "playing": `move()` advances the game; `score` (int, e.g. marks placed by human) starts at 0 and increments on positive events (placing a mark).
-            - Game-over detection: when an end condition triggers (win or draw), `state` transitions to "game_over" and `game_over` (bool) becomes True. `move()` after game_over is a no-op.
-            - Win detection: when a win condition triggers (three in a row), `winner` is set and `state` becomes "won" (or "game_over" with winner populated).
-            - `restart()` method: resets ALL state (board cleared, current_player="X", winner=None, game_over=False, draw=False, state="ready"). The instance is reusable.
+            - Initial state: instance attribute `state` MUST start at "ready" (or "menu") — NOT
+              "playing". The constructor does NOT immediately begin play.
+            - `start()` method: transitions state from "ready"/"menu" to "playing". Returns None.
+              If called when already playing, no-ops or raises.
+            - During "playing": `move()` advances the game; `score` (int, e.g. marks placed by
+              human) starts at 0 and increments on positive events (placing a mark).
+            - Game-over detection: when an end condition triggers (win or draw), `state`
+              transitions to "game_over" and `game_over` (bool) becomes True. `move()` after
+              game_over is a no-op.
+            - Win detection: when a win condition triggers (three in a row), `winner` is set
+              and `state` becomes "won" (or "game_over" with winner populated).
+            - `restart()` method: resets ALL state (board cleared, current_player="X",
+              winner=None, game_over=False, draw=False, state="ready"). The instance is reusable.
 
             Output ONLY the Python code. Start with `import random` and `class TicTacToe:`.
         """).strip(),
@@ -1105,12 +1185,10 @@ def _get_state_dict(instance: Any) -> dict[str, Any]:
     merged: dict[str, Any] = dict(instance.__dict__)
     found = _find_callable_attr(instance, _STATE_NAMES)
     if found is not None:
-        try:
+        with contextlib.suppress(Exception):
             result = found[1]()
             if isinstance(result, dict):
                 merged.update(result)
-        except Exception:
-            pass
     return _copy.deepcopy(merged)
 
 
@@ -1456,7 +1534,9 @@ def _verify_pong_features(mod: Any) -> list[str]:
 
 
 def _verify_breakout_features(mod: Any) -> list[str]:
-    return _verify_tick_game_features(mod, preferred="Breakout")
+    failures = _verify_tick_game_features(mod, preferred="Breakout")
+    failures.extend(run_lifecycle_checks("breakout", mod))
+    return failures
 
 
 def _verify_minesweeper_features(mod: Any) -> list[str]:
@@ -1497,6 +1577,7 @@ def _verify_minesweeper_features(mod: Any) -> list[str]:
             "no flag-like method found (flag/mark/toggle_flag/set_flag); "
             "minesweeper must support flagging"
         )
+    failures.extend(run_lifecycle_checks("minesweeper", mod))
     return failures
 
 
@@ -1532,6 +1613,7 @@ def _verify_checkers_features(mod: Any) -> list[str]:
         failures.append(
             "no current-player-like attribute found; checkers must track whose turn"
         )
+    failures.extend(run_lifecycle_checks("checkers", mod))
     return failures
 
 
@@ -1592,6 +1674,7 @@ def _verify_banana_features(mod: Any) -> list[str]:
             "no skyline-like attribute found (list of >=3 building heights); "
             "banana must track the city skyline"
         )
+    failures.extend(run_lifecycle_checks("banana", mod))
     return failures
 
 
@@ -1601,6 +1684,7 @@ def _verify_maze_runner_features(mod: Any) -> list[str]:
         return failures
     if _find_callable_attr(instance, _INPUT_NAMES) is None:
         failures.append("no input-like method found")
+    failures.extend(run_lifecycle_checks("maze_runner", mod))
     return failures
 
 
@@ -1616,6 +1700,7 @@ def _verify_word_guesser_features(mod: Any) -> list[str]:
         guess[1]("a")
     except Exception as exc:
         failures.append(f"guess raised: {type(exc).__name__}: {exc}")
+    failures.extend(run_lifecycle_checks("word_guesser", mod))
     return failures
 
 
@@ -1631,6 +1716,7 @@ def _verify_memory_match_features(mod: Any) -> list[str]:
         flip[1](0)
     except Exception as exc:
         failures.append(f"flip raised: {type(exc).__name__}: {exc}")
+    failures.extend(run_lifecycle_checks("memory_match", mod))
     return failures
 
 
@@ -1648,6 +1734,7 @@ def _verify_tic_tac_toe_features(mod: Any) -> list[str]:
             failures.append("move result dict missing 'valid' key")
     except Exception as exc:
         failures.append(f"move raised: {type(exc).__name__}: {exc}")
+    failures.extend(run_lifecycle_checks("tic_tac_toe", mod))
     return failures
 
 
@@ -2295,7 +2382,7 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
             matched_one = False
             for _val, ids in value_to_ids.items():
                 if len(ids) >= 2:
-                    try:
+                    with contextlib.suppress(Exception):
                         # Ensure clean turn state before each pair
                         with contextlib.suppress(AttributeError, TypeError):
                             instance.first_flip = None
@@ -2304,8 +2391,6 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
                         if isinstance(r2, dict) and r2.get("match"):
                             matched_one = True
                             break
-                    except Exception:
-                        pass
             if not matched_one:
                 break
         # Success if game_over, OR all cards matched (model may not set game_over)
@@ -2386,12 +2471,10 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         return st is not None and str(st).lower() in ("playing", "active", "running", "in_progress", "play")
 
     if check_id == "lifecycle_score_starts_zero":
-        try:
+        with contextlib.suppress(Exception):
             start_found = _find_callable_attr(instance, _START_NAMES)
             if start_found is not None:
                 start_found[1]()
-        except Exception:
-            pass
         state = _get_state_dict(instance)
         score_name = _find_score_attribute(state)
         if score_name is None:
@@ -2402,12 +2485,10 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
             return True
 
     if check_id == "lifecycle_score_increments":
-        try:
+        with contextlib.suppress(Exception):
             start_found = _find_callable_attr(instance, _START_NAMES)
             if start_found is not None:
                 start_found[1]()
-        except Exception:
-            pass
         state_before = _get_state_dict(instance)
         score_name = _find_score_attribute(state_before)
         if score_name is None:
@@ -2416,13 +2497,11 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         tick_found = _find_callable_attr(instance, _TICK_NAMES)
         if tick_found is None:
             return True
-        try:
+        with contextlib.suppress(Exception):
             for _ in range(50):
                 tick_found[1]()
                 if getattr(instance, "game_over", False):
                     break
-        except Exception:
-            pass
         state_after = _get_state_dict(instance)
         after = state_after.get(score_name, 0)
         try:
@@ -2431,44 +2510,36 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
             return True
 
     if check_id == "lifecycle_game_over":
-        try:
+        with contextlib.suppress(Exception):
             start_found = _find_callable_attr(instance, _START_NAMES)
             if start_found is not None:
                 start_found[1]()
-        except Exception:
-            pass
         tick_found = _find_callable_attr(instance, _TICK_NAMES)
         if tick_found is None:
             return True
-        try:
+        with contextlib.suppress(Exception):
             for _ in range(300):
                 tick_found[1]()
                 if getattr(instance, "game_over", False):
                     return True
-        except Exception:
-            pass
         return getattr(instance, "game_over", False)
 
     if check_id == "lifecycle_game_over_idempotent":
         if not getattr(instance, "game_over", False):
             tick_found = _find_callable_attr(instance, _TICK_NAMES)
             if tick_found is not None:
-                try:
+                with contextlib.suppress(Exception):
                     for _ in range(300):
                         tick_found[1]()
                         if getattr(instance, "game_over", False):
                             break
-                except Exception:
-                    pass
         if not getattr(instance, "game_over", False):
             return True
         state_before = _get_state_dict(instance)
         tick_found = _find_callable_attr(instance, _TICK_NAMES)
         if tick_found is not None:
-            try:
+            with contextlib.suppress(Exception):
                 tick_found[1]()
-            except Exception:
-                pass
         state_after = _get_state_dict(instance)
         return state_after.get("game_over") == state_before.get("game_over")
 
@@ -2484,10 +2555,8 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         score_name = _find_score_attribute(state)
         score_zero = True
         if score_name is not None:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 score_zero = float(state.get(score_name, 0)) == 0
-            except (TypeError, ValueError):
-                pass
         game_over_false = state.get("game_over") is False or getattr(instance, "game_over", None) is False
         st = state.get("state") or getattr(instance, "state", None)
         state_reset = st is None or str(st).lower() in ("ready", "menu", "idle", "start", "not_started", "initialized")
