@@ -2,6 +2,40 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## [0.1.0-beta.2] — 2026-07-06
+
+Beta 2: GPU/compute provider expansion, typing hardening, and guardrail codification.
+
+### Added
+
+- 13 new GPU/compute model providers: Baseten, Lambda Labs, Together AI, Fireworks AI, Replicate, RunPod, Modal, CoreWeave, Mistral, Cohere, NVIDIA NIM, Perplexity, Hugging Face
+- Baseten + Lambda Labs connector modules (with deployment/instance management)
+- Auto-discovery: providers auto-register when their credential env var is set
+- PROVIDER_FLAGSHIP_MODELS for sensible defaults
+- Self-improvement routing to gludd project workspace + hot-reload on commit (SelfUpdateAppliedEvent)
+- HotReloader.reload_changed_modules batch method (modified/added/deleted)
+- E2E failover tests: timeout/500/DNS/429 failover, Retry-After, exponential backoff, circuit breaker, half-open recovery, budget gate
+- E2E observability tests (13 tests)
+- E2E sandbox backend tests (21 tests)
+- Game-test full-play-lifecycle prompts + 84 check tuples + _game_lifecycle.py module
+- enforce-no-suppressions.ts plugin (3-layer guardrail preventing lint-suppression reintroduction)
+- enforce-no-wait.ts plugin (3-layer guardrail: never wait on gate; CI is the gate)
+- Makefile submodule-init/update/status/pin targets
+- Provider onboarding playbook (docs/PROVIDER_ONBOARDING.md)
+
+### Changed
+
+- conftest.py: autouse GLUDD_ALLOW_NO_AUTH=1 fixture (recovers ~400-550 daemon-test failures)
+- Lint-suppression cleanup: removed ALL # noqa + # type: ignore from src/ and tests/
+- test_type_safety_guardrails.py: warnings.warn → assert (3 hard + 4 aspirational ratcheted)
+- Strict typing refactor: ~400+ Any removed across connectors/, issue_sources/, routers/
+
+### Fixed
+
+- Game-test nondeterminism: 10/10 PASS over 25 iterations
+- Makefile ship-commit target added
+- Plugin count test reconciled with 10 actual plugins
+
 ## [0.1.0-beta.1] — 2026-07-06
 
 Beta 1: enforcement infrastructure, game building, CI fixes, and honesty cleanup.
