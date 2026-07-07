@@ -64,14 +64,11 @@ EXPECTED_ROUTER_COUNT = 29
 # specifically; anything else is a hard failure. Each entry MUST link to the
 # offending routers in a comment so the fix path is obvious.
 #
-# - ("GET", "/api/deployments"):
-#       compute.py:402 (returns dict[str, object] with provider/model fields)
-#       todos.py:569  (returns list[dict[str, str]] with instance_id/status)
-#   todos.register is called AFTER compute.register, so the todos handler
-   # silently shadows compute's richer response. Almost certainly a bug.
-KNOWN_DUPLICATE_ROUTE_KEYS: frozenset[tuple[str, str]] = frozenset({
-    ("GET", "/api/deployments"),
-})
+# No known duplicates. The previous ("GET", "/api/deployments") collision
+# between compute.py:402 (dict[str, object] with provider/model fields) and
+# todos.py:569 (list[dict[str, str]] with instance_id/status) was resolved by
+# deleting the legacy todos.py handler — compute.py is now the sole registrant.
+KNOWN_DUPLICATE_ROUTE_KEYS: frozenset[tuple[str, str]] = frozenset()
 
 
 def _make_app_with_routers() -> FastAPI:
@@ -136,12 +133,10 @@ class TestRegisterAllRouters:
 
         FastAPI silently shadows the first handler with the second when
         two routes share a key — a class of bug introduced by a careless
-        new endpoint. New duplicates are hard-failures; the existing
-        collision on ``GET /api/deployments`` (registered by both
-        ``compute.py:402`` and ``todos.py:569``) is a known pre-existing
-        bug pinned in ``KNOWN_DUPLICATE_ROUTE_KEYS``. Removing an entry
-        from that set (because the underlying collision was fixed) is an
-        intentional, flagged act.
+        new endpoint. New duplicates are hard-failures. Pre-existing
+        collisions are pinned in ``KNOWN_DUPLICATE_ROUTE_KEYS``; removing
+        an entry from that set (because the underlying collision was
+        fixed) is an intentional, flagged act.
         """
         app = _make_app_with_routers()
         keys = _route_keys(app)

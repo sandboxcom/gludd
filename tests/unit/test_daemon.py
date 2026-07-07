@@ -142,7 +142,10 @@ class TestDaemonApp:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/deployments")
             assert resp.status_code == 200
-            assert isinstance(resp.json(), list)
+            body = resp.json()
+            assert isinstance(body, dict)
+            assert "deployments" in body
+            assert isinstance(body["deployments"], list)
 
 
 class TestDaemonStartupConfig:

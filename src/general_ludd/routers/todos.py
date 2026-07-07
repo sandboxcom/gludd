@@ -566,14 +566,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "config_file_count": config_file_count,
         }
 
-    @app.get("/api/deployments")
-    async def api_deployments() -> list[dict[str, str]]:
-        instances = getattr(app.state, "_compute_deployments", None) or {}
-        return [
-            {"instance_id": i.instance_id, "status": i.status}
-            for i in instances.values()
-        ]
-
     @app.post("/admin/log-level")
     async def admin_log_level(req: LogLevelRequest) -> dict[str, str]:
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}

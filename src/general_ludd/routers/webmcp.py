@@ -338,7 +338,7 @@ _ENDPOINTS: list[dict[str, object]] = [
     {
         "method": "GET",
         "path": "/api/deployments",
-        "purpose": "List active compute deployments (instance_id + status).",
+        "purpose": "List compute deployments from the registry ({instance_id, provider, model_name, state, ...}).",
         "auth_required": True,
     },
     # ── Spend limiter ────────────────────────────────────────────────────────

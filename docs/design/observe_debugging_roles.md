@@ -597,10 +597,10 @@ For each role: **inputs/vars · connector KINDs pulled · correlation/join strat
   flags model-deployment misconfig — e.g. requested GPU/mem below the model's
   known footprint, replica count of 1 for a saturated service, batch/concurrency
   settings inconsistent with observed queue depth. It reads the model deployment
-  spec (via the existing `/api/deployments` endpoint in `routers/todos.py`,
-  which already returns `{instance_id, status}`; extend its payload or add a
-  detail endpoint to expose resource requests) and compares against observed
-  `metrics`. Lives in `src/general_ludd/observe/model_deploy_check.py`.
+  spec (via the existing `/api/deployments` endpoint in `routers/compute.py`,
+  which returns `{deployments: [{instance_id, provider, model_name, state, ...}]}`;
+  extend its payload or add a detail endpoint to expose resource requests) and
+  compares against observed `metrics`. Lives in `src/general_ludd/observe/model_deploy_check.py`.
 - **Outputs:** `saturation_capacity_result.json` =
   `{saturated_nodes:[{node, cpu_pct, mem_pct, oom_events:int}],
   capacity_findings:[...], model_deploy_findings:[Finding...],
