@@ -103,6 +103,7 @@
 6. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
 7. **verify-remote SHA parameter** — RESOLVED (was suspected bug). Fix: `refs/heads/$$BR` pin at Makefile:1075. Test: `tests/unit/test_verify_remote_recipe.py`.
 8. **check-skills-frontmatter** — DONE. Script at `scripts/check_skills_frontmatter.py`, Makefile target at line 1852, wired into `gate` at line 298.
+9. **False "8 GPU providers" claim in `4e9d97fc`** — commit message claims "8 GPU providers" but only 5 were added (mistral, cohere, nvidia, perplexity, huggingface). Commit is pushed with descendants; NOT amended per no-force-push policy. Audit doc recommended 10; 5 remain unimplemented (google, cloudflare, databricks, azure-ai-foundry, ai21). See Next Steps #9 for backlog.
 
 ## Next Steps
 
@@ -114,6 +115,7 @@
 6. [ ] **Lift coverage** to gate threshold (strict-typing burn-down may still be open — check if typecheck errors are related).
 7. [ ] **Wire the 6 new audit roles into a playbook** — single `gludd audit-plugins` command orchestrating all check roles together.
 8. [ ] **Add integration tests for 6 new roles** — `tests/integration/test_audit_roles.py` (file exists as untracked — verify completeness).
+9. [ ] **Implement 5 missing GPU providers** — `4e9d97fc` claimed "8 GPU providers" but only 5 landed (mistral, cohere, nvidia, perplexity, huggingface). Remaining: google, cloudflare, databricks, azure-ai-foundry, ai21. Audit doc recommended 10 total.
 
 ## Current Gate Status (2026-07-07)
 <!-- gate:begin -->

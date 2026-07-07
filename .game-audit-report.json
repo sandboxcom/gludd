@@ -1,5 +1,5 @@
 {
-  "report_generated": "2026-07-07T05:45:40Z",
+  "report_generated": "2026-07-07T15:44:26Z",
   "games": {
     "snake": {
       "game_id": "snake",
@@ -62,15 +62,15 @@
         }
       },
       "tokens_in": 522,
-      "tokens_out": 759,
+      "tokens_out": 730,
       "tool_calls": 0,
-      "content_len": 2849,
+      "content_len": 2901,
       "model": "unknown",
       "phases": {
-        "model_call": 6515.4,
-        "extract_code": 0.0,
-        "ast_parse": 0.9,
-        "game_verify": 1.6
+        "model_call": 6153.3,
+        "extract_code": 0.1,
+        "ast_parse": 1.8,
+        "game_verify": 2.5
       },
       "errors": [],
       "gaps": [],
@@ -137,15 +137,15 @@
         }
       },
       "tokens_in": 584,
-      "tokens_out": 2285,
+      "tokens_out": 2337,
       "tool_calls": 0,
-      "content_len": 9008,
+      "content_len": 9108,
       "model": "unknown",
       "phases": {
-        "model_call": 14347.4,
-        "extract_code": 0.1,
-        "ast_parse": 2.5,
-        "game_verify": 2.9
+        "model_call": 14838.9,
+        "extract_code": 0.2,
+        "ast_parse": 6.4,
+        "game_verify": 6.1
       },
       "errors": [],
       "gaps": [],
@@ -158,7 +158,7 @@
       "game_id": "minesweeper",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 11,
+      "checks_passed": 12,
       "checks_total": 14,
       "checks": {
         "import_and_instantiate": {
@@ -178,7 +178,7 @@
           "desc": "revealing a 0 cell auto-reveals adjacent cells"
         },
         "flag_toggle": {
-          "passed": false,
+          "passed": true,
           "desc": "flag() toggles between flagged/unflagged"
         },
         "win_detection": {
@@ -219,21 +219,19 @@
         }
       },
       "tokens_in": 613,
-      "tokens_out": 1089,
+      "tokens_out": 1197,
       "tool_calls": 0,
-      "content_len": 4285,
+      "content_len": 4650,
       "model": "unknown",
       "phases": {
-        "model_call": 8354.1,
-        "extract_code": 0.0,
-        "ast_parse": 1.0,
-        "game_verify": 2.4
+        "model_call": 8679.0,
+        "extract_code": 0.1,
+        "ast_parse": 1.1,
+        "game_verify": 3.0
       },
       "errors": [],
       "gaps": [],
-      "feature_failures": [
-        "reveal returned unexpected value: 'game_not_started'"
-      ]
+      "feature_failures": []
     },
     "checkers": {
       "game_id": "checkers",
@@ -300,15 +298,15 @@
         }
       },
       "tokens_in": 728,
-      "tokens_out": 2431,
+      "tokens_out": 2557,
       "tool_calls": 0,
-      "content_len": 9377,
+      "content_len": 9543,
       "model": "unknown",
       "phases": {
-        "model_call": 22541.5,
-        "extract_code": 0.1,
-        "ast_parse": 2.8,
-        "game_verify": 2.6
+        "model_call": 18045.2,
+        "extract_code": 0.2,
+        "ast_parse": 6.8,
+        "game_verify": 5.9
       },
       "errors": [],
       "gaps": [],
@@ -318,7 +316,7 @@
       "game_id": "skifree",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 7,
+      "checks_passed": 9,
       "checks_total": 13,
       "checks": {
         "import_and_instantiate": {
@@ -350,7 +348,7 @@
           "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
         },
         "lifecycle_start": {
-          "passed": false,
+          "passed": true,
           "desc": "calling start() transitions state to 'playing'"
         },
         "lifecycle_score_starts_zero": {
@@ -358,7 +356,7 @@
           "desc": "score is 0 at start of play"
         },
         "lifecycle_score_increments": {
-          "passed": false,
+          "passed": true,
           "desc": "score increases after positive event"
         },
         "lifecycle_game_over": {
@@ -375,15 +373,15 @@
         }
       },
       "tokens_in": 677,
-      "tokens_out": 1203,
+      "tokens_out": 1149,
       "tool_calls": 0,
-      "content_len": 4276,
+      "content_len": 4217,
       "model": "unknown",
       "phases": {
-        "model_call": 10467.9,
+        "model_call": 8659.2,
         "extract_code": 0.0,
-        "ast_parse": 1.3,
-        "game_verify": 2.3
+        "ast_parse": 1.0,
+        "game_verify": 2.4
       },
       "errors": [],
       "gaps": [],
@@ -452,20 +450,19 @@
         }
       },
       "tokens_in": 767,
-      "tokens_out": 1435,
+      "tokens_out": 1341,
       "tool_calls": 0,
-      "content_len": 5988,
+      "content_len": 5579,
       "model": "unknown",
       "phases": {
-        "model_call": 12744.5,
-        "extract_code": 0.1,
-        "ast_parse": 1.4,
-        "game_verify": 1.8
+        "model_call": 12486.8,
+        "extract_code": 0.2,
+        "ast_parse": 2.5,
+        "game_verify": 2.7
       },
       "errors": [],
       "gaps": [],
       "feature_failures": [
-        "throw trajectory must be a non-empty list, got []",
         "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='game_over', won_attr='won')"
       ]
     },
@@ -530,15 +527,15 @@
         }
       },
       "tokens_in": 728,
-      "tokens_out": 954,
+      "tokens_out": 959,
       "tool_calls": 0,
-      "content_len": 3185,
+      "content_len": 3198,
       "model": "unknown",
       "phases": {
-        "model_call": 7066.3,
+        "model_call": 6585.8,
         "extract_code": 0.0,
-        "ast_parse": 1.0,
-        "game_verify": 1.7
+        "ast_parse": 0.8,
+        "game_verify": 1.4
       },
       "errors": [],
       "gaps": [],
@@ -548,7 +545,7 @@
       "game_id": "breakout",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 9,
+      "checks_passed": 10,
       "checks_total": 13,
       "checks": {
         "import_and_instantiate": {
@@ -588,7 +585,7 @@
           "desc": "score is 0 at start of play"
         },
         "lifecycle_score_increments": {
-          "passed": false,
+          "passed": true,
           "desc": "score increases after positive event"
         },
         "lifecycle_game_over": {
@@ -605,15 +602,15 @@
         }
       },
       "tokens_in": 815,
-      "tokens_out": 1082,
+      "tokens_out": 1071,
       "tool_calls": 0,
-      "content_len": 3944,
+      "content_len": 4001,
       "model": "unknown",
       "phases": {
-        "model_call": 8478.9,
-        "extract_code": 0.0,
-        "ast_parse": 1.1,
-        "game_verify": 2.5
+        "model_call": 8136.3,
+        "extract_code": 0.1,
+        "ast_parse": 2.8,
+        "game_verify": 4.9
       },
       "errors": [],
       "gaps": [],
@@ -623,7 +620,7 @@
       "game_id": "maze_runner",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 9,
+      "checks_passed": 10,
       "checks_total": 12,
       "checks": {
         "import_and_instantiate": {
@@ -631,7 +628,7 @@
           "desc": "class imports and instantiates without error"
         },
         "maze_moves": {
-          "passed": false,
+          "passed": true,
           "desc": "input('right') moves player on a path cell"
         },
         "maze_wall_blocks": {
@@ -676,15 +673,15 @@
         }
       },
       "tokens_in": 601,
-      "tokens_out": 960,
+      "tokens_out": 935,
       "tool_calls": 0,
-      "content_len": 3701,
+      "content_len": 3611,
       "model": "unknown",
       "phases": {
-        "model_call": 6706.0,
-        "extract_code": 0.1,
-        "ast_parse": 1.1,
-        "game_verify": 1.7
+        "model_call": 6145.2,
+        "extract_code": 0.0,
+        "ast_parse": 1.2,
+        "game_verify": 1.8
       },
       "errors": [],
       "gaps": [],
@@ -696,7 +693,7 @@
       "game_id": "word_guesser",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 11,
+      "checks_passed": 12,
       "checks_total": 13,
       "checks": {
         "import_and_instantiate": {
@@ -728,7 +725,7 @@
           "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
         },
         "lifecycle_start": {
-          "passed": false,
+          "passed": true,
           "desc": "calling start() transitions state to 'playing'"
         },
         "lifecycle_score_starts_zero": {
@@ -753,27 +750,25 @@
         }
       },
       "tokens_in": 704,
-      "tokens_out": 700,
+      "tokens_out": 687,
       "tool_calls": 0,
-      "content_len": 2766,
+      "content_len": 2777,
       "model": "unknown",
       "phases": {
-        "model_call": 6920.2,
-        "extract_code": 0.0,
-        "ast_parse": 0.7,
-        "game_verify": 1.4
+        "model_call": 6350.9,
+        "extract_code": 0.1,
+        "ast_parse": 1.2,
+        "game_verify": 2.2
       },
       "errors": [],
       "gaps": [],
-      "feature_failures": [
-        "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='game_over', won_attr='won')"
-      ]
+      "feature_failures": []
     },
     "memory_match": {
       "game_id": "memory_match",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 7,
+      "checks_passed": 8,
       "checks_total": 13,
       "checks": {
         "import_and_instantiate": {
@@ -805,7 +800,7 @@
           "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
         },
         "lifecycle_start": {
-          "passed": false,
+          "passed": true,
           "desc": "calling start() transitions state to 'playing'"
         },
         "lifecycle_score_starts_zero": {
@@ -830,15 +825,15 @@
         }
       },
       "tokens_in": 702,
-      "tokens_out": 812,
+      "tokens_out": 600,
       "tool_calls": 0,
-      "content_len": 3293,
+      "content_len": 2515,
       "model": "unknown",
       "phases": {
-        "model_call": 6173.4,
-        "extract_code": 0.0,
-        "ast_parse": 0.9,
-        "game_verify": 1.7
+        "model_call": 5412.7,
+        "extract_code": 0.1,
+        "ast_parse": 1.3,
+        "game_verify": 2.8
       },
       "errors": [],
       "gaps": [],
@@ -848,7 +843,7 @@
       "game_id": "tic_tac_toe",
       "imported": true,
       "instantiated": true,
-      "checks_passed": 12,
+      "checks_passed": 11,
       "checks_total": 13,
       "checks": {
         "import_and_instantiate": {
@@ -880,7 +875,7 @@
           "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
         },
         "lifecycle_start": {
-          "passed": true,
+          "passed": false,
           "desc": "calling start() transitions state to 'playing'"
         },
         "lifecycle_score_starts_zero": {
@@ -905,15 +900,15 @@
         }
       },
       "tokens_in": 753,
-      "tokens_out": 1160,
+      "tokens_out": 1264,
       "tool_calls": 0,
-      "content_len": 4472,
+      "content_len": 4483,
       "model": "unknown",
       "phases": {
-        "model_call": 9008.1,
+        "model_call": 9418.3,
         "extract_code": 0.1,
-        "ast_parse": 1.5,
-        "game_verify": 2.1
+        "ast_parse": 4.3,
+        "game_verify": 4.9
       },
       "errors": [],
       "gaps": [],
@@ -925,9 +920,9 @@
     "games_imported": 12,
     "games_fully_verified": 0,
     "total_tokens_in": 8194,
-    "total_tokens_out": 14870,
-    "total_latency_ms": 119365.09999999999,
-    "total_latency_s": 119.37,
+    "total_tokens_out": 14827,
+    "total_latency_ms": 110984.6,
+    "total_latency_s": 110.98,
     "most_tokens": "checkers",
     "most_latency": "checkers"
   }
