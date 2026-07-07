@@ -14,10 +14,10 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 from general_ludd.agents.context import ContextCompactor, ContextMessage
+from general_ludd.mcp.registry import MCPToolRegistry
 
 if TYPE_CHECKING:
     from general_ludd.compaction.aggressive import CompactionLevel
-    from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.token_window import TokenWindowManager
 from general_ludd.agents.tool_adapter import AgentToolAdapter

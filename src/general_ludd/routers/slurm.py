@@ -36,8 +36,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/admin/slurm/status")
     async def admin_slurm_status() -> dict[str, object]:
         adapter = _make_adapter(app)
-        available = await asyncio.to_thread(adapter.available)
-        return {"available": available}
+        try:
+            available = await asyncio.to_thread(adapter.available)
+            return {"available": available}
+        except SlurmNotInstalledError:
+            raise HTTPException(status_code=503, detail="Slurm is not installed") from None
 
     @app.post("/admin/slurm/submit")
     async def admin_slurm_submit(req: dict[str, object]) -> dict[str, object]:

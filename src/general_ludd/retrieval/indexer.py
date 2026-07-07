@@ -18,8 +18,9 @@ MAX_CHUNK_CHARS = 2000
 
 
 def _tokenize(text: str) -> list[str]:
-    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9]*", text.lower())
-    return [t for t in tokens if len(t) > 1]
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9_]*", text.lower())
+    stripped = [t.strip("_") for t in tokens]
+    return [t for t in stripped if len(t) > 1]
 
 
 def _cosine_similarity(vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
