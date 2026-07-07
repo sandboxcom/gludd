@@ -324,6 +324,128 @@ class HotReloader:
         details["rolled_back"] = False
         return ReloadResult(success=True, scope=scope, details=details)
 
+    def reload_changed_modules(
+        self,
+        repo_dir: str,
+        changed_paths: list[str],
+        health_check: Callable[[], bool] | None = None,
+        role: str | None = None,
+    ) -> ReloadResult:
+        """Batch hot-reload every changed Python module touched by a self-improvement commit.
+
+        Walks ``changed_paths`` (repo-relative), maps each ``.py`` path to its
+        dotted module name, and for each:
+          * modified (file exists, module imported): copy workspace bytes over
+            the live ``__file__`` and ``importlib.reload``.
+          * added (file exists, module NOT imported): ``invalidate_caches`` +
+            ``importlib.import_module`` so the new module becomes live.
+          * deleted (file gone, module imported): drop from ``sys.modules``.
+          * non-``.py`` paths: skipped.
+
+        A single ``health_check`` gate runs at the END of the batch (not per
+        module) — a failure leaves the already-applied swaps in place but
+        reports ``success=False`` so the caller can decide to roll back. This
+        reuses the existing authenticity/anti-clobber/health machinery by
+        delegating modified modules to :meth:`reload_code_module`.
+
+        Returns a ``ReloadResult`` whose ``details`` carries:
+          * ``reloaded_modules`` — dotted names of modules successfully reloaded
+          * ``added_modules`` — dotted names of newly-imported modules
+          * ``deleted_modules`` — dotted names dropped from ``sys.modules``
+          * ``skipped`` — repo-relative paths ignored (non-Python or unresolved)
+        """
+        import shutil
+
+        scope = "changed_modules"
+        details: dict[str, Any] = {
+            "reloaded_modules": [],
+            "added_modules": [],
+            "deleted_modules": [],
+            "skipped": [],
+        }
+        self._publish(ReloadRequestedEvent(scope=scope))
+
+        repo_root = Path(repo_dir)
+        for rel_path in changed_paths:
+            norm = rel_path.replace("\\", "/")
+            if not norm.endswith(".py"):
+                details["skipped"].append(rel_path)
+                continue
+            module_name = self._path_to_module_name(norm)
+            workspace_path = repo_root / norm
+            existing = sys.modules.get(module_name)
+
+            if not workspace_path.is_file():
+                if existing is not None:
+                    sys.modules.pop(module_name, None)
+                    details["deleted_modules"].append(module_name)
+                else:
+                    details["skipped"].append(rel_path)
+                continue
+
+            if existing is not None:
+                live_path_str = getattr(existing, "__file__", None)
+                if live_path_str:
+                    live_path = Path(live_path_str)
+                    if live_path.resolve() != workspace_path.resolve():
+                        try:
+                            shutil.copy2(str(workspace_path), str(live_path))
+                        except OSError as exc:
+                            logger.warning(
+                                "could not copy %s -> %s: %s",
+                                workspace_path, live_path, exc,
+                            )
+                            details["skipped"].append(rel_path)
+                            continue
+                    self._invalidate_source_cache(live_path)
+                try:
+                    importlib.reload(existing)
+                    details["reloaded_modules"].append(module_name)
+                except Exception as exc:
+                    logger.warning("reload failed for %s: %s", module_name, exc)
+                    details["skipped"].append(rel_path)
+            else:
+                importlib.invalidate_caches()
+                try:
+                    importlib.import_module(module_name)
+                    details["added_modules"].append(module_name)
+                except Exception as exc:
+                    logger.warning("import failed for %s: %s", module_name, exc)
+                    details["skipped"].append(rel_path)
+
+        if health_check is not None:
+            try:
+                healthy = bool(health_check())
+            except Exception as exc:
+                logger.warning("batch health_check raised: %s", exc)
+                healthy = False
+            if not healthy:
+                self._publish(ReloadFailedEvent(scope=scope, error="batch health gate failed"))
+                return ReloadResult(
+                    success=False, scope=scope, details=details,
+                    error="batch health gate failed after reload",
+                )
+
+        self._publish(ReloadCompletedEvent(scope=scope))
+        return ReloadResult(success=True, scope=scope, details=details)
+
+    @staticmethod
+    def _path_to_module_name(path: str) -> str:
+        """Map a repo-relative ``.py`` path to its dotted module name.
+
+        ``src/general_ludd/foo/bar.py``  -> ``general_ludd.foo.bar``
+        ``pkg/__init__.py``              -> ``pkg``
+        ``pkg/sub/mod.py``               -> ``pkg.sub.mod``
+        """
+        p = path.replace("\\", "/")
+        if p.endswith("/__init__.py"):
+            p = p[: -len("/__init__.py")]
+        elif p.endswith(".py"):
+            p = p[: -len(".py")]
+        if p.startswith("src/"):
+            p = p[len("src/"):]
+        return p.replace("/", ".")
+
     def _resolve_apply_bytes(
         self,
         scope: str,

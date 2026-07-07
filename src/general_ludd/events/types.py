@@ -24,6 +24,7 @@ class EventType(_enum.StrEnum):
     STALL_DETECTED = "stall_detected"
     SLOW_OPERATION = "slow_operation"
     CUSTOM = "custom"
+    SELF_UPDATE_APPLIED = "self_update_applied"
 
 
 @dataclass
@@ -170,3 +171,13 @@ class HookTriggeredEvent(Event):
 class CustomEvent(Event):
     def __init__(self, name: str, payload: dict[str, Any] | None = None, **kwargs: Any) -> None:
         super().__init__(type=EventType.CUSTOM, payload={"name": name, **(payload or {})}, **kwargs)
+
+
+@dataclass
+class SelfUpdateAppliedEvent(Event):
+    def __init__(self, commit_sha: str, reloaded_modules: list[str], **kwargs: Any) -> None:
+        super().__init__(
+            type=EventType.SELF_UPDATE_APPLIED,
+            payload={"commit_sha": commit_sha, "reloaded_modules": reloaded_modules},
+            **kwargs,
+        )

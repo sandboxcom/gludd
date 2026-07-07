@@ -325,6 +325,33 @@ class GitAutomation:
             logger.error("Push failed")
             return False
 
+    def commit_and_push(
+        self, message: str, remote: str = "origin", branch: str = "main"
+    ) -> str:
+        """Commit all changes and push to remote; return the new commit SHA.
+
+        A push failure is logged via ``push`` returning ``False`` but does NOT
+        raise — the local commit SHA is still returned so the caller (the
+        self-improvement hot-reload path) can reload from the local commit.
+        The remote will be reconciled on a later push.
+        """
+        sha = self.commit(message)
+        self.push(remote=remote, branch=branch)
+        return sha
+
+    def remote_url(self, remote: str = "origin") -> str:
+        """Return the configured URL for ``remote`` (default origin).
+
+        Best-effort read: returns ``""`` on any failure (not a repo, no such
+        remote, git missing, timeout) rather than raising, so callers can use
+        it for detection without try/except noise.
+        """
+        _reject_leading_dash(remote, kind="remote name")
+        proc = self._run_git("remote", "get-url", remote, check=False)
+        if proc.returncode != 0:
+            return ""
+        return proc.stdout.strip()
+
     def reject_force_push(self) -> bool:
         return False
 

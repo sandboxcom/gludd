@@ -118,7 +118,10 @@ async def _persist_gated_self_improve_todos(
 
 
 async def _config_tier_apply(
-    app: FastAPI, kind: str, payload: dict[str, object]
+    app: FastAPI,
+    kind: str,
+    payload: dict[str, object],
+    workspace_root: Path | None = None,
 ) -> dict[str, object]:
     """Human-gated config-tier apply (task #22).
 
@@ -138,7 +141,7 @@ async def _config_tier_apply(
     approval_id = payload.get("approval_id")
     if not approval_id:
         return await _enqueue_config_change(factory, kind, payload)
-    return await _apply_approved_config_change(factory, str(approval_id))
+    return await _apply_approved_config_change(factory, str(approval_id), workspace_root=workspace_root)
 
 
 async def _enqueue_config_change(
@@ -198,7 +201,9 @@ async def _enqueue_config_change(
 
 
 async def _apply_approved_config_change(
-    factory: async_sessionmaker[AsyncSession], approval_id: str
+    factory: async_sessionmaker[AsyncSession],
+    approval_id: str,
+    workspace_root: Path | None = None,
 ) -> dict[str, object]:
     """Perform the on-disk config write for a human-RELEASED approval record.
 
@@ -238,7 +243,7 @@ async def _apply_approved_config_change(
                 detail=f"approval {approval_id} has a malformed change spec",
             ) from exc
 
-        workspace_root = Path.cwd()
+        resolved_workspace_root = workspace_root if workspace_root is not None else Path.cwd()
 
         # Change-export recorder (task #47): populate the ChangeRecordStore on
         # every successful config-tier write so `core-changes list/commit` has
@@ -266,12 +271,12 @@ async def _apply_approved_config_change(
             )
 
         safe_writer = AtomicSafeWriter(
-            workspace_root=workspace_root, recorder=_recorder
+            workspace_root=resolved_workspace_root, recorder=_recorder
         )
         applier = UpdateApplier(
             writer=safe_writer,
             capability_checker=_ConfigTierCapabilityChecker(),
-            workspace_root=workspace_root,
+            workspace_root=resolved_workspace_root,
         )
         plan = _ConfigTierPlan(
             kind=str(spec.get("kind", "config")),
@@ -338,6 +343,20 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.post("/admin/self-improve/apply")
     async def admin_self_improve_apply(payload: dict[str, object]) -> dict[str, object]:
         kind = str(payload.get("kind", ""))
+        project_id = str(payload.get("project_id", "") or "")
+        workspace_root: Path | None = None
+        if project_id:
+            pm = getattr(app.state, "_project_manager", None)
+            if pm is not None:
+                proj = pm.get_project(project_id)
+                if proj is not None and proj.workspace_path:
+                    from general_ludd.projects.workspace import ProjectWorkspace
+
+                    ws = ProjectWorkspace(
+                        project_id=project_id,
+                        workspace_path=proj.workspace_path,
+                    )
+                    workspace_root = ws.repo_dir
 
         # Config-tier path: route through UpdateApplier + AtomicSafeWriter. The
         # applier owns capability gating, workspace confinement, the protected-
@@ -357,7 +376,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         #      is impossible. The capability/denylist/YAML/rollback guards still
         #      run inside UpdateApplier + AtomicSafeWriter.
         if kind in _CONFIG_TIER_KINDS:
-            return await _config_tier_apply(app, kind, payload)
+            return await _config_tier_apply(app, kind, payload, workspace_root=workspace_root)
 
         # Legacy / code-tier path: validate -> apply -> reload via
         # SelfImprovementWorkflow. Validation runs the test suite in the given

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
+import subprocess
 import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -17,6 +19,91 @@ logger = logging.getLogger(__name__)
 
 _VALID_RELATION_TYPES = frozenset({"parent", "child", "sibling", "external"})
 _VALID_LOCATION_KINDS = frozenset({"gludd_project_name", "directory", "url"})
+
+
+def _normalize_repo_url(url: str) -> str:
+    """Normalize a git remote URL for equality comparison.
+
+    Collapses the common spellings of the same remote so a project registered
+    with one form (e.g. ``git@github.com:sandboxcom/gludd.git``) matches the
+    self-repo URL detected from another form (e.g.
+    ``https://github.com/sandboxcom/gludd``):
+
+      * strip a trailing ``.git``
+      * lowercase
+      * drop scheme (``https://`` / ``http://`` / ``ssh://``)
+      * drop userinfo (``git@host:`` scp form and ``user@host/`` URI form)
+      * convert the scp ``:`` separator to ``/``
+
+    The result is a canonical ``host/owner/repo`` string with no trailing slash.
+    """
+    u = (url or "").strip().lower()
+    if u.endswith(".git"):
+        u = u[:-4]
+    if u.startswith("ssh://"):
+        u = u[6:]
+    elif u.startswith("https://"):
+        u = u[8:]
+    elif u.startswith("http://"):
+        u = u[7:]
+    # scp-like form: git@github.com:owner/repo  ->  github.com/owner/repo
+    if u.startswith("git@"):
+        u = u[4:]
+        u = u.replace(":", "/", 1)
+    # drop any remaining userinfo before the first '/' (user@host/...)
+    if "@" in u.split("/", 1)[0]:
+        u = u.split("@", 1)[1]
+    return u.strip("/")
+
+
+def _resolve_self_repo_url() -> str:
+    """Resolve the running daemon's own repo URL.
+
+    Priority:
+      1. ``GLUDD_SELF_REPO_URL`` env var (explicit operator override)
+      2. ``git remote get-url origin`` in the daemon's CWD (the live checkout)
+      3. empty string (detection disabled — nothing matches)
+
+    Failures (not a git repo, git missing, timeout) return ``""`` rather than
+    raising — detection must be best-effort, never block daemon startup.
+    """
+    override = os.environ.get("GLUDD_SELF_REPO_URL", "")
+    if override.strip():
+        return override.strip()
+    try:
+        proc = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=os.getcwd(),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if proc.returncode == 0:
+            return proc.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return ""
+
+
+def _detect_self_project(
+    project: ProjectWeight, self_repo_url: str | None = None
+) -> bool:
+    """True when ``project.repo_url`` is the gludd repo itself.
+
+    Compares the project's ``repo_url`` against the daemon's own repo URL. Both
+    sides are normalized via :func:`_normalize_repo_url` so SSH/HTTPS/SCP
+    spellings of the same remote match. An explicit ``self_repo_url`` override
+    (used by tests and config) takes precedence over auto-detection. An empty
+    project URL never matches (an unconfigured project cannot be "self").
+    """
+    project_url = getattr(project, "repo_url", "") or ""
+    if not project_url:
+        return False
+    target = self_repo_url if self_repo_url is not None else _resolve_self_repo_url()
+    if not target:
+        return False
+    return _normalize_repo_url(project_url) == _normalize_repo_url(target)
 
 
 def _infer_location_kind(location: str) -> str:
