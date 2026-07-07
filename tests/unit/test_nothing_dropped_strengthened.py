@@ -350,29 +350,34 @@ class TestOrphanedTestStillAppends:
 
 
 class TestMakeWordExemptionDropped:
-    """Post-merge: enforce-stop.ts has `responseLooksTerminal()` which does
-    NOT have a `make <word>` exemption. The old `responseLooksLikeSummary()`
-    function from enforce-todos.ts was replaced entirely."""
+    """Post-merge: enforce-stop.ts uses COMPLETION_VERBATIM regex directly
+    in text.complete handler for terminal-detection, with NO make-word
+    exemption. The old `responseLooksLikeSummary()` function from
+    enforce-todos.ts was replaced entirely by inline detection logic."""
 
     def test_make_word_recap_detected_as_summary(self):
         s = _src()
-        # Post-merge: responseLooksTerminal() has no make-word exemption.
-        # The TOOL_CALL_INTENT regex at lines 113 checks for `make git-`,
-        # `dispatch`, `subagent`, `gludd `, `pytest `, `uv run` — these
-        # negate the stop detection. But a standalone `make gate` in a
-        # summary is NOT a tool-call-intent match, so it IS treated as
-        # terminal. The old exemption is gone.
-        assert "responseLooksTerminal" in s, (
-            "responseLooksTerminal function must exist — the post-merge "
-            "replacement for responseLooksLikeSummary. It has no make-word "
-            "exemption."
+        # Post-merge: COMPLETION_VERBATIM is the terminal-detection regex
+        # used inline in text.complete. It has no make-word exemption.
+        # A standalone `make gate` in a summary is treated as terminal
+        # because COMPLETION_VERBATIM matches stop-like phrases.
+        assert "COMPLETION_VERBATIM" in s, (
+            "COMPLETION_VERBATIM regex must exist — the post-merge "
+            "replacement for responseLooksLikeSummary. It detects terminal "
+            "responses with no make-word exemption."
         )
-        # The TOOL_CALL_INTENT regex anchors on specific patterns like
-        # `make git-` — NOT unanchored `make <word>`. A recap ending with
-        # 'run make gate' would NOT pass TOOL_CALL_INTENT.
-        assert "TOOL_CALL_INTENT" in s, (
-            "TOOL_CALL_INTENT regex must exist — it replaces the old "
-            "make-word exemption with anchored tool-command patterns."
+        # The text.complete handler uses an inline regex
+        # /\b(make git-|dispatch|subagent|task)\b/ at line ~730 to check
+        # whether the response mentions tool-call phrases. This replaces
+        # the old TOOL_CALL_INTENT — a recap ending with `run make gate`
+        # would NOT match (only `make git-` prefix is anchored).
+        has_intent_regex = (
+            r"\b(make git-|dispatch|subagent|task)\b" in s
+        )
+        assert has_intent_regex, (
+            "text.complete handler must have tool-call-intent regex "
+            "that replaces the old TOOL_CALL_INTENT — anchored on "
+            "`make git-|dispatch|subagent|task`, no bare `make <word>`."
         )
 
 

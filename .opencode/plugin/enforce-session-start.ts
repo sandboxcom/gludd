@@ -62,6 +62,18 @@ const TASKS_STALE_MINUTES = parseInt(
 
 let _lastTasksReadMtime = 0
 
+// Per-module-instance latch (Fix B). Once the primed condition has been
+// observed — `readsDone && dispatches >= EFFECTIVE_MIN` — this instance
+// skips ALL state-file I/O on subsequent tool calls. That eliminates the
+// race window for every call after the orchestrator's session-start duty
+// is complete (including every subagent's `make` call).
+//
+// Semantics:
+//   null  = not yet loaded from state file (lazy init on first tool.execute.before)
+//   false = loaded, primed condition not yet met — keep tracking
+//   true  = primed — gate is latched open for this instance forever
+let sessionPrimed: boolean | null = null
+
 const TASK_FILES = ["TASKS.md", "BUGS.md", "config/ratchet.yml", "SESSION.md"]
 
 // --- System prompt banner ---------------------------------------------------
@@ -116,8 +128,15 @@ function loadState(): SessionState {
 }
 
 function saveState(state: SessionState): void {
+  // Fix A: atomic write via temp-file + rename. Each writer uses a
+  // PID-unique temp path so concurrent writers don't clobber each other's
+  // temp file, and the final rename is atomic on POSIX (no torn reads).
+  // Combined with the per-instance latch (Fix B), this eliminates the
+  // lost-update race for the dispatches counter.
   try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state))
+    const tmp = `${STATE_FILE}.tmp.${process.pid}`
+    fs.writeFileSync(tmp, JSON.stringify(state))
+    fs.renameSync(tmp, STATE_FILE)
   } catch {
     // fail open
   }
@@ -125,6 +144,18 @@ function saveState(state: SessionState): void {
 
 function sessionIsFresh(s: SessionState): boolean {
   return (Date.now() - s.started_at) / 1000 < FRESH_SECS
+}
+
+// Returns true once the primed condition has been met AND latches the
+// module-level `sessionPrimed` flag so future calls skip state I/O.
+function updatePrimedLatch(state: SessionState): boolean {
+  if (sessionPrimed === true) return true
+  if (state.readsDone && state.dispatches >= EFFECTIVE_MIN) {
+    sessionPrimed = true
+    return true
+  }
+  if (sessionPrimed === null) sessionPrimed = false
+  return false
 }
 
 // --- Tool classification ----------------------------------------------------
@@ -213,12 +244,20 @@ export default (async () => {
       let denyMessage: string | null = null
       try {
         const tool = String((input as { tool?: string }).tool ?? "")
+
+        // Fix B: once this instance has observed the primed condition, the
+        // gate has done its job — skip ALL state-file I/O for every
+        // subsequent tool call. This is what stops the gate from policing
+        // every subagent's `make` call after the orchestrator's turn-1 duty.
+        if (sessionPrimed === true) return
+
         const state = loadState()
 
         // Count + record dispatches — they are what we want more of.
         if (isDispatchTool(tool)) {
           state.dispatches += 1
           saveState(state)
+          updatePrimedLatch(state)
           return
         }
 
@@ -236,16 +275,22 @@ export default (async () => {
               _lastTasksReadMtime = fs.statSync(tasksPath).mtimeMs
             }
           } catch { /* ignore */ }
+          updatePrimedLatch(state)
           return
         }
 
         // Other reads are always allowed (the protocol WANTS investigation).
-        if (isReadTool(tool)) return
+        if (isReadTool(tool)) {
+          updatePrimedLatch(state)
+          return
+        }
 
         // For any other tool (edit/write/bash/etc.) in a fresh, unprimed
         // session: emit a loud reminder, and in ENFORCE mode hard-deny.
-        const primed = state.readsDone && state.dispatches >= EFFECTIVE_MIN
-        if (sessionIsFresh(state) && !primed) {
+        // If already primed (race-free check below), latch and allow.
+        if (updatePrimedLatch(state)) return
+
+        if (sessionIsFresh(state)) {
           const msg = [
             `[SESSION START PROTOCOL] readsDone=${state.readsDone},`,
             `${state.dispatches}/${EFFECTIVE_MIN} dispatches so far.`,
@@ -267,7 +312,7 @@ export default (async () => {
           }
         }
       } catch {
-        // fail-open — never wedge the session on a plugin bug
+        // fail open — never wedge the session on a plugin bug
       }
       if (denyMessage) throw new Error(denyMessage)
     },

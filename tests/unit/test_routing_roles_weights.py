@@ -72,6 +72,8 @@ class TestTaskRole:
     def test_members(self):
         assert {r.name for r in TaskRole} == {
             "PLANNER",
+            "CODER",
+            "REVIEWER",
             "EDITOR",
             "COMPACTOR",
             "ENUMERATOR",
@@ -79,6 +81,8 @@ class TestTaskRole:
 
     def test_string_values(self):
         assert TaskRole.PLANNER == "planner"
+        assert TaskRole.CODER == "coder"
+        assert TaskRole.REVIEWER == "reviewer"
         assert TaskRole.EDITOR == "editor"
         assert TaskRole.COMPACTOR == "compactor"
         assert TaskRole.ENUMERATOR == "enumerator"

@@ -96,7 +96,7 @@ class TestD22FallbackHealthCheck:
         primary = _make_profile("primary", fallback=["fb_a", "fb_b"])
         fb_a = _make_profile("fb_a")
         fb_b = _make_profile("fb_b")
-        gw, reg = _make_gateway([primary, fb_a, fb_b])
+        gw, _reg = _make_gateway([primary, fb_a, fb_b])
         gw._health_tracker = None
 
         class _ProviderError(RuntimeError):
@@ -110,8 +110,7 @@ class TestD22FallbackHealthCheck:
             raise _ProviderError(f"provider blew up on {profile_id}")
 
         with (
-            patch.object(reg, "is_installed", return_value=True),
-            patch.object(gw, "_try_call_model", side_effect=fake_try) as spy,
+            patch.object(gw, "call_model", side_effect=fake_try) as spy,
         ):
             resp = gw.call_model_with_fallback(
                 "primary",
@@ -144,7 +143,7 @@ class TestD22FallbackHealthCheck:
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=FakeChatModel),
-            patch.object(gw, "_try_call_model", wraps=gw._try_call_model) as spy,
+            patch.object(gw, "call_model", wraps=gw.call_model) as spy,
         ):
             resp = gw.call_model_with_fallback(
                 "primary_open",
@@ -174,7 +173,7 @@ class TestD22FallbackHealthCheck:
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=MagicMock()),
             patch.object(gw, "_try_call_model") as spy,
-            pytest.raises(CircuitBreakerOpenError, match="circuit-open"),
+            pytest.raises(CircuitBreakerOpenError, match="All circuits open"),
         ):
             gw.call_model_with_fallback(
                 "primary_sick",

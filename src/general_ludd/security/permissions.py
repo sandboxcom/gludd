@@ -25,7 +25,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import yaml
 
@@ -75,7 +75,7 @@ class Capability:
 
     resource: str
     actions: list[str] = field(default_factory=list)
-    constraints: dict[str, Any] = field(default_factory=dict)
+    constraints: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -505,10 +505,10 @@ class PermissionSpecParser:
 
     @staticmethod
     def _intersect_constraints(
-        a: dict[str, Any],
-        b: dict[str, Any],
+        a: dict[str, object],
+        b: dict[str, object],
         family: str,
-    ) -> dict[str, Any] | None:
+    ) -> dict[str, object] | None:
         """Return the narrowed constraints for ``family`` or ``None`` if empty.
 
         ``None`` is the signal to drop the capability entirely (no overlap).
@@ -537,20 +537,20 @@ class PermissionSpecParser:
                 return {"path_prefix": bp}
             return None
         if family == "net:":
-            out: dict[str, Any] = {}
+            out: dict[str, object] = {}
             for key in ("allowed_hosts", "allowed_ports"):
-                aset = set(a.get(key, []) or [])
-                bset = set(b.get(key, []) or [])
-                inter = sorted(aset & bset)
+                aset = set(cast(list[object], a.get(key, [])) or [])
+                bset = set(cast(list[object], b.get(key, [])) or [])
+                inter = sorted(aset & bset, key=str)
                 if inter:
                     out[key] = inter
             if not out:
                 return None
             return out
         if family == "secret:openbao":
-            aset = set(a.get("openbao_paths", []) or [])
-            bset = set(b.get("openbao_paths", []) or [])
-            inter = sorted(aset & bset)
+            aset = set(cast(list[object], a.get("openbao_paths", [])) or [])
+            bset = set(cast(list[object], b.get("openbao_paths", [])) or [])
+            inter = sorted(aset & bset, key=str)
             if not inter:
                 return None
             return {"openbao_paths": inter}
@@ -565,8 +565,8 @@ class PermissionSpecParser:
 
     @staticmethod
     def _constraints_narrower(
-        narrow: dict[str, Any],
-        wide: dict[str, Any],
+        narrow: dict[str, object],
+        wide: dict[str, object],
         resource: str,
     ) -> bool:
         if resource == "file:":
@@ -595,8 +595,8 @@ class PermissionSpecParser:
             return n_segs[: len(w_segs)] == w_segs
         if resource == "net:":
             for key in ("allowed_hosts", "allowed_ports"):
-                ns = set(narrow.get(key, []) or [])
-                ws = set(wide.get(key, []) or [])
+                ns = set(cast(list[object], narrow.get(key, [])) or [])
+                ws = set(cast(list[object], wide.get(key, [])) or [])
                 if not ws:
                     # ABSENT/empty on the wide side == UNCONSTRAINED on this
                     # dimension (the enforcers emit ``(allow network-outbound)``
@@ -610,8 +610,8 @@ class PermissionSpecParser:
                     return False
             return True
         if resource == "secret:openbao":
-            ns = set(narrow.get("openbao_paths", []) or [])
-            ws = set(wide.get("openbao_paths", []) or [])
+            ns = set(cast(list[object], narrow.get("openbao_paths", [])) or [])
+            ws = set(cast(list[object], wide.get("openbao_paths", [])) or [])
             return ns.issubset(ws)
         return False
 

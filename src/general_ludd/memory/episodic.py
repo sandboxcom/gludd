@@ -29,7 +29,7 @@ class Episode:
     work_type: str = ""
     priority: str = "medium"
     outcome: str = "unknown"  # success, failure, partial, cancelled
-    context: dict[str, Any] = field(default_factory=dict)
+    context: dict[str, object] = field(default_factory=dict)
     tools_used: list[str] = field(default_factory=list)
     takeaway: str = ""
     error_message: str = ""
@@ -95,7 +95,7 @@ class EpisodicMemoryRecorder:
         work_type: str = "code",
         priority: str = "medium",
         outcome: str = "success",
-        context: dict[str, Any] | None = None,
+        context: dict[str, object] | None = None,
         takeaway: str = "",
         error_message: str = "",
         duration_seconds: float = 0.0,
@@ -114,7 +114,7 @@ class EpisodicMemoryRecorder:
         return await self.record_episode(episode)
 
 
-def _episode_to_dict(ep: Episode) -> dict[str, Any]:
+def _episode_to_dict(ep: Episode) -> dict[str, object]:
     return {
         "id": ep.id,
         "agent_id": ep.agent_id,

@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
 
 from fastapi import FastAPI, Query
 from pydantic import BaseModel, Field
 
 from general_ludd.security.adversarial_detector import (
     AdversarialCodeDetector,
+    AdversarialFinding,
     AdversarialScanResult,
 )
 
@@ -73,7 +73,7 @@ class ScanFileResponse(BaseModel):
     summary: str
 
 
-def _finding_to_dict(f: Any) -> dict[str, object]:
+def _finding_to_dict(f: AdversarialFinding) -> dict[str, object]:
     return {
         "pattern_id": f.pattern_id,
         "category": f.category.value if hasattr(f.category, "value") else str(f.category),
@@ -104,7 +104,7 @@ def _result_to_response(result: AdversarialScanResult) -> dict[str, object]:
     }
 
 
-def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
     @app.post("/admin/security/scan-text", response_model=ScanTextResponse)
     async def scan_text(body: ScanTextRequest) -> dict[str, object]:
         """Scan arbitrary text for adversarial code patterns."""

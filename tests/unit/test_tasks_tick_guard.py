@@ -16,11 +16,11 @@ GOOD_TASKS = textwrap.dedent("""\
 
 BAD_TASKS = {
     "missing_evidence": (
-        "- [x] W0.1 — thing done | no proof here abc1234\n",
+        "- [x] W0.1 — thing done | no proof here xyzzyxyzzy\n",
         "evidence:",
     ),
     "missing_test_ref": (
-        "- [x] W0.1 — thing done | evidence: some words abc1234\n",
+        "- [x] W0.1 — thing done | evidence: some words xyzzyxyzzy\n",
         "make ",
     ),
     "pending_word": (

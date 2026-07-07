@@ -40,7 +40,6 @@ import os
 import time
 import urllib.request
 from collections.abc import Callable
-from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
@@ -70,7 +69,7 @@ _METRICS_PATH = "/metrics"
 
 def _default_http_get(
     url: str,
-    params: dict[str, Any] | None = None,
+    params: dict[str, object] | None = None,
     headers: dict[str, str] | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
 ) -> tuple[int, str]:
@@ -226,12 +225,12 @@ class KafkaExporterSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         http_get: HttpGet | None = None,
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
-        base_url = config.get("base_url", "")
+        base_url = str(config.get("base_url", ""))
         self._base_url = _validate_base_url(base_url)
         self._token_env = config.get("token_env")
         self._http_get = http_get or _default_http_get
@@ -245,12 +244,12 @@ class KafkaExporterSource:
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Accept": "text/plain"}
         if self._token_env:
-            token = os.environ.get(self._token_env)
+            token = os.environ.get(str(self._token_env))
             if token:
                 headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    def _error_record(self, message: str, raw: Any) -> dict[str, Any]:
+    def _error_record(self, message: str, raw: object) -> dict[str, object]:
         return {
             "ts": time.time(),
             "source": self.name,
@@ -264,7 +263,7 @@ class KafkaExporterSource:
 
     def _sample_record(
         self, name: str, labels: dict[str, str], value: float, ts: float, raw: str
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         return {
             "ts": ts,
             "source": self.name,
@@ -278,7 +277,7 @@ class KafkaExporterSource:
 
     # -- public API -------------------------------------------------------
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Scrape ``/metrics`` and normalize wanted kafka series.
 
         ``spec`` may carry ``metrics`` (an explicit allowlist of metric names)
@@ -300,10 +299,13 @@ class KafkaExporterSource:
             return [self._error_record("non-text /metrics payload", payload)]
 
         wanted = spec.get("metrics")
-        wanted_set = frozenset(wanted) if wanted else _WANTED_METRICS
+        if isinstance(wanted, (list, tuple, set, frozenset)) and wanted:
+            wanted_set = frozenset(wanted)
+        else:
+            wanted_set = _WANTED_METRICS
 
         ts = time.time()
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for line in payload.splitlines():
             parsed = _parse_metric_line(line)
             if parsed is None:
@@ -314,7 +316,7 @@ class KafkaExporterSource:
             records.append(self._sample_record(name, labels, value, ts, line.strip()))
         return records
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Return ``{"ok": bool, "detail": str}``. Never raises.
 
         Scrapes ``/metrics`` and treats a 2xx text response as healthy.

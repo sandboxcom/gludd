@@ -209,6 +209,22 @@ class TestModelRegistryUnit:
                 assert call_kwargs["author"] == "meta"
 
 
+def test_download_unpinned_warns(caplog):
+    import logging
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        reg = ModelRegistry(cache_dir=tmpdir)
+        with patch("huggingface_hub.snapshot_download") as mock_dl:
+            snap_dir = os.path.join(tmpdir, "snap")
+            os.makedirs(snap_dir)
+            mock_dl.return_value = snap_dir
+            with caplog.at_level(logging.WARNING, logger="general_ludd.models.model_registry"):
+                result = reg.download("test/model")
+        assert mock_dl.call_args.kwargs["revision"] is None
+        assert result.revision is None
+        assert any("without a pinned revision" in r.message for r in caplog.records)
+
+
 class TestModelRegistryRevision:
     """B615 supply-chain fix: download() forwards a pinned revision and warns when unpinned."""
 
@@ -233,21 +249,6 @@ class TestModelRegistryRevision:
                 result = reg.download("test/model", revision="v1.0")
             assert mock_dl.call_args.kwargs["revision"] == "v1.0"
             assert result.revision == "v1.0"
-
-    def test_download_unpinned_warns(self, caplog):
-        import logging
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            reg = ModelRegistry(cache_dir=tmpdir)
-            with patch("huggingface_hub.snapshot_download") as mock_dl:
-                snap_dir = os.path.join(tmpdir, "snap")
-                os.makedirs(snap_dir)
-                mock_dl.return_value = snap_dir
-                with caplog.at_level(logging.WARNING, logger="general_ludd.models.model_registry"):
-                    result = reg.download("test/model")
-            assert mock_dl.call_args.kwargs["revision"] is None
-            assert result.revision is None
-            assert any("without a pinned revision" in r.message for r in caplog.records)
 
     def test_download_pinned_does_not_warn(self, caplog):
         import logging

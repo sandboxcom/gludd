@@ -27,14 +27,14 @@ class TestRunRecorderDaemonWiring:
         app.state._run_recorder = recorder
         register(app, {})
 
-        # Use the FastAPI TestClient (Starlette) to call the endpoint
-        from starlette.testclient import TestClient
+        with patch.object(recorder, "list_runs", return_value=[]):
+            from starlette.testclient import TestClient
 
-        client = TestClient(app)
-        response = client.get("/api/replays")
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
-        assert response.json() == []
+            client = TestClient(app)
+            response = client.get("/api/replays")
+            assert response.status_code == 200
+            assert isinstance(response.json(), list)
+            assert response.json() == []
 
     def test_api_replays_missing_recorder_returns_empty(self) -> None:
         """GET /api/replays returns [] when no RunRecorder is attached to app."""

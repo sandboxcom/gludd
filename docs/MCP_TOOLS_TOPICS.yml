@@ -795,6 +795,45 @@ general_ludd.agent.gludd_features:
       returned: when state=list
       type: int
   module: gludd_features
+general_ludd.agent.gludd_gate_check:
+  DOCUMENTATION:
+    description:
+    - Reads the C(.gate-status) file written by C(make gate) and determines
+    - whether the gate run is complete (a terminal marker is present) and
+    - whether it passed.
+    - C(gate_complete) is C(true) when the file exists and contains either
+    - 'C(=== GATE: PASSED ===) or C(=== GATE: FAILED ===).'
+    - C(gate_passed) is C(true) when the file exists, is complete, and
+    - 'contains C(=== GATE: PASSED ===).'
+    - Check-mode safe — this module performs no writes.
+    - Wraps the same logic as C(scripts/gate_fresh_check.py).
+    module: gludd_gate_check
+    options:
+      gate_path: {}
+      state: {}
+    short_description: Check whether a .gate-status file is complete and passed
+  EXAMPLES:
+  - general_ludd.agent.gludd_gate_check:
+      gate_path: .gate-status
+      state: check
+    name: Check whether the gate is complete
+    register: gate_result
+  - ansible.builtin.assert:
+      fail_msg: Gate did not pass — fix failures before proceeding.
+      success_msg: Gate passed.
+      that: gate_result.gate_passed
+    name: Assert gate passed
+  - ansible.builtin.meta: end_play
+    name: Block commit if gate incomplete
+    when: not gate_result.gate_complete
+  RETURN: "RETURN:\n  gate_complete:\n    description:\n      - Whether the gate file\
+    \ exists and contains a terminal marker\n        (C(=== GATE: PASSED ===) or C(===\
+    \ GATE: FAILED ===)).\n    type: bool\n    returned: always\n  gate_passed:\n\
+    \    description:\n      - Whether the gate file exists, is complete, and contains\n\
+    \        C(=== GATE: PASSED ===).\n    type: bool\n    returned: always\n  gate_path:\n\
+    \    description: The absolute path of the file that was checked.\n    type: str\n\
+    \    returned: always"
+  module: gludd_gate_check
 general_ludd.agent.gludd_git:
   DOCUMENTATION:
     description:
@@ -1599,6 +1638,135 @@ general_ludd.agent.gludd_model_call:
       returned: success
       type: dict
   module: gludd_model_call
+general_ludd.agent.gludd_open_code:
+  DOCUMENTATION:
+    description:
+    - Codifies the repeated back-and-forth tool-call patterns opencode agents perform
+      by bundling multiple tool calls into single Ansible tasks.
+    - Each action maps to a make target that composites the underlying checks.
+    - Check-mode safe — all actions report the change they WOULD make without executing
+      the underlying command.
+    - All actions run locally via C(ansible.builtin.command) executing make targets
+      in the repository root; no daemon round-trips are needed.
+    module: gludd_open_code
+    options:
+      action:
+        choices:
+        - gate_check
+        - push_and_verify
+        - commit_ship
+        - test_batch
+        - status_check
+        description:
+        - The bundled operation to perform.
+        - C(gate_check) — lint + typecheck + collect in one call (make gate-fast).
+        - C(push_and_verify) — push master + verify remote SHA + poll CI (make ci-push-and-verify).
+        - C(commit_ship) — add + commit + push + verify in one call (make ship).
+        - C(test_batch) — run multiple test files in one invocation (make test-batch).
+        - C(status_check) — regenerate status table + verify it is current (make status-update).
+        required: true
+        type: str
+      branch:
+        default: master
+        description: Branch name for push_and_verify or commit_ship (defaults to master).
+        type: str
+      ci_timeout:
+        default: 600
+        description: Maximum seconds to wait for CI when wait_for_ci=true.
+        type: int
+      commit_msg:
+        description: Commit message (required when action=commit_ship).
+        type: str
+      repo_path:
+        default: .
+        description: Path to the git repository root where make targets are defined.
+        type: str
+      test_files:
+        description:
+        - Space-separated list of test file paths (required when action=test_batch).
+        - Passed as the C(TESTFILES) variable to C(make test-batch).
+        elements: str
+        type: list
+      wait_for_ci:
+        default: true
+        description: When true, push_and_verify polls CI after push until completion
+          or timeout.
+        type: bool
+    short_description: Batched opencode agent tool patterns — gate, push, commit,
+      test, status
+  EXAMPLES:
+  - general_ludd.agent.gludd_open_code:
+      action: gate_check
+      repo_path: /workspace/gludd
+    name: Run fast gate check (lint + typecheck + collect)
+    register: gate_result
+  - general_ludd.agent.gludd_open_code:
+      action: commit_ship
+      commit_msg: 'feat: add batched opencode patterns'
+      repo_path: /workspace/gludd
+    name: Commit all changes and ship to remote
+    register: ship_result
+  - general_ludd.agent.gludd_open_code:
+      action: push_and_verify
+      branch: master
+      ci_timeout: 600
+      repo_path: /workspace/gludd
+      wait_for_ci: true
+    name: Push master and poll CI until green
+    register: push_result
+  - general_ludd.agent.gludd_open_code:
+      action: test_batch
+      repo_path: /workspace/gludd
+      test_files:
+      - tests/unit/test_module_a.py
+      - tests/unit/test_module_b.py
+    name: Run a batch of test files
+    register: test_result
+  - general_ludd.agent.gludd_open_code:
+      action: status_check
+      repo_path: /workspace/gludd
+    name: Regenerate and verify README status table
+    register: status_result
+  RETURN:
+    action:
+      description: The action that was performed.
+      returned: always
+      sample: gate_check
+      type: str
+    changed:
+      description: Whether the action changed system state.
+      returned: always
+      sample: true
+      type: bool
+    cmd:
+      description: The full command that was executed (or would be in check mode).
+      returned: always
+      sample: make gate-fast
+      type: str
+    elapsed_seconds:
+      description: Wall-clock duration of the command execution.
+      returned: when command ran
+      sample: 12.34
+      type: float
+    rc:
+      description: Return code of the command (None in check mode).
+      returned: always
+      sample: 0
+      type: int
+    skipped:
+      description: True when run in check mode (no command executed).
+      returned: always
+      sample: false
+      type: bool
+    stderr:
+      description: Standard error of the command.
+      returned: always
+      type: str
+    stdout:
+      description: Standard output of the command (truncated to last 2000 chars).
+      returned: always
+      type: str
+  module: gludd_open_code
 general_ludd.agent.gludd_ornith:
   DOCUMENTATION:
     description:
@@ -2030,6 +2198,83 @@ general_ludd.agent.gludd_process:
       returned: when action is signal
       type: str
   module: gludd_process
+general_ludd.agent.gludd_push_guard:
+  DOCUMENTATION:
+    description:
+    - Wraps the ForcePushTracker (scripts/push_rate_guard.py) as an idempotent
+    - Ansible module.
+    - Tracks consecutive GLUDD_FORCE_PUSH bypasses in a JSON state file and
+    - rejects further bypasses when the configured C(max_bypasses) threshold
+    - is exceeded within C(window_hours).
+    - 'Supports three states: C(check) to query whether a bypass is allowed,'
+    - C(record) to persist a bypass event, and C(reset) to clear the counter
+    - (normal push).
+    - Check-mode safe — C(check) and C(record) report what would change
+    - without mutating the state file.
+    module: gludd_push_guard
+    options:
+      max_bypasses: {}
+      state: {}
+      state_file: {}
+      window_hours: {}
+    short_description: Enforce push-rate guard via force-push bypass tracking
+  EXAMPLES:
+  - general_ludd.agent.gludd_push_guard:
+      max_bypasses: 3
+      state: check
+    name: Check if a force-push bypass is currently allowed
+    register: guard
+  - ansible.builtin.fail:
+      msg: 'Force-push blocked: {{ guard.current_count }} bypasses already'
+    name: Block push playbook when bypass is denied
+    when: not guard.bypass_allowed
+  - general_ludd.agent.gludd_push_guard:
+      state: record
+    name: Record a successful force-push bypass
+  - general_ludd.agent.gludd_push_guard:
+      state: reset
+      state_file: /var/tmp/my-force-track.json
+    name: Reset the bypass counter after a normal push
+  RETURN:
+    bypass_allowed:
+      description:
+      - Whether a force-push bypass is currently permitted.
+      - Only returned when C(state=check).
+      returned: when state is 'check'
+      type: bool
+    current_count:
+      description:
+      - Number of bypass entries currently within the window.
+      returned: when state is 'check'
+      type: int
+    max_bypasses:
+      description:
+      - Configured maximum consecutive bypasses before blocking.
+      returned: when state is 'check'
+      type: int
+    recorded:
+      description:
+      - Whether a bypass was recorded in this invocation.
+      - Only returned when C(state=record).
+      returned: when state is 'record'
+      type: bool
+    reset:
+      description:
+      - Whether the counter was reset in this invocation.
+      - Only returned when C(state=reset).
+      returned: when state is 'reset'
+      type: bool
+    state_file:
+      description:
+      - Path to the JSON state file used for tracking.
+      returned: always
+      type: str
+    window_hours:
+      description:
+      - Configured rolling window in hours.
+      returned: when state is 'check'
+      type: float
+  module: gludd_push_guard
 general_ludd.agent.gludd_reload:
   DOCUMENTATION:
     description:

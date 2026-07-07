@@ -30,7 +30,7 @@ import contextlib
 import logging
 import os
 import xml.etree.ElementTree as ET
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.code_intelligence.git_intel import GitIntelligence
 from general_ludd.self_improve.harness import SelfImprovementHarness
@@ -51,8 +51,8 @@ class CodebaseIntrospector:
     def __init__(
         self,
         repo_root: str,
-        traces_buffer: Any = None,
-        recent_failures: dict[str, Any] | None = None,
+        traces_buffer: object | None = None,
+        recent_failures: dict[str, object] | None = None,
         project_id: str | None = None,
     ) -> None:
         self.repo_root = repo_root
@@ -63,7 +63,7 @@ class CodebaseIntrospector:
         # surface cross-tenant trace cost/token totals. None = unscoped/global.
         self._project_id = project_id
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self) -> dict[str, object]:
         # Compute harness findings once (the gap analysis walks the whole src
         # tree) and split into the dead_code / missing_tests facets.
         findings = self._harness_findings()
@@ -83,7 +83,7 @@ class CodebaseIntrospector:
         }
 
     # --- churn -----------------------------------------------------------
-    def _churn(self) -> dict[str, Any] | None:
+    def _churn(self) -> dict[str, object] | None:
         try:
             gi = GitIntelligence(self.repo_root)
             hot = gi.hot_files(limit=_MAX_HOT_FILES)
@@ -95,11 +95,11 @@ class CodebaseIntrospector:
         return {"hot_files": hot}
 
     # --- complexity ------------------------------------------------------
-    def _complexity(self) -> dict[str, Any] | None:
+    def _complexity(self) -> dict[str, object] | None:
         src_dir = os.path.join(self.repo_root, "src", "general_ludd")
         if not os.path.isdir(src_dir):
             return None
-        modules: list[dict[str, Any]] = []
+        modules: list[dict[str, object]] = []
         for root, _dirs, files in os.walk(src_dir):
             for f in files:
                 if not f.endswith(".py") or f == "__init__.py":
@@ -112,10 +112,10 @@ class CodebaseIntrospector:
         if not modules:
             return None
         # Most complex first (branch_count is a decent proxy).
-        modules.sort(key=lambda m: m["branch_count"], reverse=True)
+        modules.sort(key=lambda m: cast(int, m["branch_count"]), reverse=True)
         return {"modules": modules[:_MAX_COMPLEXITY_MODULES]}
 
-    def _module_metrics(self, path: str) -> dict[str, Any] | None:
+    def _module_metrics(self, path: str) -> dict[str, object] | None:
         try:
             with open(path, encoding="utf-8") as fh:
                 tree = ast.parse(fh.read())
@@ -149,7 +149,7 @@ class CodebaseIntrospector:
         return depth(tree, 0)
 
     # --- coverage --------------------------------------------------------
-    def _coverage(self) -> dict[str, Any] | None:
+    def _coverage(self) -> dict[str, object] | None:
         coverage_xml = os.path.join(self.repo_root, "coverage.xml")
         if not os.path.isfile(coverage_xml):
             return None
@@ -159,7 +159,7 @@ class CodebaseIntrospector:
             return None
         root = tree.getroot()
         overall = root.get("line-rate")
-        low: list[dict[str, Any]] = []
+        low: list[dict[str, object]] = []
         for cls in root.findall(".//classes/class"):
             filename = cls.get("filename", "")
             try:
@@ -168,15 +168,15 @@ class CodebaseIntrospector:
                 continue
             if filename and rate < _LOW_COVERAGE_THRESHOLD:
                 low.append({"file": filename, "line_rate": round(rate, 4)})
-        low.sort(key=lambda c: c["line_rate"])
-        result: dict[str, Any] = {"low_coverage": low[:_MAX_LOW_COVERAGE]}
+        low.sort(key=lambda c: cast(float, c["line_rate"]))
+        result: dict[str, object] = {"low_coverage": low[:_MAX_LOW_COVERAGE]}
         if overall is not None:
             with contextlib.suppress(ValueError):
                 result["overall_line_rate"] = round(float(overall), 4)
         return result
 
     # --- debt ------------------------------------------------------------
-    def _debt(self) -> dict[str, Any] | None:
+    def _debt(self) -> dict[str, object] | None:
         gate_status = os.path.join(self.repo_root, ".gate-status")
         if not os.path.isfile(gate_status):
             return None
@@ -185,7 +185,7 @@ class CodebaseIntrospector:
                 lines = fh.read().splitlines()
         except (OSError, UnicodeDecodeError):
             return None
-        debt: dict[str, Any] = {}
+        debt: dict[str, object] = {}
         for line in lines:
             parts = line.split()
             # e.g. "lint PASS 0" / "typecheck FAIL 7"
@@ -197,7 +197,7 @@ class CodebaseIntrospector:
         return debt or None
 
     # --- dead_code / missing_tests --------------------------------------
-    def _harness_findings(self) -> list[dict[str, Any]]:
+    def _harness_findings(self) -> list[dict[str, object]]:
         try:
             harness = SelfImprovementHarness(repo_root=self.repo_root)
             return harness.run_gap_analysis()
@@ -206,12 +206,12 @@ class CodebaseIntrospector:
             return []
 
     # --- perf_cost -------------------------------------------------------
-    def _perf_cost(self) -> dict[str, Any] | None:
+    def _perf_cost(self) -> dict[str, object] | None:
         buffer = self._traces_buffer
         if buffer is None or not hasattr(buffer, "snapshot"):
             return None
         try:
-            snap = buffer.snapshot(project_id=self._project_id)
+            snap = cast(Any, buffer).snapshot(project_id=self._project_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("perf_cost unavailable: %s", exc)
             return None

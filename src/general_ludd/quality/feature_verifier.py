@@ -24,7 +24,7 @@ import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ class FeatureVerifier:
     # Public API
     # ------------------------------------------------------------------
 
-    def verify_feature(self, feature: dict[str, Any]) -> dict[str, Any]:
+    def verify_feature(self, feature: dict[str, object]) -> dict[str, object]:
         """Verify a single feature dict and return a result dict.
 
         The result dict includes:
@@ -115,7 +115,7 @@ class FeatureVerifier:
           verified_at   : ISO datetime string if status==verified else None
           evidence_results : per-ref detail + aggregate counters
         """
-        evidence_raw: list[str] | None = feature.get("evidence")
+        evidence_raw = cast(list[str] | None, feature.get("evidence"))
         prior_status: str = str(feature.get("status", "requested")).lower()
 
         # Fail-closed: empty or None evidence MUST NEVER reach VERIFIED
@@ -128,7 +128,7 @@ class FeatureVerifier:
                 total_count=0,
             )
 
-        per_ref: list[dict[str, Any]] = []
+        per_ref: list[dict[str, object]] = []
         met_count = 0
 
         for ref in evidence_raw:
@@ -160,14 +160,14 @@ class FeatureVerifier:
             total_count=total_count,
         )
 
-    def verify_all(self, features: list[dict[str, Any]]) -> dict[str, Any]:
+    def verify_all(self, features: list[dict[str, object]]) -> dict[str, object]:
         """Verify a list of features and return a summary dict.
 
         Summary keys:
           total    : int
           results  : list of per-feature result dicts (each includes name, status, …)
         """
-        results: list[dict[str, Any]] = []
+        results: list[dict[str, object]] = []
         for feat in features:
             r = self.verify_feature(feat)
             r["id"] = feat.get("id")
@@ -290,10 +290,10 @@ class FeatureVerifier:
     def _build_result(
         status: str,
         verified_at: datetime | None,
-        per_ref: list[dict[str, Any]],
+        per_ref: list[dict[str, object]],
         met_count: int,
         total_count: int,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         return {
             "status": status,
             "verified_at": verified_at.isoformat() if verified_at is not None else None,

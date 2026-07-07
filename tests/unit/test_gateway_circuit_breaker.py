@@ -204,7 +204,10 @@ class TestSuccessReset:
         assert tracker.is_healthy("primary") is True
 
     def test_success_after_open_breaker_via_call_model_recovers(self) -> None:
-        """A success on the call_model path clears an already-open breaker."""
+        """A success on the call_model path clears an already-open breaker.
+
+        Uses ``_skip_health_check=True`` so the call bypasses the circuit gate
+        and the downstream ``record_success`` resets the consecutive counter."""
         tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
         gateway = _make_gateway(tracker)
 
@@ -215,7 +218,7 @@ class TestSuccessReset:
         assert tracker.is_healthy("primary", admit_probe=False) is False
 
         _FakeChatModel.script = ["recovered"]
-        gateway.call_model("primary", [{"role": "user", "content": "hi"}])
+        gateway.call_model("primary", [{"role": "user", "content": "hi"}], _skip_health_check=True)
         assert tracker._consecutive.get("primary") == 0
         assert tracker.is_healthy("primary", admit_probe=False) is True
 

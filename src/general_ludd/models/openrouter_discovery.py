@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 import httpx
 
@@ -18,10 +17,10 @@ class OpenRouterScraper:
 
     def __init__(self, api_key: str | None = None) -> None:
         self._api_key = api_key
-        self._cache: list[dict[str, Any]] | None = None
+        self._cache: list[dict[str, object]] | None = None
         self._cache_timestamp: float = 0.0
 
-    async def fetch_models(self) -> list[dict[str, Any]]:
+    async def fetch_models(self) -> list[dict[str, object]]:
         """Fetch the list of models from OpenRouter API. Returns empty on failure."""
         if self._api_key is None:
             logger.debug("No OpenRouter API key configured, skipping model fetch")
@@ -53,13 +52,13 @@ class OpenRouterScraper:
             logger.warning("OpenRouter models fetch error: %s", exc)
             return []
 
-    def _parse_models_response(self, data: dict[str, Any]) -> list[dict[str, Any]]:
+    def _parse_models_response(self, data: dict[str, object]) -> list[dict[str, object]]:
         """Parse the OpenRouter API response into a list of model dicts."""
         raw_models = data.get("data", [])
         if not isinstance(raw_models, list):
             return []
 
-        models: list[dict[str, Any]] = []
+        models: list[dict[str, object]] = []
         seen_ids: set[str] = set()
 
         for m in raw_models:
@@ -89,7 +88,7 @@ class OpenRouterScraper:
         return models
 
     @property
-    def cached_models(self) -> list[dict[str, Any]] | None:
+    def cached_models(self) -> list[dict[str, object]] | None:
         return self._cache
 
     def invalidate_cache(self) -> None:

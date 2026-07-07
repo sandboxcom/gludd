@@ -33,10 +33,12 @@ import logging
 import os
 import shutil
 import sys
-from typing import Annotated, Any
+from collections.abc import Callable
+from typing import Annotated, cast
 
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.controllers.environment_advisor import (
     build_advice,
@@ -78,7 +80,7 @@ _DEFAULT_EXPECTED_OUTPUT_TOKENS = 1024
 
 # The ansible gludd_* modules a job can always invoke against the daemon, even
 # when no MCP server is wired. Kept as the fail-soft floor for the tools catalog.
-_ANSIBLE_TOOL_MODULES: list[dict[str, str]] = [
+_ANSIBLE_TOOL_MODULES: list[dict[str, object]] = [
     {
         "name": "gludd_facts",
         "source": "ansible",
@@ -122,32 +124,32 @@ _SAFE_MODEL_FIELDS = (
 class EnvironmentBrief(BaseModel):
     """Consolidated environment + optimization brief for a running job."""
 
-    models: list[dict[str, Any]] = []
-    routing: dict[str, Any] = {}
-    budget: dict[str, Any] = {}
-    compute: dict[str, Any] = {}
-    tools: list[dict[str, Any]] = []
-    skills: list[dict[str, Any]] = []
-    queues: list[dict[str, Any]] = []
-    system: dict[str, Any] = {}
-    optimization: dict[str, Any] = {}
+    models: list[dict[str, object]] = []
+    routing: dict[str, object] = {}
+    budget: dict[str, object] = {}
+    compute: dict[str, object] = {}
+    tools: list[dict[str, object]] = []
+    skills: list[dict[str, object]] = []
+    queues: list[dict[str, object]] = []
+    system: dict[str, object] = {}
+    optimization: dict[str, object] = {}
     # Project-topology facet: declared relationships (parent/child/sibling/
     # external) + interface contracts. inherited_knowledge is populated from the
     # cross-project router borrowing phase when the flag is on; {} by default.
     # Fails soft to {}.
-    project: dict[str, Any] = {}
+    project: dict[str, object] = {}
 
 
 class AdviceBrief(BaseModel):
     """Per-task advice surface for ``GET /api/environment/advise``."""
 
     task_type: str = ""
-    recommendation: dict[str, Any] = {}
-    route: dict[str, Any] = {}
+    recommendation: dict[str, object] = {}
+    route: dict[str, object] = {}
     est_cost_usd: float = 0.0
     use_workflow: bool = False
     workflow_reason: str = ""
-    resource_hints: dict[str, Any] = {}
+    resource_hints: dict[str, object] = {}
 
 
 async def _resolve_advice(
@@ -156,7 +158,7 @@ async def _resolve_advice(
     work_type: str,
     prompt_tokens: int | None,
     priority: str,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Gather the per-task advice for *work_type* from live app.state.
 
     Does ALL the app.state / network I/O (adaptive routing, profile lookup,
@@ -184,7 +186,7 @@ async def _resolve_advice(
         except ValueError:  # pragma: no cover - mapping table is closed
             task_type = TaskType.FEATURE
 
-        recommendation: dict[str, Any] = {
+        recommendation: dict[str, object] = {
             "selected_prompt_profile_id": None,
             "selected_model_profile_id": "default",
             "composite_score": 0.0,
@@ -213,7 +215,7 @@ async def _resolve_advice(
         gateway = getattr(app.state, "_model_gateway", None)
         gateway_present = gateway is not None and hasattr(gateway, "list_profiles")
         chosen_id = recommendation.get("selected_model_profile_id")
-        profile: dict[str, Any] = {}
+        profile: dict[str, object] = {}
         has_local_or_free_profile = False
         if gateway_present and gateway is not None:
             try:
@@ -257,7 +259,7 @@ async def _resolve_advice(
         #    static infra pricing table.
         in_tokens = prompt_tokens if isinstance(prompt_tokens, int) else 0
         out_tokens = _DEFAULT_EXPECTED_OUTPUT_TOKENS
-        model_name = profile.get("model_name") or chosen_id or "__default__"
+        model_name = cast(str, profile.get("model_name") or chosen_id or "__default__")
         est_cost_usd: float | None = None
         limiter = getattr(app.state, "_spend_limiter", None)
         if limiter is not None and hasattr(limiter, "token_cost_usd"):
@@ -287,7 +289,7 @@ async def _resolve_advice(
         guard = getattr(app.state, "_budget_guard", None)
         if guard is not None and hasattr(guard, "check_all_limits"):
             try:
-                verdict = guard.check_all_limits(estimated_cost=est_cost_usd)
+                verdict = guard.check_all_limits(estimated_cost=est_cost_usd or 0.0)
                 if isinstance(verdict, dict):
                     budget_ok = bool(verdict.get("allowed", True))
                     rem = verdict.get("remaining_budget")
@@ -329,7 +331,7 @@ async def _resolve_advice(
         return _advice_fallback(work_type)
 
 
-def _models_facet(app: FastAPI) -> list[dict[str, Any]]:
+def _models_facet(app: FastAPI) -> list[dict[str, object]]:
     """Roster of the gateway's profiles, secret fields NEVER serialized.
 
     Fails soft to ``[]`` when no gateway is on app.state.
@@ -337,7 +339,7 @@ def _models_facet(app: FastAPI) -> list[dict[str, Any]]:
     gateway = getattr(app.state, "_model_gateway", None)
     if gateway is None or not hasattr(gateway, "list_profiles"):
         return []
-    roster: list[dict[str, Any]] = []
+    roster: list[dict[str, object]] = []
     try:
         profiles = gateway.list_profiles()
     except Exception as exc:  # pragma: no cover - defensive
@@ -347,7 +349,7 @@ def _models_facet(app: FastAPI) -> list[dict[str, Any]]:
         # NOTE: build the dict from the SAFE allow-list only. The ModelProfile's
         # credential_alias / api_base_alias / provider_package / etc. are
         # intentionally excluded so no credential reference is ever emitted.
-        entry: dict[str, Any] = {
+        entry: dict[str, object] = {
             "profile_id": getattr(p, "model_profile_id", None),
             "provider": getattr(p, "provider", None),
             "model": getattr(p, "model_name", None),
@@ -362,7 +364,7 @@ def _models_facet(app: FastAPI) -> list[dict[str, Any]]:
     return roster
 
 
-def _routing_facet(app: FastAPI) -> dict[str, Any]:
+def _routing_facet(app: FastAPI) -> dict[str, object]:
     """Routing policy from the startup model_routing config, or ``{}``."""
     startup_config = getattr(app.state, "_startup_config", {}) or {}
     routing = startup_config.get("model_routing")
@@ -382,13 +384,13 @@ def _routing_facet(app: FastAPI) -> dict[str, Any]:
         return {}
 
 
-def _budget_facet(app: FastAPI) -> dict[str, Any]:
+def _budget_facet(app: FastAPI) -> dict[str, object]:
     """Unified budget: run-level (RunBudgetGuard) + window/limiter spend.
 
     Run-level fields fail soft to ``None``; the window spend is reused verbatim
     from routers/facts.py (_spend_facet) rather than reimplemented.
     """
-    facet: dict[str, Any] = {
+    facet: dict[str, object] = {
         "run_remaining_usd": None,
         "run_limit_usd": None,
         "run_spent_usd": None,
@@ -419,9 +421,9 @@ def _budget_facet(app: FastAPI) -> dict[str, Any]:
     return facet
 
 
-def _compute_facet(app: FastAPI) -> dict[str, Any]:
+def _compute_facet(app: FastAPI) -> dict[str, object]:
     """Available compute providers + GPU types + the active config if present."""
-    facet: dict[str, Any] = {"providers": [], "gpu_types": [], "configured": None}
+    facet: dict[str, object] = {"providers": [], "gpu_types": [], "configured": None}
     try:
         from general_ludd.infra.compute import ComputeProvider, GPUType
 
@@ -441,11 +443,11 @@ def _compute_facet(app: FastAPI) -> dict[str, Any]:
     return facet
 
 
-async def _tools_facet(app: FastAPI) -> list[dict[str, Any]]:
+async def _tools_facet(app: FastAPI) -> list[dict[str, object]]:
     """Catalog of invocable tools: live MCP tools (if a client is wired) plus the
     static gludd_* ansible modules. Fails soft to just the ansible modules.
     """
-    catalog: list[dict[str, Any]] = list(_ANSIBLE_TOOL_MODULES)
+    catalog: list[dict[str, object]] = list(_ANSIBLE_TOOL_MODULES)
     mcp_client = getattr(app.state, "_mcp_client", None)
     if mcp_client is not None and hasattr(mcp_client, "list_tools"):
         try:
@@ -470,7 +472,7 @@ async def _tools_facet(app: FastAPI) -> list[dict[str, Any]]:
     return catalog
 
 
-def _skills_facet(app: FastAPI) -> list[dict[str, Any]]:
+def _skills_facet(app: FastAPI) -> list[dict[str, object]]:
     """Skill names + descriptions from the SkillRegistry, or ``[]``."""
     registry = getattr(app.state, "_skill_registry", None)
     if registry is None or not hasattr(registry, "list_skills"):
@@ -487,7 +489,7 @@ def _skills_facet(app: FastAPI) -> list[dict[str, Any]]:
 
 async def _queues_facet(
     app: FastAPI, project_id: str | None = None
-) -> list[dict[str, Any]]:
+) -> list[dict[str, object]]:
     """Queue name + depth. Reuses the todos/work backlog summary when reachable;
     fails soft to ``[]``.
 
@@ -508,7 +510,7 @@ async def _queues_facet(
             work_summary = await TaskReturnRepository(session).work_summary(
                 project_id=project_id
             )
-        queues: list[dict[str, Any]] = []
+        queues: list[dict[str, object]] = []
         backlog = todo_summary.get("backlog_size")
         if backlog is not None:
             queues.append({"name": "todos", "depth": backlog})
@@ -545,16 +547,16 @@ def _resolve_project_id(app: FastAPI, project_id: str | None) -> str | None:
     return None
 
 
-def _parse_interface(edge: Any) -> dict[str, Any]:
+def _parse_interface(edge: object) -> dict[str, object]:
     """Build the per-edge ``interface`` dict from the hint + structured contract.
 
     Parses ``interface_contract`` (JSON-in-Text) DEFENSIVELY: a malformed or
     non-object contract degrades to ``{}`` rather than raising. The free-form
     ``interface_hint`` is always carried (as ``hint``).
     """
-    interface: dict[str, Any] = {"hint": getattr(edge, "interface_hint", None)}
+    interface: dict[str, object] = {"hint": getattr(edge, "interface_hint", None)}
     raw = getattr(edge, "interface_contract", None)
-    contract: dict[str, Any] = {}
+    contract: dict[str, object] = {}
     if isinstance(raw, str) and raw.strip():
         try:
             parsed = json.loads(raw)
@@ -594,8 +596,8 @@ def _borrowing_config(app: FastAPI) -> tuple[bool, float, float, float]:
 
 
 async def _inherited_knowledge_facet(
-    app: FastAPI, pid: str, rel_repo: Any, factory: Any
-) -> dict[str, Any]:
+    app: FastAPI, pid: str, rel_repo: object, session_factory: async_sessionmaker[AsyncSession] | None
+) -> dict[str, object]:
     """Cross-project knowledge *pid* borrows, or ``{}`` when borrowing is OFF.
 
     Builds a PROJECT-SCOPED ``AdaptiveRouter`` (``project_id=pid`` +
@@ -619,7 +621,7 @@ async def _inherited_knowledge_facet(
         try:
             from general_ludd.db.repository import BenchmarkRepository
 
-            benchmark_repo = BenchmarkRepository(session_factory=factory)
+            benchmark_repo = BenchmarkRepository(session_factory=session_factory)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("inherited_knowledge: benchmark repo unavailable: %s", exc)
             benchmark_repo = None
@@ -642,8 +644,8 @@ async def _inherited_knowledge_facet(
 
 
 async def _project_facet(
-    app: FastAPI, project_id: str | None, rel_repo_factory: Any = None
-) -> dict[str, Any]:
+    app: FastAPI, project_id: str | None, rel_repo_factory: Callable[..., object] | None = None
+) -> dict[str, object]:
     """Declared project-topology edges for *project_id* + interface contracts.
 
     ``relationships`` lists every declared edge (parent/child/sibling/external)
@@ -663,18 +665,19 @@ async def _project_facet(
     pid = _resolve_project_id(app, project_id)
     if not pid:
         return {}
-    factory = getattr(app.state, "_session_factory", None)
+    factory = cast(async_sessionmaker[AsyncSession] | None, getattr(app.state, "_session_factory", None))
     if factory is None:
         return {}
     try:
         from general_ludd.db.repository import ProjectRelationshipRepository
 
         async with factory() as session:
-            rel_repo = (
-                rel_repo_factory(session)
-                if rel_repo_factory is not None
-                else ProjectRelationshipRepository(session)
-            )
+            if rel_repo_factory is not None:
+                rel_repo: ProjectRelationshipRepository = cast(
+                    ProjectRelationshipRepository, rel_repo_factory(session)
+                )
+            else:
+                rel_repo = ProjectRelationshipRepository(session)
             edges = await rel_repo.list_for_project(pid)
             # Cross-project knowledge inheritance (phase 3): populated from a
             # project-scoped router ONLY when the borrowing flag is on; ``{}``
@@ -683,7 +686,7 @@ async def _project_facet(
             inherited_knowledge = await _inherited_knowledge_facet(
                 app, pid, rel_repo, factory
             )
-        relationships: list[dict[str, Any]] = []
+        relationships: list[dict[str, object]] = []
         for edge in edges or []:
             relationships.append(
                 {
@@ -707,11 +710,11 @@ async def _project_facet(
         return {}
 
 
-def _system_facet() -> dict[str, Any]:
+def _system_facet() -> dict[str, object]:
     """Host system facts via stdlib only — never shells out. Every field is
     guarded and falls back to ``None`` on failure.
     """
-    facet: dict[str, Any] = {
+    facet: dict[str, object] = {
         "cpu_count": None,
         "python_version": None,
         "load_avg": None,
@@ -745,7 +748,7 @@ def _system_facet() -> dict[str, Any]:
     return facet
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get(
         "/api/environment",
         response_model=EnvironmentBrief,
@@ -895,4 +898,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             )
 
             advice = _advice_fallback(work_type)
-        return AdviceBrief(**advice)
+        return AdviceBrief(
+            task_type=cast(str, advice.get("task_type", "")),
+            recommendation=cast(dict[str, object], advice.get("recommendation", {})),
+            route=cast(dict[str, object], advice.get("route", {})),
+            est_cost_usd=cast(float, advice.get("est_cost_usd", 0.0)),
+            use_workflow=cast(bool, advice.get("use_workflow", False)),
+            workflow_reason=cast(str, advice.get("workflow_reason", "")),
+            resource_hints=cast(dict[str, object], advice.get("resource_hints", {})),
+        )

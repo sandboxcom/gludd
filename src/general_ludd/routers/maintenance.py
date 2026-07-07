@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 
@@ -23,11 +23,11 @@ _SAFE_LABEL = re.compile(r"^[A-Za-z0-9_.\-:/]{1,100}$")
 _MAX_SEEN_KEYS = 256
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     repo_root = os.environ.get("GLUDD_REPO_ROOT", ".")
 
     @app.get("/admin/code-intel/hot-files")
-    async def code_intel_hot_files(limit: int = 10) -> dict[str, Any]:
+    async def code_intel_hot_files(limit: int = 10) -> dict[str, object]:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
 
         gi = GitIntelligence(repo_path=repo_root)
@@ -42,7 +42,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/deps/outdated")
-    async def deps_outdated() -> dict[str, Any]:
+    async def deps_outdated() -> dict[str, object]:
         from general_ludd.dependency.manager import DependencyManager
 
         dm = DependencyManager(project_root=repo_root)
@@ -60,7 +60,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/issues/poll")
-    async def issues_poll(payload: dict[str, Any]) -> dict[str, Any]:
+    async def issues_poll(payload: dict[str, object]) -> dict[str, object]:
         # Poll a GitHub repo's labeled issues and return them as todo specs.
         # Persistence into the queue is the caller's choice; this surfaces the
         # ingestor's output so it can feed the intake queue.
@@ -91,8 +91,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # request, so its per-instance _seen_ids would always be empty and
         # every poll would re-emit all issues. Persist a per-(owner/repo/label)
         # seen-id set in the daemon state and hand it to the ingestor.
-        store: dict[str, set[int | str]] = _daemon_state.setdefault(
-            "issue_ingestor_seen_ids", {}
+        store: dict[str, set[int | str]] = cast(
+            dict[str, set[int | str]],
+            _daemon_state.setdefault("issue_ingestor_seen_ids", {}),
         )
         key = f"{owner}/{repo}#{label}"
         if key not in store and len(store) >= _MAX_SEEN_KEYS:
@@ -115,11 +116,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"new_todos": new_todos, "count": len(new_todos)}
 
     @app.post("/admin/quality/check")
-    async def quality_check(payload: dict[str, Any]) -> dict[str, Any]:
+    async def quality_check(payload: dict[str, object]) -> dict[str, object]:
         from general_ludd.quality.gate import QualityGateChecker
 
         checker = QualityGateChecker()
         return checker.check_python_coverage(
-            coverage_percent=float(payload.get("coverage_percent", 0.0)),
-            branch_percent=payload.get("branch_percent"),
+            coverage_percent=float(str(payload.get("coverage_percent", 0.0))),
+            branch_percent=cast(float | None, payload.get("branch_percent")),
         )

@@ -18,7 +18,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from watchdog.events import (
     FileSystemEvent,
@@ -442,7 +442,7 @@ class FileIntegrityScanner:
         watch_paths: list[str],
         exclude_patterns: list[str] | None = None,
         skip_vc_controlled: bool = False,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Scan *watch_paths* and return a change-detection report.
 
         Args:
@@ -463,7 +463,7 @@ class FileIntegrityScanner:
         old_hashes = self._load_hashes()
         new_hashes: dict[str, str] = {}
         files: list[str] = []
-        changes: list[dict[str, Any]] = []
+        changes: list[dict[str, object]] = []
 
         for wp in watch_paths:
             root = Path(wp).expanduser().resolve()
@@ -520,13 +520,13 @@ class FileIntegrityScanner:
 class _IntegrityEventHandler(FileSystemEventHandler):
     """Watchdog event handler that collects filesystem change events."""
 
-    def __init__(self, changes: list[dict[str, Any]], lock: threading.Lock) -> None:
+    def __init__(self, changes: list[dict[str, object]], lock: threading.Lock) -> None:
         super().__init__()
         self._changes = changes
         self._lock = lock
 
     def _record(self, event_type: str, src: str, dest: str | None = None) -> None:
-        entry: dict[str, Any] = {
+        entry: dict[str, object] = {
             "type": event_type,
             "file": src,
             "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -570,7 +570,7 @@ class FileWatcher:
 
     def __init__(self) -> None:
         self._observer: Any = None  # watchdog.observers.Observer, typed as Any (no stubs)
-        self._changes: list[dict[str, Any]] = []
+        self._changes: list[dict[str, object]] = []
         self._lock = threading.Lock()
 
     def start(self, watch_paths: list[str]) -> None:
@@ -583,7 +583,7 @@ class FileWatcher:
                 self._observer.schedule(handler, str(p), recursive=True)
         self._observer.start()
 
-    def get_changes(self) -> list[dict[str, Any]]:
+    def get_changes(self) -> list[dict[str, object]]:
         """Return all collected change events and clear the internal buffer."""
         with self._lock:
             result = list(self._changes)
@@ -598,7 +598,7 @@ class FileWatcher:
         self._observer = None
 
 
-def sign_change(change: ChangeRecord, reason: str, signer: str) -> dict[str, Any]:
+def sign_change(change: ChangeRecord, reason: str, signer: str) -> dict[str, object]:
     parts = [change.file_path, change.change_type, str(change.old_hash), str(change.new_hash), change.detected_at]
     payload = "|".join(parts)
     key = _get_integrity_key()
@@ -611,7 +611,7 @@ def sign_change(change: ChangeRecord, reason: str, signer: str) -> dict[str, Any
     return result
 
 
-def verify_signature(signed: dict[str, Any]) -> bool:
+def verify_signature(signed: dict[str, object]) -> bool:
     parts = [
         signed.get("file_path", ""),
         signed.get("change_type", ""),
@@ -642,8 +642,8 @@ def sign_change_openbao(
     reason: str,
     old_hash: str | None = None,
     new_hash: str | None = None,
-    secrets_resolver: Any | None = None,
-) -> dict[str, Any]:
+    secrets_resolver: object | None = None,
+) -> dict[str, object]:
     """Sign an integrity approval; hashes are included in the HMAC payload.
 
     ``old_hash`` and ``new_hash`` bind the signature to the specific scanned
@@ -655,7 +655,7 @@ def sign_change_openbao(
     payload = "|".join([path, signer, reason, str(old_hash), str(new_hash), ts])
     key = _get_integrity_key()
     sig = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
-    result: dict[str, Any] = {
+    result: dict[str, object] = {
         "path": path,
         "signer": signer,
         "reason": reason,
@@ -665,9 +665,9 @@ def sign_change_openbao(
         "signature": sig,
         "backend": "openbao" if secrets_resolver else "local-hmac",
     }
-    if secrets_resolver and hasattr(secrets_resolver, "write_secret"):
+    if secrets_resolver is not None and hasattr(secrets_resolver, "write_secret"):
         try:
-            secrets_resolver.write_secret(
+            cast(Any, secrets_resolver).write_secret(
                 f"integrity/{path.replace('/', '_')}",
                 {"signature": sig, "reason": reason, "old_hash": old_hash, "new_hash": new_hash},
             )
@@ -677,19 +677,19 @@ def sign_change_openbao(
     return result
 
 
-def verify_openbao_signature(signed: dict[str, Any]) -> bool:
+def verify_openbao_signature(signed: dict[str, object]) -> bool:
     """Verify a signature produced by :func:`sign_change_openbao`.
 
     Returns ``False`` (not an exception) on any mismatch so callers can
     distinguish tamper-detected from signing errors.
     """
     parts = [
-        signed.get("path", ""),
-        signed.get("signer", ""),
-        signed.get("reason", ""),
+        str(signed.get("path", "")),
+        str(signed.get("signer", "")),
+        str(signed.get("reason", "")),
         str(signed.get("old_hash")),
         str(signed.get("new_hash")),
-        signed.get("timestamp", ""),
+        str(signed.get("timestamp", "")),
     ]
     payload = "|".join(parts)
     try:

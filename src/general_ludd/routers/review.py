@@ -14,10 +14,12 @@ All endpoints require the daemon PSK (admin middleware enforces it on every
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+from general_ludd.execution.human_gate import HumanGate
 
 logger = logging.getLogger(__name__)
 
@@ -40,16 +42,16 @@ class PendingResponse(BaseModel):
     enabled: bool
 
 
-def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
-    def _human_gate() -> Any:
-        return daemon_state.get("human_gate")
+def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
+    def _human_gate() -> HumanGate | None:
+        return cast(HumanGate | None, daemon_state.get("human_gate"))
 
     @app.post(
         "/admin/review/approve/{thread_id}",
         response_model=None,
         summary="Resume a paused review gate with a human decision",
     )
-    async def admin_review_approve(thread_id: str, body: ApproveRequest) -> dict[str, Any]:
+    async def admin_review_approve(thread_id: str, body: ApproveRequest) -> dict[str, object]:
         gate = _human_gate()
         if gate is None:
             raise HTTPException(status_code=503, detail="HumanGate not available")

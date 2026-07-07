@@ -123,12 +123,14 @@ def _format_acceptance_criteria(raw_ac: str | None) -> str:
     if not raw_ac:
         return ""
     try:
-        criteria_list: list[str] = json.loads(raw_ac)
+        parsed = json.loads(raw_ac)
     except (json.JSONDecodeError, TypeError):
         return raw_ac
-    if not criteria_list:
+    if not isinstance(parsed, list):
+        return raw_ac
+    if not parsed:
         return ""
-    return "\n".join(f"- {c}" for c in criteria_list)
+    return "\n".join(f"- {c}" for c in parsed)
 
 
 def _self_update_work_item_from_todo(todo: Any, todo_id: str) -> Any:

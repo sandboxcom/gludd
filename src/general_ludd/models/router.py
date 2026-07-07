@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 
 class ModelRouter:
@@ -84,11 +84,12 @@ class ModelRouter:
         return [role for role, pid in self._mapping.items() if pid == profile_id]
 
     @classmethod
-    def build_from_profiles(cls, profiles: list[Any]) -> ModelRouter:
+    def build_from_profiles(cls, profiles: list[object]) -> ModelRouter:
         role_mapping: dict[str, str] = {}
         quality_map: dict[str, str] = {}
         latency_map: dict[str, str] = {}
-        for p in profiles:
+        for p_raw in profiles:
+            p = cast(Any, p_raw)
             pid = p.model_profile_id
             for role_name in getattr(p, "role_names", []):
                 role_mapping[role_name] = pid

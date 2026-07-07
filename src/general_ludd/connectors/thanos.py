@@ -32,7 +32,7 @@ Record shape (one dict per sample)::
         "message": str,              # "<__name__>{label="v", ...}"
         "value": float,              # numeric sample value
         "labels": dict[str, str],    # metric labels (incl. __name__)
-        "raw": Any,                  # original series/sample/payload
+        "raw": object,                  # original series/sample/payload
     }
 """
 
@@ -43,13 +43,13 @@ import os
 import time
 import urllib.request
 from collections.abc import Callable
-from typing import Any
+from typing import cast
 from urllib.parse import urlencode, urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
 
 # Injectable transport signature: (url, params, headers, timeout) -> (status, json)
-HttpGet = Callable[..., "tuple[int, Any]"]
+HttpGet = Callable[..., "tuple[int, object]"]
 
 KIND = "metrics"
 
@@ -58,10 +58,10 @@ _DEFAULT_TIMEOUT = 10.0
 
 def _default_http_get(
     url: str,
-    params: dict[str, Any] | None = None,
+    params: dict[str, object] | None = None,
     headers: dict[str, str] | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
-) -> tuple[int, Any]:
+) -> tuple[int, object]:
     """Real, time-bound stdlib transport used when none is injected.
 
     Matches the ``(url, params, headers, timeout) -> (status, json)`` contract.
@@ -78,7 +78,7 @@ def _default_http_get(
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         status = int(resp.getcode() or 0)
         body = resp.read()
-    parsed_body: Any = _json.loads(body) if body else {}
+    parsed_body: object = _json.loads(body) if body else {}
     return status, parsed_body
 
 
@@ -109,7 +109,7 @@ def _validate_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _fmt_labels(metric: dict[str, Any]) -> str:
+def _fmt_labels(metric: dict[str, object]) -> str:
     """Render ``__name__{k="v", ...}`` with sorted, non-name labels."""
     name = str(metric.get("__name__", ""))
     pairs = sorted((k, v) for k, v in metric.items() if k != "__name__")
@@ -126,13 +126,13 @@ class ThanosSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         http_get: HttpGet | None = None,
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
         base_url = config.get("base_url", "")
-        self._base_url = _validate_base_url(base_url)
+        self._base_url = _validate_base_url(str(base_url))
         # Bearer token is optional (Thanos may sit behind an auth proxy).
         self._token_env = config.get("token_env")
         self._http_get = http_get or _default_http_get
@@ -146,12 +146,12 @@ class ThanosSource:
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Accept": "application/json"}
         if self._token_env:
-            token = os.environ.get(self._token_env)
+            token = os.environ.get(str(self._token_env))
             if token:
                 headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    def _error_record(self, message: str, raw: Any) -> dict[str, Any]:
+    def _error_record(self, message: str, raw: object) -> dict[str, object]:
         return {
             "ts": time.time(),
             "source": self.name,
@@ -164,14 +164,14 @@ class ThanosSource:
         }
 
     def _sample_record(
-        self, metric: dict[str, Any], ts: Any, raw_value: Any, raw: Any
-    ) -> dict[str, Any]:
+        self, metric: dict[str, object], ts: object, raw_value: object, raw: object
+    ) -> dict[str, object]:
         try:
-            value = float(raw_value)
+            value = float(cast("float | int | str", raw_value))
         except (TypeError, ValueError):
             value = 0.0
         try:
-            ts_f = float(ts)
+            ts_f = float(cast("float | int | str", ts))
         except (TypeError, ValueError):
             ts_f = 0.0
         labels = {str(k): str(v) for k, v in metric.items()}
@@ -188,7 +188,7 @@ class ThanosSource:
 
     # -- public API -------------------------------------------------------
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Run an instant or range PromQL query; return normalized records.
 
         Range mode is selected when ``start``/``end``/``step`` are present.
@@ -201,7 +201,7 @@ class ThanosSource:
         is_range = any(k in spec for k in ("start", "end", "step"))
         if is_range:
             endpoint = "/api/v1/query_range"
-            params: dict[str, Any] = {"query": promql}
+            params: dict[str, object] = {"query": promql}
             for key in ("start", "end", "step"):
                 if key in spec:
                     params[key] = spec[key]
@@ -226,7 +226,7 @@ class ThanosSource:
 
         return self._normalize(status, payload)
 
-    def _normalize(self, status: int, payload: Any) -> list[dict[str, Any]]:
+    def _normalize(self, status: int, payload: object) -> list[dict[str, object]]:
         if not isinstance(payload, dict):
             return [self._error_record(f"non-dict payload (status {status})", payload)]
 
@@ -238,7 +238,7 @@ class ThanosSource:
         result_type = data.get("resultType")
         result = data.get("result")
 
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
 
         if result_type == "vector":
             for series in result or []:
@@ -265,7 +265,7 @@ class ThanosSource:
 
         return records
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Return ``{"ok", "detail"}``. Never raises.
 
         Uses the cheap ``query=1`` instant query as a liveness probe (works on

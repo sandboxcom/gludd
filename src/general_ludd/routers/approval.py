@@ -10,20 +10,19 @@ The shared ApprovalGate instance is stored on ``app.state._approval_gate``.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
 
-def _get_gate(app: FastAPI) -> Any:
+def _get_gate(app: FastAPI) -> object:
     return getattr(app.state, "_approval_gate", None)
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/admin/approval/status")
-    async def admin_approval_status() -> dict[str, Any]:
+    async def admin_approval_status() -> dict[str, object]:
         gate = _get_gate(app)
         wired = gate is not None
         return {

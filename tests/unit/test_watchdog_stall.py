@@ -51,10 +51,13 @@ class TestStallWatchdogStartFinish:
     def test_start_idempotent(self) -> None:
         wd = StallWatchdog()
         wd.start("op-1", "model_call")
+        first_start = wd._inflight["op-1"][1]
         first_deadline = wd._inflight["op-1"][2]
         wd.start("op-1", "model_call")
+        second_start = wd._inflight["op-1"][1]
         second_deadline = wd._inflight["op-1"][2]
-        assert first_deadline != second_deadline
+        assert first_start != second_start
+        assert first_deadline == second_deadline
 
     def test_start_resets_reported_flag(self) -> None:
         wd = StallWatchdog()

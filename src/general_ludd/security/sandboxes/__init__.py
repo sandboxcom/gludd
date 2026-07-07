@@ -51,7 +51,7 @@ class SandboxTarget:
     """
 
     pid: int | None = None
-    popen: Any | None = None
+    popen: object | None = None
     directory: str | None = None
     service: str | None = None
 
@@ -70,7 +70,7 @@ class SandboxHandle:
     backend: str
     token: str = field(repr=False)
     applied: bool = True
-    extra: dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -85,7 +85,7 @@ class Finding:
 
     severity: str
     message: str
-    capability: Any | None = None
+    capability: Capability | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -5,15 +5,22 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-06 ~22:50 PT — Gate launched in background via `make gate-background` (PID emitted, writing to `.gate-logs/`). HEAD advanced `52b13ee7` → `4e9d97fc` after lint-cleanup + provider + guardrail wave landed. Lint clean, typecheck clean (580 files), collect clean. Gate result PENDING (background). Prior: capability audit session (6 new roles, test-quality frontmatter fix, docs/audit/CAPABILITY_AUDIT_2026-07-06.md, HEAD `c8904f5f`).
+- 2026-07-07 (early PT) — Session 17: game-test lifecycle, self-improvement routing, failover e2e, version bump to beta.2. HEAD advanced `4e9d97fc` → `e2efa91f` (7 commits). Remote sandboxcom/master at `5fcea068` — **2 unpushed commits** (`2522d34b` ship-commit target, `e2efa91f` beta.2 bump). Gate is **RED** (typecheck FAIL 5) — fixes in flight. beta.2 tag NOT pushed; artifact NOT verified. Prior: capability audit session (6 new roles, HEAD `c8904f5f`).
 
 ## Current Work
 
-- **HEAD: `4e9d97fc`** on master (was `52b13ee7` before the lint-cleanup + provider + guardrail wave landed).
-- **Gate running in background** — launched ~22:50 PT via `make gate-background`. PID written to `.gate-background.pid`; log streaming to `.gate-logs/gate-<ts>.log`.
-- **Local state (pre-gate-completion)**: lint clean, typecheck clean (580 files), collect clean, gate result PENDING.
+- **HEAD: `e2efa91f`** on master (was `4e9d97fc` at session 16 end). Remote sandboxcom/master at `5fcea068` — **2 unpushed commits**.
+- **Gate: RED** — `make gate-status-check` at 2026-07-07T04:20:53Z: lint PASS, typecheck **FAIL 5**, collect aborted. Typecheck fixes being applied in parallel; gate may flip green during this session.
+- **Local state**: version bumped to `0.1.0-beta.2` in pyproject.toml + `src/general_ludd/__init__.py` + README + CHANGELOG. Tag NOT pushed. `make verify-release-artifact TAG=v0.1.0-beta.2` NOT yet run (prerequisite: green gate + green CI).
 
-- **Session 17 focus: lint-cleanup + provider + guardrail wave.** Multiple parallel landings reconciled onto master: lint suppressions cleared, provider-side fixes, guardrail tightening. HEAD advanced to `4e9d97fc` and pushed to sandboxcom.
+- **Session 17 focus: game-test lifecycle + self-improvement routing + beta.2 prep.** 7 commits past `4e9d97fc`:
+  1. `38c9395a` — fix: game-test nondeterminism (10/10 PASS over 25 iterations)
+  2. `4dbd14a2` — feat: full-play-lifecycle game tests for 12 games (84 check tuples, lifecycle helpers)
+  3. `9b17e895` — feat: self-improvement routes to gludd workspace + failover e2e (13 integration + 13 failover tests)
+  4. `5fcea068` — fix: lifecycle harness calls start() before ticking game state
+  5. `2522d34b` — fix: ship-commit Makefile target + plugin-count reconciliation (UNPUSHED)
+  6. `e2efa91f` — chore: bump version to 0.1.0-beta.2 + changelog + README status (UNPUSHED)
+  7. `97446fce` — chore: SESSION.md update (session 16 tail)
 - **Session 16 focus (prior): Ansible enforcement port.** Enforcement infrastructure ported to Ansible: `gludd_push_guard` + `gludd_gate_check` modules, `enforcement_gate` + `watchdog_check` roles, 2 molecule scenarios, 3 remaining test fixes.
 
 - **Session 15 focus (prior): enforcement guardrail hardening.** 10 categories of improvements, all committed:
@@ -88,29 +95,32 @@
 
 ## Known Gaps
 
-1. **Alpha release NOT yet shipped (v0.1.0-beta.2)** — still need: CI green on `4e9d97fc`, coverage lift, remaining strict-typing burn-down. Do NOT mark complete until `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-2. **Gate result PENDING** — background gate launched ~22:50 PT; expected completion ~23:50 PT. Check `make gate-status-check`.
-3. **Plugin liveness requires opencode restart** — all 8/8 plugins have heartbeat probes committed, but current session is running stale plugin code.
-4. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
-5. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests).
-6. **verify-remote SHA parameter bug** — `make verify-remote` may not accept SHA parameter correctly.
+1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). But: gate RED (typecheck FAIL 5), tag NOT pushed, artifact NOT verified. Do NOT mark complete until `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+2. **Gate RED** — typecheck FAIL 5 at 2026-07-07T04:20:53Z. Lint PASS, collect aborted. Typecheck fixes in flight; gate may flip green during this session.
+3. **2 unpushed commits** — `2522d34b` (ship-commit target) and `e2efa91f` (beta.2 bump) not yet on sandboxcom/master (at `5fcea068`). Push requires green gate first.
+4. **Plugin liveness requires opencode restart** — 10/10 plugins have heartbeat probes committed (enforce-no-wait + enforce-no-suppressions added this session). Current session runs stale plugin code.
+5. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
+6. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
+7. **verify-remote SHA parameter** — RESOLVED (was suspected bug). Fix: `refs/heads/$$BR` pin at Makefile:1075. Test: `tests/unit/test_verify_remote_recipe.py`.
+8. **check-skills-frontmatter** — DONE. Script at `scripts/check_skills_frontmatter.py`, Makefile target at line 1852, wired into `gate` at line 298.
 
 ## Next Steps
 
-1. [ ] **Check gate-status-check at ~23:50 PT** — background gate launched ~22:50 PT should be done; if green, run `make verify-release-artifact TAG=v0.1.0-beta.2`.
-2. [ ] **If gate green: ship v0.1.0-beta.2** — `make release-cut TAG='v0.1.0-beta.2' MSG='...'` once CI green on `4e9d97fc` and `verify-release-artifact` passes.
-3. [ ] **Lift coverage** to gate threshold (strict-typing burn-down still open).
-4. [ ] **Restart opencode** to activate all 8/8 plugin liveness probes.
-5. [ ] **Investigate verify-remote SHA parameter bug** — may not accept SHA parameter correctly.
-6. [ ] **Add `make check-skills-frontmatter` target** — scan `.opencode/skills/*/SKILL.md` for valid YAML frontmatter; add to `make gate`. Prevents recurrence of test-quality registration bug.
-7. [ ] **Wire the 6 new roles into a playbook** — single `gludd audit-plugins` command orchestrating all check roles together.
-8. [ ] **Add integration tests for 6 new roles** — `tests/integration/test_audit_roles.py` verifying each reads its target state file and emits expected `gludd_facts` keys.
+1. [ ] **Fix typecheck FAIL 5** — gate is RED. Identify the 5 errors via `make typecheck`, fix them, re-run gate.
+2. [ ] **Push 2 unpushed commits** — `2522d34b` + `e2efa91f` to sandboxcom/master once gate is green. Use `make batch-push` or `make ci-push`.
+3. [ ] **Wait for CI green** on `e2efa91f` — prerequisite for beta.2 release cut.
+4. [ ] **Ship v0.1.0-beta.2** — `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'` once CI green. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
+5. [ ] **Restart opencode** to activate all 10/10 plugin liveness probes.
+6. [ ] **Lift coverage** to gate threshold (strict-typing burn-down may still be open — check if typecheck errors are related).
+7. [ ] **Wire the 6 new audit roles into a playbook** — single `gludd audit-plugins` command orchestrating all check roles together.
+8. [ ] **Add integration tests for 6 new roles** — `tests/integration/test_audit_roles.py` (file exists as untracked — verify completeness).
 
-## Current Gate Status (2026-07-06)
+## Current Gate Status (2026-07-07)
 <!-- gate:begin -->
-- **Background gate PENDING** — launched ~22:50 PT via `make gate-background`; expected completion ~23:50 PT. Pre-gate local state: lint 0, typecheck 0 (580 files), collect 0.
-- **HEAD**: `4e9d97fc` (on master).
-- **CI**: awaiting green verdict on `4e9d97fc` (prerequisite for beta.2 release cut).
+- **Gate: RED** — `make gate-status-check` at 2026-07-07T04:20:53Z: lint PASS 0, typecheck **FAIL 5**, collect aborted at typecheck phase.
+- **HEAD**: `e2efa91f` (local), `5fcea068` (remote sandboxcom/master) — 2 unpushed commits.
+- **CI**: no run for `e2efa91f` (not yet pushed; push blocked by red gate).
+- **beta.2**: version bumped in code, tag NOT pushed, artifact NOT verified.
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
 <!-- gate:end -->
@@ -120,7 +130,8 @@
 
 ## Historical State
 
-- **2026-07-06 session 16 (current)**: HEAD `c8904f5f`. Enforcement infrastructure ported to Ansible — gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles, 2 molecule scenarios, 3 remaining test fixes.
+- **2026-07-07 session 17 (current)**: HEAD `e2efa91f`. 7 commits past `4e9d97fc`: game-test nondeterminism fix (`38c9395a`), full-play-lifecycle game tests for 12 games (`4dbd14a2` — 84 check tuples), self-improvement routing to gludd workspace + failover e2e (`9b17e895` — 26 tests), lifecycle harness start() fix (`5fcea068`), ship-commit Makefile target (`2522d34b`), beta.2 version bump (`e2efa91f`). Gate RED (typecheck FAIL 5). verify-remote bug resolved (refs/heads/ pin). check-skills-frontmatter wired into gate. 10/10 plugin liveness probes. Remote at `5fcea068` — 2 unpushed commits. beta.2 tag NOT pushed.
+- **2026-07-06 session 16 (prior)**: HEAD `c8904f5f`. Enforcement infrastructure ported to Ansible — gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles, 2 molecule scenarios, 3 remaining test fixes.
 - **2026-07-05 session 15**: HEAD `a8de1930`. Enforcement guardrail hardening: push-rate guard with force-push tracker, gate completion marker, daemon startup smoke test, runtime hook verification, watchdog CI gate injection, anti-wedge counter reset, enforce-stop CI block, disengage 1h cap, watchdog ci_pending, enforcement state reset. 7 bugs fixed. HEAD unpushed — waiting for prior CI runs (28762985158 in progress, 28763464953 pending).
 - **2026-07-05 session 14**: HEAD `46267dfc`. 6 commits: enforcement test fix + Makefile grep-P macOS compat + secrets baseline + openbao symlink cleanup (`6c6d9e45`), CLI compute destroy + 96 tests for 5 untested files (`7d1c036e`), SESSION.md update (`5d96d334`), 18 dead classes wired + 6 response models wired into routes + 98 tests total (`7a25edf4`), SESSION.md update (`d4cdedb3`), .gludd/ .gitignore fix + cache.db untracked (`46267dfc`). All bugs resolved. Connector gaps (Slack/WebSocket/reconnect) remain as feature requests. verify-remote SHA parameter bug under investigation. Pushed to sandboxcom, VERIFIED. CI run 28762103711 PENDING.
 - **2026-07-05 session 13**: HEAD `c01f7afd`. Enforcement plugin hardening complete: repoHasPendingWork deadlock fixed (git-diff for commits), BUGS.md guardrail now parses (resolved) markers, liveness probes on all 8/8 plugins, dead code/enforce-false-done removed, error swallowing in plugins fixed, stop-marker directive prepend, Makefile commit targets added. All bugs resolved. 303/304 enforcement tests pass, lint 0, typecheck 0, collect 0. CI: no run for HEAD (not yet pushed).

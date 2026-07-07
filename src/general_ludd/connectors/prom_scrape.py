@@ -26,7 +26,7 @@ import os
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
@@ -44,7 +44,7 @@ class _Transport(Protocol):
         *,
         headers: dict[str, str] | None = ...,
         timeout: float | None = ...,
-    ) -> Any: ...
+    ) -> object: ...
 
 
 class _UrllibResponse:
@@ -202,13 +202,13 @@ class PromScrapeSource:
 
     KIND: str = "metrics"
 
-    def __init__(self, config: dict[str, Any], *, transport: _Transport | None = None) -> None:
+    def __init__(self, config: dict[str, object], *, transport: _Transport | None = None) -> None:
         if "base_url" not in config:
             raise ValueError("config requires 'base_url'")
         self._allow_private = bool(config.get("allow_private", False))
         self._base_url = _guard_base_url(str(config["base_url"]), self._allow_private)
         self._token_env = config.get("token_env")
-        self._timeout = float(config.get("timeout", _DEFAULT_TIMEOUT))
+        self._timeout = float(cast("float | int | str", config.get("timeout", _DEFAULT_TIMEOUT)))
         host = urlsplit(self._base_url).hostname or self._base_url
         self.name: str = str(config.get("name") or f"prom:{host}")
         self._transport: _Transport = transport if transport is not None else _UrllibTransport()
@@ -223,18 +223,18 @@ class PromScrapeSource:
                 headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    def _fetch(self) -> Any:
+    def _fetch(self) -> object:
         url = f"{self._base_url}/metrics"
         return self._transport.get(url, headers=self._headers(), timeout=self._timeout)
 
     @staticmethod
-    def _status_ok(resp: Any) -> bool:
+    def _status_ok(resp: object) -> bool:
         code = getattr(resp, "status_code", None)
         return isinstance(code, int) and 200 <= code < 300
 
     # -- public API ----------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the exporter. Never raises; returns ``{'ok', 'detail'}``."""
         try:
             resp = self._fetch()
@@ -245,7 +245,7 @@ class PromScrapeSource:
             return {"ok": True, "detail": f"HTTP {code}"}
         return {"ok": False, "detail": f"HTTP {code}"}
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         """Scrape + normalize. Returns ``[]`` on any transport/HTTP failure."""
         spec = spec or {}
         prefix = spec.get("metric_prefix")
@@ -257,7 +257,7 @@ class PromScrapeSource:
             return []
         text = getattr(resp, "text", "") or ""
         now = time.time()
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for raw_line in text.splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#"):

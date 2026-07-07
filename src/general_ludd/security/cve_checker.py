@@ -10,7 +10,7 @@ known-vulnerable dependency.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 
 @dataclass
@@ -23,7 +23,7 @@ class CveFinding:
     description: str = ""
 
 
-KNOWN_CVES: dict[str, dict[str, Any]] = {
+KNOWN_CVES: dict[str, dict[str, object]] = {
     "diskcache": {
         "cve": "CVE-2025-69872",
         "fixed_in": "5.6.2",
@@ -68,17 +68,17 @@ def check_known_cves(
         inst = _installed_version(pkg)
         if inst is None:
             continue
-        sev = advisory.get("severity", "low")
+        sev = cast(str, advisory.get("severity", "low"))
         if SEVERITY_RANK.get(sev.lower(), 0) < threshold_rank:
             continue
         findings.append(
             CveFinding(
                 package=pkg,
                 installed=inst,
-                fixed_in=advisory.get("fixed_in", ""),
-                cve_id=advisory.get("cve", ""),
+                fixed_in=cast(str, advisory.get("fixed_in", "")),
+                cve_id=cast(str, advisory.get("cve", "")),
                 severity=sev,
-                description=advisory.get("description", ""),
+                description=cast(str, advisory.get("description", "")),
             )
         )
 

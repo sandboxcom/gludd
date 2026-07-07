@@ -6,7 +6,6 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
 
 from general_ludd.reload.hot_reloader import HotReloader
 from general_ludd.reload.manager import ReloadManager, ReloadResult, ReloadType
@@ -25,7 +24,7 @@ class SelfImprovementWorkflow:
     def __init__(self, config_dir: str = "config") -> None:
         self._reload_manager = ReloadManager()
         self._hot_reloader = HotReloader(config_dir=config_dir)
-        self._todos: dict[str, dict[str, Any]] = {}
+        self._todos: dict[str, dict[str, object]] = {}
         # Optional concrete hot-rotation target. When set, reload_if_needed
         # performs a REAL os.replace + importlib.reload + health gate via the
         # HotReloader instead of the in-memory manager bookkeeping.
@@ -69,10 +68,10 @@ class SelfImprovementWorkflow:
         self._base_source_path = base_source_path
         self._expected_sha256 = expected_sha256
 
-    def create_improvement_todo(self, title: str, description: str) -> dict[str, Any]:
+    def create_improvement_todo(self, title: str, description: str) -> dict[str, object]:
         todo_id = f"SI-{uuid.uuid4().hex[:8]}"
         now = datetime.now(UTC).isoformat()
-        todo = {
+        todo: dict[str, object] = {
             "todo_id": todo_id,
             "title": title,
             "description": description,

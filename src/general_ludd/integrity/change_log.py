@@ -38,7 +38,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.integrity.scanner import (
     ChangeRecord,
@@ -50,7 +50,7 @@ from general_ludd.integrity.scanner import (
 
 # Platform-specific: fcntl is POSIX-only (Linux/macOS).
 # contextlib.suppress handles the optional-stdlib-module idiom.
-fcntl: Any = None
+fcntl: object | None = None
 with contextlib.suppress(ImportError):
     fcntl = importlib.import_module("fcntl")
 
@@ -145,18 +145,22 @@ class ChangeRecordStore:
         if fcntl is None:  # pragma: no cover - non-POSIX platform
             yield
             return
+        _fcntl = cast(Any, fcntl)
+        _flock = _fcntl.flock
+        _lock_ex = _fcntl.LOCK_EX
+        _lock_un = _fcntl.LOCK_UN
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._lock_path, "w") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            _flock(handle.fileno(), _lock_ex)
             try:
                 yield
             finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                _flock(handle.fileno(), _lock_un)
 
     # -- serialization ---------------------------------------------------
 
     @staticmethod
-    def _entry_to_dict(entry: ChangeLogEntry) -> dict[str, Any]:
+    def _entry_to_dict(entry: ChangeLogEntry) -> dict[str, object]:
         data = asdict(entry)
         # Base64-encode the captured snapshot LOSSLESSLY: encode the RAW bytes
         # (a str snapshot is UTF-8 encoded first) with NO lossy decode, and
@@ -184,7 +188,7 @@ class ChangeRecordStore:
         return data
 
     @staticmethod
-    def _entry_from_dict(data: dict[str, Any]) -> ChangeLogEntry:
+    def _entry_from_dict(data: dict[str, object]) -> ChangeLogEntry:
         oc = data.get("old_content")
         old_content: str | bytes | None = None
         if oc is not None:
@@ -209,14 +213,14 @@ class ChangeRecordStore:
         return ChangeLogEntry(
             file_path=str(data.get("file_path", "")),
             change_type=str(data.get("change_type", "")),
-            old_hash=data.get("old_hash"),
-            new_hash=data.get("new_hash"),
+            old_hash=cast(str | None, data.get("old_hash")),
+            new_hash=cast(str | None, data.get("new_hash")),
             detected_at=str(data.get("detected_at", "")),
             approved=bool(data.get("approved", False)),
             reason=str(data.get("reason", "")),
             signer=str(data.get("signer", "")),
-            signature=data.get("signature"),
-            id=int(data.get("id", -1)),
+            signature=cast(str | None, data.get("signature")),
+            id=int(cast(int, data.get("id", -1))),
             old_content=old_content,
             new_content=new_content,
             committed=bool(data.get("committed", False)),

@@ -22,7 +22,7 @@ class RendererCache:
 
     def __init__(self, ttl_default: float = _DEFAULT_TTL) -> None:
         self._ttl_default = ttl_default
-        self._entries: dict[str, tuple[Any, float]] = {}
+        self._entries: dict[str, tuple[object, float]] = {}
 
     def get(self, name: str) -> Any | None:
         """Return the cached value if present and unexpired, else ``None``."""

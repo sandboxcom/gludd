@@ -27,7 +27,7 @@ import json
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 
@@ -56,7 +56,7 @@ class Transport(Protocol):
         self,
         method: str,
         path: str,
-        query: dict[str, Any] | None,
+        query: dict[str, object] | None,
         base_url: str,
         timeout: float,
     ) -> _DockerResponse: ...
@@ -98,7 +98,7 @@ def _is_internal_literal_host(host: str) -> bool:
 def _default_transport(
     method: str,
     path: str,
-    query: dict[str, Any] | None,
+    query: dict[str, object] | None,
     base_url: str,
     timeout: float,
 ) -> _DockerResponse:
@@ -118,7 +118,7 @@ def _default_transport(
         sock_path = base_url[len("unix://") :]
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         host_header = "localhost"
-        connect_arg: Any = sock_path
+        connect_arg: str | tuple[str, int] = sock_path
     else:
         parts = urlsplit(base_url)
         host = parts.hostname or ""
@@ -171,10 +171,10 @@ def _record(
     source: str,
     level_or_status: str | None,
     message: str,
-    value: Any,
-    labels: dict[str, Any],
-    raw: Any,
-) -> dict[str, Any]:
+    value: object,
+    labels: dict[str, object],
+    raw: object,
+) -> dict[str, object]:
     """Build one normalized record in the canonical contract shape."""
     return {
         "ts": ts,
@@ -276,11 +276,11 @@ class DockerEngineSource:
 
     _DEFAULT_BASE_URL = "unix:///var/run/docker.sock"
 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+    def __init__(self, config: dict[str, object] | None = None) -> None:
         config = config or {}
         self.name: str = str(config.get("name", "docker-engine"))
         self.base_url: str = str(config.get("base_url", self._DEFAULT_BASE_URL))
-        self.timeout: float = float(config.get("timeout", 10.0))
+        self.timeout: float = float(str(config.get("timeout", 10.0)))
         transport = config.get("transport")
         self._transport: Transport = transport if callable(transport) else _default_transport
         self._ssrf_error: str | None = self._check_base_url(self.base_url)
@@ -297,10 +297,10 @@ class DockerEngineSource:
         return None
 
     # -- HTTP plumbing ----------------------------------------------------- #
-    def _get(self, path: str, query: dict[str, Any] | None = None) -> _DockerResponse:
+    def _get(self, path: str, query: dict[str, object] | None = None) -> _DockerResponse:
         return self._transport("GET", path, query, self.base_url, self.timeout)
 
-    def _get_json(self, path: str, query: dict[str, Any] | None = None) -> Any:
+    def _get_json(self, path: str, query: dict[str, object] | None = None) -> object:
         resp = self._get(path, query)
         if resp.status < 200 or resp.status >= 300:
             raise RuntimeError(f"HTTP {resp.status} for {path}")
@@ -309,7 +309,7 @@ class DockerEngineSource:
         return json.loads(resp.body.decode("utf-8"))
 
     # -- health ------------------------------------------------------------ #
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the engine; never raises."""
         if self._ssrf_error is not None:
             return {"ok": False, "detail": self._ssrf_error}
@@ -322,7 +322,7 @@ class DockerEngineSource:
         return {"ok": ok, "detail": detail}
 
     # -- query ------------------------------------------------------------- #
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         """Dispatch on ``spec['mode']`` and return normalized records."""
         if self._ssrf_error is not None:
             raise RuntimeError(self._ssrf_error)
@@ -337,15 +337,19 @@ class DockerEngineSource:
         raise ValueError(f"unknown mode: {mode!r}")
 
     # -- ps ---------------------------------------------------------------- #
-    def _query_ps(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
-        query: dict[str, Any] = {}
+    def _query_ps(self, spec: dict[str, object]) -> list[dict[str, object]]:
+        query: dict[str, object] = {}
         if spec.get("all"):
             query["all"] = "1"
         payload = self._get_json("/containers/json", query or None)
-        records: list[dict[str, Any]] = []
-        for entry in payload:
-            names = entry.get("Names") or []
-            container_name = names[0].lstrip("/") if names else ""
+        if not isinstance(payload, list):
+            return []
+        entries = cast(list[dict[str, object]], payload)
+        records: list[dict[str, object]] = []
+        for entry in entries:
+            names_raw = entry.get("Names")
+            names = cast(list[object], names_raw) if isinstance(names_raw, list) else []
+            container_name = str(names[0]).lstrip("/") if names else ""
             cid = str(entry.get("Id", ""))
             state = entry.get("State")
             status = entry.get("Status", "")
@@ -368,13 +372,13 @@ class DockerEngineSource:
         return records
 
     # -- logs -------------------------------------------------------------- #
-    def _query_logs(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _query_logs(self, spec: dict[str, object]) -> list[dict[str, object]]:
         cid = spec.get("container_id") or spec.get("id")
         if not cid:
             raise ValueError("logs mode requires spec['container_id']")
         container_name = str(spec.get("container_name", ""))
         tail = spec.get("tail", 100)
-        query = {
+        query: dict[str, object] = {
             "stdout": "1",
             "stderr": "1",
             "timestamps": "1",
@@ -383,7 +387,7 @@ class DockerEngineSource:
         resp = self._get(f"/containers/{cid}/logs", query)
         if resp.status < 200 or resp.status >= 300:
             raise RuntimeError(f"HTTP {resp.status} for logs of {cid}")
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for stream, line in _iter_log_payload(resp.body):
             ts, message = _split_rfc3339(line)
             records.append(
@@ -404,8 +408,8 @@ class DockerEngineSource:
         return records
 
     # -- events ------------------------------------------------------------ #
-    def _query_events(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
-        query: dict[str, Any] = {}
+    def _query_events(self, spec: dict[str, object]) -> list[dict[str, object]]:
+        query: dict[str, object] = {}
         since = spec.get("since")
         if since is not None:
             query["since"] = str(since)
@@ -417,9 +421,9 @@ class DockerEngineSource:
             raise RuntimeError(f"HTTP {resp.status} for /events")
         return self._parse_events(resp.body)
 
-    def _parse_events(self, body: bytes) -> list[dict[str, Any]]:
+    def _parse_events(self, body: bytes) -> list[dict[str, object]]:
         """Parse a newline-delimited JSON event stream into records."""
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for raw_line in body.split(b"\n"):
             if not raw_line.strip():
                 continue
@@ -446,7 +450,7 @@ class DockerEngineSource:
         return records
 
     @staticmethod
-    def _event_ts(event: dict[str, Any]) -> str | None:
+    def _event_ts(event: dict[str, object]) -> str | None:
         """Prefer nanosecond ``timeNano`` then second ``time`` epoch fields."""
         from datetime import UTC, datetime
 

@@ -22,7 +22,7 @@ class TestSlurmBillingE2E:
             command="python train.py --epochs 100",
             account="billing-dept-42",
             qos="high-priority",
-            time_limit_str="01:30:00",
+            time_limit="01:30:00",
         )
         assert "#!/bin/bash" in script
         assert "#SBATCH --account=billing-dept-42" in script
@@ -36,7 +36,7 @@ class TestSlurmBillingE2E:
             command="echo quick job",
             account="testing",
             qos="express",
-            time_limit_str="30:00",
+            time_limit="30:00",
         )
         assert "#SBATCH --time=30:00" in script
         assert "#SBATCH --account=testing" in script
@@ -46,7 +46,7 @@ class TestSlurmBillingE2E:
         adapter = SlurmAdapter()
         script = adapter._build_script(
             command="echo tiny job",
-            time_limit_str="5:00",
+            time_limit="5:00",
         )
         assert "#SBATCH --time=5:00" in script
 
@@ -54,7 +54,7 @@ class TestSlurmBillingE2E:
         adapter = SlurmAdapter()
         script = adapter._build_script(
             command="echo long job",
-            time_limit_str="72:00:00",
+            time_limit="72:00:00",
         )
         assert "#SBATCH --time=72:00:00" in script
 

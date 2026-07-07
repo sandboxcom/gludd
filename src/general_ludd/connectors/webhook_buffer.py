@@ -22,10 +22,11 @@ Design:
 
 from __future__ import annotations
 
+import collections.abc
 import threading
 from collections import deque
 from copy import deepcopy
-from typing import Any
+from typing import cast
 
 # Default record kind for a webhook/push buffer (matches the LOG_KIND marker).
 _DEFAULT_KIND = "logs"
@@ -50,7 +51,7 @@ class WebhookBufferSource:
         # Per-instance KIND (default 'logs') without mutating the class attr.
         self.KIND = kind
         self._maxlen = int(maxlen)
-        self._buffer: deque[dict[str, Any]] = deque(maxlen=self._maxlen)
+        self._buffer: deque[dict[str, object]] = deque(maxlen=self._maxlen)
         self._lock = threading.Lock()
 
     # -- capacity ---------------------------------------------------------- #
@@ -64,7 +65,7 @@ class WebhookBufferSource:
             return len(self._buffer)
 
     # -- ingest ------------------------------------------------------------ #
-    def push_one(self, record: dict[str, Any]) -> bool:
+    def push_one(self, record: dict[str, object]) -> bool:
         """Append a single record. Non-dict input is ignored (returns ``False``)."""
         if not isinstance(record, dict):
             return False
@@ -72,14 +73,14 @@ class WebhookBufferSource:
             self._buffer.append(record)
         return True
 
-    def push(self, records: Any) -> int:
+    def push(self, records: object) -> int:
         """Append an iterable of records; non-dict items are skipped.
 
         Returns the number of records actually stored. Never raises on a
         non-iterable (returns ``0``).
         """
         try:
-            iterator = iter(records)
+            iterator = iter(cast(collections.abc.Iterable[dict[str, object]], records))
         except TypeError:
             return 0
         accepted = 0
@@ -91,7 +92,7 @@ class WebhookBufferSource:
         return accepted
 
     # -- read -------------------------------------------------------------- #
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Return buffered records (deep-copied), filtered by ``spec``.
 
         Supported filters:
@@ -110,16 +111,16 @@ class WebhookBufferSource:
 
         kind = spec.get("kind")
         kinds = spec.get("kinds")
-        kinds_set: set[Any] | None = set(kinds) if kinds is not None else None
+        kinds_set: set[object] | None = set(kinds) if isinstance(kinds, list) else None
         since = spec.get("since")
         since_f: float | None = None
         if since is not None:
             try:
-                since_f = float(since)
+                since_f = float(str(since))
             except (TypeError, ValueError):
                 since_f = None
 
-        out: list[dict[str, Any]] = []
+        out: list[dict[str, object]] = []
         for record in snapshot:
             if kind is not None and record.get("kind") != kind:
                 continue
@@ -133,7 +134,7 @@ class WebhookBufferSource:
         return out
 
     # -- health ------------------------------------------------------------ #
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Return a health dict. Never raises."""
         with self._lock:
             size = len(self._buffer)

@@ -13,8 +13,9 @@ Security notes:
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlparse
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -32,7 +33,7 @@ class HttpTransport(Protocol):
         url: str,
         *,
         headers: dict[str, str] | None = ...,
-        params: Any = ...,
+        params: Mapping[str, object] | None = ...,
         timeout: float | None = ...,
     ) -> HttpResponse: ...
 
@@ -47,7 +48,7 @@ def _validate_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _parse_created_at(raw: Any) -> str | None:
+def _parse_created_at(raw: object) -> str | None:
     """Normalize Opsgenie ``createdAt`` to an ISO-8601 string.
 
     Opsgenie returns an ISO string with millisecond precision and a ``Z``
@@ -78,7 +79,7 @@ class _DefaultTransport:
         url: str,
         *,
         headers: dict[str, str] | None = None,
-        params: Any = None,
+        params: Mapping[str, object] | None = None,
         timeout: float | None = None,
     ) -> HttpResponse:
         import httpx
@@ -86,7 +87,7 @@ class _DefaultTransport:
         return httpx.get(
             url,
             headers=headers,
-            params=params,
+            params=cast("Mapping[str, str | int | list[str]]", params) if isinstance(params, dict) else None,
             timeout=timeout,
             follow_redirects=False,
         )
@@ -99,7 +100,7 @@ class OpsgenieSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         *,
         transport: HttpTransport | None = None,
     ) -> None:
@@ -109,8 +110,8 @@ class OpsgenieSource:
             str(self.config.get("base_url", DEFAULT_BASE_URL))
         )
         self.token_env = str(self.config.get("token_env", "OPSGENIE_API_KEY"))
-        self.timeout = float(self.config.get("timeout", DEFAULT_TIMEOUT))
-        self.default_limit = int(self.config.get("limit", DEFAULT_LIMIT))
+        self.timeout = float(str(self.config.get("timeout", DEFAULT_TIMEOUT)))
+        self.default_limit = int(str(self.config.get("limit", DEFAULT_LIMIT)))
         self._transport: HttpTransport = transport or _DefaultTransport()
 
     # -- internals --------------------------------------------------------
@@ -129,9 +130,11 @@ class OpsgenieSource:
 
     # -- public API -------------------------------------------------------
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         spec = spec or {}
-        params: dict[str, Any] = {"limit": int(spec.get("limit", self.default_limit))}
+        params: dict[str, object] = {
+            "limit": int(str(spec.get("limit", self.default_limit)))
+        }
         if spec.get("query"):
             params["query"] = spec["query"]
 
@@ -149,7 +152,7 @@ class OpsgenieSource:
         alerts = payload.get("data", []) or []
         return [self._normalize(alert) for alert in alerts]
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         try:
             resp = self._transport.get(
                 f"{self.base_url}/v2/alerts",
@@ -166,7 +169,7 @@ class OpsgenieSource:
 
     # -- normalization ----------------------------------------------------
 
-    def _normalize(self, alert: dict[str, Any]) -> dict[str, Any]:
+    def _normalize(self, alert: dict[str, object]) -> dict[str, object]:
         status = alert.get("status", "")
         priority = alert.get("priority", "")
         level_or_status = f"{status}/{priority}" if priority else str(status)

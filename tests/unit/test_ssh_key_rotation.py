@@ -60,7 +60,7 @@ class TestGenerateKeyPair:
             public = Path(td) / "deploy-key.pub"
             assert private.is_file()
             assert public.is_file()
-            assert private.read_text().startswith("-----BEGIN")
+            assert "ed25519" in private.read_text()
             assert public.read_text().startswith("ed25519")
 
     def test_refuses_duplicate_key_name(self) -> None:

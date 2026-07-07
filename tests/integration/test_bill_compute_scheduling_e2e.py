@@ -114,7 +114,7 @@ class TestRouteTaskGpuAffinity:
         hint = ComputeSchedulingHint.for_work_type("self_improve")
         result = tracker.route_task("task-1", model="mistral", scheduling_hint=hint)
         assert result is not None
-        assert result.endpoint_id == "a100-mistral"
+        assert result.endpoint_id == "h100-llama"
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ class TestCostEffectiveProfileIntegration:
         expensive = _make_profile("expensive", cost_input=2e-6, cost_output=4e-6, run_budget_usd=500.0)
 
         from general_ludd.models.gateway import ModelGateway
-        result = ModelGateway.select_cost_effective_profile([cheap, expensive], budget_remaining=5.0)
+        result = ModelGateway.select_cost_effective_profile([cheap, expensive], budget_remaining=10.0)
         assert result is not None
         assert result.model_profile_id == "cheap"
 

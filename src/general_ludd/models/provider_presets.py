@@ -6,9 +6,7 @@ a provider and provides an API key, the system auto-configures everything else.
 
 from __future__ import annotations
 
-from typing import Any
-
-PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
+PROVIDER_PRESETS: dict[str, dict[str, object]] = {
     "openrouter": {
         "api_base_url": "https://openrouter.ai/api/v1",
         "provider_package": "langchain-openai",
@@ -244,7 +242,7 @@ PROVIDER_FLAGSHIP_MODELS: dict[str, str] = {
 }
 
 
-def get_provider_preset(provider_name: str) -> dict[str, Any] | None:
+def get_provider_preset(provider_name: str) -> dict[str, object] | None:
     """Get the preset configuration for a provider. Returns None if unknown."""
     return PROVIDER_PRESETS.get(provider_name.lower())
 

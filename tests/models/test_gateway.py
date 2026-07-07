@@ -42,14 +42,16 @@ class TestSecurityBatch4Gateway:
         mock_call.assert_not_called()
 
     def test_all_circuits_open_raises_clear_error(self):
-        """When primary AND all fallbacks tripped, raise ValueError with 'All circuits open'."""
+        """When primary AND all fallbacks tripped, raise CircuitBreakerOpenError."""
         from unittest.mock import MagicMock, patch
+
+        from general_ludd.models.gateway import CircuitBreakerOpenError
         tracker = MagicMock()
         tracker.is_healthy.return_value = False
         gw = self._make_gw(health_tracker=tracker)
         with patch.object(gw, '_walk_fallbacks', return_value=(None, None)):
             import pytest
-            with pytest.raises(ValueError, match="All circuits open"):
+            with pytest.raises(CircuitBreakerOpenError, match=r"All circuits open for fallback chain"):
                 gw.call_model_with_fallback("primary", [])
 
     def test_budget_rejection_not_swallowed(self):

@@ -14,7 +14,6 @@ be surfaced by the /api/facts ``schedule`` facet.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -59,7 +58,7 @@ class ScheduleResponse(BaseModel):
     batches: list[list[str]]
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.post("/api/schedule", response_model=None)
     async def post_schedule(body: ScheduleRequest) -> ScheduleResponse | JSONResponse:
         """Compute concurrency-safe ordered batches for the supplied work items.

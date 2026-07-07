@@ -13,7 +13,7 @@ labels, raw.
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -30,7 +30,7 @@ class HttpTransport(Protocol):
         url: str,
         *,
         headers: dict[str, str] | None = ...,
-        params: dict[str, Any] | None = ...,
+        params: dict[str, object] | None = ...,
         timeout: float | None = ...,
     ) -> HttpResponse: ...
 
@@ -61,7 +61,7 @@ class GraphiteSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         transport: HttpTransport,
         *,
         environ: dict[str, str] | None = None,
@@ -83,12 +83,12 @@ class GraphiteSource:
                 raise ConnectorConfigError(f"environment variable {token_env!r} is unset or empty")
             self._auth_header = {"Authorization": f"Bearer {token}"}
         self._transport = transport
-        self._timeout = float(config.get("timeout", 30.0))
+        self._timeout = float(cast("float | int | str", config.get("timeout", 30.0)))
 
     def _headers(self) -> dict[str, str]:
         return {"Accept": "application/json", **self._auth_header}
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         try:
             resp = self._transport.request(
                 "GET",
@@ -103,12 +103,12 @@ class GraphiteSource:
             return {"ok": True, "detail": f"HTTP {resp.status_code}"}
         return {"ok": False, "detail": f"HTTP {resp.status_code}"}
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         spec = spec or {}
         target = spec.get("target")
         if not target:
             raise ConnectorConfigError("spec must set 'target'")
-        params: dict[str, Any] = {"target": target, "format": "json"}
+        params: dict[str, object] = {"target": target, "format": "json"}
         if "from" in spec:
             params["from"] = spec["from"]
         if "until" in spec:
@@ -124,8 +124,8 @@ class GraphiteSource:
             raise ConnectorConfigError(f"graphite query failed: HTTP {resp.status_code}")
         return self._normalize(resp.json())
 
-    def _normalize(self, payload: Any) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
+    def _normalize(self, payload: object) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
         series_list = payload if isinstance(payload, list) else []
         for series in series_list:
             target = series.get("target")

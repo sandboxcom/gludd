@@ -19,7 +19,7 @@ Security posture:
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
@@ -45,7 +45,7 @@ class _Transport(Protocol):
         url: str,
         *,
         headers: dict[str, str] | None = None,
-        json: Any = None,
+        json: object = None,
         timeout: float | None = None,
     ) -> HttpResponse: ...
 
@@ -66,7 +66,7 @@ class HoneycombSource:
 
     KIND = "traces"
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, object]) -> None:
         self.name: str = str(config.get("name") or "honeycomb")
         self.dataset: str = str(config.get("dataset", ""))
         self._api_key_env: str = str(config.get("api_key_env", ""))
@@ -79,10 +79,10 @@ class HoneycombSource:
         self.base_url: str = base_url
 
         timeout = config.get("timeout")
-        self._timeout: float = float(timeout) if timeout is not None else DEFAULT_TIMEOUT
+        self._timeout: float = float(str(timeout)) if timeout is not None else DEFAULT_TIMEOUT
 
         transport = config.get("transport")
-        self._transport: _Transport = transport if transport is not None else _no_transport
+        self._transport: _Transport = cast(_Transport, transport) if transport is not None else _no_transport
 
     # ------------------------------------------------------------------ #
     # auth / headers
@@ -103,7 +103,7 @@ class HoneycombSource:
     # ------------------------------------------------------------------ #
     # health
     # ------------------------------------------------------------------ #
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe ``GET /1/auth``. Never raises; reports via the return value."""
         if not self._api_key():
             return {
@@ -135,7 +135,7 @@ class HoneycombSource:
     # ------------------------------------------------------------------ #
     # query
     # ------------------------------------------------------------------ #
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Run a query and return normalized records.
 
         Flow: POST a query spec to create a query, POST to create a query
@@ -186,7 +186,7 @@ class HoneycombSource:
     # helpers
     # ------------------------------------------------------------------ #
     @staticmethod
-    def _safe_json(resp: HttpResponse) -> Any:
+    def _safe_json(resp: HttpResponse) -> object:
         try:
             return resp.json()
         except Exception:
@@ -199,7 +199,7 @@ class HoneycombSource:
         raise ValueError("query create response missing 'id'")
 
     @staticmethod
-    def _rows(body: Any) -> list[dict[str, Any]]:
+    def _rows(body: object) -> list[dict[str, object]]:
         if not isinstance(body, dict):
             return []
         data = body.get("data")
@@ -210,19 +210,19 @@ class HoneycombSource:
             return []
         return [r for r in results if isinstance(r, dict)]
 
-    def _has_rows(self, body: Any) -> bool:
+    def _has_rows(self, body: object) -> bool:
         return bool(self._rows(body))
 
-    def _normalize_row(self, row: dict[str, Any], style: str) -> dict[str, Any]:
+    def _normalize_row(self, row: dict[str, object], style: str) -> dict[str, object]:
         ts = row.get("time") or row.get("start_time")
         data = row.get("data")
         data = data if isinstance(data, dict) else {}
 
         # Split a row's data into calculation values vs. breakdown labels.
-        calc_value: Any = None
-        level_or_status: Any = None
+        calc_value: object = None
+        level_or_status: object = None
         message_parts: list[str] = []
-        labels: dict[str, Any] = {}
+        labels: dict[str, object] = {}
 
         for key, val in data.items():
             if self._looks_like_calculation(key):
@@ -272,7 +272,7 @@ def _no_transport(
     url: str,
     *,
     headers: dict[str, str] | None = None,
-    json: Any = None,
+    json: object = None,
     timeout: float | None = None,
 ) -> HttpResponse:
     raise RuntimeError(

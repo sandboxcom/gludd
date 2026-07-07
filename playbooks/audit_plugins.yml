@@ -1,0 +1,85 @@
+---
+- name: Plugin health audit — floor, delegate discipline, task deadlines + opt-in deletion gate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo_path: "{{ playbook_dir }}/.."
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-plugin-audit') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    psk: "{{ psk | default('') }}"
+    handoff_recipient: "{{ handoff_recipient | default('') }}"
+    include_deletion_gate: "{{ include_deletion_gate | default(false) }}"
+  roles:
+    - role: general_ludd.agent.agent_floor_check
+      vars:
+        repo_path: "{{ playbook_dir }}/.."
+        artifact_dir: "{{ artifact_dir }}/agent_floor"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        handoff_recipient: "{{ handoff_recipient }}"
+
+    - role: general_ludd.agent.delegate_discipline_check
+      vars:
+        artifact_dir: "{{ artifact_dir }}/delegate_discipline"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+
+    - role: general_ludd.agent.task_deadline_check
+      vars:
+        artifact_dir: "{{ artifact_dir }}/task_deadline"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        handoff_recipient: "{{ handoff_recipient }}"
+
+    - role: general_ludd.agent.deletion_gate
+      vars:
+        target_file: "{{ deletion_target_file | default('') }}"
+        baseline_lines: "{{ deletion_baseline_lines | default(0) | int }}"
+        current_lines: "{{ deletion_current_lines | default(0) | int }}"
+        deletion_reason: "{{ deletion_reason | default('') }}"
+        artifact_dir: "{{ artifact_dir }}/deletion_gate"
+        audit_log_path: "{{ deletion_audit_log | default(artifact_dir + '/deletion-audit.log') }}"
+      when: include_deletion_gate | bool
+
+- name: Spec lifecycle audit — enumerate drafts/active/archive across the .spec.md pipeline
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    psk: "{{ psk | default('') }}"
+  roles:
+    - role: general_ludd.agent.spec_lifecycle
+      vars:
+        operation: "{{ spec_lifecycle_operation | default('list') }}"
+        spec_root: "{{ spec_root | default(playbook_dir ~ '/../.spec.md') }}"
+        artifact_dir: "{{ artifact_dir | default('/tmp/gludd-plugin-audit') }}/spec_lifecycle"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        task_name: "{{ spec_lifecycle_task_name | default('') }}"
+        task_size: "{{ spec_lifecycle_task_size | default('medium') }}"
+        enable_model_call: "{{ spec_lifecycle_enable_model_call | default(false) }}"
+        enable_git_write: "{{ spec_lifecycle_enable_git_write | default(false) }}"
+
+- name: Enforce disengage — LAST-RESORT enforcement escape hatch (opt-in, destructive)
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    audit_plugins_run_enforce_disengage: "{{ audit_plugins_run_enforce_disengage | default(false) }}"
+  roles:
+    - role: general_ludd.agent.enforce_disengage
+      vars:
+        daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+        psk: "{{ psk | default('') }}"
+        repo_path: "{{ repo_path | default(playbook_dir ~ '/..') }}"
+        artifact_dir: "{{ artifact_dir | default('/tmp/gludd-plugin-audit') }}/enforce_disengage"
+        disengage_duration_hours: "{{ disengage_duration_hours | default(1) | int }}"
+        disengage_max_hours: "{{ disengage_max_hours | default(5) | int }}"
+        skip_pre_checks: "{{ skip_pre_checks | default(false) }}"
+        enable_commit: "{{ enable_commit | default(false) }}"
+        commit_msg_file: "{{ commit_msg_file | default('') }}"
+        enable_push: "{{ enable_push | default(false) }}"
+        verify_branch: "{{ verify_branch | default('master') }}"
+      when: audit_plugins_run_enforce_disengage | bool

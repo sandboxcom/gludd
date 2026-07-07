@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -18,17 +17,17 @@ FILESTORE_WRITE_MAX_BYTES: int = int(
 )
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/filestore/list")
-    async def admin_filestore_list(path: str = "/") -> dict[str, Any]:
+    async def admin_filestore_list(path: str = "/") -> dict[str, object]:
         safe_path = sanitize_path(path.lstrip("/")) or ""
         store = FileStore()
         entries = store.list_dir(safe_path)
         return {"path": safe_path, "entries": entries, "count": len(entries)}
 
     @app.get("/admin/filestore/read")
-    async def admin_filestore_read(path: str = "") -> dict[str, Any]:
+    async def admin_filestore_read(path: str = "") -> dict[str, object]:
         safe_path = sanitize_path(path.lstrip("/"))
         if safe_path is None:
             return {"error": "Invalid path"}
@@ -45,7 +44,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return {"path": safe_path, "is_dir": False, "binary": True}
 
     @app.post("/admin/filestore/write")
-    async def admin_filestore_write(request: Request) -> Any:
+    async def admin_filestore_write(request: Request) -> object:
         store = FileStore()
         body = await request.json()
         raw_path = body.get("path", "")
@@ -68,7 +67,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"success": True, "path": safe_path}
 
     @app.delete("/admin/filestore/remove")
-    async def admin_filestore_remove(path: str = "") -> dict[str, Any]:
+    async def admin_filestore_remove(path: str = "") -> dict[str, object]:
         safe_path = sanitize_path(path)
         if safe_path is None:
             return {"error": "Invalid path", "success": False}
@@ -81,7 +80,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/filestore/bootstrap")
     async def admin_filestore_bootstrap(
         binary: str = "openbao",
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         store = FileStore()
         boot = BinaryBootstrapper(store=store)
         if binary == "openbao":
@@ -110,7 +109,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/filestore/binaries")
-    async def admin_filestore_binaries() -> dict[str, Any]:
+    async def admin_filestore_binaries() -> dict[str, object]:
         store = FileStore()
         boot = BinaryBootstrapper(store=store)
         bins = boot.list_binaries()

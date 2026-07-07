@@ -31,6 +31,15 @@ from pathlib import Path
 
 import pytest
 
+# Python 3.14: yaml C extension (CSafeLoader) fails parsing ansible config.
+# Force-load yaml first, then strip C classes so ansible falls back to
+# the pure-Python SafeLoader via its existing (ImportError, AttributeError) catch.
+import yaml as _yaml_mod
+
+for _name in ("CSafeLoader", "CSafeDumper", "CParser"):
+    _yaml_mod.__dict__.pop(_name, None)
+del _yaml_mod, _name
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 _SRC_DIR = _REPO_ROOT / "src"

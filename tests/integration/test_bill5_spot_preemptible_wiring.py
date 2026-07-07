@@ -20,6 +20,7 @@ from general_ludd.infra.pricing import INFRA_PRICING, InfraTracker
 from general_ludd.infra.terraform import TerraformGenerator
 from general_ludd.pricing_intel.models import (
     BillingGranularity,
+    BillingTerms,
     ComputePrice,
 )
 
@@ -138,6 +139,9 @@ class TestSpotPreemptibleWiring:
             sku="A100-SXM4-80GB-1x",
             usd_per_unit=0.0004,
             granularity=BillingGranularity.per_second,
+            spot=True,
+            terms=BillingTerms.postpaid_per_use,
+            source="test",
         )
         catalog.compute_price.return_value = spot_price
 
@@ -157,6 +161,9 @@ class TestSpotPreemptibleWiring:
             sku="A100-SXM4-80GB-1x",
             usd_per_unit=0.00083,
             granularity=BillingGranularity.per_second,
+            spot=False,
+            terms=BillingTerms.postpaid_per_use,
+            source="test",
         )
         catalog.compute_price.return_value = regular_price
 
@@ -187,12 +194,18 @@ class TestSpotPreemptibleWiring:
             sku="A100",
             usd_per_unit=0.0004,
             granularity=BillingGranularity.per_second,
+            spot=True,
+            terms=BillingTerms.postpaid_per_use,
+            source="test",
         )
         regular_p = ComputePrice(
             provider="runpod",
             sku="A100",
             usd_per_unit=0.00083,
             granularity=BillingGranularity.per_second,
+            spot=False,
+            terms=BillingTerms.postpaid_per_use,
+            source="test",
         )
         catalog.compute_price.side_effect = [spot_p, regular_p]
 

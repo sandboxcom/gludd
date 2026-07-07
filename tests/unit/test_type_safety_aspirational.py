@@ -37,7 +37,6 @@ def test_no_any_imports():
     )
 
 
-@pytest.mark.xfail(strict=False, reason="ratchet: burn down loose builtin generics")
 def test_no_loose_generics_in_annotations():
     violations: list[str] = []
     for py_file in _src_files():

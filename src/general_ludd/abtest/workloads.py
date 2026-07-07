@@ -13,9 +13,7 @@ the ``RESULT_OK`` sentinel when the workload returns without raising.
 
 from __future__ import annotations
 
-from typing import Any
-
-Workload = dict[str, Any]
+Workload = dict[str, object]
 
 KIND_IMPORT_MODULE = "import_module"
 

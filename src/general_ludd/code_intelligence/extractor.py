@@ -6,14 +6,14 @@ Inspired by Graphify/code-knowledge's tree-sitter AST extraction approach.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
-_LANGUAGE_PARSERS: dict[str, Any] = {}
+_LANGUAGE_PARSERS: dict[str, object] = {}
 
 
-def _get_parser(language: str) -> Any:
+def _get_parser(language: str) -> object | None:
     if language in _LANGUAGE_PARSERS:
         return _LANGUAGE_PARSERS[language]
 
@@ -34,14 +34,14 @@ def _get_parser(language: str) -> Any:
 class ASTBlockExtractor:
     """Extracts code blocks (functions, classes, methods) from source code."""
 
-    def extract_blocks(self, source_code: str, language: str = "python") -> list[dict[str, Any]]:
+    def extract_blocks(self, source_code: str, language: str = "python") -> list[dict[str, object]]:
         parser = _get_parser(language)
         if parser is None:
             return self._extract_fallback(source_code)
 
         try:
-            tree = parser.parse(bytes(source_code, "utf-8"))
-            blocks: list[dict[str, Any]] = []
+            tree = cast("Any", parser).parse(bytes(source_code, "utf-8"))
+            blocks: list[dict[str, object]] = []
             self._walk_tree(tree.root_node, source_code, blocks, parent=None)
             return blocks
         except Exception as exc:
@@ -50,12 +50,12 @@ class ASTBlockExtractor:
 
     def _walk_tree(
         self,
-        node: Any,
+        node: object,
         source: str,
-        blocks: list[dict[str, Any]],
+        blocks: list[dict[str, object]],
         parent: str | None = None,
     ) -> None:
-        for child in node.children:
+        for child in cast("Any", node).children:
             child_type = child.type if hasattr(child, "type") else ""
 
             actual_child = child
@@ -111,8 +111,9 @@ class ASTBlockExtractor:
             elif child_type in ("block", "body"):
                 self._walk_tree(child, source, blocks, parent=parent)
 
-    def _extract_docstring(self, node: Any, source: str) -> str | None:
-        body = node.child_by_field_name("body")
+    def _extract_docstring(self, node: object, source: str) -> str | None:
+        n = cast("Any", node)
+        body = n.child_by_field_name("body")
         if body is None:
             return None
         for stmt in body.children:
@@ -124,9 +125,10 @@ class ASTBlockExtractor:
                         return text.strip('"').strip("'").strip()
         return None
 
-    def _extract_bases(self, node: Any, source: str) -> list[str]:
-        bases = []
-        for child in node.children:
+    def _extract_bases(self, node: object, source: str) -> list[str]:
+        n = cast("Any", node)
+        bases: list[str] = []
+        for child in n.children:
             if hasattr(child, "type") and child.type == "argument_list":
                 for arg in child.children:
                     if hasattr(arg, "type") and arg.type == "identifier":
@@ -134,10 +136,10 @@ class ASTBlockExtractor:
         return bases
 
     @staticmethod
-    def _extract_fallback(source_code: str) -> list[dict[str, Any]]:
+    def _extract_fallback(source_code: str) -> list[dict[str, object]]:
         import re
 
-        blocks: list[dict[str, Any]] = []
+        blocks: list[dict[str, object]] = []
         lines = source_code.split("\n")
         pattern = re.compile(r"^\s*(class|def)\s+(\w+)")
 

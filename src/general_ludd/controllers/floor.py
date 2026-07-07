@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
-from typing import Any
 
 
 class FloorController:
@@ -36,7 +35,7 @@ class FloorController:
         else:
             self._floor = 10
         self._health: float = 100.0
-        self._floor_history: list[dict[str, Any]] = []
+        self._floor_history: list[dict[str, object]] = []
 
     @property
     def floor(self) -> int:
@@ -47,7 +46,7 @@ class FloorController:
         return self._health
 
     @property
-    def floor_history(self) -> list[dict[str, Any]]:
+    def floor_history(self) -> list[dict[str, object]]:
         """Ordered list of floor-change records for trend analysis."""
         return list(self._floor_history)
 

@@ -44,7 +44,7 @@ import ipaddress
 import os
 import re
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Protocol, cast
 from urllib.parse import quote, urlencode, urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -79,9 +79,9 @@ def _record(
     level_or_status: str = "info",
     message: str = "",
     value: float | None = None,
-    labels: dict[str, Any] | None = None,
-    raw: Any = None,
-) -> dict[str, Any]:
+    labels: dict[str, object] | None = None,
+    raw: object = None,
+) -> dict[str, object]:
     """Build a normalized record dict with the canonical eight keys.
 
     ``kind`` is always ``"logs"`` for this connector (it is a log/event source).
@@ -213,7 +213,7 @@ class _UrllibResponse:
         self.status_code = status_code
         self.text = text
 
-    def json(self) -> Any:
+    def json(self) -> object:
         import json
 
         return json.loads(self.text) if self.text else None
@@ -265,7 +265,7 @@ class KubernetesSource:
 
     KIND: str = "logs"
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, object]) -> None:
         self._config = dict(config)
         self.name: str = str(config.get("name") or "kubernetes")
 
@@ -274,19 +274,19 @@ class KubernetesSource:
         self._namespace = str(config.get("namespace", "default"))
         self._token_env = str(config.get("token_env", "K8S_TOKEN"))
         self._allow_private = bool(config.get("allow_private", False))
-        self._timeout_s = float(config.get("timeout_s", 10.0))
+        self._timeout_s = float(str(config.get("timeout_s", 10.0)))
 
         # TLS hint: prefer explicit verify, else a CA path means "verify", else
         # default True. Forwarded to the transport only if it accepts ``verify``.
         if "verify" in config:
-            self._verify: Any = config["verify"]
+            self._verify: object = config["verify"]
         elif config.get("ca"):
             self._verify = config["ca"]
         else:
             self._verify = True
 
         transport = config.get("transport")
-        self._transport: _Transport = transport if transport is not None else _default_transport
+        self._transport: _Transport = cast(_Transport, transport) if transport is not None else _default_transport
 
     # -- internals --------------------------------------------------------- #
     def _bearer_token(self) -> str | None:
@@ -305,20 +305,14 @@ class KubernetesSource:
                 f"no ServiceAccount token in env var {self._token_env!r}"
             )
         headers = self._headers(token, accept=accept)
-        kwargs: dict[str, Any] = {"headers": headers, "timeout": self._timeout_s}
-        # Forward TLS verify hint only if the transport accepts it.
-        try:
-            return self._transport("GET", url, **kwargs)
-        except TypeError:
-            # Some transports (incl. our test fakes) only accept headers/timeout.
-            return self._transport("GET", url, headers=headers, timeout=self._timeout_s)
+        return self._transport("GET", url, headers=headers, timeout=self._timeout_s)
 
     def _guard(self) -> str | None:
         """Return an SSRF block reason for the configured api_server, or None."""
         return _endpoint_block_reason(self._api_server, allow_private=self._allow_private)
 
     # -- public API -------------------------------------------------------- #
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe ``/livez`` (falling back to ``/version``). Never raises."""
         block = self._guard()
         if block is not None:
@@ -337,7 +331,7 @@ class KubernetesSource:
             "detail": f"livez/version both unhealthy (last status {resp.status_code})",
         }
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Dispatch on ``spec['mode']`` and return normalized records.
 
         Any failure is returned as a single ``"error"``-level record; this method
@@ -360,7 +354,7 @@ class KubernetesSource:
             return [self._error(f"query failed: {exc}")]
 
     # -- logs -------------------------------------------------------------- #
-    def _query_logs(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _query_logs(self, spec: dict[str, object]) -> list[dict[str, object]]:
         namespace = str(spec.get("namespace", self._namespace))
         pod = str(spec.get("pod", ""))
         if not pod:
@@ -393,7 +387,7 @@ class KubernetesSource:
             "pod": pod,
             "container": str(container) if container else "",
         }
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for raw_line in resp.text.splitlines():
             line = raw_line.rstrip("\r")
             if not line.strip():
@@ -418,7 +412,7 @@ class KubernetesSource:
         return records
 
     # -- events ------------------------------------------------------------ #
-    def _query_events(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _query_events(self, spec: dict[str, object]) -> list[dict[str, object]]:
         namespace = spec.get("namespace", self._namespace)
         namespace = "" if namespace is None else str(namespace)
         if namespace:
@@ -436,26 +430,27 @@ class KubernetesSource:
 
         body = resp.json() or {}
         items = body.get("items", []) if isinstance(body, dict) else []
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for ev in items:
             records.append(self._normalize_event(ev))
         return records
 
-    def _normalize_event(self, ev: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_event(self, ev: dict[str, object]) -> dict[str, object]:
         ev = ev if isinstance(ev, dict) else {}
         ev_type = str(ev.get("type") or "Normal")
         reason = str(ev.get("reason") or "")
         body = str(ev.get("message") or "")
         message = f"{reason}: {body}".strip(": ").strip() if reason else body
 
-        ts = _parse_rfc3339(ev.get("lastTimestamp")) or _parse_rfc3339(
-            ev.get("eventTime")
+        ts = _parse_rfc3339(cast(str | None, ev.get("lastTimestamp"))) or _parse_rfc3339(
+            cast(str | None, ev.get("eventTime"))
         )
         if ts is None:
-            ts = _parse_rfc3339(ev.get("firstTimestamp"))
+            ts = _parse_rfc3339(cast(str | None, ev.get("firstTimestamp")))
 
-        involved = ev.get("involvedObject") or {}
-        labels = {
+        involved_raw = ev.get("involvedObject") or {}
+        involved: dict[str, object] = involved_raw if isinstance(involved_raw, dict) else {}
+        labels: dict[str, object] = {
             "involvedObject.kind": str(involved.get("kind") or ""),
             "involvedObject.name": str(involved.get("name") or ""),
             "reason": reason,
@@ -471,7 +466,7 @@ class KubernetesSource:
         )
 
     # -- helpers ----------------------------------------------------------- #
-    def _error(self, message: str) -> dict[str, Any]:
+    def _error(self, message: str) -> dict[str, object]:
         return _record(
             source=self.name,
             level_or_status="error",

@@ -43,7 +43,7 @@ class RendererSpec:
     allow_raw_html: bool = False
     schema_path: Path | None = None
 
-    def model_dump(self) -> dict[str, Any]:
+    def model_dump(self) -> dict[str, object]:
         """Pydantic-style dump for routers that expect ``.model_dump()``."""
         d = asdict(self)
         d["path"] = str(self.path)
@@ -148,7 +148,7 @@ class RendererRegistry:
     def get(self, name: str) -> RendererSpec | None:
         return self._specs.get(name)
 
-    def metadata(self) -> list[dict[str, Any]]:
+    def metadata(self) -> list[dict[str, object]]:
         return [spec.model_dump() for spec in self._specs.values()]
 
     # Backward-compat with prior partial work that used list_all() / iteration.

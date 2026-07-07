@@ -12,7 +12,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Any, cast
 
 from general_ludd.events.types import (
     ConfigReloadedEvent,
@@ -48,14 +49,14 @@ class ReloadScope(enum.StrEnum):
 class ReloadResult:
     success: bool
     scope: str
-    details: dict[str, Any] = field(default_factory=dict)
+    details: dict[str, object] = field(default_factory=dict)
     error: str | None = None
     timestamp: float = field(default_factory=time.time)
 
 
 @dataclass
 class _ReloadState:
-    previous_config: dict[str, Any] | None = None
+    previous_config: dict[str, object] | None = None
     timestamp: float = 0.0
 
 
@@ -93,7 +94,7 @@ class HotReloader:
         self._last_state = _ReloadState(previous_config=self._snapshot())
 
         try:
-            details: dict[str, Any] = {"scope": scope.value}
+            details: dict[str, object] = {"scope": scope.value}
             if scope in (ReloadScope.MODELS, ReloadScope.CONFIG, ReloadScope.ALL):
                 details.update(self._reload_models())
             if scope in (ReloadScope.TEMPLATES, ReloadScope.CONFIG, ReloadScope.ALL):
@@ -165,7 +166,7 @@ class HotReloader:
         On any failure the live module is left byte-for-byte as it started.
         """
         scope = "code_module"
-        details: dict[str, Any] = {"module": module_name}
+        details: dict[str, object] = {"module": module_name}
         self._publish(ReloadRequestedEvent(scope=scope))
 
         module = sys.modules.get(module_name)
@@ -262,7 +263,7 @@ class HotReloader:
             return self._code_reload_failure(
                 scope,
                 details,
-                details.get("merge_error", "reload refused: merge conflict"),
+                cast(str, details.get("merge_error", "reload refused: merge conflict")),
             )
 
         # Swap resolved bytes over live path + reload.
@@ -357,19 +358,17 @@ class HotReloader:
         import shutil
 
         scope = "changed_modules"
-        details: dict[str, Any] = {
-            "reloaded_modules": [],
-            "added_modules": [],
-            "deleted_modules": [],
-            "skipped": [],
-        }
+        reloaded: list[str] = []
+        added: list[str] = []
+        deleted: list[str] = []
+        skipped_items: list[str] = []
         self._publish(ReloadRequestedEvent(scope=scope))
 
         repo_root = Path(repo_dir)
         for rel_path in changed_paths:
             norm = rel_path.replace("\\", "/")
             if not norm.endswith(".py"):
-                details["skipped"].append(rel_path)
+                skipped_items.append(rel_path)
                 continue
             module_name = self._path_to_module_name(norm)
             workspace_path = repo_root / norm
@@ -378,9 +377,9 @@ class HotReloader:
             if not workspace_path.is_file():
                 if existing is not None:
                     sys.modules.pop(module_name, None)
-                    details["deleted_modules"].append(module_name)
+                    deleted.append(module_name)
                 else:
-                    details["skipped"].append(rel_path)
+                    skipped_items.append(rel_path)
                 continue
 
             if existing is not None:
@@ -395,23 +394,30 @@ class HotReloader:
                                 "could not copy %s -> %s: %s",
                                 workspace_path, live_path, exc,
                             )
-                            details["skipped"].append(rel_path)
+                            skipped_items.append(rel_path)
                             continue
                     self._invalidate_source_cache(live_path)
                 try:
                     importlib.reload(existing)
-                    details["reloaded_modules"].append(module_name)
+                    reloaded.append(module_name)
                 except Exception as exc:
                     logger.warning("reload failed for %s: %s", module_name, exc)
-                    details["skipped"].append(rel_path)
+                    skipped_items.append(rel_path)
             else:
                 importlib.invalidate_caches()
                 try:
                     importlib.import_module(module_name)
-                    details["added_modules"].append(module_name)
+                    added.append(module_name)
                 except Exception as exc:
                     logger.warning("import failed for %s: %s", module_name, exc)
-                    details["skipped"].append(rel_path)
+                    skipped_items.append(rel_path)
+
+        details: dict[str, object] = {
+            "reloaded_modules": reloaded,
+            "added_modules": added,
+            "deleted_modules": deleted,
+            "skipped": skipped_items,
+        }
 
         if health_check is not None:
             try:
@@ -449,7 +455,7 @@ class HotReloader:
     def _resolve_apply_bytes(
         self,
         scope: str,
-        details: dict[str, Any],
+        details: dict[str, object],
         *,
         base_source_path: str | None,
         live_bytes: bytes,
@@ -501,7 +507,7 @@ class HotReloader:
         return result.text.encode("utf-8")
 
     def _restore_module_bytes(
-        self, module: Any, live_path: Path, original_bytes: bytes
+        self, module: object, live_path: Path, original_bytes: bytes
     ) -> bool:
         """Restore the rollback buffer over the live path, reload the module so
         the running interpreter reverts to the original code, and VERIFY the
@@ -522,7 +528,7 @@ class HotReloader:
             tmp_path.write_bytes(original_bytes)
             os.replace(tmp_path, live_path)
             self._invalidate_source_cache(live_path)
-            importlib.reload(module)
+            importlib.reload(cast(ModuleType, module))
         except Exception as exc:
             logger.error("rollback failed for %s: %s", live_path, exc)
             return False
@@ -568,7 +574,7 @@ class HotReloader:
     def _code_reload_failure(
         self,
         scope: str,
-        details: dict[str, Any],
+        details: dict[str, object],
         error: str,
         rolled_back: bool = False,
         rollback_verified: bool | None = None,
@@ -582,14 +588,14 @@ class HotReloader:
     def get_last_state(self) -> _ReloadState:
         return self._last_state
 
-    def _snapshot(self) -> dict[str, Any]:
+    def _snapshot(self) -> dict[str, object]:
         return {"config_dir": str(self._config_dir), "timestamp": time.time()}
 
-    def _reload_models(self) -> dict[str, Any]:
+    def _reload_models(self) -> dict[str, object]:
         # H14 (W3.12): previously returned models_reloaded=True after a bare
         # existence check — theater success for a no-op.  Now we actually
         # parse the routing config and swap it into the model gateway.
-        result: dict[str, Any] = {"models_reloaded": False}
+        result: dict[str, object] = {"models_reloaded": False}
         routing_path = self._config_dir / "model_routing.yml"
         if not routing_path.exists():
             return result
@@ -643,8 +649,8 @@ class HotReloader:
 
         return result
 
-    def _reload_templates(self) -> dict[str, Any]:
-        result: dict[str, Any] = {"templates_loaded": 0}
+    def _reload_templates(self) -> dict[str, object]:
+        result: dict[str, object] = {"templates_loaded": 0}
         if self._templates_dir and self._templates_dir.exists():
             templates = list(self._templates_dir.glob("*.j2"))
             result["templates_loaded"] = len(templates)
@@ -654,8 +660,8 @@ class HotReloader:
             self._publish(TemplateUpdatedEvent(templates=[t.name for t in templates]))
         return result
 
-    def _reload_playbooks(self) -> dict[str, Any]:
-        result: dict[str, Any] = {"playbooks": []}
+    def _reload_playbooks(self) -> dict[str, object]:
+        result: dict[str, object] = {"playbooks": []}
         if self._playbooks_dir and self._playbooks_dir.exists():
             playbooks = list(self._playbooks_dir.glob("*.yml"))
             current_names = {p.name for p in playbooks}
@@ -670,15 +676,16 @@ class HotReloader:
             self._known_playbooks = current_names
         return result
 
-    def _reload_skills(self) -> dict[str, Any]:
-        result: dict[str, Any] = {"skills": []}
+    def _reload_skills(self) -> dict[str, object]:
+        skills: list[str] = []
+        result: dict[str, object] = {"skills": skills}
         active_dirs: list[str] = []
         for skills_dir in self._skills_dirs:
             if skills_dir.exists():
                 active_dirs.append(str(skills_dir))
                 for md_file in sorted(skills_dir.glob("*.md")):
                     name = md_file.stem
-                    result["skills"].append(name)
+                    skills.append(name)
                     self._publish(SkillUpdatedEvent(skill=name))
         if active_dirs and self._skill_registry is not None:
             try:
@@ -689,7 +696,7 @@ class HotReloader:
                 result["registry_error"] = str(exc)
         return result
 
-    def _publish(self, event: Any) -> None:
+    def _publish(self, event: object) -> None:
         # Event emission must NEVER crash a reload/rollback. A raising subscriber
         # would otherwise propagate out of reload_code_module — worst case the
         # post-swap ReloadCompletedEvent raising AFTER a healthy swap, leaving
@@ -704,7 +711,7 @@ class HotReloader:
                 "reload event publish failed (%s): %s", type(event).__name__, exc
             )
 
-    def _fire_hooks(self, event_name: str, payload: dict[str, Any]) -> None:
+    def _fire_hooks(self, event_name: str, payload: dict[str, object]) -> None:
         if self._hooks:
             self._hooks.fire(event_name, payload)
         # Surface the hook firing on the event bus so subscribers (metrics,

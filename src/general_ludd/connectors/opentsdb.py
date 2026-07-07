@@ -28,7 +28,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
@@ -99,17 +99,17 @@ def _guard_base_url(base_url: str, allow_private: bool) -> str:
     return base_url.rstrip("/")
 
 
-def _coerce_ts(value: Any) -> float | None:
+def _coerce_ts(value: object) -> float | None:
     """OpenTSDB dps keys are unix timestamps (seconds or ms) as strings/ints."""
     try:
-        return float(value)
+        return float(cast("float | int | str", value))
     except (TypeError, ValueError):
         return None
 
 
-def _coerce_value(value: Any) -> float | None:
+def _coerce_value(value: object) -> float | None:
     try:
-        return float(value)
+        return float(cast("float | int | str", value))
     except (TypeError, ValueError):
         return None
 
@@ -125,14 +125,14 @@ class OpenTsdbSource:
 
     KIND = "metrics"
 
-    def __init__(self, config: dict[str, Any], transport: Transport | None = None) -> None:
-        self.config: dict[str, Any] = dict(config or {})
+    def __init__(self, config: dict[str, object], transport: Transport | None = None) -> None:
+        self.config: dict[str, object] = dict(config or {})
         self.name: str = str(self.config.get("name", "opentsdb"))
         self.allow_private: bool = bool(self.config.get("allow_private", False))
         self.base_url: str = _guard_base_url(
             str(self.config.get("base_url", "")), self.allow_private
         )
-        self.timeout: float = float(self.config.get("timeout", _DEFAULT_TIMEOUT))
+        self.timeout: float = float(cast("float | int | str", self.config.get("timeout", _DEFAULT_TIMEOUT)))
         self.default_aggregator: str = str(
             self.config.get("aggregator", _DEFAULT_AGGREGATOR)
         )
@@ -159,7 +159,7 @@ class OpenTsdbSource:
             headers["Authorization"] = f"Basic {token}"
         return headers
 
-    def _build_body(self, spec: dict[str, Any]) -> dict[str, Any]:
+    def _build_body(self, spec: dict[str, object]) -> dict[str, object]:
         """Translate a query spec into an OpenTSDB request body.
 
         ``spec`` keys:
@@ -167,7 +167,7 @@ class OpenTsdbSource:
             queries: an explicit list of query objects, OR
             metric + aggregator + tags for a single-query convenience form.
         """
-        body: dict[str, Any] = {}
+        body: dict[str, object] = {}
         if spec.get("start") is not None:
             body["start"] = spec["start"]
         if spec.get("end") is not None:
@@ -176,7 +176,7 @@ class OpenTsdbSource:
         if isinstance(spec.get("queries"), list):
             body["queries"] = spec["queries"]
         else:
-            query_obj: dict[str, Any] = {
+            query_obj: dict[str, object] = {
                 "metric": spec.get("metric"),
                 "aggregator": spec.get("aggregator", self.default_aggregator),
             }
@@ -186,15 +186,15 @@ class OpenTsdbSource:
             body["queries"] = [query_obj]
         return body
 
-    def _post_query(self, body: dict[str, Any]) -> tuple[int, str]:
+    def _post_query(self, body: dict[str, object]) -> tuple[int, str]:
         url = f"{self.base_url}/api/query"
         payload = json.dumps(body).encode("utf-8")
         return self._transport.request(
             "POST", url, headers=self._headers(), body=payload, timeout=self.timeout
         )
 
-    def _records_from_results(self, results: list[Any]) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
+    def _records_from_results(self, results: list[object]) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
         for result in results:
             if not isinstance(result, dict):
                 continue
@@ -222,7 +222,7 @@ class OpenTsdbSource:
 
     # -- public API --------------------------------------------------------
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """POST an OpenTSDB query and return normalized records (one per dps point)."""
         if spec.get("start") is None and not isinstance(spec.get("queries"), list):
             return []
@@ -243,7 +243,7 @@ class OpenTsdbSource:
             return []
         return self._records_from_results(payload)
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the endpoint. Returns {'ok': bool, 'detail': str}; never raises."""
         try:
             status, _ = self._transport.request(

@@ -23,7 +23,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import SSRFError
@@ -50,7 +50,7 @@ class HttpTransport(Protocol):
         url: str,
         *,
         headers: dict[str, str],
-        params: dict[str, Any] | None = ...,
+        params: dict[str, object] | None = ...,
         timeout: float = ...,
     ) -> HttpResponse:  # pragma: no cover - structural typing only
         ...
@@ -60,7 +60,7 @@ class HttpTransport(Protocol):
         url: str,
         *,
         headers: dict[str, str],
-        data: dict[str, Any] | None = ...,
+        data: dict[str, object] | None = ...,
         timeout: float = ...,
     ) -> HttpResponse:  # pragma: no cover - structural typing only
         ...
@@ -78,7 +78,7 @@ def _assert_safe_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _parse_time(value: Any) -> str | None:
+def _parse_time(value: object) -> str | None:
     """Best-effort parse of a Splunk ``_time`` field into ISO-8601 UTC text.
 
     Splunk emits ``_time`` either as an ISO string (``2026-06-12T...``) or as an
@@ -112,7 +112,7 @@ def _parse_time(value: Any) -> str | None:
     return None
 
 
-def _first(row: dict[str, Any], *keys: str) -> Any:
+def _first(row: dict[str, object], *keys: str) -> object:
     """Return the first present, non-None value among ``keys``."""
     for key in keys:
         if key in row and row[key] is not None:
@@ -143,7 +143,7 @@ class SplunkSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         *,
         transport: HttpTransport,
         name: str | None = None,
@@ -179,12 +179,12 @@ class SplunkSource:
 
     # -- health -------------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe ``/services/server/info``; never raises.
 
         Returns a dict ``{"ok": bool, "name": str, "kind": str, ...}``.
         """
-        result: dict[str, Any] = {"ok": False, "name": self.name, "kind": self.kind}
+        result: dict[str, object] = {"ok": False, "name": self.name, "kind": self.kind}
         try:
             headers = self._auth_headers()
             resp = self._transport.get(
@@ -212,7 +212,7 @@ class SplunkSource:
 
     # -- query --------------------------------------------------------------
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Run a oneshot Splunk search and return normalized records.
 
         ``spec`` keys:
@@ -224,7 +224,7 @@ class SplunkSource:
         if not isinstance(search, str) or not search.strip():
             raise ValueError("spec.search is required")
 
-        data: dict[str, Any] = {
+        data: dict[str, object] = {
             "search": search,
             "output_mode": "json",
             "exec_mode": "oneshot",
@@ -249,7 +249,7 @@ class SplunkSource:
         return [self._normalize(row) for row in rows]
 
     @staticmethod
-    def _extract_rows(payload: Any) -> list[dict[str, Any]]:
+    def _extract_rows(payload: object) -> list[dict[str, object]]:
         """Pull the result rows out of a oneshot JSON payload."""
         if isinstance(payload, dict):
             results = payload.get("results")
@@ -259,7 +259,7 @@ class SplunkSource:
             return [r for r in payload if isinstance(r, dict)]
         return []
 
-    def _normalize(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _normalize(self, row: dict[str, object]) -> dict[str, object]:
         """Map a Splunk result row onto the gludd normalized record shape."""
         ts = _parse_time(_first(row, "_time", "time"))
         level_or_status = _first(row, "level", "severity", "status")

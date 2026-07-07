@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Any, Protocol, TypedDict, cast, runtime_checkable
+from typing import Protocol, TypedDict, cast, runtime_checkable
 
 __all__ = ["AwsObservabilitySource"]
 
@@ -153,7 +153,7 @@ class _Client(Protocol):
     moment we bind the response to a name.
     """
 
-    def __getattr__(self, name: str) -> Any: ...  # pragma: no cover - protocol
+    def __getattr__(self, name: str) -> Callable[..., object]: ...  # pragma: no cover - protocol
 
 
 ClientFactory = Callable[[str], _Client]
@@ -296,7 +296,7 @@ class AwsObservabilitySource:
             kwargs["filterPattern"] = spec["filterPattern"]
         if "startTime" in spec:
             kwargs["startTime"] = spec["startTime"]
-        resp: FilterLogEventsResponse = client.filter_log_events(**kwargs)
+        resp = cast(FilterLogEventsResponse, client.filter_log_events(**kwargs))
         log_group_raw = spec.get("logGroupName", "")
         log_group = log_group_raw if isinstance(log_group_raw, str) else ""
         records: list[NormalizedRecord] = []
@@ -329,7 +329,7 @@ class AwsObservabilitySource:
         for key in ("MetricDataQueries", "StartTime", "EndTime", "ScanBy"):
             if key in spec:
                 kwargs[key] = spec[key]
-        resp: GetMetricDataResponse = client.get_metric_data(**kwargs)
+        resp = cast(GetMetricDataResponse, client.get_metric_data(**kwargs))
         namespace_raw = spec.get("namespace")
         namespace = namespace_raw if isinstance(namespace_raw, str) else None
         metric_name_raw = spec.get("metricName")
@@ -369,7 +369,7 @@ class AwsObservabilitySource:
         for key in ("StartTime", "EndTime", "FilterExpression", "TimeRangeType"):
             if key in spec:
                 kwargs[key] = spec[key]
-        resp: GetTraceSummariesResponse = client.get_trace_summaries(**kwargs)
+        resp = cast(GetTraceSummariesResponse, client.get_trace_summaries(**kwargs))
         records: list[NormalizedRecord] = []
         for summary in resp.get("TraceSummaries", []):
             service_ids = summary.get("ServiceIds") or []
@@ -412,7 +412,7 @@ class AwsObservabilitySource:
         for key in ("LookupAttributes", "StartTime", "EndTime"):
             if key in spec:
                 kwargs[key] = spec[key]
-        resp: LookupEventsResponse = client.lookup_events(**kwargs)
+        resp = cast(LookupEventsResponse, client.lookup_events(**kwargs))
         records: list[NormalizedRecord] = []
         for event in resp.get("Events", []):
             event_name = event.get("EventName", "")

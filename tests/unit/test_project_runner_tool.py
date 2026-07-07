@@ -55,7 +55,7 @@ class TestBuiltinRegistration:
         register_builtins(client)
 
         scoped = await client.list_tools(BUILTIN_SERVER_ID)
-        assert [t.name for t in scoped] == ["run_project_check"]
+        assert set(t.name for t in scoped) == {"run_project_check", "web_retrieve"}
         # server_id is stamped by the registry on registration.
         assert scoped[0].server_id == BUILTIN_SERVER_ID
 

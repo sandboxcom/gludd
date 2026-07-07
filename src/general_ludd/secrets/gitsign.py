@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from general_ludd.secrets.manager import SecretsManager
 
 _SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -27,7 +30,7 @@ def _scoped_path(project_id: str) -> str:
 
 
 def write_gitsign_config(
-    mgr: Any,
+    mgr: SecretsManager,
     project_id: str,
     fulcio_url: str = "https://fulcio.sigstore.dev",
     rekor_url: str = "https://rekor.sigstore.dev",
@@ -47,14 +50,14 @@ def write_gitsign_config(
     )
 
 
-def read_gitsign_config(mgr: Any, project_id: str) -> GitsignConfig | None:
+def read_gitsign_config(mgr: SecretsManager, project_id: str) -> GitsignConfig | None:
     data = mgr.read_secret(_scoped_path(project_id))
     if data is None:
         return None
     return GitsignConfig(
-        fulcio_url=data.get("fulcio_url", "https://fulcio.sigstore.dev"),
-        rekor_url=data.get("rekor_url", "https://rekor.sigstore.dev"),
-        oidc_issuer=data.get("oidc_issuer", "https://oauth2.sigstore.dev/auth"),
-        key_ref=data.get("key_ref", ""),
-        enabled=data.get("enabled", False),
+        fulcio_url=cast(str, data.get("fulcio_url", "https://fulcio.sigstore.dev")),
+        rekor_url=cast(str, data.get("rekor_url", "https://rekor.sigstore.dev")),
+        oidc_issuer=cast(str, data.get("oidc_issuer", "https://oauth2.sigstore.dev/auth")),
+        key_ref=cast(str, data.get("key_ref", "")),
+        enabled=cast(bool, data.get("enabled", False)),
     )

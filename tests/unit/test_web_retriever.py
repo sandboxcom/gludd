@@ -100,8 +100,8 @@ class TestWebRetrieverFetch:
 
         with patch("urllib.request.urlopen", return_value=mock_response):
             retriever = WebRetriever()
-            result1 = retriever.fetch_web_page("https://example.com")
-            result2 = retriever.fetch_web_page("https://example.com")
+            result1 = retriever.fetch_web_page("https://example.com/cache-test")
+            result2 = retriever.fetch_web_page("https://example.com/cache-test")
 
         assert result1.content == result2.content
 
@@ -130,7 +130,7 @@ class TestWebRetrieverFetch:
 
         with patch("urllib.request.urlopen", return_value=mock_response):
             retriever = WebRetriever()
-            result = retriever.fetch_web_page("https://example.com")
+            result = retriever.fetch_web_page("https://example.com/title-attr")
         assert result.title == "English Title"
 
     def test_content_truncation_at_limit(self) -> None:
@@ -165,7 +165,7 @@ class TestWebRetrieverFetch:
 
         with patch("urllib.request.urlopen", return_value=mock_response):
             retriever = WebRetriever()
-            result = retriever.fetch_web_page("https://example.com")
+            result = retriever.fetch_web_page("https://example.com/with-headers")
         assert result.headers is not None
         assert result.headers.get("content-type") == "text/html"
 

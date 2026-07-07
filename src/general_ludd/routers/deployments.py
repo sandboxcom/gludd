@@ -13,7 +13,7 @@ PSK-gated (admin-only). Surfaces:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -66,8 +66,8 @@ class MisconfigCheckRequest(BaseModel):
     runs config-only rules.
     """
 
-    deployment: Any
-    gpu_info: dict[str, Any] | None = None
+    deployment: object
+    gpu_info: dict[str, object] | None = None
     gpu_type: str | None = None
     gpu_count: int = Field(default=1, ge=1)
 
@@ -78,13 +78,13 @@ class FindingResponse(BaseModel):
     engine: str
     message: str
     remediation: str
-    evidence: dict[str, Any]
+    evidence: dict[str, object]
 
 
 class RemediationResponse(BaseModel):
     rule_id: str
     format: str
-    config_patch: dict[str, Any]
+    config_patch: dict[str, object]
     requires_restart: bool
     notes: str
 
@@ -103,9 +103,9 @@ class SuggestFixRequest(BaseModel):
     ``deployment`` + GPU context (``gpu_info`` or ``gpu_type``/``gpu_count``).
     """
 
-    deployment: Any
-    findings: list[dict[str, Any]] | None = None
-    gpu_info: dict[str, Any] | None = None
+    deployment: object
+    findings: list[dict[str, object]] | None = None
+    gpu_info: dict[str, object] | None = None
     gpu_type: str | None = None
     gpu_count: int = Field(default=1, ge=1)
 
@@ -117,7 +117,7 @@ class FixDecisionRequest(BaseModel):
     reason: str = ""
 
 
-def _dict_to_finding(d: dict[str, Any]) -> Finding:
+def _dict_to_finding(d: dict[str, object]) -> Finding:
     """Build a :class:`Finding` from a plain dict (fail-soft on missing keys)."""
     evidence = d.get("evidence")
     return Finding(
@@ -139,7 +139,7 @@ def _get_health_checker(app: FastAPI) -> DeploymentHealthChecker | None:
     return router.health_checker
 
 
-def _status_to_dict(s: DeploymentStatus) -> dict[str, Any]:
+def _status_to_dict(s: DeploymentStatus) -> dict[str, object]:
     return {
         "deployment_id": s.deployment_id,
         "healthy": s.healthy,
@@ -149,7 +149,7 @@ def _status_to_dict(s: DeploymentStatus) -> dict[str, Any]:
     }
 
 
-def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
     # One approval manager per app, held on app.state so state survives across
     # requests (suggest-fix -> approve/reject) and is isolated per app instance.
     fix_manager: FixApprovalManager | None = getattr(
@@ -191,7 +191,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
         "/admin/deployments/{deployment_id}/remediate",
         response_model=None,
     )
-    async def post_force_remediate(deployment_id: str) -> dict[str, Any]:
+    async def post_force_remediate(deployment_id: str) -> dict[str, object]:
         """Force remediation of a deployment — marks it healthy."""
         checker = _get_health_checker(app)
         if checker is None:
@@ -248,12 +248,12 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
         """
         detector = MisconfigDetector()
         if body.gpu_info is not None:
-            gpu_info: dict[str, Any] = body.gpu_info
+            gpu_info: dict[str, object] = body.gpu_info
         elif body.gpu_type:
             gpu_info = gpu_info_from_gpu_type(body.gpu_type, body.gpu_count)
         else:
             gpu_info = {}
-        findings = detector.check(body.deployment, gpu_info)
+        findings = detector.check(cast("dict[str, object]", body.deployment), gpu_info)
         finding_responses = [
             FindingResponse(
                 rule_id=f.rule_id,
@@ -286,7 +286,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
         "/admin/deployments/suggest-fix",
         response_model=None,
     )
-    async def post_suggest_fix(body: SuggestFixRequest) -> dict[str, Any]:
+    async def post_suggest_fix(body: SuggestFixRequest) -> dict[str, object]:
         """Propose a config-patch to fix a deployment's misconfigurations.
 
         Uses the SLM ``FixSuggester`` when a ``ModelGateway`` is wired on
@@ -300,12 +300,12 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
             findings = [_dict_to_finding(f) for f in body.findings]
         else:
             if body.gpu_info is not None:
-                gpu_info: dict[str, Any] = body.gpu_info
+                gpu_info: dict[str, object] = body.gpu_info
             elif body.gpu_type:
                 gpu_info = gpu_info_from_gpu_type(body.gpu_type, body.gpu_count)
             else:
                 gpu_info = {}
-            findings = detector.check(body.deployment, gpu_info)
+            findings = detector.check(cast("dict[str, object]", body.deployment), gpu_info)
 
         gateway = getattr(app.state, "_model_gateway", None)
         suggest_fn = make_fix_suggestion_fn(gateway) if gateway is not None else None
@@ -314,13 +314,13 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
         # source by whether it actually produced a usable patch, NOT by whether
         # that patch differs from the deterministic merge (the SLM is steered to
         # echo the deterministic hint, so a value-compare would under-report it).
-        slm_patch = suggest_fn(body.deployment, findings) if suggest_fn is not None else None
+        slm_patch = suggest_fn(cast("dict[str, object]", body.deployment), findings) if suggest_fn is not None else None
         if isinstance(slm_patch, dict) and slm_patch:
             patch = slm_patch
             source = "slm"
         else:
             # Deterministic fallback: the guaranteed remediate() merge, no model.
-            patch = FixSuggester(detector, None).suggest(body.deployment, findings)
+            patch = FixSuggester(detector, None).suggest(cast("dict[str, object]", body.deployment), findings)
             source = "deterministic"
 
         # A non-dict deployment can't be merged; base the proposal on {} so the
@@ -335,7 +335,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     )
     async def post_approve_fix(
         fix_id: str, body: FixDecisionRequest | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Approve a parked fix and return its merged config to apply.
 
         With ``{"retry": true}`` and a redeploy hook wired on
@@ -350,7 +350,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         merged = proposal.merged_config()
-        result: dict[str, Any] = {
+        result: dict[str, object] = {
             "fix_id": fix_id,
             "status": proposal.status,
             "merged_config": merged,
@@ -378,7 +378,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     )
     async def post_reject_fix(
         fix_id: str, body: FixDecisionRequest | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Reject a parked fix, recording an optional ``reason``."""
         decision = body or FixDecisionRequest()
         try:

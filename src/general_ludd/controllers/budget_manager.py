@@ -10,7 +10,9 @@ import logging
 import math
 import threading
 import time
-from typing import Any
+
+from general_ludd.controllers.load_scrape import LoadSnapshot
+from general_ludd.controllers.pid import BudgetController
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +62,6 @@ class BudgetManager:
         # API cost estimation + local-resource gating are delegated to the
         # threshold-based BudgetController so this manager has a single source
         # for both monetary and compute-pressure budget decisions.
-        from general_ludd.controllers.pid import BudgetController
-
         self._controller = BudgetController(
             default_run_budget_usd=(
                 daily_limit_usd if daily_limit_usd != float("inf") else 200.0
@@ -72,11 +72,11 @@ class BudgetManager:
         """Estimate the USD cost of a model call (via BudgetController)."""
         return self._controller.estimate_call_cost(tokens, cost_per_1k)
 
-    def check_local_model_resources(self, snapshot: Any) -> dict[str, bool | str]:
+    def check_local_model_resources(self, snapshot: LoadSnapshot) -> dict[str, bool | str]:
         """Gate a local-model run on CPU/memory/disk/load pressure."""
         return self._controller.check_local_model_resources(snapshot)
 
-    def check_todo_budget(self, todo_id: str, estimated_cost: float) -> dict[str, Any]:
+    def check_todo_budget(self, todo_id: str, estimated_cost: float) -> dict[str, object]:
         with self._spend_lock:
             current = self._todo_spend.get(todo_id, 0.0)
             if self._per_todo_limit != float("inf") and _is_uncomputable(estimated_cost):
@@ -110,7 +110,7 @@ class BudgetManager:
             self._todo_reservations[todo_id] = estimated_cost
             return {"allowed": True, "reason": "ok", "charged": True}
 
-    def check_daily_budget(self, estimated_cost: float) -> dict[str, Any]:
+    def check_daily_budget(self, estimated_cost: float) -> dict[str, object]:
         with self._spend_lock:
             # Reset BEFORE the paused check: a sticky pause from a prior day's breach
             # must not survive the daily-window rollover (else the kill-switch never
@@ -149,7 +149,7 @@ class BudgetManager:
                 logger.warning("Budget at %.1f%% of daily limit", pct)
             return {"allowed": True, "reason": "ok", "charged": True}
 
-    def check_daily_budget_reserved(self, todo_id: str, estimated_cost: float) -> dict[str, Any]:
+    def check_daily_budget_reserved(self, todo_id: str, estimated_cost: float) -> dict[str, object]:
         """Like check_daily_budget but records a daily reservation keyed by todo_id.
 
         Use this instead of check_daily_budget when you will later call
@@ -242,7 +242,7 @@ class BudgetManager:
             if daily_reserved is not None:
                 self._daily_spend = max(0.0, self._daily_spend - daily_reserved)
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self) -> dict[str, object]:
         with self._spend_lock:
             self._reset_daily_if_needed()
             pct = (

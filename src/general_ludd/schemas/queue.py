@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -20,7 +18,7 @@ class Queue(BaseModel):
     allowed_prompt_profiles: list[str] = Field(default_factory=list)
     required_molecule_coverage_profile: str | None = None
     max_error_rate: float = 0.5
-    retry_policy: dict[str, Any] = Field(default_factory=dict)
+    retry_policy: dict[str, object] = Field(default_factory=dict)
 
     @field_validator("queue_name", mode="before")
     @classmethod

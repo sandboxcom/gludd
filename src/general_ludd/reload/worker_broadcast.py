@@ -4,7 +4,6 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 import httpx
 
@@ -126,7 +125,7 @@ class WorkerBroadcaster:
         psk = os.environ.get("GLUDD_PSK", "")
         return {"Authorization": f"Bearer {psk}"} if psk else {}
 
-    def broadcast_reload(self, scope: Any) -> list[BroadcastResult]:
+    def broadcast_reload(self, scope: object) -> list[BroadcastResult]:
         results = []
         scope_value = scope.value if hasattr(scope, "value") else str(scope)
         headers = self._auth_headers()
@@ -198,7 +197,7 @@ class WorkerBroadcaster:
         return results
 
     def broadcast_model_update(
-        self, action: str, model_id: str, profile: dict[str, Any]
+        self, action: str, model_id: str, profile: dict[str, object]
     ) -> list[BroadcastResult]:
         results = []
         headers = self._auth_headers()

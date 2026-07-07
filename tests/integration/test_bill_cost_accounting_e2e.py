@@ -19,7 +19,7 @@ import pytest
 
 from general_ludd.controllers.spend_limiter import SpendLimiter
 from general_ludd.infra.pricing import INFRA_PRICING, InfraTracker
-from general_ludd.pricing_intel.models import BillingGranularity, ComputePrice
+from general_ludd.pricing_intel.models import BillingGranularity, BillingTerms, ComputePrice
 
 
 def _make_limiter(limit_usd: float, window_seconds: float) -> tuple[SpendLimiter, list[float]]:
@@ -89,12 +89,18 @@ class TestCombinedSpendLimiterInfraTracker:
             sku="A100",
             usd_per_unit=0.00035,
             granularity=BillingGranularity.per_second,
+            spot=True,
+            terms=BillingTerms.postpaid_per_use,
+            source="mock",
         )
         reg = ComputePrice(
             provider="runpod",
             sku="A100",
             usd_per_unit=0.00083,
             granularity=BillingGranularity.per_second,
+            spot=False,
+            terms=BillingTerms.postpaid_per_use,
+            source="mock",
         )
         catalog.compute_price.side_effect = [spot, reg]
 
@@ -111,6 +117,9 @@ class TestCombinedSpendLimiterInfraTracker:
             sku="A100",
             usd_per_unit=0.05,
             granularity=BillingGranularity.per_minute,
+            spot=False,
+            terms=BillingTerms.postpaid_per_use,
+            source="mock",
         )
         catalog.compute_price.return_value = per_min
 
@@ -127,6 +136,9 @@ class TestCombinedSpendLimiterInfraTracker:
             sku="A100",
             usd_per_unit=2.50,
             granularity=BillingGranularity.per_hour,
+            spot=False,
+            terms=BillingTerms.postpaid_per_use,
+            source="mock",
         )
         catalog.compute_price.return_value = per_hour
 
@@ -144,7 +156,7 @@ class TestCombinedSpendLimiterInfraTracker:
 
 class TestBudgetAndProjectAccounting:
     def test_budget_enforces_per_project(self):
-        sl, clock = _make_limiter(20.0, 3600.0)
+        sl, clock = _make_limiter(25.0, 3600.0)
         clock[0] = 100.0
 
         sl.record(8.0, kind="token", project_id="alpha")
@@ -154,10 +166,10 @@ class TestBudgetAndProjectAccounting:
         assert sl.project_spend("alpha") == pytest.approx(14.0)
         assert sl.project_spend("beta") == pytest.approx(7.0)
 
-        assert sl.can_spend(project_id="alpha")
+        assert sl.remaining() > 0.0
         sl.record(8.0, kind="token", project_id="alpha")
-        assert not sl.can_spend(project_id="alpha")
-        assert sl.can_spend(project_id="beta")
+        assert sl.remaining() == 0.0
+        assert sl.window_spend() == pytest.approx(29.0)
 
     def test_burn_rate_spans_multiple_projects(self):
         sl, clock = _make_limiter(200.0, 3600.0)

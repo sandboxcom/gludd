@@ -29,7 +29,8 @@ import math
 import operator
 import sys
 import threading
-from typing import Any, Literal, Protocol, TypedDict, runtime_checkable
+from collections.abc import Mapping
+from typing import Literal, Protocol, TypedDict, cast, runtime_checkable
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -95,8 +96,8 @@ class NormalizedRecord(TypedDict):
     level_or_status: str
     message: str
     value: float | None
-    labels: dict[str, Any]
-    raw: Any
+    labels: dict[str, object]
+    raw: object
 
 
 def normalized_record(
@@ -107,8 +108,8 @@ def normalized_record(
     ts: float | None = None,
     level_or_status: str = "info",
     value: float | None = None,
-    labels: dict[str, Any] | None = None,
-    raw: Any = None,
+    labels: Mapping[str, object] | None = None,
+    raw: object = None,
 ) -> NormalizedRecord:
     """Build a :class:`NormalizedRecord` with well-formed defaults.
 
@@ -133,7 +134,7 @@ def normalized_record(
         level_or_status=level_or_status,
         message=message,
         value=value,
-        labels=labels if labels is not None else {},
+        labels=dict(labels) if labels is not None else {},
         raw=raw,
     )
 
@@ -152,11 +153,11 @@ class Source(Protocol):
     name: str
     KIND: str
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Return a status dict. MUST NOT raise — report failure in the dict."""
         ...
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Return a list of normalized-record dicts matching ``spec``."""
         ...
 
@@ -228,7 +229,7 @@ class Observability:
         self._registry = registry
 
     # -- query fan-out ----------------------------------------------------- #
-    def find(self, spec: dict[str, Any], kinds: list[str] | None = None) -> list[dict[str, Any]]:
+    def find(self, spec: dict[str, object], kinds: list[str] | None = None) -> list[dict[str, object]]:
         """Fan ``spec`` across matching sources; merge + sort the results by ts.
 
         ``kinds`` restricts the fan-out to sources of those kinds (default: all).
@@ -247,7 +248,7 @@ class Observability:
             wanted = set(kinds)
             sources = [s for s in self._registry.all() if s.KIND in wanted]
 
-        merged: list[dict[str, Any]] = []
+        merged: list[dict[str, object]] = []
         _global_count = 0
         _byte_count = 0
         for source in sources:
@@ -258,7 +259,7 @@ class Observability:
             except Exception:
                 # Resilience is the whole point: a single source blowing up must
                 # never abort the fan-out — capture it as an error record.
-                error_rec: dict[str, Any] = dict(
+                error_rec: dict[str, object] = dict(
                     normalized_record(
                         source=getattr(source, "name", "<unknown>"),
                         kind=getattr(source, "KIND", "unknown"),
@@ -300,7 +301,7 @@ class Observability:
         return self._sort_by_ts(merged)
 
     @staticmethod
-    def _sort_by_ts(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _sort_by_ts(records: list[dict[str, object]]) -> list[dict[str, object]]:
         """Stable sort by ts ascending; ``None`` timestamps sort last."""
         return sorted(
             records,
@@ -310,10 +311,10 @@ class Observability:
     # -- correlation ------------------------------------------------------- #
     @staticmethod
     def associate(
-        records: list[dict[str, Any]],
+        records: list[dict[str, object]],
         by: str = "trace_id",
         window_s: float = 60.0,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         """Correlate ``records`` into groups.
 
         ``by``:
@@ -331,11 +332,11 @@ class Observability:
         return Observability._associate_by_label(records, by)
 
     @staticmethod
-    def _associate_by_label(records: list[dict[str, Any]], label: str) -> list[dict[str, Any]]:
-        groups: dict[str, list[dict[str, Any]]] = {}
+    def _associate_by_label(records: list[dict[str, object]], label: str) -> list[dict[str, object]]:
+        groups: dict[str, list[dict[str, object]]] = {}
         order: list[str] = []
         for rec in records:
-            labels = rec.get("labels") or {}
+            labels = cast(dict[str, object], rec.get("labels")) or {}
             key = labels.get(label)
             if key is None:
                 continue
@@ -347,16 +348,16 @@ class Observability:
         return [{"key": k, "records": groups[k]} for k in order]
 
     @staticmethod
-    def _associate_by_window(records: list[dict[str, Any]], window_s: float) -> list[dict[str, Any]]:
+    def _associate_by_window(records: list[dict[str, object]], window_s: float) -> list[dict[str, object]]:
         timed = [r for r in records if r.get("ts") is not None]
         timed.sort(key=operator.itemgetter("ts"))
 
-        groups: list[dict[str, Any]] = []
-        current: list[dict[str, Any]] = []
+        groups: list[dict[str, object]] = []
+        current: list[dict[str, object]] = []
         anchor_ts: float | None = None
 
         for rec in timed:
-            ts = float(rec["ts"])
+            ts = float(cast(float, rec["ts"]))
             if anchor_ts is None or ts - anchor_ts > window_s:
                 if current:
                     groups.append({"key": anchor_ts, "records": current})
@@ -448,7 +449,7 @@ def _is_configured(source: Source) -> bool:
     return not has_env_attrs
 
 
-def classify_health(result: dict[str, Any], source_name: str) -> HealthResult:
+def classify_health(result: dict[str, object], source_name: str) -> HealthResult:
     """Normalize a connector's ``health()`` return dict to a :class:`HealthResult`.
 
     Mapping rules (first-match):
@@ -479,7 +480,7 @@ def classify_health(result: dict[str, Any], source_name: str) -> HealthResult:
 
 
 def classify_health_for_source(
-    source: Source, result: dict[str, Any]
+    source: Source, result: dict[str, object]
 ) -> HealthResult:
     """Like :func:`classify_health` but inspects whether *source* is configured.
 
@@ -507,7 +508,7 @@ def run_healthcheck(
     exception the result is also ``unhealthy`` with the exception class in the
     detail (never the message string — credential leak prevention).
     """
-    result_holder: dict[str, Any] = {}
+    result_holder: dict[str, object] = {}
     error_holder: Exception | None = None
     done = threading.Event()
 

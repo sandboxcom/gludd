@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 from general_ludd.project_runner import (
     ProjectCommandRunner,
@@ -40,7 +39,7 @@ def run_project_gate(
     required: tuple[str, ...] | list[str] | None = None,
     timeout_s: int | None = None,
     profile: ProjectProfile | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Run each check in ``checks`` for the target project and aggregate a verdict.
 
     Args:
@@ -104,7 +103,7 @@ def run_project_gate(
             "error": str(exc),
         }
 
-    check_reports: list[dict[str, Any]] = []
+    check_reports: list[dict[str, object]] = []
     missing: list[str] = []
     gate_passed = True
 

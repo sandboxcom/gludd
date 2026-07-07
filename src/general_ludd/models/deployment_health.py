@@ -14,7 +14,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.models.failover import ModelFailoverChain
 from general_ludd.models.timeout_detector import (
@@ -141,7 +141,7 @@ class DeploymentIncidentLog:
 
     def __init__(
         self,
-        audit_repo: Any | None = None,
+        audit_repo: object | None = None,
         max_in_memory: int = 1000,
         project_id: str | None = None,
         in_memory: bool = False,
@@ -182,7 +182,7 @@ class DeploymentIncidentLog:
     async def _persist(self, incident: DeploymentIncident) -> None:
         assert self._audit_repo is not None  # guarded by caller
         try:
-            await self._audit_repo.create(
+            await cast(Any, self._audit_repo).create(
                 event_type="deployment_incident",
                 entity_type="deployment",
                 entity_id=incident.deployment_id,
@@ -292,7 +292,7 @@ class DeploymentHealthChecker:
 
     # -- content quality ----------------------------------------------------
 
-    def check_content(self, deployment_id: str, content: Any) -> tuple[bool, str]:
+    def check_content(self, deployment_id: str, content: object) -> tuple[bool, str]:
         if self._content_quality is not None and isinstance(content, str):
             ok, reason = self._content_quality.evaluate(content)
             if not ok:
@@ -332,7 +332,7 @@ class DeploymentHealthChecker:
 
         return True, "Content passes quality checks"
 
-    def validate_content(self, content: Any) -> None:
+    def validate_content(self, content: object) -> None:
         """Validate content and raise InvalidContentError on failure."""
         if self._content_quality is not None and isinstance(content, str):
             ok, reason = self._content_quality.evaluate(content)
@@ -506,7 +506,7 @@ class SelfHealingRouter:
         self._failover_chain = failover_chain
         self._per_deployment_chains: dict[str, ModelFailoverChain] = {}
         self._fallback_map: dict[str, list[str]] = {}
-        self._deployment_health: dict[str, dict[str, Any]] = {}
+        self._deployment_health: dict[str, dict[str, object]] = {}
         self._lock = threading.RLock()
 
     # -- properties ---------------------------------------------------------
@@ -520,7 +520,7 @@ class SelfHealingRouter:
         return self._failover_chain
 
     @property
-    def deployment_health(self) -> dict[str, dict[str, Any]]:
+    def deployment_health(self) -> dict[str, dict[str, object]]:
         with self._lock:
             return {
                 did: dict(data) for did, data in self._deployment_health.items()
@@ -604,7 +604,7 @@ class SelfHealingRouter:
             health = self._deployment_health.setdefault(deployment_id, {})
             health["status"] = "unhealthy"
             health["last_check"] = time.time()
-            health["error_count"] = health.get("error_count", 0) + 1
+            health["error_count"] = cast(int, health.get("error_count", 0)) + 1
 
         return DeploymentIncident(
             timestamp=time.time(),

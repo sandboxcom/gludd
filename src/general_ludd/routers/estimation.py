@@ -13,7 +13,6 @@ All endpoints require the daemon PSK (admin middleware enforces it on every
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
@@ -42,8 +41,8 @@ def _get_tracker(app: FastAPI) -> EstimationTracker:
 class EstimationReportResponse(BaseModel):
     total_estimates: int
     total_suspect: int
-    by_work_type: dict[str, dict[str, Any]]
-    calibrations: dict[str, dict[str, Any]]
+    by_work_type: dict[str, dict[str, object]]
+    calibrations: dict[str, dict[str, object]]
     overall_accuracy: float
     trend: str
     generated_at: str
@@ -69,7 +68,7 @@ class CalibrationInfo(BaseModel):
     last_adjusted: str | None
 
 
-def _calibration_to_dict(c: EstimationCalibration) -> dict[str, Any]:
+def _calibration_to_dict(c: EstimationCalibration) -> dict[str, object]:
     return {
         "work_type": c.work_type,
         "cost_multiplier": c.cost_multiplier,
@@ -80,7 +79,7 @@ def _calibration_to_dict(c: EstimationCalibration) -> dict[str, Any]:
     }
 
 
-def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
     @app.get("/admin/estimation/report", response_model=EstimationReportResponse)
     async def get_estimation_report() -> EstimationReportResponse:
         """Return the aggregated estimation accuracy report."""

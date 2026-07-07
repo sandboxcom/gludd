@@ -10,7 +10,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import yaml
 from fastapi import FastAPI
@@ -89,7 +89,7 @@ def _get_human_spec(app: FastAPI) -> PermissionSpec:
 # ---------------------------------------------------------------------------
 
 
-def _get_esc_store(app: FastAPI) -> list[dict[str, Any]]:
+def _get_esc_store(app: FastAPI) -> list[dict[str, object]]:
     store = getattr(app.state, "_escalation_store", None)
     if store is None:
         store = []
@@ -107,7 +107,7 @@ def _esc_counter(app: FastAPI) -> int:
 
 
 async def _file_human_todo_for_escalation(
-    app: FastAPI, esc_row: dict[str, Any]
+    app: FastAPI, esc_row: dict[str, object]
 ) -> str | None:
     """File a HumanTodo(category=permission_escalation) for a pending escalation.
 
@@ -126,7 +126,7 @@ async def _file_human_todo_for_escalation(
     from general_ludd.db.repository import HumanTodoRepository
 
     esc_id = esc_row["id"]
-    agent_id = esc_row["agent_id"]
+    agent_id = cast(str, esc_row["agent_id"])
     title = f"Permission escalation #{esc_id} from {agent_id}"
     body = (
         f"Agent {agent_id} requested additional capabilities.\n\n"
@@ -150,7 +150,7 @@ async def _file_human_todo_for_escalation(
 
 
 async def _resolve_human_todo_for_escalation(
-    app: FastAPI, esc_row: dict[str, Any], *, status: str, resolver: str, reason: str
+    app: FastAPI, esc_row: dict[str, object], *, status: str, resolver: str, reason: str
 ) -> None:
     """Mark the HumanTodo linked to this escalation as done/dismissed.
 
@@ -166,7 +166,7 @@ async def _resolve_human_todo_for_escalation(
 
     async with factory() as session:
         repo = HumanTodoRepository(session)
-        row = await repo.get(ht_id)
+        row = await repo.get(cast(str, ht_id))
         if row is None:
             return
         # Skip if already terminal (e.g. human resolved via the human-todo
@@ -174,9 +174,9 @@ async def _resolve_human_todo_for_escalation(
         if row.status in {"done", "dismissed", "superseded"}:
             return
         if status == "done":
-            await repo.mark_done(ht_id, resolver, reason)
+            await repo.mark_done(cast(str, ht_id), resolver, reason)
         else:
-            await repo.dismiss(ht_id, resolver, reason)
+            await repo.dismiss(cast(str, ht_id), resolver, reason)
         await session.commit()
 
 
@@ -218,7 +218,7 @@ async def _sync_escalation_from_human_todo(
             break
 
 
-def _caps_to_yaml(caps: list[dict[str, Any]]) -> str:
+def _caps_to_yaml(caps: list[dict[str, object]]) -> str:
     return str(yaml.safe_dump(caps, sort_keys=False))
 
 
@@ -281,13 +281,13 @@ def _perms_dir(app: FastAPI) -> Path:
     return perms
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/sts/issue")
-    async def admin_sts_issue(req: dict[str, Any]) -> Any:
-        subject_agent_id = req.get("subject_agent_id")
-        requested_yaml = req.get("requested_spec_yaml")
-        ttl = int(req.get("ttl_seconds", 3600))
+    async def admin_sts_issue(req: dict[str, object]) -> object:
+        subject_agent_id = cast(str, req.get("subject_agent_id"))
+        requested_yaml = cast(str, req.get("requested_spec_yaml"))
+        ttl = int(str(req.get("ttl_seconds", 3600)))
         if not subject_agent_id or not requested_yaml:
             return JSONResponse(
                 status_code=400,
@@ -304,7 +304,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return JSONResponse(status_code=400, content={"error": "spec validation failed", "details": errors})
         issuer_spec = _get_issuer_spec(app)
         issuer = _get_issuer(app)
-        issuer_id = req.get("issuer_agent_id") or issuer_spec.agent_type
+        issuer_id = cast(str, req.get("issuer_agent_id") or issuer_spec.agent_type)
         try:
             token = issuer.issue(
                 issuer_spec=issuer_spec,
@@ -325,7 +325,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/sts/active")
-    async def admin_sts_active() -> Any:
+    async def admin_sts_active() -> object:
         issuer = _get_issuer(app)
         tokens = issuer.list_active()
         return {"tokens": [
@@ -342,8 +342,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         ]}
 
     @app.post("/admin/sts/revoke")
-    async def admin_sts_revoke(req: dict[str, Any]) -> Any:
-        token_id = req.get("token_id")
+    async def admin_sts_revoke(req: dict[str, object]) -> object:
+        token_id = cast(str, req.get("token_id"))
         if not token_id:
             return JSONResponse(status_code=400, content={"error": "token_id is required"})
         issuer = _get_issuer(app)
@@ -359,13 +359,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         agent_id: str | None = None,
         since: float | None = None,
         capability: str | None = None,
-    ) -> Any:
+    ) -> object:
         audit = _get_audit_log(app)
         events = audit.query(agent_id=agent_id, since=since, capability=capability)
         return {"events": events}
 
     @app.get("/admin/perm/spec/{agent_type}")
-    async def admin_perm_spec_get(agent_type: str) -> Any:
+    async def admin_perm_spec_get(agent_type: str) -> object:
         import yaml
 
         from general_ludd.security.permissions import default_spec
@@ -404,8 +404,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"agent_type": agent_type, "spec_yaml": spec_yaml}
 
     @app.put("/admin/perm/spec/{agent_type}")
-    async def admin_perm_spec_put(agent_type: str, req: dict[str, Any]) -> Any:
-        spec_yaml = req.get("spec_yaml")
+    async def admin_perm_spec_put(agent_type: str, req: dict[str, object]) -> object:
+        spec_yaml = cast(str, req.get("spec_yaml"))
         if not spec_yaml:
             return JSONResponse(status_code=400, content={"error": "spec_yaml is required"})
         try:
@@ -421,7 +421,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"status": "saved", "agent_type": agent_type, "path": str(path)}
 
     @app.get("/admin/perm/spec")
-    async def admin_perm_spec_list() -> Any:
+    async def admin_perm_spec_list() -> object:
         perms = _perms_dir(app)
         agent_types = sorted(p.stem for p in perms.glob("*.yml") if p.is_file())
         return {"agent_types": agent_types}
@@ -431,12 +431,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     # -----------------------------------------------------------------
 
     @app.post("/admin/perm/escalation-request")
-    async def admin_perm_escalation_request(req: dict[str, Any]) -> Any:
-        agent_id = req.get("agent_id")
-        current_yaml = req.get("current_spec_yaml")
+    async def admin_perm_escalation_request(req: dict[str, object]) -> object:
+        agent_id = cast(str, req.get("agent_id"))
+        current_yaml = cast(str, req.get("current_spec_yaml"))
         requested_raw = req.get("requested_additional_capabilities")
-        reason = req.get("reason")
-        alternatives = req.get("alternatives_tried") or []
+        reason = cast(str, req.get("reason"))
+        alternatives: list[object] = cast(list[object], req.get("alternatives_tried") or [])
         if not agent_id or not current_yaml or not requested_raw or not reason:
             return JSONResponse(
                 status_code=400,
@@ -465,7 +465,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 },
             )
         try:
-            requested_caps = _caps_from_yaml(_caps_to_yaml(requested_raw))
+            requested_caps = _caps_from_yaml(_caps_to_yaml(cast(list[dict[str, object]], requested_raw)))
         except Exception as exc:
             return JSONResponse(status_code=400, content={"error": f"invalid requested_additional_capabilities: {exc}"})
 
@@ -479,11 +479,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         )
 
         esc_id = _esc_counter(app)
-        row: dict[str, Any] = {
+        row: dict[str, object] = {
             "id": esc_id,
             "agent_id": agent_id,
             "current_spec_yaml": current_yaml,
-            "requested_capabilities_yaml": _caps_to_yaml(requested_raw),
+            "requested_capabilities_yaml": _caps_to_yaml(cast(list[dict[str, object]], requested_raw)),
             "reason": reason,
             "alternatives_tried_json": json.dumps(alternatives),
             "status": status,
@@ -551,31 +551,31 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         )
 
     @app.get("/admin/perm/escalations")
-    async def admin_perm_escalations_list(status: str | None = None) -> Any:
+    async def admin_perm_escalations_list(status: str | None = None) -> object:
         store = _get_esc_store(app)
         items = [dict(r) for r in store]
         if status:
             items = [i for i in items if i.get("status") == status]
-        items.sort(key=lambda r: r.get("id", 0))
+        items.sort(key=lambda r: cast(int, r.get("id", 0)))
         return {"items": items}
 
     @app.get("/admin/perm/escalations/history")
-    async def admin_perm_escalations_history(agent_id: str | None = None) -> Any:
+    async def admin_perm_escalations_history(agent_id: str | None = None) -> object:
         store = _get_esc_store(app)
         items = [dict(r) for r in store]
         if agent_id:
             items = [i for i in items if i.get("agent_id") == agent_id]
-        items.sort(key=lambda r: r.get("id", 0))
+        items.sort(key=lambda r: cast(int, r.get("id", 0)))
         return {"items": items}
 
-    def _find_esc(esc_id: int) -> dict[str, Any] | None:
+    def _find_esc(esc_id: int) -> dict[str, object] | None:
         for row in _get_esc_store(app):
             if row.get("id") == esc_id:
                 return row
         return None
 
     @app.post("/admin/perm/escalations/{esc_id}/approve")
-    async def admin_perm_escalation_approve(esc_id: int, req: dict[str, Any]) -> Any:
+    async def admin_perm_escalation_approve(esc_id: int, req: dict[str, object]) -> object:
         row = _find_esc(esc_id)
         if row is None:
             return JSONResponse(status_code=404, content={"error": "escalation not found"})
@@ -584,18 +584,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 status_code=409,
                 content={"error": f"escalation already {row['status']}"},
             )
-        reason = req.get("reason") or "approved"
+        reason = cast(str, req.get("reason") or "approved")
         human_spec = _get_human_spec(app)
         agent_spec = _get_issuer_spec(app)
         # Build the augmented spec (current + requested), then intersect
         # with human spec — human CANNOT grant more than they have.
         try:
-            current_spec = PermissionSpecParser.parse(row["current_spec_yaml"])
+            current_spec = PermissionSpecParser.parse(cast(str, row["current_spec_yaml"]))
         except Exception:
-            current_spec = PermissionSpec(agent_type=row["agent_id"], capabilities=[])
-        requested_caps = _caps_from_yaml(row["requested_capabilities_yaml"])
+            current_spec = PermissionSpec(agent_type=cast(str, row["agent_id"]), capabilities=[])
+        requested_caps = _caps_from_yaml(cast(str, row["requested_capabilities_yaml"]))
         augmented = PermissionSpec(
-            agent_type=row["agent_id"],
+            agent_type=cast(str, row["agent_id"]),
             capabilities=list(current_spec.capabilities) + requested_caps,
             subject=PermissionSubject.STS_TOKEN,
         )
@@ -607,7 +607,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 issuer_spec=agent_spec,
                 subject_spec_request=effective,
                 issuer_id=f"escalation:{esc_id}",
-                subject_id=row["agent_id"],
+                subject_id=cast(str, row["agent_id"]),
                 ttl_seconds=ttl,
             )
         except PermissionDeniedError as exc:
@@ -626,7 +626,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             app,
             row,
             status="done",
-            resolver=req.get("human_reviewer") or "system",
+            resolver=cast(str, req.get("human_reviewer") or "system"),
             reason=reason,
         )
         return {
@@ -637,7 +637,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/admin/perm/escalations/{esc_id}/deny")
-    async def admin_perm_escalation_deny(esc_id: int, req: dict[str, Any]) -> Any:
+    async def admin_perm_escalation_deny(esc_id: int, req: dict[str, object]) -> object:
         row = _find_esc(esc_id)
         if row is None:
             return JSONResponse(status_code=404, content={"error": "escalation not found"})
@@ -660,7 +660,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             app,
             row,
             status="dismissed",
-            resolver=req.get("human_reviewer") or "system",
+            resolver=cast(str, req.get("human_reviewer") or "system"),
             reason=str(reason),
         )
         return {"id": esc_id, "status": "denied", "decided_reason": reason}

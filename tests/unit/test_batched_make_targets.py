@@ -26,17 +26,17 @@ class TestBatchedMakeTargets:
         recipe = _recipe("test-batch")
         assert recipe, "test-batch target must have a recipe"
 
-    def test_status_update_target_exists(self):
-        """status-update target must exist."""
-        recipe = _recipe("status-update")
-        assert recipe, "status-update target must have a recipe"
+    def test_status_snapshot_target_exists(self):
+        """status-snapshot target must exist."""
+        recipe = _recipe("status-snapshot")
+        assert recipe, "status-snapshot target must have a recipe"
 
-    def test_ship_target_exists(self):
-        """ship target must exist."""
-        recipe = _recipe("ship")
-        assert recipe, "ship target must have a recipe"
+    def test_ship_async_target_exists(self):
+        """ship-async target must exist."""
+        recipe = _recipe("ship-async")
+        assert recipe, "ship-async target must have a recipe"
 
-    def test_precommit_target_exists(self):
-        """precommit target must exist."""
-        recipe = _recipe("precommit")
-        assert recipe, "precommit target must have a recipe"
+    def test_install_hooks_target_exists(self):
+        """install-hooks target must exist."""
+        recipe = _recipe("install-hooks")
+        assert recipe, "install-hooks target must have a recipe"

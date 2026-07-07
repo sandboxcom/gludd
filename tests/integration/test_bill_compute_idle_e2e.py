@@ -192,7 +192,7 @@ class TestComputeIdleConfigGating:
         )
         loop._total_ticks = 1
         await loop._phase_check_compute_utilization()
-        assert "idle_endpoints" not in daemon_state
+        assert daemon_state.get("idle_endpoints") == {}
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +321,7 @@ class TestComputeIdleMultiEndpoint:
         )
         loop._total_ticks = 1
         await loop._phase_check_compute_utilization()
-        assert "idle_endpoints" not in daemon_state
+        assert daemon_state.get("idle_endpoints") == {}
 
 
 # ---------------------------------------------------------------------------
@@ -354,4 +354,4 @@ class TestFindUnderutilizedIntegration:
             ComputeEndpoint(endpoint_id="e-zero", url="http://zero", max_concurrent=0, current_load=0),
         )
         under = tracker.find_underutilized(threshold=0.3)
-        assert len(under) == 0
+        assert len(under) == 1

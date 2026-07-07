@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
@@ -54,10 +54,10 @@ class _Transport(Protocol):
         url: str,
         *,
         headers: dict[str, str] | None = ...,
-        json: Any | None = ...,
-        params: dict[str, Any] | None = ...,
+        json: object | None = ...,
+        params: dict[str, object] | None = ...,
         timeout: float | None = ...,
-    ) -> tuple[int, Any]: ...
+    ) -> tuple[int, object]: ...
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -86,7 +86,7 @@ class GrafanaLokiSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         *,
         transport: _Transport,
         timeout: float = _DEFAULT_TIMEOUT,
@@ -107,7 +107,7 @@ class GrafanaLokiSource:
         return headers
 
     @staticmethod
-    def _detect_level(stream_labels: dict[str, Any]) -> str:
+    def _detect_level(stream_labels: dict[str, object]) -> str:
         for key in _LEVEL_LABEL_KEYS:
             val = stream_labels.get(key)
             if isinstance(val, str) and val.strip():
@@ -115,14 +115,14 @@ class GrafanaLokiSource:
         return ""
 
     @staticmethod
-    def _ns_to_seconds(ts_ns: Any) -> float:
+    def _ns_to_seconds(ts_ns: object) -> float:
         try:
             return float(int(str(ts_ns))) / 1_000_000_000.0
         except (TypeError, ValueError):
             return 0.0
 
     @staticmethod
-    def _maybe_value(entry: Any) -> float | None:
+    def _maybe_value(entry: object) -> float | None:
         """Loki stream entries can carry a third element (a parsed metric)."""
         if isinstance(entry, (list, tuple)) and len(entry) >= 3:
             try:
@@ -132,8 +132,8 @@ class GrafanaLokiSource:
         return None
 
     def _normalize_entry(
-        self, entry: Any, stream_labels: dict[str, Any], detected: str
-    ) -> dict[str, Any]:
+        self, entry: object, stream_labels: dict[str, object], detected: str
+    ) -> dict[str, object]:
         if isinstance(entry, (list, tuple)) and len(entry) >= 2:
             ts_ns, line = entry[0], entry[1]
         else:
@@ -149,8 +149,8 @@ class GrafanaLokiSource:
             "raw": entry,
         }
 
-    def _iter_records(self, payload: Any) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
+    def _iter_records(self, payload: object) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
         if not isinstance(payload, dict):
             return records
         data = payload.get("data")
@@ -174,21 +174,21 @@ class GrafanaLokiSource:
 
     # -- public API --------------------------------------------------------
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Run a Loki ``query_range`` request and return normalized records.
 
         ``spec`` keys: ``query`` (LogQL), ``start`` / ``end`` (epoch seconds,
         forwarded as nanoseconds — the bounded window), optional ``limit``.
         """
         logql = str(spec.get("query", ""))
-        params: dict[str, Any] = {"query": logql}
+        params: dict[str, object] = {"query": logql}
         start = spec.get("start")
         end = spec.get("end")
         if start is not None:
-            params["start"] = int(float(start) * 1_000_000_000)
+            params["start"] = int(float(str(start)) * 1_000_000_000)
         if end is not None:
-            params["end"] = int(float(end) * 1_000_000_000)
-        params["limit"] = int(spec.get("limit", _DEFAULT_LIMIT))
+            params["end"] = int(float(str(end)) * 1_000_000_000)
+        params["limit"] = int(str(spec.get("limit", _DEFAULT_LIMIT)))
         url = f"{self._base_url}/loki/api/v1/query_range"
         status_code, payload = self._transport.request(
             "GET",
@@ -201,7 +201,7 @@ class GrafanaLokiSource:
             return []
         return self._iter_records(payload)
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe Loki's ``/ready`` endpoint. Never raises."""
         url = f"{self._base_url}/ready"
         try:
@@ -216,7 +216,7 @@ class GrafanaLokiSource:
             logger.warning("grafana_loki health check failed", exc_info=True)
             return {"ok": False, "source": self.name, "error": "health check failed"}
         ok = 200 <= status_code < 300
-        result: dict[str, Any] = {"ok": ok, "source": self.name, "status_code": status_code}
+        result: dict[str, object] = {"ok": ok, "source": self.name, "status_code": status_code}
         if not ok:
             result["error"] = f"unhealthy status {status_code}"
         return result

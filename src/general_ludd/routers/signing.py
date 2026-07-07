@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -41,22 +41,22 @@ def _validate_output_dir(output_dir: str | None) -> str | None:
     return resolved
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/signing/cosign/generate")
-    async def admin_cosign_generate(req: dict[str, Any]) -> Any:
+    async def admin_cosign_generate(req: dict[str, object]) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "write_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
-        raw_output_dir: str | None = req.get("output_dir")
+        raw_output_dir: str | None = cast(str | None, req.get("output_dir"))
         try:
             safe_output_dir = _validate_output_dir(raw_output_dir)
             key = generate_and_store_cosign_key(
                 mgr=resolver,
-                project_id=req.get("project_id", "default"),
-                key_name=req.get("key_name", "cosign-key"),
+                project_id=str(req.get("project_id", "default")),
+                key_name=str(req.get("key_name", "cosign-key")),
                 output_dir=safe_output_dir,
-                password=req.get("password"),
+                password=cast(str | None, req.get("password")),
             )
         except ValueError as exc:
             # Invalid project_id/key_name (segment regex) or output_dir → clean
@@ -66,7 +66,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"key_name": key.key_name, "public_key": key.public_key, "created_at": key.created_at}
 
     @app.get("/admin/signing/cosign/list/{project_id}")
-    async def admin_cosign_list(project_id: str) -> Any:
+    async def admin_cosign_list(project_id: str) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "read_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
@@ -90,7 +90,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return keys
 
     @app.get("/admin/signing/cosign/{project_id}/{key_name}")
-    async def admin_cosign_read(project_id: str, key_name: str) -> Any:
+    async def admin_cosign_read(project_id: str, key_name: str) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "read_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
@@ -103,7 +103,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"key_name": key.key_name, "public_key": key.public_key, "created_at": key.created_at}
 
     @app.delete("/admin/signing/cosign/{project_id}/{key_name}")
-    async def admin_cosign_delete(project_id: str, key_name: str) -> Any:
+    async def admin_cosign_delete(project_id: str, key_name: str) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "delete_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
@@ -114,26 +114,26 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"status": "deleted", "project_id": project_id, "key_name": key_name}
 
     @app.post("/admin/signing/gitsign/config")
-    async def admin_gitsign_write(req: dict[str, Any]) -> Any:
+    async def admin_gitsign_write(req: dict[str, object]) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "write_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
         try:
             write_gitsign_config(
                 mgr=resolver,
-                project_id=req.get("project_id", "default"),
-                fulcio_url=req.get("fulcio_url", "https://fulcio.sigstore.dev"),
-                rekor_url=req.get("rekor_url", "https://rekor.sigstore.dev"),
-                oidc_issuer=req.get("oidc_issuer", "https://oauth2.sigstore.dev/auth"),
-                key_ref=req.get("key_ref", ""),
-                enabled=req.get("enabled", True),
+                project_id=str(req.get("project_id", "default")),
+                fulcio_url=str(req.get("fulcio_url", "https://fulcio.sigstore.dev")),
+                rekor_url=str(req.get("rekor_url", "https://rekor.sigstore.dev")),
+                oidc_issuer=str(req.get("oidc_issuer", "https://oauth2.sigstore.dev/auth")),
+                key_ref=str(req.get("key_ref", "")),
+                enabled=bool(req.get("enabled", True)),
             )
         except ValueError as exc:
             return JSONResponse(status_code=400, content={"error": str(exc)})
         return {"status": "ok"}
 
     @app.get("/admin/signing/gitsign/{project_id}")
-    async def admin_gitsign_read(project_id: str) -> Any:
+    async def admin_gitsign_read(project_id: str) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "read_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})

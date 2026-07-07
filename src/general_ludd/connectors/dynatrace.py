@@ -25,7 +25,7 @@ Design contract (shared by all gludd APM connectors):
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -53,7 +53,7 @@ class HttpTransport(Protocol):
         *,
         headers: dict[str, str],
         timeout: float,
-    ) -> tuple[int, dict[str, Any]]:
+    ) -> tuple[int, dict[str, object]]:
         ...
 
 
@@ -69,7 +69,7 @@ def _validate_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _resolve_secret(config: dict[str, Any], env_key_name: str) -> str:
+def _resolve_secret(config: dict[str, object], env_key_name: str) -> str:
     """Read a secret strictly from the environment named by ``config[env_key_name]``."""
     env_var = config.get(env_key_name)
     if not env_var or not isinstance(env_var, str):
@@ -89,7 +89,7 @@ class _UrllibTransport:
         *,
         headers: dict[str, str],
         timeout: float,
-    ) -> tuple[int, dict[str, Any]]:
+    ) -> tuple[int, dict[str, object]]:
         import json
         import urllib.error
         import urllib.request
@@ -108,7 +108,7 @@ class _UrllibTransport:
                 return int(exc.code), {}
         if not raw:
             return status, {}
-        parsed: Any = json.loads(raw)
+        parsed: object = json.loads(raw)
         return status, parsed if isinstance(parsed, dict) else {"data": parsed}
 
 
@@ -117,11 +117,11 @@ class DynatraceSource:
 
     KIND = KIND_METRICS
 
-    def __init__(self, config: dict[str, Any], transport: HttpTransport | None = None) -> None:
+    def __init__(self, config: dict[str, object], transport: HttpTransport | None = None) -> None:
         self.name: str = str(config.get("name", "dynatrace"))
         self.base_url: str = _validate_base_url(str(config.get("base_url", "")))
         self._token: str = _resolve_secret(config, "token_env")
-        self.timeout: float = float(config.get("timeout", DEFAULT_TIMEOUT))
+        self.timeout: float = float(str(config.get("timeout", DEFAULT_TIMEOUT)))
         self._transport: HttpTransport = transport or _UrllibTransport()
 
     # -- internals ---------------------------------------------------------
@@ -132,7 +132,7 @@ class DynatraceSource:
             "Accept": "application/json",
         }
 
-    def _get(self, path: str, params: dict[str, str] | None = None) -> tuple[int, dict[str, Any]]:
+    def _get(self, path: str, params: dict[str, str] | None = None) -> tuple[int, dict[str, object]]:
         from urllib.parse import urlencode
 
         url = f"{self.base_url}{path}"
@@ -142,7 +142,7 @@ class DynatraceSource:
 
     # -- public API --------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe reachability + auth; never raises."""
         try:
             status, _ = self._get("/api/v2/metrics", {"pageSize": "1"})
@@ -152,9 +152,9 @@ class DynatraceSource:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Run a metrics query (and optional problems pull); return normalized records."""
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         records.extend(self._query_metrics(spec))
         if spec.get("include_problems"):
             records.extend(self._query_problems(spec))
@@ -162,7 +162,7 @@ class DynatraceSource:
 
     # -- metrics -----------------------------------------------------------
 
-    def _query_metrics(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _query_metrics(self, spec: dict[str, object]) -> list[dict[str, object]]:
         selector = str(spec.get("metric_selector", spec.get("metricSelector", "")))
         if not selector:
             return []
@@ -176,9 +176,12 @@ class DynatraceSource:
             return []
         return self._normalize_metrics(body)
 
-    def _normalize_metrics(self, body: dict[str, Any]) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        for series_result in body.get("result", []):
+    def _normalize_metrics(self, body: dict[str, object]) -> list[dict[str, object]]:
+        out: list[dict[str, object]] = []
+        raw_results = body.get("result", [])
+        if not isinstance(raw_results, list):
+            return []
+        for series_result in raw_results:
             if not isinstance(series_result, dict):
                 continue
             metric_id = series_result.get("metricId", "")
@@ -187,7 +190,7 @@ class DynatraceSource:
                     continue
                 dimensions = data_point.get("dimensions") or []
                 dim_map = data_point.get("dimensionMap") or {}
-                labels: dict[str, Any] = {"dimensions": dimensions}
+                labels: dict[str, object] = {"dimensions": dimensions}
                 if dim_map:
                     labels.update(dim_map)
                 timestamps = data_point.get("timestamps") or []
@@ -209,7 +212,7 @@ class DynatraceSource:
 
     # -- problems / incidents ----------------------------------------------
 
-    def _query_problems(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _query_problems(self, spec: dict[str, object]) -> list[dict[str, object]]:
         params: dict[str, str] = {}
         if spec.get("from") is not None:
             params["from"] = str(spec["from"])
@@ -218,8 +221,11 @@ class DynatraceSource:
         status, body = self._get("/api/v2/problems", params or None)
         if not (200 <= status < 300):
             return []
-        out: list[dict[str, Any]] = []
-        for problem in body.get("problems", []):
+        out: list[dict[str, object]] = []
+        raw_problems = body.get("problems", [])
+        if not isinstance(raw_problems, list):
+            return []
+        for problem in raw_problems:
             if not isinstance(problem, dict):
                 continue
             out.append(
@@ -241,11 +247,11 @@ class DynatraceSource:
         return out
 
 
-def _ms_to_epoch(ts_ms: Any) -> float | None:
+def _ms_to_epoch(ts_ms: object) -> float | None:
     """Convert epoch milliseconds to epoch seconds; tolerate None/garbage."""
     if ts_ms is None:
         return None
     try:
-        return float(ts_ms) / 1000.0
+        return float(str(ts_ms)) / 1000.0
     except (TypeError, ValueError):
         return None

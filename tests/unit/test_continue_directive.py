@@ -51,11 +51,11 @@ def test_build_directive_basic():
         gate_red=False,
         ci_pending=False,
     )
-    assert d["action"] == "CONTINUE"
+    assert d["action"] == "FORCE_DISPATCH"
     assert d["required_tool"] == "task"
     assert "TASKS.md has unchecked items" in d["pending_items"]
     assert "3 ratchet entries" in d["pending_items"]
-    assert "Dispatch subagents NOW" in d["message"]
+    assert "Dispatch ALL of them NOW" in d["message"]
     assert d["stop_count"] == 1
     assert d["source"] == "local"
     assert "ts" in d
@@ -103,7 +103,7 @@ def test_build_directive_with_extra_message():
         extra_message="REPEATED STOP DETECTED (3x)",
     )
     assert "REPEATED STOP DETECTED" in d["message"]
-    assert "Dispatch subagents NOW" in d["message"]
+    assert "Dispatch ALL of them NOW" in d["message"]
 
 
 def test_build_directive_with_work_hint():
@@ -118,7 +118,7 @@ def test_build_directive_with_work_hint():
         work_hint="CI pending. Do NOT push new commits.",
     )
     assert "CI pending. Do NOT push new commits." in d["message"]
-    assert "Dispatch subagents NOW" in d["message"]
+    assert "Dispatch ALL of them NOW" in d["message"]
 
 
 def test_build_directive_ci_pending_no_run_id():
@@ -210,10 +210,10 @@ def test_check_and_reset_writes_json_directive_on_stop(tmp_path):
     assert directive_path.exists(), f"Expected directive at {directive_path}"
 
     directive = json.loads(directive_path.read_text())
-    assert directive["action"] == "CONTINUE"
+    assert directive["action"] == "FORCE_DISPATCH"
     assert directive["required_tool"] == "task"
     assert "TASKS.md has unchecked items" in directive["pending_items"]
-    assert "Dispatch subagents NOW" in directive["message"]
+    assert "Dispatch ALL of them NOW" in directive["message"]
 
 
 def test_check_and_reset_does_not_write_directive_when_no_stop(tmp_path):
@@ -291,26 +291,26 @@ def test_check_and_reset_does_not_write_directive_when_no_stop(tmp_path):
 
 def test_plugin_reads_continue_directive():
     src = PLUGIN_PATH.read_text()
-    assert ("/tmp/gludd-continue-directive.json" in src or
-            "GLUDD_CONTINUE_DIRECTIVE" in src), (
-        "enforce-stop.ts must read the watchdog's continue directive file"
+    assert ("/tmp/gludd-force-dispatch.json" in src or
+            "FORCE_DISPATCH_FILE" in src), (
+        "enforce-stop.ts must reference the force-dispatch file"
     )
 
 
 def test_plugin_has_freshness_check():
     src = PLUGIN_PATH.read_text()
     assert "120_000" in src or "120000" in src, (
-        "enforce-stop.ts must check directive freshness (<120s)"
+        "enforce-stop.ts must check freshness (<120s)"
     )
-    assert "mtimeMs" in src or "mtime" in src, (
-        "enforce-stop.ts must check file modification time"
+    assert "Date.now()" in src or "lastBlockTs" in src, (
+        "enforce-stop.ts must check age via timestamps"
     )
 
 
 def test_plugin_prepends_continue_directive():
     src = PLUGIN_PATH.read_text()
-    assert "URGENT" in src or "CONTINUE" in src, (
-        "enforce-stop.ts must prepend a CONTINUE directive to the system prompt"
+    assert "FORCE_DISPATCH" in src or "MANDATORY" in src, (
+        "enforce-stop.ts must prepend a FORCE_DISPATCH directive to the system prompt"
     )
     assert ".unshift" in src or "prepend" in src or ".join" in src, (
         "enforce-stop.ts must prepend (not append) the directive"
@@ -319,22 +319,22 @@ def test_plugin_prepends_continue_directive():
 
 def test_plugin_directive_mentions_required_tool():
     src = PLUGIN_PATH.read_text()
-    assert "required_tool" in src, (
-        "enforce-stop.ts must read the required_tool field from the directive"
+    assert "Task tool" in src or "dispatch a subagent" in src, (
+        "enforce-stop.ts must instruct dispatch via Task tool"
     )
 
 
 def test_plugin_directive_mentions_pending_items():
     src = PLUGIN_PATH.read_text()
-    assert "pending_items" in src, (
-        "enforce-stop.ts must read pending_items from the directive JSON"
+    assert "pending_items" in src or "PENDING WORK EXISTS" in src, (
+        "enforce-stop.ts must surface pending work items"
     )
 
 
 def test_plugin_directive_has_action_check():
     src = PLUGIN_PATH.read_text()
-    assert 'action === "CONTINUE"' in src or 'action == "CONTINUE"' in src, (
-        "enforce-stop.ts must check directive.action === 'CONTINUE'"
+    assert "active:" in src or "consecutiveBlocks," in src, (
+        "enforce-stop.ts must write force-dispatch data with action fields"
     )
 
 
@@ -343,10 +343,10 @@ def test_plugin_directive_has_action_check():
 
 def test_watchdog_and_plugin_use_same_filename():
     src = PLUGIN_PATH.read_text()
-    # The watchdog defaults to .json now
-    assert ("/tmp/gludd-continue-directive.json" in src or
-            "GLUDD_CONTINUE_DIRECTIVE" in src), (
-        "enforce-stop.ts must read the same file the watchdog writes"
+    # Plugin writes FORCE_DISPATCH_FILE; watchdog reads it
+    assert ("/tmp/gludd-force-dispatch.json" in src or
+            "FORCE_DISPATCH_FILE" in src), (
+        "enforce-stop.ts must share the force-dispatch file with the watchdog"
     )
 
 
@@ -359,7 +359,7 @@ def test_watchdog_default_is_json():
 def test_directive_json_is_valid_on_stop(tmp_path):
     """End-to-end: write a stop-like directive, verify it can be parsed and used."""
     directive = {
-        "action": "CONTINUE",
+        "action": "FORCE_DISPATCH",
         "pending_items": ["TASKS.md has unchecked items", "3 ratchet entries"],
         "required_tool": "task",
         "message": "Dispatch subagents NOW to clear pending work.",
@@ -376,13 +376,13 @@ def test_directive_json_is_valid_on_stop(tmp_path):
     assert age_sec < 120, "Fresh directive should be within 120s threshold"
 
     parsed = json.loads(directive_path.read_text())
-    assert parsed["action"] == "CONTINUE"
+    assert parsed["action"] == "FORCE_DISPATCH"
     assert len(parsed["pending_items"]) == 2
     assert parsed["required_tool"] == "task"
 
     # Simulate the prepend string the plugin builds
     pending_str = "; ".join(parsed["pending_items"])
-    prepend = f"URGENT CONTINUE: {pending_str} — {parsed['message']} — use {parsed['required_tool']}"
+    prepend = f"FORCE DISPATCH: {pending_str} — {parsed['message']} — use {parsed['required_tool']}"
     assert "TASKS.md has unchecked items" in prepend
     assert "Dispatch subagents NOW" in prepend
     assert "task" in prepend

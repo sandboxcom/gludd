@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from general_ludd.schemas.quality_gate import QualityGateConfig
 
@@ -16,27 +15,28 @@ class QualityGateChecker:
 
     def check_python_coverage(
         self, coverage_percent: float, branch_percent: float | None = None
-    ) -> dict[str, Any]:
-        result: dict[str, Any] = {
+    ) -> dict[str, object]:
+        checks: list[dict[str, object]] = []
+        result: dict[str, object] = {
             "gate": "python_coverage",
             "passed": True,
-            "checks": [],
+            "checks": checks,
         }
         py = self.config.python
         if not py.enabled:
-            result["checks"].append({"check": "python_coverage", "skipped": True})
+            checks.append({"check": "python_coverage", "skipped": True})
             return result
 
         if coverage_percent < py.line_coverage_min_percent:
             result["passed"] = False
-            result["checks"].append({
+            checks.append({
                 "check": "line_coverage",
                 "actual": coverage_percent,
                 "required": py.line_coverage_min_percent,
                 "status": "failed",
             })
         else:
-            result["checks"].append({
+            checks.append({
                 "check": "line_coverage",
                 "actual": coverage_percent,
                 "required": py.line_coverage_min_percent,
@@ -45,7 +45,7 @@ class QualityGateChecker:
 
         if branch_percent is not None and branch_percent < py.branch_coverage_min_percent:
             result["passed"] = False
-            result["checks"].append({
+            checks.append({
                 "check": "branch_coverage",
                 "actual": branch_percent,
                 "required": py.branch_coverage_min_percent,
@@ -56,7 +56,7 @@ class QualityGateChecker:
 
     def check_molecule_coverage(
         self, covered: int, required: int
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         mol = self.config.molecule
         if not mol.enabled:
             return {"gate": "molecule_coverage", "passed": True, "skipped": True}
@@ -75,7 +75,7 @@ class QualityGateChecker:
             "required": required,
         }
 
-    def enforce(self, gate_results: list[dict[str, Any]]) -> dict[str, Any]:
+    def enforce(self, gate_results: list[dict[str, object]]) -> dict[str, object]:
         all_passed = all(g.get("passed", True) for g in gate_results)
         return {
             "all_passed": all_passed,

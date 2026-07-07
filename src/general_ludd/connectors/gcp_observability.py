@@ -32,7 +32,7 @@ defines no shared base class — it is standalone.
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -53,8 +53,8 @@ class HttpTransport(Protocol):
         url: str,
         *,
         headers: dict[str, str],
-        params: dict[str, Any] | None = ...,
-        json_body: dict[str, Any] | None = ...,
+        params: dict[str, object] | None = ...,
+        json_body: dict[str, object] | None = ...,
         timeout: float,
     ) -> HttpResponse: ...
 
@@ -86,7 +86,7 @@ class GcpObservabilitySource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         *,
         transport: HttpTransport,
         token: str | None = None,
@@ -94,7 +94,7 @@ class GcpObservabilitySource:
         self._transport = transport
         self.project = str(config.get("project", ""))
         self.name = str(config.get("name", f"gcp:{self.project}"))
-        self._timeout = float(config.get("timeout", DEFAULT_TIMEOUT))
+        self._timeout = float(str(config.get("timeout", DEFAULT_TIMEOUT)))
         self._order_by = str(config.get("order_by", "timestamp desc"))
 
         # Endpoints are validated (literal SSRF block) at construction time, so a
@@ -138,7 +138,7 @@ class GcpObservabilitySource:
     # ------------------------------------------------------------------ #
     # health
     # ------------------------------------------------------------------ #
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Minimal monitoring call; never raises. Returns {'ok', 'detail'}."""
 
         try:
@@ -157,7 +157,7 @@ class GcpObservabilitySource:
     # ------------------------------------------------------------------ #
     # query dispatch
     # ------------------------------------------------------------------ #
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         mode = spec.get("mode")
         if mode == "logs":
             return self._query_logs(spec)
@@ -168,11 +168,11 @@ class GcpObservabilitySource:
     # ------------------------------------------------------------------ #
     # logs mode
     # ------------------------------------------------------------------ #
-    def _query_logs(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
-        body: dict[str, Any] = {
+    def _query_logs(self, spec: dict[str, object]) -> list[dict[str, object]]:
+        body: dict[str, object] = {
             "resourceNames": [f"projects/{self.project}"],
             "orderBy": str(spec.get("order_by", self._order_by)),
-            "pageSize": int(spec.get("page_size", 100)),
+            "pageSize": int(str(spec.get("page_size", 100))),
         }
         if "filter" in spec and spec["filter"] is not None:
             body["filter"] = str(spec["filter"])
@@ -189,7 +189,7 @@ class GcpObservabilitySource:
         entries = payload.get("entries") or []
         return [self._normalize_log_entry(e) for e in entries]
 
-    def _normalize_log_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_log_entry(self, entry: dict[str, object]) -> dict[str, object]:
         message = entry.get("textPayload")
         if message is None:
             json_payload = entry.get("jsonPayload")
@@ -198,8 +198,9 @@ class GcpObservabilitySource:
         if message is None:
             message = ""
 
-        resource = entry.get("resource") or {}
-        labels: dict[str, Any] = {
+        resource_raw = entry.get("resource") or {}
+        resource: dict[str, object] = resource_raw if isinstance(resource_raw, dict) else {}
+        labels: dict[str, object] = {
             "resource.type": resource.get("type"),
             "logName": entry.get("logName"),
         }
@@ -221,8 +222,8 @@ class GcpObservabilitySource:
     # ------------------------------------------------------------------ #
     # metrics mode
     # ------------------------------------------------------------------ #
-    def _query_metrics(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {}
+    def _query_metrics(self, spec: dict[str, object]) -> list[dict[str, object]]:
+        params: dict[str, object] = {}
         if "filter" in spec and spec["filter"] is not None:
             params["filter"] = str(spec["filter"])
         if spec.get("interval_start") is not None:
@@ -230,7 +231,7 @@ class GcpObservabilitySource:
         if spec.get("interval_end") is not None:
             params["interval.endTime"] = str(spec["interval_end"])
         if spec.get("page_size") is not None:
-            params["pageSize"] = int(spec["page_size"])
+            params["pageSize"] = int(str(spec["page_size"]))
 
         resp = self._transport.request(
             "GET",
@@ -243,24 +244,33 @@ class GcpObservabilitySource:
         payload = resp.json()
         series = payload.get("timeSeries") or []
 
-        rows: list[dict[str, Any]] = []
+        rows: list[dict[str, object]] = []
         for ts_obj in series:
             rows.extend(self._normalize_time_series(ts_obj))
         return rows
 
     def _normalize_time_series(
-        self, ts_obj: dict[str, Any]
-    ) -> list[dict[str, Any]]:
-        metric = ts_obj.get("metric") or {}
-        resource = ts_obj.get("resource") or {}
+        self, ts_obj: dict[str, object]
+    ) -> list[dict[str, object]]:
+        metric_raw = ts_obj.get("metric") or {}
+        metric: dict[str, object] = metric_raw if isinstance(metric_raw, dict) else {}
+        resource_raw = ts_obj.get("resource") or {}
+        resource: dict[str, object] = resource_raw if isinstance(resource_raw, dict) else {}
         metric_type = metric.get("type", "")
 
-        labels: dict[str, Any] = {}
-        labels.update(metric.get("labels") or {})
-        labels.update(resource.get("labels") or {})
+        labels: dict[str, object] = {}
+        metric_labels = metric.get("labels")
+        if isinstance(metric_labels, dict):
+            labels.update(metric_labels)
+        resource_labels = resource.get("labels")
+        if isinstance(resource_labels, dict):
+            labels.update(resource_labels)
 
-        rows: list[dict[str, Any]] = []
-        for point in ts_obj.get("points") or []:
+        points = ts_obj.get("points")
+        if not isinstance(points, list):
+            return []
+        rows: list[dict[str, object]] = []
+        for point in points:
             interval = point.get("interval") or {}
             rows.append(
                 {
@@ -277,16 +287,16 @@ class GcpObservabilitySource:
         return rows
 
 
-def _point_value(value: dict[str, Any]) -> float | None:
+def _point_value(value: dict[str, object]) -> float | None:
     """Extract a scalar float from a Cloud Monitoring typed value object."""
 
     for key in ("doubleValue", "int64Value", "boolValue"):
         if key in value and value[key] is not None:
             raw = value[key]
             if isinstance(raw, bool):
-                return float(raw)
-            return float(raw)
+                return float(str(raw))
+            return float(str(raw))
     dist = value.get("distributionValue")
     if isinstance(dist, dict) and dist.get("mean") is not None:
-        return float(dist["mean"])
+        return float(str(dist["mean"]))
     return None

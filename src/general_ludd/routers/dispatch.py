@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
@@ -29,15 +28,12 @@ MAX_CALLS_PER_REQUEST = 20
 # Bounded ring-buffer for recent dispatch history (facts facet).
 _MAX_RECENT_DISPATCHES = 50
 
-# Hard cap on tool_calls per request to prevent unbounded dispatch loops.
-MAX_CALLS_PER_REQUEST = 20
-
-Handler = Callable[[str, dict[str, Any]], Any]
+Handler = Callable[[str, dict[str, object]], object]
 
 
 def register(
     app: FastAPI,
-    _daemon_state: dict[str, Any],
+    _daemon_state: dict[str, object],
     *,
     role_handler: Handler | None = None,
     mcp_handler: Handler | None = None,
@@ -67,11 +63,11 @@ def register(
     )
 
     # Per-process ring buffer for recent dispatch history.
-    _recent_dispatches: list[dict[str, Any]] = []
+    _recent_dispatches: list[dict[str, object]] = []
 
     def _record(results: list[DispatchResult]) -> None:
         for r in results:
-            entry: dict[str, Any] = {
+            entry: dict[str, object] = {
                 "ts": datetime.now(UTC).isoformat(),
                 **r.to_dict(),
             }
@@ -89,7 +85,7 @@ def register(
             "(D-16). PSK-authenticated."
         ),
     )
-    async def api_dispatch(body: dict[str, Any]) -> dict[str, Any]:
+    async def api_dispatch(body: dict[str, object]) -> dict[str, object]:
         """Dispatch one or more tool-call requests from a model turn.
 
         Body shape (single call)::
@@ -131,18 +127,18 @@ def register(
         }
 
     @app.get("/api/dispatch/recent")
-    async def api_dispatch_recent(limit: int = 20) -> dict[str, Any]:
+    async def api_dispatch_recent(limit: int = 20) -> dict[str, object]:
         """Return the most recent dispatch events (bounded, newest last)."""
         bounded = max(1, min(limit, _MAX_RECENT_DISPATCHES))
         return {"recent": _recent_dispatches[-bounded:], "total": len(_recent_dispatches)}
 
     @app.get("/api/dispatch/available")
-    async def api_dispatch_available() -> dict[str, Any]:
+    async def api_dispatch_available() -> dict[str, list[str]]:
         """Return which handler kinds are registered on this daemon instance."""
         return dispatcher.list_available()
 
     # Expose a _dispatch_facet callable for facts.py (registered below).
-    def _dispatch_facet() -> dict[str, Any]:
+    def _dispatch_facet() -> dict[str, object]:
         """Snapshot for inclusion in /api/facts under key ``"dispatch"``."""
         recent = _recent_dispatches[-10:]
         return {

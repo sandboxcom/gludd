@@ -115,7 +115,7 @@ class TestFinding:
         assert f.capability is None
 
     def test_fail_finding_with_capability(self):
-        cap = Capability(name="fs_write", description="write files", constraints={})
+        cap = Capability(resource="fs_write", constraints={})
         f = Finding(severity="fail", message="write denied", capability=cap)
         assert f.severity == "fail"
         assert f.capability is cap
@@ -139,71 +139,71 @@ class TestFinding:
 
 class TestConstraintHelpers:
     def test_constraint_value_returns_value(self):
-        cap = Capability(name="net", description="", constraints={"allowed_hosts": ["a"]})
+        cap = Capability(resource="net", constraints={"allowed_hosts": ["a"]})
         assert constraint_value(cap, "allowed_hosts") == ["a"]
 
     def test_constraint_value_missing_key_returns_none(self):
-        cap = Capability(name="net", description="", constraints={})
+        cap = Capability(resource="net", constraints={})
         assert constraint_value(cap, "path_prefix") is None
 
     def test_constraint_value_non_dict_constraints_returns_none(self):
-        cap = cast(Any, Capability)(name="net", description="", constraints="bad")
+        cap = cast(Any, Capability)(resource="net", constraints="bad")
         assert constraint_value(cap, "x") is None
 
     def test_path_prefix_string(self):
         cap = Capability(
-            name="fs_read", description="", constraints={"path_prefix": "/tmp"},
+            resource="fs_read", constraints={"path_prefix": "/tmp"},
         )
         assert path_prefix(cap) == "/tmp"
 
     def test_path_prefix_none(self):
-        cap = Capability(name="fs_read", description="", constraints={})
+        cap = Capability(resource="fs_read", constraints={})
         assert path_prefix(cap) is None
 
     def test_path_prefix_non_string(self):
         cap = Capability(
-            name="fs_read", description="", constraints={"path_prefix": 42},
+            resource="fs_read", constraints={"path_prefix": 42},
         )
         assert path_prefix(cap) is None
 
     def test_allowed_hosts_list(self):
         cap = Capability(
-            name="net", description="",
+            resource="net",
             constraints={"allowed_hosts": ["host1", "host2"]},
         )
         assert allowed_hosts(cap) == ["host1", "host2"]
 
     def test_allowed_hosts_string(self):
         cap = Capability(
-            name="net", description="", constraints={"allowed_hosts": "single"},
+            resource="net", constraints={"allowed_hosts": "single"},
         )
         assert allowed_hosts(cap) == ["single"]
 
     def test_allowed_hosts_empty(self):
-        cap = Capability(name="net", description="", constraints={})
+        cap = Capability(resource="net", constraints={})
         assert allowed_hosts(cap) == []
 
     def test_allowed_hosts_tuple(self):
         cap = Capability(
-            name="net", description="",
+            resource="net",
             constraints={"allowed_hosts": ("a", "b")},
         )
         assert allowed_hosts(cap) == ["a", "b"]
 
     def test_allowed_ports_list(self):
         cap = Capability(
-            name="net", description="", constraints={"allowed_ports": [80, 443]},
+            resource="net", constraints={"allowed_ports": [80, 443]},
         )
         assert allowed_ports(cap) == [80, 443]
 
     def test_allowed_ports_single_int(self):
         cap = Capability(
-            name="net", description="", constraints={"allowed_ports": 8080},
+            resource="net", constraints={"allowed_ports": 8080},
         )
         assert allowed_ports(cap) == [8080]
 
     def test_allowed_ports_empty(self):
-        cap = Capability(name="net", description="", constraints={})
+        cap = Capability(resource="net", constraints={})
         assert allowed_ports(cap) == []
 
 
@@ -215,25 +215,25 @@ class TestConstraintHelpers:
 class TestPermissionSpecSandboxIntegration:
     def test_spec_construction(self):
         spec = PermissionSpec(
-            subject="agent-1",
+            agent_type="agent-1",
             capabilities=[
-                Capability(name="fs_read", description="", constraints={"path_prefix": "/"}),
-                Capability(name="net", description="", constraints={"allowed_hosts": ["*"]}),
+                Capability(resource="fs_read", constraints={"path_prefix": "/"}),
+                Capability(resource="net", constraints={"allowed_hosts": ["*"]}),
             ],
         )
-        assert spec.subject == "agent-1"
+        assert spec.agent_type == "agent-1"
         assert len(spec.capabilities) == 2
 
     def test_spec_capability_iteration(self):
         spec = PermissionSpec(
-            subject="agent-2",
+            agent_type="agent-2",
             capabilities=[
-                Capability(name="a", description="", constraints={}),
-                Capability(name="b", description="", constraints={}),
-                Capability(name="c", description="", constraints={}),
+                Capability(resource="a", constraints={}),
+                Capability(resource="b", constraints={}),
+                Capability(resource="c", constraints={}),
             ],
         )
-        names = [c.name for c in spec.capabilities]
+        names = [c.resource for c in spec.capabilities]
         assert names == ["a", "b", "c"]
 
 
@@ -283,16 +283,16 @@ class TestSandboxBackendProtocol:
         assert SELinuxBackend.name == "selinux"
 
     def test_seatbelt_backend_exists_with_name(self):
-        from general_ludd.security.sandboxes.macos_seatbelt import MacSeatbeltBackend
-        assert MacSeatbeltBackend.name == "seatbelt"
+        from general_ludd.security.sandboxes.macos_seatbelt import SeatbeltBackend
+        assert SeatbeltBackend.name == "seatbelt"
 
     def test_jail_backend_exists_with_name(self):
-        from general_ludd.security.sandboxes.freebsd_jail import FreeBSDJailBackend
-        assert FreeBSDJailBackend.name == "jail"
+        from general_ludd.security.sandboxes.freebsd_jail import JailBackend
+        assert JailBackend.name == "jail"
 
     def test_appcontainer_backend_exists_with_name(self):
-        from general_ludd.security.sandboxes.windows_appcontainer import WindowsAppContainerBackend
-        assert WindowsAppContainerBackend.name == "appcontainer"
+        from general_ludd.security.sandboxes.windows_appcontainer import AppContainerBackend
+        assert AppContainerBackend.name == "appcontainer"
 
 
 # ---------------------------------------------------------------------------
@@ -322,23 +322,23 @@ class TestFailOpenContract:
         assert isinstance(result, bool)
 
     def test_seatbelt_available_is_bool(self):
-        from general_ludd.security.sandboxes.macos_seatbelt import MacSeatbeltBackend
-        result = MacSeatbeltBackend.available()
+        from general_ludd.security.sandboxes.macos_seatbelt import SeatbeltBackend
+        result = SeatbeltBackend.available()
         assert isinstance(result, bool)
 
     def test_jail_available_is_bool(self):
-        from general_ludd.security.sandboxes.freebsd_jail import FreeBSDJailBackend
-        result = FreeBSDJailBackend.available()
+        from general_ludd.security.sandboxes.freebsd_jail import JailBackend
+        result = JailBackend.available()
         assert isinstance(result, bool)
 
     def test_appcontainer_available_is_bool(self):
-        from general_ludd.security.sandboxes.windows_appcontainer import WindowsAppContainerBackend
-        result = WindowsAppContainerBackend.available()
+        from general_ludd.security.sandboxes.windows_appcontainer import AppContainerBackend
+        result = AppContainerBackend.available()
         assert isinstance(result, bool)
 
     def test_fail_open_apply_on_unavailable_backend(self):
         from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
-        spec = PermissionSpec(subject="test", capabilities=[])
+        spec = PermissionSpec(agent_type="test", capabilities=[])
         target = SandboxTarget(pid=99999)
         handle = LandlockBackend.apply(spec, target)
         assert isinstance(handle, SandboxHandle)
@@ -350,7 +350,7 @@ class TestFailOpenContract:
 
     def test_bubblewrap_fail_open(self):
         from general_ludd.security.sandboxes.linux_bubblewrap import BubblewrapBackend
-        spec = PermissionSpec(subject="test", capabilities=[])
+        spec = PermissionSpec(agent_type="test", capabilities=[])
         target = SandboxTarget(pid=1)
         handle = BubblewrapBackend.apply(spec, target)
         assert isinstance(handle, SandboxHandle)

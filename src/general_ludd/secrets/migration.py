@@ -12,18 +12,21 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from general_ludd.secrets.env import EnvSecretsManager
 from general_ludd.secrets.manager import SecretAlias
+
+if TYPE_CHECKING:
+    from general_ludd.secrets.manager import SecretsManager
 
 logger = logging.getLogger(__name__)
 
 
 def migrate_profile_secrets(
-    mgr: Any,
-    profiles: list[dict[str, Any]],
-) -> dict[str, Any]:
+    mgr: SecretsManager,
+    profiles: list[dict[str, object]],
+) -> dict[str, object]:
     aliases_to_migrate: list[tuple[str, str, str]] = []
     skipped: list[str] = []
 

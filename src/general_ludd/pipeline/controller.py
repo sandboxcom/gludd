@@ -84,7 +84,7 @@ class PipelineController:
         self._gate_lane = GateLane(
             config, self._state, self._lock, gate_fn, clock=clock,
         )
-        self._tasks: list[asyncio.Task[Any]] = []
+        self._tasks: list[asyncio.Task[object]] = []
         self._running = False
 
     # --- backlog feed ---------------------------------------------------- #
@@ -148,7 +148,7 @@ class PipelineController:
         logger.info("PipelineController stopped")
 
     @staticmethod
-    def _on_task_done(task: asyncio.Task[Any]) -> None:
+    def _on_task_done(task: asyncio.Task[object]) -> None:
         if task.cancelled():
             return
         exc = task.exception()
@@ -180,7 +180,7 @@ class PipelineController:
             hb.backpressure, hb.last_gate_epoch,
         )
 
-    async def status(self) -> dict[str, Any]:
+    async def status(self) -> dict[str, object]:
         """Point-in-time snapshot of the pipeline for the daemon status surface."""
         async with self._lock:
             s = self._state

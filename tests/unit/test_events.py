@@ -250,20 +250,34 @@ class TestHookSystemUnit:
         assert order == ["high", "mid", "low"]
 
     def test_webhook_fire_with_retries(self):
+        from unittest.mock import AsyncMock
+
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.post") as mock_post:
-            mock_post.side_effect = [Exception("fail"), MagicMock(status_code=200)]
+        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client_instance = MagicMock()
+            mock_client_cls.return_value = mock_client_instance
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.post = AsyncMock(
+                side_effect=[Exception("fail"), MagicMock(status_code=200)]
+            )
             hooks.register_webhook("on_x", "https://example.com", retry_count=3)
             hooks.fire("on_x", {"test": True})
-            assert mock_post.call_count == 2
+            assert mock_client.post.call_count == 2
 
     def test_webhook_sends_correct_body(self):
+        from unittest.mock import AsyncMock
+
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=200)
+        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client_instance = MagicMock()
+            mock_client_cls.return_value = mock_client_instance
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
             hooks.register_webhook("on_event", "https://example.com")
             hooks.fire("on_event", {"model": "gpt-5"})
-            body = mock_post.call_args[1]["json"]
+            body = mock_client.post.call_args[1]["json"]
             assert body["event"] == "on_event"
             assert body["payload"]["model"] == "gpt-5"
 
@@ -312,13 +326,19 @@ class TestHookSystemUnit:
         assert hid.startswith("hook-wh-")
 
     def test_webhook_retries_all_fail_raises(self):
+        from unittest.mock import AsyncMock
+
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.post") as mock_post:
-            mock_post.side_effect = Exception("fail")
+        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client_instance = MagicMock()
+            mock_client_cls.return_value = mock_client_instance
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.post = AsyncMock(side_effect=Exception("fail"))
             hooks.register_webhook("on_x", "https://example.com", retry_count=3)
             count = hooks.fire("on_x", {"test": True})
             assert count == 0
-            assert mock_post.call_count == 3
+            assert mock_client.post.call_count == 3
 
     def test_unregister_nonexistent_is_noop(self):
         hooks = HookSystem()
@@ -326,26 +346,38 @@ class TestHookSystemUnit:
         assert hooks.list_hooks() == []
 
     def test_webhook_sends_custom_headers(self):
+        from unittest.mock import AsyncMock
+
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=200)
+        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client_instance = MagicMock()
+            mock_client_cls.return_value = mock_client_instance
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
             hooks.register_webhook(
                 "on_x",
                 "https://example.com",
                 headers={"X-Custom": "val", "Authorization": "Bearer tok"},
             )
             hooks.fire("on_x", {})
-            call_headers = mock_post.call_args[1]["headers"]
+            call_headers = mock_client.post.call_args[1]["headers"]
             assert call_headers["X-Custom"] == "val"
             assert call_headers["Authorization"] == "Bearer tok"
 
     def test_webhook_uses_configured_timeout(self):
+        from unittest.mock import AsyncMock
+
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.post") as mock_post:
-            mock_post.return_value = MagicMock(status_code=200)
+        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client_instance = MagicMock()
+            mock_client_cls.return_value = mock_client_instance
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
             hooks.register_webhook("on_x", "https://example.com", timeout_seconds=30)
             hooks.fire("on_x", {})
-            assert mock_post.call_args[1]["timeout"] == 30
+            assert mock_client.post.call_args[1]["timeout"] == 30
 
     def test_hook_registration_dataclass_fields(self):
         reg = HookRegistration(

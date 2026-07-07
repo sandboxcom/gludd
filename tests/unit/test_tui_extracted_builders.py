@@ -456,25 +456,29 @@ class TestCmdAnsibleBuiltins:
 
 
 class TestScanLocalIntegrity:
+    @patch("general_ludd.integrity.overlay_guard.warn_if_overlay_unmonitored")
     @patch("general_ludd.cli.FileIntegrityScanner")
-    def test_calls_scanner_with_valid_paths(self, mock_scanner_cls):
+    def test_calls_scanner_with_valid_paths(self, mock_scanner_cls, mock_warn):
         from general_ludd.cli import _scan_local_integrity
 
         mock_instance = MagicMock()
         mock_instance.scan.return_value = {"scanned": 5, "changes": []}
         mock_scanner_cls.return_value = mock_instance
+        mock_warn.return_value = None
         info = {"config_dir": "/etc/gludd", "filestore_root": "/var/gludd"}
         with patch("os.path.isdir", return_value=True), patch("os.path.expanduser", side_effect=lambda x: x):
             result = _scan_local_integrity(info)
         assert result["scanned"] == 5
 
+    @patch("general_ludd.integrity.overlay_guard.warn_if_overlay_unmonitored")
     @patch("general_ludd.cli.FileIntegrityScanner")
-    def test_no_valid_paths(self, mock_scanner_cls):
+    def test_no_valid_paths(self, mock_scanner_cls, mock_warn):
         from general_ludd.cli import _scan_local_integrity
 
         mock_instance = MagicMock()
         mock_instance.scan.return_value = {"scanned": 0, "changes": []}
         mock_scanner_cls.return_value = mock_instance
+        mock_warn.return_value = None
         info = {"config_dir": "", "filestore_root": ""}
         with patch("os.path.isdir", return_value=False), patch("os.path.expanduser", side_effect=lambda x: x):
             result = _scan_local_integrity(info)

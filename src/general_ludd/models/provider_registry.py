@@ -6,7 +6,7 @@ import importlib
 import importlib.util
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.models.provider_presets import PROVIDER_PRESETS
 from general_ludd.schemas.todo import Todo, TodoStatus, WorkType
@@ -18,14 +18,14 @@ _DEFAULT_PROVIDER_PACKAGE = "langchain_openai"
 _DEFAULT_CLASS_HINT = "ChatOpenAI"
 
 
-def _profile_attr(profile: Any, name: str) -> Any:
+def _profile_attr(profile: object, name: str) -> object:
     """Read a field from a profile that may be a dict OR a ModelProfile-like object."""
     if isinstance(profile, dict):
         return profile.get(name)
     return getattr(profile, name, None)
 
 
-def _normalize_package(package: Any) -> str:
+def _normalize_package(package: object) -> str:
     """Coerce to a Python IMPORT name. Empty/None -> default; hyphens -> underscores."""
     if not package or not isinstance(package, str) or not package.strip():
         return _DEFAULT_PROVIDER_PACKAGE
@@ -64,11 +64,11 @@ class ProviderRegistry:
         for name, preset in PROVIDER_PRESETS.items():
             package = _normalize_package(preset.get("provider_package"))
             class_hint = preset.get("provider_class") or _DEFAULT_CLASS_HINT
-            registry.register_provider(name=name, package=package, class_hint=class_hint)
+            registry.register_provider(name=name, package=package, class_hint=cast(str, class_hint))
         return registry
 
     @classmethod
-    def from_profiles(cls, profiles: Any) -> ProviderRegistry:
+    def from_profiles(cls, profiles: object) -> ProviderRegistry:
         """Build a populated ProviderRegistry from an iterable of model profiles.
 
         Every provider in ``PROVIDER_PRESETS`` is registered first (via
@@ -89,13 +89,13 @@ class ProviderRegistry:
         daemon.py / worker app / models.py fixes that.
         """
         registry = cls.from_presets()
-        for profile in profiles or []:
-            name = _profile_attr(profile, "provider") or "openai"
+        for profile in cast(Any, profiles) or []:
+            name = cast(str, _profile_attr(profile, "provider") or "openai")
             if name in registry._providers:
                 # Presets win for stability; profile cannot override.
                 continue
             package = _normalize_package(_profile_attr(profile, "provider_package"))
-            class_hint = _profile_attr(profile, "provider_class_hint") or _DEFAULT_CLASS_HINT
+            class_hint = cast(str, _profile_attr(profile, "provider_class_hint") or _DEFAULT_CLASS_HINT)
             registry.register_provider(name=name, package=package, class_hint=class_hint)
         return registry
 

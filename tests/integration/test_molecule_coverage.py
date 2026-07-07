@@ -123,18 +123,44 @@ _NOT_YET_COVERED_MODULES: set[str] = {
 # roles/ dir during the single-home migration (2026-06-28). They do not hit
 # the daemon — scenarios are TODO but the roles are wired via FQCN.
 _NOT_YET_COVERED_ROLES: set[str] = {
+    "account_lifecycle",
+    "agent_floor_check",
+    "background_test_runner",
+    "backlog_guard_audit",
+    "ci_annotations_poll",
+    "cost_audit",
+    "coverage_audit",
+    "credit_audit",
+    "delegate_discipline_check",
+    "deletion_gate",
     "deploy_model_server_slurm",
-    "git_commit_push",  # TODO: add molecule scenario
+    "enforce_disengage",
+    "enforcement_gate",
+    "enforcement_verify",
+    "feature_evidence_audit",
+    "game_build_audit",
+    "generate_status_table",
+    "git_commit_push",
     "gludd_update",
+    "guardrail_pattern",
     "manage_processes",
+    "multitasking_backlog_check",
     "observe_deploy_correlator",
     "observe_error_spike_rca",
     "observe_incident_triage",
     "observe_latency_regression",
-    "ornith_self_improve",  # TODO: add molecule scenario
     "observe_saturation_capacity",
     "observe_security_signal",
+    "ornith_self_improve",
+    "scan_conflict_markers",
+    "service_login",
+    "spec_lifecycle",
     "stream_input_key_before",
+    "task_deadline_check",
+    "token_window_monitor",
+    "type_safety_audit",
+    "verify_feature_claims",
+    "watchdog_check",
 }
 # All roles now have molecule scenarios (W10 role-coverage complete + W13 + W14 + W15):
 #   agent_task            -> role_agent_task            (8793, todo_get/worktree/agent/commit/todo_done)

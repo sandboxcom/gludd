@@ -183,7 +183,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             import os
 
             preset = get_provider_preset(provider)
-            env_var = preset["credential_env_var"] if preset else "OPENROUTER_API_KEY"
+            env_var = cast(str, preset["credential_env_var"]) if preset else "OPENROUTER_API_KEY"
             scraper._api_key = os.environ.get(env_var, None)
         scraped = await scraper.fetch_models()
         configurator = AutoConfigurator()

@@ -24,8 +24,7 @@ canned response and no network is touched.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
-from typing import Any
+from collections.abc import Callable, Iterable, Mapping
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -34,7 +33,7 @@ from general_ludd.security.ssrf import is_url_blocked
 # Injectable transport contract: (method, url, headers, json_body, timeout) -> response.
 # The response only needs ``.status_code: int`` and ``.json() -> Any`` (httpx.Response
 # satisfies this; tests pass a tiny stub).
-Transport = Callable[[str, str, Mapping[str, str], Any, float], HttpResponse]
+Transport = Callable[[str, str, Mapping[str, str], object, float], HttpResponse]
 
 
 # --- literal-host SSRF block (NO DNS) -------------------------------------------------
@@ -69,7 +68,7 @@ def _reject_if_internal(base_url: str) -> None:
         raise ValueError(f"refusing single-label/internal host: {host!r}")
 
 
-def _parse_ts(value: Any) -> float | None:
+def _parse_ts(value: object) -> float | None:
     """Best-effort parse of an Azure ``TimeGenerated`` value into epoch seconds.
 
     Accepts ISO-8601 (optionally ``Z``-suffixed) strings and numeric epochs.
@@ -93,7 +92,7 @@ def _parse_ts(value: Any) -> float | None:
     return None
 
 
-def _coerce_float(value: Any) -> float | None:
+def _coerce_float(value: object) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int | float):
@@ -117,7 +116,7 @@ class AzureMonitorSource:
 
     DEFAULT_BASE_URL = "https://api.loganalytics.io"
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, object]) -> None:
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
 
@@ -134,11 +133,14 @@ class AzureMonitorSource:
         # SSRF: validate any (possibly overridden) endpoint by literal host, no DNS.
         _reject_if_internal(self._base_url)
 
-        self._timeout: float = float(config.get("timeout", 30.0))
+        self._timeout: float = float(str(config.get("timeout", 30.0)))
         self._default_timespan: str = str(config.get("timespan", "PT1H"))
-        self._message_columns: tuple[str, ...] = tuple(
-            config.get("message_columns", ("Message", "RenderedDescription", "ResultDescription"))
-        )
+        _mc = config.get("message_columns", ("Message", "RenderedDescription", "ResultDescription"))
+        if isinstance(_mc, (str, bytes)):
+            _mc = (_mc,)
+        if not isinstance(_mc, tuple):
+            _mc = tuple(_mc) if isinstance(_mc, Iterable) else ()
+        self._message_columns: tuple[str, ...] = _mc
 
         transport = config.get("transport")
         if transport is None:
@@ -158,7 +160,7 @@ class AzureMonitorSource:
     def _query_url(self) -> str:
         return f"{self._base_url}/v1/workspaces/{self._workspace_id}/query"
 
-    def _post_kql(self, kql: str, timespan: str) -> Any:
+    def _post_kql(self, kql: str, timespan: str) -> object:
         headers = {
             "Authorization": f"Bearer {self._token()}",
             "Content-Type": "application/json",
@@ -170,18 +172,23 @@ class AzureMonitorSource:
             raise RuntimeError(f"log analytics query failed: HTTP {resp.status_code}")
         return resp.json()
 
-    def _pick_message(self, row: Mapping[str, Any]) -> Any:
+    def _pick_message(self, row: Mapping[str, object]) -> object:
         for col in self._message_columns:
             if col in row and row[col] is not None:
                 return row[col]
         return None
 
-    def _normalize_table(self, table: Mapping[str, Any]) -> list[dict[str, Any]]:
-        columns = table.get("columns") or []
+    def _normalize_table(self, table: Mapping[str, object]) -> list[dict[str, object]]:
+        columns: object = table.get("columns") or []
+        if not isinstance(columns, list):
+            return []
         col_names = [str(c.get("name")) for c in columns if isinstance(c, Mapping)]
-        records: list[dict[str, Any]] = []
-        for raw_row in table.get("rows") or []:
-            row: dict[str, Any] = dict(zip(col_names, raw_row, strict=False))
+        records: list[dict[str, object]] = []
+        raw_rows: object = table.get("rows") or []
+        if not isinstance(raw_rows, list):
+            return []
+        for raw_row in raw_rows:
+            row: dict[str, object] = dict(zip(col_names, raw_row, strict=False))
             level = row.get("Level")
             if level is None:
                 level = row.get("SeverityLevel")
@@ -208,10 +215,10 @@ class AzureMonitorSource:
             )
         return records
 
-    def _normalize(self, payload: Any) -> list[dict[str, Any]]:
+    def _normalize(self, payload: object) -> list[dict[str, object]]:
         if not isinstance(payload, Mapping):
             return []
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for table in payload.get("tables") or []:
             if isinstance(table, Mapping):
                 records.extend(self._normalize_table(table))
@@ -219,7 +226,7 @@ class AzureMonitorSource:
 
     # -- public API --------------------------------------------------------------------
 
-    def query(self, spec: Any) -> list[dict[str, Any]]:
+    def query(self, spec: object) -> list[dict[str, object]]:
         """Run a KQL query and return normalized records.
 
         ``spec`` may be a raw KQL string or a mapping with ``query`` (KQL) and an
@@ -237,7 +244,7 @@ class AzureMonitorSource:
             raise ValueError("empty KQL query")
         return self._normalize(self._post_kql(kql, timespan))
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Trivial ``print 1`` KQL probe. Never raises."""
         try:
             payload = self._post_kql("print 1", "PT5M")
@@ -255,7 +262,7 @@ def _default_transport(
     method: str,
     url: str,
     headers: Mapping[str, str],
-    json_body: Any,
+    json_body: object,
     timeout: float,
 ) -> HttpResponse:
     """Default httpx-backed transport (no shell, time-bound). Imported lazily."""

@@ -59,7 +59,7 @@ class TestR2_5aFallbackChain:
         assert "fallback_chain" in data
         assert isinstance(data["fallback_chain"], list)
         assert len(data["fallback_chain"]) >= 2
-        assert "deepseek_coder" in data["fallback_chain"]
+        assert "qwen_coder" in data["fallback_chain"]
 
     def test_model_routing_config_accepts_fallback_chain(self):
         from general_ludd.config.model_routing import ModelRoutingConfig
@@ -76,4 +76,4 @@ class TestR2_5aFallbackChain:
         path = str(ROOT / "config" / "model_routing.yml")
         cfg = load_model_routing(path)
         assert cfg.fallback_chain is not None
-        assert "deepseek_coder" in cfg.fallback_chain
+        assert "qwen_coder" in cfg.fallback_chain

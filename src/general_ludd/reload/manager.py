@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import cast
 
 
 class ReloadType(Enum):
@@ -38,10 +38,10 @@ class ReloadStatus:
 
 class ReloadManager:
     def __init__(self) -> None:
-        self._reload_store: dict[str, dict[str, Any]] = {}
+        self._reload_store: dict[str, dict[str, object]] = {}
 
     def request_reload(
-        self, reload_type: ReloadType, config: dict[str, Any] | None = None
+        self, reload_type: ReloadType, config: dict[str, object] | None = None
     ) -> ReloadResult:
         reload_id = uuid.uuid4().hex[:12]
         now = datetime.now(UTC).isoformat()
@@ -82,14 +82,14 @@ class ReloadManager:
         entry["status"] = "no_op"
         entry["completed_at"] = now
         entry["message"] = (
-            f"No-op: {entry['reload_type'].value} reload not performed — "
+            f"No-op: {cast(ReloadType, entry['reload_type']).value} reload not performed — "
             "no real reload/validation implemented for this target"
         )
         return ReloadResult(
             reload_id=reload_id,
-            reload_type=entry["reload_type"],
+            reload_type=cast(ReloadType, entry["reload_type"]),
             status="no_op",
-            message=entry["message"],
+            message=cast(str, entry["message"]),
             timestamp=now,
         )
 
@@ -106,12 +106,12 @@ class ReloadManager:
         now = datetime.now(UTC).isoformat()
         entry["status"] = "rolled_back"
         entry["completed_at"] = now
-        entry["message"] = f"Rolled back {entry['reload_type'].value}"
+        entry["message"] = f"Rolled back {cast(ReloadType, entry['reload_type']).value}"
         return ReloadResult(
             reload_id=reload_id,
-            reload_type=entry["reload_type"],
+            reload_type=cast(ReloadType, entry["reload_type"]),
             status="rolled_back",
-            message=entry["message"],
+            message=cast(str, entry["message"]),
             timestamp=now,
         )
 
@@ -127,8 +127,8 @@ class ReloadManager:
             )
         return ReloadStatus(
             reload_id=reload_id,
-            type=entry["reload_type"],
-            status=entry["status"],
-            started_at=entry["started_at"],
-            completed_at=entry["completed_at"],
+            type=cast(ReloadType, entry["reload_type"]),
+            status=cast(str, entry["status"]),
+            started_at=cast(str, entry["started_at"]),
+            completed_at=cast(str | None, entry["completed_at"]),
         )

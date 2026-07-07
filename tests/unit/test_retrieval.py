@@ -200,7 +200,7 @@ class TestCosineSimilarity:
     def test_identical_vectors(self):
         from general_ludd.retrieval.indexer import _cosine_similarity
         vec = {"hello": 1.0, "world": 2.0}
-        assert _cosine_similarity(vec, vec) == 1.0
+        assert _cosine_similarity(vec, vec) == pytest.approx(1.0)
 
     def test_orthogonal_vectors(self):
         from general_ludd.retrieval.indexer import _cosine_similarity

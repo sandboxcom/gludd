@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel, field_validator
 
 from general_ludd.schemas.todo import (
@@ -28,7 +26,7 @@ class TaskDefinition(BaseModel):
     prompt_profile: str | None = None
     resource_profile: str = "low_resource"
     risk_level: str = "low"
-    vars: dict[str, Any] = {}
+    vars: dict[str, object] = {}
 
     @field_validator("name", mode="before")
     @classmethod

@@ -72,6 +72,13 @@ _UTILITY_ALLOWLIST: frozenset[str] = frozenset(
         "RedfishConfig",
         # Concrete connector Sources (must each be unique)
         # No Source class names in the allowlist — duplicates here are bugs.
+        # AWS response TypedDicts / shapes (per-module, self-contained)
+        "CloudTrailLookupEvent",
+        "CloudWatchLogEvent",
+        "FilterLogEventsResponse",
+        "HealthStatus",
+        "LookupEventsResponse",
+        "NormalizedRecord",
     }
 )
 

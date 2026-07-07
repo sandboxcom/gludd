@@ -15,10 +15,12 @@ The shared PauseController instance is stored on
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
+
+from general_ludd.controllers.pause_controller import PauseController
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +40,13 @@ class ResumeRequest(BaseModel):
     target_id: str = Field(..., min_length=1, description="Project or model identifier")
 
 
-def _get_controller(app: FastAPI) -> Any:
+def _get_controller(app: FastAPI) -> PauseController | None:
     return getattr(app.state, "_pause_controller", None)
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/api/pause")
-    async def api_pause_list() -> dict[str, Any]:
+    async def api_pause_list() -> dict[str, object]:
         """List all currently paused entities (projects and models)."""
         controller = _get_controller(app)
         if controller is None:
@@ -64,7 +66,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/api/pause/project")
-    async def api_pause_project(req: PauseRequest) -> dict[str, Any]:
+    async def api_pause_project(req: PauseRequest) -> dict[str, object]:
         """Pause a project. Idempotent — re-pausing returns the existing record."""
         controller = _get_controller(app)
         if controller is None:
@@ -80,7 +82,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             reason=req.reason,
             resources=req.resources or None,
             last_state=req.last_state or None,
-            agent_handles=handles,
+            agent_handles=cast(list[object] | None, handles),
         )
         return {
             "paused": True,
@@ -93,7 +95,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/api/pause/model")
-    async def api_pause_model(req: PauseRequest) -> dict[str, Any]:
+    async def api_pause_model(req: PauseRequest) -> dict[str, object]:
         """Pause a model profile. Idempotent."""
         controller = _get_controller(app)
         if controller is None:
@@ -116,7 +118,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/api/resume/project")
-    async def api_resume_project(req: ResumeRequest) -> dict[str, Any]:
+    async def api_resume_project(req: ResumeRequest) -> dict[str, object]:
         """Resume a paused project. Returns null when not paused (idempotent)."""
         controller = _get_controller(app)
         if controller is None:
@@ -132,7 +134,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.post("/api/resume/model")
-    async def api_resume_model(req: ResumeRequest) -> dict[str, Any]:
+    async def api_resume_model(req: ResumeRequest) -> dict[str, object]:
         """Resume a paused model profile. Returns null when not paused (idempotent)."""
         controller = _get_controller(app)
         if controller is None:

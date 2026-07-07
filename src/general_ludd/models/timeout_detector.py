@@ -27,7 +27,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -345,7 +345,7 @@ class ModelHealthTracker:
 
             return False
 
-    def get_health(self, model_id: str) -> dict[str, Any]:
+    def get_health(self, model_id: str) -> dict[str, object]:
         with self.__lock:
             last = self._last_failure.get(model_id)
             return {

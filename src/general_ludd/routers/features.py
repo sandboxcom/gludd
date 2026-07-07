@@ -15,23 +15,24 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from general_ludd.db.models import FeatureStatus
+from general_ludd.db.models import FeatureModel, FeatureStatus
 from general_ludd.db.repository import FeatureRepository
 
 logger = logging.getLogger(__name__)
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def _feature_to_dict(feat: Any) -> dict[str, Any]:
+def _feature_to_dict(feat: FeatureModel) -> dict[str, object]:
     """Serialize a FeatureModel row to a dict, deserializing JSON fields."""
-    def _load_json(val: str, default: Any) -> Any:
+    def _load_json(val: str, default: object) -> object:
         try:
             return json.loads(val) if val else default
         except Exception:
@@ -54,14 +55,14 @@ def _feature_to_dict(feat: Any) -> dict[str, Any]:
     }
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/api/features")
     async def list_features(
         status: str | None = None,
         category: str | None = None,
         project_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """List features, optionally filtered by status, category and/or project."""
         factory = _get_session_factory(app)
         if factory is None:
@@ -101,7 +102,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.get("/api/features/{feature_id}")
     async def get_feature(
         feature_id: str, project_id: str | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Get a single feature by its FEAT-... id (optionally project-scoped)."""
         factory = _get_session_factory(app)
         if factory is None:
@@ -122,7 +123,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return _feature_to_dict(feat)
 
     @app.post("/api/features/verify")
-    async def verify_features(project_id: str | None = None) -> dict[str, Any]:
+    async def verify_features(project_id: str | None = None) -> dict[str, object]:
         """Run FeatureVerifier.verify_all against all features and persist results.
 
         For each feature:
@@ -170,22 +171,22 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
             # Persist results
             from datetime import datetime
-            for result in summary.get("results", []):
+            for result in cast("list[dict[str, object]]", summary.get("results", [])):
                 feat_id = result.get("id")
                 if feat_id is None:
                     continue
                 try:
-                    new_status = FeatureStatus(result["status"])
+                    new_status = FeatureStatus(cast(str, result["status"]))
                     verified_at = None
                     if result.get("verified_at"):
                         try:
-                            verified_at = datetime.fromisoformat(result["verified_at"])
+                            verified_at = datetime.fromisoformat(cast(str, result["verified_at"]))
                         except Exception:
                             verified_at = None
                     await repo.set_status(
-                        feat_id,
+                        cast(str, feat_id),
                         new_status,
-                        detail=result.get("evidence_results"),
+                        detail=cast("dict[str, object] | None", result.get("evidence_results")),
                         verified_at=verified_at,
                     )
                 except Exception as exc:

@@ -1,0 +1,21 @@
+---
+- name: Enforcement disengage — last-resort escape hatch for blocked commits
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo_path: "{{ playbook_dir }}/.."
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-disengage-artifacts') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    psk: "{{ psk | default('') }}"
+    disengage_duration_hours: "{{ disengage_duration_hours | default(1) | int }}"
+    disengage_max_hours: "{{ disengage_max_hours | default(5) | int }}"
+    disengage_file_path: "{{ disengage_file_path | default('/tmp/gludd-watchdog-disengage.json') }}"
+    block_counter_path: "{{ block_counter_path | default('/tmp/gludd-block-counter.json') }}"
+    skip_pre_checks: "{{ skip_pre_checks | default(false) }}"
+    enable_commit: "{{ enable_commit | default(false) }}"
+    commit_msg_file: "{{ commit_msg_file | default('') }}"
+    enable_push: "{{ enable_push | default(false) }}"
+    verify_branch: "{{ verify_branch | default('master') }}"
+  roles:
+    - general_ludd.agent.enforce_disengage

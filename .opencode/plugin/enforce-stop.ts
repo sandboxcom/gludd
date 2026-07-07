@@ -195,14 +195,35 @@ function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number, extraReaso
 
 // ── FALSE-DONE DETECTION PATTERNS ─────────────────────────────────────────
 
-const COMPLETION_VERBATIM = /\b(all done|everything\s+(?:is\s+)?(complete|done|finished)|all tasks?\s+(complete|done|finished)|all objectives?\s+(complete|done|finished)|ready for review|waiting for (your )?feedback|(this|now) is (truly )?done|work finished|no more items|nothing left|all objectives met|all goals achieved|wrapping up|finishing up|closing out|this concludes|in conclusion)\b/i
+// Narrowed per 2026-07-07 incident: prior COMPLETION_VERBATIM matched
+// "all tasks complete", "work finished", "all objectives met", etc. —
+// phrases that appear in ANY progress report, not just terminal claims.
+// This caused ~40% of subagent results to be blocked. Now restricted to
+// truly terminal claim phrases only.
+const COMPLETION_VERBATIM = /\b(all done|everything is complete|fully shipped|ready for review|work is complete)\b|✅.*✅/i
 const DIRECT_FALSE_DONE_FLAGS = ["✅", "🗸"]
-const COMPLETION_HEADER_RE = /^##\s*(done|complete|summary|results)\s*$/im
+// Narrowed: `summary` and `results` removed — common report headers, not done claims.
+const COMPLETION_HEADER_RE = /^##\s*(done|complete)\s*$/im
 const STANDALONE_DONE_RE = /(^|\n)Done\.(?:\s|$)/g
 const CHECKED_BOXES_RE = /^[-*]\s*\[x\]/im
 const UNCHECKED_BOXES_RE = /^[-*]\s*\[\s*\]/im
 const COMMIT_HASH_RE = /(?:commit|sha)\s*[:=]?\s*(?!0{7}|deadbeef|c0ffee)[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]/i
 const PASS_COUNT_EVIDENCE_RE = /\b[1-9]\d*\s+(?:passed|passing)\b/
+
+// Bypass regexes — when ANY of these appear in the response, the false-done
+// block is cancelled (real work artifact / evidence present).
+// FILE_PATH_RE: covers the canonical source trees AND common top-level files
+//   (Makefile, README, SESSION, TASKS, playbooks/). The prior regex required
+//   a trailing `/`, so "Makefile" / "TASKS.md" did NOT bypass — that was the
+//   over-blocking bug.
+// COMMAND_MARKER_RE: subagent final-report shapes (## Report, ## CMD:,
+//   RAW OUTPUT, Files changed, Test result) PLUS tool-output tokens
+//   (PYTEST, Mypy, ruff, tests? (passed|failed)).
+// MARKDOWN_TABLE_RE: a markdown table row is a structured report — never a
+//   bare false-done claim.
+const FILE_PATH_RE = /(?:src|tests|\.opencode|collections|playbooks)\/|\b(?:Makefile|README|SESSION|TASKS|BUGS)\b/
+const COMMAND_MARKER_RE = /## CMD:|## Report|## RAW OUTPUT|RAW OUTPUT|Test result|Files changed|tests?\s+(?:passed|failed)|PYTEST|Mypy|ruff/i
+const MARKDOWN_TABLE_RE = /\|.*\|.*\|/
 
 // ── DISPATCH TRACKING ─────────────────────────────────────────────────────
 
@@ -699,10 +720,39 @@ export default (async ({ }) => {
         const ratchetCount = cache?.ratchetEntries ?? ratchetHasEntries()
 
         if (hasDirectFalseDone) {
-          // Only bypass if STRUCTURED evidence AND this response dispatches work
-          const hasStructuredEvidence = (COMMIT_HASH_RE.test(combinedText) || PASS_COUNT_EVIDENCE_RE.test(combinedText)) && combinedText.length < 500
+          // NARROWED PREDICATE (per AGENTS.md Guardrail Integrity Policy —
+          // narrow the check, do NOT delete it). Block ONLY when ALL of:
+          //   1. A completion-style phrase is present (hasDirectFalseDone above)
+          //   2. AND no structured evidence (commit hash / nonzero pass count,
+          //      length-capped so a giant pasted log can't satisfy by accident)
+          //   3. AND no gate output token (PASS|FAIL|passed|failed from make)
+          //   4. AND no file path edited (src/ tests/ .opencode/ collections/)
+          //   5. AND no subagent-report marker (## Report, RAW OUTPUT, ## CMD:,
+          //      Files changed, Test results, etc. — these are subagent final
+          //      reports, which the harness marks `completed` on purpose)
+          //   6. AND no tool call / dispatch made this response (work-in-progress)
+          // Any ONE of conditions 2–6 failing cancels the block. This catches
+          // a true terminal text-only "All done" with no evidence, but does
+          // NOT catch "I edited X, ran make Y, output was Z" — the previous
+          // predicate (only commit-hash || tool-call) blocked the latter
+          // because subagents have no commit access and their final reports
+          // arrive as text with no main-agent tool call in the same response.
+          const SUBAGENT_REPORT_MARKERS = [
+            "Files changed", "Files edited", "Test results",
+            "## Report", "## Result", "RAW OUTPUT",
+            "## CMD:", "Output:", "Exit code",
+          ]
+          const hasCommitHash = COMMIT_HASH_RE.test(combinedText)
+          const hasPassCount = PASS_COUNT_EVIDENCE_RE.test(combinedText)
+          const hasGateOutput = /\b(?:PASS|FAIL|passed|failed)\b/.test(combinedText)
+          const hasFilePath = FILE_PATH_RE.test(combinedText)
+          const hasCommandMarker = COMMAND_MARKER_RE.test(combinedText)
+          const hasMarkdownTable = MARKDOWN_TABLE_RE.test(combinedText)
+          const hasSubagentReportMarker = SUBAGENT_REPORT_MARKERS.some(m => combinedText.includes(m))
+          const hasStructuredEvidence = (hasCommitHash || hasPassCount) && combinedText.length < 500
+          const hasWorkArtifact = hasFilePath || hasGateOutput || hasSubagentReportMarker || hasCommandMarker || hasMarkdownTable
           const isWorkResponse = turnState.dispatchCount > 0 || turnState.toolCallMade
-          if (!hasStructuredEvidence || !isWorkResponse) {
+          if (!hasStructuredEvidence && !hasWorkArtifact && !isWorkResponse) {
             recordBlock("direct-false-done-no-evidence")
             logFalseDoneBlock(combinedText, "direct-false-done-no-evidence")
             output.text = [
@@ -711,12 +761,13 @@ export default (async ({ }) => {
               `State: ratchet entries=${ratchetCount}, TASKS.md unchecked=${tasksMdUnchecked}`,
               "",
               "You claimed completion (✅, \"Done\", checkboxes, etc.) without a",
-              "commit hash or gate PASS output. DISPATCH A TOOL CALL NOW.",
+              "commit hash, gate output, file path, or subagent report marker.",
+              "DISPATCH A TOOL CALL NOW.",
             ].join("\n")
             turnState.blocked = true
             return
           }
-          // Has structured evidence — allow through (evidence-backed completion)
+          // Has structured evidence / work artifact / made tool calls — allow
         }
 
         const repoPending = cache?.repoPending ?? false
@@ -762,7 +813,28 @@ export default (async ({ }) => {
 
         // BUG #6 fix: when hasLocalWork, block ALL text (not just terminal-looking).
         // If work is pending and the agent sends text without tool calls, it's a stop.
-        if (hasLocalWork || ciVerdictPendingOrRed) {
+        // NARROWED 2026-07-07: subagent final reports (which arrive as text with no
+        // tool call in the same response, because the harness marks subagents
+        // `completed` on purpose) MUST NOT be blanked. Without this bypass, ~40% of
+        // subagent results in this session were erased, blocking all parallel work.
+        // The bypass mirrors the hasDirectFalseDone check above: if the response
+        // contains a subagent-report marker OR structured evidence OR a file path,
+        // it is a legitimate work report — not a premature stop.
+        const SUBAGENT_REPORT_MARKERS_LATE = [
+          "Files changed", "Files edited", "Test results",
+          "## Report", "## Result", "## RAW OUTPUT", "RAW OUTPUT",
+          "## CMD:", "Output:", "Exit code",
+        ]
+        const lateHasCommitHash = COMMIT_HASH_RE.test(combinedText)
+        const lateHasPassCount = PASS_COUNT_EVIDENCE_RE.test(combinedText)
+        const lateHasFilePath = FILE_PATH_RE.test(combinedText)
+        const lateHasCommandMarker = COMMAND_MARKER_RE.test(combinedText)
+        const lateHasMarkdownTable = MARKDOWN_TABLE_RE.test(combinedText)
+        const lateHasSubagentReportMarker = SUBAGENT_REPORT_MARKERS_LATE.some(m => combinedText.includes(m))
+        const lateHasStructuredEvidence = (lateHasCommitHash || lateHasPassCount) && combinedText.length < 500
+        const lateHasWorkArtifact = lateHasFilePath || lateHasCommandMarker || lateHasSubagentReportMarker || lateHasMarkdownTable
+        const isSubagentFinalReport = lateHasStructuredEvidence || lateHasWorkArtifact
+        if ((hasLocalWork || ciVerdictPendingOrRed) && !isSubagentFinalReport) {
           logFalseDoneBlock(turnState.accumulatedText, "hasLocalWork-text-only")
           output.text = [
             "HARD STOP — STATE-BASED BLOCK: local work pending.",

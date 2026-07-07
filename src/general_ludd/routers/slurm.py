@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 
@@ -31,34 +31,34 @@ def _make_adapter(app: FastAPI) -> SlurmAdapter:
     return SlurmAdapter(api_url=api_url, auth_token=auth_token)
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/slurm/status")
-    async def admin_slurm_status() -> dict[str, Any]:
+    async def admin_slurm_status() -> dict[str, object]:
         adapter = _make_adapter(app)
         available = await asyncio.to_thread(adapter.available)
         return {"available": available}
 
     @app.post("/admin/slurm/submit")
-    async def admin_slurm_submit(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_slurm_submit(req: dict[str, object]) -> dict[str, object]:
         adapter = _make_adapter(app)
-        command = req.get("command", "")
+        command = cast(str, req.get("command", ""))
         if not command:
             raise HTTPException(status_code=422, detail="command is required")
         try:
             job_id = await asyncio.to_thread(
                 adapter.submit,
                 command=command,
-                job_name=req.get("job_name"),
-                partition=req.get("partition"),
-                cpus_per_task=req.get("cpus_per_task"),
-                gpus=req.get("gpus"),
-                memory=req.get("memory"),
-                time_limit=req.get("time_limit"),
-                output=req.get("output"),
-                extra_args=req.get("extra_args"),
-                account=req.get("account"),
-                qos=req.get("qos"),
+                job_name=cast(str | None, req.get("job_name")),
+                partition=cast(str | None, req.get("partition")),
+                cpus_per_task=cast(int | None, req.get("cpus_per_task")),
+                gpus=cast(str | None, req.get("gpus")),
+                memory=cast(str | None, req.get("memory")),
+                time_limit=cast(str | None, req.get("time_limit")),
+                output=cast(str | None, req.get("output")),
+                extra_args=cast(list[str] | None, req.get("extra_args")),
+                account=cast(str | None, req.get("account")),
+                qos=cast(str | None, req.get("qos")),
             )
             return {"job_id": job_id}
         except SlurmNotInstalledError:
@@ -67,7 +67,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.get("/admin/slurm/jobs/{job_id}")
-    async def admin_slurm_job_status(job_id: str) -> dict[str, Any]:
+    async def admin_slurm_job_status(job_id: str) -> dict[str, object]:
         adapter = _make_adapter(app)
         try:
             info = await asyncio.to_thread(adapter.status, job_id)
@@ -80,7 +80,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=503, detail="Slurm is not installed") from None
 
     @app.delete("/admin/slurm/jobs/{job_id}")
-    async def admin_slurm_job_cancel(job_id: str) -> dict[str, Any]:
+    async def admin_slurm_job_cancel(job_id: str) -> dict[str, object]:
         adapter = _make_adapter(app)
         try:
             await asyncio.to_thread(adapter.cancel, job_id)
@@ -91,7 +91,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.get("/admin/slurm/jobs")
-    async def admin_slurm_jobs_list() -> dict[str, Any]:
+    async def admin_slurm_jobs_list() -> dict[str, object]:
         adapter = _make_adapter(app)
         try:
             jobs = await asyncio.to_thread(adapter.list_jobs)
@@ -107,7 +107,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=500, detail=f"Could not list jobs: {exc}") from exc
 
     @app.get("/admin/slurm/jobs/{job_id}/cost")
-    async def admin_slurm_job_cost(job_id: str) -> dict[str, Any]:
+    async def admin_slurm_job_cost(job_id: str) -> dict[str, object]:
         adapter = _make_adapter(app)
         try:
             info = await asyncio.to_thread(adapter.status, job_id)

@@ -35,10 +35,10 @@ def upgrade() -> None:
         sa.Column("ttl_seconds", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.UniqueConstraint("agent_id", "key", "namespace", name="uq_memory_agent_key_ns"),
     )
     op.create_index("ix_memory_agent_id", "memory_records", ["agent_id"])
     op.create_index("ix_memory_namespace", "memory_records", ["namespace"])
-    op.create_unique_constraint("uq_memory_agent_key_ns", "memory_records", ["agent_id", "key", "namespace"])
 
 
 def downgrade() -> None:

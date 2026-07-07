@@ -10,7 +10,7 @@ is the single source of that logic so the two surfaces cannot drift.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     import asyncio
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Strong references to in-flight background tasks so they are not garbage
 # collected before completion (RUF006).
-_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
+_BACKGROUND_TASKS: set[asyncio.Task[object]] = set()
 
 # Work types whose execute job is a model-driven generation task. For these the
 # caller invokes the ModelGateway and feeds the generated output into the
@@ -46,13 +46,13 @@ def invoke_model_for_generation(
     model_profile: str | None,
     prompt_text: str | None,
     skill_body: str | None,
-    budget_guard: Any = None,
-    benchmark_recorder: Any = None,
+    budget_guard: object = None,
+    benchmark_recorder: object = None,
     project_id: str | None = None,
     use_slm_compaction: bool = False,
     compaction_level: CompactionLevel | None = None,
-    scheduling_hint: Any | None = None,
-) -> tuple[str | None, list[dict[str, Any]] | None]:
+    scheduling_hint: object | None = None,
+) -> tuple[str | None, list[dict[str, object]] | None]:
     """Call the model for a generation job.
 
     Returns a ``(content, tool_calls)`` tuple:
@@ -184,7 +184,7 @@ def invoke_model_for_generation(
 
 
 def _record_generation_benchmark(
-    recorder: Any,
+    recorder: object,
     *,
     model_profile: str,
     work_type: str,
@@ -229,7 +229,7 @@ def _record_generation_benchmark(
                     loop = _asyncio.get_event_loop()
                     if loop.is_running():
                         # Keep a reference so the task is not GC'd mid-flight.
-                        _bg_task = loop.create_task(cast("Coroutine[Any, Any, Any]", result))
+                        _bg_task = loop.create_task(cast("Coroutine[object, object, object]", result))
                         _BACKGROUND_TASKS.add(_bg_task)
                         _bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
                     else:

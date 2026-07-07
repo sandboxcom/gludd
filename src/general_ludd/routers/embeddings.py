@@ -26,7 +26,8 @@ is embedded on-the-fly, no schema change), and ``traces`` (the in-process
 :class:`~general_ludd.observability.trace_store.RecentTracesBuffer` on
 ``app.state._recent_traces``; each recent execution trace's work_type + phase
 labels + span descriptions are concatenated and embedded on-the-fly, no schema
-change). Any other ``corpus`` value is rejected by pydantic (422). It reuses the SAME default embedder as ``/similar``
+change). Any other ``corpus`` value is rejected by pydantic (422). It reuses
+the SAME default embedder as ``/similar``
 and ``/compare`` so the scores are comparable. Fully defensive: an empty/absent
 registry or any embed failure yields a 200 with empty ``results`` — never a 500.
 
@@ -55,10 +56,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.scoring.task_embeddings import (
     TaskEmbeddingStore,
@@ -202,7 +203,7 @@ class EmbeddingSearchRequest(BaseModel):
     ``events`` (the persisted :class:`~general_ludd.db.models.AuditEventModel`
     corpus; each recent audit event's event_type + entity_type + a human
     summary of its ``details`` JSON is embedded on the fly — no schema change).
-    Any other value (metrics/system/osquery are later phases) is rejected by
+    object other value (metrics/system/osquery are later phases) is rejected by
     pydantic (422).
     """
 
@@ -243,7 +244,7 @@ class SearchResultItem(BaseModel):
     name: str
     source_text: str
     similarity_score: float
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class EmbeddingSearchResponse(BaseModel):
@@ -307,11 +308,11 @@ class MultiCorpusSearchResponse(BaseModel):
     results: list[SearchResultItem] = Field(default_factory=list)
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def _parse_json_list(raw: Any) -> list[Any]:
+def _parse_json_list(raw: object) -> list[object]:
     """Defensively decode a JSON-array column value to a list.
 
     PromptProfileModel stores ``tags``/``task_types`` as JSON-encoded strings
@@ -506,7 +507,7 @@ async def _search_task_types(
     )
 
 
-def _search_skills(req: EmbeddingSearchRequest, registry: Any) -> EmbeddingSearchResponse:
+def _search_skills(req: EmbeddingSearchRequest, registry: object) -> EmbeddingSearchResponse:
     """corpus=skills: embed each skill description on the fly, cosine-rank.
 
     The skill corpus has no stored vectors (zero schema change): the live
@@ -522,7 +523,7 @@ def _search_skills(req: EmbeddingSearchRequest, registry: Any) -> EmbeddingSearc
     query_vec = embedder.embed(req.text)
     query_dim = len(query_vec)
 
-    skills: list[Any] = []
+    skills: list[object] = []
     if registry is not None and hasattr(registry, "list_skills"):
         try:
             skills = list(registry.list_skills())
@@ -606,7 +607,7 @@ async def _search_prompts(
             results=[],
         )
 
-    rows: list[Any] = []
+    rows: list[object] = []
     async with factory() as session:
         repo = PromptProfileRepository(session)
         try:
@@ -659,7 +660,7 @@ async def _search_prompts(
     )
 
 
-def _trace_text(trace: dict[str, Any]) -> str:
+def _trace_text(trace: dict[str, object]) -> str:
     """Build the searchable text for one snapshot trace row.
 
     Concatenates the trace's ``work_type`` with each span's phase label and
@@ -707,7 +708,7 @@ def _search_traces(
     query_dim = len(query_vec)
 
     buffer = getattr(app.state, "_recent_traces", None)
-    traces: list[dict[str, Any]] = []
+    traces: list[dict[str, object]] = []
     if buffer is not None and hasattr(buffer, "snapshot"):
         try:
             # Tenant isolation (XT trace-leak fix): scope the trace corpus to the
@@ -777,7 +778,7 @@ def _search_traces(
     )
 
 
-def _event_details_summary(raw: Any) -> str:
+def _event_details_summary(raw: object) -> str:
     """Build a flat human summary of an audit event's ``details`` JSON column.
 
     ``AuditEventModel.details`` is a JSON-text column (default ``"{}"``). Decode
@@ -819,7 +820,7 @@ def _event_details_summary(raw: Any) -> str:
     return " ".join(parts)
 
 
-def _event_text(row: Any) -> str:
+def _event_text(row: object) -> str:
     """Build the searchable text for one audit-event row.
 
     Concatenates the event's ``event_type`` and ``entity_type`` with a flattened
@@ -880,7 +881,7 @@ async def _search_events(
             results=[],
         )
 
-    rows: list[Any] = []
+    rows: list[object] = []
     async with factory() as session:
         try:
             # XT-8: scope the events corpus to the requested project so semantic
@@ -1067,7 +1068,7 @@ async def _search_multi(
     )
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.post("/api/embeddings/similar", response_model=EmbeddingSimilarResponse)
     async def api_embeddings_similar(
         req: EmbeddingSimilarRequest,
@@ -1123,7 +1124,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "each prompt_text embedded on the fly, no schema change), and "
             "`traces` (the in-process recent-execution-traces buffer — each "
             "trace's work_type/phase/span descriptions embedded on the fly, no "
-            "schema change). Any other `corpus` value is rejected (422). Reuses "
+            "schema change). object other `corpus` value is rejected (422). Reuses "
             "the same default embedder as /similar and /compare; "
             "`embedding_method` is \"openai\" or \"hash\". Defensive: an absent/"
             "empty corpus or any embed failure degrades to a 200 with empty "

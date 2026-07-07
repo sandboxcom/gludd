@@ -594,7 +594,10 @@ class TestQuantizationDriftCheckWithTracker:
 class TestWorktreeStatusWithMonitor:
     @pytest.mark.asyncio
     async def test_worktree_status_with_monitor(self, app, transport):
+        from general_ludd.worktree import WorktreeMonitor
+
         mock_monitor = MagicMock()
+        mock_monitor.__class__ = WorktreeMonitor
         mock_wt = MagicMock()
         mock_wt.path = "/tmp/test-wt"
         mock_wt.todo_id = "todo-1"

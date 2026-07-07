@@ -80,7 +80,7 @@ class MemoryConsolidator:
         for ep in old_episodes:
             grouped[ep.task_type or "unknown"].append(ep)
 
-        summaries: dict[str, dict[str, Any]] = {}
+        summaries: dict[str, dict[str, object]] = {}
         for task_type, eps in grouped.items():
             summary = self._summarize_group(task_type, eps)
             summaries[task_type] = summary
@@ -119,7 +119,7 @@ class MemoryConsolidator:
 
     def _summarize_group(
         self, task_type: str, episodes: list[Any]
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         outcomes = Counter(ep.outcome for ep in episodes)
         priorities = Counter(ep.priority for ep in episodes)
         total_duration = sum(ep.duration_seconds for ep in episodes)
@@ -150,7 +150,7 @@ class MemoryConsolidator:
         }
 
     async def _model_consolidate(
-        self, summaries: dict[str, dict[str, Any]]
+        self, summaries: dict[str, dict[str, object]]
     ) -> str | None:
         gw = self._model_gateway
         if gw is None:

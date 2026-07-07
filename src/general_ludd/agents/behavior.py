@@ -7,7 +7,6 @@ gets rendered into agent system prompts at runtime.
 from __future__ import annotations
 
 import fnmatch
-from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -118,12 +117,12 @@ class AgentBehavior(BaseModel):
         """Return True only when assume_and_proceed is False (i.e., blocking is needed)."""
         return not self.assume_and_proceed
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return self.model_dump()
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> AgentBehavior:
-        return cls(**data)
+    def from_dict(cls, data: dict[str, object]) -> AgentBehavior:
+        return cls.model_validate(data)
 
 
 class BehaviorRenderer:
@@ -143,7 +142,7 @@ class BehaviorRenderer:
 
     def __init__(
         self,
-        prompt_enhancer: Any | None = None,
+        prompt_enhancer: object | None = None,
     ) -> None:
         # Cache of rendered behavior bodies keyed by render-determining content.
         self._render_cache: dict[str, str] = {}
@@ -332,7 +331,9 @@ class BehaviorRenderer:
         header = f"You are agent **{agent_name}**. Your current task: {task}\n\n"
         result = header + base
         if self._prompt_enhancer is not None:
-            result = self._prompt_enhancer.enhance_prompt(result)
+            enhance = getattr(self._prompt_enhancer, "enhance_prompt", None)
+            if enhance is not None:
+                result = enhance(result)
         return result
 
 

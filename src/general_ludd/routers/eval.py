@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException, Request
 
 from general_ludd.eval.schema import EvalCase
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/eval/run")
-    async def admin_eval_run(request: Request) -> dict[str, Any]:
+    async def admin_eval_run(request: Request) -> dict[str, object]:
         harness = getattr(app.state, "eval_harness", None)
         if harness is None:
             raise HTTPException(status_code=503, detail="eval harness not configured")
@@ -20,7 +20,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=503, detail="no evaluator configured")
 
         body = await request.json() if hasattr(request, "json") else {}
-        cases_raw: list[dict[str, Any]] = body.get("cases", [])
+        cases_raw: list[dict[str, object]] = body.get("cases", [])
         if not cases_raw:
             raise HTTPException(status_code=422, detail="cases list is required")
 
@@ -29,12 +29,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             try:
                 cases.append(
                     EvalCase(
-                        id=c["id"],
-                        description=c.get("description", ""),
-                        input_files=c.get("input_files", {}),
-                        expected_patch=c.get("expected_patch", ""),
-                        task_type=c.get("task_type", ""),
-                        assertions=c.get("assertions", {}),
+                        id=cast(str, c["id"]),
+                        description=cast(str, c.get("description", "")),
+                        input_files=cast(dict[str, str], c.get("input_files", {})),
+                        expected_patch=cast(str, c.get("expected_patch", "")),
+                        task_type=cast(str, c.get("task_type", "")),
+                        assertions=cast(dict[str, str], c.get("assertions", {})),
                     )
                 )
             except KeyError as exc:
@@ -63,7 +63,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/eval/results")
-    async def admin_eval_results() -> dict[str, Any]:
+    async def admin_eval_results() -> dict[str, object]:
         harness = getattr(app.state, "eval_harness", None)
         if harness is None:
             raise HTTPException(status_code=503, detail="eval harness not configured")

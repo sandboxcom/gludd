@@ -29,7 +29,6 @@ payload without importing the enum.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from general_ludd.schemas.todo import TodoStatus
 
@@ -50,8 +49,8 @@ class GateDecision:
         headroom:   How many slots were free when the batch arrived.
     """
 
-    admitted: list[dict[str, Any]] = field(default_factory=list)
-    rejected: list[dict[str, Any]] = field(default_factory=list)
+    admitted: list[dict[str, object]] = field(default_factory=list)
+    rejected: list[dict[str, object]] = field(default_factory=list)
     initial_status: str = TodoStatus.APPROVAL_REQUIRED.value
     headroom: int = 0
 
@@ -92,7 +91,7 @@ class SelfImproveGate:
 
     def admit(
         self,
-        proposals: list[dict[str, Any]],
+        proposals: list[dict[str, object]],
         open_count: int,
     ) -> GateDecision:
         """Decide which proposals to admit and at what status.
@@ -111,8 +110,8 @@ class SelfImproveGate:
         """
         free = self.headroom(open_count)
         status = self.initial_status
-        admitted: list[dict[str, Any]] = []
-        rejected: list[dict[str, Any]] = []
+        admitted: list[dict[str, object]] = []
+        rejected: list[dict[str, object]] = []
         for proposal in proposals:
             if len(admitted) < free:
                 admitted.append({**proposal, "status": status})

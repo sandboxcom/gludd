@@ -6,7 +6,10 @@ import datetime
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from general_ludd.secrets.manager import SecretsManager
 
 _SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -33,7 +36,7 @@ def _scoped_path(project_id: str, key_name: str) -> str:
 
 
 def write_cosign_key(
-    mgr: Any,
+    mgr: SecretsManager,
     project_id: str,
     key_name: str,
     private_key: str,
@@ -52,20 +55,20 @@ def write_cosign_key(
     )
 
 
-def read_cosign_key(mgr: Any, project_id: str, key_name: str) -> CosignKey | None:
+def read_cosign_key(mgr: SecretsManager, project_id: str, key_name: str) -> CosignKey | None:
     data = mgr.read_secret(_scoped_path(project_id, key_name))
     if data is None:
         return None
     return CosignKey(
-        key_name=data.get("key_name", key_name),
-        private_key=data.get("private_key", ""),
-        public_key=data.get("public_key", ""),
-        password=data.get("password"),
-        created_at=data.get("created_at", ""),
+        key_name=cast(str, data.get("key_name", key_name)),
+        private_key=cast(str, data.get("private_key", "")),
+        public_key=cast(str, data.get("public_key", "")),
+        password=cast("str | None", data.get("password")),
+        created_at=cast(str, data.get("created_at", "")),
     )
 
 
-def delete_cosign_key(mgr: Any, project_id: str, key_name: str) -> None:
+def delete_cosign_key(mgr: SecretsManager, project_id: str, key_name: str) -> None:
     mgr.delete_secret(_scoped_path(project_id, key_name))
 
 
@@ -115,7 +118,7 @@ def generate_cosign_key(
 
 
 def generate_and_store_cosign_key(
-    mgr: Any,
+    mgr: SecretsManager,
     project_id: str,
     key_name: str,
     output_dir: str | None = None,

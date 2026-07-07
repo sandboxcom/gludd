@@ -15,7 +15,7 @@ Contract (shared across general_ludd.connectors.*):
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -31,7 +31,7 @@ class HttpTransport(Protocol):
         url: str,
         *,
         headers: dict[str, str] | None = ...,
-        params: dict[str, Any] | None = ...,
+        params: dict[str, object] | None = ...,
         timeout: float | None = ...,
     ) -> HttpResponse: ...
 
@@ -63,7 +63,7 @@ class BugsnagSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         transport: HttpTransport,
         *,
         environ: dict[str, str] | None = None,
@@ -84,7 +84,7 @@ class BugsnagSource:
             raise ConnectorConfigError(f"environment variable {token_env!r} is unset or empty")
         self._token = token
         self._transport = transport
-        self._timeout = float(config.get("timeout", 15.0))
+        self._timeout = float(str(config.get("timeout", 15.0)))
 
     def _headers(self) -> dict[str, str]:
         # Bugsnag Data Access API: Authorization: token <PERSONAL_AUTH_TOKEN>
@@ -93,7 +93,7 @@ class BugsnagSource:
     def _errors_url(self) -> str:
         return f"{self.base_url}/projects/{self.project_id}/errors"
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         try:
             resp = self._transport.request(
                 "GET",
@@ -108,9 +108,9 @@ class BugsnagSource:
             return {"ok": True, "detail": f"HTTP {resp.status_code}"}
         return {"ok": False, "detail": f"HTTP {resp.status_code}"}
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         spec = spec or {}
-        params: dict[str, Any] = {}
+        params: dict[str, object] = {}
         for key in ("status", "release_stage", "per_page", "sort"):
             if key in spec:
                 params[key] = spec[key]
@@ -127,11 +127,11 @@ class BugsnagSource:
         errors = payload if isinstance(payload, list) else (payload or {}).get("errors", [])
         return [self._normalize(err) for err in errors]
 
-    def _normalize(self, err: dict[str, Any]) -> dict[str, Any]:
+    def _normalize(self, err: dict[str, object]) -> dict[str, object]:
         klass = err.get("error_class") or err.get("class")
         message = err.get("message")
         if klass and message:
-            combined: Any = f"{klass}: {message}"
+            combined: object = f"{klass}: {message}"
         else:
             combined = message or klass
         return {

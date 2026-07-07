@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import cast
 
 from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get(
         "/admin/prompts/variants/report",
         summary="Prompt variant comparison report",
         description="Aggregate A/B outcomes by template and expose which variant is winning.",
     )
-    async def admin_variants_report() -> dict[str, Any]:
+    async def admin_variants_report() -> dict[str, object]:
         event_loop = getattr(app.state, "event_loop", None)
         if event_loop is None:
             return {"templates": {}, "template_count": 0, "note": "EventLoop not running"}
@@ -30,7 +30,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return {"templates": {}, "template_count": 0, "note": "VariantMetrics not wired"}
 
         try:
-            return cast("dict[str, Any]", metrics.generate_variant_report())
+            return cast("dict[str, object]", metrics.generate_variant_report())
         except Exception:
             logger.warning("Failed to generate variant report", exc_info=True)
             return {"templates": {}, "template_count": 0, "error": "Report generation failed"}

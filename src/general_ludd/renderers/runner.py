@@ -62,8 +62,8 @@ class RendererResult:
     ``schema`` is non-None.
     """
 
-    data: dict[str, Any] = field(default_factory=dict)
-    schema: dict[str, Any] | None = None
+    data: dict[str, object] = field(default_factory=dict)
+    schema: dict[str, object] | None = None
     field_metadata: list[FieldMeta] | None = None
     doc: RenderDocument | None = None
 
@@ -123,7 +123,7 @@ def _max_bytes() -> int:
         return DEFAULT_MAX_BYTES
 
 
-def _read_render_json(artifact_dir: Path, name: str) -> dict[str, Any]:
+def _read_render_json(artifact_dir: Path, name: str) -> dict[str, object]:
     path = artifact_dir / RENDER_ARTIFACT_NAME
     if not path.is_file():
         raise RendererFailure(name, f"{RENDER_ARTIFACT_NAME} not written by playbook")
@@ -205,7 +205,7 @@ async def run_renderer(app: FastAPI, spec: RendererSpec) -> RendererResult:
     return _validate_canonical(spec, raw, start)
 
 
-def _coerce_stub_output(stub_out: Any, spec: RendererSpec) -> dict[str, Any]:
+def _coerce_stub_output(stub_out: Any, spec: RendererSpec) -> dict[str, object]:
     """Normalize the stub runner's output into a raw ``render.json`` dict."""
     if isinstance(stub_out, RenderDocument):
         return stub_out.model_dump()
@@ -218,7 +218,7 @@ def _coerce_stub_output(stub_out: Any, spec: RendererSpec) -> dict[str, Any]:
 
 async def _execute_playbook(
     spec: RendererSpec, runner: Any
-) -> tuple[dict[str, Any], float]:
+) -> tuple[dict[str, object], float]:
     """Run the playbook via AnsibleRunnerAdapter; return ``(raw_dict, start_time)``."""
     artifact_dir = Path(tempfile.mkdtemp(prefix=f"gludd-render-{spec.name}-")) / "artifacts"
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -264,7 +264,7 @@ async def _execute_playbook(
     return raw, start
 
 
-def _validate_with_schema(spec: RendererSpec, raw: dict[str, Any]) -> RendererResult:
+def _validate_with_schema(spec: RendererSpec, raw: dict[str, object]) -> RendererResult:
     """Validate ``raw`` against the companion schema and return a result."""
     if spec.schema_path is None:  # pragma: no cover - caller guards this
         raise RendererFailure(spec.name, "no companion schema path on spec")
@@ -281,7 +281,7 @@ def _validate_with_schema(spec: RendererSpec, raw: dict[str, Any]) -> RendererRe
 
 
 def _validate_canonical(
-    spec: RendererSpec, raw: dict[str, Any], start: float
+    spec: RendererSpec, raw: dict[str, object], start: float
 ) -> RendererResult:
     """Validate ``raw`` against :class:`RenderDocument` (canonical path)."""
     try:

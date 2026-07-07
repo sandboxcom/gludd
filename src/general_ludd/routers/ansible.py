@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.ansible.galaxy import get_builtin_modules, install_galaxy, search_galaxy
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/ansible/search")
-    async def admin_ansible_search(query: str = "", type: str = "role") -> dict[str, Any]:
+    async def admin_ansible_search(query: str = "", type: str = "role") -> dict[str, object]:
         # search_galaxy shells out to ansible-galaxy via a blocking
         # subprocess.run (60s timeout); offload it so the async handler does
         # not freeze the event loop while the subprocess runs.
@@ -19,21 +19,21 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"query": query, "type": type, "results": results}
 
     @app.post("/admin/ansible/install")
-    async def admin_ansible_install(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_ansible_install(req: dict[str, object]) -> dict[str, object]:
         # install_galaxy shells out to ansible-galaxy via a blocking
         # subprocess.run (300s timeout); offload it so the async handler does
         # not freeze the event loop while the install runs.
         result = await asyncio.to_thread(
-            install_galaxy, req.get("name", ""), req.get("type", "role")
+            install_galaxy, cast(str, req.get("name", "")), cast(str, req.get("type", "role"))
         )
         return result
 
     @app.get("/admin/ansible/builtins")
-    async def admin_ansible_builtins() -> dict[str, Any]:
+    async def admin_ansible_builtins() -> dict[str, object]:
         return {"modules": get_builtin_modules()}
 
     @app.post("/admin/ansible/render")
-    async def admin_ansible_render(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_ansible_render(req: dict[str, object]) -> dict[str, object]:
         # SECURITY (CRITICAL SSTI->RCE): this endpoint accepts an attacker-
         # controlled template body. It MUST NOT use the trusted full-Templar
         # path (AnsibleTemplater.render -> Templar.template), which exposes the

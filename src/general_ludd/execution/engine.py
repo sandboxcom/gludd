@@ -26,7 +26,7 @@ _JINJA2_COMMENT = re.compile(r"\{#.*?#\}", re.DOTALL)
 
 
 def validate_extra_vars_safe(
-    vars_dict: dict[str, Any],
+    vars_dict: dict[str, object],
     allow_jinja2_in_extravars: bool = False,
 ) -> None:
     """Validate that extra_vars do not contain Jinja2 SSTI injection patterns.
@@ -46,7 +46,7 @@ def validate_extra_vars_safe(
     if allow_jinja2_in_extravars:
         return
 
-    def _check_value(value: Any, path: str) -> None:
+    def _check_value(value: object, path: str) -> None:
         if isinstance(value, str):
             if _JINJA2_EXPR.search(value):
                 raise ValueError(

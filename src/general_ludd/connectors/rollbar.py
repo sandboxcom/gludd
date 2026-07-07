@@ -20,7 +20,7 @@ Contract (shared across general_ludd.connectors.*):
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -38,7 +38,7 @@ class HttpTransport(Protocol):
         url: str,
         *,
         headers: dict[str, str] | None = ...,
-        params: dict[str, Any] | None = ...,
+        params: dict[str, object] | None = ...,
         timeout: float | None = ...,
     ) -> HttpResponse: ...
 
@@ -63,7 +63,7 @@ def _assert_public_base_url(base_url: str) -> None:
         )
 
 
-def _coerce_ts(value: Any) -> Any:
+def _coerce_ts(value: object) -> object:
     """Pass timestamps through unchanged; Rollbar emits epoch seconds."""
     return value
 
@@ -76,7 +76,7 @@ class RollbarSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         transport: HttpTransport,
         *,
         environ: dict[str, str] | None = None,
@@ -93,12 +93,12 @@ class RollbarSource:
             raise ConnectorConfigError(f"environment variable {token_env!r} is unset or empty")
         self._token = token
         self._transport = transport
-        self._timeout = float(config.get("timeout", 15.0))
+        self._timeout = float(str(config.get("timeout", 15.0)))
 
     def _headers(self) -> dict[str, str]:
         return {"X-Rollbar-Access-Token": self._token, "Accept": "application/json"}
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the items endpoint; never raises."""
         try:
             resp = self._transport.request(
@@ -114,9 +114,9 @@ class RollbarSource:
             return {"ok": True, "detail": f"HTTP {resp.status_code}"}
         return {"ok": False, "detail": f"HTTP {resp.status_code}"}
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         spec = spec or {}
-        params: dict[str, Any] = {}
+        params: dict[str, object] = {}
         if "status" in spec:
             params["status"] = spec["status"]
         if "environment" in spec:
@@ -136,7 +136,7 @@ class RollbarSource:
         items = (payload or {}).get("result", {}).get("items", [])
         return [self._normalize(item) for item in items]
 
-    def _normalize(self, item: dict[str, Any]) -> dict[str, Any]:
+    def _normalize(self, item: dict[str, object]) -> dict[str, object]:
         return {
             "ts": _coerce_ts(item.get("last_occurrence_timestamp")),
             "source": self.name,

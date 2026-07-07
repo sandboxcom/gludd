@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.mcp.catalog import MCPCatalog
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/mcp/catalog/search")
-    async def admin_mcp_catalog_search(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_mcp_catalog_search(req: dict[str, object]) -> dict[str, object]:
         catalog = MCPCatalog()
-        results = catalog.search(query=req.get("query", ""), limit=req.get("limit", 20))
+        results = catalog.search(query=cast(str, req.get("query", "")), limit=cast(int, req.get("limit", 20)))
         return {
             "results": [
                 {
@@ -30,7 +30,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/mcp/catalog/servers")
-    async def admin_mcp_catalog_servers() -> dict[str, Any]:
+    async def admin_mcp_catalog_servers() -> dict[str, object]:
         catalog = MCPCatalog()
         servers = catalog.get_known_servers()
         return {
@@ -49,7 +49,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
 
     @app.get("/admin/mcp/catalog/servers/{name}")
-    async def admin_mcp_catalog_server(name: str) -> dict[str, Any]:
+    async def admin_mcp_catalog_server(name: str) -> dict[str, object]:
         catalog = MCPCatalog()
         server = catalog.get_server(name)
         if server is None:

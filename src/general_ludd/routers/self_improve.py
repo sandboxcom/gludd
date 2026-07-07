@@ -394,7 +394,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # self-improve apply doesn't freeze the event loop for the full run.
         validation = await asyncio.to_thread(workflow.validate_improvement, worktree_path)
         apply_result = await asyncio.to_thread(
-            workflow.apply_improvement, todo["todo_id"], validation
+            workflow.apply_improvement, cast(str, todo["todo_id"]), validation
         )
         reload_result = await asyncio.to_thread(workflow.reload_if_needed, apply_result)
         return {

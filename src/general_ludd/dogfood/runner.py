@@ -6,7 +6,6 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Any
 
 from pydantic import BaseModel, field_validator
 
@@ -81,9 +80,9 @@ class DogfoodRunner:
     def __init__(self, config: DogfoodConfig) -> None:
         self.config = config
 
-    def seed_todos_from_sprint(self, sprint_path: str) -> list[dict[str, Any]]:
+    def seed_todos_from_sprint(self, sprint_path: str) -> list[dict[str, object]]:
         items = parse_sprint_markdown(sprint_path)
-        todos: list[dict[str, Any]] = []
+        todos: list[dict[str, object]] = []
         for item in items:
             for task in item.tasks:
                 todos.append({
@@ -94,9 +93,9 @@ class DogfoodRunner:
                 })
         return todos
 
-    def seed_todos_from_gap_analysis(self, gap_report: Any) -> list[dict[str, Any]]:
-        todos: list[dict[str, Any]] = []
-        for gap in gap_report.gaps:
+    def seed_todos_from_gap_analysis(self, gap_report: object) -> list[dict[str, object]]:
+        todos: list[dict[str, object]] = []
+        for gap in getattr(gap_report, "gaps", []):
             todos.append({
                 "description": gap.description,
                 "source": "gap_analysis",
@@ -106,10 +105,10 @@ class DogfoodRunner:
             })
         return todos
 
-    def seed_todos_from_test_failures(self, test_output: str) -> list[dict[str, Any]]:
+    def seed_todos_from_test_failures(self, test_output: str) -> list[dict[str, object]]:
         pattern = re.compile(r"FAILED\s+(\S+::\S+)")
         matches = pattern.findall(test_output)
-        todos: list[dict[str, Any]] = []
+        todos: list[dict[str, object]] = []
         for match in matches:
             todos.append({
                 "description": f"Fix failing test: {match}",

@@ -170,7 +170,7 @@ class TestSpendConfigurePreservesHistory:
             "Spend history was wiped on reconfigure — cap-reset evasion is possible."
         )
         # And the carried-over record has cost=8.0.
-        assert any(c == pytest.approx(8.0) for _, c in new_limiter._records)
+        assert any(c == pytest.approx(8.0) for _, c, _ in new_limiter._records)
 
     def test_configure_old_spend_counts_against_new_cap(
         self, app: FastAPI, client: TestClient

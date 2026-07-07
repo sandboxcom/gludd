@@ -28,7 +28,7 @@ import json
 import os
 import urllib.parse
 import urllib.request
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
@@ -43,7 +43,7 @@ class _ZipkinResponse:
         self.status = status
         self.body = body
 
-    def json(self) -> Any:
+    def json(self) -> object:
         return json.loads(self.body.decode("utf-8"))
 
 
@@ -84,18 +84,18 @@ class ZipkinSource:
 
     KIND = "traces"
 
-    def __init__(self, config: dict[str, Any], transport: HttpTransport | None = None) -> None:
+    def __init__(self, config: dict[str, object], transport: HttpTransport | None = None) -> None:
         self.name: str = str(config.get("name", "zipkin"))
         self.allow_private: bool = bool(config.get("allow_private", False))
         self.base_url: str = _guard_base_url(
             str(config.get("base_url", "")), allow_private=self.allow_private
         )
-        self.timeout: float = float(config.get("timeout", 10.0))
+        self.timeout: float = float(cast("float | int | str", config.get("timeout", 10.0)))
         self.default_service: str | None = (
             str(config["service_name"]) if config.get("service_name") is not None else None
         )
-        self.default_lookback: int | str = config.get("lookback", 3600000)
-        self.default_limit: int = int(config.get("limit", 20))
+        self.default_lookback: int | str = cast(int | str, config.get("lookback", 3600000))
+        self.default_limit: int = int(cast("int | str", config.get("limit", 20)))
 
         token_env = config.get("token_env")
         self._token: str | None = os.environ.get(str(token_env)) if token_env else None
@@ -108,7 +108,7 @@ class ZipkinSource:
             headers["Authorization"] = f"Bearer {self._token}"
         return headers
 
-    def _get(self, path: str, params: dict[str, Any]) -> _ZipkinResponse:
+    def _get(self, path: str, params: dict[str, object]) -> _ZipkinResponse:
         query = urllib.parse.urlencode(
             {k: v for k, v in params.items() if v is not None}, doseq=True
         )
@@ -117,7 +117,7 @@ class ZipkinSource:
             url = f"{url}?{query}"
         return self._transport.get(url, headers=self._headers(), timeout=self.timeout)
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the traces endpoint with limit=1. Never raises."""
         try:
             resp = self._get("/api/v2/traces", {"limit": 1})
@@ -131,7 +131,7 @@ class ZipkinSource:
             return {"ok": False, "detail": f"invalid json: {exc}"}
         return {"ok": True, "detail": "reachable"}
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         """Fetch traces and emit one normalized record per span."""
         spec = spec or {}
         params = {
@@ -141,7 +141,7 @@ class ZipkinSource:
         }
         resp = self._get("/api/v2/traces", params)
         payload = resp.json()
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         if not isinstance(payload, list):
             return records
         for trace in payload:
@@ -152,7 +152,7 @@ class ZipkinSource:
                     records.append(self._normalize_span(span))
         return records
 
-    def _normalize_span(self, span: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_span(self, span: dict[str, object]) -> dict[str, object]:
         local_endpoint = span.get("localEndpoint") or {}
         service = (
             str(local_endpoint.get("serviceName", "")) if isinstance(local_endpoint, dict) else ""

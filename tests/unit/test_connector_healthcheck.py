@@ -63,13 +63,14 @@ def _connector_module_paths() -> list[str]:
 
 
 def _source_class_for(mod_path: str) -> type | None:
-    """Return the ``*Source`` class from a connector module, or None."""
+    """Return the ``*Source`` or ``*Client`` class from a connector module, or None."""
     import importlib
 
     mod = importlib.import_module(mod_path)
-    for attr, obj in vars(mod).items():
-        if attr.endswith("Source") and isinstance(obj, type) and getattr(obj, "__module__", None) == mod_path:
-            return obj
+    for suffix in ("Source", "Client"):
+        for attr, obj in vars(mod).items():
+            if attr.endswith(suffix) and isinstance(obj, type) and getattr(obj, "__module__", None) == mod_path:
+                return obj
     return None
 
 

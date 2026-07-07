@@ -81,7 +81,11 @@ class TestZAISkipBehavior:
                 return None
             return fallback_response
 
-        with patch.object(gateway, "_try_call_model", side_effect=_try_call_side_effect):
+        with patch.object(
+            gateway, "_try_call_model", side_effect=_try_call_side_effect
+        ), patch.object(
+            gateway, "_call_fallback", return_value=fallback_response
+        ):
             result = gateway.call_model_with_fallback("zai_main", [
                 {"role": "user", "content": "test"}
             ])

@@ -881,6 +881,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         bc = _parse_budget_config(uc)
         if uc and hasattr(uc, "database"):
             db_config = uc.database or {}
+        _db_override: str | None = getattr(app.state, "_db_path_override", None)
+        if _db_override:
+            db_config["url"] = f"sqlite+aiosqlite:///{_db_override}"
         engine = init_engine_from_config(db_config)
         await ensure_tables(engine)
 
@@ -1108,7 +1111,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 logger.info(
                     "Secret migration: %d migrated, %d skipped",
                     result["migrated"],
-                    len(result["skipped"]),
+                    len(cast("list[str]", result["skipped"])),
                 )
             except Exception:
                 logger.error("Secret migration failed", exc_info=True)
@@ -2233,6 +2236,7 @@ def create_daemon_app(
     config_dir: str | None = None,
     templates_dir: str | None = None,
     playbooks_dir: str | None = None,
+    _db_path_override: str | None = None,
 ) -> FastAPI:
     if tick_interval is None:
         env_tick = os.environ.get("GLUDD_TICK_INTERVAL")
@@ -2268,6 +2272,7 @@ def create_daemon_app(
     app.state._event_bus = None
     app.state._hook_system = None
     app.state._worker_broadcaster = None
+    app.state._db_path_override = _db_path_override
     app.state._config_dir = config_dir
     app.state._templates_dir = templates_dir
     app.state._playbooks_dir = playbooks_dir

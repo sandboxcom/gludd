@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableBranch
 from langchain_core.runnables.base import RunnableLambda
@@ -20,9 +20,9 @@ class LangChainModelRouter:
     """
 
     def __init__(self) -> None:
-        self._conditions: list[Callable[[dict[str, Any]], bool]] = []
-        self._runnables: list[Any] = []
-        self._default_runnable: Any = None
+        self._conditions: list[Callable[[dict[str, object]], bool]] = []
+        self._runnables: list[object] = []
+        self._default_runnable: object = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -30,19 +30,19 @@ class LangChainModelRouter:
 
     def add_route(
         self,
-        condition_fn: Callable[[dict[str, Any]], bool],
-        model_runnable: Any,
+        condition_fn: Callable[[dict[str, object]], bool],
+        model_runnable: object,
     ) -> None:
         """Register a route: when *condition_fn* evaluates to ``True`` on the
         resolver input, *model_runnable* is returned by :meth:`resolve`."""
         self._conditions.append(condition_fn)
         self._runnables.append(model_runnable)
 
-    def set_default(self, model_runnable: Any) -> None:
+    def set_default(self, model_runnable: object) -> None:
         """Set the catch-all runnable returned when no route condition matches."""
         self._default_runnable = model_runnable
 
-    def resolve(self, input_dict: dict[str, Any]) -> Any:
+    def resolve(self, input_dict: dict[str, object]) -> object:
         """Resolve *input_dict* to the first matching model runnable.
 
         Returns the runnable associated with the first satisfied condition,
@@ -56,7 +56,7 @@ class LangChainModelRouter:
     # Internal
     # ------------------------------------------------------------------
 
-    def _build_branches(self) -> RunnableBranch[Any, Any]:
+    def _build_branches(self) -> RunnableBranch[object, object]:
         """Assemble a :class:`RunnableBranch` from the current route table.
 
         Each row becomes a ``(condition_fn, RunnableLambda)`` branch whose
@@ -69,13 +69,13 @@ class LangChainModelRouter:
         registered so the :class:`RunnableBranch` minimum-arguments
         invariant holds (at least one pair + the default).
         """
-        def _passthrough_factory(value: Any) -> Any:
-            def _fn(_input: Any) -> Any:
+        def _passthrough_factory(value: object) -> object:
+            def _fn(_input: object) -> object:
                 return value
 
             return RunnableLambda(_fn)
 
-        conditions: list[tuple[Any, Any]] = []
+        conditions: list[tuple[object, object]] = []
         for cond, run in zip(self._conditions, self._runnables, strict=True):
             conditions.append((cond, _passthrough_factory(run)))
 
@@ -88,4 +88,4 @@ class LangChainModelRouter:
             else RunnableLambda(lambda _: None)
         )
 
-        return RunnableBranch(*conditions, default)
+        return RunnableBranch(*cast(Any, conditions), cast(Any, default))

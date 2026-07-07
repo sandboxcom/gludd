@@ -47,13 +47,12 @@ import os
 import time
 import urllib.request
 from collections.abc import Callable
-from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
 
 # Injectable transport signature: (url, params, headers, timeout) -> (status, json)
-HttpGet = Callable[..., "tuple[int, Any]"]
+HttpGet = Callable[..., "tuple[int, object]"]
 
 KIND = "metrics"
 
@@ -63,10 +62,10 @@ _DEFAULT_MGMT_PORT = 15672
 
 def _default_http_get(
     url: str,
-    params: dict[str, Any] | None = None,
+    params: dict[str, object] | None = None,
     headers: dict[str, str] | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
-) -> tuple[int, Any]:
+) -> tuple[int, object]:
     """Real, time-bound stdlib transport used when none is injected.
 
     Matches the ``(url, params, headers, timeout) -> (status, json)`` contract.
@@ -83,7 +82,7 @@ def _default_http_get(
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         status = int(resp.getcode() or 0)
         body = resp.read()
-    parsed_body: Any = _json.loads(body) if body else {}
+    parsed_body: object = _json.loads(body) if body else {}
     return status, parsed_body
 
 
@@ -116,9 +115,9 @@ def _validate_base_url(base_url: str) -> str:
     return normalized
 
 
-def _f(value: Any) -> float:
+def _f(value: object) -> float:
     try:
-        return float(value)
+        return float(str(value))
     except (TypeError, ValueError):
         return 0.0
 
@@ -130,12 +129,12 @@ class RabbitMqSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         http_get: HttpGet | None = None,
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
-        base_url = config.get("base_url", "")
+        base_url = str(config.get("base_url", ""))
         self._base_url = _validate_base_url(base_url)
         self._user_env = config.get("user_env")
         self._password_env = config.get("password_env")
@@ -149,20 +148,20 @@ class RabbitMqSource:
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Accept": "application/json"}
-        user = os.environ.get(self._user_env) if self._user_env else None
-        password = os.environ.get(self._password_env) if self._password_env else None
+        user = os.environ.get(str(self._user_env)) if self._user_env else None
+        password = os.environ.get(str(self._password_env)) if self._password_env else None
         if user is not None and password is not None:
             token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
             headers["Authorization"] = f"Basic {token}"
         return headers
 
-    def _get(self, path: str) -> tuple[int, Any]:
+    def _get(self, path: str) -> tuple[int, object]:
         url = f"{self._base_url}{path}"
         return self._http_get(
             url, params=None, headers=self._headers(), timeout=self._timeout
         )
 
-    def _error_record(self, message: str, raw: Any) -> dict[str, Any]:
+    def _error_record(self, message: str, raw: object) -> dict[str, object]:
         return {
             "ts": time.time(),
             "source": self.name,
@@ -175,8 +174,8 @@ class RabbitMqSource:
         }
 
     def _record(
-        self, message: str, value: float, labels: dict[str, str], ts: float, raw: Any
-    ) -> dict[str, Any]:
+        self, message: str, value: float, labels: dict[str, str], ts: float, raw: object
+    ) -> dict[str, object]:
         return {
             "ts": ts,
             "source": self.name,
@@ -191,9 +190,9 @@ class RabbitMqSource:
     # -- normalization ----------------------------------------------------
 
     def _normalize_queues(
-        self, queues: Any, ts: float
-    ) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
+        self, queues: object, ts: float
+    ) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
         if not isinstance(queues, list):
             return records
         for q in queues:
@@ -244,8 +243,8 @@ class RabbitMqSource:
             )
         return records
 
-    def _normalize_nodes(self, nodes: Any, ts: float) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
+    def _normalize_nodes(self, nodes: object, ts: float) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
         if not isinstance(nodes, list):
             return records
         for node in nodes:
@@ -292,8 +291,8 @@ class RabbitMqSource:
             )
         return records
 
-    def _normalize_overview(self, overview: Any, ts: float) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
+    def _normalize_overview(self, overview: object, ts: float) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
         if not isinstance(overview, dict):
             return records
         totals = overview.get("queue_totals")
@@ -331,15 +330,17 @@ class RabbitMqSource:
 
     # -- public API -------------------------------------------------------
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Pull overview/queues/nodes and normalize. Never raises.
 
         ``spec`` may carry ``endpoints`` (a subset of
         ``{"overview", "queues", "nodes"}``) to restrict the scrape.
         """
         requested = spec.get("endpoints") or ("overview", "queues", "nodes")
+        if not isinstance(requested, (list, tuple, set, frozenset)):
+            requested = ("overview", "queues", "nodes")
         ts = time.time()
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
 
         endpoint_map = {
             "overview": ("/api/overview", self._normalize_overview),
@@ -372,7 +373,7 @@ class RabbitMqSource:
 
         return records
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Return ``{"ok": bool, "detail": str}``. Never raises.
 
         Probes ``/api/overview`` (cheap, always present on the mgmt API).
@@ -384,6 +385,7 @@ class RabbitMqSource:
 
         ok = 200 <= int(status) < 300 and isinstance(payload, dict)
         if ok:
+            assert isinstance(payload, dict)
             version = payload.get("rabbitmq_version", "?")
             return {"ok": True, "detail": f"overview ok (rabbitmq {version})"}
         return {"ok": False, "detail": f"unhealthy (status {status})"}

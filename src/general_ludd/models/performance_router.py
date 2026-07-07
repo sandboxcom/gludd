@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 logger = logging.getLogger(__name__)
 
@@ -32,15 +32,15 @@ class ModelPerformanceRepository(Protocol):
         task_type: str,
         min_calls: int = 3,
         prefer_cost: bool = False,
-    ) -> dict[str, Any] | None: ...
+    ) -> dict[str, object] | None: ...
 
-    async def get_ranking(self, task_type: str) -> list[dict[str, Any]]: ...
+    async def get_ranking(self, task_type: str) -> list[dict[str, object]]: ...
 
     async def get_summary(
         self,
         service: str | None = None,
         task_type: str | None = None,
-    ) -> list[dict[str, Any]]: ...
+    ) -> list[dict[str, object]]: ...
 
     async def refresh_recent_stats(self) -> None: ...
 
@@ -74,11 +74,11 @@ class ModelPerformanceRouter:
 
     def __init__(
         self,
-        perf_repo: Any | None = None,
-        config: dict[str, Any] | None = None,
+        perf_repo: object | None = None,
+        config: dict[str, object] | None = None,
     ) -> None:
         self._repo = perf_repo
-        self._config: dict[str, Any] = {
+        self._config: dict[str, object] = {
             "min_calls": 3,
             "default_fallback": "openai/gpt-4o",
             ** (config or {}),
@@ -96,7 +96,7 @@ class ModelPerformanceRouter:
     def get_strategy(self, task_type: str) -> str:
         return self._strategies.get(task_type, "balanced")
 
-    def get_config(self) -> dict[str, Any]:
+    def get_config(self) -> dict[str, object]:
         return {
             "strategies": dict(self._strategies),
             "defaults": dict(self._config),
@@ -107,7 +107,7 @@ class ModelPerformanceRouter:
         task_type: str,
         strategy: str | None = None,
         fallback: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Select the best (service, model_name) for a task type.
 
         Strategies:
@@ -119,7 +119,7 @@ class ModelPerformanceRouter:
         Returns a dict with service, model_name, score, and strategy info.
         """
         effective_strategy = strategy or self._strategies.get(task_type, "balanced")
-        effective_fallback = fallback or self._config["default_fallback"]
+        effective_fallback = cast(str, fallback or self._config["default_fallback"])
 
         if self._repo is None:
             parts = effective_fallback.split("/", 1)
@@ -133,9 +133,10 @@ class ModelPerformanceRouter:
             }
 
         try:
-            best = await self._repo.get_best_model(
+            repo = cast(ModelPerformanceRepository, self._repo)
+            best = await repo.get_best_model(
                 task_type,
-                min_calls=self._config["min_calls"],
+                min_calls=cast(int, self._config["min_calls"]),
                 prefer_cost=(effective_strategy == "cheapest"),
             )
         except Exception:
@@ -143,10 +144,11 @@ class ModelPerformanceRouter:
             best = None
 
         if best is not None:
+            best_any = cast(dict[str, Any], best)
             return {
-                "service": best.get("service", "openai"),
-                "model_name": best.get("model_name", "gpt-4o"),
-                "score": float(best.get("composite_score", 0.0)),
+                "service": cast(str, best_any.get("service", "openai")),
+                "model_name": cast(str, best_any.get("model_name", "gpt-4o")),
+                "score": float(cast(float, best_any.get("composite_score", 0.0))),
                 "strategy": effective_strategy,
                 "fallback": False,
                 "reason": "historical_best",
@@ -154,11 +156,11 @@ class ModelPerformanceRouter:
 
         ranking = await self.get_rankings(task_type, strategy=effective_strategy)
         if ranking:
-            top = ranking[0]
+            top = cast(dict[str, Any], ranking[0])
             return {
-                "service": top.get("service", "openai"),
-                "model_name": top.get("model_name", "gpt-4o"),
-                "score": float(top.get("score", 0.0)),
+                "service": cast(str, top.get("service", "openai")),
+                "model_name": cast(str, top.get("model_name", "gpt-4o")),
+                "score": float(cast(float, top.get("score", 0.0))),
                 "strategy": effective_strategy,
                 "fallback": False,
                 "reason": "strategy_ranked",
@@ -178,7 +180,7 @@ class ModelPerformanceRouter:
         self,
         task_type: str,
         strategy: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         """Get ranked list of models for a task type with scores."""
         effective_strategy = strategy or self._strategies.get(task_type, "balanced")
 
@@ -186,7 +188,8 @@ class ModelPerformanceRouter:
             return []
 
         try:
-            raw = await self._repo.get_ranking(task_type)
+            repo = cast(ModelPerformanceRepository, self._repo)
+            raw = await repo.get_ranking(task_type)
         except Exception:
             logger.exception("get_ranking failed for %s", task_type)
             return []
@@ -197,15 +200,15 @@ class ModelPerformanceRouter:
         weights = DEFAULT_STRATEGIES.get(effective_strategy, DEFAULT_STRATEGIES["balanced"])
 
         scores = [
-            float(r.get("success_rate", 0.0))
+            float(cast(float, r.get("success_rate", 0.0)))
             for r in raw
         ]
         latencies = [
-            float(r.get("avg_latency_ms", 0.0))
+            float(cast(float, r.get("avg_latency_ms", 0.0)))
             for r in raw
         ]
         costs = [
-            float(r.get("avg_cost_usd", 0.0))
+            float(cast(float, r.get("avg_cost_usd", 0.0)))
             for r in raw
         ]
 
@@ -213,8 +216,9 @@ class ModelPerformanceRouter:
         norm_latencies = _scale(latencies)
         norm_costs = _scale(costs)
 
-        ranked: list[dict[str, Any]] = []
+        ranked: list[dict[str, object]] = []
         for i, r in enumerate(raw):
+            r_any = cast(dict[str, Any], r)
             w_score = norm_scores[i] if i < len(norm_scores) else 0.5
             w_lat = (1 - norm_latencies[i]) if i < len(norm_latencies) else 0.5
             w_cost = (1 - norm_costs[i]) if i < len(norm_costs) else 0.5
@@ -226,15 +230,15 @@ class ModelPerformanceRouter:
             )
 
             ranked.append({
-                "service": r.get("service", ""),
-                "model_name": r.get("model_name", ""),
-                "success_rate": r.get("success_rate", 0.0),
-                "avg_latency_ms": r.get("avg_latency_ms", 0.0),
-                "avg_cost_usd": r.get("avg_cost_usd", 0.0),
-                "sample_count": r.get("sample_count", 0),
+                "service": r_any.get("service", ""),
+                "model_name": r_any.get("model_name", ""),
+                "success_rate": r_any.get("success_rate", 0.0),
+                "avg_latency_ms": r_any.get("avg_latency_ms", 0.0),
+                "avg_cost_usd": r_any.get("avg_cost_usd", 0.0),
+                "sample_count": r_any.get("sample_count", 0),
                 "score": round(composite, 4),
                 "strategy": effective_strategy,
             })
 
-        ranked.sort(key=lambda x: x["score"], reverse=True)
+        ranked.sort(key=lambda x: cast(float, x["score"]), reverse=True)
         return ranked

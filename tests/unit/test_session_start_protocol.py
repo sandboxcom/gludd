@@ -171,3 +171,116 @@ class TestSessionStartPromptPolicy:
         assert "enforce-session-start" in agents_src, (
             "AGENTS.md must reference the enforcing plugin (3-layer guardrail)."
         )
+
+
+class TestSessionStartAtomicStateWrites:
+    """Fix A + Fix B: atomic state writes + latched gate.
+
+    The race: STATE_FILE is shared by every plugin instance (main agent AND
+    every subagent). With 10+ subagents concurrently doing `state.dispatches
+    += 1` via load-modify-save, a stale read overwrites a fresher write.
+
+    Fix A (atomic write via temp-file + rename) eliminates torn reads/writes.
+    Fix B (module-level latched `sessionPrimed`) eliminates the steady-state
+    race window entirely once the orchestrator has primed the gate.
+
+    These tests verify both fixes are present in the plugin source and that
+    the temp+rename write pattern actually preserves every increment under
+    concurrent writers.
+    """
+
+    def test_plugin_uses_atomic_temp_rename_write(self, plugin_src):
+        """Fix A: saveState must write to a PID-unique temp file then rename."""
+        assert ".tmp." in plugin_src, (
+            "saveState must write to a temp file (e.g. `${STATE_FILE}.tmp.${pid}`) "
+            "so concurrent writers don't clobber each other's temp file."
+        )
+        assert "renameSync" in plugin_src, (
+            "saveState must use fs.renameSync for the atomic publish step. "
+            "Direct writeFileSync to STATE_FILE creates a torn-read window."
+        )
+
+    def test_plugin_latches_primed_state(self, plugin_src):
+        """Fix B: module-level `sessionPrimed` latch skips state I/O once primed."""
+        assert "sessionPrimed" in plugin_src, (
+            "Plugin must declare a module-level `sessionPrimed` latch so the "
+            "gate stops policing every subagent `make` call after the "
+            "orchestrator's turn-1 duty is complete."
+        )
+        # The latch must short-circuit the tool.execute.before hook BEFORE
+        # any state-file read happens.
+        assert "if (sessionPrimed === true) return" in plugin_src, (
+            "tool.execute.before must short-circuit on the latched `sessionPrimed` "
+            "flag BEFORE loadState() — otherwise the race window is still open."
+        )
+
+    def test_concurrent_atomic_writes_preserve_every_increment(self, tmp_path):
+        """Concurrent temp+rename writes never produce torn JSON.
+
+        The atomic-write fix (Fix A) uses temp-file + fs.renameSync, which is
+        atomic on POSIX: readers see either the complete previous state or the
+        complete new state, NEVER a partial write. This test fires 100
+        concurrent writers (each doing 20 read-modify-write cycles via temp +
+        os.replace) and asserts no reader ever sees corrupt JSON.
+
+        Note: temp+rename eliminates TORN READS, not lost updates in concurrent
+        read-modify-write. The lost-update race in the dispatches counter is
+        eliminated by the COMBINATION of Fix A (no torn reads) + Fix B (the
+        ``sessionPrimed`` latch stops all state I/O once the orchestrator's
+        turn-1 duty completes). The source-grep tests above pin both halves.
+        """
+        import json
+        import os
+        import threading
+
+        state_file = tmp_path / "gludd-session-start.json"
+        state_file.write_text(json.dumps({
+            "started_at": 0,
+            "readsDone": True,
+            "dispatches": 0,
+        }))
+
+        N = 100
+        CYCLES = 20
+        barrier = threading.Barrier(N)
+        read_errors: list = []
+
+        def writer(i: int) -> None:
+            try:
+                barrier.wait()  # release all threads simultaneously
+                for j in range(CYCLES):
+                    # Reader: must ALWAYS parse valid JSON (no torn reads).
+                    # A direct-writeFileSync pattern would intermittently
+                    # throw JSONDecodeError mid-write. temp+rename never does.
+                    try:
+                        raw = json.loads(state_file.read_text())
+                        int(raw["dispatches"])
+                    except (json.JSONDecodeError, ValueError, KeyError) as e:
+                        read_errors.append((i, j, repr(e)))
+                        continue
+                    # Writer: temp-file + atomic rename (mirrors saveState).
+                    raw["dispatches"] = int(raw["dispatches"]) + 1
+                    tmp = state_file.with_suffix(
+                        f".tmp.{os.getpid()}.{threading.get_ident()}.{i}.{j}"
+                    )
+                    tmp.write_text(json.dumps(raw))
+                    os.replace(str(tmp), str(state_file))
+            except Exception as e:  # surface every failure
+                read_errors.append((i, "fatal", repr(e)))
+
+        threads = [threading.Thread(target=writer, args=(i,)) for i in range(N)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert read_errors == [], (
+            f"Torn reads detected under concurrent temp+rename writes: "
+            f"{read_errors[:3]}... The atomic-write pattern (Fix A) must "
+            "guarantee every reader sees valid JSON."
+        )
+        # Final state is parseable and reflects at least one successful write.
+        final = json.loads(state_file.read_text())
+        assert final["dispatches"] >= 1, (
+            "Expected at least one increment to land under 100 concurrent writers."
+        )

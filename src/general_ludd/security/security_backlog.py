@@ -9,8 +9,8 @@ replaced with the real implementation during the follow-up cycle.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass
@@ -93,7 +93,7 @@ def _check_d27_sandbox_limits() -> tuple[bool, str]:
     return True, "stub — container resource limits defer to bubblewrap/landlock backends"
 
 
-_BACKLOG_CHECKERS: dict[str, Any] = {
+_BACKLOG_CHECKERS: dict[str, Callable[[], tuple[bool, str]]] = {
     "D-07": _check_d07_input_validation,
     "D-14": _check_d14_url_parsing,
     "D-17": _check_d17_psk_rotation,

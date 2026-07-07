@@ -33,7 +33,7 @@ class VariableStore:
 
     def __init__(self) -> None:
         # {namespace: {key: value}}
-        self._store: dict[str, dict[str, Any]] = {}
+        self._store: dict[str, dict[str, object]] = {}
 
     # ------------------------------------------------------------------
     # Core set / get
@@ -47,18 +47,18 @@ class VariableStore:
         """Return ``namespace.key`` or ``default`` if absent."""
         return self._store.get(namespace, {}).get(key, default)
 
-    def get_namespace(self, namespace: str) -> dict[str, Any]:
+    def get_namespace(self, namespace: str) -> dict[str, object]:
         """Return a shallow copy of all variables in ``namespace``."""
         return dict(self._store.get(namespace, {}))
 
-    def all_vars(self) -> dict[str, Any]:
+    def all_vars(self) -> dict[str, object]:
         """Flatten the store into a single dict for template rendering.
 
         Keys are ``"namespace__key"`` to avoid collision between namespaces.
         Additionally the top-level namespace keys are aliased as bare names
         when there is no collision, but the ``__`` form always wins.
         """
-        flat: dict[str, Any] = {}
+        flat: dict[str, object] = {}
         for ns, kvs in self._store.items():
             for k, v in kvs.items():
                 flat[f"{ns}__{k}"] = v
@@ -81,7 +81,7 @@ class VariableStore:
         # cannot reach Python internals. Blocked access raises and is caught
         # below (fail-open returns the raw template, never the evaluated escape).
         env = SandboxedEnvironment(undefined=Undefined, autoescape=select_autoescape())
-        ctx: dict[str, Any] = {**self.all_vars(), **extra}
+        ctx: dict[str, object] = {**self.all_vars(), **extra}
         try:
             tmpl = env.from_string(template)
             return tmpl.render(**ctx)

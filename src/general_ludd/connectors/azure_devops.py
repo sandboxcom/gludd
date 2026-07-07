@@ -25,7 +25,6 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -37,7 +36,7 @@ _DEFAULT_TIMEOUT = 10.0
 _API_VERSION = "7.0"
 
 # A transport is any callable matching ``http_get(url, headers) -> (status, json)``.
-Transport = Callable[[str, dict[str, str]], "tuple[int, Any]"]
+Transport = Callable[[str, dict[str, str]], "tuple[int, object]"]
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -49,7 +48,7 @@ def _validate_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _parse_ts(value: Any) -> float | None:
+def _parse_ts(value: object) -> float | None:
     """Parse an ISO-8601 timestamp into a POSIX float, or None."""
     if not value or not isinstance(value, str):
         return None
@@ -76,7 +75,7 @@ def _parse_ts(value: Any) -> float | None:
         return None
 
 
-def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, Any]:
+def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, object]:
     """Real, time-bounded urllib transport. Never uses a shell."""
     req = urllib.request.Request(url, headers=headers, method="GET")
     try:
@@ -86,7 +85,7 @@ def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, Any]:
     except urllib.error.HTTPError as exc:
         raw = exc.read()
         status = int(exc.code)
-    body: Any = None
+    body: object = None
     if raw:
         try:
             body = _json.loads(raw.decode("utf-8"))
@@ -102,7 +101,7 @@ class AzureDevOpsSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         *,
         http_get: Transport | None = None,
     ) -> None:
@@ -120,7 +119,8 @@ class AzureDevOpsSource:
         )
         # PAT is read from this env var at call time and used as Basic-auth pwd.
         self.token_env: str = str(config.get("token_env") or "AZURE_DEVOPS_PAT")
-        self.name: str = config.get("name") or f"azure-devops:{self.org}/{self.project}"
+        _name = config.get("name")
+        self.name: str = str(_name) if _name else f"azure-devops:{self.org}/{self.project}"
         self._http_get: Transport = http_get or _default_http_get
 
     # -- internal helpers ---------------------------------------------------
@@ -135,7 +135,7 @@ class AzureDevOpsSource:
             headers["Authorization"] = f"Basic {token}"
         return headers
 
-    def _builds_url(self, spec: dict[str, Any]) -> str:
+    def _builds_url(self, spec: dict[str, object]) -> str:
         params: dict[str, str] = {"api-version": _API_VERSION}
         status_filter = spec.get("statusFilter") or spec.get("status")
         if status_filter:
@@ -153,7 +153,7 @@ class AzureDevOpsSource:
         )
         return f"{base}?{urllib.parse.urlencode(params)}"
 
-    def _normalize(self, build: dict[str, Any]) -> dict[str, Any]:
+    def _normalize(self, build: dict[str, object]) -> dict[str, object]:
         definition = build.get("definition")
         def_name = ""
         if isinstance(definition, dict):
@@ -179,7 +179,7 @@ class AzureDevOpsSource:
         }
 
     # -- public API ---------------------------------------------------------
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the builds endpoint. Never raises."""
         try:
             status, _ = self._http_get(self._builds_url({}), self._headers())
@@ -189,7 +189,7 @@ class AzureDevOpsSource:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """List recent builds and return normalized records.
 
         Supported *spec* keys: ``statusFilter``/``status``,
@@ -205,13 +205,13 @@ class AzureDevOpsSource:
         builds = body.get("value")
         if not isinstance(builds, list):
             return []
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for build in builds:
             if isinstance(build, dict):
                 records.append(self._normalize(build))
         return records
 
-    def fetch_logs(self, build_id: Any) -> list[dict[str, Any]]:
+    def fetch_logs(self, build_id: object) -> list[dict[str, object]]:
         """GET builds/{id}/logs -> raw list of log dicts. Never raises."""
         url = (
             f"{self.base_url}/"

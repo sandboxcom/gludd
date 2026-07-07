@@ -1,23 +1,24 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import cast
 
 from fastapi import FastAPI, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.db.repository import BenchmarkRepository, PromptProfileRepository
 from general_ludd.scoring.router import AdaptiveRouter
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/benchmark/scores")
     async def admin_benchmark_scores(
         task_type: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             return {"scores": []}
@@ -27,7 +28,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return {"scores": list(scores)}
 
     @app.get("/admin/benchmark/recent")
-    async def admin_benchmark_recent(limit: int = 50) -> dict[str, Any]:
+    async def admin_benchmark_recent(limit: int = 50) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             return {"results": []}
@@ -56,7 +57,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.get("/admin/benchmark/leaderboard")
     async def admin_benchmark_leaderboard(
         task_type: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             return {"leaderboard": []}
@@ -81,33 +82,34 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             }
 
     @app.post("/admin/benchmark/record")
-    async def admin_benchmark_record(req: dict[str, Any]) -> dict[str, Any]:
+    async def admin_benchmark_record(req: dict[str, object]) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database session")
         async with factory() as session:
             repo = BenchmarkRepository(session)
+            scores = cast(dict[str, object], req.get("scores", {}))
             row = await repo.record_result(data={
-                "model_profile_id": req.get("model_profile_id", ""),
-                "task_type": req.get("task_type", "feature"),
-                "success": req.get("success", True),
-                "prompt_profile_id": req.get("prompt_profile_id"),
-                "completion_score": req.get("scores", {}).get("completion", 0.0),
-                "code_quality_score": req.get("scores", {}).get("code_quality", 0.0),
-                "instruction_adherence_score": req.get("scores", {}).get("instruction", 0.0),
-                "token_efficiency_score": req.get("scores", {}).get("token_efficiency", 0.0),
-                "time_seconds": req.get("time_seconds", 0.0),
-                "input_tokens": req.get("input_tokens", 0),
-                "output_tokens": req.get("output_tokens", 0),
-                "cost_usd": req.get("cost_usd", 0.0),
-                "error_message": req.get("error_message", ""),
-                "raw_output": req.get("raw_output", ""),
+                "model_profile_id": cast(str, req.get("model_profile_id", "")),
+                "task_type": cast(str, req.get("task_type", "feature")),
+                "success": cast(bool, req.get("success", True)),
+                "prompt_profile_id": cast(str | None, req.get("prompt_profile_id")),
+                "completion_score": scores.get("completion", 0.0),
+                "code_quality_score": scores.get("code_quality", 0.0),
+                "instruction_adherence_score": scores.get("instruction", 0.0),
+                "token_efficiency_score": scores.get("token_efficiency", 0.0),
+                "time_seconds": cast(float, req.get("time_seconds", 0.0)),
+                "input_tokens": cast(int, req.get("input_tokens", 0)),
+                "output_tokens": cast(int, req.get("output_tokens", 0)),
+                "cost_usd": cast(float, req.get("cost_usd", 0.0)),
+                "error_message": cast(str, req.get("error_message", "")),
+                "raw_output": cast(str, req.get("raw_output", "")),
             })
             await session.commit()
             return {"id": row.id, "success": row.success}
 
     @app.get("/admin/prompt-profiles")
-    async def admin_prompt_profiles() -> dict[str, Any]:
+    async def admin_prompt_profiles() -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             return {"profiles": []}

@@ -23,7 +23,7 @@ import secrets as _py_secrets
 import time
 import uuid
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.security.permissions import (
     Capability,
@@ -208,7 +208,7 @@ class StsAuditLog:
     """In-memory audit log for STS issuance, use, and expiry events."""
 
     def __init__(self) -> None:
-        self._events: list[dict[str, Any]] = []
+        self._events: list[dict[str, object]] = []
 
     def record_issue(self, token: StsToken) -> None:
         self._events.append(
@@ -256,14 +256,14 @@ class StsAuditLog:
         agent_id: str | None = None,
         since: float | None = None,
         capability: str | None = None,
-    ) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
+    ) -> list[dict[str, object]]:
+        results: list[dict[str, object]] = []
         for ev in self._events:
             if agent_id is not None and ev.get(
                 "subject_agent_id"
             ) != agent_id and ev.get("issuer_agent_id") != agent_id:
                 continue
-            if since is not None and ev.get("at", 0.0) < since:
+            if since is not None and cast(float, ev.get("at", 0.0)) < since:
                 continue
             if (
                 capability is not None

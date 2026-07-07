@@ -10,7 +10,7 @@ Wraps existing single-shot call_model in a compiled langgraph StateGraph that su
 from __future__ import annotations
 
 import logging
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 from pydantic import BaseModel, Field
 
@@ -28,8 +28,8 @@ class ReviewVerdict(BaseModel):
 
 
 class GraphState(TypedDict, total=False):
-    messages: list[Any]
-    task_context: dict[str, Any]
+    messages: list[object]
+    task_context: dict[str, object]
     classification: str | None
     selected_model: str | None
     selected_prompt: str | None
@@ -65,13 +65,13 @@ class LangGraphGateway:
         quality_threshold: float = 0.6,
         enable_graph: bool = True,
     ) -> None:
-        self._call_model = call_model_fn
-        self._router = adaptive_router
-        self._scoring = scoring_engine
+        self._call_model: Any = call_model_fn
+        self._router: Any = adaptive_router
+        self._scoring: Any = scoring_engine
         self._max_retries = max_retries
         self._quality_threshold = quality_threshold
         self._enable_graph = enable_graph
-        self._graph = None
+        self._graph: Any = None
         self._has_langgraph = False
         try:
             import importlib.util
@@ -125,7 +125,7 @@ class LangGraphGateway:
         if self._router is not None:
             try:
                 ctx = state.get("task_context", {})
-                wt = ctx.get("work_type", "feature")
+                wt = cast(str, ctx.get("work_type", "feature"))
                 try:
                     task_type = TaskType(wt.replace("-", "_").lower())
                 except ValueError:
@@ -218,10 +218,10 @@ class LangGraphGateway:
 
     async def call(
         self,
-        messages: list[Any],
-        task_context: dict[str, Any] | None = None,
+        messages: list[object],
+        task_context: dict[str, object] | None = None,
         profile_id: str = "default",
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Execute model call, either single-shot or multi-step graph."""
         ctx = task_context or {}
         if not self._enable_graph or not self._has_langgraph:
@@ -244,7 +244,7 @@ class LangGraphGateway:
         result = await self._run_graph(state)
         return result
 
-    async def _run_graph(self, state: GraphState) -> dict[str, Any]:
+    async def _run_graph(self, state: GraphState) -> dict[str, object]:
         """Execute the multi-step graph using compiled StateGraph or fallback."""
         if self._graph is not None:
             try:
@@ -262,7 +262,7 @@ class LangGraphGateway:
                 state.get("selected_model") or "default",
             )
 
-    def _format_result(self, state: GraphState) -> dict[str, Any]:
+    def _format_result(self, state: GraphState) -> dict[str, object]:
         return {
             "content": state.get("final_output", ""),
             "model": state.get("selected_model", "default"),
@@ -272,7 +272,7 @@ class LangGraphGateway:
             "warnings": list(state.get("warnings", [])),
         }
 
-    async def _execute_graph_steps(self, state: GraphState) -> dict[str, Any]:
+    async def _execute_graph_steps(self, state: GraphState) -> dict[str, object]:
         max_retries = self._max_retries
         warnings: list[str] = list(state.get("warnings", []))
 
@@ -317,7 +317,7 @@ class LangGraphGateway:
         if self._router is not None:
             try:
                 ctx = state.get("task_context", {})
-                wt = ctx.get("work_type", "feature")
+                wt = cast(str, ctx.get("work_type", "feature"))
                 try:
                     task_type = TaskType(wt.replace("-", "_").lower())
                 except ValueError:
@@ -377,10 +377,10 @@ class LangGraphGateway:
 
     async def _call_single_shot(
         self,
-        messages: list[Any],
-        task_context: dict[str, Any],
+        messages: list[object],
+        task_context: dict[str, object],
         profile_id: str,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         if self._call_model is None:
             return {"content": "", "model": profile_id, "warnings": ["no call_model_fn"]}
         try:

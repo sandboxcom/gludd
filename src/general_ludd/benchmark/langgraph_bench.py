@@ -246,8 +246,7 @@ class BenchmarkRunner:
 
     def _compare_consensus_engines(self) -> None:
         def reviewer_fn(prompt: str) -> str:
-            import hashlib
-            h = int(hashlib.md5(prompt.encode()).hexdigest()[:2], 16)
+            h = hash(prompt.encode()) % 256
             if h < 200:
                 return "approve\nRationale: looks good"
             elif h < 220:

@@ -11,7 +11,7 @@ import re
 import signal
 import sys
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
@@ -591,6 +591,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     tui_parser.add_argument("--daemon-url", default="http://localhost:8000")
     tui_parser.set_defaults(func=_cmd_tui)
 
+    # `gludd audit-plugins` — plugin-health audit playbook wrapper.
+    from general_ludd.cli_audit_plugins import add_audit_plugins_subparser
+
+    add_audit_plugins_subparser(sub)
+    audit_plugins_parser = sub.choices["audit-plugins"]
+
     integrity_parser = sub.add_parser("integrity", help="File integrity monitoring commands")
     int_sub = integrity_parser.add_subparsers(dest="integrity_command")
 
@@ -922,6 +928,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "core-changes": core_changes_parser,
         "payment": payment_parser,
         "account": account_parser,
+        "audit-plugins": audit_plugins_parser,
     }
 
     return parser, subcommand_map
@@ -2066,18 +2073,18 @@ def _cmd_preflight(args: argparse.Namespace) -> None:
     overall = result.get("overall", "FAIL")
     print(f"Preflight: {overall}")
     print(f"Passed:    {result.get('passed_count', 0)}/{result.get('total_count', 0)}")
-    for chk in result.get("checks", []):
+    for chk in cast("list[dict[str, object]]", result.get("checks", [])):
         name = chk.get("name", "?")
         passed = chk.get("passed", False)
         marker = "PASS" if passed else "FAIL"
         line = f"  [{marker}] {name}"
         if name == "terraform_collection_import_audit":
-            issues = chk.get("issues", []) or []
+            issues = cast("list[dict[str, object]]", chk.get("issues", []) or [])
             line += f"  ({len(issues)} importer issue(s))"
             for issue in issues:
                 line += f"\n        {issue.get('severity', '?')}: {issue.get('message', '')}"
         elif not passed and chk.get("violations"):
-            for v in chk["violations"][:3]:
+            for v in cast("list[object]", chk["violations"])[:3]:
                 line += f"\n        - {v}"
         print(line)
     if overall != "PASS":

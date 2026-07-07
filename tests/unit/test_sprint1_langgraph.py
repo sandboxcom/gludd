@@ -121,6 +121,7 @@ class TestLangGraphGateway:
             enable_graph=True,
         )
         gw._has_langgraph = True
+        gw._graph = None  # force step-based fallback for deterministic call count
         result = await gw.call(messages=[{"role": "user", "content": "x"}])
         assert call_count == 2
         assert len(result["warnings"]) >= 0

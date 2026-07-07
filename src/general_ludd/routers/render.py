@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -57,7 +57,7 @@ _ERROR_TEMPLATE = "error.html.j2"
 _SCHEMA_CONTENT_TYPE = "application/schema+json"
 
 
-def _dump_json(value: Any) -> str:
+def _dump_json(value: object) -> str:
     """JSON encoder filter tolerant of pydantic models (RenderMetadata)."""
     if hasattr(value, "model_dump"):
         value = value.model_dump()
@@ -94,7 +94,7 @@ def render_document(doc: RenderDocument, *, allow_raw_html: bool = False) -> str
 
 
 def render_schema_page(
-    *, schema: dict[str, Any], data: dict[str, Any], field_metadata: list[Any] | None
+    *, schema: dict[str, object], data: dict[str, object], field_metadata: Sequence[object] | None
 ) -> str:
     """Render the schema-driven template (exposed for tests)."""
     return _env.get_template(_SCHEMA_PAGE_TEMPLATE).render(
@@ -107,8 +107,8 @@ def render_schema_page(
 def render_schema_error(
     *,
     name: str,
-    errors: list[Any],
-    schema: dict[str, Any] | None = None,
+    errors: list[dict[str, str]] | list[object],
+    schema: dict[str, object] | None = None,
 ) -> str:
     """Render the schema-validation error template (exposed for tests).
 
@@ -142,14 +142,14 @@ def render_error(
     )
 
 
-def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get(
         "/api/renderers",
         summary="List registered renderer playbooks (admin)",
         description="PSK-authed. Returns the catalog of discovered renderer playbooks.",
     )
-    async def api_list_renderers() -> dict[str, Any]:
+    async def api_list_renderers() -> dict[str, object]:
         registry = _get_registry(app)
         if registry is None:
             return {"renderers": [], "count": 0}
@@ -229,7 +229,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 ),
             )
         except SchemaValidationError as exc:
-            loaded_schema: dict[str, Any] | None = None
+            loaded_schema: dict[str, object] | None = None
             try:
                 from general_ludd.renderers.schema_loader import load_schema
 

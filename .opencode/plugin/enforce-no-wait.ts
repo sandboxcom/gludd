@@ -21,7 +21,21 @@
  * (Subagents inherit the plugin; the workaround is `for i in range(N): sleep(1)`
  * inside the Task prompt, not a shell-level `sleep && make`.)
  */
+import * as fs from "fs";
 import type { PluginAPI } from "@opencode/plugin";
+
+function _reportAlive() {
+  try {
+    const alivePath = "/tmp/gludd-plugin-alive.json";
+    const alive = fs.existsSync(alivePath)
+      ? JSON.parse(fs.readFileSync(alivePath, "utf8"))
+      : {};
+    alive["enforce-no-wait"] = { last_seen: Date.now() };
+    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8");
+  } catch {
+    // fail-open
+  }
+}
 
 export const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bsleep\s+\d+\s*&&\s*make\b/,
@@ -38,6 +52,7 @@ export const DENY_MESSAGE =
 
 export default function noWaitPlugin(api: PluginAPI): void {
   api.tool.execute.before((params) => {
+    _reportAlive();
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
       if (params.tool !== "bash") return;

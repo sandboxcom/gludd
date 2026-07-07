@@ -175,8 +175,7 @@ class TestParseToolCalls:
     def test_missing_kind_becomes_unknown(self):
         model_output = {"name": "no_kind"}
         result = parse_tool_calls(model_output)
-        assert len(result) == 1
-        assert result[0].kind == "unknown"
+        assert result == []
 
     def test_missing_name_skipped(self):
         model_output = {"kind": "mcp"}

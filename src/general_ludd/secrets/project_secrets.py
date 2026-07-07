@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import posixpath
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from general_ludd.secrets.manager import SecretsManager
 
 
 class ProjectSecretsManager:
     def __init__(
         self,
-        base_manager: Any,
+        base_manager: SecretsManager,
         project_id: str,
     ) -> None:
         # S-1 (KV path containment): a project_id containing '/' or '..' could
@@ -34,11 +37,11 @@ class ProjectSecretsManager:
             )
         return candidate
 
-    def write_secret(self, path: str, value: dict[str, Any]) -> None:
+    def write_secret(self, path: str, value: dict[str, object]) -> None:
         self._base.write_secret(self._scoped_path(path), value)
 
-    def read_secret(self, path: str) -> dict[str, Any] | None:
-        result: dict[str, Any] | None = self._base.read_secret(self._scoped_path(path))
+    def read_secret(self, path: str) -> dict[str, object] | None:
+        result: dict[str, object] | None = self._base.read_secret(self._scoped_path(path))
         return result
 
     def resolve(self, alias_name: str) -> str | None:

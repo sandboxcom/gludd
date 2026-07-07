@@ -26,14 +26,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping
-from typing import Any
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 # (method, url, headers, json_body, timeout) -> response with ``.status_code`` + ``.json()``.
-Transport = Callable[[str, str, Mapping[str, str], Any, float], HttpResponse]
+Transport = Callable[[str, str, Mapping[str, str], object, float], HttpResponse]
 
 
 # --- literal-host SSRF block (NO DNS) -------------------------------------------------
@@ -68,7 +67,7 @@ def _reject_if_internal(base_url: str) -> None:
         raise ValueError(f"refusing single-label/internal host: {host!r}")
 
 
-def _parse_ts(value: Any) -> float | None:
+def _parse_ts(value: object) -> float | None:
     """Parse a ``properties.timeCreated``-style value into epoch seconds, or None."""
     if value is None:
         return None
@@ -88,7 +87,7 @@ def _parse_ts(value: Any) -> float | None:
     return None
 
 
-def _as_mapping(value: Any) -> Mapping[str, Any]:
+def _as_mapping(value: object) -> Mapping[str, object]:
     return value if isinstance(value, Mapping) else {}
 
 
@@ -100,15 +99,17 @@ class AzureResourceGraphSource:
     DEFAULT_BASE_URL = "https://management.azure.com"
     API_VERSION = "2021-03-01"
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, object]) -> None:
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
 
         self.name: str = str(config.get("name", "azure-resource-graph"))
 
-        subs = config.get("subscriptions", [])
+        subs: object = config.get("subscriptions", [])
         if isinstance(subs, str):
             subs = [subs]
+        if not isinstance(subs, list):
+            subs = []
         self._subscriptions: list[str] = [str(s) for s in subs if str(s).strip()]
         if not self._subscriptions:
             raise ValueError("config['subscriptions'] must list at least one subscription id")
@@ -121,7 +122,7 @@ class AzureResourceGraphSource:
         # SSRF: validate any (possibly overridden) endpoint by literal host, no DNS.
         _reject_if_internal(self._base_url)
 
-        self._timeout: float = float(config.get("timeout", 30.0))
+        self._timeout: float = float(str(config.get("timeout", 30.0)))
 
         transport = config.get("transport")
         if transport is None:
@@ -144,7 +145,7 @@ class AzureResourceGraphSource:
             f"?api-version={self.API_VERSION}"
         )
 
-    def _post_kql(self, kql: str) -> Any:
+    def _post_kql(self, kql: str) -> object:
         headers = {
             "Authorization": f"Bearer {self._token()}",
             "Content-Type": "application/json",
@@ -156,7 +157,7 @@ class AzureResourceGraphSource:
             raise RuntimeError(f"resource graph query failed: HTTP {resp.status_code}")
         return resp.json()
 
-    def _normalize_row(self, row: Any) -> dict[str, Any]:
+    def _normalize_row(self, row: object) -> dict[str, object]:
         rowmap = _as_mapping(row)
         props = _as_mapping(rowmap.get("properties"))
 
@@ -183,13 +184,13 @@ class AzureResourceGraphSource:
             "raw": rowmap if isinstance(row, Mapping) else row,
         }
 
-    def _normalize(self, payload: Any) -> list[dict[str, Any]]:
+    def _normalize(self, payload: object) -> list[dict[str, object]]:
         if not isinstance(payload, Mapping):
             return []
         data = payload.get("data")
         # The Resource Graph API returns ``data`` either as a list of objects
         # (objectArray) or as a {columns, rows} table; handle both.
-        rows: list[Any] = []
+        rows: list[object] = []
         if isinstance(data, list):
             rows = list(data)
         elif isinstance(data, Mapping):
@@ -201,7 +202,7 @@ class AzureResourceGraphSource:
 
     # -- public API --------------------------------------------------------------------
 
-    def query(self, spec: Any) -> list[dict[str, Any]]:
+    def query(self, spec: object) -> list[dict[str, object]]:
         """Run a Resource-Graph KQL query and return normalized records.
 
         ``spec`` may be a raw KQL string or a mapping with a ``query`` key.
@@ -216,7 +217,7 @@ class AzureResourceGraphSource:
             raise ValueError("empty KQL query")
         return self._normalize(self._post_kql(kql))
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """``Resources | limit 1`` probe. Never raises."""
         try:
             payload = self._post_kql("Resources | limit 1")
@@ -230,7 +231,7 @@ def _default_transport(
     method: str,
     url: str,
     headers: Mapping[str, str],
-    json_body: Any,
+    json_body: object,
     timeout: float,
 ) -> HttpResponse:
     """Default httpx-backed transport (no shell, time-bound). Imported lazily."""

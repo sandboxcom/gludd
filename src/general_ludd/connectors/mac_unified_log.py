@@ -25,7 +25,6 @@ import json
 import re
 import subprocess
 from collections.abc import Callable, Mapping
-from typing import Any
 
 # A runner takes an argv list and returns (returncode, stdout, stderr).
 Runner = Callable[[list[str]], "tuple[int, str, str]"]
@@ -141,7 +140,7 @@ def _validate_predicate(value: object) -> str:
     return candidate
 
 
-def _parse_timestamp(record: Mapping[str, Any]) -> str | None:
+def _parse_timestamp(record: Mapping[str, object]) -> str | None:
     """Pull the event timestamp out of an ndjson record.
 
     `log show --style ndjson` uses the ``timestamp`` key; we keep the raw string
@@ -153,7 +152,7 @@ def _parse_timestamp(record: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _extract_process(record: Mapping[str, Any]) -> str | None:
+def _extract_process(record: Mapping[str, object]) -> str | None:
     """Best-effort process identity from any of the keys `log` may emit."""
     for key in ("processImagePath", "process", "processID"):
         value = record.get(key)
@@ -181,10 +180,10 @@ class MacUnifiedLogSource:
 
     def __init__(
         self,
-        config: Mapping[str, Any] | None = None,
+        config: Mapping[str, object] | None = None,
         runner: Runner | None = None,
     ) -> None:
-        self.config: dict[str, Any] = dict(config or {})
+        self.config: dict[str, object] = dict(config or {})
         self.name: str = str(self.config.get("name", "mac_unified_log"))
         self._runner: Runner = runner if runner is not None else _default_runner
 
@@ -202,7 +201,7 @@ class MacUnifiedLogSource:
 
     # -- public API -----------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Best-effort liveness probe. Never raises.
 
         Tries ``log stats`` first; if that errors out at the process level, falls
@@ -223,7 +222,7 @@ class MacUnifiedLogSource:
         except Exception as exc:  # health() must never raise
             return {"ok": False, "detail": f"probe raised: {exc!r}"}
 
-    def query(self, spec: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: Mapping[str, object] | None = None) -> list[dict[str, object]]:
         """Run ``log show`` per ``spec`` and return normalized records.
 
         spec keys (all optional):
@@ -250,7 +249,7 @@ class MacUnifiedLogSource:
             # callers treat an empty list as "no records / unavailable".
             return []
 
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for line in stdout.splitlines():
             stripped = line.strip()
             if not stripped:
@@ -267,7 +266,7 @@ class MacUnifiedLogSource:
 
     # -- normalization --------------------------------------------------------
 
-    def _normalize(self, raw: Mapping[str, Any]) -> dict[str, Any]:
+    def _normalize(self, raw: Mapping[str, object]) -> dict[str, object]:
         labels = {
             "subsystem": raw.get("subsystem"),
             "category": raw.get("category"),

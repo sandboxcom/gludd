@@ -7,7 +7,7 @@ import os
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import diskcache
 
@@ -18,7 +18,7 @@ MAX_CHUNK_CHARS = 2000
 
 
 def _tokenize(text: str) -> list[str]:
-    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9_]*", text.lower())
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9]*", text.lower())
     return [t for t in tokens if len(t) > 1]
 
 
@@ -89,7 +89,7 @@ class CodebaseIndexer:
             extractor = ASTBlockExtractor()
             blocks = extractor.extract_blocks(content, language="python")
             if blocks:
-                return [b["source"] for b in blocks]
+                return [cast(str, b["source"]) for b in blocks]
         except Exception as exc:
             logger.debug("tree-sitter chunking unavailable: %s", exc)
         return self._chunk_generic(content)

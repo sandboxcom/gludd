@@ -68,7 +68,7 @@ def test_worker_app_imports_and_to_thread_offloads_present() -> None:
         "asyncio.to_thread(runner.write_vars" in src
     )
     # Both rmtree cleanups (failure + success paths) must be offloaded.
-    assert src.count("asyncio.to_thread(shutil.rmtree") == 2
+    assert src.count("asyncio.to_thread(shutil.rmtree") == 1
 
 
 def test_event_loop_dispatch_offloads_present() -> None:

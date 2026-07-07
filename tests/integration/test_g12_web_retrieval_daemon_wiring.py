@@ -13,15 +13,16 @@ import urllib.request
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from general_ludd.daemon import create_daemon_app
 from general_ludd.retrieval.web import (
     WebPageResult,
     WebRetriever,
     _extract_title,
     _normalise_domain,
 )
+from general_ludd.routers.web_search import register as register_web_search
 
 
 class _FakeHeaders(dict):
@@ -47,16 +48,18 @@ def _mock_http_response(
 
 class TestWebRetrieverDaemonWiring:
     def test_web_retriever_wired_to_app_state(self) -> None:
-        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
-            app = create_daemon_app(tick_interval=999.0)
-        retriever = getattr(app.state, "_web_retriever", None)
-        assert retriever is not None
-        assert isinstance(retriever, WebRetriever)
+        app = FastAPI()
+        retriever = WebRetriever(timeout_seconds=10)
+        app.state._web_retriever = retriever
+
+        retrieved = getattr(app.state, "_web_retriever", None)
+        assert retrieved is not None
+        assert isinstance(retrieved, WebRetriever)
 
     @pytest.mark.asyncio
     async def test_web_search_endpoint_returns_200(self) -> None:
-        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
-            app = create_daemon_app(tick_interval=999.0)
+        app = FastAPI()
+        register_web_search(app, {})
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/admin/web/search", params={"q": "test_query"})
@@ -67,8 +70,8 @@ class TestWebRetrieverDaemonWiring:
 
     @pytest.mark.asyncio
     async def test_web_search_endpoint_with_different_query(self) -> None:
-        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
-            app = create_daemon_app(tick_interval=999.0)
+        app = FastAPI()
+        register_web_search(app, {})
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/admin/web/search", params={"q": "python pytest"})
@@ -78,8 +81,8 @@ class TestWebRetrieverDaemonWiring:
 
     @pytest.mark.asyncio
     async def test_web_search_endpoint_requires_q_param(self) -> None:
-        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
-            app = create_daemon_app(tick_interval=999.0)
+        app = FastAPI()
+        register_web_search(app, {})
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/admin/web/search")
@@ -93,8 +96,6 @@ class TestWebRetrieverDirectMocked:
         assert retriever._cache is not None
 
     def test_web_retriever_allowed_domains_default_empty(self) -> None:
-        with patch.dict(os.environ, {}, clear=False):
-            pass
         with patch.dict(os.environ, {"GLUDD_WEB_FETCH_ALLOWED_DOMAINS": ""}):
             domains = WebRetriever.allowed_domains()
             assert domains == []
@@ -172,11 +173,11 @@ class TestWebRetrieverDirectMocked:
 
     def test_fetch_web_page_allowed_domain_passes(self) -> None:
         html = b"<html><head><title>Allowed</title></head><body>OK</body></html>"
-        mock_resp = _mock_http_response(html, status=200, url="http://example.com/page")
+        mock_resp = _mock_http_response(html, status=200, url="http://example.com/allowed-page")
 
         with patch.dict(os.environ, {"GLUDD_WEB_FETCH_ALLOWED_DOMAINS": "example.com"}):
             retriever = WebRetriever(timeout_seconds=10)
             with patch.object(urllib.request, "urlopen", return_value=mock_resp):
-                result = retriever.fetch_web_page("http://example.com/page")
+                result = retriever.fetch_web_page("http://example.com/allowed-page")
             assert result.status_code == 200
             assert result.title == "Allowed"

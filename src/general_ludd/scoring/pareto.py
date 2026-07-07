@@ -48,8 +48,11 @@ class ParetoRouter:
 
         valid: list[tuple[int, float, float]] = []
         for i, c in enumerate(candidates):
-            cost = float(c.get("cost", float("nan")))
-            quality = float(c.get("quality", float("nan")))
+            try:
+                cost = float(c.get("cost", float("nan")))
+                quality = float(c.get("quality", float("nan")))
+            except (ValueError, TypeError):
+                continue
             if math.isfinite(cost) and math.isfinite(quality):
                 valid.append((i, cost, quality))
 

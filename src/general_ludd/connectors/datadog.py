@@ -30,7 +30,7 @@ Record shape (one dict per event or metric point)::
         "level_or_status": str,      # log status, or "" for metric data
         "message": str,              # log message, or metric name
         "value": float | None,       # metric value (None for logs)
-        "labels": dict[str, Any],    # service/host/tags or tag_set+metric+scope
+        "labels": dict[str, object],    # service/host/tags or tag_set+metric+scope
         "raw": Any,                  # original event / series payload
     }
 """
@@ -42,7 +42,6 @@ import os
 import time
 import urllib.request
 from collections.abc import Callable
-from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 from general_ludd.connectors.normalize import sanitize_metric_value
@@ -50,7 +49,7 @@ from general_ludd.security.ssrf import is_url_blocked
 
 # Injectable transport signature:
 #   (method, url, *, params, json, headers, timeout) -> (status, payload)
-HttpRequest = Callable[..., "tuple[int, Any]"]
+HttpRequest = Callable[..., "tuple[int, object]"]
 
 KIND = "logs"
 
@@ -62,11 +61,11 @@ def _default_http_request(
     method: str,
     url: str,
     *,
-    params: dict[str, Any] | None = None,
-    json: Any = None,
+    params: dict[str, object] | None = None,
+    json: object = None,
     headers: dict[str, str] | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
-) -> tuple[int, Any]:
+) -> tuple[int, object]:
     """Real, time-bound stdlib transport used when none is injected.
 
     Matches the connector's
@@ -87,7 +86,7 @@ def _default_http_request(
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         status = int(resp.getcode() or 0)
         body = resp.read()
-    parsed_body: Any = _json.loads(body) if body else {}
+    parsed_body: object = _json.loads(body) if body else {}
     return status, parsed_body
 
 
@@ -116,12 +115,12 @@ class DatadogSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         http_request: HttpRequest | None = None,
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
-        self._site = _validate_site(config.get("site") or _DEFAULT_SITE)
+        self._site = _validate_site(str(config.get("site") or _DEFAULT_SITE))
         self._api_key_env = config.get("api_key_env")
         self._app_key_env = config.get("app_key_env")
         self._http_request = http_request or _default_http_request
@@ -139,16 +138,16 @@ class DatadogSource:
             "Content-Type": "application/json",
         }
         if self._api_key_env:
-            api_key = os.environ.get(self._api_key_env)
+            api_key = os.environ.get(str(self._api_key_env))
             if api_key:
                 headers["DD-API-KEY"] = api_key
         if self._app_key_env:
-            app_key = os.environ.get(self._app_key_env)
+            app_key = os.environ.get(str(self._app_key_env))
             if app_key:
                 headers["DD-APPLICATION-KEY"] = app_key
         return headers
 
-    def _error_record(self, message: str, raw: Any) -> dict[str, Any]:
+    def _error_record(self, message: str, raw: object) -> dict[str, object]:
         return {
             "ts": time.time(),
             "source": self.name,
@@ -161,15 +160,15 @@ class DatadogSource:
         }
 
     @staticmethod
-    def _is_2xx(status: Any) -> bool:
+    def _is_2xx(status: int) -> bool:
         try:
-            return 200 <= int(status) < 300
+            return 200 <= status < 300
         except (TypeError, ValueError):
             return False
 
     # -- public API -------------------------------------------------------
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Run a logs or metrics query; return normalized records.
 
         Never raises: transport / protocol failures become a single error
@@ -189,9 +188,9 @@ class DatadogSource:
 
     # -- logs -------------------------------------------------------------
 
-    def _query_logs(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _query_logs(self, spec: dict[str, object]) -> list[dict[str, object]]:
         url = f"{self._site}/api/v2/logs/events/search"
-        body: dict[str, Any] = {
+        body: dict[str, object] = {
             "filter": {
                 "query": spec.get("query", "*"),
                 "from": spec.get("from", "now-15m"),
@@ -222,7 +221,7 @@ class DatadogSource:
                 self._error_record(f"non-dict payload (status {status})", payload)
             ]
 
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for event in payload.get("data") or []:
             if not isinstance(event, dict):
                 continue
@@ -247,9 +246,9 @@ class DatadogSource:
 
     # -- metrics ----------------------------------------------------------
 
-    def _query_metrics(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def _query_metrics(self, spec: dict[str, object]) -> list[dict[str, object]]:
         url = f"{self._site}/api/v1/query"
-        params: dict[str, Any] = {"query": spec.get("query", "")}
+        params: dict[str, object] = {"query": spec.get("query", "")}
         if "from" in spec:
             params["from"] = spec["from"]
         if "to" in spec:
@@ -277,14 +276,14 @@ class DatadogSource:
                 self._error_record(f"non-dict payload (status {status})", payload)
             ]
 
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for series in payload.get("series") or []:
             if not isinstance(series, dict):
                 continue
             metric = series.get("metric", "")
             scope = series.get("scope", "")
             tag_set = list(series.get("tag_set") or [])
-            labels: dict[str, Any] = {
+            labels: dict[str, object] = {
                 "tags": tag_set,
                 "metric": metric,
                 "scope": scope,
@@ -306,18 +305,18 @@ class DatadogSource:
         return records
 
     @staticmethod
-    def _split_point(point: Any) -> tuple[Any, Any]:
+    def _split_point(point: object) -> tuple[object, object]:
         if isinstance(point, (list, tuple)) and len(point) >= 2:
             return point[0], point[1]
         return None, None
 
     @staticmethod
-    def _to_float(value: Any) -> float | None:
+    def _to_float(value: object) -> float | None:
         return sanitize_metric_value(value)
 
     # -- health -----------------------------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the Datadog key-validation endpoint. Never raises.
 
         Returns ``{'ok': bool, 'detail': str}``.

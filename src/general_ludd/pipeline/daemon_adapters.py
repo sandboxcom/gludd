@@ -47,7 +47,7 @@ def make_dispatch_fn(
     agent_name: str = "general",
     invoker_name: str = "build",
     project_id: str | None = None,
-    task_builder: Callable[[str], Any] | None = None,
+        task_builder: Callable[[str], object] | None = None,
 ) -> Callable[[str], Awaitable[object]]:
     """Build a ``DispatchFn`` that launches a role-agent for a backlog unit id.
 
@@ -77,7 +77,7 @@ def make_dispatch_fn(
     """
     from general_ludd.agents.types import AgentTask
 
-    def _default_builder(unit_id: str) -> Any:
+    def _default_builder(unit_id: str) -> object:
         return AgentTask(
             task_id=f"pipeline-{unit_id}",
             agent_name=agent_name,

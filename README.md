@@ -69,6 +69,26 @@ and Windows (x86_64).
 
 ---
 
+## Feature & Task Completion Status
+
+<!-- STATUS-TABLE:START -->
+*(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
+
+
+### Security Hardening
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 0% | **PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
+
+### Orchestration / Agents
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 0% | **PENDING**: Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status. |
+
+<!-- STATUS-TABLE:END -->
+
 ## Backlog
 
 Completed features are documented in CHANGELOG.md. Only in-progress items are tracked here.

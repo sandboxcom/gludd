@@ -30,6 +30,8 @@ class _ReadyStateSnake:
         self.score: int = 0
         self.game_over: bool = False
         self.body: list[list[int]] = [[5, 5], [4, 5], [3, 5]]
+        self.grid_w: int = 20
+        self.grid_h: int = 20
         self._ticks = 0
 
     def start(self) -> None:
@@ -40,7 +42,16 @@ class _ReadyStateSnake:
         if self.state != "playing" or self.game_over:
             return False
         head = self.body[0]
-        self.body.insert(0, [head[0] + 1, head[1]])
+        # React to out-of-bounds head (matches real generated snake behavior;
+        # _force_lose_snake teleports head past grid_w/grid_h to force terminal).
+        if head[0] < 0 or head[0] >= self.grid_w or head[1] < 0 or head[1] >= self.grid_h:
+            self.game_over = True
+            return False
+        new_head = [head[0] + 1, head[1]]
+        if new_head[0] >= self.grid_w:
+            self.game_over = True
+            return False
+        self.body.insert(0, new_head)
         self.body.pop()
         self._ticks += 1
         self.score += 1
@@ -197,6 +208,9 @@ def test_run_lifecycle_checks_passes_correct_new_spec_game() -> None:
     """
     import types
     mod = types.ModuleType("fake_snake_module")
+    # _discover_game_class filters by __module__ == mod.__name__, so the
+    # mock class must report its module as the fake module's name.
+    _ReadyStateSnake.__module__ = "fake_snake_module"
     mod.Snake = _ReadyStateSnake  # type: ignore[attr-defined]
     failures = run_lifecycle_checks("snake", mod)
     assert failures == [], f"unexpected lifecycle failures: {failures}"

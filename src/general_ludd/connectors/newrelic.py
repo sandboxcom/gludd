@@ -27,7 +27,6 @@ from __future__ import annotations
 import json as _json
 import os
 from collections.abc import Callable
-from typing import Any
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -63,7 +62,7 @@ def _validate_api_url(api_url: str) -> str:
 # Default transport (lazy import; never required for testing)
 # --------------------------------------------------------------------------- #
 def _default_transport(
-    url: str, *, headers: dict[str, str], json: Any, timeout: float
+    url: str, *, headers: dict[str, str], json: object, timeout: float
 ) -> HttpResponse:
     """Real HTTP POST transport using ``requests``; imported lazily.
 
@@ -101,7 +100,7 @@ def _nerdgraph_body(account_id: int | str, nrql: str) -> dict[str, str]:
 _TIMESTAMP_KEYS = ("timestamp", "beginTimeSeconds", "beginTime")
 
 
-def _coerce_ts(row: dict[str, Any]) -> Any:
+def _coerce_ts(row: dict[str, object]) -> object:
     """Extract a timestamp from a result row, trying known NRQL keys."""
     for key in _TIMESTAMP_KEYS:
         if key in row and row[key] is not None:
@@ -109,11 +108,11 @@ def _coerce_ts(row: dict[str, Any]) -> Any:
     return None
 
 
-def _is_number(v: Any) -> bool:
+def _is_number(v: object) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def _first_numeric_aggregate(row: dict[str, Any], skip: frozenset[str]) -> Any:
+def _first_numeric_aggregate(row: dict[str, object], skip: frozenset[str]) -> object:
     """Return the first numeric value in *row* (skipping timestamp keys)."""
     for key, value in row.items():
         if key in skip:
@@ -141,7 +140,7 @@ class NewRelicSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         *,
         transport: Transport | None = None,
     ) -> None:
@@ -156,16 +155,16 @@ class NewRelicSource:
             sent as the ``API-Key`` header.
           * ``timeout``     -- per-request timeout in seconds.
         """
-        self.config: dict[str, Any] = dict(config or {})
+        self.config: dict[str, object] = dict(config or {})
         self.name: str = str(self.config.get("name", "newrelic"))
 
         api_url = str(self.config.get("api_url", self.DEFAULT_API_URL))
         # Fail fast on an unsafe endpoint (SSRF literal-host block, no DNS).
         self.api_url: str = _validate_api_url(api_url)
 
-        self.account_id: Any = self.config.get("account_id")
+        self.account_id: object = self.config.get("account_id")
         self.api_key_env: str = str(self.config.get("api_key_env", "NEW_RELIC_API_KEY"))
-        self.timeout: float = float(self.config.get("timeout", self.DEFAULT_TIMEOUT))
+        self.timeout: float = float(str(self.config.get("timeout", self.DEFAULT_TIMEOUT)))
 
         self._transport: Transport = transport or _default_transport
 
@@ -184,12 +183,12 @@ class NewRelicSource:
             "API-Key": self._api_key(),
         }
 
-    def _run_nrql(self, nrql: str) -> list[dict[str, Any]]:
+    def _run_nrql(self, nrql: str) -> list[dict[str, object]]:
         """POST an NRQL query to NerdGraph and return the raw results list."""
         if self.account_id is None:
             raise RuntimeError("config 'account_id' is required to run NRQL")
 
-        body = _nerdgraph_body(self.account_id, nrql)
+        body = _nerdgraph_body(str(self.account_id), nrql)
         resp = self._transport(
             self.api_url,
             headers=self._headers(),
@@ -220,12 +219,12 @@ class NewRelicSource:
         return [r for r in results if isinstance(r, dict)]
 
     # -- normalization ----------------------------------------------------- #
-    def _normalize_row(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_row(self, row: dict[str, object]) -> dict[str, object]:
         ts = _coerce_ts(row)
         ts_keys = frozenset(k for k in _TIMESTAMP_KEYS if k in row)
         value = sanitize_metric_value(_first_numeric_aggregate(row, skip=ts_keys))
 
-        labels: dict[str, Any] = {
+        labels: dict[str, object] = {
             k: v
             for k, v in row.items()
             if k not in ts_keys and not _is_number(v)
@@ -243,7 +242,7 @@ class NewRelicSource:
         }
 
     # -- public API -------------------------------------------------------- #
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Run the NRQL in ``spec['nrql']`` and return normalized records."""
         if not isinstance(spec, dict):
             raise TypeError("spec must be a mapping")
@@ -254,7 +253,7 @@ class NewRelicSource:
         rows = self._run_nrql(nrql)
         return [self._normalize_row(row) for row in rows]
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Trivial NRQL health probe; never raises.
 
         Runs ``SELECT 1`` and reports ``{"ok", "detail"}``.

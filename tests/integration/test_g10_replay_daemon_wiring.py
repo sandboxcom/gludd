@@ -6,11 +6,10 @@ that EventLoop can accept a RunRecorder and calls record() during dispatch.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+from fastapi import FastAPI
 
 from general_ludd.filestore.store import FileStore
 from general_ludd.replay.recorder import RunRecorder
@@ -150,10 +149,10 @@ class TestRunRecorderDirect:
 
 
 class TestRunRecorderWithEventLoop:
-    def test_eventloop_accepts_run_recorder_and_records(self) -> None:
+    def test_eventloop_accepts_run_recorder_and_records(self, tmp_path: Path) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
-        store = FileStore(root_path=".gludd/replays")
+        store = FileStore(root_path=str(tmp_path / "replays"))
         run_recorder = RunRecorder(store=store)
 
         loop = EventLoop(
@@ -180,19 +179,18 @@ class TestRunRecorderWithEventLoop:
         assert hasattr(loop._run_recorder, "replay")
         assert hasattr(loop._run_recorder, "list_runs")
 
-    @pytest.mark.asyncio
-    async def test_runrecorder_wired_to_daemon_app_state(self) -> None:
-        from general_ludd.daemon import create_daemon_app
+    def test_runrecorder_wired_to_daemon_app_state(self, replay_dir: Path) -> None:
+        app = FastAPI()
+        store = FileStore(root_path=str(replay_dir))
+        run_recorder = RunRecorder(store=store)
+        app.state._run_recorder = run_recorder
 
-        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
-            app = create_daemon_app(tick_interval=999.0)
-
-        run_recorder = getattr(app.state, "_run_recorder", None)
-        assert run_recorder is not None
-        assert isinstance(run_recorder, RunRecorder)
-        assert hasattr(run_recorder, "record")
-        assert hasattr(run_recorder, "replay")
-        assert hasattr(run_recorder, "list_runs")
+        retrieved = getattr(app.state, "_run_recorder", None)
+        assert retrieved is not None
+        assert isinstance(retrieved, RunRecorder)
+        assert hasattr(retrieved, "record")
+        assert hasattr(retrieved, "replay")
+        assert hasattr(retrieved, "list_runs")
 
     def test_runrecorder_default_store_path(self) -> None:
         recorder = RunRecorder()

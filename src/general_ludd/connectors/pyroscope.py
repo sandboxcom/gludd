@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Protocol
+from typing import Protocol, cast
 from urllib.parse import urlsplit
 
 import httpx
@@ -58,7 +58,7 @@ class _Transport(Protocol):
         self,
         url: str,
         *,
-        params: dict[str, Any] | None = ...,
+        params: dict[str, str | int | float | bool | None] | None = ...,
         headers: dict[str, str] | None = ...,
         timeout: float | None = ...,
     ) -> HttpResponse: ...
@@ -71,7 +71,7 @@ class _HttpxTransport:
         self,
         url: str,
         *,
-        params: dict[str, Any] | None = None,
+        params: dict[str, str | int | float | bool | None] | None = None,
         headers: dict[str, str] | None = None,
         timeout: float | None = None,
     ) -> HttpResponse:
@@ -87,7 +87,7 @@ class PyroscopeSource:
 
     KIND: str = "traces"
 
-    def __init__(self, config: dict[str, Any], *, transport: _Transport | None = None) -> None:
+    def __init__(self, config: dict[str, object], *, transport: _Transport | None = None) -> None:
         self.name: str = str(config.get("name", "pyroscope"))
 
         base_url = str(config.get("base_url", "")).rstrip("/")
@@ -109,7 +109,7 @@ class PyroscopeSource:
 
         self._query: str = str(config.get("query", ""))
         self._token_env = config.get("token_env")
-        self._timeout: float = float(config.get("timeout", 20.0))
+        self._timeout: float = float(cast("float | int | str", config.get("timeout", 20.0)))
         self._transport: _Transport = transport if transport is not None else _HttpxTransport()
 
     # -- helpers ----------------------------------------------------------- #
@@ -124,47 +124,48 @@ class PyroscopeSource:
     def _render_url(self) -> str:
         return f"{self._base_url}{_RENDER_PATH}"
 
-    def _params(self, spec: dict[str, Any]) -> dict[str, Any]:
-        params: dict[str, Any] = {
-            "query": spec.get("query", self._query),
+    def _params(self, spec: dict[str, object]) -> dict[str, str | int | float | bool | None]:
+        params: dict[str, str | int | float | bool | None] = {
+            "query": cast(str, spec.get("query", self._query)),
             "format": "json",
         }
         if spec.get("from") is not None:
-            params["from"] = spec.get("from")
+            params["from"] = cast(str, spec.get("from"))
         if spec.get("until") is not None:
-            params["until"] = spec.get("until")
+            params["until"] = cast(str, spec.get("until"))
         return params
 
     @staticmethod
-    def _frame_records(payload: dict[str, Any], source: str, kind: str) -> list[dict[str, Any]]:
+    def _frame_records(payload: dict[str, object], source: str, kind: str) -> list[dict[str, object]]:
         """Flatten a flamebearer ``levels`` table into per-frame records.
 
         Each ``levels`` row is a flat list of ``(offset, total, self, name_index)``
         quads. Frames with ``self == 0`` (pure aggregators / the synthetic root)
         are skipped — only frames that actually accrued samples are emitted.
         """
-        flame = payload.get("flamebearer") or {}
-        names = flame.get("names") or []
-        levels = flame.get("levels") or []
+        flame = cast(dict[str, object], payload.get("flamebearer") or {})
+        names = cast(list[str], flame.get("names") or [])
+        levels_raw = flame.get("levels") or []
+        levels: list[list[object]] = levels_raw if isinstance(levels_raw, list) else []
 
-        metadata = payload.get("metadata") or {}
+        metadata = cast(dict[str, object], payload.get("metadata") or {})
         app = metadata.get("appName") or metadata.get("name")
         profile_type = metadata.get("name") or metadata.get("appName")
 
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for row in levels:
             if not isinstance(row, list):
                 continue
             for i in range(0, len(row) - 3, 4):
                 try:
-                    self_samples = float(row[i + 2])
-                    name_index = int(row[i + 3])
+                    self_samples = float(cast("float | int | str", row[i + 2]))
+                    name_index = int(cast("int | float | str", row[i + 3]))
                 except (TypeError, ValueError, IndexError):
                     continue
                 if self_samples <= 0:
                     continue
                 frame_name = str(names[name_index]) if 0 <= name_index < len(names) else "(unknown)"
-                labels: dict[str, Any] = {"app": app, "profile_type": profile_type}
+                labels: dict[str, object] = {"app": app, "profile_type": profile_type}
                 records.append(
                     {
                         "ts": None,
@@ -180,7 +181,7 @@ class PyroscopeSource:
         return records
 
     # -- public API -------------------------------------------------------- #
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Fetch a flamebearer render and normalize its frames. Fail-soft -> []."""
         try:
             resp = self._transport.get(
@@ -205,7 +206,7 @@ class PyroscopeSource:
 
         return self._frame_records(payload, self.name, self.KIND)
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the render endpoint with a bounded request. Never raises."""
         try:
             resp = self._transport.get(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -14,8 +13,8 @@ class TaskDecision(BaseModel):
     decision: str
     confidence: float = 0.0
     evidence_refs: list[str] = Field(default_factory=list)
-    todo_updates: dict[str, Any] = Field(default_factory=dict)
-    child_todos: list[dict[str, Any]] = Field(default_factory=list)
+    todo_updates: dict[str, object] = Field(default_factory=dict)
+    child_todos: list[dict[str, object]] = Field(default_factory=list)
     validation_requests: list[str] = Field(default_factory=list)
     git_requests: list[str] = Field(default_factory=list)
     audit_notes: list[str] = Field(default_factory=list)
@@ -51,6 +50,6 @@ class TaskDecision(BaseModel):
             "ignore_duplicate",
         }
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: object) -> None:
         if self.decision not in self.valid_decisions():
             raise ValueError(f"Invalid decision: {self.decision}. Must be one of {self.valid_decisions()}")

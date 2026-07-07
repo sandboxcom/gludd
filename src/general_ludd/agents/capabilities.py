@@ -10,12 +10,14 @@ pieces individually.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
 
 from general_ludd.agents.context import ContextCompactor, ContextMessage
 
 if TYPE_CHECKING:
     from general_ludd.compaction.aggressive import CompactionLevel
+    from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.token_window import TokenWindowManager
 from general_ludd.agents.tool_adapter import AgentToolAdapter
@@ -33,7 +35,7 @@ class AgentCapabilities:
         primary_profile: str = "default",
         fallback_profiles: list[str] | None = None,
         agent_registry: AgentRegistry | None = None,
-        model_gateway: Any = None,
+        model_gateway: object = None,
         use_slm_compaction: bool = False,
         compaction_level: CompactionLevel | None = None,
     ) -> None:
@@ -55,8 +57,8 @@ class AgentCapabilities:
         # (the ``compactor`` profile) which fails SOFT to extractive truncation if
         # the profile is missing or the gateway errors — compaction never crashes
         # the context path.
-        self._slm_compactor: Any = None
-        self._slm_summarize_fn: Any = None
+        self._slm_compactor: object = None
+        self._slm_summarize_fn: object = None
         if model_gateway is not None and use_slm_compaction:
             from general_ludd.compaction.slm import (
                 SLMCompactor,
@@ -133,7 +135,7 @@ class AgentCapabilities:
                 msgs,
                 goal="",
                 level=level,
-                summarize_fn=self._slm_summarize_fn,
+                summarize_fn=cast(Callable[[str, str], str] | None, self._slm_summarize_fn),
                 max_tokens=self._max_tokens,
             )
             return [{"role": m.role, "content": m.content} for m in compacted_msgs]
@@ -151,11 +153,11 @@ class AgentCapabilities:
 
     def make_tool_loop(
         self,
-        model_gateway: Any,
-        mcp_client: Any = None,
-        mcp_registry: Any = None,
-        budget_guard: Any = None,
-        adversarial_detector: Any = None,
+        model_gateway: object,
+        mcp_client: object = None,
+        mcp_registry: object = None,
+        budget_guard: object = None,
+        adversarial_detector: object = None,
         max_total_tokens: int | None = None,
         per_iteration_timeout: float | None = None,
         work_type_max_iterations: dict[str, int] | None = None,
@@ -183,9 +185,9 @@ class AgentCapabilities:
         return ToolCallLoop(
             model_gateway=model_gateway,
             mcp_client=mcp_client,
-            mcp_registry=mcp_registry,
+            mcp_registry=cast(MCPToolRegistry | None, mcp_registry),
             compaction_level=tool_compaction_level,
-            summarize_fn=tool_summarize_fn,
+            summarize_fn=cast(Callable[[str, str], str] | None, tool_summarize_fn),
             budget_guard=budget_guard,
             adversarial_detector=adversarial_detector,
             max_total_tokens=max_total_tokens,
@@ -195,9 +197,9 @@ class AgentCapabilities:
 
     def make_langgraph_tool_loop(
         self,
-        model_gateway: Any,
-        mcp_client: Any = None,
-        mcp_registry: Any = None,
+        model_gateway: object,
+        mcp_client: object = None,
+        mcp_registry: object = None,
     ) -> LangGraphAgentLoop:
         """Build a LangGraphAgentLoop backed by ``create_react_agent``.
 
@@ -213,16 +215,16 @@ class AgentCapabilities:
             model_gateway=model_gateway,
             chat_model=None,  # resolved per-run via _resolve_chat_model
             mcp_client=mcp_client,
-            mcp_registry=mcp_registry,
+            mcp_registry=cast(MCPToolRegistry | None, mcp_registry),
         )
 
     def make_graph_gateway(
         self,
-        model_gateway: Any,
-        adaptive_router: Any = None,
-        benchmark_repo: Any = None,
+        model_gateway: object,
+        adaptive_router: object = None,
+        benchmark_repo: object = None,
         enable_graph: bool = True,
-    ) -> Any:
+    ) -> object:
         """Build a multi-step LangGraphGateway scored by PromptScoringEngine.
 
         Generate -> score -> retry-or-return. Falls back to single-shot when

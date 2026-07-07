@@ -20,8 +20,8 @@ Design constraints (matching the rest of the connector package):
   logs, or records.
 * **SSRF literal-host block.** ``base_url`` and ``management_url`` are validated
   at construction against loopback / private / link-local / metadata addresses.
-* **Strict typing.** No ``Any``, no ``# type: ignore``. Heterogeneous config
-  values are typed as ``Mapping[str, str | int | float | bool | None]``.
+* **Strict typing.** No ``Any``, no type-ignore suppression comments. Heterogeneous
+   config values are typed as ``Mapping[str, str | int | float | bool | None]``.
 * **health() never raises.** It always returns a dict.
 
 References

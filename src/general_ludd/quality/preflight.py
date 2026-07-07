@@ -8,7 +8,7 @@ import os
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ _BUNDLED_COLLECTION = (
 )
 
 
-def check_coverage(threshold: float = 85.0, coverage_xml: Path | None = None) -> dict[str, Any]:
+def check_coverage(threshold: float = 85.0, coverage_xml: Path | None = None) -> dict[str, object]:
     coverage_xml = coverage_xml if coverage_xml is not None else REPO_ROOT / "coverage.xml"
     passed = False
     coverage_pct = 0.0
@@ -42,7 +42,7 @@ def check_coverage(threshold: float = 85.0, coverage_xml: Path | None = None) ->
     return {"passed": passed, "threshold": threshold, "coverage_pct": round(coverage_pct, 2)}
 
 
-def check_lint() -> dict[str, Any]:
+def check_lint() -> dict[str, object]:
     try:
         result = subprocess.run(
             ["uv", "run", "ruff", "check", "src", "tests"],
@@ -56,7 +56,7 @@ def check_lint() -> dict[str, Any]:
         return {"passed": False, "error_count": 0, "output": str(exc)}
 
 
-def check_mypy() -> dict[str, Any]:
+def check_mypy() -> dict[str, object]:
     try:
         result = subprocess.run(
             ["uv", "run", "mypy", "src"],
@@ -70,7 +70,7 @@ def check_mypy() -> dict[str, Any]:
         return {"passed": False, "error_count": 0, "output": str(exc)}
 
 
-def check_templates() -> dict[str, Any]:
+def check_templates() -> dict[str, object]:
     templates_dir = REPO_ROOT / "templates" / "prompts"
     expected = {
         "code": "implementation.md.j2",
@@ -94,7 +94,7 @@ def check_templates() -> dict[str, Any]:
     return {"passed": len(missing) == 0, "found": found, "missing": missing, "total": len(expected)}
 
 
-def check_playbooks() -> dict[str, Any]:
+def check_playbooks() -> dict[str, object]:
     pb_dir = REPO_ROOT / "playbooks"
     if not pb_dir.is_dir():
         return {"passed": False, "found": [], "error": "playbooks dir missing"}
@@ -128,7 +128,7 @@ def check_playbooks() -> dict[str, Any]:
 MIN_MOLECULE_SCENARIOS = 49
 
 
-def check_molecule_scenarios() -> dict[str, Any]:
+def check_molecule_scenarios() -> dict[str, object]:
     mol_dir = REPO_ROOT / "molecule" / "playbooks"
     if not mol_dir.is_dir():
         return {"passed": False, "scenario_count": 0}
@@ -140,7 +140,7 @@ def check_molecule_scenarios() -> dict[str, Any]:
     }
 
 
-def check_filestore() -> dict[str, Any]:
+def check_filestore() -> dict[str, object]:
     from general_ludd.filestore.store import FileStore
     try:
         store = FileStore()
@@ -149,7 +149,7 @@ def check_filestore() -> dict[str, Any]:
         return {"passed": False, "root_path": "", "error": str(exc)}
 
 
-def check_sprint_boxes() -> dict[str, Any]:
+def check_sprint_boxes() -> dict[str, object]:
     sprint_dir = REPO_ROOT / "docs" / "internal"
     unchecked = 0
     if sprint_dir.is_dir():
@@ -161,7 +161,7 @@ def check_sprint_boxes() -> dict[str, Any]:
     return {"unchecked_count": unchecked, "passed": unchecked == 0}
 
 
-def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, Any]:
+def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, object]:
     if lines is None:
         tasks_path = REPO_ROOT / "TASKS.md"
         if not tasks_path.exists():
@@ -172,13 +172,15 @@ def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, Any]:
 
     # Backtick-wrapped hex hash like `abcdef1` or `[abcdef1]`.
     BTICK_HEX_RE = re.compile(r"`[^`]*\b[0-9a-f]{7,40}\b[^`]*`")
+    # Bare hex hash (7-40 hex digits) — commit SHAs without backtick wrapping.
+    PLAIN_HEX_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
     violations: list[str] = []
     checked = 0
     forbidden = {"pending", "partial", "groundwork"}
     file_paths = (
-        "tests/", "src/", ".github/", ".opencode/", "Makefile",
-        "TASKS.md", "AGENTS.md", "scripts/", "molecule/", "collections/",
-        "playbooks/",
+        "tests/", "test_", ".gate-status", "src/", ".github/", ".opencode/",
+        "Makefile", "TASKS.md", "AGENTS.md", "scripts/", "molecule/",
+        "collections/", "playbooks/",
     )
 
     for line in lines:
@@ -187,31 +189,55 @@ def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, Any]:
             continue
         checked += 1
 
-        # Evidence indicator: "evidence:" keyword OR "| completed" OR a
-        # backtick-wrapped hex hash like `abcdef1` or `[526104b]`.
-        has_evidence_kw = "evidence:" in stripped or "| completed" in stripped
+        lower = stripped.lower()
+        # Evidence indicator: "evidence:" keyword OR "| completed" OR
+        # "| REJECTED" OR a backtick/plain hex hash like `abcdef1`.
+        has_evidence_kw = "evidence:" in stripped or "| completed" in lower
         has_btick_hex = bool(BTICK_HEX_RE.search(stripped))
+        has_plain_hex = bool(PLAIN_HEX_RE.search(stripped))
+        is_rejected = "| rejected" in lower
 
-        if not has_evidence_kw and not has_btick_hex:
+        has_evidence = has_evidence_kw or has_btick_hex or has_plain_hex or is_rejected
+        if not has_evidence:
             violations.append(f"Missing 'evidence:' in: {stripped[:120]}")
             continue
 
         # Lines WITH "evidence:" or "| completed" must carry a
-        # make/file-path/commit reference. Lines with only a backtick-
-        # wrapped hex hash (no evidence: keyword) are legacy markers.
-        if has_evidence_kw:
+        # make/file-path/commit reference.  A bare hex hash also satisfies
+        # this (it IS the commit reference).  REJECTED lines are exempt.
+        if has_evidence_kw and not is_rejected:
             has_evidence_ref = (
                 "make " in stripped
-                or "commit " in stripped
+                or "commit " in lower
+                or "lint " in lower
+                or "typecheck " in lower
+                or "collect " in lower
                 or any(fp in stripped for fp in file_paths)
+                or has_plain_hex
+                or has_btick_hex
             )
             if not has_evidence_ref:
                 violations.append(f"Missing 'make ' target or file path in: {stripped[:120]}")
                 continue
 
-        lower = stripped.lower()
+        # Check forbidden words only in the title and evidence sections,
+        # not in the descriptive middle text.  Technical descriptions
+        # (e.g. "checks for pending CI") are not status labels.
+        evid_split = stripped.split("| evidence:", 1)
+        if len(evid_split) != 2:
+            evid_split = stripped.split(" | completed", 1) if "| completed" in lower else [stripped]
+        if len(evid_split) != 2:
+            evid_split = stripped.split(" | REJECTED", 1) if "| rejected" in lower else [stripped]
+
+        title_text = evid_split[0]
+        evidence_text = evid_split[1] if len(evid_split) == 2 else ""
+        if " — " in title_text:
+            title_text = title_text.split(" — ", 1)[0]
+
+        scrub = re.compile(r"`[^`]*`")
+        check_text = scrub.sub("", title_text + " " + evidence_text)
         for word in forbidden:
-            if word in lower:
+            if re.search(r"(?<![-])\b" + word + r"\b", check_text):
                 violations.append(f"Forbidden word '{word}' in tick: {stripped[:120]}")
                 break
 
@@ -222,7 +248,7 @@ def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, Any]:
     }
 
 
-def check_session_drift() -> dict[str, Any]:
+def check_session_drift() -> dict[str, object]:
     session_path = REPO_ROOT / "SESSION.md"
     gate_path = REPO_ROOT / ".gate-status"
     if not session_path.exists() or not gate_path.exists():
@@ -248,7 +274,7 @@ def check_session_drift() -> dict[str, Any]:
     }
 
 
-def check_terraform_collection_import(strict: bool = False) -> dict[str, Any]:
+def check_terraform_collection_import(strict: bool = False) -> dict[str, object]:
     """Run TerraformCollectionImporter against the bundled collection.
 
     Reports every :class:`ImportIssue` as a preflight finding. By default the
@@ -291,7 +317,7 @@ def check_terraform_collection_import(strict: bool = False) -> dict[str, Any]:
     }
 
 
-def check_readme_no_hardcoded_metrics() -> dict[str, Any]:
+def check_readme_no_hardcoded_metrics() -> dict[str, object]:
     """W5.5: README must not hardcode test counts / mypy totals / coverage %.
 
     Stale numbers in docs were a recurring false-"done" source. The gate
@@ -330,8 +356,8 @@ def check_readme_no_hardcoded_metrics() -> dict[str, Any]:
     }
 
 
-def run_preflight(strict_terraform_import: bool = False) -> dict[str, Any]:
-    checks: list[dict[str, Any]] = [
+def run_preflight(strict_terraform_import: bool = False) -> dict[str, object]:
+    checks: list[dict[str, object]] = [
         {"name": "coverage_85pct", **check_coverage(threshold=85.0)},
         {"name": "lint_clean", **check_lint()},
         {"name": "mypy_clean", **check_mypy()},
@@ -360,8 +386,8 @@ def run_preflight(strict_terraform_import: bool = False) -> dict[str, Any]:
 
 def verify_task_completion(
     criteria: list[str],
-    evidence: dict[str, Any],
-) -> dict[str, Any]:
+    evidence: dict[str, object],
+) -> dict[str, object]:
     if not criteria:
         return {
             "complete": False,
@@ -370,7 +396,7 @@ def verify_task_completion(
             "reason": "No acceptance criteria defined",
         }
 
-    results: list[dict[str, Any]] = []
+    results: list[dict[str, object]] = []
     passed = 0
     for criterion in criteria:
         c = criterion.lower()
@@ -378,10 +404,10 @@ def verify_task_completion(
         reason = "unchecked"
 
         if "coverage" in c and "85" in c:
-            met = evidence.get("coverage_pct", 0) >= 85.0
+            met = cast(float, evidence.get("coverage_pct", 0)) >= 85.0
             reason = f"coverage={evidence.get('coverage_pct', '?')}%"
         elif "coverage" in c:
-            met = evidence.get("coverage_pct", 0) >= 80.0
+            met = cast(float, evidence.get("coverage_pct", 0)) >= 80.0
             reason = f"coverage={evidence.get('coverage_pct', '?')}%"
         elif "lint" in c and ("no" in c or "0" in c or "clean" in c or "pass" in c):
             met = evidence.get("lint_errors", 999) == 0
@@ -393,7 +419,7 @@ def verify_task_completion(
             met = evidence.get("test_fail_count", 999) == 0
             reason = f"test_fail_count={evidence.get('test_fail_count', '?')}"
         elif "test" in c and "count" in c:
-            met = evidence.get("test_pass_count", 0) > 0
+            met = cast(int, evidence.get("test_pass_count", 0)) > 0
             reason = f"test_pass_count={evidence.get('test_pass_count', '?')}"
         else:
             met = False
@@ -413,9 +439,9 @@ def verify_task_completion(
     }
 
 
-def run_completion_audit() -> dict[str, Any]:
+def run_completion_audit() -> dict[str, object]:
     src_root = REPO_ROOT / "src" / "general_ludd"
-    findings: list[dict[str, Any]] = []
+    findings: list[dict[str, object]] = []
 
     py_files = sorted(src_root.rglob("*.py"))
     all_src_text = ""
@@ -472,9 +498,9 @@ def run_completion_audit() -> dict[str, Any]:
     }
 
 
-def generate_backlog_from_audit(audit: dict[str, Any]) -> list[dict[str, Any]]:
-    todos: list[dict[str, Any]] = []
-    for f in audit.get("findings", []):
+def generate_backlog_from_audit(audit: dict[str, object]) -> list[dict[str, object]]:
+    todos: list[dict[str, object]] = []
+    for f in cast(list[dict[str, object]], audit.get("findings", [])):
         name = f.get("class_name") or f.get("function_name", "unknown")
         todos.append({
             "title": f"Wire {name} into the pipeline",

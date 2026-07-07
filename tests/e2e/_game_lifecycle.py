@@ -219,11 +219,24 @@ def _invoke_start_method(instance: object) -> str | None:
     could not be transitioned to 'playing'.
     """
     state_before = _find_attr(instance, _STATE_ATTR_NAMES)
-    if state_before is None or not isinstance(state_before[1], str):
-        return None
-    if state_before[1].lower() not in _READY_STATES:
+    is_confirmed_ready = (
+        state_before is not None
+        and isinstance(state_before[1], str)
+        and state_before[1].lower() in _READY_STATES
+    )
+
+    # Non-ready confirmed — nothing to do
+    if (
+        state_before is not None
+        and isinstance(state_before[1], str)
+        and state_before[1].lower() not in _READY_STATES
+    ):
         return None
 
+    # Try start regardless of whether state attr was found: games may
+    # track state under a name not in _STATE_ATTR_NAMES (e.g. "game_state").
+    # If we skip start() because the attr name is unknown, every tick()
+    # no-ops and the lifecycle check produces a false failure.
     start_found = _find_callable(instance, _START_NAMES)
     if start_found is not None:
         try:
@@ -233,23 +246,25 @@ def _invoke_start_method(instance: object) -> str | None:
                 f"start method {start_found[0]!r} raised: "
                 f"{type(exc).__name__}: {exc}"
             )
-    else:
-        if not _tick_once(instance):
-            return (
-                "could not transition from ready to playing — "
-                "no start() method and tick() did not auto-start"
-            )
-
-    state_after = _find_attr(instance, _STATE_ATTR_NAMES)
-    if (
-        state_after is not None
-        and isinstance(state_after[1], str)
-        and state_after[1].lower() in _READY_STATES
-    ):
+    elif is_confirmed_ready and not _tick_once(instance):
         return (
-            f"state stayed at {state_after[1]!r} after start "
-            f"(expected transition to playing/running/active)"
+            "could not transition from ready to playing — "
+            "no start() method and tick() did not auto-start"
         )
+    # else: no start method + state unknown → assume game auto-starts
+
+    # Verify transition (only meaningful when we saw a ready state before)
+    if is_confirmed_ready:
+        state_after = _find_attr(instance, _STATE_ATTR_NAMES)
+        if (
+            state_after is not None
+            and isinstance(state_after[1], str)
+            and state_after[1].lower() in _READY_STATES
+        ):
+            return (
+                f"state stayed at {state_after[1]!r} after start "
+                f"(expected transition to playing/running/active)"
+            )
     return None
 
 
@@ -504,6 +519,11 @@ def _check_lifecycle_restart(instance: object) -> str | None:
             and value != 0
         ):
             return f"score is {value!r} after restart (expected 0)"
+
+    start_fail = _invoke_start_method(instance)
+    if start_fail is not None:
+        return f"after restart: {start_fail}"
+
     return None
 
 

@@ -15,7 +15,7 @@ Design constraints:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 # When run-budget spend crosses this fraction of the run limit we emit a budget
 # hint nudging the job to reduce scope / prefer the weak (cheap) profile.
@@ -124,8 +124,8 @@ def build_advice(
     *,
     work_type: str,
     priority: str = "quality",
-    recommendation: dict[str, Any] | None = None,
-    profile: dict[str, Any] | None = None,
+    recommendation: dict[str, object] | None = None,
+    profile: dict[str, object] | None = None,
     est_cost_usd: float | None = None,
     prompt_tokens: int | None = None,
     healthy: bool = True,
@@ -136,7 +136,7 @@ def build_advice(
     budget_warning: bool = False,
     budget_remaining_usd: float | None = None,
     max_retries: int = _DEFAULT_MAX_RETRIES,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Assemble the per-task advice contract. PURE — never raises.
 
     The caller resolves the adaptive routing decision (``recommendation``), the
@@ -160,8 +160,8 @@ def build_advice(
         prompt_profile_id = rec.get("selected_prompt_profile_id")
 
         latency_class = _latency_class(
-            model_name=prof.get("model_name"),
-            max_output_tokens=prof.get("max_output_tokens"),
+            model_name=cast("str | None", prof.get("model_name")),
+            max_output_tokens=cast("int | None", prof.get("max_output_tokens")),
             healthy=healthy,
         )
         quality_class = prof.get("quality_class") or (
@@ -219,12 +219,12 @@ def build_advice(
                 f"work_type '{wt}' benefits from gated multi-step workflow"
             )
 
-        recommendation_out: dict[str, Any] = {
+        recommendation_out: dict[str, object] = {
             "model_profile": model_profile_id,
             "reason": rec.get("reason", "insufficient_historical_data"),
             "composite_score": _safe_float(rec.get("composite_score")) or 0.0,
             "fallback": bool(rec.get("fallback", True)),
-            "sample_count": int(rec.get("sample_count", 0) or 0),
+            "sample_count": int(cast("int | float", rec.get("sample_count", 0) or 0)),
             "latency_class": latency_class,
             "quality_class": quality_class,
         }
@@ -250,7 +250,7 @@ def build_advice(
         return _advice_fallback(work_type)
 
 
-def _advice_fallback(work_type: str) -> dict[str, Any]:
+def _advice_fallback(work_type: str) -> dict[str, object]:
     """Safe fallback advice when anything in build_advice goes wrong."""
     return {
         "task_type": work_type,
@@ -281,12 +281,12 @@ def _advice_fallback(work_type: str) -> dict[str, Any]:
 
 def build_optimization_hints(
     *,
-    models: list[dict[str, Any]] | None = None,
-    routing: dict[str, Any] | None = None,
-    budget: dict[str, Any] | None = None,
+    models: list[dict[str, object]] | None = None,
+    routing: dict[str, object] | None = None,
+    budget: dict[str, object] | None = None,
     metrics_collector: Any | None = None,
     token_tracker: Any | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Return ``{"hints": [...], "recommended_profile_for": {...}}``.
 
     Never raises. ``hints`` is a list of ``{signal, recommendation, severity}``
@@ -313,14 +313,13 @@ def build_optimization_hints(
     routing = routing or {}
     budget = budget or {}
 
-    hints: list[dict[str, Any]] = []
+    hints: list[dict[str, object]] = []
     recommended: dict[str, str] = {}
 
-    default_profile = routing.get("default_profile")
-    weak_profile = routing.get("weak_model_profile")
-    role_routing = routing.get("roles") or {}
-    if not isinstance(role_routing, dict):
-        role_routing = {}
+    default_profile = cast("str | None", routing.get("default_profile"))
+    weak_profile = cast("str | None", routing.get("weak_model_profile"))
+    role_routing_raw = routing.get("roles")
+    role_routing: dict[str, object] = role_routing_raw if isinstance(role_routing_raw, dict) else {}
 
     # 1) Budget pressure: if a large fraction of the run budget is already spent,
     #    nudge toward smaller scope / the weak (cheap) profile.
@@ -394,7 +393,7 @@ def build_optimization_hints(
         learned = "unknown"
         if token_tracker is not None:
             try:
-                learned = token_tracker.classify(work_type)
+                learned = cast(Any, token_tracker).classify(work_type)
             except Exception:
                 # A misbehaving tracker must never break the advisory — fall
                 # back to the static taxonomy.
@@ -409,7 +408,7 @@ def build_optimization_hints(
             # weak_profile may be None; the caller's `if target` then drops it,
             # reproducing the previous `if weak_profile:` guard exactly.
             return weak_profile
-        role_target = role_routing.get(work_type)
+        role_target = cast("str | None", role_routing.get(work_type))
         return role_target or quality_target
 
     for work_type in _CHEAP_WORK_TYPES:
@@ -431,7 +430,7 @@ def build_optimization_hints(
     #     leaves the static mapping byte-identical.
     if token_tracker is not None:
         try:
-            observed = token_tracker.heaviest()
+            observed = cast(Any, token_tracker).heaviest()
         except Exception:
             observed = []
         for weight_obj in observed:
@@ -439,16 +438,16 @@ def build_optimization_hints(
             if not key or key in recommended:
                 continue
             try:
-                learned = token_tracker.classify(key)
+                learned = cast(Any, token_tracker).classify(key)
             except Exception:
                 continue
             if learned == "light":
                 if weak_profile:
                     recommended[key] = weak_profile
             elif learned == "heavy":
-                target = role_routing.get(key) or quality_target
-                if target:
-                    recommended[key] = target
+                role_target: str | None = cast("str | None", role_routing.get(key)) or quality_target
+                if role_target:
+                    recommended[key] = role_target
 
     # 3) Metered-model fallback: if any enabled, api_metered profile has a
     #    cheaper fallback available, recommend preferring the fallback for
@@ -495,7 +494,7 @@ def build_optimization_hints(
             if not profile_id:
                 continue
             try:
-                if not metrics_collector.is_flaky(profile_id):
+                if not cast(Any, metrics_collector).is_flaky(profile_id):
                     continue
                 recent: list[str] = []
                 getter = getattr(metrics_collector, "get_recent_failures", None)

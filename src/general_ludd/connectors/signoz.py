@@ -12,7 +12,7 @@ shape shared by every gludd observability source::
         "message": str,          # "<serviceName> <operation>"
         "value": float | None,   # durationNano
         "labels": dict,          # {trace_id, span_id, service.name, durationNano}
-        "raw": Any,              # the original span object
+        "raw": object,              # the original span object
     }
 
 The module is deliberately standalone: it imports nothing from a connector
@@ -33,7 +33,7 @@ Security posture:
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
@@ -48,7 +48,7 @@ _DEFAULT_TIMEOUT = 15.0
 class _Transport(Protocol):
     """Minimal injectable HTTP transport.
 
-    Any object exposing this ``request`` signature can be injected. Returning a
+    object object exposing this ``request`` signature can be injected. Returning a
     ``(status_code, json_body)`` tuple keeps the connector free of any concrete
     HTTP library dependency and makes mocking trivial.
     """
@@ -59,10 +59,10 @@ class _Transport(Protocol):
         url: str,
         *,
         headers: dict[str, str] | None = ...,
-        json: Any | None = ...,
-        params: dict[str, Any] | None = ...,
+        json: object | None = ...,
+        params: dict[str, object] | None = ...,
         timeout: float | None = ...,
-    ) -> tuple[int, Any]: ...
+    ) -> tuple[int, object]: ...
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -99,7 +99,7 @@ class SigNozSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         *,
         transport: _Transport,
         timeout: float = _DEFAULT_TIMEOUT,
@@ -124,7 +124,7 @@ class SigNozSource:
         return headers
 
     @staticmethod
-    def _coerce_ts(raw_span: dict[str, Any]) -> float:
+    def _coerce_ts(raw_span: dict[str, object]) -> float:
         """Derive epoch-seconds start time from a span's various time fields."""
         for key in ("startTimeUnixNano", "startTimeNano", "timestampNano"):
             val = raw_span.get(key)
@@ -138,7 +138,7 @@ class SigNozSource:
         return 0.0
 
     @staticmethod
-    def _coerce_status(raw_span: dict[str, Any]) -> str:
+    def _coerce_status(raw_span: dict[str, object]) -> str:
         """Map status code / error flag to a level_or_status string."""
         if raw_span.get("hasError") is True or raw_span.get("error") is True:
             return "error"
@@ -153,13 +153,13 @@ class SigNozSource:
         return str(code)
 
     @staticmethod
-    def _iter_spans(payload: Any) -> list[dict[str, Any]]:
+    def _iter_spans(payload: object) -> list[dict[str, object]]:
         """Extract span dicts from a SigNoz query_range payload.
 
         Tolerates the common v3/v4 shapes: ``data.result[].list[].data`` and a
         flat ``data.result[]`` list of spans.
         """
-        spans: list[dict[str, Any]] = []
+        spans: list[dict[str, object]] = []
         if not isinstance(payload, dict):
             return spans
         data = payload.get("data")
@@ -182,7 +182,7 @@ class SigNozSource:
                 spans.append(series)
         return spans
 
-    def _normalize_span(self, raw_span: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_span(self, raw_span: dict[str, object]) -> dict[str, object]:
         trace_id = str(
             raw_span.get("traceID", raw_span.get("trace_id", raw_span.get("traceId", "")))
         )
@@ -196,7 +196,7 @@ class SigNozSource:
         duration = raw_span.get("durationNano", raw_span.get("duration_nano"))
         value: float | None
         try:
-            value = float(duration) if duration is not None else None
+            value = float(cast("float | int | str", duration)) if duration is not None else None
         except (TypeError, ValueError):
             value = None
         message = " ".join(part for part in (service, operation) if part) or "(span)"
@@ -218,21 +218,21 @@ class SigNozSource:
 
     # -- public API --------------------------------------------------------
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Run a SigNoz query_range request and return normalized records.
 
         ``spec`` carries the (time-bound) query window plus an optional raw
         SigNoz ``query`` body. Required keys: ``start`` and ``end`` (epoch
-        seconds). Any caller-supplied ``payload`` is forwarded verbatim.
+        seconds). object caller-supplied ``payload`` is forwarded verbatim.
         """
         start = spec.get("start")
         end = spec.get("end")
-        body: dict[str, Any] = dict(spec.get("payload") or {})
+        body: dict[str, object] = cast(dict[str, object], spec.get("payload") or {})
         # Express the bounded window in the body (SigNoz expects ms).
         if start is not None:
-            body.setdefault("start", int(float(start) * 1000))
+            body.setdefault("start", int(float(cast("float | int | str", start)) * 1000))
         if end is not None:
-            body.setdefault("end", int(float(end) * 1000))
+            body.setdefault("end", int(float(cast("float | int | str", end)) * 1000))
         if "query" in spec:
             body.setdefault("query", spec["query"])
         url = f"{self._base_url}/api/v3/query_range"
@@ -247,7 +247,7 @@ class SigNozSource:
             return []
         return [self._normalize_span(span) for span in self._iter_spans(payload)]
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the SigNoz version endpoint. Never raises."""
         url = f"{self._base_url}/api/v1/version"
         try:
@@ -260,7 +260,7 @@ class SigNozSource:
         except Exception as exc:  # health must never raise
             return {"ok": False, "source": self.name, "error": str(exc)}
         ok = 200 <= status_code < 300
-        result: dict[str, Any] = {"ok": ok, "source": self.name, "status_code": status_code}
+        result: dict[str, object] = {"ok": ok, "source": self.name, "status_code": status_code}
         if isinstance(payload, dict) and "version" in payload:
             result["version"] = payload["version"]
         if not ok:

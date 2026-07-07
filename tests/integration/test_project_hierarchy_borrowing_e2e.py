@@ -9,8 +9,8 @@ Tests:
   - AdaptiveRouter with borrowing OFF: only own project scores used
   - AdaptiveRouter with borrowing ON: neighbouring project scores contribute
   - RelationshipRoutingConfig defaults: borrowing OFF, sensible decay values
-  - inherited_knowledge_map returns {} when borrowing OFF
-  - inherited_knowledge_map returns neighbour candidates when borrowing ON
+  - inherited_knowledge returns {} when borrowing OFF
+  - inherited_knowledge returns neighbour candidates when borrowing ON
   - min_borrow_weight filter: very distant neighbours contribute 0.0
   - Edge case: no relationship_repo → no borrowing even with flag ON
   - Edge case: empty relationship graph → no borrowing impact
@@ -22,9 +22,12 @@ the DB layer (which is covered by unit tests for ProjectRelationshipRepository).
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from general_ludd.config.user_config import RelationshipRoutingConfig
+from general_ludd.schemas.benchmark import TaskType
 from general_ludd.scoring.router import AdaptiveRouter
 
 # ---------------------------------------------------------------------------
@@ -33,49 +36,50 @@ from general_ludd.scoring.router import AdaptiveRouter
 
 
 def _make_benchmark_repo(*score_lists: list[dict[str, Any]]) -> MagicMock:
-    """Return a MagicMock whose get_aggregate_scores returns each list in order."""
+    """Return a MagicMock whose get_aggregate_scores is an AsyncMock."""
     repo = MagicMock()
     if len(score_lists) == 1:
-        repo.get_aggregate_scores.return_value = list(score_lists[0])
+        repo.get_aggregate_scores = AsyncMock(return_value=list(score_lists[0]))
     else:
-        repo.get_aggregate_scores.side_effect = [list(sl) for sl in score_lists]
+        repo.get_aggregate_scores = AsyncMock(side_effect=[list(sl) for sl in score_lists])
     return repo
 
 
-def _make_relationship_repo(edge_map: dict[str, list[tuple[str, str, str]]] | None) -> MagicMock:
+def _make_relationship_repo(edge_map: dict[str, list[tuple[str, str, bool]]] | None) -> MagicMock:
     """Return a mock ProjectRelationshipRepository.
 
     ``edge_map`` maps source_project_id → list of
-    (related_project_id, relation_type, location_kind), which are the rows
-    get_parent + list_children + get_siblings return.
+    (related_project_id, relation_type, controlled_by_gludd), which are the edges
+    that list_for_project returns. The router calls ``list_for_project(project_id)``
+    and reads ``related_project_id``, ``relation_type``, ``controlled_by_gludd``
+    from each edge object.
     """
     repo = MagicMock()
 
-    async def _get_parent(project_id: str) -> Any | None:
-        return MagicMock(related_project_id="parent-proj") if project_id in edge_map else None
+    def _make_edge(related_id: str, rel_type: str, controlled: bool) -> MagicMock:
+        edge = MagicMock()
+        edge.related_project_id = related_id
+        edge.relation_type = rel_type
+        edge.controlled_by_gludd = controlled
+        return edge
 
-    async def _list_children(project_id: str, **kw: Any) -> list[Any]:
-        return [MagicMock(related_project_id=f"child-{i}") for i in range(2)] if project_id in edge_map else []
+    async def _list_for_project(project_id: str) -> list[MagicMock]:
+        entries = edge_map.get(project_id, [])
+        return [_make_edge(rid, rt, ctl) for rid, rt, ctl in entries]
 
-    async def _get_siblings(project_id: str, **kw: Any) -> list[Any]:
-        return [MagicMock(related_project_id=f"sib-{i}") for i in range(2)] if project_id in edge_map else []
-
-    repo.get_parent.side_effect = _get_parent
-    repo.list_children.side_effect = _list_children
-    repo.get_siblings = MagicMock(side_effect=_get_siblings)
+    repo.list_for_project.side_effect = _list_for_project
     return repo
 
 
 def _make_own_scores() -> list[dict[str, Any]]:
     return [
         {
-            "candidate_name": "own-model-1",
-            "task_type": "code",
-            "composite_score": 85.0,
+            "model_profile_id": "own-model-1",
+            "prompt_profile_id": "prompt-own",
+            "task_type": "bug_fix",
+            "composite_score": 0.85,
             "avg_cost": 0.003,
             "sample_count": 10,
-            "routing_key": "own-model-1",
-            "model_id": "own-model-1",
             "project_id": "proj-self",
         }
     ]
@@ -84,13 +88,12 @@ def _make_own_scores() -> list[dict[str, Any]]:
 def _make_borrow_scores() -> list[dict[str, Any]]:
     return [
         {
-            "candidate_name": "neighbour-model",
-            "task_type": "code",
-            "composite_score": 90.0,
+            "model_profile_id": "neighbour-model",
+            "prompt_profile_id": "prompt-nbr",
+            "task_type": "bug_fix",
+            "composite_score": 0.90,
             "avg_cost": 0.002,
             "sample_count": 15,
-            "routing_key": "neighbour-model",
-            "model_id": "neighbour-model",
             "project_id": "parent-proj",
         }
     ]
@@ -109,26 +112,31 @@ class TestBorrowingOff:
         assert cfg.external_penalty == 0.5
         assert cfg.min_borrow_weight == 0.05
 
-    def test_router_with_borrowing_off_only_uses_own_scores(self):
+    @pytest.mark.asyncio
+    async def test_router_with_borrowing_off_only_uses_own_scores(self):
         own = _make_own_scores()
         borrowed = _make_borrow_scores()
         repo = _make_benchmark_repo(own, borrowed)
-        rel_repo = _make_relationship_repo({"proj-self": [("parent-proj", "parent", "local")]})
+        rel_repo = _make_relationship_repo(
+            {"proj-self": [("parent-proj", "parent", False)]}
+        )
 
         router = AdaptiveRouter(
             benchmark_repo=repo,
+            min_samples=1,
             project_id="proj-self",
             relationship_repo=rel_repo,
             enable_cross_project_borrowing=False,
         )
 
-        decision = router.route(task_type="code", model_id_candidates=["own-model-1", "neighbour-model"])
+        decision = await router.route(task_type=TaskType.BUG_FIX)
         assert decision is not None
-        assert decision.winner is not None
-        assert decision.winner.routing_key == "own-model-1"
+        assert decision.fallback is False
+        assert decision.selected_model_profile_id == "own-model-1"
         assert repo.get_aggregate_scores.call_count == 1
 
-    def test_inherited_knowledge_map_empty_when_off(self):
+    @pytest.mark.asyncio
+    async def test_inherited_knowledge_empty_when_off(self):
         repo = _make_benchmark_repo(_make_own_scores())
         rel_repo = _make_relationship_repo({"proj-self": []})
 
@@ -139,7 +147,7 @@ class TestBorrowingOff:
             enable_cross_project_borrowing=False,
         )
 
-        inherited = router.inherited_knowledge_map()
+        inherited = await router.inherited_knowledge()
         assert inherited == {}
 
 
@@ -149,14 +157,18 @@ class TestBorrowingOff:
 
 
 class TestBorrowingOn:
-    def test_borrowing_flag_enables_neighbour_scores(self):
+    @pytest.mark.asyncio
+    async def test_borrowing_flag_enables_neighbour_scores(self):
         own = _make_own_scores()
         borrowed = _make_borrow_scores()
         repo = _make_benchmark_repo(own, borrowed)
-        rel_repo = _make_relationship_repo({"proj-self": [("parent-proj", "parent", "local")]})
+        rel_repo = _make_relationship_repo(
+            {"proj-self": [("parent-proj", "parent", False)]}
+        )
 
         router = AdaptiveRouter(
             benchmark_repo=repo,
+            min_samples=1,
             project_id="proj-self",
             relationship_repo=rel_repo,
             enable_cross_project_borrowing=True,
@@ -165,14 +177,15 @@ class TestBorrowingOn:
             min_borrow_weight=0.01,
         )
 
-        decision = router.route(task_type="code", model_id_candidates=["neighbour-model"])
+        decision = await router.route(task_type=TaskType.BUG_FIX)
         assert decision is not None
-        assert decision.winner is not None
+        assert decision.fallback is False
 
-    def test_inherited_knowledge_map_populated_when_on(self):
+    @pytest.mark.asyncio
+    async def test_inherited_knowledge_populated_when_on(self):
         repo = _make_benchmark_repo(_make_own_scores(), _make_borrow_scores())
         rel_repo = _make_relationship_repo(
-            {"proj-self": [("parent-proj", "parent", "local")]}
+            {"proj-self": [("parent-proj", "parent", False)]}
         )
 
         router = AdaptiveRouter(
@@ -185,22 +198,28 @@ class TestBorrowingOn:
             min_borrow_weight=0.01,
         )
 
-        inherited = router.inherited_knowledge_map()
+        inherited = await router.inherited_knowledge()
         assert isinstance(inherited, dict)
-        assert "parent-proj" in inherited
-        parent_entry = inherited["parent-proj"]
-        assert "relationship_type" in parent_entry
-        assert "location_kind" in parent_entry
+        assert "enabled" in inherited
+        assert inherited["enabled"] is True
+        assert "sources" in inherited
+        assert "parent-proj" in inherited["sources"]
+        parent_entry = inherited["sources"]["parent-proj"]
+        assert "relation_type" in parent_entry
         assert "borrowed_candidates" in parent_entry
 
-    def test_min_borrow_weight_filters_far_neighbours(self):
+    @pytest.mark.asyncio
+    async def test_min_borrow_weight_filters_far_neighbours(self):
         own = _make_own_scores()
         borrowed = _make_borrow_scores()
         repo = _make_benchmark_repo(own, borrowed)
-        rel_repo = _make_relationship_repo({"proj-self": [("parent-proj", "parent", "local")]})
+        rel_repo = _make_relationship_repo(
+            {"proj-self": [("parent-proj", "parent", False)]}
+        )
 
         router = AdaptiveRouter(
             benchmark_repo=repo,
+            min_samples=1,
             project_id="proj-self",
             relationship_repo=rel_repo,
             enable_cross_project_borrowing=True,
@@ -209,43 +228,48 @@ class TestBorrowingOn:
             min_borrow_weight=0.99,
         )
 
-        decision = router.route(task_type="code", model_id_candidates=["neighbour-model"])
+        decision = await router.route(task_type=TaskType.BUG_FIX)
         assert decision is not None
 
-    def test_no_relationship_repo_no_borrowing_even_when_on(self):
+    @pytest.mark.asyncio
+    async def test_no_relationship_repo_no_borrowing_even_when_on(self):
         own = _make_own_scores()
         repo = _make_benchmark_repo(own)
 
         router = AdaptiveRouter(
             benchmark_repo=repo,
+            min_samples=1,
             project_id="proj-self",
             relationship_repo=None,
             enable_cross_project_borrowing=True,
         )
 
-        inherited = router.inherited_knowledge_map()
+        inherited = await router.inherited_knowledge()
         assert inherited == {}
-        decision = router.route(task_type="code", model_id_candidates=["own-model-1"])
+        decision = await router.route(task_type=TaskType.BUG_FIX)
         assert decision is not None
+        assert decision.fallback is False
 
-    def test_empty_relationship_graph_no_impact(self):
+    @pytest.mark.asyncio
+    async def test_empty_relationship_graph_no_impact(self):
         own = _make_own_scores()
         repo = _make_benchmark_repo(own)
         rel_repo = _make_relationship_repo({})
 
         router = AdaptiveRouter(
             benchmark_repo=repo,
+            min_samples=1,
             project_id="proj-self",
             relationship_repo=rel_repo,
             enable_cross_project_borrowing=True,
         )
 
-        inherited = router.inherited_knowledge_map()
+        inherited = await router.inherited_knowledge()
         assert isinstance(inherited, dict)
-        decision = router.route(task_type="code", model_id_candidates=["own-model-1"])
+        decision = await router.route(task_type=TaskType.BUG_FIX)
         assert decision is not None
-        assert decision.winner is not None
-        assert decision.winner.routing_key == "own-model-1"
+        assert decision.fallback is False
+        assert decision.selected_model_profile_id == "own-model-1"
 
 
 # ---------------------------------------------------------------------------

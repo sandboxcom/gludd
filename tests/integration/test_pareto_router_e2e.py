@@ -143,15 +143,15 @@ class TestLargeFrontier:
     def test_frontier_size(self, _candidates: list[dict[str, Any]]) -> None:
         router = ParetoRouter()
         frontier = router.route_by_pareto_frontier(_candidates)
-        assert len(frontier) == 8
+        # c01 (0.1, 0.95) has lowest cost AND highest quality — dominates all
+        assert len(frontier) == 1
 
     def test_all_frontier_members_named(self, _candidates: list[dict[str, Any]]) -> None:
         router = ParetoRouter()
         frontier = router.route_by_pareto_frontier(_candidates)
         frontier_names = _names(frontier)
-        dominated_names = {"c06", "c07", "c11"}
-        for name in dominated_names:
-            assert name not in frontier_names
+        # c01 (0.1, 0.95) dominates all — only c01 on frontier
+        assert frontier_names == ["c01"]
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +242,7 @@ class TestNaNAndInfExclusion:
         names = _names(frontier)
         assert "nan_cost" not in names
         assert "valid" in names
-        assert "also_valid" in names
+        # also_valid (0.5, 0.5) dominated by valid (0.2, 0.8) — lower cost AND higher quality
 
     def test_nan_quality_excluded(self) -> None:
         router = ParetoRouter()
@@ -317,8 +317,8 @@ class TestNaNAndInfExclusion:
         ]
         frontier = router.route_by_pareto_frontier(candidates)
         names = _names(frontier)
-        assert "v1" in names
-        assert "v2" in names
+        # v1 (0.1, 0.9) dominates v2 (0.3, 0.7) — lower cost AND higher quality
+        assert names == ["v1"]
         assert "nan_c" not in names
         assert "no_q" not in names
         assert "no_both" not in names
@@ -615,13 +615,13 @@ class TestDominatedExclusion:
         candidates = [
             _make_candidate(0.5, 0.6, "mid"),
             _make_candidate(0.3, 0.9, "best"),
-            _make_candidate(0.4, 0.5, "worst"),  # dominated by mid on cost, by best on quality
+            _make_candidate(0.4, 0.5, "worst"),  # dominated by both
         ]
         frontier = router.route_by_pareto_frontier(candidates)
         names = _names(frontier)
+        # best (0.3, 0.9) dominates mid (0.5, 0.6) — lower cost AND higher quality
+        assert names == ["best"]
         assert "worst" not in names
-        assert "mid" in names
-        assert "best" in names
 
     def test_equal_cost_lower_quality_dominated(self) -> None:
         router = ParetoRouter()
@@ -787,7 +787,7 @@ class TestAdaptiveRouterIntegration:
             composite_score=0.9,
             avg_cost_usd=0.05,
             sample_count=10,
-            task_type=TaskType.CODE_GENERATION,
+            task_type=TaskType.BUG_FIX,
         )
         c2 = RoutingCandidate(
             prompt_profile_id="p2",
@@ -795,7 +795,7 @@ class TestAdaptiveRouterIntegration:
             composite_score=0.85,
             avg_cost_usd=0.03,
             sample_count=10,
-            task_type=TaskType.CODE_GENERATION,
+            task_type=TaskType.BUG_FIX,
         )
         c3 = RoutingCandidate(
             prompt_profile_id="p3",
@@ -803,7 +803,7 @@ class TestAdaptiveRouterIntegration:
             composite_score=0.6,
             avg_cost_usd=1.0,
             sample_count=10,
-            task_type=TaskType.CODE_GENERATION,
+            task_type=TaskType.BUG_FIX,
         )
 
         weighted = [(c1, 0.9, None), (c2, 0.85, None), (c3, 0.6, None)]
@@ -825,7 +825,7 @@ class TestAdaptiveRouterIntegration:
             composite_score=0.5,
             avg_cost_usd=0.5,
             sample_count=3,
-            task_type=TaskType.CODE_GENERATION,
+            task_type=TaskType.BUG_FIX,
         )
         weighted = [(c1, 0.5, None)]
         result = adaptive._apply_pareto_filter(weighted)
@@ -843,7 +843,7 @@ class TestAdaptiveRouterIntegration:
             composite_score=0.9,
             avg_cost_usd=0.1,
             sample_count=5,
-            task_type=TaskType.CODE_GENERATION,
+            task_type=TaskType.BUG_FIX,
         )
         c2 = RoutingCandidate(
             prompt_profile_id="p2",
@@ -851,7 +851,7 @@ class TestAdaptiveRouterIntegration:
             composite_score=0.5,
             avg_cost_usd=1.0,
             sample_count=5,
-            task_type=TaskType.CODE_GENERATION,
+            task_type=TaskType.BUG_FIX,
         )
         weighted = [(c1, 0.9, None), (c2, 0.5, None)]
         result = adaptive._apply_pareto_filter(weighted)
@@ -865,11 +865,31 @@ class TestAdaptiveRouterIntegration:
         adaptive = AdaptiveRouter(pareto_router=pareto)
 
         candidates = [
-            RoutingCandidate("p1", "opus", 0.95, 0.05, 10, TaskType.CODE_GENERATION),
-            RoutingCandidate("p2", "sonnet", 0.88, 0.03, 10, TaskType.CODE_GENERATION),
-            RoutingCandidate("p3", "haiku", 0.70, 0.01, 10, TaskType.CODE_GENERATION),
-            RoutingCandidate("p4", "gpt4", 0.90, 0.08, 10, TaskType.CODE_GENERATION),
-            RoutingCandidate("p5", "bad", 0.60, 0.50, 10, TaskType.CODE_GENERATION),
+            RoutingCandidate(
+                prompt_profile_id="p1", model_profile_id="opus",
+                composite_score=0.95, avg_cost_usd=0.05,
+                sample_count=10, task_type=TaskType.BUG_FIX,
+            ),
+            RoutingCandidate(
+                prompt_profile_id="p2", model_profile_id="sonnet",
+                composite_score=0.88, avg_cost_usd=0.03,
+                sample_count=10, task_type=TaskType.BUG_FIX,
+            ),
+            RoutingCandidate(
+                prompt_profile_id="p3", model_profile_id="haiku",
+                composite_score=0.70, avg_cost_usd=0.01,
+                sample_count=10, task_type=TaskType.BUG_FIX,
+            ),
+            RoutingCandidate(
+                prompt_profile_id="p4", model_profile_id="gpt4",
+                composite_score=0.90, avg_cost_usd=0.08,
+                sample_count=10, task_type=TaskType.BUG_FIX,
+            ),
+            RoutingCandidate(
+                prompt_profile_id="p5", model_profile_id="bad",
+                composite_score=0.60, avg_cost_usd=0.50,
+                sample_count=10, task_type=TaskType.BUG_FIX,
+            ),
         ]
         weighted = [(c, float(c.composite_score), None) for c in candidates]
 

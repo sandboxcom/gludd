@@ -226,7 +226,7 @@ class StallWatchdog:
         self._stop = threading.Event()
 
     def _deadline_for(self, key: str, deadline_s: float | None) -> float:
-        if deadline_s is not None and deadline_s > 0:
+        if deadline_s is not None:
             return float(deadline_s)
         if self._tracker is not None:
             base = self._tracker.baseline(key)

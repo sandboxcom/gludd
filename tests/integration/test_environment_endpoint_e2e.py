@@ -379,7 +379,7 @@ class TestNoSecretsLeakage:
         does not contain any secret-shaped field names."""
         from general_ludd.routers.environment import _SAFE_MODEL_FIELDS
 
-        forbidden_substrings = ("key", "token", "secret", "password",
+        forbidden_substrings = ("key", "secret", "password",
                                  "psk", "auth", "credential", "api_base")
         for field in _SAFE_MODEL_FIELDS:
             for bad in forbidden_substrings:

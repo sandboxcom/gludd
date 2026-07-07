@@ -23,7 +23,7 @@ def _make_cache_key(
     messages: list[dict[str, str]],
     *,
     model_name: str | None = None,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> str:
     # Include the resolved model_name so that swapping a profile's underlying
     # model invalidates its cached output instead of serving the old model's
@@ -54,16 +54,16 @@ class ModelResponseCache:
             os.chmod(path, 0o700)
         self._cache: Any = Cache(path)
 
-    def get(self, cache_key: str) -> dict[str, Any] | None:
-        result: Any = self._cache.get(cache_key)
+    def get(self, cache_key: str) -> dict[str, object] | None:
+        result: object = self._cache.get(cache_key)
         if isinstance(result, dict):
-            return cast(dict[str, Any], result)
+            return cast(dict[str, object], result)
         return None
 
     def set(
         self,
         cache_key: str,
-        response: dict[str, Any],
+        response: dict[str, object],
         *,
         expire: float | None = DEFAULT_CACHE_TTL_SECONDS,
     ) -> None:

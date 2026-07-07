@@ -34,7 +34,7 @@ def _compute_mac(data: bytes) -> str:
     return hmac.new(_MAC_KEY, data, hashlib.sha256).hexdigest()
 
 
-def _serialize(situation: BadCallSituation) -> dict[str, Any]:
+def _serialize(situation: BadCallSituation) -> dict[str, object]:
     return {
         "tool_name": situation.tool_name,
         "tool_args": situation.tool_args,

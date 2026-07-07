@@ -23,6 +23,18 @@ from general_ludd.quality.preflight import run_preflight
 logger = logging.getLogger(__name__)
 
 
+def _deserialize_json_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if isinstance(parsed, list):
+        return parsed
+    return []
+
+
 class AddTodoRequest(BaseModel):
     title: str = Field(min_length=1, max_length=512)
     description: str = Field(default="", max_length=4096)
@@ -94,7 +106,7 @@ def _todo_to_dict(todo: TodoModel) -> dict[str, object]:
         "project_id": todo.project_id,
         "version": todo.version,
         "created_at": str(todo.created_at) if todo.created_at else None,
-        "acceptance_criteria": todo.acceptance_criteria if todo.acceptance_criteria else [],
+        "acceptance_criteria": _deserialize_json_list(todo.acceptance_criteria),
         "definition_of_done": todo.definition_of_done if todo.definition_of_done else "",
     }
 
@@ -139,9 +151,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         _daemon_state["todos"] = collections.deque(
             cast(Iterable[object], _existing), maxlen=_MAX_INMEMORY_TODOS
         )
-    _todos: collections.deque[dict[str, object]] = cast(
-        collections.deque[dict[str, object]], _daemon_state["todos"]
-    )
+    def _todos() -> collections.deque[dict[str, object]]:
+        td = _daemon_state.get("todos")
+        if not isinstance(td, collections.deque):
+            td = collections.deque(
+                td if isinstance(td, list) else [], maxlen=_MAX_INMEMORY_TODOS
+            )
+            _daemon_state["todos"] = td
+        return cast(collections.deque[dict[str, object]], td)
 
     @app.post("/admin/preflight")
     async def admin_run_preflight() -> dict[str, object]:
@@ -188,7 +205,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 result = await repo.create(todo_data=todo)
                 await session.commit()
                 return _todo_to_dict(result)
-        _todos.append(todo)
+        _todos().append(todo)
         return todo
 
     @app.get("/api/todos")
@@ -223,7 +240,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     limit=_limit, offset=_offset,
                 )
                 return [_todo_to_dict(t) for t in todos][:limit]
-        results = list(_todos)
+        results = list(_todos())
         if queue is not None:
             results = [t for t in results if t.get("queue") == queue]
         if status is not None:
@@ -407,7 +424,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 if todo is not None:
                     return _todo_to_dict(todo)
                 raise HTTPException(status_code=404, detail="Todo not found")
-        for _row in _todos:
+        for _row in _todos():
             if (
                 str(_row.get("todo_id", "")) == todo_id
                 and (project_id is None or _row.get("project_id") == project_id)
@@ -442,13 +459,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 updated = await repo.get_by_id(todo_id)
                 if updated is not None:
                     return _todo_to_dict(updated)
-        for i, _row in enumerate(_todos):
+        for i, _row in enumerate(_todos()):
             if (
                 str(_row.get("todo_id", "")) == todo_id
                 and (project_id is None or _row.get("project_id") == project_id)
             ):
-                _todos[i] = {**_row, **updates}
-                return dict(_todos[i])
+                _todos()[i] = {**_row, **updates}
+                return dict(_todos()[i])
         raise HTTPException(status_code=404, detail="Todo not found")
 
     @app.get("/admin/todos")
@@ -470,7 +487,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 todos = await repo.list_all(status=status, project_id=project_id)
                 results = [_todo_to_dict(t) for t in todos]
                 return {"todos": results, "count": len(results)}
-        results = list(_todos)
+        results = list(_todos())
         if status is not None:
             results = [t for t in results if t.get("status") == status]
         if project_id is not None:
@@ -503,7 +520,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                         queue_depths.get(q or "unknown", 0) + c
                     )
         else:
-            for todo in _todos:
+            for todo in _todos():
                 q = cast(str, todo.get("queue") or "unknown")
                 queue_depths[q] = queue_depths.get(q, 0) + 1
                 todo_count += 1

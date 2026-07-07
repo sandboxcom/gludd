@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-from typing import Any
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ class GitIntelligence:
             logger.debug("git command failed: %s", exc)
             return None
 
-    def files_changed_together(self, limit: int = 20) -> list[dict[str, Any]]:
+    def files_changed_together(self, limit: int = 20) -> list[dict[str, object]]:
         """Find files that are frequently changed together in the same commit."""
         result = self._run_git([
             "log", "--name-only", "--format=", "-n", str(int(limit) * 5)
@@ -138,7 +138,7 @@ class GitIntelligence:
         sorted_pairs = sorted(file_pairs.items(), key=lambda x: x[1], reverse=True)[:limit]
         return [{"files": p[0].split("||"), "count": p[1]} for p in sorted_pairs]
 
-    def blame_analysis(self, file_path: str) -> dict[str, Any]:
+    def blame_analysis(self, file_path: str) -> dict[str, object]:
         """Get blame information for a file."""
         result = self._run_git(
             ["blame", "--line-porcelain"],
@@ -161,12 +161,12 @@ class GitIntelligence:
             "total_lines": line_count,
             "author_breakdown": sorted(
                 [{"author": k, "lines": v} for k, v in authors.items()],
-                key=lambda x: x["lines"],
+                key=lambda x: cast(int, x["lines"]),
                 reverse=True,
             ),
         }
 
-    def recent_contributors(self, limit: int = 10) -> list[dict[str, Any]]:
+    def recent_contributors(self, limit: int = 10) -> list[dict[str, object]]:
         """List recent contributors to the repository."""
         result = self._run_git([
             "shortlog", "-sne", "-n", str(int(limit)), "HEAD"
@@ -174,7 +174,7 @@ class GitIntelligence:
         if result is None or result.returncode != 0:
             return []
 
-        contributors: list[dict[str, Any]] = []
+        contributors: list[dict[str, object]] = []
         for line in result.stdout.strip().split("\n"):
             if not line.strip():
                 continue
@@ -189,7 +189,7 @@ class GitIntelligence:
                 })
         return contributors
 
-    def recent_commits(self, limit: int = 20) -> list[dict[str, Any]]:
+    def recent_commits(self, limit: int = 20) -> list[dict[str, object]]:
         """Get recent commits with structured data."""
         result = self._run_git([
             "log", "-n", str(int(limit)), "--format=%H\t%s\t%an\t%aI"
@@ -197,7 +197,7 @@ class GitIntelligence:
         if result is None or result.returncode != 0:
             return []
 
-        commits: list[dict[str, Any]] = []
+        commits: list[dict[str, object]] = []
         for line in result.stdout.strip().split("\n"):
             if not line.strip():
                 continue
@@ -211,7 +211,7 @@ class GitIntelligence:
                 })
         return commits
 
-    def hot_files(self, limit: int = 10) -> list[dict[str, Any]]:
+    def hot_files(self, limit: int = 10) -> list[dict[str, object]]:
         """Find the most frequently changed files."""
         result = self._run_git([
             "log", "--format=", "--name-only", "-n", str(int(limit) * 10)

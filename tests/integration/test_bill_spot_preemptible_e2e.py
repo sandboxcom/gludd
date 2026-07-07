@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from general_ludd.infra.pricing import INFRA_PRICING, InfraTracker
-from general_ludd.pricing_intel.models import BillingGranularity, ComputePrice
+from general_ludd.pricing_intel.models import BillingGranularity, BillingTerms, ComputePrice
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STACKS_DIR = REPO_ROOT / "infra" / "terraform" / "stacks"
@@ -169,6 +169,9 @@ class TestInfraTrackerSpotPricing:
             sku="A100-SXM4-80GB-1x",
             usd_per_unit=0.0004,
             granularity=BillingGranularity.per_second,
+            spot=True,
+            terms=BillingTerms.postpaid_per_use,
+            source="test",
         )
         catalog.compute_price.return_value = spot_price
 
@@ -187,6 +190,9 @@ class TestInfraTrackerSpotPricing:
             sku="A100-SXM4-80GB-1x",
             usd_per_unit=0.00083,
             granularity=BillingGranularity.per_second,
+            spot=False,
+            terms=BillingTerms.postpaid_per_use,
+            source="test",
         )
         catalog.compute_price.return_value = regular_price
 
@@ -225,12 +231,18 @@ class TestInfraTrackerSpotPricing:
             sku="A100",
             usd_per_unit=0.0004,
             granularity=BillingGranularity.per_second,
+            spot=True,
+            terms=BillingTerms.postpaid_per_use,
+            source="test",
         )
         regular_p = ComputePrice(
             provider="runpod",
             sku="A100",
             usd_per_unit=0.00083,
             granularity=BillingGranularity.per_second,
+            spot=False,
+            terms=BillingTerms.postpaid_per_use,
+            source="test",
         )
         catalog.compute_price.side_effect = [spot_p, regular_p]
 

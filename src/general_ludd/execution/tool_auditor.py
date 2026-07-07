@@ -12,7 +12,6 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass
@@ -31,11 +30,11 @@ class BadCallSituation:
     without serializing the full agent environment.
     """
     tool_name: str
-    tool_args: dict[str, Any]
+    tool_args: dict[str, object]
     classification: str
     reason: str
     task_excerpt: str = ""
-    recent_calls: list[dict[str, Any]] = field(default_factory=list)
+    recent_calls: list[dict[str, object]] = field(default_factory=list)
     timestamp: float = 0.0
     work_type: str = ""
 
@@ -48,7 +47,7 @@ class RedundancyDetector:
         self._last_call: tuple[str, str] | None = None  # (tool_name, args_hash)
         self._consecutive_count: int = 0
 
-    def check(self, tool_name: str, args: dict[str, Any]) -> CallVerdict:
+    def check(self, tool_name: str, args: dict[str, object]) -> CallVerdict:
         args_hash = hashlib.sha256(
             json.dumps(args, sort_keys=True, default=str).encode()
         ).hexdigest()
@@ -82,12 +81,12 @@ class ErrorLoopDetector:
         self._max_error_retries = max_error_retries
         self._error_counts: dict[str, int] = {}  # args_hash -> count
 
-    def _hash_args(self, args: dict[str, Any]) -> str:
+    def _hash_args(self, args: dict[str, object]) -> str:
         return hashlib.sha256(
             json.dumps(args, sort_keys=True, default=str).encode()
         ).hexdigest()[:16]
 
-    def check(self, tool_name: str, args: dict[str, Any]) -> CallVerdict:
+    def check(self, tool_name: str, args: dict[str, object]) -> CallVerdict:
         key = f"{tool_name}:{self._hash_args(args)}"
         count = self._error_counts.get(key, 0)
         if count >= self._max_error_retries:
@@ -101,11 +100,11 @@ class ErrorLoopDetector:
             )
         return CallVerdict(allowed=True)
 
-    def record_error(self, tool_name: str, args: dict[str, Any], error: str) -> None:
+    def record_error(self, tool_name: str, args: dict[str, object], error: str) -> None:
         key = f"{tool_name}:{self._hash_args(args)}"
         self._error_counts[key] = self._error_counts.get(key, 0) + 1
 
-    def record_success(self, tool_name: str, args: dict[str, Any]) -> None:
+    def record_success(self, tool_name: str, args: dict[str, object]) -> None:
         key = f"{tool_name}:{self._hash_args(args)}"
         self._error_counts.pop(key, None)
 
@@ -140,7 +139,7 @@ class IrrelevanceDetector:
         self._keywords = relevant_keywords
 
     def check(
-        self, tool_name: str, args: dict[str, Any], task_context: str,
+        self, tool_name: str, args: dict[str, object], task_context: str,
     ) -> CallVerdict:
         if not task_context:
             return CallVerdict(allowed=True)
@@ -186,12 +185,12 @@ class ToolCallAuditor:
         self._error_loop = error_loop_detector or ErrorLoopDetector()
         self._irrelevance = irrelevance_detector or IrrelevanceDetector()
         self._max_history = max_history
-        self.call_history: list[dict[str, Any]] = []
+        self.call_history: list[dict[str, object]] = []
 
     def audit(
         self,
         tool_name: str,
-        tool_args: dict[str, Any],
+        tool_args: dict[str, object],
         task_context: str = "",
         work_type: str = "",
         capture_situation: bool = False,
@@ -223,10 +222,10 @@ class ToolCallAuditor:
             return None
         return CallVerdict(allowed=True)
 
-    def record_error(self, tool_name: str, args: dict[str, Any], error: str) -> None:
+    def record_error(self, tool_name: str, args: dict[str, object], error: str) -> None:
         self._error_loop.record_error(tool_name, args, error)
 
-    def record_success(self, tool_name: str, args: dict[str, Any], result: Any = None) -> None:
+    def record_success(self, tool_name: str, args: dict[str, object], result: object = None) -> None:
         self._error_loop.record_success(tool_name, args)
         self._record_call(tool_name, args, success=True, result=str(result)[:200] if result else None)
 
@@ -237,7 +236,7 @@ class ToolCallAuditor:
         self.call_history.clear()
 
     def _record_call(
-        self, tool_name: str, args: dict[str, Any],
+        self, tool_name: str, args: dict[str, object],
         success: bool | None = None, result: str | None = None,
     ) -> None:
         short_args = {k: str(v)[:100] for k, v in args.items()}
@@ -250,7 +249,7 @@ class ToolCallAuditor:
                     if result is not None:
                         entry["result"] = result
                     return
-        new_entry: dict[str, Any] = {
+        new_entry: dict[str, object] = {
             "tool_name": tool_name,
             "args": short_args,
             "timestamp": time.time(),
@@ -264,7 +263,7 @@ class ToolCallAuditor:
             self.call_history.pop(0)
 
     def _maybe_capture(
-        self, verdict: CallVerdict, tool_name: str, args: dict[str, Any],
+        self, verdict: CallVerdict, tool_name: str, args: dict[str, object],
         task_context: str, work_type: str, capture: bool,
     ) -> CallVerdict | BadCallSituation:
         if not capture:

@@ -8,7 +8,7 @@ block so the playbook cannot lie about timing.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,7 +24,7 @@ class MarkdownSection(_Strict):
 
 class Metric(_Strict):
     label: str
-    value: Any
+    value: object
     unit: str | None = None
 
 
@@ -37,16 +37,16 @@ class TableSection(_Strict):
     type: Literal["table"] = "table"
     title: str | None = None
     columns: list[str]
-    rows: list[list[Any]]
+    rows: list[list[object]]
 
 
 class ChartSeries(_Strict):
     name: str
-    values: list[Any] = Field(default_factory=list)
+    values: list[object] = Field(default_factory=list)
 
 
 class ChartData(_Strict):
-    labels: list[Any] = Field(default_factory=list)
+    labels: list[object] = Field(default_factory=list)
     series: list[ChartSeries]
 
 

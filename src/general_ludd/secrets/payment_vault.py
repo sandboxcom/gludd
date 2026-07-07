@@ -14,9 +14,9 @@ from general_ludd.secrets.manager import SecretsManager, SecretsUnavailableError
 
 logger = logging.getLogger("general_ludd.secrets.payment_vault")
 
-hashes: Any = None
-AESGCM: Any = None
-HKDF: Any = None
+hashes: object = None
+AESGCM: object = None
+HKDF: object = None
 try:
     hashes = importlib.import_module("cryptography.hazmat.primitives.hashes")
     _aead = importlib.import_module("cryptography.hazmat.primitives.ciphers.aead")
@@ -165,12 +165,12 @@ class SecurePaymentVault:
             plaintext = json.dumps(
                 {"card_number": pan, "cvc": cvc}, separators=(",", ":")
             ).encode("utf-8")
-            ciphertext = AESGCM(dek).encrypt(nonce, plaintext, None)
+            ciphertext = cast(Any, AESGCM)(dek).encrypt(nonce, plaintext, None)
 
             kek_nonce = os.urandom(12)
-            encrypted_dek = kek_nonce + AESGCM(kek).encrypt(kek_nonce, dek, None)
+            encrypted_dek = kek_nonce + cast(Any, AESGCM)(kek).encrypt(kek_nonce, dek, None)
 
-            payload: dict[str, Any] = {
+            payload: dict[str, object] = {
                 "token": token,
                 "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
                 "nonce": base64.b64encode(nonce).decode("ascii"),
@@ -201,7 +201,7 @@ class SecurePaymentVault:
         last4 = data.get("last4")
         return str(last4) if last4 is not None else None
 
-    def get_card_metadata(self, label: str = "default") -> dict[str, Any] | None:
+    def get_card_metadata(self, label: str = "default") -> dict[str, object] | None:
         data = self._read_card(label)
         if data is None:
             return None
@@ -217,8 +217,8 @@ class SecurePaymentVault:
             "stored_at": data.get("stored_at"),
         }
 
-    def list_cards(self) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
+    def list_cards(self) -> list[dict[str, object]]:
+        out: list[dict[str, object]] = []
         for label in self._iter_card_labels():
             meta = self.get_card_metadata(label)
             if meta is not None:
@@ -251,7 +251,7 @@ class SecurePaymentVault:
     def _card_path(self, label: str) -> str:
         return f"{_CARDS_PREFIX}/{label}"
 
-    def _read_card(self, label: str) -> dict[str, Any] | None:
+    def _read_card(self, label: str) -> dict[str, object] | None:
         try:
             return self._sm.read_secret(self._card_path(label))
         except SecretsUnavailableError as exc:
@@ -295,8 +295,8 @@ class SecurePaymentVault:
     def _derive_kek(self, root_key: bytes, label: str) -> bytes:
         return cast(
             bytes,
-            HKDF(
-                algorithm=hashes.SHA256(),
+            cast(Any, HKDF)(
+                algorithm=cast(Any, hashes).SHA256(),
                 length=32,
                 salt=None,
                 info=label.encode("utf-8"),

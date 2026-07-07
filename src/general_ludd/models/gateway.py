@@ -6,7 +6,7 @@ import logging
 import math
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import tenacity
 from pydantic import BaseModel, Field, field_validator
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_RESPONSE_CACHE_TTL_SECONDS = 3600
 
 
-def _coerce_token_count(value: Any) -> int:
+def _coerce_token_count(value: object) -> int:
     """Coerce a provider-supplied token count into a safe, billable int.
 
     Provider usage metadata is fully untrusted. We:
@@ -57,6 +57,50 @@ def _coerce_token_count(value: Any) -> int:
 class _SecretsResolver(Protocol):
     def resolve(self, alias_name: str) -> str | None: ...
 
+
+
+class _HealthTrackerProtocol(Protocol):
+    def is_healthy(self, model_id: str, admit_probe: bool = ...) -> bool: ...
+    def record_success(self, model_id: str) -> None: ...
+    def record_event(self, event: object) -> None: ...
+
+
+class _BudgetGuardProtocol(Protocol):
+    def record_spend(self, cost: float) -> None: ...
+
+
+class _PauseControllerProtocol(Protocol):
+    def is_paused(self, scope: str, target_id: str) -> bool: ...
+
+
+class _ResponseCacheProtocol(Protocol):
+    def get(self, cache_key: str) -> dict[str, object] | None: ...
+    def set(self, cache_key: str, response: dict[str, object], *, expire: float | None = ...) -> None: ...
+
+
+class _MetricsCollectorProtocol(Protocol):
+    def record_model_call(
+        self,
+        agent_id: str,
+        model_id: str,
+        input_tokens: int,
+        output_tokens: int,
+        success: bool,
+        cost_per_input_token: float,
+        cost_per_output_token: float,
+    ) -> None: ...
+
+
+class _EventBusProtocol(Protocol):
+    def publish(self, event: object) -> None: ...
+
+
+class _HookSystemProtocol(Protocol):
+    def fire(self, name: str, payload: dict[str, object]) -> None: ...
+
+
+class _WorkerBroadcasterProtocol(Protocol):
+    def broadcast_model_update(self, action: str, model_id: str, payload: dict[str, object]) -> None: ...
 
 
 class BudgetExceededError(ValueError):
@@ -146,10 +190,10 @@ class ModelProfile(BaseModel):
 @dataclass
 class ModelResponse:
     content: str
-    usage_metadata: dict[str, Any] = field(default_factory=dict)
+    usage_metadata: dict[str, object] = field(default_factory=dict)
     cost_estimate: float = 0.0
     model_name: str = ""
-    raw_response: Any = None
+    raw_response: object = None
     # Tool/function calls the model requested, NORMALIZED to the OpenAI-nested
     # shape the tool-call loop consumes: each item is
     #   {"id": str, "type": "function",
@@ -162,7 +206,7 @@ class ModelResponse:
     # ToolCallLoop's `getattr(response, "tool_calls", None)` was always None and
     # NO tool was ever dispatched in production. _extract_tool_calls normalizes
     # either provider shape into the nested shape and we store it here.
-    tool_calls: list[dict[str, Any]] | None = None
+    tool_calls: list[dict[str, object]] | None = None
 
 
 def _extract_retry_after_seconds(exc: BaseException) -> float | None:
@@ -193,7 +237,7 @@ def _extract_retry_after_seconds(exc: BaseException) -> float | None:
         return None
 
 
-def _extract_tool_calls(raw_response: Any) -> list[dict[str, Any]] | None:
+def _extract_tool_calls(raw_response: object) -> list[dict[str, object]] | None:
     """Normalize a provider response's tool calls into the nested OpenAI shape.
 
     The MCP ToolCallLoop reads each tool call as ``tc["function"]["name"]`` /
@@ -218,7 +262,7 @@ def _extract_tool_calls(raw_response: Any) -> list[dict[str, Any]] | None:
     if not isinstance(raw_calls, (list, tuple)) or not raw_calls:
         return None
 
-    normalized: list[dict[str, Any]] = []
+    normalized: list[dict[str, object]] = []
     for tc in raw_calls:
         # Support both dict-shaped tool calls (LangChain flat, or already-nested)
         # and OpenAI SDK objects (with .id / .function.name / .function.arguments).
@@ -268,17 +312,17 @@ class ModelGateway:
         profiles: list[ModelProfile] | dict[str, ModelProfile] | None = None,
         provider_registry: ProviderRegistry | None = None,
         secrets_manager: _SecretsResolver | None = None,
-        budget_guard: Any | None = None,
+        budget_guard: _BudgetGuardProtocol | None = None,
         router: ModelRouter | None = None,
-        event_bus: Any | None = None,
-        hook_system: Any | None = None,
-        worker_broadcaster: Any | None = None,
-        metrics_collector: Any | None = None,
+        event_bus: _EventBusProtocol | None = None,
+        hook_system: _HookSystemProtocol | None = None,
+        worker_broadcaster: _WorkerBroadcasterProtocol | None = None,
+        metrics_collector: _MetricsCollectorProtocol | None = None,
         metrics_agent_id: str | None = None,
-        response_cache: Any | None = None,
+        response_cache: _ResponseCacheProtocol | None = None,
         response_cache_ttl_seconds: int = DEFAULT_RESPONSE_CACHE_TTL_SECONDS,
-        health_tracker: Any | None = None,
-        pause_controller: Any | None = None,
+        health_tracker: _HealthTrackerProtocol | None = None,
+        pause_controller: _PauseControllerProtocol | None = None,
         langsmith_tracer: LangSmithTracer | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
@@ -354,9 +398,9 @@ class ModelGateway:
         self,
         profile_id: str,
         *,
-        tools: list[dict[str, Any]] | None = None,
+        tools: list[dict[str, object]] | None = None,
         project_id: str | None = None,
-    ) -> Any:
+    ) -> object:
         """Return a LangChain chat model for use with langgraph agents.
 
         Constructs the provider with the same credential + SSRF guards as
@@ -387,7 +431,7 @@ class ModelGateway:
             raise ValueError(
                 f"No provider registry configured for '{profile_id}'"
             )
-        init_kwargs: dict[str, Any] = {"model": profile.model_name}
+        init_kwargs: dict[str, object] = {"model": profile.model_name}
         if api_key:
             init_kwargs["api_key"] = api_key
         if profile.api_base_alias and job_secrets:
@@ -585,7 +629,7 @@ class ModelGateway:
             cached = self._response_cache.get(cache_key)
             if cached is not None:
                 logger.debug("Cache hit for profile=%s key=%s", profile_id, cache_key[:12])
-                return ModelResponse(**cached)
+                return ModelResponse(**cast(dict[str, Any], cached))
 
         # Cache stampede single-flight: under concurrency N identical misses
         # would otherwise all hit the provider. Serialize identical misses on a
@@ -603,7 +647,7 @@ class ModelGateway:
                             profile_id,
                             cache_key[:12],
                         )
-                        return ModelResponse(**cached)
+                        return ModelResponse(**cast(dict[str, Any], cached))
                     return self._invoke_and_bill(
                         profile, profile_id, messages, cache_key, **kwargs
                     )
@@ -614,7 +658,7 @@ class ModelGateway:
             profile, profile_id, messages, None, **kwargs
         )
 
-    def _resolver_for_project(self, project_id: str | None) -> Any:
+    def _resolver_for_project(self, project_id: str | None) -> _SecretsResolver | None:
         """Return the secrets resolver scoped to ``project_id`` when possible.
 
         S-1 wiring (task #25): the daemon injects a project-aware resolver
@@ -642,7 +686,7 @@ class ModelGateway:
         if not callable(for_project):
             return base
         try:
-            return for_project(project_id)
+            return cast(_SecretsResolver, for_project(project_id))
         except Exception:
             logger.warning(
                 "project-scoped secrets unavailable for project_id=%r; "
@@ -709,7 +753,7 @@ class ModelGateway:
         _work_type = kwargs.pop("work_type", "unknown")
         work_type = str(_work_type) if _work_type else "unknown"
 
-        init_kwargs: dict[str, Any] = {"model": profile.model_name}
+        init_kwargs: dict[str, object] = {"model": profile.model_name}
         if api_key:
             init_kwargs["api_key"] = api_key
         if profile.api_base_alias and job_secrets:
@@ -723,7 +767,7 @@ class ModelGateway:
                         f"{base_url!r} for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
-        extra_body: dict[str, Any] = kwargs.pop("extra_body", {})
+        extra_body: dict[str, object] = kwargs.pop("extra_body", {})
         for key in ("guided_json", "guided_regex", "guided_choice",
                       "guided_grammar", "guided_whitespace_pattern"):
             val = kwargs.pop(key, None)
@@ -1229,10 +1273,7 @@ class ModelGateway:
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> ModelResponse:
-        """Call one fallback profile, delegating success/failure accounting to
-        call_model.
-
-        The bare fallback-exhaustion loop used to call call_model(fb_id) with no
+        """The bare fallback-exhaustion loop used to call call_model(fb_id) with no
         is_healthy gate and never recorded the fallback's success or failure, so
         the breaker never tracked fallback health (Fix 3). call_model already
         records both failures (via record_timeout_on_failure on exception) AND
@@ -1385,7 +1426,7 @@ class ModelGateway:
         # Thread budget params into kwargs so _try_call_model / _walk_fallbacks
         # forward them to call_model (they are explicit keyword-only params of
         # call_model_with_fallback, NOT in **kwargs).
-        _call_kwargs: dict[str, Any] = {
+        _call_kwargs: dict[str, object] = {
             "estimated_cost": estimated_cost,
             "budget_remaining": budget_remaining,
             **kwargs,
@@ -1423,12 +1464,12 @@ class ModelGateway:
 
     def _notify_profile_change(
         self,
-        event: Any,
+        event: object,
         hook_name: str,
-        hook_payload: dict[str, Any],
+        hook_payload: dict[str, object],
         action: str,
         model_id: str,
-        broadcast_payload: dict[str, Any],
+        broadcast_payload: dict[str, object],
     ) -> None:
         """Publish event, fire hook, and broadcast a profile add/remove notification.
 

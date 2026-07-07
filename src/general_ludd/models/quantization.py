@@ -14,7 +14,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import httpx
 
@@ -123,7 +123,7 @@ class QuantizationInfo:
     confidence: float = 0.0
     provider_name: str | None = None
     bits_estimate: int | None = None
-    raw_data: dict[str, Any] | None = None
+    raw_data: dict[str, object] | None = None
     detected_at: float = field(default_factory=time.time)
 
     def __post_init__(self) -> None:
@@ -362,7 +362,7 @@ class QuantizationTracker:
             return False
         return existing.precision != new_info.precision
 
-    def to_dict(self) -> dict[str, dict[str, Any]]:
+    def to_dict(self) -> dict[str, dict[str, object]]:
         return {
             mid: {
                 "precision": qi.precision,
@@ -376,16 +376,17 @@ class QuantizationTracker:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, dict[str, Any]]) -> QuantizationTracker:
+    def from_dict(cls, data: dict[str, dict[str, object]]) -> QuantizationTracker:
         tracker = cls()
         for mid, d in data.items():
+            d_any = cast(dict[str, Any], d)
             tracker._data[mid] = QuantizationInfo(
-                precision=d["precision"],
-                source=d.get("source", "unknown"),
-                confidence=d.get("confidence", 0.0),
-                provider_name=d.get("provider_name"),
-                bits_estimate=d.get("bits_estimate"),
-                detected_at=d.get("detected_at", time.time()),
+                precision=cast(str, d_any["precision"]),
+                source=cast(str, d_any.get("source", "unknown")),
+                confidence=cast(float, d_any.get("confidence", 0.0)),
+                provider_name=cast("str | None", d_any.get("provider_name")),
+                bits_estimate=cast("int | None", d_any.get("bits_estimate")),
+                detected_at=cast(float, d_any.get("detected_at", time.time())),
             )
         return tracker
 
@@ -463,19 +464,20 @@ def task_precision_suitability(task_type: str, precision: str) -> str:
 
 def rank_models_for_task(
     task_type: str,
-    models: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    models: list[dict[str, object]],
+) -> list[dict[str, object]]:
     requirement = _TASK_PRECISION_REQUIREMENTS.get(task_type, "low")
-    costs = [m.get("cost", 1.0) for m in models]
+    costs = [cast(float, m.get("cost", 1.0)) for m in models]
     max_cost = max(costs) if costs else 1.0
     if max_cost == 0:
         max_cost = 1.0
-    scored = []
+    scored: list[tuple[float, object]] = []
     for m in models:
-        precision = m.get("precision", "unknown")
+        m_any = cast(dict[str, Any], m)
+        precision = cast(str, m_any.get("precision", "unknown"))
         p = Precision.from_string(precision)
         quality = p.quality_score()
-        cost = m.get("cost", 1.0)
+        cost = cast(float, m_any.get("cost", 1.0))
         cost_ratio = cost / max_cost if max_cost > 0 else 1.0
         if requirement == "high":
             score = quality * 0.9 - cost_ratio * 0.1
@@ -485,4 +487,4 @@ def rank_models_for_task(
             score = quality * 0.5 - cost_ratio * 0.5
         scored.append((score, m))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [m for _, m in scored]
+    return [cast(dict[str, object], m) for _, m in scored]

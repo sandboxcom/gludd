@@ -41,29 +41,30 @@ class LangChainRetryGateway:
     default path (``model.use_langchain_retry: false``).
     """
 
-    def __init__(self, gateway: Any) -> None:
+    def __init__(self, gateway: object) -> None:
         self._gateway = gateway
-        self._chain: Runnable[Any, Any] | None = None
+        self._chain: Runnable[object, object] | None = None
 
-    def _make_profile_runnable(self, profile_id: str) -> Runnable[Any, Any]:
+    def _make_profile_runnable(self, profile_id: str) -> Runnable[object, object]:
         """Build a Runnable that invokes the gateway for a single profile."""
 
-        def _invoke_profile(input: dict[str, Any]) -> Any:
-            return self._gateway.call_model(
+        def _invoke_profile(input: dict[str, object]) -> object:
+            gateway = cast(Any, self._gateway)
+            return gateway.call_model(
                 profile_id,
                 input["messages"],
                 tools=input.get("tools"),
-                **input.get("_call_kwargs", {}),
+                **cast(Any, input.get("_call_kwargs", {})),
             )
 
-        return RunnableLambda(_invoke_profile)
+        return cast(Runnable[object, object], RunnableLambda(cast(Any, _invoke_profile)))
 
     def build_chain(
         self,
         primary_id: str,
         fallback_ids: list[str],
-        retry_config: dict[str, Any] | None = None,
-    ) -> Runnable[Any, Any]:
+        retry_config: dict[str, object] | None = None,
+    ) -> Runnable[object, object]:
         """Build a LangChain Runnable chain with retry + fallbacks.
 
         Args:
@@ -82,17 +83,18 @@ class LangChainRetryGateway:
             A Runnable whose ``.invoke(input)`` calls the primary with retry
             and falls back to the configured fallback profiles.
         """
-        cfg = dict(retry_config or {})
-        stop_after_attempt = cfg.pop("stop_after_attempt", 3)
-        wait_exponential_jitter = cfg.pop("wait_exponential_jitter", True)
-        retry_exc_types: tuple[type[BaseException], ...] = cfg.pop(
-            "retry_if_exception_type", (Exception,)
+        cfg: dict[str, Any] = cast(dict[str, Any], dict(retry_config or {}))
+        stop_after_attempt: int = cast(Any, cfg.pop("stop_after_attempt", 3))
+        wait_exponential_jitter: bool = cast(Any, cfg.pop("wait_exponential_jitter", True))
+        retry_exc_types: tuple[type[BaseException], ...] = cast(
+            Any,
+            cfg.pop("retry_if_exception_type", (Exception,)),
         )
-        exponential_jitter_params = cfg.pop("exponential_jitter_params", None)
+        exponential_jitter_params: Any = cfg.pop("exponential_jitter_params", None)
 
         primary = self._make_profile_runnable(primary_id)
 
-        primary_with_retry: Runnable[Any, Any] = primary.with_retry(
+        primary_with_retry: Runnable[object, object] = primary.with_retry(
             stop_after_attempt=stop_after_attempt,
             wait_exponential_jitter=wait_exponential_jitter,
             retry_if_exception_type=retry_exc_types,
@@ -110,10 +112,10 @@ class LangChainRetryGateway:
     def call(
         self,
         messages: list[dict[str, str]],
-        tools: list[dict[str, Any]] | None = None,
-        config: dict[str, Any] | None = None,
-        context: dict[str, Any] | None = None,
-    ) -> Any:
+        tools: list[dict[str, object]] | None = None,
+        config: dict[str, object] | None = None,
+        context: dict[str, object] | None = None,
+    ) -> object:
         """Invoke the retry + fallback chain.
 
         Args:
@@ -133,7 +135,7 @@ class LangChainRetryGateway:
             raise RuntimeError(
                 "No chain built — call build_chain() first"
             )
-        input_dict: dict[str, Any] = {
+        input_dict: dict[str, object] = {
             "messages": messages,
             "tools": tools,
             "_call_kwargs": context or {},
@@ -141,7 +143,7 @@ class LangChainRetryGateway:
         return self._chain.invoke(input_dict, config=cast(RunnableConfig, config or {}))
 
 
-_default_retry_config: dict[str, Any] = {
+_default_retry_config: dict[str, object] = {
     "stop_after_attempt": 3,
     "wait_exponential_jitter": True,
 }

@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any
 
 # Syslog severity (the low 3 bits of PRI) and facility (PRI >> 3) decode tables.
 _SEVERITIES = (
@@ -118,7 +117,7 @@ class SyslogFileSource:
 
     KIND = "logs"
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, object]) -> None:
         cfg = config or {}
         root = cfg.get("root")
         if not root:
@@ -127,7 +126,7 @@ class SyslogFileSource:
         self._root = os.path.realpath(str(root))
         self.name = str(cfg.get("name", "syslog_file"))
         # default read cap; overridable per-query via spec['limit'].
-        self._default_limit = int(cfg.get("limit", 1000))
+        self._default_limit = int(str(cfg.get("limit", 1000)))
         self._encoding = str(cfg.get("encoding", "utf-8"))
 
     # -- confinement ----------------------------------------------------------
@@ -141,7 +140,7 @@ class SyslogFileSource:
         return real
 
     # -- contract -------------------------------------------------------------
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Report whether the confinement root is a usable directory. Never raises."""
         try:
             if not os.path.isdir(self._root):
@@ -152,7 +151,7 @@ class SyslogFileSource:
         except OSError as exc:  # pragma: no cover - defensive
             return {"ok": False, "detail": f"health error: {exc}"}
 
-    def _parse_line(self, line: str) -> dict[str, Any]:
+    def _parse_line(self, line: str) -> dict[str, object]:
         stripped = line.rstrip("\n")
         m5 = _RFC5424.match(stripped)
         if m5 is not None:
@@ -210,7 +209,7 @@ class SyslogFileSource:
             "raw": stripped,
         }
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Parse a confined syslog file into normalized records.
 
         spec keys:
@@ -226,12 +225,12 @@ class SyslogFileSource:
             raise ValueError("query spec requires 'path'")
         real = self._resolve_confined(str(path))
 
-        limit = int(spec.get("limit", self._default_limit))
+        limit = int(str(spec.get("limit", self._default_limit)))
         pattern = spec.get("pattern")
-        compiled = re.compile(pattern) if pattern else None
+        compiled = re.compile(str(pattern)) if pattern else None
         since = spec.get("since")
 
-        out: list[dict[str, Any]] = []
+        out: list[dict[str, object]] = []
         with open(real, encoding=self._encoding, errors="replace") as fh:
             for line in fh:
                 raw = line.rstrip("\n")

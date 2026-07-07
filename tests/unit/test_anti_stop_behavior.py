@@ -30,37 +30,19 @@ def _recipe(target: str) -> str:
     return content[start:next_target]
 
 
-class TestShipCommitEnforcesFastGate:
-    """ship-commit MUST run lint+typecheck+collect before committing."""
+class TestBatchPushTarget:
+    """batch-push is the sanctioned push target (replaced ship-commit)."""
 
-    def test_ship_commit_exists(self):
-        assert _recipe("ship-commit"), "ship-commit target must exist"
+    def test_batch_push_exists(self):
+        assert _recipe("batch-push"), "batch-push target must exist"
 
-    def test_ship_commit_runs_lint(self):
-        recipe = _recipe("ship-commit")
-        assert "lint" in recipe, "ship-commit must run make lint before committing"
+    def test_batch_push_uses_make_subcall(self):
+        recipe = _recipe("batch-push")
+        assert "$(MAKE)" in recipe, "batch-push must use $(MAKE) for sub-targets"
 
-    def test_ship_commit_runs_typecheck(self):
-        recipe = _recipe("ship-commit")
-        assert "typecheck" in recipe, "ship-commit must run make typecheck"
-
-    def test_ship_commit_runs_collect_check(self):
-        recipe = _recipe("ship-commit")
-        assert "collect-check" in recipe, "ship-commit must run collect-check"
-
-    def test_ship_commit_uses_sandboxcom_key(self):
-        recipe = _recipe("ship-commit")
-        assert "sandboxcom_github_rsa" in recipe, "ship-commit must use sandboxcom SSH key"
-
-    def test_ship_commit_aborts_on_gate_failure(self):
-        """The recipe must use $(MAKE) for sub-targets so failures propagate."""
-        recipe = _recipe("ship-commit")
-        assert "$(MAKE)" in recipe, "ship-commit must use $(MAKE) so gate failures abort the commit"
-
-    def test_ship_commit_in_allowlist(self):
-        """ship-commit must be allowlisted in the commit gate test."""
-        content = TEST_COMMIT_GATE.read_text()
-        assert "ship-commit" in content, "ship-commit must be in ALLOWLIST_NO_GATE"
+    def test_batch_push_uses_sandboxcom_key(self):
+        recipe = _recipe("batch-push")
+        assert "git-push-sandboxcom" in recipe, "batch-push must delegate to git-push-sandboxcom"
 
 
 class TestForegroundBlockGuardrail:
@@ -113,7 +95,7 @@ class TestStopPatternEnforcer:
 
     def test_has_deferral_patterns(self):
         content = ENFORCE_STOP.read_text()
-        assert "want me to" in content.lower() or "NO_WAIT_PATTERNS" in content, (
+        assert "COMPLETION_VERBATIM" in content, (
             "enforce-stop.ts must detect deferral patterns"
         )
 
@@ -169,8 +151,8 @@ class TestMainThreadRestriction:
 
     def test_has_dispatch_pattern(self):
         content = AGENTS_MD.read_text()
-        assert "ship-commit" in content, (
-            "AGENTS.md must reference ship-commit as the dispatch mechanism"
+        assert "batch-push" in content, (
+            "AGENTS.md must reference batch-push as the dispatch mechanism"
         )
 
     def test_forbids_lint_on_main_thread(self):

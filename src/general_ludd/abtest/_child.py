@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 import sys
 import traceback
-from typing import Any
+from typing import cast
 
 from general_ludd.abtest.workloads import RESULT_SENTINEL as SENTINEL
 from general_ludd.system.rlimit import apply_limits
@@ -51,16 +51,16 @@ def _apply_limits(mem_limit_mb: int, cpu_seconds: int) -> None:
     apply_limits(mem_limit_mb, cpu_seconds)
 
 
-def _run_workload(workload: dict[str, Any]) -> dict[str, Any]:
+def _run_workload(workload: dict[str, object]) -> dict[str, object]:
     """Execute the workload spec. Raises on any failure; returns a small
     JSON-safe detail dict on success."""
     kind = workload.get("kind")
     if kind == "import_module":
-        module_name = workload["module"]
+        module_name = cast(str, workload["module"])
         import importlib
 
         mod = importlib.import_module(module_name)
-        expect_attr = workload.get("expect_attr")
+        expect_attr = cast(str | None, workload.get("expect_attr"))
         if expect_attr is not None and not hasattr(mod, expect_attr):
             raise AssertionError(
                 f"candidate module {module_name} missing attr {expect_attr!r}"
@@ -69,7 +69,7 @@ def _run_workload(workload: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"unknown workload kind: {kind!r}")
 
 
-def _write_result_nonce(result_path: str, nonce: str, detail: dict[str, Any]) -> None:
+def _write_result_nonce(result_path: str, nonce: str, detail: dict[str, object]) -> None:
     """Write the parent-generated ``nonce`` (plus a JSON detail blob) into the
     parent-created ``result_path``.
 

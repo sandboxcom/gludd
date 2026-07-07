@@ -8,8 +8,6 @@ tests. Returns a serializable report.
 
 from __future__ import annotations
 
-from typing import Any
-
 from general_ludd.dogfood.runner import DogfoodConfig, DogfoodRunner
 from general_ludd.dogfood.validator import DogfoodValidator
 
@@ -20,7 +18,7 @@ def run_smoke_and_validate(
     target_repo: str | None = None,
     runtime_profile: str = "ansible",
     model_profile: str = "dogfood-echo",
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Run a dogfood smoke task and adjudicate it; return a report dict."""
     runner = DogfoodRunner(
         DogfoodConfig(

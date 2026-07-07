@@ -29,7 +29,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
@@ -61,7 +61,7 @@ class _SentryResponse:
             return self._body.decode("utf-8", errors="replace")
         return self._body
 
-    def json(self) -> Any:
+    def json(self) -> object:
         body = self.text.strip()
         if not body:
             return None
@@ -127,7 +127,7 @@ class SentrySource:
     #: Connector kind — Sentry surfaces error/issue events as logs.
     KIND: str = "logs"
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, object]) -> None:
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
 
@@ -153,14 +153,14 @@ class SentrySource:
 
         timeout = config.get("timeout", _DEFAULT_TIMEOUT)
         try:
-            self.timeout: float = float(timeout)
+            self.timeout: float = float(str(timeout))
         except (TypeError, ValueError) as exc:
             raise ValueError("config['timeout'] must be a number") from exc
 
         transport = config.get("transport")
         if transport is None:
             transport = _UrllibTransport()
-        self._transport: Transport = transport
+        self._transport: Transport = cast(Transport, transport)
 
     # ------------------------------------------------------------------ #
     # Construction-time validation
@@ -202,7 +202,7 @@ class SentrySource:
     # ------------------------------------------------------------------ #
     # Health
     # ------------------------------------------------------------------ #
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the Sentry API. Never raises.
 
         Returns ``{"ok": True, "detail": "..."}`` on a 2xx from the API root,
@@ -222,7 +222,7 @@ class SentrySource:
     # ------------------------------------------------------------------ #
     # Query
     # ------------------------------------------------------------------ #
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         """Fetch issues matching ``spec`` and return normalized records.
 
         ``spec`` keys (all optional):
@@ -240,7 +240,7 @@ class SentrySource:
         params["statsPeriod"] = str(spec.get("statsPeriod") or _DEFAULT_STATS_PERIOD)
         limit = spec.get("limit", _DEFAULT_LIMIT)
         try:
-            limit_int = int(limit)
+            limit_int = int(str(limit))
         except (TypeError, ValueError):
             limit_int = _DEFAULT_LIMIT
         params["limit"] = str(limit_int)
@@ -252,7 +252,7 @@ class SentrySource:
         if not isinstance(payload, list):
             return []
 
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for issue in payload:
             if isinstance(issue, dict):
                 records.append(self._normalize_issue(issue))
@@ -263,7 +263,7 @@ class SentrySource:
     # ------------------------------------------------------------------ #
     # fetch_event
     # ------------------------------------------------------------------ #
-    def fetch_event(self, issue_id: str) -> dict[str, Any] | None:
+    def fetch_event(self, issue_id: str) -> dict[str, object] | None:
         """Fetch the latest event for ``issue_id`` and normalize it.
 
         Surfaces ``trace_id`` and selected ``contexts`` keys in ``labels`` so a
@@ -284,19 +284,20 @@ class SentrySource:
     # ------------------------------------------------------------------ #
     # Normalization
     # ------------------------------------------------------------------ #
-    def _normalize_issue(self, issue: dict[str, Any]) -> dict[str, Any]:
-        title = issue.get("title") or issue.get("metadata", {}).get("type") or ""
+    def _normalize_issue(self, issue: dict[str, object]) -> dict[str, object]:
+        metadata = issue.get("metadata", {})
+        title = issue.get("title") or (metadata.get("type") if isinstance(metadata, dict) else None) or ""
         culprit = issue.get("culprit") or ""
         message = f"{title} — {culprit}".strip(" —") if culprit else str(title)
 
         count = issue.get("count")
         value: float | None
         try:
-            value = float(count) if count is not None else None
+            value = float(str(count)) if count is not None else None
         except (TypeError, ValueError):
             value = None
 
-        labels: dict[str, Any] = {}
+        labels: dict[str, object] = {}
         if issue.get("shortId"):
             labels["shortId"] = issue["shortId"]
         if issue.get("status"):
@@ -325,12 +326,12 @@ class SentrySource:
             "raw": issue,
         }
 
-    def _normalize_event(self, event: dict[str, Any], *, issue_id: str) -> dict[str, Any]:
+    def _normalize_event(self, event: dict[str, object], *, issue_id: str) -> dict[str, object]:
         title = event.get("title") or event.get("message") or ""
         culprit = event.get("culprit") or ""
         message = f"{title} — {culprit}".strip(" —") if culprit else str(title)
 
-        labels: dict[str, Any] = {"issueId": issue_id}
+        labels: dict[str, object] = {"issueId": issue_id}
         event_id = event.get("eventID") or event.get("id")
         if event_id:
             labels["eventId"] = event_id

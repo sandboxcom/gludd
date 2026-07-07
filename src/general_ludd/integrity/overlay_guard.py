@@ -25,7 +25,6 @@ import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 from general_ludd.config.project_dir import find_project_gludd_dir
 
@@ -38,7 +37,7 @@ _DEFAULT_SELF_IMPROVE_INTERVAL = 10
 
 
 def resolve_self_improve_enabled(
-    si_cfg: Mapping[str, Any] | None,
+    si_cfg: Mapping[str, object] | None,
     *,
     default_interval: int = _DEFAULT_SELF_IMPROVE_INTERVAL,
 ) -> bool:
@@ -52,7 +51,7 @@ def resolve_self_improve_enabled(
     if not si_cfg:
         return default_interval > 0
     try:
-        interval = int(si_cfg.get("interval", default_interval))
+        interval = int(str(si_cfg.get("interval", default_interval)))
     except (TypeError, ValueError):
         interval = default_interval
     return interval > 0

@@ -9,7 +9,6 @@ import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
 
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentTask
@@ -51,9 +50,9 @@ class AgentDispatcher:
         *,
         tracker: DurationTracker | None = None,
         watchdog: StallWatchdog | None = None,
-        pause_controller: Any | None = None,
+        pause_controller: object | None = None,
         run_recorder: RunRecorder | None = None,
-        mcp_tool_registry: Any | None = None,
+        mcp_tool_registry: object | None = None,
     ) -> None:
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
@@ -93,7 +92,7 @@ class AgentDispatcher:
             self._semaphores.setdefault(agent_name, asyncio.Semaphore(limit))
         return self._semaphores[agent_name]
 
-    def _record_if_wired(self, run_id: str, event: dict[str, Any]) -> None:
+    def _record_if_wired(self, run_id: str, event: dict[str, object]) -> None:
         if self._run_recorder is not None:
             with contextlib.suppress(Exception):
                 self._run_recorder.record(run_id, event)
@@ -129,7 +128,8 @@ class AgentDispatcher:
             )
 
         if self._pause_controller is not None and task.project_id:
-            silenced = self._pause_controller.is_paused("project", task.project_id)
+            is_paused = getattr(self._pause_controller, "is_paused", None)
+            silenced = bool(is_paused and is_paused("project", task.project_id))
             if silenced:
                 self._record_if_wired(task.task_id, {
                     "type": "task_blocked",
@@ -169,7 +169,8 @@ class AgentDispatcher:
             and task.tools is None
         ):
             try:
-                mcp_tools = self._mcp_tool_registry.list_tools()
+                list_tools_fn = getattr(self._mcp_tool_registry, "list_tools", None)
+                mcp_tools = list_tools_fn() if list_tools_fn is not None else []
                 if mcp_tools:
                     task.tools = [
                         {

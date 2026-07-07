@@ -31,7 +31,7 @@ class TestComputeSchedulingHint:
         )
         assert routing is not None
         assert routing.endpoint_id == "a100-1"
-        assert routing.reason == "least_utilized"
+        assert routing.reason == "gpu_affinity"
 
     def test_review_routes_to_t4(self):
         tracker = UtilizationTracker()

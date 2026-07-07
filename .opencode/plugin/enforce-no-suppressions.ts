@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import * as fs from "node:fs"
 
 // --- No-lint-suppression-comments guardrail (3-layer) -----------------------
 // This plugin enforces the "No Lint-Suppression Comments" policy from
@@ -74,6 +75,24 @@ export function shouldAllowEdit(
   }
 }
 
+// --- Heartbeat probe --------------------------------------------------------
+// Reports liveness to /tmp/gludd-plugin-alive.json so a watchdog can detect
+// if this plugin silently dies. Matches the canonical pattern in
+// enforce-deletion-gate.ts:81. Fail-open: never block edits on a heartbeat
+// fault.
+function _reportAlive(): void {
+  try {
+    const alivePath = "/tmp/gludd-plugin-alive.json"
+    const alive = fs.existsSync(alivePath)
+      ? JSON.parse(fs.readFileSync(alivePath, "utf8"))
+      : {}
+    alive["enforce-no-suppressions"] = { last_seen: Date.now() }
+    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8")
+  } catch {
+    // fail-open
+  }
+}
+
 // --- Plugin entry point -----------------------------------------------------
 // tool.execute.before hook: inspects the args of `edit` and `write` tool calls
 // and denies when the would-be content carries a forbidden suppression
@@ -81,6 +100,7 @@ export function shouldAllowEdit(
 export default (async () => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
+      _reportAlive()
       // Only edit/write are in scope. Other tools pass through unchanged.
       if (input?.tool !== "edit" && input?.tool !== "write") {
         return

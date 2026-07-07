@@ -1,6 +1,6 @@
 ---
 name: guardrail-pattern
-description: Use when creating or updating any agent policy, restriction, or enforcement rule. Provides the three-layer pattern for making guardrails that actually stick: config permissions, runtime hooks, and agent prompting.
+description: "Use when creating or updating any agent policy, restriction, or enforcement rule. Provides the three-layer pattern for making guardrails that actually stick: config permissions, runtime hooks, and agent prompting."
 ---
 
 # Guardrail Pattern

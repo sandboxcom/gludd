@@ -57,7 +57,7 @@ class ModelRegistry:
         author: str | None = None,
     ) -> list[ModelSearchResult]:
         api = self._get_api()
-        kwargs: dict[str, Any] = {"sort": sort, "limit": limit, "direction": -1}
+        kwargs: dict[str, object] = {"sort": sort, "limit": limit, "direction": -1}
         if query:
             kwargs["search"] = query
         if tags:
@@ -78,7 +78,7 @@ class ModelRegistry:
             )
         return results
 
-    def get_model_info(self, model_id: str) -> dict[str, Any]:
+    def get_model_info(self, model_id: str) -> dict[str, object]:
         api = self._get_api()
         info = api.model_info(repo_id=model_id)
         return {

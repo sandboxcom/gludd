@@ -295,7 +295,7 @@ collect-check:
 collect-check-e2e-live:
 	@$(UV) run python -m pytest tests/e2e/ tests/live/ --collect-only -q 2>&1 | tail -5
 
-gate:
+gate: check-skills-frontmatter
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -1072,7 +1072,7 @@ git-fetch-sandboxcom:
 
 verify-remote:
 	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$(or $(BRANCH),master); \
-	REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom $$BR | awk '{print $$1}'); \
+	REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
 	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
@@ -1127,6 +1127,13 @@ verify-release-artifact:
 	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-artifact TAG=v0.1.0-alpha.1"; exit 1; }
 	@$(PYTHON) scripts/verify_release_artifact.py "$(TAG)"
 
+# CI-green precondition for release-cut. Exit 0 only when the latest CI run for
+# the given SHA (default: HEAD) is completed + success. Fail-closed: any
+# non-success state (pending, failure, missing run) aborts the release.
+# Usage: make require-ci-green [SHA=<full-sha>]
+require-ci-green:
+	@$(UV) run python scripts/require_ci_green.py $(SHA)
+
 # Delete a tag both locally and on sandboxcom. Usage:
 #   make git-tag-rm TAG=v0.1.0-alpha.1
 git-tag-rm:
@@ -1153,14 +1160,30 @@ release-recut:
 	done; \
 	echo "Poll exhausted after $(VERIFY_POLLS) attempts."; exit 1
 
-# The single release command: check-readme-status -> push -> tag -> confirm.
+# The single release command. 6 steps, fail-closed at every gate:
+#   0. require-ci-green        — abort if CI is not GREEN for HEAD (or SHA=...)
+#   1. check-readme-status     — README status table is current for this TAG
+#   2. git-push-sandboxcom     — push master
+#   3. git-tag-push            — annotated tag + push (triggers CI release job)
+#   4. release-view            — confirm the GitHub Release exists
+#   5. verify-release-artifact — poll until assets are published (up to ~10 min)
 # Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes'
 release-cut:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...']"; exit 1; }
+	@$(MAKE) -s require-ci-green
 	@$(MAKE) -s check-readme-status TAG=$(TAG)
 	@$(MAKE) -s git-push-sandboxcom
 	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
 	@$(MAKE) -s release-view TAG=$(TAG)
+	@echo "Polling for release artifact (up to 10 attempts, ~10 min)..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
+			echo "Release artifact verified on attempt $$i/10."; exit 0; \
+		fi; \
+		echo "Waiting for release artifact (attempt $$i/10)..."; \
+		sleep 60; \
+	done; \
+	echo "WARNING: release artifact not found after 10 minutes"; exit 1
 
 # Manual fallback: build artifacts and publish a GitHub Release via gh.
 # Usage: make release-create TAG=v0.1.0-alpha.1
@@ -1847,6 +1870,10 @@ audit-features:
 
 check-readme-status:
 	@$(UV) run python scripts/check_readme_status_current.py $(TAG)
+
+# --- Skill frontmatter validation ---
+check-skills-frontmatter:
+	@$(UV) run python scripts/check_skills_frontmatter.py
 
 # --- Type strictness: flag `Any` usage in Python annotations (tight types only) ---
 # Scans src/ for Any in return/param/annassign annotations (incl. nested dict[...]/Optional[...]).

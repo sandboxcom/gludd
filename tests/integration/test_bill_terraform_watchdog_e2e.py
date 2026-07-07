@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from general_ludd.infra.terraform import ComputeConfig, TerraformGenerator
+from general_ludd.infra.compute import ComputeConfig
+from general_ludd.infra.terraform import TerraformGenerator
 
 STACKS_DIR = Path("infra/terraform/stacks")
 WATCHDOG_SOURCE = '"../../modules/gpu-cost-watchdog"'
@@ -90,16 +91,16 @@ class TestTerraformWatchdogE2E:
     def test_terraform_generator_produces_watchdog_in_aws_vllm(self):
         config = ComputeConfig(
             provider="aws",
-            gpu_type="a100",
+            gpu_type="a100_80",
             gpu_count=1,
-            inference_engine="vllm",
+            engine="vllm",
             model_name="meta-llama/Llama-3-8b",
             max_cost_usd=15.0,
             timeout_minutes=45,
             region="us-east-1",
         )
-        generator = TerraformGenerator(config)
-        tf = generator.generate()
+        generator = TerraformGenerator()
+        tf = generator.generate(config)
         assert "module " in tf or "resource " in tf or "provider " in tf or "variable " in tf
         assert isinstance(tf, str)
         assert len(tf) > 0
@@ -107,16 +108,16 @@ class TestTerraformWatchdogE2E:
     def test_terraform_generator_build_tfvars_includes_billing(self):
         config = ComputeConfig(
             provider="aws",
-            gpu_type="a100",
+            gpu_type="a100_80",
             gpu_count=1,
-            inference_engine="vllm",
+            engine="vllm",
             model_name="meta-llama/Llama-3-8b",
             max_cost_usd=25.0,
             timeout_minutes=60,
             region="us-east-1",
         )
-        generator = TerraformGenerator(config)
-        tfvars = generator.build_tfvars()
+        generator = TerraformGenerator()
+        tfvars = generator.build_tfvars(config)
         assert "max_cost_usd" in tfvars
         assert "timeout_minutes" in tfvars
 

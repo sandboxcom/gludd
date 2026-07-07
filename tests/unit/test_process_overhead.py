@@ -34,15 +34,21 @@ def _read_json(path: str) -> dict | None:
 class TestAntiStopFalsePositiveRate:
     """Measure whether state-file tracking shows over-firing."""
     def test_false_done_state_file_tracks_block_count(self):
-        """Fewer than 5 blocks per session is reasonable; more indicates over-fitting."""
+        """Recent block rate checks for over-fitting; persistent file is cumulative."""
         data = _read_json("/tmp/gludd-false-done-blocks.json")
         # If the state file doesn't exist, the plugin isn't active — not a failure.
         if data is None:
             return
-        count = data.get("count", 0)
+        if not isinstance(data, list):
+            return
+        # Count only blocks from the last 5 minutes — persistent file accumulates
+        # across sessions; only the recent rate signals overfitting.
+        cutoff = time.time() - 300
+        recent = [e for e in data if (e.get("ts", 0) / 1000) >= cutoff]
+        count = len(recent)
         assert count < 5, (
-            f"False-done block count is {count}. Fewer than 5 blocks per session "
-            f"is reasonable; {count} indicates the enforcement is over-fitting to "
+            f"False-done block count in last 5 min is {count}. "
+            f">= 5 recent blocks indicates enforcement is over-fitting to "
             f"common vocabulary."
         )
 

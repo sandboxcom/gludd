@@ -602,8 +602,8 @@ class TestHitlEdgeCases:
 class TestHitlHumanTodoRouterIntegration:
     """HumanTodo creation blocks parent agent todo and resolves on human action."""
 
-    def _make_app_with_db(self):
-
+    @staticmethod
+    def _make_app_with_db():
         from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
         from sqlalchemy.pool import StaticPool
 
@@ -641,7 +641,15 @@ class TestHitlHumanTodoRouterIntegration:
             return app, factory
 
         import asyncio
-        return asyncio.run(_setup())
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(_setup())
+        else:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, _setup())
+                return future.result()
 
     @pytest.mark.asyncio
     async def test_create_human_todo_with_parent_blocks_parent(self):
@@ -653,9 +661,9 @@ class TestHitlHumanTodoRouterIntegration:
         async with factory() as session:
             repo = TodoRepository(session)
             parent = await repo.create(
-                title="Needs approval", queue="core",
+                {"title": "Needs approval", "queue": "core"},
             )
-            parent_id = parent.id
+            parent_id = parent.todo_id
             await session.commit()
 
         transport = ASGITransport(app=app)
@@ -692,7 +700,7 @@ class TestHitlHumanTodoRouterIntegration:
                 "agent_id": "agent-2",
                 "title": "Review this",
                 "body": "Please review.",
-                "category": "human_input",
+                "category": "input_request",
                 "priority": "medium",
             },
         )
@@ -735,7 +743,7 @@ class TestHitlHumanTodoRouterIntegration:
                 "agent_id": "agent-4",
                 "title": "Bad prio",
                 "body": "x",
-                "category": "human_input",
+                "category": "input_request",
                 "priority": "critical",
             },
         )
@@ -751,7 +759,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             await repo.create(
                 agent_id="a2", title="t2", body="b2",
@@ -777,7 +785,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             row = await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             ht_id = row.id
             await session.commit()
@@ -810,7 +818,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             row = await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             ht_id = row.id
             await session.commit()
@@ -835,7 +843,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             row = await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             ht_id = row.id
             await session.commit()
@@ -859,7 +867,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             row = await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             ht_id = row.id
             await session.commit()
@@ -891,7 +899,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             row = await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             ht_id = row.id
             await session.commit()
@@ -920,7 +928,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             row = await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             await repo.mark_done(row.id, "admin", "done")
             ht_id = row.id
@@ -945,7 +953,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             row = await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             ht_id = row.id
             await session.commit()
@@ -969,7 +977,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             row = await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             ht_id = row.id
             await session.commit()
@@ -995,7 +1003,7 @@ class TestHitlHumanTodoRouterIntegration:
             repo = HumanTodoRepository(session)
             await repo.create(
                 agent_id="a1", title="t1", body="b1",
-                category="human_input", priority="medium",
+                category="input_request", priority="medium",
             )
             await session.commit()
 
@@ -1039,7 +1047,7 @@ class TestHitlHumanTodoRouterIntegration:
             "/api/human-todos",
             json={
                 "agent_id": "a", "title": "t", "body": "b",
-                "category": "human_input",
+                "category": "input_request",
             },
         )
         assert resp.status_code == 503, resp.text

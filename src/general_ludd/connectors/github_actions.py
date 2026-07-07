@@ -29,12 +29,11 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
 
 from general_ludd.security.ssrf import is_url_blocked
 
 # A transport is any callable matching ``http_get(url, headers) -> (status, json)``.
-Transport = Callable[[str, dict[str, str]], tuple[int, Any]]
+Transport = Callable[[str, dict[str, str]], tuple[int, object]]
 
 _DEFAULT_BASE_URL = "https://api.github.com"
 _DEFAULT_TIMEOUT = 15.0
@@ -48,7 +47,7 @@ def _validate_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, Any]:
+def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, object]:
     """Real, time-bounded urllib transport. Never uses a shell."""
     req = urllib.request.Request(url, headers=headers, method="GET")
     try:
@@ -58,7 +57,7 @@ def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, Any]:
     except urllib.error.HTTPError as exc:  # non-2xx still carries a status + body
         raw = exc.read()
         status = int(exc.code)
-    body: Any = None
+    body: object = None
     if raw:
         try:
             body = _json.loads(raw.decode("utf-8"))
@@ -88,7 +87,7 @@ class GitHubActionsSource:
 
     KIND: str = _KIND
 
-    def __init__(self, config: dict[str, Any], *, http_get: Transport | None = None) -> None:
+    def __init__(self, config: dict[str, object], *, http_get: Transport | None = None) -> None:
         repo = config.get("repo")
         if not repo or "/" not in str(repo):
             raise ValueError("config['repo'] must be 'owner/name'")
@@ -114,12 +113,12 @@ class GitHubActionsSource:
     def _runs_url(self) -> str:
         return f"{self.base_url}/repos/{self.repo}/actions/runs"
 
-    def _normalize(self, run: dict[str, Any]) -> dict[str, Any]:
+    def _normalize(self, run: dict[str, object]) -> dict[str, object]:
         name = run.get("name") or ""
         branch = run.get("head_branch") or ""
         status_value = run.get("conclusion") or run.get("status") or ""
         return {
-            "ts": _parse_ts(run.get("updated_at")),
+            "ts": _parse_ts(str(run.get("updated_at"))) if run.get("updated_at") is not None else None,
             "source": self.name,
             "kind": _KIND,
             "level_or_status": str(status_value),
@@ -136,7 +135,7 @@ class GitHubActionsSource:
 
     # -- public, duck-typed interface ------------------------------------
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the runs endpoint. Never raises."""
         try:
             status, _ = self._http_get(self._runs_url(), self._headers())
@@ -146,7 +145,7 @@ class GitHubActionsSource:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """List recent workflow runs and return normalized records.
 
         Supported *spec* filters: ``limit`` (int), ``branch`` (str), ``status``
@@ -160,7 +159,7 @@ class GitHubActionsSource:
 
         branch = spec.get("branch")
         want_status = spec.get("status")
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for run in runs:
             if not isinstance(run, dict):
                 continue
@@ -177,7 +176,7 @@ class GitHubActionsSource:
             records = records[:limit]
         return records
 
-    def fetch_failed_logs(self, run_id: int | str) -> list[dict[str, Any]]:
+    def fetch_failed_logs(self, run_id: int | str) -> list[dict[str, object]]:
         """Return the jobs list for a run (stub for failure-log drill-down)."""
         url = f"{self.base_url}/repos/{self.repo}/actions/runs/{run_id}/jobs"
         try:

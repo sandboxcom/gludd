@@ -251,7 +251,7 @@ class LandlockBackend:
             rc = libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
             if rc != 0:
                 err = ctypes.get_errno()
-                logger.error(
+                logger.warning(
                     "Landlock prctl(PR_SET_NO_NEW_PRIVS) failed (errno=%d) — UNSANDBOXED",
                     err,
                 )
@@ -285,7 +285,7 @@ class LandlockBackend:
                 },
             )
         except Exception as exc:
-            logger.error(
+            logger.warning(
                 "Landlock apply failed for %s — dispatching UNSANDBOXED: %s",
                 ruleset_name, exc, exc_info=True,
             )

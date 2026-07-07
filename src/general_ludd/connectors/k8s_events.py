@@ -29,7 +29,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
-from typing import Any, Protocol
+from typing import Protocol, cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import SSRFError
@@ -50,7 +50,7 @@ class _Transport(Protocol):
         url: str,
         *,
         headers: dict[str, str],
-        params: dict[str, Any] | None = None,
+        params: dict[str, object] | None = None,
         verify: str | bool = True,
         timeout: float | None = None,
     ) -> HttpResponse: ...
@@ -119,20 +119,20 @@ class K8sEventsSource:
 
     def __init__(
         self,
-        config: dict[str, Any] | None = None,
+        config: dict[str, object] | None = None,
         transport: _Transport | None = None,
     ) -> None:
-        self.config: dict[str, Any] = dict(config or {})
+        self.config: dict[str, object] = dict(config or {})
         self.name: str = str(self.config.get("name", "k8s_events"))
         self._transport = transport
         self._base_url: str = str(self.config.get("base_url", "")).rstrip("/")
         self._allow_private: bool = bool(self.config.get("allow_private", False))
-        self._token_env: str | None = self.config.get("token_env")
-        self._ca_cert: str | bool = self.config.get("ca_cert", True)
+        self._token_env: str | None = cast(str | None, self.config.get("token_env"))
+        self._ca_cert: str | bool = cast(str | bool, self.config.get("ca_cert", True))
         # Bound the query so we never approximate an infinite watch.
-        self._limit: int = int(self.config.get("limit", 500))
-        self._timeout_seconds: int = int(self.config.get("timeout_seconds", 30))
-        self._namespace: str | None = self.config.get("namespace")
+        self._limit: int = int(str(self.config.get("limit", 500)))
+        self._timeout_seconds: int = int(str(self.config.get("timeout_seconds", 30)))
+        self._namespace: str | None = cast(str | None, self.config.get("namespace"))
         # Validate the base_url host at construction time (fail-closed early).
         if self._base_url:
             assert_url_allowed(self._base_url, allow_private=self._allow_private)
@@ -159,12 +159,15 @@ class K8sEventsSource:
             raise ValueError(f"invalid kubernetes namespace: {segment!r}")
         return segment
 
-    def _normalize(self, event: dict[str, Any]) -> dict[str, Any]:
-        ev_type = event.get("type", "Normal")
+    def _normalize(self, event: dict[str, object]) -> dict[str, object]:
+        ev_type = str(event.get("type", "Normal"))
         level = _TYPE_LEVEL.get(ev_type, "info")
-        involved = event.get("involvedObject", {}) or {}
-        source = event.get("source", {}) or {}
-        metadata = event.get("metadata", {}) or {}
+        _raw_involved = event.get("involvedObject", {}) or {}
+        involved: dict[str, object] = _raw_involved if isinstance(_raw_involved, dict) else {}
+        _raw_source = event.get("source", {}) or {}
+        source: dict[str, object] = _raw_source if isinstance(_raw_source, dict) else {}
+        _raw_metadata = event.get("metadata", {}) or {}
+        metadata: dict[str, object] = _raw_metadata if isinstance(_raw_metadata, dict) else {}
         ts = (
             event.get("lastTimestamp")
             or event.get("eventTime")
@@ -191,7 +194,7 @@ class K8sEventsSource:
 
     # -- public API ----------------------------------------------------------
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         """Single bounded GET of cluster events; returns normalized records."""
         if self._transport is None:
             raise RuntimeError("K8sEventsSource requires an injected transport")
@@ -199,10 +202,10 @@ class K8sEventsSource:
         # Re-assert SSRF guard in case base_url changed via spec.
         base = str(spec.get("base_url", self._base_url)).rstrip("/")
         assert_url_allowed(base, allow_private=self._allow_private)
-        params: dict[str, Any] = {
-            "limit": int(spec.get("limit", self._limit)),
+        params: dict[str, object] = {
+            "limit": int(str(spec.get("limit", self._limit))),
             # timeoutSeconds bounds the request server-side; NOT a watch.
-            "timeoutSeconds": int(spec.get("timeout_seconds", self._timeout_seconds)),
+            "timeoutSeconds": int(str(spec.get("timeout_seconds", self._timeout_seconds))),
         }
         field_selector = spec.get("field_selector")
         if field_selector:
@@ -220,7 +223,7 @@ class K8sEventsSource:
         items = payload.get("items", []) if isinstance(payload, dict) else []
         return [self._normalize(e) for e in items if isinstance(e, dict)]
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the events endpoint with limit=1. NEVER raises."""
         try:
             if self._transport is None:

@@ -14,7 +14,7 @@ labels, raw.
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -30,8 +30,8 @@ class HttpTransport(Protocol):
         url: str,
         *,
         headers: dict[str, str] | None = ...,
-        params: dict[str, Any] | None = ...,
-        data: Any = ...,
+        params: dict[str, object] | None = ...,
+        data: object = ...,
         timeout: float | None = ...,
     ) -> HttpResponse: ...
 
@@ -54,7 +54,7 @@ class InfluxDbSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         transport: HttpTransport,
         *,
         environ: dict[str, str] | None = None,
@@ -79,12 +79,12 @@ class InfluxDbSource:
         self.org = config.get("org")
         self.database = config.get("database")
         self._transport = transport
-        self._timeout = float(config.get("timeout", 30.0))
+        self._timeout = float(cast("float | int | str", config.get("timeout", 30.0)))
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Token {self._token}", "Accept": "application/json"}
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         try:
             resp = self._transport.request(
                 "GET",
@@ -98,18 +98,18 @@ class InfluxDbSource:
             return {"ok": True, "detail": f"HTTP {resp.status_code}"}
         return {"ok": False, "detail": f"HTTP {resp.status_code}"}
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         spec = spec or {}
         resp = self._query_flux(spec) if self.dialect == "flux" else self._query_influxql(spec)
         if not (200 <= resp.status_code < 300):
             raise ConnectorConfigError(f"influxdb query failed: HTTP {resp.status_code}")
         return self._normalize(resp.json())
 
-    def _query_flux(self, spec: dict[str, Any]) -> HttpResponse:
+    def _query_flux(self, spec: dict[str, object]) -> HttpResponse:
         flux = spec.get("flux")
         if not flux:
             raise ConnectorConfigError("flux dialect requires spec['flux']")
-        params: dict[str, Any] = {}
+        params: dict[str, object] = {}
         if self.org:
             params["org"] = self.org
         return self._transport.request(
@@ -121,11 +121,11 @@ class InfluxDbSource:
             timeout=self._timeout,
         )
 
-    def _query_influxql(self, spec: dict[str, Any]) -> HttpResponse:
+    def _query_influxql(self, spec: dict[str, object]) -> HttpResponse:
         q = spec.get("q") or spec.get("influxql")
         if not q:
             raise ConnectorConfigError("influxql dialect requires spec['q']")
-        params: dict[str, Any] = {"q": q}
+        params: dict[str, object] = {"q": q}
         db = spec.get("db") or self.database
         if db:
             params["db"] = db
@@ -137,15 +137,15 @@ class InfluxDbSource:
             timeout=self._timeout,
         )
 
-    def _normalize(self, payload: Any) -> list[dict[str, Any]]:
+    def _normalize(self, payload: object) -> list[dict[str, object]]:
         if self.dialect == "flux":
             return self._normalize_flux(payload)
         return self._normalize_influxql(payload)
 
-    def _normalize_flux(self, payload: Any) -> list[dict[str, Any]]:
+    def _normalize_flux(self, payload: object) -> list[dict[str, object]]:
         # Canonical normalized Flux shape: a list of tables, each with records
         # carrying _time/_value/_measurement and arbitrary tag columns.
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         tables = (payload or {}).get("tables", []) if isinstance(payload, dict) else []
         for table in tables:
             for row in table.get("records", []):
@@ -170,8 +170,8 @@ class InfluxDbSource:
                 )
         return records
 
-    def _normalize_influxql(self, payload: Any) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
+    def _normalize_influxql(self, payload: object) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
         results = (payload or {}).get("results", []) if isinstance(payload, dict) else []
         for result in results:
             for series in result.get("series", []):

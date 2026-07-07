@@ -5,47 +5,48 @@ Models: calls, contains, inherits relationships between code blocks.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import cast
 
 
 class CallGraph:
     """Directed graph of code block relationships."""
 
     def __init__(self) -> None:
-        self._nodes: dict[str, dict[str, Any]] = {}
+        self._nodes: dict[str, dict[str, object]] = {}
         self._edges: list[dict[str, str]] = []
         self._parents: dict[str, str] = {}
 
-    def build_from_blocks(self, blocks: list[dict[str, Any]]) -> None:
+    def build_from_blocks(self, blocks: list[dict[str, object]]) -> None:
         for b in blocks:
             full_name = self._full_name(b)
             self._nodes[full_name] = b
             if b.get("parent"):
-                self._parents[full_name] = b["parent"]
-                self._edges.append({"from": b["parent"], "to": full_name, "relation": "contains"})
+                self._parents[full_name] = cast(str, b["parent"])
+                self._edges.append({"from": cast(str, b["parent"]), "to": full_name, "relation": "contains"})
 
         for b in blocks:
             full_name = self._full_name(b)
-            source = b.get("source", "")
+            source = cast(str, b.get("source", ""))
             if source:
                 for other_b in blocks:
                     other_name = self._full_name(other_b)
                     if other_name == full_name:
                         continue
-                    if other_b["name"] in source and not self._has_edge(full_name, other_name):
+                    other_name_val = cast(str, other_b["name"])
+                    if other_name_val in source and not self._has_edge(full_name, other_name):
                         self._edges.append({"from": full_name, "to": other_name, "relation": "calls"})
 
         for b in blocks:
-            bases = b.get("base_classes", [])
+            bases: list[str] = cast("list[str]", b.get("base_classes", []))
             full_name = self._full_name(b)
             for base in bases:
                 if base in self._nodes:
                     self._edges.append({"from": full_name, "to": base, "relation": "inherits"})
 
     @staticmethod
-    def _full_name(block: dict[str, Any]) -> str:
-        parent = block.get("parent")
-        name = str(block.get("name", "unknown"))
+    def _full_name(block: dict[str, object]) -> str:
+        parent = cast("str | None", block.get("parent"))
+        name = str(cast(str, block.get("name", "unknown")))
         if parent:
             return f"{parent}.{name}"
         return name
@@ -76,7 +77,7 @@ class CallGraph:
     def _has_edge(self, from_node: str, to_node: str) -> bool:
         return any(e["from"] == from_node and e["to"] == to_node for e in self._edges)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "nodes": [{"name": k, **v} for k, v in self._nodes.items()],
             "edges": self._edges,

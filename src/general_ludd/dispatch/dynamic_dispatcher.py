@@ -50,7 +50,7 @@ class ToolCall:
 
     kind: ToolCallKind
     name: str
-    args: dict[str, Any] = field(default_factory=dict)
+    args: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
@@ -63,7 +63,7 @@ class DispatchResult:
     output: Any = None
     error: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "ok": self.ok,
             "kind": self.kind,
@@ -77,7 +77,7 @@ class DispatchResult:
 # parse_tool_calls
 # ---------------------------------------------------------------------------
 
-def parse_tool_calls(model_output: str | dict[str, Any]) -> list[ToolCall]:
+def parse_tool_calls(model_output: str | dict[str, object]) -> list[ToolCall]:
     """Parse a model output into a list of ToolCall objects.
 
     Accepted shapes:
@@ -119,7 +119,7 @@ def parse_tool_calls(model_output: str | dict[str, Any]) -> list[ToolCall]:
     return []
 
 
-def _parse_call_list(items: list[Any]) -> list[ToolCall]:
+def _parse_call_list(items: list[object]) -> list[ToolCall]:
     results: list[ToolCall] = []
     for item in items:
         if not isinstance(item, dict):
@@ -130,7 +130,7 @@ def _parse_call_list(items: list[Any]) -> list[ToolCall]:
     return results
 
 
-def _parse_single(item: dict[str, Any]) -> ToolCall | None:
+def _parse_single(item: dict[str, object]) -> ToolCall | None:
     kind_raw = item.get("kind")
     name_raw = item.get("name")
     if not isinstance(name_raw, str) or not name_raw:
@@ -143,14 +143,14 @@ def _parse_single(item: dict[str, Any]) -> ToolCall | None:
     # dispatch fails-closed.
     kind_str: str = str(kind_raw)[:64] if kind_raw is not None else "unknown"
     args_raw = item.get("args", {})
-    args: dict[str, Any] = args_raw if isinstance(args_raw, dict) else {}
+    args: dict[str, object] = args_raw if isinstance(args_raw, dict) else {}
     # We deliberately allow kind values not in the Literal union here so that
     # the dispatcher can handle them at dispatch time (fail-closed).
     return ToolCall(kind=cast(ToolCallKind, kind_str), name=name_str, args=args)
 
 
 def structured_tool_calls_to_calls(
-    tool_calls: list[dict[str, Any]] | None,
+    tool_calls: list[dict[str, object]] | None,
 ) -> list[ToolCall]:
     """Convert a model's STRUCTURED tool/function calls into ``ToolCall`` objects.
 
@@ -186,7 +186,7 @@ def structured_tool_calls_to_calls(
                 args_raw = json.loads(args_raw)
             except (json.JSONDecodeError, ValueError):
                 args_raw = {}
-        args: dict[str, Any] = args_raw if isinstance(args_raw, dict) else {}
+        args: dict[str, object] = args_raw if isinstance(args_raw, dict) else {}
         calls.append(ToolCall(kind="mcp", name=name_raw[:256], args=args))
     return calls
 

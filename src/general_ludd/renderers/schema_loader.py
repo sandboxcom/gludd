@@ -49,12 +49,12 @@ class FieldMeta:
     description: str
     type: str
     required: bool = False
-    enum: list[Any] | None = None
+    enum: list[object] | None = None
     format: str | None = None
     children: list[FieldMeta] | None = None
     items: FieldMeta | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Flatten to a plain dict for template consumption."""
 
         return {
@@ -75,7 +75,7 @@ class FieldMeta:
 # ---------------------------------------------------------------------------
 
 
-def load_schema(path: Path) -> dict[str, Any] | None:
+def load_schema(path: Path) -> dict[str, object] | None:
     """Load a JSON Schema from ``path``.
 
     Returns the parsed schema dict, or ``None`` if the file does not exist
@@ -96,7 +96,7 @@ def load_schema(path: Path) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 
 
-def validate_against_schema(data: Any, schema: dict[str, Any]) -> tuple[bool, list[str]]:
+def validate_against_schema(data: object, schema: dict[str, object]) -> tuple[bool, list[str]]:
     """Validate ``data`` against ``schema`` using ``jsonschema``.
 
     Returns ``(True, [])`` on success, ``(False, [messages...])`` on failure.
@@ -152,7 +152,7 @@ def _format_validation_error(err: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-def extract_field_metadata(schema: dict[str, Any]) -> list[FieldMeta]:
+def extract_field_metadata(schema: dict[str, object]) -> list[FieldMeta]:
     """Walk ``schema["properties"]`` and return :class:`FieldMeta` per property.
 
     * Nested ``object`` properties populate :attr:`FieldMeta.children`.
@@ -197,7 +197,7 @@ def extract_field_metadata(schema: dict[str, Any]) -> list[FieldMeta]:
     return fields
 
 
-def _build_field_meta(name: str, prop_schema: dict[str, Any], required_set: set[str]) -> FieldMeta:
+def _build_field_meta(name: str, prop_schema: dict[str, object], required_set: set[str]) -> FieldMeta:
     """Build a single FieldMeta, recursing into nested objects / arrays."""
 
     title = str(prop_schema.get("title") or name)

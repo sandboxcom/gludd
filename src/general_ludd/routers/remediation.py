@@ -23,11 +23,11 @@ import json as _json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any, TypeVar
+from typing import TypeVar, cast
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.db.models import RemediationActionModel
 from general_ludd.db.repository import (
@@ -54,11 +54,11 @@ PSK_BYPASS_ROUTES = frozenset(
 )
 
 
-def _get_session_factory(app: FastAPI) -> Any:
+def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
     return getattr(app.state, "_session_factory", None)
 
 
-def _blocked_task_to_dict(b: BlockedTask) -> dict[str, Any]:
+def _blocked_task_to_dict(b: BlockedTask) -> dict[str, object]:
     return {
         "todo_id": b.todo_id,
         "project_id": b.project_id,
@@ -72,7 +72,7 @@ def _blocked_task_to_dict(b: BlockedTask) -> dict[str, Any]:
     }
 
 
-def _action_to_dict(a: RemediationAction) -> dict[str, Any]:
+def _action_to_dict(a: RemediationAction) -> dict[str, object]:
     return {
         "kind": str(a.kind.value) if hasattr(a.kind, "value") else str(a.kind),
         "blocked_todo_id": a.blocked_todo_id,
@@ -84,7 +84,7 @@ def _action_to_dict(a: RemediationAction) -> dict[str, Any]:
     }
 
 
-def _remediation_row_to_dict(row: RemediationActionModel) -> dict[str, Any]:
+def _remediation_row_to_dict(row: RemediationActionModel) -> dict[str, object]:
     try:
         detail = _json.loads(row.detail or "{}")
     except Exception:
@@ -103,7 +103,7 @@ def _remediation_row_to_dict(row: RemediationActionModel) -> dict[str, Any]:
     }
 
 
-def _config_to_dict(cfg: RemediationConfig) -> dict[str, Any]:
+def _config_to_dict(cfg: RemediationConfig) -> dict[str, object]:
     return {
         "human_input_block_hours": cfg.human_input_block_hours,
         "permission_escalation_block_hours": cfg.permission_escalation_block_hours,
@@ -176,18 +176,18 @@ class RemediationConfigResponse(BaseModel):
     retry_delay_hours: int
 
 
-def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
+def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
     @app.get("/admin/remediation/scan", response_model=None)
-    async def get_scan(project_id: str | None = Query(default=None)) -> dict[str, Any]:
+    async def get_scan(project_id: str | None = Query(default=None)) -> dict[str, object]:
         """Run the detector once; return findings without applying remediation."""
-        cfg = daemon_state.get("remediation_config") or RemediationConfig()
+        cfg = cast(RemediationConfig, daemon_state.get("remediation_config")) or RemediationConfig()
 
         async def _run(
             *,
             session: AsyncSession,
             todo_repo: TodoRepository,
             human_todo_repo: HumanTodoRepository,
-        ) -> dict[str, Any]:
+        ) -> dict[str, object]:
             det = BlockerDetector(
                 todo_repo=todo_repo,
                 human_todo_repo=human_todo_repo,
@@ -206,16 +206,16 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/remediation/remediate", response_model=None)
     async def post_remediate(
         project_id: str | None = Query(default=None),
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Run the detector once AND apply remediation for each finding."""
-        cfg = daemon_state.get("remediation_config") or RemediationConfig()
+        cfg = cast(RemediationConfig, daemon_state.get("remediation_config")) or RemediationConfig()
 
         async def _run(
             *,
             session: AsyncSession,
             todo_repo: TodoRepository,
             human_todo_repo: HumanTodoRepository,
-        ) -> dict[str, Any]:
+        ) -> dict[str, object]:
             from general_ludd.db.repository import RemediationActionRepository
 
             remediation_repo = RemediationActionRepository(session)
@@ -232,7 +232,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
                 human_todo_repo=human_todo_repo,
                 remediation_repo=remediation_repo,
             )
-            actions: list[dict[str, Any]] = []
+            actions: list[dict[str, object]] = []
             for blocked in findings:
                 a = await dispatcher.remediate(blocked)
                 actions.append(_action_to_dict(a))
@@ -251,16 +251,16 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     async def get_chronic_blockers(
         project_id: str | None = Query(default=None),
         lookback_days: int | None = Query(default=None),
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Return the chronic-blocker report."""
-        cfg = daemon_state.get("remediation_config") or RemediationConfig()
+        cfg = cast(RemediationConfig, daemon_state.get("remediation_config")) or RemediationConfig()
 
         async def _run(
             *,
             session: AsyncSession,
             todo_repo: TodoRepository,
             human_todo_repo: HumanTodoRepository,
-        ) -> dict[str, Any]:
+        ) -> dict[str, object]:
             det = BlockerDetector(
                 todo_repo=todo_repo,
                 human_todo_repo=human_todo_repo,
@@ -280,7 +280,7 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
         project_id: str | None = Query(default=None),
         since: datetime | None = None,
         limit: int = Query(default=100, ge=1, le=1000),
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Return the audit trail of past remediation actions."""
         factory = _get_session_factory(app)
         if factory is None:
@@ -308,6 +308,12 @@ def register(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     )
     async def get_config() -> RemediationConfigResponse:
         """Return the current RemediationConfig thresholds."""
-        cfg = daemon_state.get("remediation_config") or RemediationConfig()
-        d = _config_to_dict(cfg)
-        return RemediationConfigResponse(**d)
+        cfg = cast(RemediationConfig, daemon_state.get("remediation_config")) or RemediationConfig()
+        return RemediationConfigResponse(
+            human_input_block_hours=cfg.human_input_block_hours,
+            permission_escalation_block_hours=cfg.permission_escalation_block_hours,
+            max_requeues_before_chronic=cfg.max_requeues_before_chronic,
+            chronic_lookback_days=cfg.chronic_lookback_days,
+            min_chronic_incidents=cfg.min_chronic_incidents,
+            retry_delay_hours=cfg.retry_delay_hours,
+        )

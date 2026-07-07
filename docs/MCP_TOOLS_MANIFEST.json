@@ -458,6 +458,28 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_gate_check",
+    "description": "Check whether a .gate-status file is complete and passed — Reads the C(.gate-status) file written by C(make gate) and determines whether the gate run is complete (a terminal marker is present) and whether it passed. C(gate_complete) is C(true) when the file exists and contains either C(=== GATE: PASSED ===) or C(=== GATE: FAILED ===). C(gate_passed) is C(true) when the file exists, is complete, and contains C(=== GATE: PASSED ===). Check-mode safe — this module performs no writes. Wraps the same logic as C(scripts/gate_fresh_check.py).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "gate_path": {
+          "type": "string",
+          "default": ".gate-status"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "check"
+          ],
+          "default": "check"
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_git",
     "description": "Git control-plane ops (commit/branch/worktree/merge/push) via git_automation — Exposes gludd's hardened C(general_ludd.git_automation.GitAutomation) control plane to roles/playbooks so an agent-authored job can perform git operations WITHOUT reimplementing the safety logic. This is a thin B(delegating wrapper) — it does not reimplement git. The Python core provides per-repo C(.git/index.lock) serialization (issue #63), a bounded subprocess timeout, a non-interactive git environment, leading-dash ref rejection, C(--) end-of-options separators, worktree-path traversal guards, and typed results the daemon also consumes synchronously. Keeping that core in Python (rather than a pure role) preserves those guarantees; this module simply makes the same operations available on the Ansible execution seam. Idempotent where git is: C(branch) is a no-op if the branch already exists; C(commit) reports C(changed=false) when there is nothing to commit. Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped in check mode and report the change they WOULD make.",
     "input_schema": {
@@ -953,6 +975,16 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_open_code",
+    "description": "Batched opencode agent tool patterns — gate, push, commit, test, status — Codifies the repeated back-and-forth tool-call patterns opencode agents perform by bundling multiple tool calls into single Ansible tasks. Each action maps to a make target that composites the underlying checks. Check-mode safe — all actions report the change they WOULD make without executing the underlying command. All actions run locally via C(ansible.builtin.command) executing make targets in the repository root; no daemon round-trips are needed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_ornith",
     "description": "Pull rejected Ornith training pairs and invoke improvement rollouts — {'Bidirectional seam for the gludd × Ornith symbiotic loop. Two states': None} C(state=pairs) — fetch the most-recent training pairs whose outcome matches a comma-separated status list (e.g. C(rejected_by_gate,rejected_by_review,reverted)). These are the artifacts that NEED improvement. Hits the daemon's C(GET /admin/ornith/pairs) endpoint. C(state=improve) — invoke the daemon's model gateway (C(POST /admin/models/call)) with a structured \"improve this artifact\" prompt and return the proposed diff. The caller is responsible for writing the diff to disk, opening a PR, and filing a human-todo for review. The PR is NEVER auto-merged — the human-todo is the gate. Check mode skips both the network call and the model invocation.",
     "input_schema": {
@@ -1150,6 +1182,38 @@
       "required": [
         "action"
       ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_push_guard",
+    "description": "Enforce push-rate guard via force-push bypass tracking — Wraps the ForcePushTracker (scripts/push_rate_guard.py) as an idempotent Ansible module. Tracks consecutive GLUDD_FORCE_PUSH bypasses in a JSON state file and rejects further bypasses when the configured C(max_bypasses) threshold is exceeded within C(window_hours). Supports three states: C(check) to query whether a bypass is allowed, C(record) to persist a bypass event, and C(reset) to clear the counter (normal push). Check-mode safe — C(check) and C(record) report what would change without mutating the state file.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "check",
+            "record",
+            "reset"
+          ],
+          "default": "check"
+        },
+        "state_file": {
+          "type": "string",
+          "default": ".gate-logs/force-push-track.json"
+        },
+        "max_bypasses": {
+          "type": "integer",
+          "default": 5
+        },
+        "window_hours": {
+          "type": "number",
+          "default": 12.0
+        }
+      },
+      "additionalProperties": false
     },
     "server_id": "ansible"
   },

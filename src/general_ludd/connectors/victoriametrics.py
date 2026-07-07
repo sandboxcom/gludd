@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import Any
+from typing import cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import SSRFError
@@ -58,8 +58,8 @@ def _default_transport(
     url: str,
     *,
     headers: dict[str, str] | None = None,
-    params: dict[str, Any] | None = None,
-    json: Any | None = None,
+    params: dict[str, str | int | float | bool | None] | None = None,
+    json: dict[str, object] | None = None,
     timeout: float = 30.0,
 ) -> HttpResponse:
     import httpx
@@ -76,11 +76,11 @@ def _default_transport(
     return resp
 
 
-def _as_float(value: Any) -> float | None:
+def _as_float(value: object) -> float | None:
     try:
         if value is None:
             return None
-        return float(value)
+        return float(cast("float | int | str", value))
     except (TypeError, ValueError):
         # Prometheus encodes +Inf/-Inf/NaN as strings; treat as non-numeric.
         return None
@@ -93,7 +93,7 @@ class VictoriaMetricsSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, object],
         *,
         transport: Transport | None = None,
         environ: dict[str, str] | None = None,
@@ -101,7 +101,7 @@ class VictoriaMetricsSource:
         env = environ if environ is not None else os.environ
         self.name: str = str(config.get("name", "victoriametrics"))
         self.base_url: str = _validate_base_url(str(config.get("base_url", "")))
-        self.timeout: float = float(config.get("timeout", 30.0))
+        self.timeout: float = float(cast("float | int | str", config.get("timeout", 30.0)))
         self._transport: Transport = transport or _default_transport
 
         # Optional bearer token resolved from the environment via *_env only.
@@ -116,7 +116,7 @@ class VictoriaMetricsSource:
             headers["Authorization"] = f"Bearer {self._token}"
         return headers
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe the VictoriaMetrics /health endpoint; never raises."""
         try:
             resp = self._transport(
@@ -130,11 +130,11 @@ class VictoriaMetricsSource:
         ok = 200 <= resp.status_code < 300
         return {"ok": ok, "detail": f"HTTP {resp.status_code}"}
 
-    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """Run an instant or range PromQL query and normalize results."""
         promql = str(spec.get("query", ""))
         is_range = bool(spec.get("start") or spec.get("end") or spec.get("step"))
-        params: dict[str, Any] = {"query": promql}
+        params: dict[str, object] = {"query": promql}
         if is_range:
             path = "/api/v1/query_range"
             for key in ("start", "end", "step"):
@@ -155,25 +155,25 @@ class VictoriaMetricsSource:
         data = payload.get("data") or {}
         result = data.get("result") or []
         result_type = data.get("resultType")
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for series in result:
             records.extend(self._normalize_series(series, result_type))
         return records
 
     def _normalize_series(
-        self, series: dict[str, Any], result_type: Any
-    ) -> list[dict[str, Any]]:
-        metric = dict(series.get("metric") or {})
+        self, series: dict[str, object], result_type: object
+    ) -> list[dict[str, object]]:
+        metric = cast(dict[str, object], series.get("metric") or {})
         name = metric.pop("__name__", "") if "__name__" in metric else ""
         labels = metric  # remaining labels after extracting the metric name
 
-        samples: list[list[Any]] = []
+        samples: list[list[object]] = []
         if series.get("value") is not None:
-            samples.append(series["value"])  # instant vector: [ts, "val"]
+            samples.append(cast(list[object], series["value"]))  # instant vector: [ts, "val"]
         if series.get("values"):
-            samples.extend(series["values"])  # matrix: [[ts, "val"], ...]
+            samples.extend(cast(list[list[object]], series["values"]))  # matrix: [[ts, "val"], ...]
 
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for sample in samples:
             ts = sample[0] if len(sample) > 0 else None
             raw_val = sample[1] if len(sample) > 1 else None

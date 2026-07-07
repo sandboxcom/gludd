@@ -9,7 +9,7 @@ import os
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 import hvac
 
@@ -152,7 +152,7 @@ class SecretAlias:
 class SecretsManager:
     def __init__(
         self,
-        client: Any = None,
+        client: hvac.Client | None = None,
         aliases: dict[str, SecretAlias] | None = None,
         config: OpenBaoConfig | None = None,
         permission_spec: PermissionSpec | None = None,
@@ -200,11 +200,12 @@ class SecretsManager:
                 path=path,
                 action=action,
                 agent_type=spec.agent_type,
-                allowed_patterns=list(
-                    (cap.constraints.get("openbao_paths") if cap else None) or []
-                ),
+                allowed_patterns=cast(
+                    "list[str]",
+                    cap.constraints.get("openbao_paths") or [],
+                ) if cap else [],
             )
-        patterns = list(cap.constraints.get("openbao_paths") or [])
+        patterns = cast("list[str]", cap.constraints.get("openbao_paths") or [])
         if not any(fnmatch.fnmatchcase(path, pat) for pat in patterns):
             raise SecretPermissionDeniedError(
                 path=path,
@@ -399,7 +400,7 @@ class SecretsManager:
                 r"^[A-Za-z0-9_.:-][A-Za-z0-9_/.:-]*$ with no '..' segment"
             )
 
-    def write_secret(self, path: str, value: dict[str, Any]) -> None:
+    def write_secret(self, path: str, value: dict[str, object]) -> None:
         self._validate_secret_path(path)
         self._enforce_permission(path, action="write")
         if self._client is None:
@@ -410,16 +411,17 @@ class SecretsManager:
             mount_point=self._config.kv_mount,
         )
 
-    def read_secret(self, path: str) -> dict[str, Any] | None:
+    def read_secret(self, path: str) -> dict[str, object] | None:
         self._validate_secret_path(path)
         self._enforce_permission(path, action="read")
         self._require_connected_for_read(context_label=f"reading {path!r}")
+        assert self._client is not None
         try:
             result = self._client.secrets.kv.v2.read_secret_version(
                 path=path, mount_point=self._config.kv_mount
             )
             if result and "data" in result and "data" in result["data"]:
-                return dict[str, Any](result["data"]["data"])
+                return dict(result["data"]["data"])
         except Exception as exc:
             if _is_genuine_not_found(exc):
                 return None

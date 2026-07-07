@@ -31,7 +31,7 @@ import json
 import os
 import urllib.parse
 import urllib.request
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
@@ -46,7 +46,7 @@ class _TempoResponse:
         self.status = status
         self.body = body
 
-    def json(self) -> Any:
+    def json(self) -> object:
         return json.loads(self.body.decode("utf-8"))
 
 
@@ -87,21 +87,21 @@ class TempoSource:
 
     KIND = "traces"
 
-    def __init__(self, config: dict[str, Any], transport: HttpTransport | None = None) -> None:
+    def __init__(self, config: dict[str, object], transport: HttpTransport | None = None) -> None:
         self.name: str = str(config.get("name", "tempo"))
         self.allow_private: bool = bool(config.get("allow_private", False))
         self.base_url: str = _guard_base_url(
             str(config.get("base_url", "")), allow_private=self.allow_private
         )
-        self.timeout: float = float(config.get("timeout", 10.0))
+        self.timeout: float = float(cast("float | int | str", config.get("timeout", 10.0)))
         self.default_tags: str | None = (
             str(config["tags"]) if config.get("tags") is not None else None
         )
         self.default_start: int | None = (
-            int(config["start"]) if config.get("start") is not None else None
+            int(cast("int | str", config["start"])) if config.get("start") is not None else None
         )
         self.default_end: int | None = (
-            int(config["end"]) if config.get("end") is not None else None
+            int(cast("int | str", config["end"])) if config.get("end") is not None else None
         )
 
         token_env = config.get("token_env")
@@ -115,7 +115,7 @@ class TempoSource:
             headers["Authorization"] = f"Bearer {self._token}"
         return headers
 
-    def _get(self, path: str, params: dict[str, Any]) -> _TempoResponse:
+    def _get(self, path: str, params: dict[str, object]) -> _TempoResponse:
         query = urllib.parse.urlencode(
             {k: v for k, v in params.items() if v is not None}, doseq=True
         )
@@ -124,7 +124,7 @@ class TempoSource:
             url = f"{url}?{query}"
         return self._transport.get(url, headers=self._headers(), timeout=self.timeout)
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> dict[str, object]:
         """Probe ``/api/search`` with a bounded window. Never raises."""
         try:
             resp = self._get("/api/search", {"limit": 1})
@@ -138,7 +138,7 @@ class TempoSource:
             return {"ok": False, "detail": f"invalid json: {exc}"}
         return {"ok": True, "detail": "reachable"}
 
-    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         """Search traces and emit normalized records.
 
         Default: one record per trace summary. When ``spec["fetch_spans"]`` is
@@ -148,7 +148,7 @@ class TempoSource:
         spec = spec or {}
         traceql = spec.get("traceql")
         if traceql is not None:
-            params: dict[str, Any] = {"q": str(traceql)}
+            params: dict[str, object] = {"q": str(traceql)}
         else:
             params = {
                 "tags": spec.get("tags", self.default_tags),
@@ -163,7 +163,7 @@ class TempoSource:
         summaries = payload.get("traces", []) if isinstance(payload, dict) else []
 
         if spec.get("fetch_spans"):
-            records: list[dict[str, Any]] = []
+            records: list[dict[str, object]] = []
             for summary in summaries:
                 if isinstance(summary, dict):
                     records.extend(self._fetch_and_normalize_spans(summary))
@@ -175,7 +175,7 @@ class TempoSource:
             if isinstance(summary, dict)
         ]
 
-    def _normalize_summary(self, summary: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_summary(self, summary: dict[str, object]) -> dict[str, object]:
         trace_id = str(summary.get("traceID", ""))
         service = str(summary.get("rootServiceName", ""))
         message = str(summary.get("rootTraceName", ""))
@@ -196,19 +196,21 @@ class TempoSource:
             "raw": summary,
         }
 
-    def _fetch_and_normalize_spans(self, summary: dict[str, Any]) -> list[dict[str, Any]]:
+    def _fetch_and_normalize_spans(self, summary: dict[str, object]) -> list[dict[str, object]]:
         trace_id = str(summary.get("traceID", ""))
         if not trace_id:
             return []
         safe_id = urllib.parse.quote(trace_id, safe="")
         resp = self._get(f"/api/traces/{safe_id}", {})
         payload = resp.json()
-        records: list[dict[str, Any]] = []
+        records: list[dict[str, object]] = []
         for batch in self._iter_batches(payload):
             resource = batch.get("resource", {})
             service = self._resource_service(resource)
             for scoped in self._iter_scope_spans(batch):
-                for span in scoped.get("spans", []):
+                spans_raw = scoped.get("spans", [])
+                spans: list[dict[str, object]] = spans_raw if isinstance(spans_raw, list) else []
+                for span in spans:
                     if isinstance(span, dict):
                         records.append(
                             self._normalize_span(span, service, trace_id)
@@ -216,20 +218,21 @@ class TempoSource:
         return records
 
     @staticmethod
-    def _iter_batches(payload: Any) -> list[dict[str, Any]]:
+    def _iter_batches(payload: object) -> list[dict[str, object]]:
         if isinstance(payload, dict):
-            batches = payload.get("batches")
-            if isinstance(batches, list):
-                return [b for b in batches if isinstance(b, dict)]
+            batches_raw = payload.get("batches")
+            if isinstance(batches_raw, list):
+                return [b for b in batches_raw if isinstance(b, dict)]
         return []
 
     @staticmethod
-    def _iter_scope_spans(batch: dict[str, Any]) -> list[dict[str, Any]]:
-        scoped = batch.get("scopeSpans") or batch.get("instrumentationLibrarySpans") or []
-        return [s for s in scoped if isinstance(s, dict)]
+    def _iter_scope_spans(batch: dict[str, object]) -> list[dict[str, object]]:
+        scoped_raw = batch.get("scopeSpans") or batch.get("instrumentationLibrarySpans") or []
+        scoped: list[dict[str, object]] = scoped_raw if isinstance(scoped_raw, list) else []
+        return scoped
 
     @staticmethod
-    def _resource_service(resource: Any) -> str:
+    def _resource_service(resource: object) -> str:
         if not isinstance(resource, dict):
             return ""
         for attr in resource.get("attributes", []):
@@ -240,8 +243,8 @@ class TempoSource:
         return ""
 
     def _normalize_span(
-        self, span: dict[str, Any], service: str, trace_id: str
-    ) -> dict[str, Any]:
+        self, span: dict[str, object], service: str, trace_id: str
+    ) -> dict[str, object]:
         name = str(span.get("name", ""))
         span_id = str(span.get("spanId", span.get("spanID", "")))
         status_obj = span.get("status") or {}
@@ -255,7 +258,7 @@ class TempoSource:
         duration_ms: float | None = None
         try:
             if start is not None and end is not None:
-                duration_ms = (int(end) - int(start)) / 1_000_000
+                duration_ms = (int(cast("int | str", end)) - int(cast("int | str", start))) / 1_000_000
         except (TypeError, ValueError):
             duration_ms = None
         labels = {
