@@ -154,6 +154,56 @@ class TestMigration016EscalationRemediation:
         assert "remediation_actions" in dropped
 
 
+class TestMigration020Arity:
+    """020 downgrade() alter_column calls must use exactly 1 positional arg
+    (column name only) inside a batch_alter_table context.
+
+    Regression: the second alter_column erroneously passed ("todos",
+    "definition_of_done") as positional args. Inside a batch context the table
+    is already bound, so the extra "todos" arg shifts the column name into the
+    wrong position and breaks the call signature at runtime.
+    """
+
+    _FILENAME = "020_make_todo_acceptance_criteria_and_dod_nullable.py"
+
+    def test_revision_links_to_020(self):
+        mod = _load_migration_by_filename(self._FILENAME)
+        assert mod.revision == "021"
+        assert mod.down_revision == "020"
+
+    def test_downgrade_alter_column_calls_have_single_positional_arg(self):
+        mod = _load_migration_by_filename(self._FILENAME)
+        with patch.object(mod, "op") as mock_op:
+            mod.downgrade()
+        batch_ctx = mock_op.batch_alter_table.return_value.__enter__.return_value
+        alter_calls = batch_ctx.alter_column.call_args_list
+        assert len(alter_calls) == 2, (
+            f"expected 2 alter_column calls in downgrade(), got {len(alter_calls)}"
+        )
+        for call in alter_calls:
+            assert len(call.args) == 1, (
+                "alter_column inside batch_alter_table must be called with exactly "
+                f"1 positional arg (column name only); got args={call.args}"
+            )
+        columns = [call.args[0] for call in alter_calls]
+        assert columns == ["acceptance_criteria", "definition_of_done"], (
+            f"expected ['acceptance_criteria', 'definition_of_done'], got {columns}"
+        )
+
+    def test_upgrade_alter_column_calls_have_single_positional_arg(self):
+        """upgrade() already follows the correct arity; pin it as the reference shape."""
+        mod = _load_migration_by_filename(self._FILENAME)
+        with patch.object(mod, "op") as mock_op:
+            mod.upgrade()
+        batch_ctx = mock_op.batch_alter_table.return_value.__enter__.return_value
+        alter_calls = batch_ctx.alter_column.call_args_list
+        assert len(alter_calls) == 2
+        for call in alter_calls:
+            assert len(call.args) == 1, (
+                f"upgrade() alter_column arity drifted; got args={call.args}"
+            )
+
+
 def _load_migration_001():
     """Load alembic/versions/001_initial_schema.py via importlib (filename starts with digit)."""
     import importlib.util

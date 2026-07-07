@@ -216,6 +216,28 @@ PROVIDER_PRESETS: dict[str, dict[str, object]] = {
         "free_models_endpoint": None,
         "supports_free_models": False,
     },
+    "ai21": {
+        "api_base_url": "https://api.ai21.com/studio/v1",
+        "provider_package": "langchain-openai",
+        "provider_class": "ChatOpenAI",
+        "credential_env_var": "AI21_API_KEY",
+        "credential_alias": "ai21_api_key",
+        "api_base_alias": "ai21_api_base",
+        "display_name": "AI21",
+        "free_models_endpoint": None,
+        "supports_free_models": False,
+    },
+    "google": {
+        "api_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "provider_package": "langchain-openai",
+        "provider_class": "ChatOpenAI",
+        "credential_env_var": "GOOGLE_API_KEY",
+        "credential_alias": "google_api_key",
+        "api_base_alias": "google_api_base",
+        "display_name": "Google",
+        "free_models_endpoint": None,
+        "supports_free_models": False,
+    },
 }
 
 
@@ -239,6 +261,8 @@ PROVIDER_FLAGSHIP_MODELS: dict[str, str] = {
     "nvidia": "meta-llama/Llama-3.1-70B-Instruct",
     "perplexity": "llama-3.1-sonar-large-128k-online",
     "huggingface": "meta-llama/Llama-3.1-70B-Instruct",
+    "ai21": "jamba-1.5-large",
+    "google": "gemini-2.5-pro",
 }
 
 

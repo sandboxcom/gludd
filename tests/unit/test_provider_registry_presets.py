@@ -31,6 +31,8 @@ EXPECTED_PRESET_PROVIDERS = [
     "nvidia",
     "perplexity",
     "huggingface",
+    "ai21",
+    "google",
 ]
 
 
@@ -41,17 +43,17 @@ def test_from_presets_includes_all_known_providers():
     for name in EXPECTED_PRESET_PROVIDERS:
         assert name in registered, f"preset provider {name!r} not registered"
 
-    # The full preset table is covered, not just the documented 19.
+    # The full preset table is covered, not just the documented 21.
     assert registered == set(PROVIDER_PRESETS.keys())
 
 
-def test_from_presets_has_nineteen_providers():
-    """The documented provider list has exactly 19 entries."""
-    assert len(EXPECTED_PRESET_PROVIDERS) == 19
-    assert len(PROVIDER_PRESETS) == 19
+def test_from_presets_has_twenty_one_providers():
+    """The documented provider list has exactly 21 entries."""
+    assert len(EXPECTED_PRESET_PROVIDERS) == 21
+    assert len(PROVIDER_PRESETS) == 21
 
     registry = ProviderRegistry.from_presets()
-    assert len(registry.list_providers()) == 19
+    assert len(registry.list_providers()) == 21
 
 
 def test_from_profiles_empty_returns_presets_populated_registry():

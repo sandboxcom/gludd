@@ -28,6 +28,6 @@ def downgrade() -> None:
             server_default="[]",
         )
         batch_op.alter_column(
-            "todos", "definition_of_done", nullable=False, existing_type=sa.Text(),
+            "definition_of_done", nullable=False, existing_type=sa.Text(),
             server_default="",
         )
