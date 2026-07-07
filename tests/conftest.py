@@ -64,7 +64,7 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     layer override this by setting ``GLUDD_PSK`` or unsetting the env var
     inside their own ``monkeypatch.setenv`` calls.
     """
-    if "GLUDD_PSK" not in os.environ:
+    if not os.environ.get("GLUDD_PSK", "").strip():
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
 
 
