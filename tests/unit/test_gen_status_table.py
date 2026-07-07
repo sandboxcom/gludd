@@ -24,6 +24,7 @@ from gen_status_table import (
     _inject_into_readme,
     _load_manifest,
     _render_section,
+    _strip_mode_artifacts,
     _verify_feature,
     main,
 )
@@ -475,6 +476,114 @@ class TestInjectIntoReadme:
         assert first == second
 
 
+# ── _strip_mode_artifacts ─────────────────────────────────────────────────────
+
+
+class TestStripModeArtifacts:
+    """Unit tests for the mode-agnostic normalization used by --check.
+
+    The body (sections, rows, badges, notes) MUST be preserved exactly. Only
+    the two generation-mode artifacts (header line + ``*(file-refs only)*``
+    suffix) are stripped, so a README written in --fast mode passes a full-mode
+    --check (the CI scenario) and vice versa.
+    """
+
+    _FAST_HEADER = (
+        "*(auto-generated with `--fast`; `test:` refs checked by file existence only —"
+        " run `make gen-status-table` locally to verify tests pass)*\n"
+    )
+    _FULL_HEADER = (
+        "*(auto-generated — do not edit between markers; regenerate with `make gen-status-table`)*\n"
+    )
+    _BODY = (
+        "\n### Section One\n"
+        "| Feature / Task | Verified % | Evidence |\n"
+        "|---|---|---|\n"
+        "| Feature A | ✓ 100% | **PASS**: notes |\n"
+    )
+
+    def test_strips_fast_header(self) -> None:
+        block = self._FAST_HEADER + self._BODY
+        assert _strip_mode_artifacts(block) == self._BODY
+
+    def test_strips_full_header(self) -> None:
+        block = self._FULL_HEADER + self._BODY
+        assert _strip_mode_artifacts(block) == self._BODY
+
+    def test_fast_and_full_normalize_equal(self) -> None:
+        """The core invariant: fast-mode block and full-mode block normalize
+        to the same string when only the header differs."""
+        fast_block = self._FAST_HEADER + self._BODY
+        full_block = self._FULL_HEADER + self._BODY
+        assert _strip_mode_artifacts(fast_block) == _strip_mode_artifacts(full_block)
+
+    def test_strips_file_refs_suffix(self) -> None:
+        block = self._FAST_HEADER + (
+            "| Feature A | ✓ 100% | **PASS** *(file-refs only)*: notes |\n"
+        )
+        normalized = _strip_mode_artifacts(block)
+        assert "file-refs only" not in normalized
+        assert "**PASS**: notes" in normalized
+
+    def test_strips_multiple_file_refs_suffixes(self) -> None:
+        block = (
+            self._FAST_HEADER
+            + "| A | ✓ 100% | **PASS** *(file-refs only)*: n1 |\n"
+            + "| B | ✓ 100% | **PASS** *(file-refs only)*: n2 |\n"
+        )
+        normalized = _strip_mode_artifacts(block)
+        assert normalized.count("file-refs only") == 0
+
+    def test_strips_both_header_and_suffix(self) -> None:
+        block = self._FAST_HEADER + (
+            "| A | ✓ 100% | **PASS** *(file-refs only)*: notes |\n"
+        )
+        normalized = _strip_mode_artifacts(block)
+        assert "auto-generated" not in normalized
+        assert "file-refs only" not in normalized
+        assert "**PASS**: notes" in normalized
+
+    def test_no_artifacts_returns_unchanged(self) -> None:
+        block = self._BODY
+        assert _strip_mode_artifacts(block) == block
+
+    def test_preserves_body_exactly(self) -> None:
+        """Regression guard: every body element (section heading, table rows,
+        badges, notes, percentages) must survive normalization intact."""
+        block = self._FAST_HEADER + self._BODY
+        normalized = _strip_mode_artifacts(block)
+        assert "### Section One" in normalized
+        assert "| Feature / Task | Verified % | Evidence |" in normalized
+        assert "| Feature A | ✓ 100% | **PASS**: notes |" in normalized
+
+    def test_strips_header_when_leading_newline_present(self) -> None:
+        """The on-disk block extracted via _extract_between_markers starts
+        with a leading \\n (the newline immediately after START marker).
+        The header-stripping regex must still find the header line."""
+        block = "\n" + self._FAST_HEADER + self._BODY
+        normalized = _strip_mode_artifacts(block)
+        assert "auto-generated" not in normalized.replace("\n", "", 1) or normalized.lstrip() == self._BODY
+
+    def test_does_not_strip_non_generation_parenthetical(self) -> None:
+        """A regular parenthetical in a notes field must NOT be stripped."""
+        block = self._FAST_HEADER + (
+            "| A | ✓ 100% | **PASS**: see PR (review pending) |\n"
+        )
+        normalized = _strip_mode_artifacts(block)
+        assert "(review pending)" in normalized
+
+    def test_does_not_strip_arbitrary_auto_generated_text(self) -> None:
+        """The header regex is anchored to a line that STARTS with
+        ``*(auto-generated`` and ends with ``)*``. A mention of 'auto-generated'
+        in the middle of a notes field must NOT be touched."""
+        body_with_mention = (
+            "| A | ✓ 100% | **PASS**: this is auto-generated content |\n"
+        )
+        block = self._FAST_HEADER + body_with_mention
+        normalized = _strip_mode_artifacts(block)
+        assert "auto-generated content" in normalized
+
+
 # ── main() integration ────────────────────────────────────────────────────────
 
 
@@ -537,6 +646,104 @@ class TestMain:
         readme = tmp_path / "README.md"
         readme.write_text(
             f"# Doc\n{_START_MARKER}\nSTALE CONTENT\n{_END_MARKER}\n"
+        )
+        import gen_status_table as gst
+        with patch.object(gst, "_REPO_ROOT", tmp_path):
+            rc = main(["--check", "--fast", "--manifest", str(manifest)])
+        assert rc == 1
+
+    def test_check_mode_header_agnostic_full_written_fast_checked(
+        self, tmp_path: Path
+    ) -> None:
+        """README written in FULL mode passes a --fast --check.
+
+        Pins the mode-agnostic behavior: only the header line + file-refs
+        suffix differ between modes; the body (sections/rows/badges/notes)
+        is the actual contract and must compare equal after normalization.
+
+        We stub _verify_feature to return identical results regardless of
+        mode so the BODY is equal in both phases — this isolates the test
+        to the header/suffix normalization (not pytest-vs-file-existence
+        semantics).
+        """
+        manifest = self._write_minimal_manifest(tmp_path)
+        self._write_readme_with_markers(tmp_path)
+        import gen_status_table as gst
+
+        def _stub_verify(verifier, feat, repo_root, fast):
+            return {
+                "status": "verified",
+                "verified_at": None,
+                "evidence_results": {
+                    "all_met": True,
+                    "met_count": len(feat.get("evidence_refs", [])),
+                    "total_count": len(feat.get("evidence_refs", [])),
+                    "per_ref": [],
+                },
+            }
+
+        with patch.object(gst, "_REPO_ROOT", tmp_path), \
+             patch.object(gst, "_verify_feature", side_effect=_stub_verify):
+            # 1. Write README in FULL mode (no --fast) — produces full header.
+            rc_write = main(["--write", "--manifest", str(manifest)])
+            assert rc_write == 0
+            # 2. Check it in --fast mode — produces fast header.
+            #    Headers differ; bodies must compare equal post-normalization.
+            rc_check = main(["--check", "--fast", "--manifest", str(manifest)])
+        assert rc_check == 0
+
+    def test_check_mode_header_agnostic_fast_written_full_checked(
+        self, tmp_path: Path
+    ) -> None:
+        """README written in --fast mode passes a full-mode --check.
+
+        This is the exact CI scenario: ``make gen-status-table`` writes
+        ``--fast``; ``playbooks/verify_feature_claims.yml`` runs ``--check``
+        in full mode. Before the fix, the header-line diff alone caused CI
+        RED even though the body was current.
+        """
+        manifest = self._write_minimal_manifest(tmp_path)
+        self._write_readme_with_markers(tmp_path)
+        import gen_status_table as gst
+
+        def _stub_verify(verifier, feat, repo_root, fast):
+            return {
+                "status": "verified",
+                "verified_at": None,
+                "evidence_results": {
+                    "all_met": True,
+                    "met_count": len(feat.get("evidence_refs", [])),
+                    "total_count": len(feat.get("evidence_refs", [])),
+                    "per_ref": [],
+                },
+            }
+
+        with patch.object(gst, "_REPO_ROOT", tmp_path), \
+             patch.object(gst, "_verify_feature", side_effect=_stub_verify):
+            # 1. Write README in --fast mode — produces fast header.
+            rc_write = main(["--write", "--fast", "--manifest", str(manifest)])
+            assert rc_write == 0
+            # 2. Check it in FULL mode (no --fast) — produces full header.
+            #    This is the CI playbook's invocation. Headers differ; bodies
+            #    must compare equal post-normalization.
+            rc_check = main(["--check", "--manifest", str(manifest)])
+        assert rc_check == 0
+
+    def test_check_mode_still_fails_on_real_body_diff_after_normalize(
+        self, tmp_path: Path
+    ) -> None:
+        """The check is still strict on the BODY: a genuine content
+        difference (e.g. a feature row the manifest has but the on-disk
+        table lacks) must fail even after mode-artifact normalization."""
+        manifest = self._write_minimal_manifest(tmp_path)
+        readme = tmp_path / "README.md"
+        # On-disk table has the FAST header but a TOTALLY DIFFERENT body.
+        readme.write_text(
+            f"# Doc\n{_START_MARKER}\n"
+            "*(auto-generated with `--fast`; ...)*\n"
+            "### TOTALLY DIFFERENT SECTION\n"
+            "| X | ✓ 1% | **PASS**: nothing |\n"
+            f"{_END_MARKER}\n"
         )
         import gen_status_table as gst
         with patch.object(gst, "_REPO_ROOT", tmp_path):

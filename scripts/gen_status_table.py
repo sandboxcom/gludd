@@ -83,6 +83,16 @@ _HEADING_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Generation-mode artifacts — differ between --fast and full mode but are NOT
+# part of the table-body contract. ``--check`` normalizes these away so a
+# README written in one mode passes a check run in the other (see
+# ``_strip_mode_artifacts``).
+_HEADER_LINE_PATTERN = re.compile(
+    r"^[ \t]*\*\(auto-generated.*\)\*[ \t]*(?:\n|$)",
+    re.MULTILINE,
+)
+_FILE_REFS_SUFFIX_PATTERN = re.compile(r" \*\(file-refs only\)\*")
+
 # ---------------------------------------------------------------------------
 # Manifest loading
 # ---------------------------------------------------------------------------
@@ -267,6 +277,29 @@ def _extract_between_markers(text: str) -> str | None:
     return text[start + len(_START_MARKER) : end]
 
 
+def _strip_mode_artifacts(block: str) -> str:
+    """Strip generation-mode artifacts so ``--check`` is mode-agnostic.
+
+    The following differ between --fast and full mode but are NOT part of
+    the table-body contract:
+
+    1. The header line ("*(auto-generated ... )*") which differs in wording
+       between --fast mode ("auto-generated with --fast; test: refs checked
+       by file existence only ...") and full mode ("auto-generated — do not
+       edit between markers; ...").
+    2. The " *(file-refs only)*" suffix appended to evidence cells in --fast
+       mode (absent in full mode).
+
+    The table BODY — section headings, feature rows, status badges,
+    percentages, evidence notes — is still strictly compared by --check.
+    Only the two generation-mode annotations above are normalized away, so a
+    README written in --fast mode passes a full-mode --check (the CI
+    scenario) and vice versa.
+    """
+    without_header = _HEADER_LINE_PATTERN.sub("", block, count=1)
+    return _FILE_REFS_SUFFIX_PATTERN.sub("", without_header)
+
+
 def _readme_has_status_section(text: str) -> bool:
     """Return True if README has STATUS-TABLE markers OR the status-table heading.
 
@@ -449,14 +482,27 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         if current_block.strip() != block.strip():
+            # Before declaring stale, normalize generation-mode artifacts
+            # (header line + `*(file-refs only)*` suffix) that differ between
+            # --fast and full mode. The table BODY is the actual contract.
+            disk_norm = _strip_mode_artifacts(current_block).strip()
+            fresh_norm = _strip_mode_artifacts(block).strip()
+            if disk_norm == fresh_norm:
+                print(
+                    "[check-status-table] OK — README.md status table is current "
+                    "(mode-agnostic: header/suffix differences ignored).",
+                )
+                return 0
             print(
-                "ERROR: README.md status table is stale (on-disk content differs from freshly generated).\n"
+                "ERROR: README.md status table is stale (on-disk body differs from freshly generated).\n"
                 "  Fix: make gen-status-table",
                 file=sys.stderr,
             )
-            # Show a diff summary (first differing line) without shelling out to diff.
-            on_disk_lines = current_block.strip().splitlines()
-            fresh_lines = block.strip().splitlines()
+            # Show a diff summary (first differing line) on the NORMALIZED
+            # bodies so the message reflects the real contract violation,
+            # not a harmless mode-specific annotation.
+            on_disk_lines = disk_norm.splitlines()
+            fresh_lines = fresh_norm.splitlines()
             for i, (a, b) in enumerate(zip(on_disk_lines, fresh_lines)):
                 if a != b:
                     print(

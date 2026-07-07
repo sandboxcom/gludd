@@ -238,6 +238,51 @@ PROVIDER_PRESETS: dict[str, dict[str, object]] = {
         "free_models_endpoint": None,
         "supports_free_models": False,
     },
+    "cloudflare": {
+        # Sentinel URL — Workers AI requires the account_id in the path.
+        # Operators set the cloudflare_api_base alias (env-overridable) to
+        # https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1
+        # so ChatOpenAI hits the account-scoped inference endpoint.
+        "api_base_url": "https://api.cloudflare.com/client/v4",
+        "provider_package": "langchain-openai",
+        "provider_class": "ChatOpenAI",
+        "credential_env_var": "CLOUDFLARE_API_TOKEN",
+        "credential_alias": "cloudflare_api_key",
+        "api_base_alias": "cloudflare_api_base",
+        "display_name": "Cloudflare",
+        "free_models_endpoint": None,
+        "supports_free_models": False,
+    },
+    "databricks": {
+        # Placeholder URL — the real Serving Endpoints URL is workspace-scoped
+        # (https://<workspace-host>/serving-endpoints). Operators set the
+        # databricks_api_base alias (env-overridable, typically derived from
+        # DATABRICKS_HOST) so ChatOpenAI hits the workspace-scoped endpoint.
+        "api_base_url": "https://workspace.cloud.databricks.com/serving-endpoints",
+        "provider_package": "langchain-openai",
+        "provider_class": "ChatOpenAI",
+        "credential_env_var": "DATABRICKS_TOKEN",
+        "credential_alias": "databricks_api_key",
+        "api_base_alias": "databricks_api_base",
+        "display_name": "Databricks",
+        "free_models_endpoint": None,
+        "supports_free_models": False,
+    },
+    "azure-ai-foundry": {
+        # Placeholder URL — Azure AI Foundry inference endpoints are
+        # region/project-scoped. Operators set the azure_ai_base alias
+        # (env-overridable, per Option A) to the region-specific URL so
+        # ChatOpenAI hits the correct project endpoint.
+        "api_base_url": "https://models.ai.azure.com",
+        "provider_package": "langchain-openai",
+        "provider_class": "ChatOpenAI",
+        "credential_env_var": "AZURE_AI_API_KEY",
+        "credential_alias": "azure_ai_api_key",
+        "api_base_alias": "azure_ai_base",
+        "display_name": "Azure AI Foundry",
+        "free_models_endpoint": None,
+        "supports_free_models": False,
+    },
 }
 
 
@@ -263,6 +308,9 @@ PROVIDER_FLAGSHIP_MODELS: dict[str, str] = {
     "huggingface": "meta-llama/Llama-3.1-70B-Instruct",
     "ai21": "jamba-1.5-large",
     "google": "gemini-2.5-pro",
+    "cloudflare": "@cf/meta/llama-3.1-70b-instruct",
+    "databricks": "databricks-dbrx-instruct",
+    "azure-ai-foundry": "Phi-4",
 }
 
 

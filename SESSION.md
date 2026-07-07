@@ -69,7 +69,7 @@
 ### Bugs still present:
 - **Connector gaps**: no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
 - **Full local test suite OOM** under 8-worker xdist — CI-as-gate used.
-- **5 missing GPU providers** — `4e9d97fc` claimed "8 GPU providers" but only 5 landed; see Known Gaps #8.
+- **5 missing GPU providers** — RESOLVED. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21); actual count now 24. See Known Gaps #8 + Next Steps #9.
 
 ## Last Commits (this session + recent)
 
@@ -128,7 +128,7 @@
 5. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
 6. **verify-remote branch/tag collision** — RESOLVED. `refs/heads/$$BR` pin added at Makefile:1075 prevents branch/tag name collision. Test: `tests/unit/test_verify_remote_recipe.py`. Verified working: `make verify-remote BRANCH=master SHA=a907382e` → `VERIFIED master@a907382e`.
 7. **check-skills-frontmatter** — DONE. Script at `scripts/check_skills_frontmatter.py`, Makefile target at line 1852, wired into `gate` at line 298.
-8. **False "8 GPU providers" claim in `4e9d97fc`** — commit message claims "8 GPU providers" but only 5 were added (mistral, cohere, nvidia, perplexity, huggingface). Commit is pushed with descendants (`a907382e` among them); NOT amended per no-force-push policy. Documented in commit notes + this file. Audit doc recommended 10; 5 remain unimplemented (google, cloudflare, databricks, azure-ai-foundry, ai21). See Next Steps #9 for backlog.
+8. **False "8 GPU providers" claim in `4e9d97fc`** — RESOLVED (gap closed). Commit message claims "8 GPU providers" but only 5 were added at the time (mistral, cohere, nvidia, perplexity, huggingface). Commit is pushed with descendants (`a907382e` among them); NOT amended per no-force-push policy. The 5 missing providers (google, cloudflare, databricks, azure-ai-foundry, ai21) are now implemented — actual provider count is 24 (19 original + 5 new). The `4e9d97fc` commit message still reads "8" but the underlying gap is closed by subsequent work.
 
 ## Next Steps
 
@@ -140,7 +140,7 @@
 6. [ ] **Lift coverage** to gate threshold — gate test phase has failures (likely environmental); classify + triage after gate completes.
 7. [x] **Wire the 6 new audit roles into a playbook** — DONE. `gludd audit-plugins` CLI + `audit_plugins.yml` playbook orchestrating all 6 check roles (commit `7ec9f2dc`).
 8. [x] **Add integration tests for 6 new roles** — DONE. 128 audit_roles tests pass (commit `7ec9f2dc`).
-9. [ ] **Implement 5 missing GPU providers** — `4e9d97fc` claimed "8 GPU providers" but only 5 landed (mistral, cohere, nvidia, perplexity, huggingface). Remaining: google, cloudflare, databricks, azure-ai-foundry, ai21. Audit doc recommended 10 total.
+9. [x] **Implement 5 missing GPU providers** — DONE. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21). Actual provider count is now 24 (19 original + 5 new). The `4e9d97fc` commit message still says "8 GPU providers" but is NOT amended per no-force-push policy; the claim was false at commit time but the gap is now closed by subsequent work.
 
 ## Current Gate Status (2026-07-07)
 <!-- gate:begin -->
@@ -171,6 +171,7 @@
 7. **4e9d97fc "8 GPU providers" false claim documented** — commit message claimed 8 but only 5 landed (mistral, cohere, nvidia, perplexity, huggingface). Commit is pushed with descendants; NOT amended per no-force-push policy. Documented in Known Gaps #8 + Next Steps #9.
 8. **baseten.py detect-secrets false positive** — marked with `# pragma: allowlist secret` (commit `a907382e`). Not a real secret; detect-secrets was matching a non-secret string.
 9. **348+ new tests pass** — 60 false-done tests, 12 heartbeat tests, 128 audit_roles tests, plus session-start race + hasLocalWork bypass tests. All in commit `7ec9f2dc`.
+10. **5 missing GPU providers implemented** — google, cloudflare, databricks, azure-ai-foundry, ai21 all added. Closes the gap from the `4e9d97fc` false "8 GPU providers" claim. Actual provider count is now 24 (19 original + 5 new). The `4e9d97fc` commit message still says "8" but is NOT amended (no-force-push policy); gap is closed by subsequent work.
 
 ### Honest state at session end
 

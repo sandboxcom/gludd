@@ -39,6 +39,9 @@ ALL_FLAGSHIP_PROVIDERS = [
     "huggingface",
     "google",
     "ai21",
+    "databricks",
+    "cloudflare",
+    "azure-ai-foundry",
 ]
 
 # Pinned flagship model ids cited in the task spec — locks the contract so
@@ -50,6 +53,9 @@ EXPECTED_FLAGSHIP_MODELS = {
     "fireworks": "meta-llama/Llama-3.1-70B-Instruct",
     "ai21": "jamba-1.5-large",
     "google": "gemini-2.5-pro",
+    "databricks": "databricks-dbrx-instruct",
+    "cloudflare": "@cf/meta/llama-3.1-70b-instruct",
+    "azure-ai-foundry": "Phi-4",
 }
 
 REQUIRED_FIELDS = {
@@ -885,3 +891,512 @@ class TestAutoConfigureWithGoogle:
         assert mp.enabled is True
         assert mp.model_name == "gemini-2.5-pro"
         assert mp.provider == "google"
+
+
+# --- Cloudflare (Workers AI, OpenAI-compat mode) ---
+
+
+CLOUDFLARE_PRESET = {
+    "api_base_url": "https://api.cloudflare.com/client/v4",
+    "provider_package": "langchain-openai",
+    "provider_class": "ChatOpenAI",
+    "credential_env_var": "CLOUDFLARE_API_TOKEN",
+    "credential_alias": "cloudflare_api_key",
+    "api_base_alias": "cloudflare_api_base",
+    "display_name": "Cloudflare",
+    "free_models_endpoint": None,
+    "supports_free_models": False,
+}
+
+
+class TestCloudflareProviderPreset:
+    """Cloudflare Workers AI — OpenAI-compatible gateway.
+
+    The api_base_url is a sentinel; operators must set the ``cloudflare_api_base``
+    alias (env-overridable) to the account-scoped URL because Cloudflare's
+    inference endpoint requires the account_id in the path.
+    """
+
+    def test_cloudflare_present_in_presets(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        assert "cloudflare" in PROVIDER_PRESETS
+
+    def test_cloudflare_has_all_required_fields(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        preset = PROVIDER_PRESETS["cloudflare"]
+        missing = REQUIRED_FIELDS - set(preset.keys())
+        assert not missing, f"cloudflare missing fields: {missing}"
+
+    def test_cloudflare_uses_openai_compatible_stack(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        preset = PROVIDER_PRESETS["cloudflare"]
+        assert preset["provider_package"] == "langchain-openai"
+        assert preset["provider_class"] == "ChatOpenAI"
+
+    @pytest.mark.parametrize("field,expected", list(CLOUDFLARE_PRESET.items()))
+    def test_cloudflare_field_values_match_spec(self, field, expected):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        assert PROVIDER_PRESETS["cloudflare"][field] == expected, (
+            f"cloudflare.{field} = {PROVIDER_PRESETS['cloudflare'][field]!r}, "
+            f"expected {expected!r}"
+        )
+
+    def test_cloudflare_does_not_advertise_free_models(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        preset = PROVIDER_PRESETS["cloudflare"]
+        assert preset["supports_free_models"] is False
+        assert preset["free_models_endpoint"] is None
+
+
+class TestGetProviderPresetForCloudflare:
+    def test_get_cloudflare_returns_correct_dict(self):
+        from general_ludd.models.provider_presets import get_provider_preset
+
+        preset = get_provider_preset("cloudflare")
+        assert preset is not None
+        assert preset["api_base_url"] == "https://api.cloudflare.com/client/v4"
+        assert preset["credential_env_var"] == "CLOUDFLARE_API_TOKEN"
+        assert preset["display_name"] == "Cloudflare"
+        assert preset["credential_alias"] == "cloudflare_api_key"
+        assert preset["api_base_alias"] == "cloudflare_api_base"
+        assert preset["provider_package"] == "langchain-openai"
+        assert preset["provider_class"] == "ChatOpenAI"
+
+    def test_get_cloudflare_is_case_insensitive(self):
+        from general_ludd.models.provider_presets import get_provider_preset
+
+        assert get_provider_preset("CLOUDFLARE") is not None
+        assert get_provider_preset("Cloudflare") is not None
+        assert get_provider_preset("CloudFlare") is not None
+
+
+class TestCloudflareFlagshipModel:
+    def test_cloudflare_flagship_is_llama_31_70b(self):
+        from general_ludd.models.provider_presets import PROVIDER_FLAGSHIP_MODELS
+
+        assert PROVIDER_FLAGSHIP_MODELS["cloudflare"] == "@cf/meta/llama-3.1-70b-instruct"
+
+    def test_get_helper_returns_llama_for_cloudflare(self):
+        from general_ludd.models.provider_presets import get_provider_flagship_model
+
+        assert (
+            get_provider_flagship_model("cloudflare")
+            == "@cf/meta/llama-3.1-70b-instruct"
+        )
+        assert (
+            get_provider_flagship_model("CLOUDFLARE")
+            == "@cf/meta/llama-3.1-70b-instruct"
+        )
+
+
+class TestDetectCredentialAliasForCloudflare:
+    def test_returns_true_when_cloudflare_api_token_set(self):
+        from general_ludd.models.provider_presets import detect_credential_alias
+
+        assert detect_credential_alias(
+            "cloudflare", {"CLOUDFLARE_API_TOKEN": "cf-test-token"}
+        ) is True
+
+    def test_returns_false_when_cloudflare_api_token_missing(self):
+        from general_ludd.models.provider_presets import detect_credential_alias
+
+        assert detect_credential_alias("cloudflare", {}) is False
+
+    def test_returns_false_when_cloudflare_api_token_empty(self):
+        from general_ludd.models.provider_presets import detect_credential_alias
+
+        assert detect_credential_alias(
+            "cloudflare", {"CLOUDFLARE_API_TOKEN": ""}
+        ) is False
+
+
+class TestListConfiguredProvidersWithCloudflare:
+    def test_lists_cloudflare_when_configured(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        configured = list_configured_providers({"CLOUDFLARE_API_TOKEN": "key"})
+        assert "cloudflare" in configured
+
+    def test_cloudflare_mixed_with_other_providers(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        env = {
+            "OPENAI_API_KEY": "oai",
+            "CLOUDFLARE_API_TOKEN": "cf",
+            "MISTRAL_API_KEY": "mi",
+        }
+        configured = list_configured_providers(env)
+        assert "cloudflare" in configured
+        assert "openai" in configured
+        assert "mistral" in configured
+
+
+class TestAutoConfigureWithCloudflare:
+    def test_cloudflare_profile_uses_llama_flagship(self):
+        from general_ludd.models.auto_configurator import AutoConfigurator
+
+        env = {"CLOUDFLARE_API_TOKEN": "k"}
+        configurator = AutoConfigurator()
+        profiles = configurator.auto_configure_from_env(environ=env)
+        assert len(profiles) == 1
+        p = profiles[0]
+        assert p["provider"] == "cloudflare"
+        assert p["model_name"] == "@cf/meta/llama-3.1-70b-instruct"
+        assert p["api_base_alias"] == "cloudflare_api_base"
+        assert p["credential_alias"] == "cloudflare_api_key"
+        assert p["provider_package"] == "langchain-openai"
+        assert p["provider_class_hint"] == "ChatOpenAI"
+
+    def test_cloudflare_profile_constructible_as_model_profile(self):
+        from general_ludd.models.auto_configurator import AutoConfigurator
+        from general_ludd.models.gateway import ModelProfile
+
+        env = {"CLOUDFLARE_API_TOKEN": "k"}
+        configurator = AutoConfigurator()
+        profiles = configurator.auto_configure_from_env(environ=env)
+        mp = ModelProfile(**profiles[0])
+        assert mp.enabled is True
+        assert mp.model_name == "@cf/meta/llama-3.1-70b-instruct"
+        assert mp.provider == "cloudflare"
+
+
+# --- Databricks (Foundation Model APIs, OpenAI-compat mode) ---
+
+
+DATABRICKS_PRESET = {
+    "api_base_url": "https://workspace.cloud.databricks.com/serving-endpoints",
+    "provider_package": "langchain-openai",
+    "provider_class": "ChatOpenAI",
+    "credential_env_var": "DATABRICKS_TOKEN",
+    "credential_alias": "databricks_api_key",
+    "api_base_alias": "databricks_api_base",
+    "display_name": "Databricks",
+    "free_models_endpoint": None,
+    "supports_free_models": False,
+}
+
+
+class TestDatabricksProviderPreset:
+    """Databricks Foundation Model APIs — OpenAI-compatible gateway.
+
+    The api_base_url is a placeholder; the real per-workspace Serving Endpoints
+    URL differs per deployment. Operators set the ``databricks_api_base`` alias
+    (env-overridable, typically derived from ``DATABRICKS_HOST``) to their
+    workspace-scoped URL so ChatOpenAI hits the right endpoint.
+    """
+
+    def test_databricks_present_in_presets(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        assert "databricks" in PROVIDER_PRESETS
+
+    def test_databricks_has_all_required_fields(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        preset = PROVIDER_PRESETS["databricks"]
+        missing = REQUIRED_FIELDS - set(preset.keys())
+        assert not missing, f"databricks missing fields: {missing}"
+
+    def test_databricks_uses_openai_compatible_stack(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        preset = PROVIDER_PRESETS["databricks"]
+        assert preset["provider_package"] == "langchain-openai"
+        assert preset["provider_class"] == "ChatOpenAI"
+
+    @pytest.mark.parametrize("field,expected", list(DATABRICKS_PRESET.items()))
+    def test_databricks_field_values_match_spec(self, field, expected):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        assert PROVIDER_PRESETS["databricks"][field] == expected, (
+            f"databricks.{field} = {PROVIDER_PRESETS['databricks'][field]!r}, "
+            f"expected {expected!r}"
+        )
+
+    def test_databricks_does_not_advertise_free_models(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        preset = PROVIDER_PRESETS["databricks"]
+        assert preset["supports_free_models"] is False
+        assert preset["free_models_endpoint"] is None
+
+
+class TestGetProviderPresetForDatabricks:
+    def test_get_databricks_returns_correct_dict(self):
+        from general_ludd.models.provider_presets import get_provider_preset
+
+        preset = get_provider_preset("databricks")
+        assert preset is not None
+        assert preset["api_base_url"] == (
+            "https://workspace.cloud.databricks.com/serving-endpoints"
+        )
+        assert preset["credential_env_var"] == "DATABRICKS_TOKEN"
+        assert preset["display_name"] == "Databricks"
+        assert preset["credential_alias"] == "databricks_api_key"
+        assert preset["api_base_alias"] == "databricks_api_base"
+        assert preset["provider_package"] == "langchain-openai"
+        assert preset["provider_class"] == "ChatOpenAI"
+
+    def test_get_databricks_is_case_insensitive(self):
+        from general_ludd.models.provider_presets import get_provider_preset
+
+        assert get_provider_preset("DATABRICKS") is not None
+        assert get_provider_preset("Databricks") is not None
+        assert get_provider_preset("DataBricks") is not None
+
+
+class TestDatabricksFlagshipModel:
+    def test_databricks_flagship_is_dbrx_instruct(self):
+        from general_ludd.models.provider_presets import PROVIDER_FLAGSHIP_MODELS
+
+        assert PROVIDER_FLAGSHIP_MODELS["databricks"] == "databricks-dbrx-instruct"
+
+    def test_get_helper_returns_dbrx_for_databricks(self):
+        from general_ludd.models.provider_presets import get_provider_flagship_model
+
+        assert get_provider_flagship_model("databricks") == "databricks-dbrx-instruct"
+        assert get_provider_flagship_model("DATABRICKS") == "databricks-dbrx-instruct"
+
+
+class TestDetectCredentialAliasForDatabricks:
+    def test_returns_true_when_databricks_token_set(self):
+        from general_ludd.models.provider_presets import detect_credential_alias
+
+        assert detect_credential_alias(
+            "databricks", {"DATABRICKS_TOKEN": "dapi-test-token"}
+        ) is True
+
+    def test_returns_false_when_databricks_token_missing(self):
+        from general_ludd.models.provider_presets import detect_credential_alias
+
+        assert detect_credential_alias("databricks", {}) is False
+
+    def test_returns_false_when_databricks_token_empty(self):
+        from general_ludd.models.provider_presets import detect_credential_alias
+
+        assert detect_credential_alias(
+            "databricks", {"DATABRICKS_TOKEN": ""}
+        ) is False
+
+
+class TestListConfiguredProvidersWithDatabricks:
+    def test_lists_databricks_when_configured(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        configured = list_configured_providers({"DATABRICKS_TOKEN": "key"})
+        assert "databricks" in configured
+
+    def test_databricks_mixed_with_other_providers(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        env = {
+            "OPENAI_API_KEY": "oai",
+            "DATABRICKS_TOKEN": "dbx",
+            "MISTRAL_API_KEY": "mi",
+        }
+        configured = list_configured_providers(env)
+        assert "databricks" in configured
+        assert "openai" in configured
+        assert "mistral" in configured
+
+
+class TestAutoConfigureWithDatabricks:
+    def test_databricks_profile_uses_dbrx_flagship(self):
+        from general_ludd.models.auto_configurator import AutoConfigurator
+
+        env = {"DATABRICKS_TOKEN": "k"}
+        configurator = AutoConfigurator()
+        profiles = configurator.auto_configure_from_env(environ=env)
+        assert len(profiles) == 1
+        p = profiles[0]
+        assert p["provider"] == "databricks"
+        assert p["model_name"] == "databricks-dbrx-instruct"
+        assert p["api_base_alias"] == "databricks_api_base"
+        assert p["credential_alias"] == "databricks_api_key"
+        assert p["provider_package"] == "langchain-openai"
+        assert p["provider_class_hint"] == "ChatOpenAI"
+
+    def test_databricks_profile_constructible_as_model_profile(self):
+        from general_ludd.models.auto_configurator import AutoConfigurator
+        from general_ludd.models.gateway import ModelProfile
+
+        env = {"DATABRICKS_TOKEN": "k"}
+        configurator = AutoConfigurator()
+        profiles = configurator.auto_configure_from_env(environ=env)
+        mp = ModelProfile(**profiles[0])
+        assert mp.enabled is True
+        assert mp.model_name == "databricks-dbrx-instruct"
+        assert mp.provider == "databricks"
+
+
+# --- Azure AI Foundry (OpenAI-compat mode, Option A region override) ---
+
+
+AZURE_AI_FOUNDRY_PRESET = {
+    "api_base_url": "https://models.ai.azure.com",
+    "provider_package": "langchain-openai",
+    "provider_class": "ChatOpenAI",
+    "credential_env_var": "AZURE_AI_API_KEY",
+    "credential_alias": "azure_ai_api_key",
+    "api_base_alias": "azure_ai_base",
+    "display_name": "Azure AI Foundry",
+    "free_models_endpoint": None,
+    "supports_free_models": False,
+}
+
+
+class TestAzureAiFoundryProviderPreset:
+    """Azure AI Foundry — OpenAI-compatible gateway.
+
+    The api_base_url is a placeholder sentinel; operators set the
+    ``azure_ai_base`` alias (env-overridable, per Option A) to the
+    region/project-scoped inference URL because Azure AI Foundry
+    endpoints are region-specific.
+    """
+
+    def test_azure_ai_foundry_present_in_presets(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        assert "azure-ai-foundry" in PROVIDER_PRESETS
+
+    def test_azure_ai_foundry_has_all_required_fields(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        preset = PROVIDER_PRESETS["azure-ai-foundry"]
+        missing = REQUIRED_FIELDS - set(preset.keys())
+        assert not missing, f"azure-ai-foundry missing fields: {missing}"
+
+    def test_azure_ai_foundry_uses_openai_compatible_stack(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        preset = PROVIDER_PRESETS["azure-ai-foundry"]
+        assert preset["provider_package"] == "langchain-openai"
+        assert preset["provider_class"] == "ChatOpenAI"
+
+    @pytest.mark.parametrize("field,expected", list(AZURE_AI_FOUNDRY_PRESET.items()))
+    def test_azure_ai_foundry_field_values_match_spec(self, field, expected):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        assert PROVIDER_PRESETS["azure-ai-foundry"][field] == expected, (
+            f"azure-ai-foundry.{field} = "
+            f"{PROVIDER_PRESETS['azure-ai-foundry'][field]!r}, "
+            f"expected {expected!r}"
+        )
+
+    def test_azure_ai_foundry_does_not_advertise_free_models(self):
+        from general_ludd.models.provider_presets import PROVIDER_PRESETS
+
+        preset = PROVIDER_PRESETS["azure-ai-foundry"]
+        assert preset["supports_free_models"] is False
+        assert preset["free_models_endpoint"] is None
+
+
+class TestGetProviderPresetForAzureAiFoundry:
+    def test_get_azure_ai_foundry_returns_correct_dict(self):
+        from general_ludd.models.provider_presets import get_provider_preset
+
+        preset = get_provider_preset("azure-ai-foundry")
+        assert preset is not None
+        assert preset["api_base_url"] == "https://models.ai.azure.com"
+        assert preset["credential_env_var"] == "AZURE_AI_API_KEY"
+        assert preset["display_name"] == "Azure AI Foundry"
+        assert preset["credential_alias"] == "azure_ai_api_key"
+        assert preset["api_base_alias"] == "azure_ai_base"
+        assert preset["provider_package"] == "langchain-openai"
+        assert preset["provider_class"] == "ChatOpenAI"
+
+    def test_get_azure_ai_foundry_is_case_insensitive(self):
+        from general_ludd.models.provider_presets import get_provider_preset
+
+        assert get_provider_preset("AZURE-AI-FOUNDRY") is not None
+        assert get_provider_preset("Azure-Ai-Foundry") is not None
+        assert get_provider_preset("azure-ai-Foundry") is not None
+
+
+class TestAzureAiFoundryFlagshipModel:
+    def test_azure_ai_foundry_flagship_is_phi4(self):
+        from general_ludd.models.provider_presets import PROVIDER_FLAGSHIP_MODELS
+
+        assert PROVIDER_FLAGSHIP_MODELS["azure-ai-foundry"] == "Phi-4"
+
+    def test_get_helper_returns_phi4_for_azure_ai_foundry(self):
+        from general_ludd.models.provider_presets import get_provider_flagship_model
+
+        assert get_provider_flagship_model("azure-ai-foundry") == "Phi-4"
+        assert get_provider_flagship_model("AZURE-AI-FOUNDRY") == "Phi-4"
+
+
+class TestDetectCredentialAliasForAzureAiFoundry:
+    def test_returns_true_when_azure_ai_api_key_set(self):
+        from general_ludd.models.provider_presets import detect_credential_alias
+
+        assert detect_credential_alias(
+            "azure-ai-foundry", {"AZURE_AI_API_KEY": "az-test-key"}
+        ) is True
+
+    def test_returns_false_when_azure_ai_api_key_missing(self):
+        from general_ludd.models.provider_presets import detect_credential_alias
+
+        assert detect_credential_alias("azure-ai-foundry", {}) is False
+
+    def test_returns_false_when_azure_ai_api_key_empty(self):
+        from general_ludd.models.provider_presets import detect_credential_alias
+
+        assert detect_credential_alias(
+            "azure-ai-foundry", {"AZURE_AI_API_KEY": ""}
+        ) is False
+
+
+class TestListConfiguredProvidersWithAzureAiFoundry:
+    def test_lists_azure_ai_foundry_when_configured(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        configured = list_configured_providers({"AZURE_AI_API_KEY": "key"})
+        assert "azure-ai-foundry" in configured
+
+    def test_azure_ai_foundry_mixed_with_other_providers(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        env = {
+            "OPENAI_API_KEY": "oai",
+            "AZURE_AI_API_KEY": "az",
+            "MISTRAL_API_KEY": "mi",
+        }
+        configured = list_configured_providers(env)
+        assert "azure-ai-foundry" in configured
+        assert "openai" in configured
+        assert "mistral" in configured
+
+
+class TestAutoConfigureWithAzureAiFoundry:
+    def test_azure_ai_foundry_profile_uses_phi4_flagship(self):
+        from general_ludd.models.auto_configurator import AutoConfigurator
+
+        env = {"AZURE_AI_API_KEY": "k"}
+        configurator = AutoConfigurator()
+        profiles = configurator.auto_configure_from_env(environ=env)
+        assert len(profiles) == 1
+        p = profiles[0]
+        assert p["provider"] == "azure-ai-foundry"
+        assert p["model_name"] == "Phi-4"
+        assert p["api_base_alias"] == "azure_ai_base"
+        assert p["credential_alias"] == "azure_ai_api_key"
+        assert p["provider_package"] == "langchain-openai"
+        assert p["provider_class_hint"] == "ChatOpenAI"
+
+    def test_azure_ai_foundry_profile_constructible_as_model_profile(self):
+        from general_ludd.models.auto_configurator import AutoConfigurator
+        from general_ludd.models.gateway import ModelProfile
+
+        env = {"AZURE_AI_API_KEY": "k"}
+        configurator = AutoConfigurator()
+        profiles = configurator.auto_configure_from_env(environ=env)
+        mp = ModelProfile(**profiles[0])
+        assert mp.enabled is True
+        assert mp.model_name == "Phi-4"
+        assert mp.provider == "azure-ai-foundry"
