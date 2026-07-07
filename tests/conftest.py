@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import importlib
 import os
+import shutil
+import socket
 import sys
 from pathlib import Path
 
@@ -64,3 +66,42 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     if "GLUDD_PSK" not in os.environ:
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+
+
+# --- Environmental test-skip probes -----------------------------------------
+#
+# Integration tests that require SLURM or PostgreSQL can decorate themselves
+# with ``requires_slurm`` / ``requires_postgres`` (imported from this module)
+# so the local gate skips them unless the service is actually reachable. This
+# avoids forcing every developer to run both services just to get a green
+# local gate; CI exports the env vars (or runs the services) to opt in.
+#
+# Override shortcuts for operators:
+#   SLURM_AVAILABLE=1      treat SLURM as present without sbatch on PATH
+#   POSTGRES_AVAILABLE=1   treat Postgres as present without a live :5432
+
+
+def _port_open(host: str, port: int, timeout: float = 0.2) -> bool:
+    """Return True iff a TCP connection to (host, port) succeeds within timeout."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+SLURM_AVAILABLE: bool = (
+    os.environ.get("SLURM_AVAILABLE") == "1" or shutil.which("sbatch") is not None
+)
+POSTGRES_AVAILABLE: bool = (
+    os.environ.get("POSTGRES_AVAILABLE") == "1" or _port_open("127.0.0.1", 5432)
+)
+
+requires_slurm = pytest.mark.skipif(
+    not SLURM_AVAILABLE,
+    reason="requires SLURM — set SLURM_AVAILABLE=1 or install sbatch",
+)
+requires_postgres = pytest.mark.skipif(
+    not POSTGRES_AVAILABLE,
+    reason="requires PostgreSQL — set POSTGRES_AVAILABLE=1 or run postgres on :5432",
+)

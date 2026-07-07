@@ -192,6 +192,8 @@ timeout = 180
 timeout_method = "signal"
 markers = [
     "xdist_group: serialize tests that share a fixed resource (e.g. port 8000 or the daemon PID file) under pytest-xdist",
+    "requires_slurm: skip unless SLURM_AVAILABLE=1 is set in env or sbatch is on PATH",
+    "requires_postgres: skip unless POSTGRES_AVAILABLE=1 is set in env or port 5432 is open",
 ]
 
 [tool.coverage.run]
