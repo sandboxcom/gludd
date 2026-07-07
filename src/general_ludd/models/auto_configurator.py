@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any
 
-from general_ludd.models.provider_presets import get_provider_preset
+from general_ludd.models.provider_presets import (
+    PROVIDER_FLAGSHIP_MODELS,
+    PROVIDER_PRESETS,
+    get_provider_preset,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +29,97 @@ def _safe_float(value: str | float, default: float = 0.0) -> float:
 
 class AutoConfigurator:
     """Generates model profiles from scraped/discovered model data."""
+
+    def auto_configure_from_env(
+        self,
+        environ: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Build one ModelProfile dict per provider whose credential env var is set.
+
+        Iterates every entry in PROVIDER_PRESETS. For each provider whose
+        ``credential_env_var`` is present and non-empty in the environment, a
+        ModelProfile dict is synthesized using the provider's flagship model
+        (PROVIDER_FLAGSHIP_MODELS) and preset connection metadata. Profiles are
+        ``enabled=True`` so the daemon's ModelGateway can call them immediately.
+
+        Args:
+            environ: environment mapping to inspect. Defaults to ``os.environ``.
+
+        Returns:
+            List of profile dicts (valid kwargs for ``ModelProfile(**d)``).
+        """
+        env = environ if environ is not None else dict(os.environ)
+        profiles: list[dict[str, Any]] = []
+
+        for provider_name, preset in PROVIDER_PRESETS.items():
+            credential_env_var = preset["credential_env_var"]
+            credential_value = env.get(credential_env_var, "")
+            if not credential_value:
+                continue
+
+            flagship = PROVIDER_FLAGSHIP_MODELS.get(provider_name, "")
+            if not flagship:
+                logger.warning(
+                    "Auto-config: provider '%s' has credential but no flagship "
+                    "model entry; skipping",
+                    provider_name,
+                )
+                continue
+
+            profile_id = f"{provider_name}-{_safe_profile_id(flagship)}"
+            profiles.append(
+                {
+                    "model_profile_id": profile_id,
+                    "provider": provider_name,
+                    "model_name": flagship,
+                    "display_name": f"{preset['display_name']} {flagship}",
+                    "description": (
+                        f"Auto-configured from {credential_env_var}; flagship "
+                        f"model for {preset['display_name']}."
+                    ),
+                    "api_base_alias": preset["api_base_alias"],
+                    "credential_alias": preset["credential_alias"],
+                    "provider_package": preset["provider_package"],
+                    "provider_class_hint": preset["provider_class"],
+                    "context_window": 8192,
+                    "max_output_tokens": 2048,
+                    "cost_per_input_token": 0.0,
+                    "cost_per_output_token": 0.0,
+                    "role_names": ["coder", "reviewer"],
+                    "quality_class": "medium",
+                    "latency_class": "medium",
+                    "api_metered": True,
+                    "resource_profile": "ai_heavy",
+                    "enabled": True,
+                    "auto_discovered": True,
+                    "auto_discovered_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "is_free": False,
+                }
+            )
+
+        if profiles:
+            logger.info(
+                "Auto-config: generated %d profile(s) from environment "
+                "credentials: %s",
+                len(profiles),
+                [p["provider"] for p in profiles],
+            )
+
+        return profiles
+
+    def auto_configure_profiles(
+        self,
+        environ: dict[str, str] | None = None,
+    ) -> list[Any]:
+        """Like ``auto_configure_from_env`` but returns ModelProfile objects.
+
+        The daemon and worker build gateways from ``ModelProfile`` instances;
+        this helper returns those directly so the gateway construction site
+        stays unchanged when an operator relies on env-var auto-config.
+        """
+        from general_ludd.models.gateway import ModelProfile
+
+        return [ModelProfile(**p) for p in self.auto_configure_from_env(environ)]
 
     def generate_profiles(
         self,

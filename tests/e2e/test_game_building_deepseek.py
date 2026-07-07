@@ -41,7 +41,7 @@ from typing import Any, ClassVar, cast
 
 import pytest
 
-from tests.e2e._game_lifecycle import run_lifecycle_checks
+from tests.e2e._game_lifecycle import _invoke_start_method, run_lifecycle_checks
 
 # ---------------------------------------------------------------------------
 # Key loading — read from env or .deepseek.key file
@@ -1385,6 +1385,15 @@ def _check_tick_advances_state(instance: Any) -> list[str]:
         failures.append("no state-advancing method (tick/step/update/...) found")
         return failures
     tick_fn = tick[1]
+
+    # Per the new prompt spec, games start in 'ready' and tick() short-circuits
+    # until start() transitions to 'playing'. Call start() (or a synonym) before
+    # any tick loop, otherwise state never advances and we record a false fail.
+    start_fail = _invoke_start_method(instance)
+    if start_fail is not None:
+        failures.append(f"could not start game before ticking: {start_fail}")
+        return failures
+
     try:
         tick_fn()
     except Exception as exc:
@@ -1856,6 +1865,16 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
     """Run a single verification check against a game instance. Returns True if passed."""
     if check_id == "import_and_instantiate":
         return True  # already verified above
+
+    # Per the new prompt spec, games start in 'ready' and tick() short-circuits
+    # until start() transitions to 'playing'. Call start() (or a synonym) before
+    # any tick-based check, otherwise ticks no-op and we record false failures.
+    # Idempotent: no-op if state is already 'playing', 'game_over', absent, or
+    # non-string. Skipped for lifecycle_initial_state which MUST observe the
+    # pre-start 'ready' state. Start failure is tolerated here — the downstream
+    # check will record its own descriptive failure if the game cannot play.
+    if check_id != "lifecycle_initial_state":
+        _invoke_start_method(instance)
 
     if check_id == "tick_loop":
         for _ in range(100):

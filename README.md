@@ -242,30 +242,35 @@ The model router selects which AI model to use based on role, quality requiremen
 budget, or work pattern. The shipped config routes to `zai_coder` (Z.AI GLM) with a fallback
 chain to `deepseek_coder` and `qwen_coder`.
 
-Supported providers (alphabetical): Anthropic Claude, Baseten, CoreWeave, DeepSeek, Fireworks
-AI, Groq, Lambda Labs, Modal, OpenAI, OpenRouter, Replicate, RunPod, Together AI, Z.AI GLM.
-Local backends: vLLM, llama.cpp. API keys are resolved from OpenBao or environment variables
-— never stored in profile YAML files.
+Supported providers (alphabetical) — each is configured via its environment variable.
+Keys are resolved from OpenBao or the environment; they are never stored in profile YAML.
 
-#### GPU / Compute Providers
+| Provider | Env var |
+|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` |
+| Baseten | `BASETEN_API_KEY` |
+| Cohere | `CO_API_KEY` |
+| CoreWeave | `COREWEAVE_API_KEY` |
+| DeepSeek | `DEEPSEEK_API_KEY` |
+| Fireworks AI | `FIREWORKS_API_KEY` |
+| Groq | `GROQ_API_KEY` |
+| Hugging Face | `HF_TOKEN` |
+| Lambda Labs | `LAMBDALABS_API_KEY` |
+| Modal | `MODAL_API_TOKEN` |
+| Mistral AI | `MISTRAL_API_KEY` |
+| NVIDIA NIM | `NVIDIA_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+| Perplexity | `PERPLEXITY_API_KEY` |
+| Replicate | `REPLICATE_API_TOKEN` |
+| RunPod | `RUNPOD_API_KEY` |
+| Together AI | `TOGETHER_API_KEY` |
+| Z.AI / GLM | `ZAI_API_KEY` |
 
-In addition to the hosted-model providers above, gludd supports large GPU/compute backends
-for self-hosted and serverless inference. Each is configured via its environment variable:
-
-| Provider | Env var | Description |
-|---|---|---|
-| Baseten | `BASETEN_API_KEY=...` | Managed model hosting |
-| CoreWeave | `COREWEAVE_API_KEY=...` | GPU cloud |
-| Fireworks AI | `FIREWORKS_API_KEY=...` | Fast open-model inference |
-| Lambda Labs | `LAMBDALABS_API_KEY=...` | GPU cloud + hosted open models |
-| Modal | `MODAL_API_TOKEN=...` | Serverless GPU compute |
-| Replicate | `REPLICATE_API_TOKEN=...` | Model hosting marketplace |
-| RunPod | `RUNPOD_API_KEY=...` | Serverless GPU |
-| Together AI | `TOGETHER_API_KEY=...` | Managed open-model inference |
-
-All GPU/compute providers expose an OpenAI-compatible `/v1/chat/completions` endpoint and use
-the `langchain-openai` adapter, so they drop into the same model-routing pipeline as the
-hosted providers.
+Most providers expose an OpenAI-compatible `/v1/chat/completions` endpoint and use the
+`langchain-openai` adapter; Anthropic uses `langchain-anthropic` and Hugging Face uses
+`langchain-huggingface`. Local backends (vLLM, llama.cpp) are also supported. Every
+provider drops into the same model-routing pipeline.
 
 #### Adding a New Provider
 

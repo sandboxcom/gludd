@@ -39,7 +39,7 @@ from typing import Any, cast
 
 import pytest
 
-from tests.e2e._game_lifecycle import run_lifecycle_checks
+from tests.e2e._game_lifecycle import _invoke_start_method, run_lifecycle_checks
 
 # ---------------------------------------------------------------------------
 # Key loading
@@ -516,6 +516,14 @@ def _verify_snake_features(mod: Any) -> list[str]:
         failures.append("no state-advancing method (tick/step/update/...) found")
         return failures
     tick_fn = tick_found[1]
+
+    # Per the new prompt spec, games start in 'ready' and tick() short-circuits
+    # until start() transitions to 'playing'. Call start() (or a synonym) before
+    # any tick loop, otherwise the snake never moves and we record a false fail.
+    start_fail = _invoke_start_method(instance)
+    if start_fail is not None:
+        failures.append(f"could not start game before ticking: {start_fail}")
+        return failures
 
     # Feature: tick runs without error and the game has observable state.
     try:

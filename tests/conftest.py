@@ -55,4 +55,3 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     if "GLUDD_PSK" not in os.environ:
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
-

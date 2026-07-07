@@ -194,6 +194,65 @@ def _tick_once(instance: object) -> bool:
     return True
 
 
+def _invoke_start_method(instance: object) -> str | None:
+    """Transition the game from 'ready' to 'playing' before a tick loop.
+
+    Per the new prompt spec, games start in a 'ready' state and ``tick()``
+    short-circuits until ``start()`` transitions to 'playing'.  Tick loops
+    that ran fine under the old spec (where tick advanced state from the
+    very first call) now see every tick no-op and report a false failure.
+    This helper is the fix: call it BEFORE any tick loop.
+
+    Idempotent: only acts when a state attribute exists, is a string, and
+    is in a 'ready' state (``ready`` / ``menu`` / ``idle`` / ...).  If
+    state is already 'playing', 'game_over', absent, or non-string, this
+    is a no-op — safe to call from helpers that may run after start().
+
+    Resolution when state IS 'ready':
+      1. Call ``start()`` (or any synonym in ``_START_NAMES``) if present.
+      2. If no start method, call ``tick()`` once to allow auto-transition
+         (some models bundle start logic into the first tick).
+      3. After resolution, if state is STILL in a 'ready' state, return a
+         descriptive error.
+
+    Returns ``None`` on success or an error string explaining why the game
+    could not be transitioned to 'playing'.
+    """
+    state_before = _find_attr(instance, _STATE_ATTR_NAMES)
+    if state_before is None or not isinstance(state_before[1], str):
+        return None
+    if state_before[1].lower() not in _READY_STATES:
+        return None
+
+    start_found = _find_callable(instance, _START_NAMES)
+    if start_found is not None:
+        try:
+            start_found[1]()
+        except Exception as exc:
+            return (
+                f"start method {start_found[0]!r} raised: "
+                f"{type(exc).__name__}: {exc}"
+            )
+    else:
+        if not _tick_once(instance):
+            return (
+                "could not transition from ready to playing — "
+                "no start() method and tick() did not auto-start"
+            )
+
+    state_after = _find_attr(instance, _STATE_ATTR_NAMES)
+    if (
+        state_after is not None
+        and isinstance(state_after[1], str)
+        and state_after[1].lower() in _READY_STATES
+    ):
+        return (
+            f"state stayed at {state_after[1]!r} after start "
+            f"(expected transition to playing/running/active)"
+        )
+    return None
+
+
 def _is_truthy_bool(value: object) -> bool:
     """True only if ``value`` is a bool and True. Other truthy values
     (non-zero ints, non-empty lists) do not count."""
@@ -285,6 +344,10 @@ def _check_lifecycle_score_increments(
     """Check 4: over n_ticks, score increases at least once OR the game
     ends.  If neither, fail.  Skipped if no score attribute or no tick
     method."""
+    start_fail = _invoke_start_method(instance)
+    if start_fail is not None:
+        return start_fail
+
     score_found = _find_attr(instance, _SCORE_ATTR_NAMES)
     if score_found is None:
         return None  # no score tracked — skip
@@ -323,6 +386,10 @@ def _check_lifecycle_game_over(
     """Check 5: force a lose/terminal condition and confirm game_over (or
     won) becomes True.  If no force_lose strategy is registered OR the
     strategy reports the feature is untestable, skip (NOT a fail)."""
+    start_fail = _invoke_start_method(instance)
+    if start_fail is not None:
+        return start_fail
+
     if force_lose is None:
         return None  # no strategy — skip
     try:

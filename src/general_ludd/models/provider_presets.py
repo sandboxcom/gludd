@@ -221,9 +221,42 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
 }
 
 
+PROVIDER_FLAGSHIP_MODELS: dict[str, str] = {
+    "openrouter": "anthropic/claude-3.5-sonnet",
+    "openai": "gpt-4o",
+    "anthropic": "claude-3-5-sonnet-20241022",
+    "zai": "glm-4.5",
+    "groq": "llama-3.3-70b-versatile",
+    "deepseek": "deepseek-chat",
+    "baseten": "meta-llama/Llama-3.1-70B-Instruct",
+    "lambdalabs": "meta-llama/Llama-3.1-70B-Instruct",
+    "together": "meta-llama/Llama-3.1-70B-Instruct",
+    "fireworks": "meta-llama/Llama-3.1-70B-Instruct",
+    "replicate": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+    "runpod": "meta-llama/Llama-3.1-70B-Instruct",
+    "modal": "meta-llama/Llama-3.1-70B-Instruct",
+    "coreweave": "meta-llama/Llama-3.1-70B-Instruct",
+    "mistral": "mistral-large-latest",
+    "cohere": "command-r-plus",
+    "nvidia": "meta-llama/Llama-3.1-70B-Instruct",
+    "perplexity": "llama-3.1-sonar-large-128k-online",
+    "huggingface": "meta-llama/Llama-3.1-70B-Instruct",
+}
+
+
 def get_provider_preset(provider_name: str) -> dict[str, Any] | None:
     """Get the preset configuration for a provider. Returns None if unknown."""
     return PROVIDER_PRESETS.get(provider_name.lower())
+
+
+def get_provider_flagship_model(provider_name: str) -> str | None:
+    """Return the flagship model id for a provider, or None if unknown.
+
+    Used by AutoConfigurator.auto_configure_from_env() to pick a sensible
+    default model when an operator sets a provider credential env var
+    (e.g. MISTRAL_API_KEY) without writing a full ModelProfile for it.
+    """
+    return PROVIDER_FLAGSHIP_MODELS.get(provider_name.lower())
 
 
 def detect_credential_alias(provider_name: str, environ: dict[str, str] | None = None) -> bool:

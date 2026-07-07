@@ -1063,6 +1063,41 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._secrets_resolver = secrets_resolver
 
         model_profiles = startup_config.get("model_profiles", [])
+
+        # Auto-config: for every provider whose credential env var is set
+        # (e.g. MISTRAL_API_KEY, FIREWORKS_API_KEY) but which lacks an explicit
+        # ModelProfile in the operator config, synthesize one using the
+        # provider's flagship model. Explicit config-supplied profiles always
+        # win (deduped by model_profile_id) so a user-written profile is never
+        # silently clobbered. See AutoConfigurator.auto_configure_from_env.
+        try:
+            from general_ludd.models.auto_configurator import AutoConfigurator
+
+            _auto_profiles = AutoConfigurator().auto_configure_profiles()
+            if _auto_profiles:
+                _existing_ids = {
+                    getattr(_p, "model_profile_id", None)
+                    if not isinstance(_p, dict)
+                    else _p.get("model_profile_id")
+                    for _p in model_profiles
+                }
+                _added = [
+                    _p for _p in _auto_profiles if _p.model_profile_id not in _existing_ids
+                ]
+                if _added:
+                    model_profiles = list(model_profiles) + _added
+                    logger.info(
+                        "Auto-config: appended %d env-derived profile(s): %s",
+                        len(_added),
+                        [_p.model_profile_id for _p in _added],
+                    )
+        except Exception:
+            logger.warning(
+                "Auto-config: env-var profile discovery failed; continuing with "
+                "explicit config only",
+                exc_info=True,
+            )
+
         if model_profiles and hasattr(secrets_resolver, "write_secret"):
             try:
                 profile_dicts = [

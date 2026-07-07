@@ -69,6 +69,29 @@ def build_gateway_from_config(permission_spec: Any = None) -> ModelGateway | Non
                 data = dict(val)
                 data.setdefault("model_profile_id", key)
                 profiles.append(ModelProfile(**data))
+
+        # Auto-config: synthesize a ModelProfile per provider whose credential
+        # env var is set (MISTRAL_API_KEY, FIREWORKS_API_KEY, ...). Dedup by
+        # model_profile_id so explicit config-supplied profiles always win.
+        # Mirrors the daemon's auto-config step so workers share the same
+        # operator env-var contract.
+        try:
+            from general_ludd.models.auto_configurator import AutoConfigurator
+
+            _auto = AutoConfigurator().auto_configure_profiles()
+            if _auto:
+                _existing = {p.model_profile_id for p in profiles}
+                for _p in _auto:
+                    if _p.model_profile_id not in _existing:
+                        profiles.append(_p)
+                        _existing.add(_p.model_profile_id)
+        except Exception:
+            logger.warning(
+                "Worker auto-config: env-var profile discovery failed; "
+                "continuing with explicit config only",
+                exc_info=True,
+            )
+
         if not profiles:
             return None
         from general_ludd.models.provider_registry import ProviderRegistry
