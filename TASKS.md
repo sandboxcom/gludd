@@ -841,7 +841,35 @@ Goal: port the 6 enforcement mechanisms from shell/TypeScript hooks into Ansible
 
 Deferred from the beta.2 ship window. None of these block the beta.2 release; they are the next arc of work once beta.2 ships green. Ordered by dependency.
 
-- [ ] **beta.3.1 — Gunicorn multi-worker architecture** — replace the SQLite-only single-worker clamp (`_clamp_workers_for_sqlite` in `db/session.py`, decision recorded under W3.5) with a real multi-worker gunicorn deployment: move off SQLite to Postgres (or another backend with cross-process coordination), introduce cross-process claim coordination (advisory lock / `SELECT ... FOR UPDATE` on the claim row so two workers never claim the same todo), and lift the N>1 clamp so the daemon scales horizontally. Per user request. Blocked on beta.2 ship.
+### beta.3.1 — Gunicorn multi-worker architecture
+
+Replace the SQLite-only single-worker clamp (`_clamp_workers_for_sqlite` in `db/session.py`, decision recorded under W3.5) with a real multi-worker gunicorn deployment: move off SQLite to Postgres (or another backend with cross-process coordination), introduce cross-process claim coordination (advisory lock / `SELECT ... FOR UPDATE` on the claim row so two workers never claim the same todo), and lift the N>1 clamp so the daemon scales horizontally. Per user request. Blocked on beta.2 ship.
+
+Four-phase extraction plan (B3.1.x):
+
+- [x] **B3.1.1 — Phase 1: IPC broker infrastructure** — `Broker` + `WriteQueue` primitives so gunicorn HTTP workers can hand writes to a single writer process without contending the SQLite lock; 19 unit tests cover enqueue/dequeue ordering, broadcast fanout, and crash-recovery semantics. | evidence: tests/unit/test_ipc_write_queue.py 19 passed; commit bddeba52
+- [x] **B3.1.2 — Phase 1: Read-only engine factory** — `init_read_only_engine_from_config` + `create_read_only_session_factory` enforce `PRAGMA query_only=ON` at the SQLite connection level so HTTP workers can serve reads without mutating the writer DB; 4 tests cover pragma set, write-rejection, session factory behavior, and non-SQLite URL refusal. | evidence: tests/unit/test_read_only_engine.py 4 passed; commit bddeba52
+- [ ] **B3.1.3 — Phase 2: subprocess extraction** — extract the daemon's writer path (event loop claim/review/reconcile) into a dedicated subprocess so the DB-write responsibility is isolated from the gunicorn HTTP workers. Builds on B3.1.1 (IPC broker) + B3.1.2 (read-only factory).
+- [ ] **B3.1.4 — Phase 3: supervisor + DB writer process** — application-level supervisor that owns the writer subprocess lifecycle (start/restart/health-check) and surfaces each recovery as an observable event per the No Unseen Events invariant. Pairs with beta.3.4 (self-healing pattern).
+- [ ] **B3.1.5 — Phase 4: agent hydration/dehydration** — serialize in-flight agent state (claim context, tool budget, message-queue position) so a worker can resume an interrupted todo after a process restart rather than dropping it. Depends on B3.1.4.
+
+### beta.3.2 — Coverage lifting
+
 - [ ] **beta.3.2 — Coverage lifting** — moved here from Phase SESSION-17. Lift test coverage to the gate threshold; strict-typing burn-down still open. Target the lowest-coverage modules surfaced by the `make test` coverage report.
-- [ ] **beta.3.3 — cast(Any) Protocol-based fixes** — burn down the 21 pre-existing `cast(Any, ...)` sites in `src/` (currently ratcheted via `@pytest.mark.xfail(strict=False, reason="ratchet: burn down cast(Any) in src/")` on `tests/unit/test_type_safety_guardrails.py::test_no_cast_any`, see commit `ef1fbfd9`). For each site, replace the cast with a `Protocol`-based typed shape, a `TypeVar`/`overload` pair, or a `cast(...)` to a concrete type — never a suppression comment (per the No Lint-Suppression Comments policy). Goal: remove the xfail so the assertion is strict again.
+
+### beta.3.3 — cast(Any) Protocol-based fixes
+
+Burn down the pre-existing `cast(Any, ...)` sites in `src/` (ratcheted via `@pytest.mark.xfail(strict=False, reason="ratchet: burn down cast(Any) in src/")` on `tests/unit/test_type_safety_guardrails.py::test_no_cast_any`, commit `ef1fbfd9`). For each site, replace the cast with a `Protocol`-based typed shape, a `TypeVar`/`overload` pair, or a `cast(...)` to a concrete type — never a suppression comment (per the No Lint-Suppression Comments policy). Goal: remove the xfail so the assertion is strict again.
+
+Status: 13/17 sites fixed (Tiers 1-3 complete); 4 remaining in Tier 4.
+
+- [x] **Tier 1-3 — 13/17 sites fixed** — Protocol/typed-cast replacements applied (`PerfBuffer` Protocol, `SecretsWriter` Protocol, `AuditRepo` Protocol, `TokenTrackerProtocol`, `MetricsCollectorProtocol`); covers Tier 1 (core models/services), Tier 2 (routers/repos), Tier 3 (worker/event_loop). | evidence: commit bbda098e; ratchet count dropped 21 → 4
+- [ ] **Tier 4 — Remaining 4 sites in 3 files** — `src/general_ludd/models/langchain_retry.py:52,60` (2 sites: `cast(Any, self._gateway)` + `cast(Any, _invoke_profile)`), `src/general_ludd/models/provider_registry.py:92` (`cast(Any, profiles)`), `src/general_ludd/models/router.py:92` (`cast(Any, p_raw)`). Each needs a typed shape (Protocol or concrete cast) before the xfail can be removed from `test_no_cast_any`.
+
+### beta.3.4 — Self-healing / supervisor pattern
+
 - [ ] **beta.3.4 — Self-healing / supervisor pattern** — add an application-level supervisor that restarts failed phases/workers with bounded retry + exponential backoff and surfaces each recovery as an observable event (per the No Unseen Events invariant). Distinct from the existing process-level `agent_watchdog.py` — this is self-healing of stuck *work*, not stuck *processes*.
+
+### Ship gate
+
+- [ ] **CI green + beta.2 ship** — gate for unblocking all beta.3 work. Run `make release-cut TAG='v0.1.0-beta.2' MSG='Release v0.1.0-beta.2'`, then `make verify-release-artifact TAG='v0.1.0-beta.2'`. See Phase SESSION-17 (line 830) for the 13 remaining CI failures on master HEAD.
