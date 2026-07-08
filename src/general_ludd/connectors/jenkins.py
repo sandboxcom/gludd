@@ -25,9 +25,10 @@ from __future__ import annotations
 import base64
 import json
 import os
-import urllib.request
 from typing import Protocol, TypedDict
 from urllib.parse import quote, urlencode, urlparse
+
+import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -64,18 +65,15 @@ def _default_http_get(url: str, headers: dict[str, str]) -> HttpResponse:
     """Real, time-bound transport used when none is injected.
 
     Only ``http``/``https`` are allowed; the request is bounded by an explicit
-    timeout. The mocked tests never reach this path.
+    timeout and never follows redirects. The mocked tests never reach this path.
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"unsupported url scheme: {parsed.scheme!r}")
 
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(req, timeout=_DEFAULT_TIMEOUT_S) as resp:
-        status = int(resp.getcode() or 0)
-        body = resp.read()
-    parsed_body: object = json.loads(body) if body else {}
-    return status, parsed_body
+    resp = httpx.get(url, headers=headers, timeout=_DEFAULT_TIMEOUT_S, follow_redirects=False)
+    parsed_body: object = json.loads(resp.content) if resp.content else {}
+    return resp.status_code, parsed_body
 
 
 class JenkinsSource:

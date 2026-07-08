@@ -37,12 +37,13 @@ Record shape (one dict per event or metric point)::
 
 from __future__ import annotations
 
-import json as _json
 import os
 import time
-import urllib.request
 from collections.abc import Callable
-from urllib.parse import urlencode, urlsplit
+from typing import cast
+from urllib.parse import urlsplit
+
+import httpx
 
 from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
@@ -66,28 +67,27 @@ def _default_http_request(
     headers: dict[str, str] | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
 ) -> tuple[int, object]:
-    """Real, time-bound stdlib transport used when none is injected.
+    """Real, time-bound httpx transport used when none is injected.
 
     Matches the connector's
     ``(method, url, *, params, json, headers, timeout) -> (status, json)``
-    contract. Only ``http``/``https`` are allowed and the request is bounded by
-    an explicit timeout. The mocked tests never reach this path.
+    contract. The request is bounded by an explicit timeout and redirects are
+    disabled to prevent SSRF via redirect-to-metadata. The mocked tests never
+    reach this path.
     """
-    parsed = urlsplit(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"unsupported url scheme: {parsed.scheme!r}")
-    if params:
-        sep = "&" if parsed.query else "?"
-        url = f"{url}{sep}{urlencode(params, doseq=True)}"
-    data = _json.dumps(json).encode("utf-8") if json is not None else None
-    req = urllib.request.Request(
-        url, data=data, headers=headers or {}, method=method.upper()
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        status = int(resp.getcode() or 0)
-        body = resp.read()
-    parsed_body: object = _json.loads(body) if body else {}
-    return status, parsed_body
+    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+        resp = client.request(
+            method.upper(),
+            url,
+            params=cast("dict[str, str | int | float | bool | None]", params),
+            json=json,
+            headers=headers or {},
+        )
+    try:
+        parsed_body: object = resp.json() if resp.content else {}
+    except ValueError:
+        parsed_body = {}
+    return resp.status_code, parsed_body
 
 
 def _validate_site(site: str) -> str:

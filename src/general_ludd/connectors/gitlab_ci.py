@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import json as _json
 import os
-import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from datetime import datetime
+
+import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -56,15 +56,16 @@ def _parse_ts(value: object) -> float | None:
 
 
 def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, object]:
-    """Real, time-bounded urllib transport. Never uses a shell."""
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=_DEFAULT_TIMEOUT) as resp:
-            raw = resp.read()
-            status = int(resp.getcode() or 0)
-    except urllib.error.HTTPError as exc:
-        raw = exc.read()
-        status = int(exc.code)
+    """Real, time-bounded httpx transport. Never uses a shell.
+
+    ``follow_redirects=False`` blocks SSRF via redirect-to-metadata: a 3xx
+    response is returned as-is (and rejected by callers' 2xx checks) rather
+    than being transparently followed to an internal host.
+    """
+    with httpx.Client(timeout=_DEFAULT_TIMEOUT, follow_redirects=False) as client:
+        resp = client.get(url, headers=headers)
+    raw = resp.content
+    status = int(resp.status_code)
     body: object = None
     if raw:
         try:

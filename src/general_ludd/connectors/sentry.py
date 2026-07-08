@@ -26,11 +26,11 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
+
+import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -87,7 +87,7 @@ class Transport(Protocol):
 
 
 class _UrllibTransport:
-    """Default stdlib transport (``urllib``). No third-party dependencies."""
+    """Default transport backed by httpx with redirect-following disabled."""
 
     def get(
         self,
@@ -96,15 +96,9 @@ class _UrllibTransport:
         headers: dict[str, str],
         timeout: float,
     ) -> _SentryResponse:
-        req = urllib.request.Request(url, headers=headers, method="GET")
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                status = int(getattr(resp, "status", 0) or resp.getcode() or 0)
-                raw = resp.read()
-            return _SentryResponse(status=status, body=raw)
-        except urllib.error.HTTPError as exc:  # 4xx/5xx are responses, not failures
-            body = exc.read() if hasattr(exc, "read") else b""
-            return _SentryResponse(status=int(exc.code), body=body)
+        with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+            resp = client.get(url, headers=headers)
+        return _SentryResponse(status=resp.status_code, body=resp.content)
 
 
 class SentrySource:

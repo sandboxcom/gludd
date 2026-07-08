@@ -10,7 +10,8 @@ Design constraints (see connector contract):
   * Self-contained — no base class, no sibling/package imports.
   * Injectable HTTP transport (anything with a ``get(url, headers=, timeout=)``
     returning an object exposing ``.status_code`` / ``.text``). Defaults to a
-    small ``urllib``-backed transport so production needs no extra dependency.
+    small ``httpx``-backed transport (``follow_redirects=False``) so production
+    needs no extra configuration.
   * Literal-host SSRF guard on ``base_url`` (no DNS resolution): loopback,
     RFC-1918 / link-local / unique-local, and the cloud metadata IP are
     rejected unless ``allow_private`` is opted in (exporters are usually
@@ -24,10 +25,10 @@ from __future__ import annotations
 import math
 import os
 import time
-import urllib.error
-import urllib.request
 from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
+
+import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -47,17 +48,8 @@ class _Transport(Protocol):
     ) -> object: ...
 
 
-class _UrllibResponse:
-    __slots__ = ("headers", "status_code", "text")
-
-    def __init__(self, status_code: int, text: str, headers: dict[str, str]) -> None:
-        self.status_code = status_code
-        self.text = text
-        self.headers = headers
-
-
-class _UrllibTransport:
-    """Minimal stdlib HTTP GET transport (no third-party dependency)."""
+class _HttpxTransport:
+    """Minimal httpx GET transport (redirects not followed — SSRF defense)."""
 
     def get(
         self,
@@ -65,18 +57,12 @@ class _UrllibTransport:
         *,
         headers: dict[str, str] | None = None,
         timeout: float | None = None,
-    ) -> _UrllibResponse:
-        req = urllib.request.Request(url, headers=headers or {}, method="GET")
-        try:
-            # scheme validated by the caller's SSRF guard (http/https only)
-            with urllib.request.urlopen(
-                req, timeout=timeout if timeout is not None else _DEFAULT_TIMEOUT
-            ) as resp:
-                body = resp.read().decode("utf-8", "replace")
-                return _UrllibResponse(getattr(resp, "status", 200), body, dict(resp.headers))
-        except urllib.error.HTTPError as exc:  # 4xx/5xx still carry a body
-            body = exc.read().decode("utf-8", "replace") if exc.fp else ""
-            return _UrllibResponse(exc.code, body, dict(exc.headers or {}))
+    ) -> httpx.Response:
+        with httpx.Client(
+            timeout=timeout if timeout is not None else _DEFAULT_TIMEOUT,
+            follow_redirects=False,
+        ) as client:
+            return client.get(url, headers=headers or {})
 
 
 def _guard_base_url(base_url: str, allow_private: bool) -> str:
@@ -211,7 +197,7 @@ class PromScrapeSource:
         self._timeout = float(cast("float | int | str", config.get("timeout", _DEFAULT_TIMEOUT)))
         host = urlsplit(self._base_url).hostname or self._base_url
         self.name: str = str(config.get("name") or f"prom:{host}")
-        self._transport: _Transport = transport if transport is not None else _UrllibTransport()
+        self._transport: _Transport = transport if transport is not None else _HttpxTransport()
 
     # -- internals -----------------------------------------------------------
 

@@ -138,8 +138,8 @@ def _resolve_secret(config: Mapping[str, object], env_key_name: str) -> str:
     return value
 
 
-class _UrllibTransport:
-    """Default transport backed by urllib (stdlib only, time-bounded)."""
+class _HttpxTransport:
+    """Default transport backed by httpx (follow_redirects=False, time-bounded)."""
 
     def get(
         self,
@@ -149,24 +149,18 @@ class _UrllibTransport:
         timeout: float,
     ) -> tuple[int, dict[str, object]]:
         import json
-        import urllib.error
-        import urllib.request
 
-        # base_url scheme is vetted to http/https upstream in _validate_base_url.
-        req = urllib.request.Request(url, headers=headers, method="GET")
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read()
-                status = int(resp.status)
-        except urllib.error.HTTPError as exc:  # pragma: no cover - exercised via injected transport
-            body = exc.read()
-            try:
-                return int(exc.code), cast("dict[str, object]", json.loads(body or b"{}"))
-            except ValueError:
-                return int(exc.code), {}
-        if not raw:
+        import httpx
+
+        with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+            resp = client.get(url, headers=headers)
+        status = resp.status_code
+        if not resp.content:
             return status, {}
-        parsed: object = json.loads(raw)
+        try:
+            parsed: object = json.loads(resp.content)
+        except ValueError:
+            return status, {}
         if isinstance(parsed, dict):
             return status, cast("dict[str, object]", parsed)
         return status, {"data": parsed}
@@ -190,7 +184,7 @@ class AppDynamicsSource:
             raise ConnectorConfigError("config['application'] is required")
         self._token: str = _resolve_secret(config, "token_env")
         self.timeout: float = float(cast(float | int | str | bool, config.get("timeout", DEFAULT_TIMEOUT)))
-        self._transport: HttpTransport = transport or _UrllibTransport()
+        self._transport: HttpTransport = transport or _HttpxTransport()
 
     # -- internals ---------------------------------------------------------
 

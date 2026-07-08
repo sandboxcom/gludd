@@ -33,14 +33,14 @@ Record shape (one dict per sample)::
 
 from __future__ import annotations
 
-import json as _json
 import logging
 import os
 import time
-import urllib.request
 from collections.abc import Callable, Mapping
 from typing import TypedDict, cast
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlsplit
+
+import httpx
 
 from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
@@ -125,24 +125,24 @@ def _default_http_get(
     params: dict[str, object] | None = None,
     headers: dict[str, str] | None = None,
 ) -> tuple[int, object]:
-    """Real, time-bound stdlib transport used when none is injected.
+    """Real, time-bound httpx transport used when none is injected.
 
     Matches the connector's ``(url, params, headers) -> (status, json)``
-    contract. Only ``http``/``https`` are allowed and the request is bounded by
-    an explicit timeout. The mocked tests never reach this path.
+    contract. Redirects are NOT followed so a redirect-to-metadata SSRF
+    cannot be silently chased; the caller's ``is_url_blocked`` guard already
+    validated the literal host. The mocked tests never reach this path.
     """
-    parsed = urlsplit(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"unsupported url scheme: {parsed.scheme!r}")
-    if params:
-        sep = "&" if parsed.query else "?"
-        url = f"{url}{sep}{urlencode(params, doseq=True)}"
-    req = urllib.request.Request(url, headers=headers or {}, method="GET")
-    with urllib.request.urlopen(req, timeout=_DEFAULT_TIMEOUT) as resp:
-        status = int(resp.getcode() or 0)
-        body = resp.read()
-    parsed_body: object = _json.loads(body) if body else {}
-    return status, parsed_body
+    with httpx.Client(timeout=_DEFAULT_TIMEOUT, follow_redirects=False) as client:
+        resp = client.get(
+            url,
+            params=cast("dict[str, str | int | float | bool | None]", params),
+            headers=headers or {},
+        )
+    try:
+        parsed_body: object = resp.json() if resp.content else {}
+    except ValueError:
+        parsed_body = {}
+    return resp.status_code, parsed_body
 
 
 def _validate_base_url(base_url: str) -> str:

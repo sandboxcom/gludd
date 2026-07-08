@@ -77,16 +77,17 @@ def _urllib_transport(
 ) -> _UrllibResponse:
     # Imported lazily so the module needs no network deps to import/parse.
     import urllib.parse
-    import urllib.request
+
+    import httpx
 
     full = url
     if params:
         full = f"{url}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(full, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            return _UrllibResponse(resp.status, body)
+        with httpx.Client(timeout=10, follow_redirects=False) as client:
+            resp = client.request(method, full, headers=headers)
+        body = resp.content.decode("utf-8", errors="replace")
+        return _UrllibResponse(resp.status_code, body)
     except Exception as exc:  # pragma: no cover - network path not unit-tested
         raise NomadTransportError(f"transport error: {exc}") from exc
 

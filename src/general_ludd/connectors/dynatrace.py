@@ -28,6 +28,8 @@ import os
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+import httpx
+
 from general_ludd.connectors._errors import ConnectorConfigError
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -81,7 +83,7 @@ def _resolve_secret(config: dict[str, object], env_key_name: str) -> str:
 
 
 class _UrllibTransport:
-    """Default transport backed by urllib (stdlib only, time-bounded)."""
+    """Default transport backed by httpx (redirects disabled for SSRF safety)."""
 
     def get(
         self,
@@ -90,26 +92,13 @@ class _UrllibTransport:
         headers: dict[str, str],
         timeout: float,
     ) -> tuple[int, dict[str, object]]:
-        import json
-        import urllib.error
-        import urllib.request
-
-        # base_url scheme is vetted to http/https upstream in _validate_base_url.
-        req = urllib.request.Request(url, headers=headers, method="GET")
+        with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+            resp = client.get(url, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read()
-                status = int(resp.status)
-        except urllib.error.HTTPError as exc:  # pragma: no cover - exercised via injected transport
-            body = exc.read()
-            try:
-                return int(exc.code), json.loads(body or b"{}")
-            except ValueError:
-                return int(exc.code), {}
-        if not raw:
-            return status, {}
-        parsed: object = json.loads(raw)
-        return status, parsed if isinstance(parsed, dict) else {"data": parsed}
+            parsed: object = resp.json() if resp.content else {}
+        except ValueError:
+            parsed = {}
+        return resp.status_code, parsed if isinstance(parsed, dict) else {"data": parsed}
 
 
 class DynatraceSource:

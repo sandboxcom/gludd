@@ -45,13 +45,13 @@ Record shape (one dict per datapoint)::
 
 from __future__ import annotations
 
-import json as _json
 import os
 import time
-import urllib.request
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode, urlsplit
+
+import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -73,12 +73,13 @@ def _default_http_request(
     json: object = None,
     timeout: float = _DEFAULT_TIMEOUT,
 ) -> tuple[int, object]:
-    """Real, time-bound stdlib transport used when none is injected.
+    """Real, time-bound httpx transport used when none is injected.
 
     Matches the connector's
     ``(method, url, *, params, headers, json, timeout) -> (status, json)``
     contract. Only ``http``/``https`` are allowed; the request is bounded by an
-    explicit timeout. The mocked tests never reach this path.
+    explicit timeout. Redirects are disabled (SSRF hardening). The mocked tests
+    never reach this path.
     """
     parsed = urlsplit(url)
     if parsed.scheme not in ("http", "https"):
@@ -86,14 +87,18 @@ def _default_http_request(
     if params:
         sep = "&" if parsed.query else "?"
         url = f"{url}{sep}{urlencode(params, doseq=True)}"
-    data = _json.dumps(json).encode("utf-8") if json is not None else None
-    req = urllib.request.Request(
-        url, data=data, headers=headers or {}, method=method.upper()
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        status = int(resp.getcode() or 0)
-        body = resp.read()
-    parsed_body: object = _json.loads(body) if body else {}
+    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+        resp = client.request(
+            method.upper(),
+            url,
+            headers=headers or {},
+            json=json,
+        )
+    status = resp.status_code
+    try:
+        parsed_body: object = resp.json() if resp.content else {}
+    except ValueError:
+        parsed_body = {}
     return status, parsed_body
 
 

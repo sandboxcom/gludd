@@ -43,10 +43,11 @@ import base64
 import json as _json
 import os
 import time
-import urllib.request
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlsplit
+
+import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -79,13 +80,10 @@ def _default_http_get(
     parsed = urlsplit(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"unsupported url scheme: {parsed.scheme!r}")
-    if params:
-        sep = "&" if parsed.query else "?"
-        url = f"{url}{sep}{urlencode(params, doseq=True)}"
-    req = urllib.request.Request(url, headers=headers or {}, method="GET")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        status = int(resp.getcode() or 0)
-        body = resp.read()
+    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+        resp = client.get(url, params=params, headers=headers or {})
+    status = int(resp.status_code)
+    body = resp.content
     parsed_body: Any = _json.loads(body) if body else {}
     return status, parsed_body
 

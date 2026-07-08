@@ -34,7 +34,7 @@ Config keys
 ``token_env`` (env var holding the SA token, default ``"K8S_TOKEN"``),
 ``allow_private`` (bool, default ``False``), ``verify`` / ``ca`` (TLS hints,
 forwarded to the transport via ``verify`` kwarg if the transport accepts it),
-``transport`` (injectable callable; defaults to a urllib-backed transport),
+``transport`` (injectable callable; defaults to an httpx-backed transport),
 ``timeout_s`` (float request deadline, default ``10.0``), ``name`` (source name).
 """
 
@@ -46,6 +46,8 @@ import re
 from datetime import UTC, datetime
 from typing import Protocol, cast
 from urllib.parse import quote, urlencode, urlsplit
+
+import httpx
 
 from general_ludd.connectors._protocols import HttpResponse
 
@@ -206,42 +208,28 @@ def _parse_rfc3339(value: str | None) -> float | None:
 
 
 # --------------------------------------------------------------------------- #
-# Default urllib transport (no third-party dep, no shell)
+# Default httpx transport (no shell, redirects never followed)
 # --------------------------------------------------------------------------- #
-class _UrllibResponse:
-    def __init__(self, status_code: int, text: str) -> None:
-        self.status_code = status_code
-        self.text = text
-
-    def json(self) -> object:
-        import json
-
-        return json.loads(self.text) if self.text else None
-
-
 def _default_transport(
     method: str,
     url: str,
     *,
     headers: dict[str, str] | None = None,
     timeout: float | None = None,
-) -> _UrllibResponse:
-    """urllib-backed transport. Used only when no transport is injected.
+) -> httpx.Response:
+    """httpx-backed transport. Used only when no transport is injected.
 
-    Uses the stdlib; no ``subprocess``/shell. Network errors propagate to the
-    caller, which wraps them into error records.
+    No ``subprocess``/shell. Redirects are never followed, so a 3xx cannot
+    pivot the request to an internal/metadata address (SSRF). Network errors
+    propagate to the caller, which wraps them into error records.
     """
-    import urllib.error
-    import urllib.request
-
-    req = urllib.request.Request(url, method=method, headers=headers or {})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            return _UrllibResponse(int(resp.status), body)
-    except urllib.error.HTTPError as exc:  # 4xx/5xx still carry a body
-        body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-        return _UrllibResponse(int(exc.code), body)
+    return httpx.request(
+        method,
+        url,
+        headers=headers or {},
+        timeout=timeout,
+        follow_redirects=False,
+    )
 
 
 # --------------------------------------------------------------------------- #

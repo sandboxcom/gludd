@@ -24,11 +24,10 @@ from __future__ import annotations
 
 import json as _json
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
+
+import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -48,22 +47,21 @@ def _validate_base_url(base_url: str) -> str:
 
 
 def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, object]:
-    """Real, time-bounded urllib transport. Never uses a shell."""
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=_DEFAULT_TIMEOUT) as resp:
-            raw = resp.read()
-            status = int(resp.getcode() or 0)
-    except urllib.error.HTTPError as exc:  # non-2xx still carries a status + body
-        raw = exc.read()
-        status = int(exc.code)
+    """Real, time-bounded httpx transport. Never uses a shell.
+
+    Redirects are NOT followed so a redirect-to-metadata SSRF cannot be
+    silently chased; the caller's ``is_url_blocked`` guard already validated
+    the literal host.
+    """
+    with httpx.Client(timeout=_DEFAULT_TIMEOUT, follow_redirects=False) as client:
+        resp = client.get(url, headers=headers)
     body: object = None
-    if raw:
+    if resp.content:
         try:
-            body = _json.loads(raw.decode("utf-8"))
+            body = _json.loads(resp.content.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             body = None
-    return status, body
+    return resp.status_code, body
 
 
 def _parse_ts(updated_at: str | None) -> float | None:

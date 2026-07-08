@@ -38,9 +38,10 @@ from __future__ import annotations
 
 import os
 import time
-import urllib.request
 from collections.abc import Callable
 from urllib.parse import urlencode, urlsplit
+
+import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
 
@@ -86,10 +87,10 @@ def _default_http_get(
     if params:
         sep = "&" if parsed.query else "?"
         url = f"{url}{sep}{urlencode(params, doseq=True)}"
-    req = urllib.request.Request(url, headers=headers or {}, method="GET")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        status = int(resp.getcode() or 0)
-        body = resp.read()
+    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+        resp = client.get(url, headers=headers or {})
+    status = resp.status_code
+    body = resp.content
     text = body.decode("utf-8", errors="replace") if body else ""
     return status, text
 

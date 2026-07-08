@@ -407,3 +407,170 @@ def test_parca_transport_client_constructed_with_follow_redirects_false() -> Non
         )
 
     _assert_no_redirects(captured)
+
+
+def test_opentsdb_transport_client_constructed_with_follow_redirects_false() -> None:
+    """opentsdb sets follow_redirects=False on the httpx.Client CONSTRUCTOR."""
+    from general_ludd.connectors.opentsdb import _HttpxTransport
+
+    captured: dict[str, Any] = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        def __enter__(self) -> _FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def request(self, method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+            resp = _fake_response()
+            cast(Any, resp).text = "[]"
+            return resp
+
+    with patch("httpx.Client", _FakeClient):
+        _HttpxTransport().request(
+            "POST",
+            "https://tsdb.example/api/query",
+            headers={"Content-Type": "application/json"},
+            body=b"{}",
+            timeout=10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_jenkins_transport_passes_follow_redirects_false() -> None:
+    """jenkins _default_http_get must forward follow_redirects=False to httpx.get."""
+    from general_ludd.connectors.jenkins import _default_http_get
+
+    captured: dict[str, Any] = {}
+
+    def fake_get(url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        resp = _fake_response()
+        cast(Any, resp).content = b"{}"
+        return resp
+
+    with patch("httpx.get", side_effect=fake_get):
+        _default_http_get("https://ci.example/api/json", {"Accept": "application/json"})
+
+    _assert_no_redirects(captured)
+
+
+def test_kubernetes_transport_passes_follow_redirects_false() -> None:
+    """kubernetes _default_transport must forward follow_redirects=False to httpx.request."""
+    from general_ludd.connectors.kubernetes import _default_transport
+
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.request", side_effect=fake_request):
+        _default_transport(
+            "GET",
+            "https://k8s.example/api/v1",
+            headers={"Authorization": "Bearer x"},
+            timeout=10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+# ---------------------------------------------------------------------------
+# travis / argo_workflows / buildkite — httpx.Client CONSTRUCTOR must carry
+# follow_redirects=False (SSRF: prevent redirect-to-metadata pivot).
+#
+# These three connectors share the _httpx_transport shape:
+#   (method, url, headers, timeout) -> (status_code, content)
+# using `with httpx.Client(timeout=..., follow_redirects=False) as client:`.
+# ---------------------------------------------------------------------------
+
+
+def test_travis_transport_client_constructed_with_follow_redirects_false() -> None:
+    """travis _httpx_transport must construct httpx.Client with follow_redirects=False."""
+    from general_ludd.connectors.travis import _httpx_transport
+
+    captured: dict[str, Any] = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        def __enter__(self) -> _FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def request(self, method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(status_code=200, content=b"{}")
+
+    with patch("httpx.Client", _FakeClient):
+        _httpx_transport("GET", "https://api.travis-ci.com/repo/x/builds", {}, 10.0)
+
+    _assert_no_redirects(captured)
+
+
+def test_argo_workflows_transport_client_constructed_with_follow_redirects_false() -> None:
+    """argo_workflows _httpx_transport must construct httpx.Client with follow_redirects=False."""
+    from general_ludd.connectors.argo_workflows import _httpx_transport
+
+    captured: dict[str, Any] = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        def __enter__(self) -> _FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def request(self, method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(status_code=200, content=b"{}")
+
+    with patch("httpx.Client", _FakeClient):
+        _httpx_transport(
+            "GET",
+            "https://argo.example/api/v1/workflows/argo",
+            {},
+            10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_buildkite_transport_client_constructed_with_follow_redirects_false() -> None:
+    """buildkite _httpx_transport must construct httpx.Client with follow_redirects=False."""
+    from general_ludd.connectors.buildkite import _httpx_transport
+
+    captured: dict[str, Any] = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        def __enter__(self) -> _FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def request(self, method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(status_code=200, content=b"{}")
+
+    with patch("httpx.Client", _FakeClient):
+        _httpx_transport(
+            "GET",
+            "https://api.buildkite.com/v2/organizations/o/pipelines/p/builds",
+            {},
+            10.0,
+        )
+
+    _assert_no_redirects(captured)

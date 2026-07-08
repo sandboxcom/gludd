@@ -15,7 +15,7 @@ Contract (shared by every pipeline connector):
   * ``query(spec) -> list[dict]`` — normalized events with keys ``ts``,
     ``source``, ``kind``, ``level_or_status``, ``message``, ``value``,
     ``labels`` and ``raw``
-  * injectable HTTP transport (defaults to a stdlib ``urllib`` transport) so
+  * injectable HTTP transport (defaults to ``httpx``) so
     tests run fully mocked, with a per-request timeout and no ``shell=True``.
 """
 
@@ -23,11 +23,11 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.error
-import urllib.request
 from collections.abc import Callable, Mapping
 from typing import TypedDict, cast
 from urllib.parse import urlsplit
+
+import httpx
 
 from general_ludd.connectors._errors import ConnectorConfigError
 from general_ludd.security.ssrf import is_url_blocked
@@ -81,18 +81,15 @@ def _guard_base_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _urllib_transport(method: str, url: str, headers: Mapping[str, str], timeout: float) -> tuple[int, bytes]:
-    """Default stdlib transport. Time-bound; never uses a shell.
+def _httpx_transport(method: str, url: str, headers: Mapping[str, str], timeout: float) -> tuple[int, bytes]:
+    """Default httpx transport. Time-bound; never uses a shell; no redirect follows.
 
     The URL scheme is validated (http/https only) by ``_guard_base_url`` before
-    any request is built, so the urllib call is not an unguarded open.
+    any request is built, so the call is not an unguarded open.
     """
-    req = urllib.request.Request(url, method=method, headers=dict(headers))
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return int(resp.status), resp.read()
-    except urllib.error.HTTPError as exc:
-        return int(exc.code), exc.read()
+    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+        resp = client.request(method, url, headers=dict(headers))
+    return resp.status_code, resp.content
 
 
 class BuildkiteSource:
@@ -109,7 +106,7 @@ class BuildkiteSource:
         self.timeout = float(cast(float | int | str | bool, self._config.get("timeout", 10.0)))
         self._token_env = str(self._config.get("token_env", "BUILDKITE_TOKEN"))
         self._token = os.environ.get(self._token_env, "")
-        self._transport: Transport = transport or _urllib_transport
+        self._transport: Transport = transport or _httpx_transport
 
     # -- internals ---------------------------------------------------------
     def _headers(self) -> dict[str, str]:

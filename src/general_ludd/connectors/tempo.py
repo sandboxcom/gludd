@@ -30,8 +30,9 @@ from __future__ import annotations
 import json
 import os
 import urllib.parse
-import urllib.request
 from typing import Protocol, cast, runtime_checkable
+
+import httpx
 
 from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
@@ -52,22 +53,20 @@ class _TempoResponse:
 
 @runtime_checkable
 class HttpTransport(Protocol):
-    """Injectable HTTP transport. The default uses stdlib urllib."""
+    """Injectable HTTP transport. The default uses httpx (no redirects)."""
 
     def get(
         self, url: str, *, headers: dict[str, str], timeout: float
     ) -> _TempoResponse: ...
 
 
-class _UrllibTransport:
-    """Default time-bound transport backed by ``urllib.request`` (no shell)."""
+class _HttpxTransport:
+    """Default time-bound transport backed by ``httpx`` (no shell, no redirects)."""
 
     def get(self, url: str, *, headers: dict[str, str], timeout: float) -> _TempoResponse:
-        req = urllib.request.Request(url, headers=headers, method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body: bytes = resp.read()
-            status = int(getattr(resp, "status", 200) or 200)
-            return _TempoResponse(status, body)
+        with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+            resp = client.get(url, headers=headers)
+        return _TempoResponse(resp.status_code, resp.content)
 
 
 def _guard_base_url(base_url: str, *, allow_private: bool) -> str:
@@ -107,7 +106,7 @@ class TempoSource:
         token_env = config.get("token_env")
         self._token: str | None = os.environ.get(str(token_env)) if token_env else None
 
-        self._transport: HttpTransport = transport if transport is not None else _UrllibTransport()
+        self._transport: HttpTransport = transport if transport is not None else _HttpxTransport()
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}

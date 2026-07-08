@@ -7,7 +7,6 @@ mocked — no network access occurs.
 
 from __future__ import annotations
 
-import io
 import json
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -653,18 +652,21 @@ def test_sentry_response_json_empty_body_returns_none() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# _UrllibTransport — wiring (mocked urllib, no network)
+# _UrllibTransport — wiring (mocked httpx.Client, no network)
 # --------------------------------------------------------------------------- #
 def test_urllib_transport_wiring_success() -> None:
-    """``_UrllibTransport.get`` builds a Request and decodes the response."""
+    """``_UrllibTransport.get`` uses httpx.Client(follow_redirects=False) and decodes the response."""
     transport = _UrllibTransport()
     fake_resp = MagicMock()
-    fake_resp.status = 200
-    fake_resp.__enter__ = MagicMock(return_value=fake_resp)
-    fake_resp.__exit__ = MagicMock(return_value=False)
-    fake_resp.read = MagicMock(return_value=b'{"ok": true}')
+    fake_resp.status_code = 200
+    fake_resp.content = b'{"ok": true}'
 
-    with patch("general_ludd.connectors.sentry.urllib.request.urlopen", return_value=fake_resp) as m:
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get = MagicMock(return_value=fake_resp)
+
+    with patch("general_ludd.connectors.sentry.httpx.Client", return_value=fake_client) as m:
         resp = transport.get(
             "https://sentry.example.com/api/0/",
             headers={"Authorization": "Bearer x"},
@@ -672,24 +674,23 @@ def test_urllib_transport_wiring_success() -> None:
         )
     assert resp.status == 200
     assert resp.json() == {"ok": True}
-    # urlopen must receive the timeout verbatim.
+    assert m.call_args.kwargs.get("follow_redirects") is False
     assert m.call_args.kwargs.get("timeout") == 5.0
 
 
 def test_urllib_transport_wiring_http_error_returns_response() -> None:
-    """An HTTPError (4xx/5xx) must be surfaced as a response, not raised."""
-    import urllib.error
-
+    """A non-2xx status must be surfaced as a response, not raised (httpx never raises for HTTP status)."""
     transport = _UrllibTransport()
-    err = urllib.error.HTTPError(
-        url="https://sentry.example.com/api/0/",
-        code=404,
-        msg="Not Found",
-        hdrs=None,  # type: ignore[arg-type]
-        fp=io.BytesIO(b'{"detail": "missing"}'),
-    )
+    fake_resp = MagicMock()
+    fake_resp.status_code = 404
+    fake_resp.content = b'{"detail": "missing"}'
 
-    with patch("general_ludd.connectors.sentry.urllib.request.urlopen", side_effect=err):
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get = MagicMock(return_value=fake_resp)
+
+    with patch("general_ludd.connectors.sentry.httpx.Client", return_value=fake_client):
         resp = transport.get(
             "https://sentry.example.com/api/0/",
             headers={},

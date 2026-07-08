@@ -11,7 +11,7 @@ Contract (see project connector spec):
     - literal-host SSRF block on ``base_url`` (opt-in ``allow_private``)
     - health() -> {'ok', 'detail'} and NEVER raises
     - query(spec) -> list[dict] normalized records
-    - injectable HTTP transport (defaults to a stdlib urllib transport)
+    - injectable HTTP transport (defaults to an httpx-backed transport)
     - time-bound requests; never uses shell
 
 OpenTSDB-specific: ``POST {base_url}/api/query`` with a JSON body
@@ -25,10 +25,10 @@ from __future__ import annotations
 import base64
 import json
 import os
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Protocol, cast, runtime_checkable
+
+import httpx
 
 from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
@@ -55,8 +55,8 @@ class Transport(Protocol):
         ...
 
 
-class _UrllibTransport:
-    """Default transport backed by :mod:`urllib` (no third-party deps, no shell)."""
+class _HttpxTransport:
+    """Default transport backed by httpx (no shell, redirects never followed)."""
 
     def request(
         self,
@@ -67,16 +67,9 @@ class _UrllibTransport:
         body: bytes | None = None,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> tuple[int, str]:
-        req = urllib.request.Request(url, data=body, method=method)
-        for key, value in (headers or {}).items():
-            req.add_header(key, value)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read()
-                return int(resp.status), raw.decode("utf-8", "replace")
-        except urllib.error.HTTPError as exc:
-            raw = exc.read() if hasattr(exc, "read") else b""
-            return int(exc.code), raw.decode("utf-8", "replace")
+        with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+            resp = client.request(method, url, headers=headers or {}, content=body)
+        return resp.status_code, resp.text
 
 
 def _guard_base_url(base_url: str, allow_private: bool) -> str:
@@ -136,7 +129,7 @@ class OpenTsdbSource:
         self.default_aggregator: str = str(
             self.config.get("aggregator", _DEFAULT_AGGREGATOR)
         )
-        self._transport: Transport = transport or _UrllibTransport()
+        self._transport: Transport = transport or _HttpxTransport()
 
         # Optional HTTP Basic auth from env (never inline secrets).
         self._username: str | None = None
