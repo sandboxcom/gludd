@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
+import select
 import subprocess
 import sys
 import time
@@ -111,15 +112,21 @@ class TestTUIE2E:
                 env=_subprocess_env(),
             )
             os.close(slave_fd)
-            time.sleep(1.5)
             output = b""
-            for _ in range(10):
-                try:
-                    data = os.read(master_fd, 65536)
-                    if data:
-                        output += data
-                except (OSError, BlockingIOError):
-                    time.sleep(0.2)
+            deadline = time.monotonic() + 10.0
+            while time.monotonic() < deadline:
+                if proc.poll() is not None:
+                    break
+                readable, _, _ = select.select([master_fd], [], [], 0.2)
+                if readable:
+                    try:
+                        data = os.read(master_fd, 65536)
+                        if data:
+                            output += data
+                            if b"tui |" in output.lower():
+                                break
+                    except (OSError, BlockingIOError):
+                        pass
             os.write(master_fd, b"q")
             time.sleep(0.5)
             proc.terminate()
@@ -130,7 +137,10 @@ class TestTUIE2E:
                 proc.wait()
             os.close(master_fd)
             text = output.decode("utf-8", errors="ignore").lower()
-            assert "general ludd" in text or "0.1" in text
+            assert "general ludd" in text or "0.1" in text, (
+                f"TUI did not render version. rc={proc.returncode} "
+                f"output_tail={output[-400:]!r}"
+            )
         finally:
             with contextlib.suppress(OSError):
                 os.close(master_fd)
