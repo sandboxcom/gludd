@@ -124,6 +124,37 @@ def _isolate_root_logger():
             new_logger.handlers.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_process_registry():
+    """Reset the process.registry._DEFAULT_REGISTRY singleton around every test.
+
+    Prevents order-dependent failures when tests register managed PIDs into
+    the singleton and a later test asserts on registry contents. Implements
+    the CI_GREEN_PLAN_2026-07-01.md A2 fix that was claimed-but-never-landed.
+    """
+    import general_ludd.process.registry as pr
+    original = pr._DEFAULT_REGISTRY
+    pr._DEFAULT_REGISTRY = None
+    yield
+    pr._DEFAULT_REGISTRY = original
+
+
+@pytest.fixture(autouse=True)
+def _reset_worker_runner():
+    """Reset the worker.app._runner singleton around every test.
+
+    Prevents the 2026-06-21 xdist flake (documented in SESSION_HANDOFF) where
+    a test that creates an AnsibleRunnerAdapter via get_runner() leaks the
+    instance into sibling tests. Hoists the per-file _reset_runner pattern
+    from test_worker_d09_d10_d35.py + test_worker_tool_dispatch.py.
+    """
+    import general_ludd.worker.app as wapp
+    original = wapp._runner
+    wapp._runner = None
+    yield
+    wapp._runner = original
+
+
 # --- Environmental test-skip probes -----------------------------------------
 #
 # Integration tests that require SLURM or PostgreSQL can decorate themselves

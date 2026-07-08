@@ -16,7 +16,6 @@ import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
@@ -85,19 +84,6 @@ def _build_runner_mock() -> MagicMock:
         "artifacts": [],
     }
     return runner
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(autouse=True)
-def _reset_runner() -> Any:
-    """Prevent module-level _runner singleton from leaking between tests."""
-    import general_ludd.worker.app as worker_module
-    original = worker_module._runner
-    yield
-    worker_module._runner = original
 
 
 # ---------------------------------------------------------------------------
