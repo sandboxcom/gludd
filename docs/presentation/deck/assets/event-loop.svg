@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="shadow2" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+    </marker>
+  </defs>
+
+  <rect width="800" height="600" fill="#f8fafc"/>
+
+  <!-- Title -->
+  <text x="400" y="52" text-anchor="middle" font-size="26" font-weight="700" fill="#0f172a">The Event Loop</text>
+  <text x="400" y="78" text-anchor="middle" font-size="14" fill="#64748b">Four phases, repeated every second</text>
+
+  <!-- Center hub -->
+  <circle cx="400" cy="330" r="62" fill="#ffffff" stroke="#059669" stroke-width="2" filter="url(#shadow2)"/>
+  <text x="400" y="320" text-anchor="middle" font-size="13" font-weight="700" fill="#059669">Every</text>
+  <text x="400" y="340" text-anchor="middle" font-size="13" font-weight="700" fill="#059669">1 second</text>
+  <text x="400" y="358" text-anchor="middle" font-size="10" fill="#64748b" font-style="italic">tick</text>
+
+  <!-- Curved arrows between phases (clockwise) -->
+  <!-- Claim (top) -> Dispatch (right) -->
+  <path d="M 470 250 Q 540 270 545 320" fill="none" stroke="#059669" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
+  <!-- Dispatch (right) -> Review (bottom) -->
+  <path d="M 545 360 Q 540 410 470 430" fill="none" stroke="#059669" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
+  <!-- Review (bottom) -> Reconcile (left) -->
+  <path d="M 330 430 Q 260 410 255 360" fill="none" stroke="#059669" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
+  <!-- Reconcile (left) -> Claim (top) -->
+  <path d="M 255 320 Q 260 270 330 250" fill="none" stroke="#059669" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
+
+  <!-- ===== Phase 1: Claim (top) ===== -->
+  <g filter="url(#shadow2)">
+    <rect x="320" y="170" width="160" height="80" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
+  </g>
+  <text x="400" y="198" text-anchor="middle" font-size="13" font-weight="700" fill="#d1fae5">PHASE 1</text>
+  <text x="400" y="218" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Claim</text>
+  <text x="400" y="238" text-anchor="middle" font-size="11" fill="#d1fae5">Pick up the next task</text>
+
+  <!-- ===== Phase 2: Dispatch (right) ===== -->
+  <g filter="url(#shadow2)">
+    <rect x="550" y="290" width="160" height="80" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
+  </g>
+  <text x="630" y="318" text-anchor="middle" font-size="13" font-weight="700" fill="#d1fae5">PHASE 2</text>
+  <text x="630" y="338" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Dispatch</text>
+  <text x="630" y="358" text-anchor="middle" font-size="11" fill="#d1fae5">Send to the AI model</text>
+
+  <!-- ===== Phase 3: Review (bottom) ===== -->
+  <g filter="url(#shadow2)">
+    <rect x="320" y="430" width="160" height="80" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
+  </g>
+  <text x="400" y="458" text-anchor="middle" font-size="13" font-weight="700" fill="#d1fae5">PHASE 3</text>
+  <text x="400" y="478" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Review</text>
+  <text x="400" y="498" text-anchor="middle" font-size="11" fill="#d1fae5">Check the AI's work</text>
+
+  <!-- ===== Phase 4: Reconcile (left) ===== -->
+  <g filter="url(#shadow2)">
+    <rect x="90" y="290" width="160" height="80" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
+  </g>
+  <text x="170" y="318" text-anchor="middle" font-size="13" font-weight="700" fill="#d1fae5">PHASE 4</text>
+  <text x="170" y="338" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Reconcile</text>
+  <text x="170" y="358" text-anchor="middle" font-size="11" fill="#d1fae5">Commit to git</text>
+
+  <!-- Side notes -->
+  <text x="400" y="555" text-anchor="middle" font-size="12" fill="#94a3b8">
+    After Reconcile, the loop returns to Claim — always looking for the next task.
+  </text>
+</svg>

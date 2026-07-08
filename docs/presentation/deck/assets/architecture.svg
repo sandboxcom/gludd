@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b5cf6"/>
+    </marker>
+  </defs>
+
+  <rect width="800" height="600" fill="#f8fafc"/>
+
+  <!-- Title -->
+  <text x="400" y="48" text-anchor="middle" font-size="26" font-weight="700" fill="#0f172a">How gludd Works</text>
+  <text x="400" y="74" text-anchor="middle" font-size="14" fill="#64748b">From a user's task to committed code</text>
+
+  <!-- ===== USER (blue) ===== -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="200" width="130" height="100" rx="14" fill="#3b82f6" stroke="#2563eb" stroke-width="2"/>
+  </g>
+  <text x="95" y="232" text-anchor="middle" font-size="30">👤</text>
+  <text x="95" y="262" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">User</text>
+  <text x="95" y="282" text-anchor="middle" font-size="11" fill="#dbeafe">Writes a task</text>
+
+  <!-- ===== DAEMON (green) ===== -->
+  <g filter="url(#shadow)">
+    <rect x="215" y="200" width="140" height="100" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
+  </g>
+  <text x="285" y="232" text-anchor="middle" font-size="26">🛡️</text>
+  <text x="285" y="262" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">Daemon</text>
+  <text x="285" y="282" text-anchor="middle" font-size="11" fill="#d1fae5">Receives the task</text>
+
+  <!-- ===== EVENT LOOP (green, central, larger) ===== -->
+  <g filter="url(#shadow)">
+    <rect x="410" y="170" width="200" height="160" rx="14" fill="#ffffff" stroke="#059669" stroke-width="2"/>
+  </g>
+  <text x="510" y="196" text-anchor="middle" font-size="14" font-weight="700" fill="#059669">Event Loop</text>
+  <text x="510" y="212" text-anchor="middle" font-size="10" fill="#64748b">runs every second</text>
+
+  <!-- 4 phase pills inside event loop -->
+  <g>
+    <rect x="425" y="225" width="80" height="26" rx="13" fill="#ecfdf5" stroke="#10b981"/>
+    <text x="465" y="242" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">1. Claim</text>
+
+    <rect x="515" y="225" width="80" height="26" rx="13" fill="#ecfdf5" stroke="#10b981"/>
+    <text x="555" y="242" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">2. Dispatch</text>
+
+    <rect x="425" y="262" width="80" height="26" rx="13" fill="#ecfdf5" stroke="#10b981"/>
+    <text x="465" y="279" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">3. Review</text>
+
+    <rect x="515" y="262" width="80" height="26" rx="13" fill="#ecfdf5" stroke="#10b981"/>
+    <text x="555" y="279" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">4. Reconcile</text>
+  </g>
+  <text x="510" y="312" text-anchor="middle" font-size="10" fill="#64748b" font-style="italic">pick → send → check → commit</text>
+
+  <!-- ===== AI MODEL (purple) ===== -->
+  <g filter="url(#shadow)">
+    <rect x="660" y="200" width="120" height="100" rx="14" fill="#8b5cf6" stroke="#7c3aed" stroke-width="2"/>
+  </g>
+  <text x="720" y="232" text-anchor="middle" font-size="26">🤖</text>
+  <text x="720" y="262" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">AI Model</text>
+  <text x="720" y="282" text-anchor="middle" font-size="11" fill="#ede9fe">Writes the code</text>
+
+  <!-- ===== Arrows: top row ===== -->
+  <line x1="160" y1="250" x2="210" y2="250" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="185" y="242" text-anchor="middle" font-size="10" fill="#475569">task</text>
+
+  <line x1="355" y1="250" x2="405" y2="250" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Event loop <-> AI Model (bidirectional) -->
+  <line x1="610" y1="240" x2="655" y2="240" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arrowPurple)"/>
+  <text x="632" y="232" text-anchor="middle" font-size="10" fill="#8b5cf6">send</text>
+  <line x1="655" y1="265" x2="610" y2="265" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arrowPurple)"/>
+  <text x="632" y="280" text-anchor="middle" font-size="10" fill="#8b5cf6">code</text>
+
+  <!-- ===== Bottom row: supporting layers ===== -->
+
+  <!-- Ansible Collection (teal) -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="430" width="170" height="90" rx="14" fill="#14b8a6" stroke="#0d9488" stroke-width="2"/>
+  </g>
+  <text x="165" y="460" text-anchor="middle" font-size="24">📦</text>
+  <text x="165" y="485" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff">Ansible Collection</text>
+  <text x="165" y="504" text-anchor="middle" font-size="11" fill="#ccfbf1">Execution layer</text>
+
+  <!-- SQLite Database (slate) -->
+  <g filter="url(#shadow)">
+    <rect x="315" y="430" width="170" height="90" rx="14" fill="#6b7280" stroke="#4b5563" stroke-width="2"/>
+  </g>
+  <text x="400" y="460" text-anchor="middle" font-size="24">🗄️</text>
+  <text x="400" y="485" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff">SQLite Database</text>
+  <text x="400" y="504" text-anchor="middle" font-size="11" fill="#e5e7eb">Where tasks are saved</text>
+
+  <!-- Git Repository (orange) -->
+  <g filter="url(#shadow)">
+    <rect x="550" y="430" width="170" height="90" rx="14" fill="#f59e0b" stroke="#d97706" stroke-width="2"/>
+  </g>
+  <text x="635" y="460" text-anchor="middle" font-size="24">🌳</text>
+  <text x="635" y="485" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff">Git Repository</text>
+  <text x="635" y="504" text-anchor="middle" font-size="11" fill="#fef3c7">Where work lands</text>
+
+  <!-- Arrows from event loop down to supporting layers -->
+  <line x1="460" y1="330" x2="200" y2="425" stroke="#475569" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <line x1="510" y1="330" x2="400" y2="425" stroke="#475569" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+  <line x1="560" y1="330" x2="620" y2="425" stroke="#475569" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+
+  <!-- Footer legend -->
+  <text x="400" y="568" text-anchor="middle" font-size="11" fill="#94a3b8">
+    Blue = user · Green = daemon/event loop · Purple = AI model · Teal = execution · Slate = storage · Orange = git
+  </text>
+</svg>
