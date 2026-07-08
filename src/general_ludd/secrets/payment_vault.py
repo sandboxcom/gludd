@@ -8,15 +8,21 @@ import os
 import re
 import secrets
 from datetime import UTC, datetime
-from typing import Any, cast
+from types import ModuleType
+from typing import TYPE_CHECKING
 
 from general_ludd.secrets.manager import SecretsManager, SecretsUnavailableError
 
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives import hashes as hashes_module
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM as AESGCMClass
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF as HKDFClass
+
 logger = logging.getLogger("general_ludd.secrets.payment_vault")
 
-hashes: object = None
-AESGCM: object = None
-HKDF: object = None
+hashes: ModuleType | None = None
+AESGCM: type[AESGCMClass] | None = None
+HKDF: type[HKDFClass] | None = None
 try:
     hashes = importlib.import_module("cryptography.hazmat.primitives.hashes")
     _aead = importlib.import_module("cryptography.hazmat.primitives.ciphers.aead")
@@ -165,10 +171,11 @@ class SecurePaymentVault:
             plaintext = json.dumps(
                 {"card_number": pan, "cvc": cvc}, separators=(",", ":")
             ).encode("utf-8")
-            ciphertext = cast(Any, AESGCM)(dek).encrypt(nonce, plaintext, None)
+            assert AESGCM is not None
+            ciphertext = AESGCM(dek).encrypt(nonce, plaintext, None)
 
             kek_nonce = os.urandom(12)
-            encrypted_dek = kek_nonce + cast(Any, AESGCM)(kek).encrypt(kek_nonce, dek, None)
+            encrypted_dek = kek_nonce + AESGCM(kek).encrypt(kek_nonce, dek, None)
 
             payload: dict[str, object] = {
                 "token": token,
@@ -293,12 +300,11 @@ class SecurePaymentVault:
         return root
 
     def _derive_kek(self, root_key: bytes, label: str) -> bytes:
-        return cast(
-            bytes,
-            cast(Any, HKDF)(
-                algorithm=cast(Any, hashes).SHA256(),
-                length=32,
-                salt=None,
-                info=label.encode("utf-8"),
-            ).derive(root_key),
-        )
+        assert HKDF is not None
+        assert hashes is not None
+        return HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=label.encode("utf-8"),
+        ).derive(root_key)
