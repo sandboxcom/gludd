@@ -452,6 +452,38 @@ class TestProcessIsolationFailClosed:
         assert result.error is not None
         assert "isolation" in result.error.lower()
 
+    def test_enabled_isolation_fails_closed_even_when_executable_present(self):
+        """Regression for the illusory-sandbox P3 blocker.
+
+        Even when the configured executable IS on PATH, the in-process
+        PlaybookExecutor backend never spawns podman/bwrap, so enabled=True
+        must fail closed unconditionally — not pass through to unconfined
+        execution and report success.
+        """
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.isolation import ProcessIsolationConfig
+
+        with patch.object(
+            __import__("general_ludd.ansible.core_runner", fromlist=["_HAS_ANSIBLE_CORE"]),
+            "_HAS_ANSIBLE_CORE",
+            True,
+        ):
+            iso = ProcessIsolationConfig(enabled=True, executable="podman")
+            runner = CoreAnsibleRunner(process_isolation=iso)
+
+            sentinel = object()
+            with patch.object(
+                runner,
+                "_execute_with_core",
+                return_value=sentinel,
+            ) as fake_exec, patch("shutil.which", return_value="/usr/bin/podman"):
+                result = runner.run_playbook("/tmp/whatever.yml")
+
+            fake_exec.assert_not_called()
+            assert result.status == "failed"
+            assert result.error is not None
+            assert "cannot honor" in result.error
+
     def test_disabled_isolation_does_not_fail_closed(self):
         """Isolation disabled must NOT trip the fail-closed guard."""
         from general_ludd.ansible import core_runner as cr

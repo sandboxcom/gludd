@@ -36,6 +36,20 @@ Beta 2: GPU/compute provider expansion, typing hardening, and guardrail codifica
 - Makefile ship-commit target added
 - Plugin count test reconciled with 10 actual plugins
 
+### Security
+
+- Ansible `process_isolation`: made the fail-closed guard UNCONDITIONAL on
+  `enabled=true`. `_execute_with_core` runs playbooks in-process via
+  `PlaybookExecutor` and structurally cannot honor container isolation, so any
+  `enabled=true` now refuses the run with `"cannot honor container isolation"`
+  instead of returning `success=True` on an unconfined run.
+
+### Known limitations
+
+- Ansible process isolation: setting `process_isolation.enabled: true` causes
+  fail-closed refusal — container isolation requires the ansible-runner
+  subprocess backend (targeted post-beta).
+
 ## [0.1.0-beta.1] — 2026-07-06
 
 Beta 1: enforcement infrastructure, game building, CI fixes, and honesty cleanup.

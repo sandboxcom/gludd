@@ -233,20 +233,23 @@ class CoreAnsibleRunner:
             raise ImportError("ansible-core is required for playbook execution but is not installed")
 
         # HIGH (process_isolation): the config used to be stored and silently
-        # ignored. If isolation is REQUESTED but we cannot honor it natively,
-        # fail CLOSED — never run an isolation-requiring job unconfined.
+        # ignored. _execute_with_core runs playbooks IN-PROCESS via
+        # PlaybookExecutor — it structurally cannot honor container isolation
+        # (no podman/bwrap subprocess is ever spawned). So when isolation is
+        # REQUESTED (enabled=True), fail CLOSED unconditionally — never run an
+        # isolation-requiring job unconfined, regardless of whether the
+        # executable happens to be on PATH.
         iso = self._process_isolation
-        if (
-            iso is not None
-            and getattr(iso, "enabled", False)
-            and not self._isolation_supported(iso)
-        ):
+        if iso is not None and getattr(iso, "enabled", False):
             return AnsibleResult(
                 status="failed",
                 rc=1,
                 error=(
-                    "process_isolation requested but not supported in this "
-                    "runtime; refusing to run unconfined"
+                    "process_isolation is enabled but this runtime executes "
+                    "playbooks in-process via PlaybookExecutor, which cannot "
+                    "honor container isolation. Refusing to run unconfined. "
+                    "(Container isolation requires the ansible-runner "
+                    "subprocess backend, not yet wired.)"
                 ),
             )
 
@@ -301,22 +304,6 @@ class CoreAnsibleRunner:
             become=become,
             extra_env=extra_env,
         )
-
-    @staticmethod
-    def _isolation_supported(iso: Any) -> bool:
-        """Whether requested process isolation can actually be honored.
-
-        Native ansible-core library execution (PlaybookExecutor) does NOT apply
-        the runner-style container isolation; honoring it requires the named
-        executable (e.g. podman/bwrap) to exist on PATH. When it does not, we
-        cannot confine the run, so the caller must fail closed.
-        """
-        import shutil
-
-        executable = getattr(iso, "executable", None)
-        if not executable:
-            return False
-        return shutil.which(executable) is not None
 
     def _run_with_timeout(
         self,

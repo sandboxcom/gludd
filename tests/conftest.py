@@ -208,6 +208,43 @@ def _reset_worker_runner():
     wapp._runner = original
 
 
+@pytest.fixture(autouse=True)
+def _reset_observability_singletons(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset observability + integrity module-level singletons around every test.
+
+    Prevents accumulation of token history, duration samples, metric
+    registrations, and cached integrity keys across tests on the same xdist
+    worker. Without this, ``test_default_token_tracker_is_shared`` populates
+    ``_shared_tracker`` and a sibling asserting on a fresh tracker sees stale
+    state; likewise ``test_core_changes_commit`` caches ``_INTEGRITY_KEY`` and
+    leaks the cache key into tests expecting a cold start. Covers P6-P9 from
+    the cross-test pollution audit.
+
+    P9 note: ``metrics_exporter`` carries a paired singleton — the module-level
+    ``_REGISTRY`` that ``MetricsExporter.__init__`` registers the uptime Gauge
+    into. Resetting ``_metrics_exporter`` alone forces each test to rebuild the
+    exporter, which then collides with the previous Gauge registration
+    (``Duplicated timeseries``). The registry must be reset alongside the
+    exporter or the leak simply moves one layer deeper.
+    """
+    import general_ludd.integrity.scanner as scanner
+    monkeypatch.setattr(scanner, "_INTEGRITY_KEY", None, raising=False)
+
+    import general_ludd.observability.token_cost as tc
+    monkeypatch.setattr(tc, "_shared_tracker", None, raising=False)
+
+    import general_ludd.observability.timing as timing
+    monkeypatch.setattr(timing, "_default_tracker", None, raising=False)
+
+    import general_ludd.observability.metrics_exporter as me
+    from prometheus_client import CollectorRegistry
+    monkeypatch.setattr(me, "_metrics_exporter", None, raising=False)
+    monkeypatch.setattr(me, "_current_trace_id", {}, raising=False)
+    monkeypatch.setattr(
+        me, "_REGISTRY", CollectorRegistry(auto_describe=False), raising=False
+    )
+
+
 # --- Environmental test-skip probes -----------------------------------------
 #
 # Integration tests that require SLURM or PostgreSQL can decorate themselves
