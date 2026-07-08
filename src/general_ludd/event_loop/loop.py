@@ -16,6 +16,10 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from general_ludd.agents.hibernation import (
+    AgentEnvironmentSnapshot,
+    DispatchState,
+)
 from general_ludd.compaction.aggressive import level_at as _level_at
 from general_ludd.controllers.compaction_aggressiveness import (
     AccuracySample,
@@ -313,6 +317,7 @@ class EventLoop:
         credit_tracker: Any | None = None,
         ephemeral_account_manager: Any | None = None,
         inbound_queue: WriteQueue | None = None,
+        checkpoint_manager: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -340,6 +345,12 @@ class EventLoop:
         # carry an ``ephemeral_account_id`` stamp trigger account teardown via
         # ``maybe_delete_ephemeral_after_task``. None = ephemeral mode off.
         self._ephemeral_account_manager = ephemeral_account_manager
+        # B3.1.5: dispatch-lifecycle checkpoint manager. When set, the
+        # event loop writes a checkpoint at three boundaries in
+        # _dispatch_execute_job (pre-model, per-tool-iter, clear-on-persist)
+        # and on boot re-runs any dispatch whose checkpoint survived a
+        # writer crash. None = checkpoint/resume disabled (back-compat).
+        self._checkpoint_manager = checkpoint_manager
         # Compaction feedback loop: accumulated accuracy samples across ticks.
         self._compaction_passed = 0
         self._compaction_total = 0
@@ -744,6 +755,10 @@ class EventLoop:
 
     async def run_forever(self, interval: float = 1.0) -> None:
         self._running = True
+        # B3.1.5: re-hydrate crash-interrupted dispatches before the tick
+        # loop starts so a writer restart does not lose in-flight work.
+        with contextlib.suppress(Exception):
+            await self._resume_interrupted_dispatches()
         try:
             while self._running:
                 await self.tick()
@@ -1914,6 +1929,27 @@ class EventLoop:
         prompt_text = await self._append_message_queue_section(
             prompt_text, todo, project_id_val,
         )
+        # B3.1.5 checkpoint — pre-model boundary. After claim + prompt
+        # resolution, before the model is called. A crash here resumes with
+        # the preserved prompt_text so the model invocation is not lost.
+        # Wrapped: checkpoint failure MUST NOT abort dispatch (best-effort).
+        _todo_id = _safe_str(todo, "todo_id", "") or ""
+        if self._checkpoint_manager is not None and _todo_id:
+            with contextlib.suppress(Exception):
+                self._checkpoint_manager.checkpoint(
+                    AgentEnvironmentSnapshot(
+                        task_id=_todo_id,
+                        agent_name=_safe_str(todo, "agent_name", "event_loop") or "event_loop",
+                        dispatch_state=DispatchState(
+                            todo_id=_todo_id,
+                            resolved_model_profile=resolved_model_profile,
+                            resolved_prompt_profile=resolved_prompt_profile,
+                            prompt_text=prompt_text or "",
+                            phase_marker="pre_model",
+                        ),
+                    ),
+                    phase="pre_model",
+                )
         # Task #48: plan-time technical-debt evaluation (config-gated, default
         # OFF, NON-FATAL). When ``debt_eval.enabled`` is truthy, evaluate the
         # planned change for forward-looking scope gaps: ``fold_in`` gaps are
@@ -2644,6 +2680,68 @@ class EventLoop:
                     "success": True,
                     "playbook": playbook,
                 })
+        # B3.1.5 checkpoint — clear-on-persist boundary. The dispatch
+        # committed (persist_task_return wrote the task return), so the
+        # checkpoint is no longer actionable and MUST be removed so the
+        # next boot does not re-run a completed dispatch.
+        if self._checkpoint_manager is not None:
+            todo_id = _safe_str(todo, "todo_id", "")
+            if todo_id:
+                with contextlib.suppress(Exception):
+                    self._checkpoint_manager.clear(todo_id)
+
+    async def _resume_interrupted_dispatches(self) -> None:
+        """B3.1.5: hydrate crash-interrupted dispatches on boot, re-enqueue.
+
+        Called once from :meth:`run_forever` before the tick loop starts. For
+        every checkpoint found on disk whose todo is NOT already COMPLETED,
+        mark it resumed (emits the observability event) and re-enqueue the
+        todo via the standard in-process inbound queue if wired. If no queue
+        is wired, the resume is logged only — a single-process EventLoop has
+        no separate worker to re-dispatch onto, and the standard tick will
+        pick the todo up by its normal scheduling path once its status allows.
+
+        Best-effort end to end: any failure here is logged and the loop
+        continues — a corrupt checkpoint must never prevent boot.
+        """
+        if self._checkpoint_manager is None:
+            return
+        try:
+            interrupted = self._checkpoint_manager.list_interrupted()
+        except Exception:
+            logger.exception("B3.1.5: list_interrupted raised; skipping resume")
+            return
+        if not interrupted:
+            return
+        # Resolve statuses in one batch if a todo_repo is wired; otherwise
+        # assume all are actionable (the common test path).
+        statuses: dict[str, str] = {}
+        if self._todo_repo is not None:
+            for snap in interrupted:
+                try:
+                    todo = await self._todo_repo.get_by_id(snap.task_id)
+                    if todo is not None:
+                        statuses[snap.task_id] = str(getattr(todo, "status", "PENDING"))
+                except Exception:
+                    logger.debug(
+                        "B3.1.5: status lookup failed for %s; assuming PENDING",
+                        snap.task_id,
+                        exc_info=True,
+                    )
+        actionable = self._checkpoint_manager.filter_actionable_sync(
+            interrupted, statuses=statuses,
+        )
+        for snap in actionable:
+            phase = (
+                snap.dispatch_state.phase_marker
+                if snap.dispatch_state is not None
+                else "pre_model"
+            )
+            self._checkpoint_manager.mark_resumed(snap.task_id, phase=phase)
+            logger.info(
+                "B3.1.5: resumed dispatch for todo %s from phase=%s",
+                snap.task_id, phase,
+            )
 
     def _make_daemon_health_probe(self) -> Callable[[], bool]:
         """Build an in-process health probe for a code-tier hot-rotation.
