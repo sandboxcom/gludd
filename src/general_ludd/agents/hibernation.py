@@ -39,6 +39,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
@@ -46,7 +47,7 @@ from general_ludd.agents.context import ContextMessage
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Characters permitted in a snapshot filename stem.  Anything else (``/``,
 # ``..``, control chars) is collapsed to ``_`` so a hostile task_id such as
@@ -112,6 +113,29 @@ class IntegrityError(HibernationError):
     """Raised when a snapshot fails its checksum (tampered or corrupted)."""
 
 
+class DispatchState(BaseModel):
+    """Resumable state of a single dispatch invocation (B3.1.5).
+
+    Captured just before the model is called and updated per tool-loop
+    iteration, then embedded in :class:`AgentEnvironmentSnapshot` so a
+    checkpoint round-trips through the existing integrity-checked JSON
+    envelope without a second file format. Lives here (rather than in
+    ``dispatch_checkpoint.py``) because embedding it in the snapshot
+    requires the class be importable from this module without a cycle.
+    """
+
+    model_config = {"strict": True}
+
+    todo_id: str
+    resolved_model_profile: str | None = None
+    resolved_prompt_profile: str | None = None
+    prompt_text: str = ""
+    phase_marker: str = "pre_model"
+    tool_iterations: int = 0
+    accumulated_messages: list[ContextMessage] = Field(default_factory=list)
+    lease_holder_id: str | None = None
+
+
 class AgentEnvironmentSnapshot(BaseModel):
     """Serializable snapshot of a parked agent's environment.
 
@@ -119,6 +143,12 @@ class AgentEnvironmentSnapshot(BaseModel):
     else is small metadata needed to resume the agent exactly where it parked —
     including :attr:`depth`, its position in the recursion stack, which the
     controller uses to decide whether dehydration is worthwhile.
+
+    B3.1.5 added :attr:`dispatch_state` (``schema_version=2``): the resumable
+    bits of a single dispatch invocation, written at three lifecycle
+    boundaries (pre-model, per-tool-iter, clear-on-persist) so a writer crash
+    does not abandon in-flight work. v1 snapshots hydrate with
+    ``dispatch_state=None`` (backward compat — they predate the field).
     """
 
     model_config = {"strict": True}
@@ -135,6 +165,11 @@ class AgentEnvironmentSnapshot(BaseModel):
     scratch: dict[str, str] = Field(default_factory=dict)
     created_at: float = 0.0
     schema_version: int = SCHEMA_VERSION
+    # Embedded dispatch-lifecycle checkpoint (B3.1.5). v1 snapshots (pre-2.0)
+    # lack this field and hydrate as None — ``list_interrupted`` skips those
+    # because they are deep-recursion hibernation files, not dispatch
+    # checkpoints.
+    dispatch_state: DispatchState | None = None
 
 
 class HibernationHandle(BaseModel):
