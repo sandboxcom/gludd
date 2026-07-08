@@ -210,6 +210,16 @@ const UNCHECKED_BOXES_RE = /^[-*]\s*\[\s*\]/im
 const COMMIT_HASH_RE = /(?:commit|sha)\s*[:=]?\s*(?!0{7}|deadbeef|c0ffee)[0-9a-f]{7,40}|\[[0-9a-f]{7,}\]/i
 const PASS_COUNT_EVIDENCE_RE = /\b[1-9]\d*\s+(?:passed|passing)\b/
 
+function responseLooksTerminal(text: string): boolean {
+  STANDALONE_DONE_RE.lastIndex = 0
+  if (DIRECT_FALSE_DONE_FLAGS.some(f => text.includes(f))) return true
+  if (COMPLETION_VERBATIM.test(text)) return true
+  if (COMPLETION_HEADER_RE.test(text)) return true
+  if (STANDALONE_DONE_RE.test(text)) return true
+  if (CHECKED_BOXES_RE.test(text) && !UNCHECKED_BOXES_RE.test(text)) return true
+  return false
+}
+
 // Bypass regexes — when ANY of these appear in the response, the false-done
 // block is cancelled (real work artifact / evidence present).
 // FILE_PATH_RE: covers the canonical source trees AND common top-level files
@@ -652,10 +662,7 @@ export default (async ({ }) => {
 
         // Check short completion claims (✅, "Done.") before the 60-char minimum
         if (text.trim().length < 60) {
-          const isShortFalseDone = DIRECT_FALSE_DONE_FLAGS.some(f => text.includes(f)) ||
-            STANDALONE_DONE_RE.test(text) ||
-            COMPLETION_VERBATIM.test(text)
-          if (isShortFalseDone) {
+          if (responseLooksTerminal(text)) {
             logFalseDoneBlock(text, "short-false-done")
             output.text = "⛔ FALSE-DONE CLAIM BLOCKED. DISPATCH A TOOL CALL."
             turnState.blocked = true
@@ -710,11 +717,7 @@ export default (async ({ }) => {
         const combinedText = text + turnState.accumulatedText
         const lower = combinedText.toLowerCase()
 
-        const hasDirectFalseDone = DIRECT_FALSE_DONE_FLAGS.some(f => combinedText.includes(f)) ||
-          COMPLETION_HEADER_RE.test(combinedText) ||
-          STANDALONE_DONE_RE.test(combinedText) ||
-          COMPLETION_VERBATIM.test(combinedText) ||
-          (CHECKED_BOXES_RE.test(combinedText) && !UNCHECKED_BOXES_RE.test(combinedText))
+        const hasDirectFalseDone = responseLooksTerminal(combinedText)
 
         const tasksMdUnchecked = cache?.tasksMdUnchecked ?? tasksMdHasUnchecked()
         const ratchetCount = cache?.ratchetEntries ?? ratchetHasEntries()

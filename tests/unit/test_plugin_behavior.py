@@ -251,12 +251,18 @@ class TestEnforceStopTextCompleteDetection:
             "UNCHECKED_BOXES_RE regex missing — checkbox table detection is gone"
         )
 
-    def test_response_looks_terminal_removed(self):
-        """responseLooksTerminal was removed from the simplified plugin."""
+    def test_response_looks_terminal_present(self):
+        """responseLooksTerminal is the state-based terminal-response detector.
+
+        It was previously removed during a 'simplification' pass, but the
+        guardrail audit (scripts/check_plugin_liveness.py REQUIRED_FUNCTIONS)
+        flagged its absence as a structural regression — terminal-response
+        detection must live behind a named, structurally-verifiable function.
+        """
         src = ENFORCE_STOP.read_text()
-        assert "function responseLooksTerminal" not in src, (
-            "responseLooksTerminal should NOT be present — it was removed in "
-            "the simplified plugin (stop detection is now inline in text.complete)"
+        assert "function responseLooksTerminal" in src, (
+            "responseLooksTerminal must be present — it is the state-based "
+            "terminal-response detector (required by check_plugin_liveness.py)"
         )
 
     def test_text_complete_has_local_work_block(self):
