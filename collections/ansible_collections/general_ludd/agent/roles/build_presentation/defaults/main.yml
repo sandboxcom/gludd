@@ -36,6 +36,14 @@ regenerate_deck_data: true
 honesty_check_enabled: true
 # Validate the reveal.js HTML structure (<section> slides present).
 validate_html_structure: true
+# Validate Mermaid diagram syntax in the deck source via the Mermaid CLI
+# (`mmdc`) when the binary is on PATH. SAFE-BY-DEFAULT: if `mmdc` is absent
+# the validation step is SKIPPED — never a hard failure. Mermaid is the
+# preferred diagram format for the deck (see README "Diagrams" section).
+validate_mermaid_syntax: true
+# Name or path of the Mermaid CLI binary. Override only if `mmdc` is installed
+# under a different name or a non-PATH absolute path.
+mermaid_cli_bin: "mmdc"
 # (Optional) Serve locally for visual QA after build. Off by default —
 # serving is a foreground process and must be opted into explicitly.
 serve_locally: false

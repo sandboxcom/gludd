@@ -10,8 +10,10 @@
 #   4. Run the honesty lint — banned marketing tokens + %-must-match-README
 #      (make deck-honesty).
 #   5. Validate the reveal.js HTML structure (index.html exists, has <section>).
-#   6. (Optional) Serve locally for visual QA (make deck-serve).
-#   7. (Optional) Deploy: commit + push deck artifacts via gludd_git so
+#   6. Validate Mermaid diagram syntax via mmdc when the CLI is available
+#      (Mermaid is the preferred deck diagram format; safe-skip when absent).
+#   7. (Optional) Serve locally for visual QA (make deck-serve).
+#   8. (Optional) Deploy: commit + push deck artifacts via gludd_git so
 #      GitHub Pages picks them up.
 #
 # SAFE-BY-DEFAULT: deploy_target="" → no deploy. Deploy push is a second
@@ -144,7 +146,62 @@
     - validate_html_structure | bool
     - _bp_index_stat.stat.exists
 
-# ── Step 4: (Optional) Serve locally for visual QA ─────────────────────────
+# ── Step 4: Validate Mermaid diagram syntax (optional — skip if no CLI) ────
+# Mermaid text diagrams are the PREFERRED diagram format for the deck (see
+# README). This step validates any ``.mmd`` files or ```mermaid fenced
+# blocks under the presentation dir when the Mermaid CLI (``mmdc``) is
+# available. SAFE-BY-DEFAULT: when the binary is absent the step is skipped,
+# not failed — the Mermaid toolchain is an optional dev dependency.
+
+- name: Locate Mermaid CLI (mmdc)
+  ansible.builtin.command:
+    cmd: "command -v {{ mermaid_cli_bin }}"
+  register: _bp_mmdc_lookup
+  changed_when: false
+  failed_when: false
+  when: validate_mermaid_syntax | bool
+
+- name: Set Mermaid CLI availability
+  ansible.builtin.set_fact:
+    _bp_mmdc_available: >-
+      {{ (validate_mermaid_syntax | bool)
+         and (_bp_mmdc_lookup.rc | default(1)) == 0
+         and (_bp_mmdc_lookup.stdout | default('') | length > 0) }}
+
+- name: Find .mmd diagram files under presentation dir
+  ansible.builtin.find:
+    paths: "{{ presentation_dir }}"
+    patterns: ["*.mmd"]
+    recurse: true
+    use_regex: false
+  register: _bp_mmd_files
+  when: validate_mermaid_syntax | bool
+
+- name: Validate Mermaid syntax via mmdc (one task per file)
+  ansible.builtin.command:
+    cmd: >-
+      {{ mermaid_cli_bin }}
+      -i {{ item.path }}
+      -o /tmp/gludd-mermaid-validate-{{ item.checksum | default(item.path | hash('sha1')) }}.svg
+  loop: "{{ _bp_mmd_files.files | default([]) }}"
+  register: _bp_mermaid_validate
+  changed_when: false
+  when:
+    - validate_mermaid_syntax | bool
+    - _bp_mmdc_available | bool
+    - not ansible_check_mode
+
+- name: Report Mermaid validation skipped (CLI unavailable)
+  ansible.builtin.debug:
+    msg: >-
+      validate_mermaid_syntax=true but {{ mermaid_cli_bin }} is not on PATH —
+      skipping Mermaid syntax validation. Install @mermaid-js/mermaid-cli to
+      enable this step.
+  when:
+    - validate_mermaid_syntax | bool
+    - not (_bp_mmdc_available | bool)
+
+# ── Step 5: (Optional) Serve locally for visual QA ─────────────────────────
 # Serving is a foreground process — only invoke when explicitly opted in,
 # and never in check mode or molecule converge (would hang the run).
 
@@ -168,7 +225,7 @@
       — kill via the async job handle when done.
   when: serve_locally | bool
 
-# ── Step 5: (Optional) Deploy — commit + push deck artifacts ───────────────
+# ── Step 6: (Optional) Deploy — commit + push deck artifacts ───────────────
 
 - name: Determine deploy eligibility
   ansible.builtin.set_fact:
@@ -233,6 +290,9 @@
         'validate_html_structure': validate_html_structure | bool,
         'index_present': _bp_index_stat.stat.exists,
         'slide_count': _bp_slide_count | default(0),
+        'validate_mermaid_syntax': validate_mermaid_syntax | bool,
+        'mermaid_cli_available': _bp_mmdc_available | default(false),
+        'mermaid_files_validated': (_bp_mmd_files.files | default([]) | length),
         'serve_launched': serve_locally | bool,
         'deploy_target': deploy_target,
         'deploy_outcome': _bp_deploy_outcome,
@@ -267,6 +327,9 @@
       | HTML structure validated | {{ validate_html_structure | bool }} |
       | index.html present | {{ _bp_index_stat.stat.exists }} |
       | Slide count | {{ _bp_slide_count | default(0) }} |
+      | Mermaid validation enabled | {{ validate_mermaid_syntax | bool }} |
+      | Mermaid CLI available | {{ _bp_mmdc_available | default(false) }} |
+      | Mermaid files validated | {{ _bp_mmd_files.files | default([]) | length }} |
       | Serve launched | {{ serve_locally | bool }} |
 
       {% if _bp_deploy_requested | bool %}

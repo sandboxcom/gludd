@@ -4,6 +4,33 @@ Builds, validates, and (optionally) deploys the gludd reveal.js presentation
 as a **repeatable gludd-managed task**. Codifies the deck build pipeline that
 was previously a loose collection of `make` targets + manual steps.
 
+## Diagrams — prefer Mermaid
+
+**Mermaid text diagrams are the preferred diagram format for the deck**,
+over SVG (or other binary/raster image formats). Rationale:
+
+- **Version-control friendly** — Mermaid is plain text, so diagrams diff
+  cleanly and review changes line-by-line. SVG edited by hand does not;
+  SVG exported from a drawing tool churns on every save.
+- **In-tree editable** — no external drawing tool round-trip. Authors edit
+  the diagram source in the same commit as the prose around it.
+- **Reveals in reveal.js** — the deck loads `mermaid.min.js` and renders
+  ```mermaid fenced blocks inside `<section>` slides at runtime. No binary
+  asset pipeline, no image-hosting path to manage.
+- **Single source of truth** — the same `.mmd` / ```mermaid source renders
+  in the deck, in GitHub README rendering, and in generated docs.
+
+When a diagram genuinely cannot be expressed in Mermaid (e.g. a photograph
+or a pixel-precise schematic), commit the SVG/PNG under
+`docs/presentation/deck/assets/` and reference it from the slide. Treat
+binary image additions as the exception, not the default.
+
+The role optionally validates Mermaid syntax in the deck source when a
+Mermaid CLI (`@mermaid-js/mermaid-cli`, exposing the `mmdc` binary) is
+available; see step 6 in the pipeline table below. The step is
+safe-by-default — when `mmdc` is absent the validation is skipped, not
+failed.
+
 ## Pipeline
 
 | Step | Toggle | Default |
@@ -15,6 +42,7 @@ was previously a loose collection of `make` targets + manual steps.
 | 3. Validate reveal.js HTML structure (`<section>` + `reveal.js` load) | `validate_html_structure` | on |
 | 4. Serve locally for visual QA (`make deck-serve`) | `serve_locally` | off |
 | 5. Deploy: commit + push deck artifacts via `gludd_git` | `deploy_target` | `""` (off) |
+| 6. Validate Mermaid diagram syntax (`mmdc` if available, else skip) | `validate_mermaid_syntax` | on |
 
 **SAFE-BY-DEFAULT:** deploy is off. Push requires a second explicit opt-in
 (`enable_deploy_push: true`).
@@ -40,6 +68,8 @@ was previously a loose collection of `make` targets + manual steps.
 | `require_green_gate` | `false` | refuse build if gate not green |
 | `serve_locally` | `false` | launch `make deck-serve` (foreground) |
 | `enable_deploy_push` | `false` | second opt-in for deploy push |
+| `validate_mermaid_syntax` | `true` | validate `.mmd` / ```mermaid blocks via `mmdc` if present (skipped when CLI absent) |
+| `mermaid_cli_bin` | `mmdc` | name/path of the Mermaid CLI binary |
 
 ## Example — local build + honesty lint only
 
