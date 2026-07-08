@@ -5,8 +5,9 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import cast
 
 from general_ludd.models.provider_presets import PROVIDER_PRESETS
 from general_ludd.schemas.todo import Todo, TodoStatus, WorkType
@@ -68,7 +69,7 @@ class ProviderRegistry:
         return registry
 
     @classmethod
-    def from_profiles(cls, profiles: object) -> ProviderRegistry:
+    def from_profiles(cls, profiles: Iterable[object] | None) -> ProviderRegistry:
         """Build a populated ProviderRegistry from an iterable of model profiles.
 
         Every provider in ``PROVIDER_PRESETS`` is registered first (via
@@ -89,7 +90,7 @@ class ProviderRegistry:
         daemon.py / worker app / models.py fixes that.
         """
         registry = cls.from_presets()
-        for profile in cast(Any, profiles) or []:
+        for profile in list(profiles) if profiles is not None else []:
             name = cast(str, _profile_attr(profile, "provider") or "openai")
             if name in registry._providers:
                 # Presets win for stability; profile cannot override.

@@ -11,11 +11,29 @@ fallback orchestration is delegated to LangChain primitives
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 
 logger = logging.getLogger(__name__)
+
+
+class GatewayCallerProtocol(Protocol):
+    """Structural type for any gateway exposing ``call_model``.
+
+    The concrete ``ModelGateway.call_model`` signature has keyword-only
+    parameters (``estimated_cost``, ``budget_remaining``, etc.) plus
+    ``**kwargs``; profiles forward per-call kwargs through ``**_call_kwargs``.
+    This Protocol accepts any gateway whose ``call_model`` takes
+    ``(profile_id, messages, **kwargs)`` — which ``ModelGateway`` satisfies.
+    """
+
+    def call_model(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> object: ...
 
 
 class LangChainRetryGateway:
@@ -41,7 +59,7 @@ class LangChainRetryGateway:
     default path (``model.use_langchain_retry: false``).
     """
 
-    def __init__(self, gateway: object) -> None:
+    def __init__(self, gateway: GatewayCallerProtocol) -> None:
         self._gateway = gateway
         self._chain: Runnable[object, object] | None = None
 
@@ -49,15 +67,14 @@ class LangChainRetryGateway:
         """Build a Runnable that invokes the gateway for a single profile."""
 
         def _invoke_profile(input: dict[str, object]) -> object:
-            gateway = cast(Any, self._gateway)
-            return gateway.call_model(
+            return self._gateway.call_model(
                 profile_id,
-                input["messages"],
+                cast(list[dict[str, str]], input["messages"]),
                 tools=input.get("tools"),
                 **cast(dict[str, object], input.get("_call_kwargs", {})),
             )
 
-        return cast(Runnable[object, object], RunnableLambda(cast(Any, _invoke_profile)))
+        return cast(Runnable[object, object], RunnableLambda(_invoke_profile))
 
     def build_chain(
         self,

@@ -14,8 +14,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 SUPPRESSION_ALLOWLIST: tuple[str, ...] = (
     "src/general_ludd/security/fix_not_disable.py",
 )
@@ -57,7 +55,6 @@ def test_no_type_ignore_comments():
     )
 
 
-@pytest.mark.xfail(strict=False, reason="ratchet: burn down cast(Any) in src/")
 def test_no_cast_any():
     """No cast(Any, ...) usages — narrow with a typed cast target instead."""
     violations: list[str] = []

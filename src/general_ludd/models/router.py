@@ -1,6 +1,20 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from collections.abc import Sequence
+from typing import Protocol
+
+
+class RouterProfileProtocol(Protocol):
+    """Structural type for a model profile consumed by ``build_from_profiles``.
+
+    Matches ``ModelProfile`` (pydantic model in gateway.py) and any
+    duck-typed equivalent exposing these four routing attributes.
+    """
+
+    model_profile_id: str
+    role_names: list[str]
+    quality_class: str | None
+    latency_class: str | None
 
 
 class ModelRouter:
@@ -84,18 +98,17 @@ class ModelRouter:
         return [role for role, pid in self._mapping.items() if pid == profile_id]
 
     @classmethod
-    def build_from_profiles(cls, profiles: list[object]) -> ModelRouter:
+    def build_from_profiles(cls, profiles: Sequence[RouterProfileProtocol]) -> ModelRouter:
         role_mapping: dict[str, str] = {}
         quality_map: dict[str, str] = {}
         latency_map: dict[str, str] = {}
-        for p_raw in profiles:
-            p = cast(Any, p_raw)
+        for p in profiles:
             pid = p.model_profile_id
-            for role_name in getattr(p, "role_names", []):
+            for role_name in p.role_names:
                 role_mapping[role_name] = pid
-            if getattr(p, "quality_class", None):
+            if p.quality_class:
                 quality_map[p.quality_class] = pid
-            if getattr(p, "latency_class", None):
+            if p.latency_class:
                 latency_map[p.latency_class] = pid
         router = cls(role_mapping=role_mapping)
         router._quality_map = quality_map
