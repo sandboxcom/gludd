@@ -13,4 +13,3 @@ from __future__ import annotations
 from general_ludd.writer.process import WriterProcess
 
 __all__ = ["WriterProcess"]
-
