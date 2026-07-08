@@ -9,6 +9,8 @@ daemon's memory without limit, whether the queue drops oldest or rejects.
 from __future__ import annotations
 
 import asyncio
+import queue as stdqueue
+import time
 
 import pytest
 
@@ -95,3 +97,31 @@ class TestGetPut:
         assert len(q) == 0
         snap = q.snapshot()
         assert snap["size"] == 0
+
+
+class TestGetNowait:
+    """B3.1.3 Slice 5: synchronous non-blocking dequeue used by the drain hook."""
+
+    @pytest.mark.asyncio
+    async def test_get_nowait_returns_envelope(self) -> None:
+        q = WriteQueue(maxsize=5)
+        e1 = _env(1)
+        await q.put(e1)
+        assert q.get_nowait() is e1
+        assert len(q) == 0
+
+    @pytest.mark.asyncio
+    async def test_get_nowait_raises_when_empty(self) -> None:
+        q = WriteQueue(maxsize=5)
+        with pytest.raises(stdqueue.Empty):
+            q.get_nowait()
+
+    @pytest.mark.asyncio
+    async def test_get_nowait_does_not_block(self) -> None:
+        q = WriteQueue(maxsize=5)
+        start = time.monotonic()
+        with pytest.raises(stdqueue.Empty):
+            q.get_nowait()
+        elapsed_ms = (time.monotonic() - start) * 1000
+        # Non-blocking: an empty queue must return (raise) near-instantly.
+        assert elapsed_ms < 10.0

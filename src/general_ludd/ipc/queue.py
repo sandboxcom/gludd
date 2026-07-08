@@ -23,6 +23,7 @@ delivery loop and the daemon request handlers both run inside the event loop.
 from __future__ import annotations
 
 import asyncio
+import queue as _stdqueue
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
@@ -150,6 +151,29 @@ class WriteQueue:
                         self._not_empty.clear()
                     return envelope
             await self._not_empty.wait()
+
+    def get_nowait(self) -> Envelope:
+        """Synchronous non-blocking dequeue.
+
+        Returns the oldest envelope (FIFO) if one is available, or raises
+        :class:`queue.Empty` (the STANDARD LIBRARY ``queue`` module's
+        exception, NOT ``asyncio.QueueEmpty``) when the queue is empty.
+
+        Thread-safety contract: this method does NOT acquire the
+        :class:`asyncio.Lock` (an ``asyncio.Lock`` cannot be held across a
+        synchronous call boundary, and acquiring it would deadlock when the
+        drain runs inside the same event-loop task that previously entered
+        ``put``/``get``). It is safe to call only from the single
+        event-loop thread that owns this queue — which is the only context
+        the EventLoop inbound-queue drain ever runs in. The ``deque`` read +
+        ``popleft`` pair is atomic under the GIL.
+        """
+        if not self._queue:
+            raise _stdqueue.Empty
+        envelope = self._queue.popleft()
+        if not self._queue:
+            self._not_empty.clear()
+        return envelope
 
     def snapshot(self) -> dict[str, Any]:
         """Non-destructive, JSON-safe view: queue size + counters."""

@@ -6,11 +6,12 @@ import asyncio
 import contextlib
 import json
 import logging
+import queue as _stdqueue
 import time
 from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -59,6 +60,12 @@ from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 from general_ludd.schemas.todo import Todo, TodoStatus
 from general_ludd.self_improve.harness import SelfImprovementHarness
+
+if TYPE_CHECKING:
+    # TYPE_CHECKING-only: avoids a runtime import cycle and keeps the drain
+    # hook decoupled from the IPC layer at import time. ``WriteQueue`` is only
+    # used as a type annotation on the ``inbound_queue`` kwarg.
+    from general_ludd.ipc.queue import WriteQueue
 
 logger = logging.getLogger(__name__)
 
@@ -305,6 +312,7 @@ class EventLoop:
         infra_tracker: Any | None = None,
         credit_tracker: Any | None = None,
         ephemeral_account_manager: Any | None = None,
+        inbound_queue: WriteQueue | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -432,6 +440,10 @@ class EventLoop:
         self._issue_ingestor: Any = issue_ingestor
         self._issue_poll_interval_ticks: int = 300
         self._issue_poll_tick_counter: int = 0
+        # B3.1.3 Slice 5: inbound WriteQueue drain hook. When set, run_forever
+        # empties this queue between ticks (non-blocking) and applies each
+        # Envelope inside its own DB session. None = drain disabled (no-op).
+        self._inbound_queue: WriteQueue | None = inbound_queue
 
     def _track_background_task(self, task: asyncio.Task[None]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -735,12 +747,84 @@ class EventLoop:
         try:
             while self._running:
                 await self.tick()
+                if self._inbound_queue is not None:
+                    await self._drain_inbound_queue()
                 await asyncio.sleep(interval)
         except Exception as exc:
             logger.error("EventLoop run_forever exited with error: %s", exc)
             raise
         finally:
             logger.error("EventLoop run_forever stopped; no further ticks will occur")
+
+    async def _drain_inbound_queue(self) -> None:
+        """B3.1.3 Slice 5: drain the inbound :class:`WriteQueue` between ticks.
+
+        Non-blocking: pulls every currently-buffered envelope via
+        :meth:`WriteQueue.get_nowait` and returns the moment the queue is
+        empty (``queue.Empty``). Each envelope is applied inside its own
+        freshly-opened DB session so a failure in one envelope rolls back
+        ONLY that envelope's writes; subsequent envelopes still commit.
+
+        In no-DB mode (``self._session_factory is None``) envelopes are
+        dropped (logged) — the queue still empties, so the producer is never
+        blocked by a consumer that has no DB to apply to.
+        """
+        if self._inbound_queue is None:
+            return
+        while True:
+            try:
+                envelope = self._inbound_queue.get_nowait()
+            except _stdqueue.Empty:
+                return
+            if self._session_factory is None:
+                logger.warning(
+                    "Dropping inbound envelope (no DB session factory): "
+                    "topic=%s payload_keys=%s",
+                    envelope.topic,
+                    list(envelope.payload.keys()),
+                )
+                continue
+            try:
+                async with self._session_factory() as session:
+                    try:
+                        await self._apply_envelope(envelope, session)
+                        await session.commit()
+                    except Exception:
+                        logger.exception(
+                            "Failed to apply inbound envelope: topic=%s",
+                            envelope.topic,
+                        )
+                        with contextlib.suppress(Exception):
+                            await session.rollback()
+            except Exception:
+                # The session factory itself blew up (rare); log + continue so
+                # one bad envelope does not kill the drain loop.
+                logger.exception(
+                    "Session factory error during inbound drain: topic=%s",
+                    envelope.topic,
+                )
+
+    async def _apply_envelope(self, envelope: Any, session: Any) -> None:
+        """B3.1.3 Slice 5 STUB envelope handler.
+
+        Routes by ``envelope.topic`` to the appropriate repository method.
+        This is a deliberately thin stub — real per-topic handlers (full
+        upsert semantics, validation, audit-event emission) land in later
+        slices. Today only ``todo.upsert`` is routed; unknown topics are
+        logged and otherwise ignored so the drain never crashes on a
+        future-introduced topic it doesn't yet know about.
+        """
+        topic = envelope.topic
+        payload = envelope.payload
+        if topic == "todo.upsert":
+            if self._todo_repo is not None:
+                await self._todo_repo.create(payload)
+        else:
+            logger.info(
+                "No stub handler for inbound envelope topic=%s; ignoring",
+                topic,
+            )
+        logger.info("Applied inbound envelope: topic=%s", topic)
 
     def stop(self) -> None:
         self._running = False

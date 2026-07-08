@@ -5,22 +5,24 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-08 — Session 19: CI fix wave landed (10+ commits). HEAD advanced `f2202cae` → `024a8412`. Remote sandboxcom/master VERIFIED. CI for current HEAD pending/in-progress. beta.2 STILL NOT SHIPPED — blocked on CI green. cast(Any) burn-down COMPLETE. beta.3 Phase 1 (gunicorn IPC broker) DONE.
+- 2026-07-08 — Session 19 continued. HEAD advanced significantly (`024a8412` → `e564d844`, +13 commits). CI fix wave + beta.3 Slice 1-3 (writer subprocess) + A6 conftest fixture + P1/P2 chronic pattern fixes (process.registry / worker._runner singletons) landed. unit-1 shard split into unit-1a/unit-1b to fix 30min timeout cancellation. beta.2 STILL NOT SHIPPED — blocked on CI green (pushes in flight, not polling).
 
 ## Current Work
 
-- **HEAD: `024a8412`** on master (was `f2202cae` at session 18 end). Remote sandboxcom/master **VERIFIED** at `024a8412` — no unpushed commits (working tree clean per `make git-status`).
-- **CI: pending/in-progress** for `024a8412`. The 13 CI failures from session 18's run 28899396411 have been **RESOLVED** by the session 19 fix wave (13 commits landed). Cannot confirm green until the current HEAD's CI run completes with `conclusion: success`.
-- **beta.2 BLOCKED** — still not shipped. Cannot cut until CI for `024a8412` is green, then `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-- **cast(Any) burn-down COMPLETE** — Tier 4 finished (`1d89ce8e`).
-- **beta.3 Phase 1 DONE** — gunicorn IPC broker (`84cebb6c` tick in TASKS). Phase 2 pending.
+- **HEAD: `e564d844`** on master (was `024a8412` at prior session 19 update). Working tree has 1 uncommitted file: `src/general_ludd/ipc/queue.py` (per `make git-status`).
+- **CI: PENDING** for recent pushes — NOT polling (per no-CI-poll-blocking rule). Pushes in flight. The 13 session-18 failures were resolved by the session 19 fix wave; green not yet confirmed for `e564d844` and its ancestors.
+- **beta.2 BLOCKED** — still not shipped. Cannot cut until CI for the current HEAD is green, then `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+- **beta.3 Slice 1-3 DONE** — writer subprocess extraction (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, writer child entrypoint `2d3ee08f`). **Slice 4-5 in flight.**
+- **unit-1 shard split** — `unit-1a` (tests a-bd) + `unit-1b` (tests ce) to fix 30min timeout cancellation (`1f283628`).
+- **Chronic pattern fixes** — autouse fixtures reset `process.registry` and `worker._runner` singletons (P1+P2 from CI_GREEN_PLAN A2, `d55b0f6f`). A6 durable fix: logging isolation fixture snapshots all named loggers (`9a24dcc8`).
 - **Local state**: version is `0.1.0-beta.2` in pyproject.toml + `src/general_ludd/__init__.py` + README + CHANGELOG. Tag NOT pushed. `make verify-release-artifact TAG=v0.1.0-beta.2` NOT yet run (prerequisite: green CI).
 
-### Session 19 focus: CI fix wave + cast(Any) burn-down completion + beta.3 Phase 1
+### Session 19 focus: CI fix wave + cast(Any) burn-down completion + beta.3 Phase 1 + writer subprocess + CI infra hardening
 - Landed 13 commits resolving all 13 session-18 CI failures (slurm billing, caplog pollution, tokenizer, MCPToolRegistry, structured_task_spec, TUI cold-start flakiness, gate xdist race).
 - cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`).
 - beta.3 Phase 1 (gunicorn IPC broker) DONE (`84cebb6c`).
 - STABILIZATION_PLAN added (`ef930591`).
+- **Session 19 continued (HEAD `024a8412` → `e564d844`)**: beta.3 writer subprocess Slice 1-3 landed (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`). unit-1 shard split into unit-1a/unit-1b (`1f283628`). P1/P2 chronic singleton-pollution fixes (`d55b0f6f`). A6 logging isolation fixture (`9a24dcc8`). caplog getMessage migration across 16 sites (`bcceaf85`). os.environ → monkeypatch conversion (`9d987b79`). no-CI-poll-blocking rule codified (`5ecdf2a9`). beta.2 still blocked on CI green.
 
 ### Prior session 18 deliverables (already on master):
 - PSK fix landed (reduced CI failures 147 → 13).
@@ -52,8 +54,8 @@
 - [x] baseten.py detect-secrets false positive — RESOLVED. `# pragma: allowlist secret` marker (`a907382e`).
 - [x] release-cut not enforcing CI-green / not verifying artifact — RESOLVED. require-ci-green step 0 + verify-release-artifact poll step 4 wired.
 
-### Pushes this session (19):
-- `024a8412` — HEAD pushed to sandboxcom, VERIFIED (working tree clean, no unpushed commits). CI for this HEAD pending/in-progress.
+### Pushes this session (19 continued):
+- Pushes in flight for HEAD `e564d844` and ancestors (`024a8412` → `e564d844`, 13 commits). NOT polling CI per no-CI-poll-blocking rule. Remote VERIFIED status to be confirmed at next natural break.
 
 ### Bugs still present:
 - **Connector gaps**: no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
@@ -64,6 +66,19 @@
 
 | Hash | Message |
 |------|---------|
+| `e564d844` | fixup: remove extra trailing newline from writer/__init__.py (pre-push end-of-file-fixer hook fix; whitespace only) |
+| `9d987b79` | test(infra): convert 15 unsafe os.environ writes to monkeypatch.setenv plus autouse backstop fixture and lint rule |
+| `3c448d8d` | docs(tasks): tick beta.3 Slice 1-3 progress plus A6 fixture and chronic pattern fixes |
+| `1f283628` | ci: split unit-1 shard into unit-1a (a-bd) and unit-1b (ce) to fix 30min timeout cancellation |
+| `2d3ee08f` | feat(writer): B3.1.3 Slice 3 writer child entrypoint with EventLoop ownership queue drain and 7 TDD tests |
+| `25d2ebaa` | feat(writer): B3.1.3 Slice 1 WriterProcess class with spawn stop readiness handshake and 7 TDD tests |
+| `b440e504` | feat(writer): B3.1.3 Slice 2 QueueWriteSession bridge and enqueue_or_commit helper with 10 TDD tests |
+| `d55b0f6f` | test(infra): add autouse fixtures to reset process.registry and worker._runner singletons (P1+P2 chronic patterns from CI_GREEN_PLAN A2) |
+| `d58745ba` | fixup: reflow caplog assertion to satisfy ruff E501 after getMessage() migration |
+| `5ecdf2a9` | docs(agents): codify no-CI-poll-blocking rule to prevent dispatch-blocking poll subagents |
+| `bcceaf85` | test: use LogRecord.getMessage instead of empty .message attribute across 16 caplog assertion sites |
+| `affa082f` | docs: update SESSION.md to current HEAD and landed fix wave state (prior session 19 update) |
+| `9a24dcc8` | test(infra): extend logging isolation fixture to snapshot all named loggers (A6 durable fix from CI_GREEN_PLAN_2026-07-01) |
 | `024a8412` | test(tui): replace fixed sleep with poll-until-marker loop to fix CI cold-start flakiness |
 | `5ecce329` | test: fix 6 CI failure clusters — StructuredTaskSpec list assertion, hook-plugin CI skip, GPU mock cleanup, integrity subprocess patch |
 | `8af622f8` | test: use LogRecord.getMessage instead of empty .message attribute for lazy log assertion |
@@ -124,23 +139,23 @@
 
 ## Known Gaps
 
-1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `024a8412` pushed to sandboxcom (VERIFIED). CI for `024a8412` pending/in-progress (13 prior failures RESOLVED by session 19 fix wave, but green not yet confirmed for current HEAD). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-2. **13 CI failures RESOLVED** — all clusters fixed by session 19 fix wave (slurm billing `6da1b5cd`, caplog `54353cec`/`07711c27`/`9ce86554`, tokenizer `9ce86554`, MCPToolRegistry `5ecce329`, structured_task_spec `5ecce329`, TUI cold-start `024a8412`, gate race `2f09f975`). Awaiting CI confirmation on current HEAD `024a8412`.
+1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `e564d844`; pushes in flight (CI pending, NOT polling). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+2. **13 CI failures RESOLVED** — all clusters fixed by session 19 fix wave. Green not yet confirmed for current HEAD `e564d844` (CI pending).
 3. **cast(Any) burn-down COMPLETE** — Tier 4 finished (`1d89ce8e`). STABILIZATION_PLAN documented (`ef930591`).
-4. **beta.3 Phase 1 DONE** — gunicorn IPC broker complete (`84cebb6c`). **Phase 2 pending** — B3.1.3 writer subprocess extraction not started.
+4. **beta.3 Slice 1-3 DONE, Slice 4-5 in progress** — writer subprocess extraction (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`) landed. Slice 4-5 in flight. B3.1.4 supervisor not started.
 5. **Plugin liveness** — RESOLVED (session 17). All 10/10 plugins have heartbeat probes. Current session may still run stale plugin code; opencode restart required to activate probes in-session.
 6. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
 7. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
-8. **verify-remote branch/tag collision** — RESOLVED. `refs/heads/$$BR` pin added at Makefile:1075 prevents branch/tag name collision. Test: `tests/unit/test_verify_remote_recipe.py`. Verified working: `make verify-remote BRANCH=master SHA=024a8412` → `VERIFIED master@024a8412`.
+8. **verify-remote branch/tag collision** — RESOLVED. `refs/heads/$$BR` pin added at Makefile:1075 prevents branch/tag name collision. Test: `tests/unit/test_verify_remote_recipe.py`.
 9. **check-skills-frontmatter** — DONE. Script at `scripts/check_skills_frontmatter.py`, Makefile target at line 1852, wired into `gate` at line 298.
-10. **False "8 GPU providers" claim in `4e9d97fc`** — RESOLVED (gap closed). Commit message claims "8 GPU providers" but only 5 were added at the time (mistral, cohere, nvidia, perplexity, huggingface). Commit is pushed with descendants; NOT amended per no-force-push policy. The 5 missing providers (google, cloudflare, databricks, azure-ai-foundry, ai21) are now implemented — actual provider count is 24 (19 original + 5 new).
+10. **False "8 GPU providers" claim in `4e9d97fc`** — RESOLVED (gap closed). The 5 missing providers (google, cloudflare, databricks, azure-ai-foundry, ai21) are now implemented — actual provider count is 24.
 
 ## Next Steps
 
 1. [x] **Fix 13 CI failures** — LANDED (session 19 fix wave, 13 commits).
-2. [~] **Push + wait for CI green** — push DONE (`024a8412` VERIFIED on remote); CI pending/in-progress. Run `make ci-verdict BRANCH=master` to confirm `conclusion: success` + `headSha == 024a8412`.
-3. [ ] **Ship v0.1.0-beta.2** — BLOCKED on CI green for `024a8412`. Once green: `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'`. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
-4. [ ] **beta.3 Phase 2: B3.1.3 writer subprocess extraction** — Phase 1 DONE; Phase 2 not started.
+2. [~] **Push + wait for CI green** — pushes in flight; NOT polling (per no-CI-poll-blocking rule). CI status will surface at the next natural break.
+3. [ ] **Ship v0.1.0-beta.2** — BLOCKED on CI green. Once green: `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'`. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
+4. [ ] **beta.3 Slice 4-5** — Slice 1-3 DONE; Slice 4-5 in flight. Then B3.1.4 supervisor.
 5. [ ] **Restart opencode** to activate all 10/10 plugin liveness probes in-session (probes are committed; session runs stale code).
 6. [ ] **Lift coverage** to gate threshold — gate test phase has failures; classify + triage after CI green.
 7. [x] **Wire the 6 new audit roles into a playbook** — DONE. `gludd audit-plugins` CLI + `audit_plugins.yml` playbook (commit `7ec9f2dc`).
@@ -149,8 +164,8 @@
 
 ## Current Gate Status (2026-07-08)
 <!-- gate:begin -->
-- **HEAD**: `024a8412` (local) — **VERIFIED** on remote sandboxcom/master (working tree clean, no unpushed commits).
-- **CI**: pending/in-progress for `024a8412`. The 13 failures from session 18 run 28899396411 have been RESOLVED by session 19 fix wave. Green not yet confirmed — cannot claim success until current HEAD's run completes with `conclusion: success` and `headSha == 024a8412`.
+- **HEAD**: `e564d844` (local). Working tree has 1 uncommitted file: `src/general_ludd/ipc/queue.py`. Pushes in flight — remote VERIFIED status NOT yet confirmed for this HEAD.
+- **CI**: PENDING — NOT polling (per no-CI-poll-blocking rule). The 13 failures from session 18 run 28899396411 were resolved by the session 19 fix wave. Green not yet confirmed for `e564d844` and its ancestors.
 - **beta.2**: version bumped in code, tag NOT yet cut, artifact NOT verified. Blocked on CI green.
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
@@ -194,7 +209,8 @@
 
 ## Historical State
 
-- **2026-07-08 session 19 (current)**: HEAD `024a8412` (pushed, VERIFIED). 13 commits landed resolving all 13 session-18 CI failures: slurm terminal-state fix (`6da1b5cd`), root-logger fixtures (`54353cec`/`07711c27`), PSK caplog + tokenizer (`9ce86554`), gate xdist race fix (`2f09f975`), lazy-log accessor (`8af622f8`), 6-cluster batch fix (`5ecce329`), TUI poll-until-marker (`024a8412`), lint cleanup (`3c62b381`). cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`). STABILIZATION_PLAN added (`ef930591`). beta.3 Phase 1 (gunicorn IPC broker) DONE (`84cebb6c`). CI for current HEAD pending/in-progress — green NOT yet confirmed. beta.2 STILL NOT shipped.
+- **2026-07-08 session 19 continued (current)**: HEAD `e564d844` (pushes in flight, CI pending — NOT polling). 13 commits past prior session-19 HEAD `024a8412`: beta.3 writer subprocess Slice 1-3 (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`), unit-1 shard split into unit-1a/unit-1b (`1f283628`), P1/P2 chronic singleton fixes (`d55b0f6f`), A6 logging isolation fixture (`9a24dcc8`), caplog getMessage migration across 16 sites (`bcceaf85`), os.environ→monkeypatch conversion (`9d987b79`), no-CI-poll-blocking rule codified (`5ecdf2a9`). beta.3 Slice 4-5 in flight. beta.2 STILL NOT shipped — blocked on CI green.
+- **2026-07-08 session 19 (prior)**: HEAD `024a8412` (pushed, VERIFIED). 13 commits landed resolving all 13 session-18 CI failures: slurm terminal-state fix (`6da1b5cd`), root-logger fixtures (`54353cec`/`07711c27`), PSK caplog + tokenizer (`9ce86554`), gate xdist race fix (`2f09f975`), lazy-log accessor (`8af622f8`), 6-cluster batch fix (`5ecce329`), TUI poll-until-marker (`024a8412`), lint cleanup (`3c62b381`). cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`). STABILIZATION_PLAN added (`ef930591`). beta.3 Phase 1 (gunicorn IPC broker) DONE (`84cebb6c`). CI for current HEAD pending/in-progress — green NOT yet confirmed. beta.2 STILL NOT shipped.
 - **2026-07-07 session 18 (prior)**: HEAD `f2202cae` (pushed, VERIFIED). PSK fix reduced CI failures 147 → 13 on run 28899396411. Remaining 13 failures (4 slurm billing, 3 connectors_base caplog, 2 PSK caplog, 2 tokenizer, 1 MCPToolRegistry import, 1 structured_task_spec) dispatched to fix wave; completed in session 19. beta.2 still NOT shipped — blocked on CI green. Gunicorn architecture work queued for beta.3 per user direction; Phase 1 completed in session 19.
 - **2026-07-07 session 17 (prior)**: HEAD `a907382e` (pushed, VERIFIED). 10 commits past `4e9d97fc`: game-test nondeterminism fix (`38c9395a`), full-play-lifecycle game tests for 12 games (`4dbd14a2` — 84 check tuples), self-improvement routing + failover e2e (`9b17e895` — 26 tests), lifecycle harness start() fix (`5fcea068`), ship-commit Makefile target (`2522d34b`), beta.2 version bump (`e2efa91f`), type-safety sweep + all parallel work (`7ec9f2dc` — 60 false-done + 12 heartbeat + 128 audit_roles + dispatch.py fix + README STATUS-TABLE + verify-remote pin + plugin heartbeats + session-start race + hasLocalWork bypass + audit-plugins CLI + release-cut wiring), secrets baseline + game-audit EOF (`66adb6a9`), baseten detect-secrets false positive (`a907382e`). 10/10 plugin liveness probes. verify-remote refs/heads pin. beta.2 tag NOT yet cut.
 - **2026-07-06 session 16 (prior)**: HEAD `c8904f5f`. Enforcement infrastructure ported to Ansible — gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles, 2 molecule scenarios, 3 remaining test fixes.
