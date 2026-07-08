@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 from general_ludd.secrets.manager import SecretsManager, SecretsUnavailableError
 
 if TYPE_CHECKING:
-    from cryptography.hazmat.primitives import hashes as hashes_module
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM as AESGCMClass
     from cryptography.hazmat.primitives.kdf.hkdf import HKDF as HKDFClass
 
