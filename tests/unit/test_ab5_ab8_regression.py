@@ -113,7 +113,7 @@ class TestAB5ToolLoopToThread:
         )
         # First positional arg of the to_thread payload must be the gateway's
         # bound call_model — that is the whole point of the fix.
-        fn, args, kwargs = to_thread_calls[0]
+        fn, _args, kwargs = to_thread_calls[0]
         assert fn == gateway.call_model, (
             "asyncio.to_thread was called, but not with gateway.call_model as "
             f"its first argument (got {fn!r})."

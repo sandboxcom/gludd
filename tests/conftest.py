@@ -236,8 +236,9 @@ def _reset_observability_singletons(monkeypatch: pytest.MonkeyPatch) -> None:
     import general_ludd.observability.timing as timing
     monkeypatch.setattr(timing, "_default_tracker", None, raising=False)
 
-    import general_ludd.observability.metrics_exporter as me
     from prometheus_client import CollectorRegistry
+
+    import general_ludd.observability.metrics_exporter as me
     monkeypatch.setattr(me, "_metrics_exporter", None, raising=False)
     monkeypatch.setattr(me, "_current_trace_id", {}, raising=False)
     monkeypatch.setattr(

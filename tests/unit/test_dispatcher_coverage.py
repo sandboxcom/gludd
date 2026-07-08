@@ -32,7 +32,6 @@ from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
 
-
 # ---------------------------------------------------------------------------
 # Helpers (mirrors the patterns in test_dispatcher.py)
 # ---------------------------------------------------------------------------

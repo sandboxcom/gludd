@@ -23,8 +23,6 @@ Notes
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -42,7 +40,6 @@ from general_ludd.event_loop.lease import (
     release_lease,
 )
 from general_ludd.schemas.todo import TodoStatus
-
 
 # ---------------------------------------------------------------------------
 # Shared async-engine / session fixtures
