@@ -1,0 +1,10 @@
+[project]
+name = "ext-test"
+version = "0.1.0"
+description = "WP-E3 fixture: non-make Python project for e2e lifecycle test"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100

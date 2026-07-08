@@ -35,6 +35,11 @@ dependencies = [
     "psutil>=6.0.0",
     "tenacity>=9.0.0",
     "ansible-core>=2.16.0",
+    # Subprocess backend for process_isolation: when
+    # ProcessIsolationConfig.enabled=True, CoreAnsibleRunner delegates to
+    # ansible-runner which spawns podman/bwrap for real container confinement
+    # (finding #1 real fix — replaces the Wave 13 fail-closed guard).
+    "ansible-runner>=2.4.0",
     "jinja2>=3.1.0",
     "jsonschema>=4.21",
     "pyyaml>=6.0.2",
@@ -166,7 +171,7 @@ disallow_untyped_defs = true
 exclude = ["src/general_ludd/security/sandboxes/.*"]
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -180,7 +185,7 @@ disable_error_code = ["type-arg"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --ignore=tests/fixtures"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # UNIVERSAL per-test stall guard: no single test may hang the suite. Applies to

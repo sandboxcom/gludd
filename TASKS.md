@@ -860,7 +860,7 @@ Four-phase extraction plan (B3.1.x):
 
 ### beta.3.2 — Coverage lifting
 
-- [ ] **beta.3.2 — Coverage lifting** — moved here from Phase SESSION-17. Lift test coverage to the gate threshold; strict-typing burn-down still open. Target the lowest-coverage modules surfaced by the `make test` coverage report.
+- [ ] **beta.3.2 — Coverage lifting** — moved here from Phase SESSION-17. Lift test coverage to the gate threshold; strict-typing burn-down still open. Target the lowest-coverage modules surfaced by the `make test` coverage report. **WP-C1 partial (Wave 15-16 `4273f676`):** coverage lifted for gateway + event_loop + dispatcher + db/repository; remaining modules pending.
 
 ### beta.3.3 — cast(Any) Protocol-based fixes
 
@@ -932,3 +932,51 @@ Wave 14 ledger. 21 commits landed in this wave spanning beta.3 Phase B completio
 - **Landed (docs/policy):** no-CI-poll-blocking AGENTS.md subsection (`5ecdf2a9`); gate-lite target (`f61ff202`).
 - **Pending (not in this wave):** commit-lock guardrail (todowrite-references-required commit block) — tracked as follow-up; the nothing-dropped / enforce-stop commit-block path remains active in the meantime.
 - **Fixture coverage:** A6 (logging-state), P1+P2 (singleton resets), P3 (env-write isolation + gate), P5 (_LANGUAGE_PARSERS cache) all landed as autouse fixtures; caplog migration (16 sites) landed. P4/P6-P9 remain as documented CI_GREEN_PLAN follow-ups.
+
+## Phase E — Project-runner polyglot detection (2026-07-08)
+
+Goal: make gludd detect and adapt to any project's toolchain (Python/Node/Go/Rust/Make) so the runner picks the right test/lint/build commands automatically. Sourced from STABILIZATION_PLAN WP-E.
+
+- [x] **WP-E1 — ToolchainDetector** — `src/general_ludd/project_runner/toolchain.py` detects pyproject.toml/package.json/go.mod/Cargo.toml/Makefile markers and returns a typed toolchain profile; 10 TDD tests cover each marker + mixed-stack detection + no-marker fallback. | evidence: commit 941aa80c; tests/unit/test_toolchain_detector.py 10 passed
+- [x] **WP-E2 — Engine _run_tests migration to adapter** — `ExecutionEngine._run_tests` migrated onto the `ToolchainAdapter` so test invocation routes through the detected toolchain (pytest/jest/go test/cargo test/make test) instead of a hardcoded pytest call. | evidence: commit 13646da0
+- [x] **WP-E-self-host — project.yml for gludd** — gludd self-hosts through its own ToolchainAdapter via `project.yml` declaring the Python toolchain; proves the detection/adapter path works on this repo. | evidence: commit ca44fa0a
+- [x] **WP-E3 — E2E test** — end-to-end test exercising a real polyglot project through the ToolchainDetector → ProjectCommandRunner path. Fixture at `tests/fixtures/external_pyproject/` (pyproject.toml-only, no Makefile); e2e test `tests/e2e/test_external_project_lifecycle.py` proves detection → profile → runner → pytest green + no make binary invoked + gludd self-host still uses make. | evidence: `make test-iso TESTFILE='tests/e2e/test_external_project_lifecycle.py'` 4 passed in 1.59s
+
+## Phase F — Documentation (2026-07-08)
+
+Goal: close the documentation gaps surfaced by the stabilization audit. Sourced from STABILIZATION_PLAN WP-F.
+
+- [x] **WP-F1 — CONFIG_REFERENCE.md** — `docs/CONFIG_REFERENCE.md` documenting every daemon/env config key with types, defaults, and descriptions; co-landed with WP-C1 dispatcher/db coverage. | evidence: commit 4273f676
+- [x] **WP-F2 — CONTRIBUTING.md** — `CONTRIBUTING.md` at repo root documenting the dev workflow (make targets, TDD policy, gate, commit conventions, branch lifecycle). | evidence: commit 48dc3896
+
+## Phase Wave 15-16 — Guardrails + Phase E + Phase F + coverage (2026-07-08)
+
+Wave 15-16 ledger. Commits landed spanning the commit-lock + priority-stacking guardrails, Phase E polyglot detection (WP-E1 + WP-E2 + self-host), Phase F documentation (WP-F1 + WP-F2), and WP-C1 coverage lifting.
+
+### Guardrails
+
+- [x] **W15-GUARD-commit-lock** — `953b386e` guardrail(commit): flock-based serialization on all commit targets + enforce-commit-lock plugin preventing parallel-commit races — `flock` serialization on every commit-shaped make target so two concurrent commits cannot interleave; `.opencode/plugin/enforce-commit-lock.ts` plugin denies commits that bypass the lock. | evidence: commit 953b386e
+- [x] **W15-GUARD-priority-stacking** — `953b386e` guardrail(policy): Priority Stacking rule (AND not OR) codified — AGENTS.md "Priority Stacking" CRITICAL section + test pin; new instructions STACK on existing objectives rather than replacing them. | evidence: commit 953b386e; AGENTS.md Priority Stacking section; tests/unit/test_priority_stacking_rule.py
+
+### Phase E (polyglot detection)
+
+- [x] **W15-WP-E1** — `941aa80c` feat(project-runner): WP-E1 ToolchainDetector — pyproject/package.json/go.mod/Cargo.toml/Makefile marker detection + 10 TDD tests. | evidence: commit 941aa80c; tests/unit/test_toolchain_detector.py 10 passed
+- [x] **W15-WP-E2** — `13646da0` feat(engine): WP-E2 migrate _run_tests to adapter — ExecutionEngine._run_tests routes through ToolchainAdapter. | evidence: commit 13646da0
+- [x] **W15-WP-E-self-host** — `ca44fa0a` feat(self-host): project.yml for gludd — gludd self-hosts through its own ToolchainAdapter. | evidence: commit ca44fa0a
+
+### Phase F (documentation)
+
+- [x] **W15-WP-F1** — `4273f676` docs: WP-F1 CONFIG_REFERENCE.md — full config key reference. | evidence: commit 4273f676
+- [x] **W15-WP-F2** — `48dc3896` docs: WP-F2 CONTRIBUTING.md — dev workflow + conventions. | evidence: commit 48dc3896
+
+### Coverage (beta.3.2 WP-C1)
+
+- [x] **W15-WP-C1-partial** — `4273f676` test(dispatcher)+test(db): WP-C1 coverage — coverage lifted for gateway + event_loop + dispatcher + db/repository. | evidence: commit 4273f676
+
+### In flight
+
+- **WP-D3** — alembic migration drift fix (schema parity test landed `60a1121c`; triage of the drift items pending).
+
+### Docs
+
+- [x] **W16-DOCS-session** — `f689a004` docs: SESSION.md update — session state refreshed to Wave 15 HEAD. | evidence: commit f689a004
