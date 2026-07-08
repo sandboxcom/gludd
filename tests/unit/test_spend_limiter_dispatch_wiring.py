@@ -95,7 +95,8 @@ class TestSpendLimiterDispatchGate:
         # try_charge() is called with the projected cost and kind="token".
         _args, _kwargs = limiter.try_charge.call_args
         assert _kwargs.get("kind") == "token", "try_charge must be charged as kind='token'."
-        assert any("spend" in rec.getMessage().lower() or "deferring" in rec.getMessage().lower() for rec in caplog.records), (
+        messages = [rec.getMessage().lower() for rec in caplog.records]
+        assert any("spend" in m or "deferring" in m for m in messages), (
             "An over-budget dispatch must log a warning."
         )
 
