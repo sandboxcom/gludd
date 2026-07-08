@@ -144,7 +144,7 @@ class TestHotReloaderSkillsRefresh:
         assert "boom" in result["registry_error"]
         assert "registry_refreshed" not in result
 
-    def test_project_gludd_skills_dir_included_by_handler(self, tmp_path: Path) -> None:
+    def test_project_gludd_skills_dir_included_by_handler(self, tmp_path: Path, monkeypatch) -> None:
         """POST /admin/reload wires the project .gludd/skills dir into HotReloader."""
         from fastapi.testclient import TestClient
 
@@ -173,14 +173,10 @@ class TestHotReloaderSkillsRefresh:
             app.state._project_gludd_dir = str(proj_gludd)
             app.state.GLUDD_ALLOW_NO_AUTH = True
             # Bypass auth middleware for tests
-            import os
-            os.environ["GLUDD_ALLOW_NO_AUTH"] = "1"
-            try:
-                with TestClient(app) as client:
-                    client.post("/admin/reload", json={"scope": "skills"})
-                    # May return any status; we care about skills_dirs
-            finally:
-                os.environ.pop("GLUDD_ALLOW_NO_AUTH", None)
+            monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+            with TestClient(app) as client:
+                client.post("/admin/reload", json={"scope": "skills"})
+                # May return any status; we care about skills_dirs
 
         assert captured_skills_dirs, "HotReloader.__init__ was never called"
         last_dirs = captured_skills_dirs[-1] or []
@@ -188,7 +184,7 @@ class TestHotReloaderSkillsRefresh:
             f"project .gludd/skills not in skills_dirs: {last_dirs}"
         )
 
-    def test_global_config_skills_subdir_used_not_root(self, tmp_path: Path) -> None:
+    def test_global_config_skills_subdir_used_not_root(self, tmp_path: Path, monkeypatch) -> None:
         """POST /admin/reload uses <config_dir>/skills, NOT <config_dir> root.
 
         A skill .md placed in config_dir/skills/ must appear in skills_dirs;
@@ -225,13 +221,9 @@ class TestHotReloaderSkillsRefresh:
             app.state._config_dir = str(config_dir)
             app.state._project_gludd_dir = None
             app.state.GLUDD_ALLOW_NO_AUTH = True
-            import os
-            os.environ["GLUDD_ALLOW_NO_AUTH"] = "1"
-            try:
-                with TestClient(app) as client:
-                    client.post("/admin/reload", json={"scope": "skills"})
-            finally:
-                os.environ.pop("GLUDD_ALLOW_NO_AUTH", None)
+            monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+            with TestClient(app) as client:
+                client.post("/admin/reload", json={"scope": "skills"})
 
         assert captured_skills_dirs, "HotReloader.__init__ was never called"
         last_dirs = captured_skills_dirs[-1] or []
@@ -245,7 +237,7 @@ class TestHotReloaderSkillsRefresh:
             f"config_dir root was incorrectly added to skills_dirs: {last_dirs}"
         )
 
-    def test_global_config_skills_subdir_absent_adds_nothing(self, tmp_path: Path) -> None:
+    def test_global_config_skills_subdir_absent_adds_nothing(self, tmp_path: Path, monkeypatch) -> None:
         """When config_dir/skills/ does not exist, no global skills entry is added."""
         from fastapi.testclient import TestClient
 
@@ -271,16 +263,13 @@ class TestHotReloaderSkillsRefresh:
             app.state._config_dir = str(config_dir)
             app.state._project_gludd_dir = None
             app.state.GLUDD_ALLOW_NO_AUTH = True
-            import os
-            os.environ["GLUDD_ALLOW_NO_AUTH"] = "1"
-            try:
-                with TestClient(app) as client:
-                    client.post("/admin/reload", json={"scope": "skills"})
-            finally:
-                os.environ.pop("GLUDD_ALLOW_NO_AUTH", None)
+            monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+            with TestClient(app) as client:
+                client.post("/admin/reload", json={"scope": "skills"})
 
         assert captured_skills_dirs, "HotReloader.__init__ was never called"
         last_dirs = captured_skills_dirs[-1] or []
+
         # Neither config_dir nor config_dir/skills should appear
         assert not any(str(config_dir) in d for d in last_dirs), (
             f"config_dir (or subdir) was added despite skills/ not existing: {last_dirs}"

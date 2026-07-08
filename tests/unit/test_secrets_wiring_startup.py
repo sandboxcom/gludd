@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import yaml
 
 from general_ludd.daemon import build_secrets_resolver, load_model_profiles
@@ -15,16 +13,13 @@ class TestBuildSecretsResolver:
         assert resolver is not None
         assert resolver.resolve("NONEXISTENT") is None
 
-    def test_env_resolver_reads_environ(self):
+    def test_env_resolver_reads_environ(self, monkeypatch):
         # S-1 fix: ambient-env resolution is restricted to allowlisted
         # credential names. A name matching the credential convention
         # (e.g. *_API_KEY) still resolves from os.environ.
-        os.environ["_GLUDD_TEST_API_KEY"] = "testval"  # pragma: allowlist secret
-        try:
-            resolver = build_secrets_resolver(openbao_config=None)
-            assert resolver.resolve("_GLUDD_TEST_API_KEY") == "testval"
-        finally:
-            del os.environ["_GLUDD_TEST_API_KEY"]
+        monkeypatch.setenv("_GLUDD_TEST_API_KEY", "testval")
+        resolver = build_secrets_resolver(openbao_config=None)
+        assert resolver.resolve("_GLUDD_TEST_API_KEY") == "testval"
 
     def test_returns_env_resolver_when_openbao_disabled(self):
         from general_ludd.secrets.config import OpenBaoConfig

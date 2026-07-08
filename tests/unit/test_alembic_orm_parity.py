@@ -9,7 +9,6 @@ that table on the next schema change, which is a data-loss security finding.
 
 from __future__ import annotations
 
-import os
 import pathlib
 
 import pytest
@@ -24,7 +23,7 @@ def _collect_orm_tablenames() -> set[str]:
     return set(Base.metadata.tables.keys())
 
 
-def _run_migrations(db_path: str) -> None:
+def _run_migrations(db_path: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Run ``alembic upgrade head`` against an SQLite DB at *db_path*."""
     from alembic import command
     from alembic.config import Config as AlembicConfig
@@ -37,20 +36,16 @@ def _run_migrations(db_path: str) -> None:
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
 
     # DATABASE_URL env-var override (D-37): must NOT interfere with the
-    # explicit test URL, so pop it for the duration of the migration run.
-    restore = os.environ.pop("DATABASE_URL", None)
-    try:
-        command.upgrade(cfg, "head")
-    finally:
-        if restore is not None:
-            os.environ["DATABASE_URL"] = restore
+    # explicit test URL, so remove it for the duration of the migration run.
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    command.upgrade(cfg, "head")
 
 
 @pytest.fixture
-def migrated_db_path(tmp_path: pathlib.Path) -> str:
+def migrated_db_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> str:
     """Create a fresh SQLite DB, run all migrations, return its path."""
     db_path = str(tmp_path / "test_parity.db")
-    _run_migrations(db_path)
+    _run_migrations(db_path, monkeypatch)
     return db_path
 
 
@@ -112,12 +107,12 @@ class TestAlembicOrmParity:
                 f"{sorted(missing_cols)}."
             )
 
-    def test_migrations_are_idempotent(self, tmp_path: pathlib.Path) -> None:
+    def test_migrations_are_idempotent(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Running ``alembic upgrade head`` twice must not error."""
         db_path = str(tmp_path / "test_idempotent.db")
-        _run_migrations(db_path)
+        _run_migrations(db_path, monkeypatch)
         # Second run must succeed silently (no new tables to create).
-        _run_migrations(db_path)
+        _run_migrations(db_path, monkeypatch)
 
         # Verify the connection is still valid after double upgrade.
         # On SQLite, a broken migration would leave the file inconsistent

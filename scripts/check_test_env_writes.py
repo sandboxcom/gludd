@@ -21,7 +21,7 @@ from pathlib import Path
 # Matches `os.environ["X"] = "v"` or `os.environ['X'] = v` (bare writes only).
 # Deliberately does NOT match reads (os.environ.get / os.environ["X"] as rvalue),
 # pops (os.environ.pop), dels (del os.environ[...]), or monkeypatch.setenv.
-_BARE_WRITE_RE = re.compile(r'^[^#\n]*\bos\.environ\[\s*["\'][^"\']+["\']\s*\]\s*=')
+_BARE_WRITE_RE = re.compile(r'^[^#\n]*\bos\.environ\[\s*["\'][^"\']+["\']\s*\]\s*=(?!=)')
 
 ALLOWED_VIOLATIONS: frozenset[str] = frozenset()
 

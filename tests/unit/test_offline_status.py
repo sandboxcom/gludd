@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
 
@@ -18,27 +17,24 @@ class TestOfflineStatus:
         assert "platform" in info
         assert "cwd" in info
 
-    def test_gather_config_directory(self):
+    def test_gather_config_directory(self, monkeypatch):
         from general_ludd.cli import _gather_offline_status
 
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["GL_CONFIG_DIR"] = tmp
+            monkeypatch.setenv("GL_CONFIG_DIR", tmp)
             cf = Path(tmp) / "general-ludd.yml"
             cf.write_text("version: 1")
             cf2 = Path(tmp) / "other.yml"
             cf2.write_text("key: val")
-            try:
-                info = _gather_offline_status(config_dir=tmp)
-                assert "config_dir" in info
-                assert info["config_dir"] == tmp
-                assert "config_files" in info
-                assert len(info["config_files"]) >= 2
-                for f in info["config_files"]:
-                    assert "name" in f
-                    assert "path" in f
-                    assert "size_bytes" in f
-            finally:
-                del os.environ["GL_CONFIG_DIR"]
+            info = _gather_offline_status(config_dir=tmp)
+            assert "config_dir" in info
+            assert info["config_dir"] == tmp
+            assert "config_files" in info
+            assert len(info["config_files"]) >= 2
+            for f in info["config_files"]:
+                assert "name" in f
+                assert "path" in f
+                assert "size_bytes" in f
 
     def test_gather_filestore_info(self):
         from general_ludd.cli import _gather_offline_status

@@ -14,7 +14,6 @@ Coverage:
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -176,11 +175,10 @@ class TestLoadBacklog:
 class TestMainCLI:
     """Tests call main() with argv and check exit code / stdout."""
 
-    def _run(self, argv: list[str], backlog_path: Path) -> tuple[int, str]:
+    def _run(self, argv: list[str], backlog_path: Path, monkeypatch) -> tuple[int, str]:
         """Run main with env override; capture stdout."""
         import io
-        old_env = os.environ.get("GLUDD_MT_BACKLOG")
-        os.environ["GLUDD_MT_BACKLOG"] = str(backlog_path)
+        monkeypatch.setenv("GLUDD_MT_BACKLOG", str(backlog_path))
         captured = io.StringIO()
         old_stdout = sys.stdout
         sys.stdout = captured
@@ -188,120 +186,104 @@ class TestMainCLI:
             rc = main(argv)
         finally:
             sys.stdout = old_stdout
-            if old_env is None:
-                os.environ.pop("GLUDD_MT_BACKLOG", None)
-            else:
-                os.environ["GLUDD_MT_BACKLOG"] = old_env
         return rc, captured.getvalue()
 
     # --open-count
-    def test_open_count_all_open(self, tmp_path: Path) -> None:
+    def test_open_count_all_open(self, tmp_path: Path, monkeypatch) -> None:
         p = _write_backlog(tmp_path, [_make_item(status="open"), _make_item(status="open")])
-        rc, out = self._run(["--open-count"], p)
+        rc, out = self._run(["--open-count"], p, monkeypatch)
         assert rc == 0
         assert out.strip() == "2"
 
-    def test_open_count_all_done(self, tmp_path: Path) -> None:
+    def test_open_count_all_done(self, tmp_path: Path, monkeypatch) -> None:
         p = _write_backlog(tmp_path, [_make_item(status="done", evidence="sha")])
-        rc, out = self._run(["--open-count"], p)
+        rc, out = self._run(["--open-count"], p, monkeypatch)
         assert rc == 0
         assert out.strip() == "0"
 
-    def test_open_count_done_without_evidence_counted_as_open(self, tmp_path: Path) -> None:
+    def test_open_count_done_without_evidence_counted_as_open(self, tmp_path: Path, monkeypatch) -> None:
         p = _write_backlog(tmp_path, [_make_item(status="done", evidence="")])
-        rc, out = self._run(["--open-count"], p)
+        rc, out = self._run(["--open-count"], p, monkeypatch)
         assert rc == 0
         assert out.strip() == "1"
 
     # --list-open
-    def test_list_open_shows_non_done(self, tmp_path: Path) -> None:
+    def test_list_open_shows_non_done(self, tmp_path: Path, monkeypatch) -> None:
         items = [
             _make_item(id="mt-a", title="alpha", status="open"),
             _make_item(id="mt-b", title="beta", status="done", evidence="proof"),
             _make_item(id="mt-c", title="gamma", status="in_progress"),
         ]
         p = _write_backlog(tmp_path, items)
-        rc, out = self._run(["--list-open"], p)
+        rc, out = self._run(["--list-open"], p, monkeypatch)
         assert rc == 0
         assert "mt-a" in out
         assert "mt-c" in out
         assert "mt-b" not in out
 
-    def test_list_open_empty_when_all_done(self, tmp_path: Path) -> None:
+    def test_list_open_empty_when_all_done(self, tmp_path: Path, monkeypatch) -> None:
         p = _write_backlog(tmp_path, [_make_item(status="done", evidence="sha")])
-        rc, out = self._run(["--list-open"], p)
+        rc, out = self._run(["--list-open"], p, monkeypatch)
         assert rc == 0
         assert out.strip() == ""
 
     # --assert-done
-    def test_assert_done_exits_0_when_all_done(self, tmp_path: Path) -> None:
+    def test_assert_done_exits_0_when_all_done(self, tmp_path: Path, monkeypatch) -> None:
         p = _write_backlog(tmp_path, [_make_item(status="done", evidence="abc123")])
-        rc, _ = self._run(["--assert-done"], p)
+        rc, _ = self._run(["--assert-done"], p, monkeypatch)
         assert rc == 0
 
-    def test_assert_done_exits_1_when_open_remain(self, tmp_path: Path) -> None:
+    def test_assert_done_exits_1_when_open_remain(self, tmp_path: Path, monkeypatch) -> None:
         p = _write_backlog(tmp_path, [_make_item(status="open")])
-        rc, _ = self._run(["--assert-done"], p)
+        rc, _ = self._run(["--assert-done"], p, monkeypatch)
         assert rc == 1
 
-    def test_assert_done_exits_1_when_in_progress(self, tmp_path: Path) -> None:
+    def test_assert_done_exits_1_when_in_progress(self, tmp_path: Path, monkeypatch) -> None:
         p = _write_backlog(tmp_path, [_make_item(status="in_progress")])
-        rc, _ = self._run(["--assert-done"], p)
+        rc, _ = self._run(["--assert-done"], p, monkeypatch)
         assert rc == 1
 
-    def test_assert_done_exits_1_when_done_without_evidence(self, tmp_path: Path) -> None:
+    def test_assert_done_exits_1_when_done_without_evidence(self, tmp_path: Path, monkeypatch) -> None:
         """done + no evidence is treated as open -> exit 1."""
         p = _write_backlog(tmp_path, [_make_item(status="done", evidence="")])
-        rc, _ = self._run(["--assert-done"], p)
+        rc, _ = self._run(["--assert-done"], p, monkeypatch)
         assert rc == 1
 
-    def test_assert_done_exits_0_empty_backlog(self, tmp_path: Path) -> None:
+    def test_assert_done_exits_0_empty_backlog(self, tmp_path: Path, monkeypatch) -> None:
         """Zero items = vacuously all done."""
         p = _write_backlog(tmp_path, [])
-        rc, _ = self._run(["--assert-done"], p)
+        rc, _ = self._run(["--assert-done"], p, monkeypatch)
         assert rc == 0
 
     # malformed file -> exit 2
-    def test_malformed_file_exits_2(self, tmp_path: Path) -> None:
+    def test_malformed_file_exits_2(self, tmp_path: Path, monkeypatch) -> None:
         p = tmp_path / "broken.json"
         p.write_text("{oops", encoding="utf-8")
-        rc, _ = self._run(["--assert-done"], p)
+        rc, _ = self._run(["--assert-done"], p, monkeypatch)
         assert rc == 2
 
-    def test_missing_file_exits_2(self, tmp_path: Path) -> None:
+    def test_missing_file_exits_2(self, tmp_path: Path, monkeypatch) -> None:
         p = tmp_path / "ghost.json"
-        rc, _ = self._run(["--assert-done"], p)
+        rc, _ = self._run(["--assert-done"], p, monkeypatch)
         assert rc == 2
 
     # env-var path override
-    def test_env_var_path_override(self, tmp_path: Path) -> None:
+    def test_env_var_path_override(self, tmp_path: Path, monkeypatch) -> None:
         """GLUDD_MT_BACKLOG must resolve to the temp file."""
         custom_path = tmp_path / "custom_backlog.json"
         custom_path.write_text(
             json.dumps({"version": "1", "items": [_make_item(status="done", evidence="ev")]}),
             encoding="utf-8",
         )
-        old = os.environ.get("GLUDD_MT_BACKLOG")
-        os.environ["GLUDD_MT_BACKLOG"] = str(custom_path)
-        try:
-            items, errors = load_backlog()
-            assert errors == []
-            assert open_count(items) == 0
-        finally:
-            if old is None:
-                os.environ.pop("GLUDD_MT_BACKLOG", None)
-            else:
-                os.environ["GLUDD_MT_BACKLOG"] = old
+        monkeypatch.setenv("GLUDD_MT_BACKLOG", str(custom_path))
+        items, errors = load_backlog()
+        assert errors == []
+        assert open_count(items) == 0
 
     # canonical repo backlog loads cleanly
-    def test_repo_backlog_loads_without_errors(self) -> None:
+    def test_repo_backlog_loads_without_errors(self, monkeypatch) -> None:
         """The seeded scripts/multitasking_backlog.json must be schema-valid."""
-        # Unset any env override to use the repo default
-        old = os.environ.pop("GLUDD_MT_BACKLOG", None)
-        try:
-            items, errors = load_backlog()
-            assert errors == [], f"Repo backlog has schema errors: {errors}"
-            assert len(items) > 0, "Repo backlog must have at least one item"
-        finally:
-            if old is not None:
-                os.environ["GLUDD_MT_BACKLOG"] = old
+        monkeypatch.delenv("GLUDD_MT_BACKLOG", raising=False)
+        items, errors = load_backlog()
+        assert errors == [], f"Repo backlog has schema errors: {errors}"
+        assert len(items) > 0, "Repo backlog must have at least one item"

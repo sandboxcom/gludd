@@ -80,24 +80,20 @@ class TestReadyzEndpoint:
                 resp = client.get("/healthz")
                 assert resp.status_code == 200
 
-    def test_readyz_is_in_public_paths(self):
+    def test_readyz_is_in_public_paths(self, monkeypatch):
         """readyz must be reachable without a PSK (same policy as healthz)."""
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
             return_value=MagicMock(),
         ):
-            import os
+            monkeypatch.setenv("GLUDD_PSK", "test-secret-psk")
 
-            os.environ["GLUDD_PSK"] = "test-secret-psk"
-            try:
-                from general_ludd.daemon import create_daemon_app
+            from general_ludd.daemon import create_daemon_app
 
-                app = create_daemon_app(tick_interval=0.01)
-                with TestClient(app) as client:
-                    resp = client.get("/readyz")
-                    # Must not return 401 — should be 200 or 503
-                    assert resp.status_code in (200, 503), (
-                        f"/readyz returned {resp.status_code} — it may be behind PSK auth"
-                    )
-            finally:
-                del os.environ["GLUDD_PSK"]
+            app = create_daemon_app(tick_interval=0.01)
+            with TestClient(app) as client:
+                resp = client.get("/readyz")
+                # Must not return 401 — should be 200 or 503
+                assert resp.status_code in (200, 503), (
+                    f"/readyz returned {resp.status_code} — it may be behind PSK auth"
+                )

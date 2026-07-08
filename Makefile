@@ -308,6 +308,9 @@ gate: check-skills-frontmatter
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
 	fi
+	@echo "=== GATE PHASE: env-writes ==="
+	@printf "env-writes " >> .gate-status
+	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
 	@echo "=== GATE PHASE: typecheck ==="
 	@printf "typecheck " >> .gate-status
 	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \

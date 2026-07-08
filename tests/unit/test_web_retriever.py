@@ -56,29 +56,23 @@ class TestWebRetrieverFetch:
 
         assert result.title is None
 
-    def test_domain_allowlist_blocks_disallowed(self) -> None:
-        os.environ["GLUDD_WEB_FETCH_ALLOWED_DOMAINS"] = "example.com,trusted.org"
-        try:
-            retriever = WebRetriever()
-            with pytest.raises(ValueError, match="not in the web fetch allowlist"):
-                retriever.fetch_web_page("https://evil.com/page")
-        finally:
-            del os.environ["GLUDD_WEB_FETCH_ALLOWED_DOMAINS"]
+    def test_domain_allowlist_blocks_disallowed(self, monkeypatch) -> None:
+        monkeypatch.setenv("GLUDD_WEB_FETCH_ALLOWED_DOMAINS", "example.com,trusted.org")
+        retriever = WebRetriever()
+        with pytest.raises(ValueError, match="not in the web fetch allowlist"):
+            retriever.fetch_web_page("https://evil.com/page")
 
-    def test_domain_allowlist_allows_whitelisted(self) -> None:
+    def test_domain_allowlist_allows_whitelisted(self, monkeypatch) -> None:
         html = "<html><body>trusted</body></html>"
         mock_response = io.BytesIO(html.encode("utf-8"))
         mock_response.status = 200
         mock_response.headers = {}
 
-        os.environ["GLUDD_WEB_FETCH_ALLOWED_DOMAINS"] = "example.com,trusted.org"
-        try:
-            with patch("urllib.request.urlopen", return_value=mock_response):
-                retriever = WebRetriever()
-                result = retriever.fetch_web_page("https://trusted.org/page")
-            assert result.status_code == 200
-        finally:
-            del os.environ["GLUDD_WEB_FETCH_ALLOWED_DOMAINS"]
+        monkeypatch.setenv("GLUDD_WEB_FETCH_ALLOWED_DOMAINS", "example.com,trusted.org")
+        with patch("urllib.request.urlopen", return_value=mock_response):
+            retriever = WebRetriever()
+            result = retriever.fetch_web_page("https://trusted.org/page")
+        assert result.status_code == 200
 
     def test_empty_allowlist_allows_all(self) -> None:
         html = "<html><body>anything</body></html>"
@@ -148,14 +142,10 @@ class TestWebRetrieverFetch:
         retriever = WebRetriever()
         assert retriever.allowed_domains() == []
 
-    def test_allowed_domains_from_env(self) -> None:
-        import os
-        os.environ["GLUDD_WEB_FETCH_ALLOWED_DOMAINS"] = "a.com,b.com,c.org"
-        try:
-            retriever = WebRetriever()
-            assert retriever.allowed_domains() == ["a.com", "b.com", "c.org"]
-        finally:
-            del os.environ["GLUDD_WEB_FETCH_ALLOWED_DOMAINS"]
+    def test_allowed_domains_from_env(self, monkeypatch) -> None:
+        monkeypatch.setenv("GLUDD_WEB_FETCH_ALLOWED_DOMAINS", "a.com,b.com,c.org")
+        retriever = WebRetriever()
+        assert retriever.allowed_domains() == ["a.com", "b.com", "c.org"]
 
     def test_fetch_with_response_headers(self) -> None:
         html = "<html><body>test</body></html>"
