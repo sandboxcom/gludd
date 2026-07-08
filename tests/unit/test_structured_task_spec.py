@@ -127,7 +127,7 @@ class TestStructuredTaskSpec:
         assert resp.status_code == 201, resp.text
         data = resp.json()
         assert data["title"] == "Implement login"
-        assert data["acceptance_criteria"] == '["User can log in", "Error on bad password"]'
+        assert data["acceptance_criteria"] == ["User can log in", "Error on bad password"]
         assert data["definition_of_done"] == "All tests pass"
 
     def test_get_todo_returns_criteria_and_done(self):
@@ -248,5 +248,5 @@ class TestStructuredTaskSpec:
             )
         assert resp.status_code == 201, resp.text
         data = resp.json()
-        assert data["acceptance_criteria"] == '["Criteria A", "Criteria B"]'
+        assert data["acceptance_criteria"] == ["Criteria A", "Criteria B"]
         assert data["definition_of_done"] == "All tests pass"

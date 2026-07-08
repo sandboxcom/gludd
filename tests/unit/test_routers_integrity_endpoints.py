@@ -300,7 +300,8 @@ class TestSelfTest:
         mock_proc.returncode = 0
         mock_proc.stderr = ""
 
-        with patch("general_ludd.routers.integrity.os.getcwd", return_value=str(tmp_path)), \
+        with patch("subprocess.run", return_value=mock_proc), \
+             patch("general_ludd.routers.integrity.os.getcwd", return_value=str(tmp_path)), \
              patch("general_ludd.routers.integrity.BinaryPathResolver") as mock_resolver_class:
             mock_resolver = MagicMock()
             mock_resolver.is_available.return_value = True

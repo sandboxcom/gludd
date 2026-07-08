@@ -184,7 +184,8 @@ class TestGPUMetricsCollectorMockedIntegration:
                 assert ep.gpu_mem_util == pytest.approx(45.0)
                 assert ep.gpu_temp_c == pytest.approx(68.0)
             finally:
-                importlib.reload(gm)
+                pass
+        importlib.reload(gm)
 
     def test_multi_gpu_collect_all(self):
         mock_nvml = _make_mock_nvml(
@@ -206,7 +207,8 @@ class TestGPUMetricsCollectorMockedIntegration:
                 assert all_metrics[2].gpu_sm_util_pct == pytest.approx(50.0)
                 assert all_metrics[3].gpu_sm_util_pct == pytest.approx(95.0)
             finally:
-                importlib.reload(gm)
+                pass
+        importlib.reload(gm)
 
     def test_multi_gpu_all_registered_in_tracker(self):
         mock_nvml = _make_mock_nvml(gpu_count=3)
@@ -231,7 +233,8 @@ class TestGPUMetricsCollectorMockedIntegration:
                     assert ep_report["gpu_sm_util"] == pytest.approx(75.0)
                     assert ep_report["gpu_mem_util"] == pytest.approx(50.0)
             finally:
-                importlib.reload(gm)
+                pass
+        importlib.reload(gm)
 
     def test_graceful_degradation_on_single_gpu_error(self):
         mock_nvml = mock.MagicMock()
@@ -257,7 +260,8 @@ class TestGPUMetricsCollectorMockedIntegration:
                     all_metrics = gm.GPUMetricsCollector.collect_all_gpu_metrics()
                     assert all_metrics == []
             finally:
-                importlib.reload(gm)
+                pass
+        importlib.reload(gm)
 
     def test_shutdown_is_idempotent(self):
         GPUMetricsCollector.shutdown()
@@ -276,7 +280,8 @@ class TestGPUMetricsCollectorMockedIntegration:
                 gm.GPUMetricsCollector.shutdown()
                 mock_nvml.nvmlShutdown.assert_called_once()
             finally:
-                importlib.reload(gm)
+                pass
+        importlib.reload(gm)
 
 
 # ---------------------------------------------------------------------------

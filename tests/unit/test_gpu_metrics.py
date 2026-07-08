@@ -74,7 +74,8 @@ class TestGPUMetricsCollectorInaccessible:
                 result = gm.GPUMetricsCollector.collect_gpu_metrics()
                 assert result.gpu_sm_util_pct == 0.0
             finally:
-                importlib.reload(gm)
+                pass
+        importlib.reload(gm)
 
 
 class TestGPUMetricsCollectorMocked:
@@ -124,7 +125,8 @@ class TestGPUMetricsCollectorMocked:
                 gm.GPUMetricsCollector.shutdown()
                 mock_nvml.nvmlShutdown.assert_called_once()
             finally:
-                importlib.reload(gm)
+                pass
+        importlib.reload(gm)
 
     def test_collect_gpu_metrics_failure_returns_zeros(self):
         mock_nvml = mock.MagicMock()
@@ -141,7 +143,8 @@ class TestGPUMetricsCollectorMocked:
                 result = gm.GPUMetricsCollector.collect_gpu_metrics()
                 assert result.gpu_sm_util_pct == 0.0
             finally:
-                importlib.reload(gm)
+                pass
+        importlib.reload(gm)
 
 
 class TestComputeEndpointGPUFields:

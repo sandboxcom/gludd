@@ -7,6 +7,7 @@ pattern-list growth, and the ratio of state-based vs vocabulary-based checks.
 """
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -202,6 +203,12 @@ class TestProcessChainLength:
 class TestGuardrailEffectivenessRatio:
     """Verify guardrails produce observable state (not dead weight)."""
 
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="opencode plugin runtime not active under pure pytest; "
+        "/tmp/gludd-session-start.json is written by enforce-session-start.ts "
+        "tool.execute.before hook during a live opencode session",
+    )
     def test_session_start_plugin_produces_state(self):
         """Session-start plugin must write its state file."""
         state_path = Path("/tmp/gludd-session-start.json")
@@ -211,6 +218,12 @@ class TestGuardrailEffectivenessRatio:
             "fires. A registered plugin with no state file is a dead registration."
         )
 
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="opencode plugin runtime not active under pure pytest; "
+        "/tmp/gludd-task-deadlines.json is written by enforce-deadline.ts "
+        "tool.execute.before hook during a live opencode session",
+    )
     def test_deadline_plugin_tracks_tasks(self):
         """Deadline plugin must write valid JSON state file."""
         state_path = Path("/tmp/gludd-task-deadlines.json")

@@ -14,9 +14,12 @@ This test validates:
 """
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import ClassVar
+
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OPENCODE_CONFIG = PROJECT_ROOT / "opencode.json"
@@ -131,6 +134,12 @@ class TestDeadHookSurfacesDetected:
 class TestHooksActuallyFire:
     """Verify hooks produce runtime side effects, proving they are alive."""
 
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true",
+        reason="opencode plugin runtime not active under pure pytest; "
+        "/tmp/gludd-stop-text-complete-count.json is written by the text.complete "
+        "hook during a live opencode session",
+    )
     def test_text_complete_fires(self):
         """text.complete must produce a fire-counter file."""
         counter_path = Path("/tmp/gludd-stop-text-complete-count.json")
