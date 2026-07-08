@@ -717,6 +717,10 @@ git-rm:
 	@[ -n "$(FILES)" ] || { echo "Usage: make git-rm FILES='path ...'"; exit 1; }
 	@git rm -r $(FILES) && echo "git-removed: $(FILES)"
 
+git-rm-cached:
+	@[ -n "$(FILES)" ] || { echo "Usage: make git-rm-cached FILES='path ...'"; exit 1; }
+	@git rm --cached $(FILES) && echo "untracked: $(FILES)"
+
 git-mv:
 	@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { echo "Usage: make git-mv FROM='old' TO='new'"; exit 1; }
 	@mkdir -p "$$(dirname "$(TO)")"

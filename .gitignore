@@ -23,6 +23,7 @@ build/
 ci-attempt-logs/
 .test-summary
 .secrets.baseline
+.game-audit-report.json
 
 gludd-dist.tar.gz
 
