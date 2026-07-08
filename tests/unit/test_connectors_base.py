@@ -345,7 +345,7 @@ def test_normalized_record_logs_warning_on_non_finite(
     # Coercion must never be silent (observability invariant).
     with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
         normalized_record(source="s", kind="metrics", value=float("nan"))
-    assert any("non-finite" in r.message for r in caplog.records)
+    assert any("non-finite" in r.getMessage() for r in caplog.records)
 
 
 def test_finite_or_none_direct() -> None:
@@ -375,7 +375,7 @@ def test_find_caps_unbounded_result_set_and_warns(
     # Capped at the per-source limit (10_000), not the full flood.
     assert len(results) == 10_000
     # Truncation is logged, never silent.
-    assert any("truncated" in r.message for r in caplog.records)
+    assert any("truncated" in r.getMessage() for r in caplog.records)
 
 
 def test_find_caps_across_multiple_sources(caplog: pytest.LogCaptureFixture) -> None:
@@ -392,7 +392,7 @@ def test_find_caps_across_multiple_sources(caplog: pytest.LogCaptureFixture) -> 
 
     # 2 sources x 10_000 per-source cap = 20_000 total.
     assert len(results) == 20_000
-    assert any("truncated" in r.message for r in caplog.records)
+    assert any("truncated" in r.getMessage() for r in caplog.records)
 
 
 def test_find_under_cap_returns_all_without_warning(
@@ -407,4 +407,4 @@ def test_find_under_cap_returns_all_without_warning(
         results = obs.find({"q": "x"})
 
     assert len(results) == 5
-    assert not any("truncated" in r.message for r in caplog.records)
+    assert not any("truncated" in r.getMessage() for r in caplog.records)

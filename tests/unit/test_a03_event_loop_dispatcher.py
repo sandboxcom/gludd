@@ -99,7 +99,7 @@ class TestEventLoopNoDispatcherWarns:
                     "TEST-JOB",
                 )
 
-        assert any("no dispatcher" in r.message.lower() for r in caplog.records)
+        assert any("no dispatcher" in r.getMessage().lower() for r in caplog.records)
 
 
 class TestPerTurnCap:

@@ -234,7 +234,7 @@ def test_no_allowlist_preserves_behavior_and_warns(monkeypatch, caplog) -> None:
     mock_post.assert_called_once()
     assert mock_post.call_args[1]["headers"]["Authorization"] == "Bearer secret123"
     assert results[0].success is True
-    assert any("UNRESTRICTED" in rec.message for rec in caplog.records)
+    assert any("UNRESTRICTED" in rec.getMessage() for rec in caplog.records)
 
 
 def test_allowlist_does_not_bypass_ssrf_guard(monkeypatch) -> None:

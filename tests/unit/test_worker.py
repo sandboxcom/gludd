@@ -179,7 +179,7 @@ class TestWorkerApp:
                 })
                 assert resp.status_code == 200
             for record in caplog.records:
-                assert "secret/db_password" not in record.message
+                assert "secret/db_password" not in record.getMessage()
 
     @pytest.mark.asyncio
     async def test_worker_correlation_ids_in_responses(self, transport):

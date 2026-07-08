@@ -512,7 +512,7 @@ def test_apply_warns_when_net_hosts_without_ports(
     assert handle.extra["unhandled_net_hosts"] == ["internal.svc"]
     rs = _FakeRuleset.instances[-1]
     assert rs.allowed_nets == []
-    assert any("hostname" in r.message.lower() for r in caplog.records)
+    assert any("hostname" in r.getMessage().lower() for r in caplog.records)
 
 
 def test_apply_warns_when_kernel_abi_below_net_support(
@@ -547,7 +547,7 @@ def test_apply_warns_when_kernel_abi_below_net_support(
     assert handle.applied is True
     rs = _FakeRuleset.instances[-1]
     assert rs.allowed_nets == []
-    assert any("does not support net rules" in r.message for r in caplog.records)
+    assert any("does not support net rules" in r.getMessage() for r in caplog.records)
 
 
 def test_apply_handles_file_rule_exception(
@@ -593,7 +593,7 @@ def test_apply_handles_file_rule_exception(
     assert "/tmp/good/" in prefixes
     assert "/badpath/" not in prefixes
     assert handle.extra["allowed_paths"] == ["/tmp/good/"]
-    assert any("could not allow" in r.message for r in caplog.records)
+    assert any("could not allow" in r.getMessage() for r in caplog.records)
 
 
 def test_apply_handles_net_rule_exception(
@@ -629,7 +629,7 @@ def test_apply_handles_net_rule_exception(
     assert handle.applied is True
     # The two good ports are recorded; 666 was skipped.
     assert sorted(handle.extra["allowed_ports"]) == [80, 443]
-    assert any("could not allow port 666" in r.message for r in caplog.records)
+    assert any("could not allow port 666" in r.getMessage() for r in caplog.records)
 
 
 def test_apply_skips_file_cap_with_no_path_prefix(

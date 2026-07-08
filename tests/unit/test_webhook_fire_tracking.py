@@ -85,7 +85,7 @@ async def test_failed_webhook_is_tracked_then_cleaned_up_and_logged(monkeypatch,
     # The Future was tracked and then removed by the done-callback.
     assert hs._pending_webhooks == set()
     # The failure was surfaced to operators, not swallowed.
-    assert any("Webhook delivery failed" in r.message for r in caplog.records)
+    assert any("Webhook delivery failed" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio

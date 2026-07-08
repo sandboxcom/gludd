@@ -55,7 +55,7 @@ class TestBroadcastReload:
         # Must have produced an ERROR-level log mentioning 401 and the worker
         error_records = [rec for rec in caplog.records if rec.levelno == logging.ERROR]
         assert error_records, "Expected at least one ERROR log for 401"
-        assert "401" in error_records[0].message or "401" in str(error_records[0].args)
+        assert "401" in error_records[0].getMessage() or "401" in str(error_records[0].args)
 
     def test_non_200_non_401_yields_http_status_error(self):
         broadcaster, _ = _make_broadcaster(503)
@@ -96,7 +96,7 @@ class TestBroadcastModelUpdate:
 
         error_records = [rec for rec in caplog.records if rec.levelno == logging.ERROR]
         assert error_records, "Expected at least one ERROR log for 401"
-        assert "401" in error_records[0].message or "401" in str(error_records[0].args)
+        assert "401" in error_records[0].getMessage() or "401" in str(error_records[0].args)
 
     def test_non_200_non_401_yields_http_status_error(self):
         broadcaster, _ = _make_broadcaster(404)

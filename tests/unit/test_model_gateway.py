@@ -587,7 +587,7 @@ class TestModelGatewayRedactsCredentials:
             gw.call_model("gpt4_redact", [{"role": "user", "content": "hi"}])
 
         for record in caplog.records:
-            assert "sk-super-secret-key-12345" not in record.message
+            assert "sk-super-secret-key-12345" not in record.getMessage()
 
 
 class TestCallModelByRoleStrictMode:
