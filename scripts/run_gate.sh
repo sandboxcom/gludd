@@ -42,8 +42,6 @@ fi
 # GATE_LOCK_FILE can be overridden in tests to give each test an isolated lock.
 LOCK_FILE="${GATE_LOCK_FILE:-/tmp/gludd-gate.lock}"
 BASETEMP_PREFIX="${GATE_BASETEMP_PREFIX:-/tmp/gludd-gate}"
-LOG_FILE=/tmp/gludd-test-gate.txt
-RC_FILE=/tmp/gludd-gate-rc
 STATUS_FILE=.gate-status
 FAILED_FILE=.gate-failed
 
@@ -141,6 +139,12 @@ fi
 # AFTER lock acquisition guarantees a rejected second invocation leaves no
 # basetemp dir behind at all (the rejection paths above exit before this line).
 BASETEMP=$(mktemp -d "${BASETEMP_PREFIX}-XXXXXX")
+
+# Per-invocation RC_FILE and LOG_FILE derived from the unique BASETEMP so
+# concurrent gate invocations (e.g. xdist-running the gate-concurrency tests)
+# cannot clobber each other's rc/log between write and read.
+RC_FILE="${BASETEMP}/rc"
+LOG_FILE="${BASETEMP}/gate.log"
 
 # ---------------------------------------------------------------------------
 # Run pytest (or the PYTEST_CMD stub for unit testing).
