@@ -25,6 +25,7 @@ or per-test ``os.environ`` patches:
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import shutil
 import socket
@@ -66,6 +67,25 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     if not os.environ.get("GLUDD_PSK", "").strip():
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_root_logger():
+    """Snapshot and restore the root logger around every test.
+
+    Prevents caplog pollution: tests that mutate the root logger's level,
+    propagate flag, or handler list (without restoring) leak into sibling
+    tests on the same xdist worker, causing caplog assertions to fail
+    nondeterministically.
+    """
+    root = logging.getLogger()
+    snap_level = root.level
+    snap_propagate = root.propagate
+    snap_handlers = list(root.handlers)
+    yield
+    root.level = snap_level
+    root.propagate = snap_propagate
+    root.handlers[:] = snap_handlers
 
 
 # --- Environmental test-skip probes -----------------------------------------
