@@ -1,0 +1,49 @@
+# gludd's own project.yml — self-hosting profile (Phase E / WP-E2).
+#
+# After the project_runner migrates from hardcoded make-target invocation to
+# detection via the ToolchainAdapter (docs/STABILIZATION_PLAN.md WP-E2), gludd
+# must still know how to run its OWN toolchain so `make dogfood` keeps passing.
+# This file is the single source of truth for that mapping: every logical check
+# gludd runs on itself funnels through `make <target>` so the make-gate (lint +
+# typecheck + collect + test) stays the real contract.
+#
+# Schema: see src/general_ludd/project_runner/profile.py. Same security model
+# as any external target repo — fail-closed exec allowlist, shlex-only parsing,
+# no shell metacharacters. Pinned by tests/unit/test_gludd_self_profile.py.
+
+name: gludd
+
+# argv[0] basenames gludd is permitted to run in its own tree. Every command
+# below goes through `make`, so only `make` is strictly required; the rest
+# (uv/python3/ruff/mypy/pytest) are allowlisted so future ToolchainAdapter
+# detection can invoke them directly without re-editing this file. Operators of
+# a fully-trusted checkout may instead set GLUDD_PROJECT_ALLOW_ANY_EXEC=1.
+allowed_exec:
+  - make
+  - uv
+  - python3
+  - ruff
+  - mypy
+  - pytest
+
+# Environment variables from gludd's own process that MAY pass through to these
+# commands. PATH/HOME/LANG are already in the runner's sanitized base env (see
+# runner._build_env); listing them is harmless and self-documenting. PYTHONPATH
+# is forwarded so the in-repo `src/` layout resolves under `python3 -m` direct
+# invocations. Gludd's secrets (ZAI_API_KEY, GLUDD_PSK, tokens) are NEVER listed
+# here — they are stripped by _build_env regardless.
+env_passthrough:
+  - PATH
+  - HOME
+  - LANG
+  - PYTHONPATH
+
+# Logical check name -> exact command. Every command is `make <target>` so the
+# canonical Makefile gate (AGENTS.md "Key Make Targets") remains the contract.
+# No shell metacharacters — composition lives in the Makefile, not here.
+commands:
+  test:      make test
+  lint:      make lint
+  typecheck: make typecheck
+  gate:      make gate
+  smoke:     make smoke
