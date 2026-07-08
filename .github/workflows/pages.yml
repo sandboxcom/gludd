@@ -4,7 +4,9 @@ on:
   push:
     branches: [master]
     paths:
-      - 'docs/presentation/deck/**'
+      - 'docs/presentation/**'
+      - 'scripts/build_deck.py'
+      - 'Makefile'
   workflow_dispatch:
 
 permissions:
@@ -24,6 +26,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install dependencies
+        run: make sync
+      - name: Build deck (regenerate HTML from live data)
+        run: make deck-build
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload deck artifact

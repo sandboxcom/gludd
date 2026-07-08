@@ -2702,6 +2702,11 @@ deck:
 	@echo "=== DECK BUILT ==="
 	@echo "View: make deck-serve  or  open $(DECK_DIR)/index.html"
 
+deck-build: deck
+	@echo "=== REGENERATING DECK HTML FROM LIVE DATA ==="
+	@$(UV) run python3 scripts/build_deck.py --build
+	@echo "=== DECK HTML REGENERATED ==="
+
 deck-serve:
 	@echo "Serving deck at http://localhost:8080/"
 	@$(UV) run python3 scripts/build_deck.py --serve

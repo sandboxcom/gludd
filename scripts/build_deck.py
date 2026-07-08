@@ -132,6 +132,27 @@ def build_deck_data() -> dict:
     return data
 
 
+def apply_tokens(html: str, data: dict) -> tuple[str, list[str]]:
+    """Replace {{TOKEN}} placeholders in HTML with live data values.
+
+    Returns the rewritten HTML and a list of tokens that were not found in
+    the template (so the caller can warn about stale tokens).
+    """
+    test_count = data.get("test_count", 0)
+    role_count = data.get("role_count", 0)
+    replacements = {
+        "{{VERSION}}": str(data.get("version", "unknown")),
+        "{{TEST_COUNT}}": f"{test_count:,}",
+        "{{ROLE_COUNT}}": str(role_count),
+        "{{GIT_SHA}}": str(data.get("git_sha", "unknown")),
+        "{{GENERATED_AT}}": str(data.get("generated_at", "")),
+    }
+    missing = [tok for tok in replacements if tok not in html]
+    for token, value in replacements.items():
+        html = html.replace(token, value)
+    return html, missing
+
+
 def honesty_check(html: str) -> list[str]:
     """Check deck HTML for honesty violations. Returns list of violations."""
     violations = []
@@ -160,6 +181,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build the gludd reveal.js deck")
     parser.add_argument("--serve", action="store_true", help="Start local server after build")
     parser.add_argument("--check", action="store_true", help="Run honesty check on deck HTML")
+    parser.add_argument("--build", action="store_true",
+                        help="Regenerate index.html by applying {{TOKEN}} placeholders from live data")
     parser.add_argument("--port", type=int, default=8080, help="Port for --serve")
     parser.add_argument("--data", action="store_true", help="Print deck data JSON to stdout")
     args = parser.parse_args()
@@ -181,6 +204,16 @@ def main() -> None:
         sys.exit(1)
 
     html = deck_path.read_text()
+
+    # When --build is set, rewrite index.html by replacing {{TOKEN}} placeholders
+    # with live values from the collected data. This is what makes the deck
+    # regenerate from data rather than staying static/stale.
+    if args.build:
+        html, missing = apply_tokens(html, data)
+        deck_path.write_text(html)
+        print(f"Deck HTML rewritten: {deck_path}")
+        if missing:
+            print(f"  WARNING: tokens not found in template: {', '.join(missing)}")
 
     # Honesty check
     violations = honesty_check(html)
