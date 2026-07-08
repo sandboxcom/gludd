@@ -8,8 +8,30 @@ SafeLoader via its existing except (ImportError, AttributeError) catch in
 ansible/module_utils/common/yaml.py:39-43.
 """
 
+import logging
+
+import pytest
 import yaml as _yaml_mod
 
 for _name in ("CSafeLoader", "CSafeDumper", "CParser"):
     _yaml_mod.__dict__.pop(_name, None)
 del _yaml_mod, _name
+
+
+@pytest.fixture(autouse=True)
+def _isolate_root_logger():
+    """Snapshot and restore the root logger around every test.
+
+    Prevents caplog pollution: tests that mutate the root logger's level,
+    propagate flag, or handler list (without restoring) leak into sibling
+    tests on the same xdist worker, causing caplog assertions to fail
+    nondeterministically.
+    """
+    root = logging.getLogger()
+    snap_level = root.level
+    snap_propagate = root.propagate
+    snap_handlers = list(root.handlers)
+    yield
+    root.level = snap_level
+    root.propagate = snap_propagate
+    root.handlers[:] = snap_handlers
