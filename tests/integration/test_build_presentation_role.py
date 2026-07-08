@@ -101,6 +101,43 @@ def test_role_runs_honesty_check() -> None:
     )
 
 
+def test_readme_documents_mermaid_preference() -> None:
+    """README.md must document Mermaid as the preferred diagram format.
+
+    Mermaid text diagrams are version-controlled, diff-friendly, and render in
+    the reveal.js deck without binary artifacts — preferred over SVG so the
+    deck stays editable in-tree.
+    """
+    readme = (ROLE_DIR / "README.md").read_text().lower()
+    assert "mermaid" in readme, (
+        "build_presentation README must document Mermaid as the preferred "
+        "diagram format (over SVG)"
+    )
+
+
+def test_tasks_validate_mermaid_syntax() -> None:
+    """tasks/main.yml must include a Mermaid syntax validation step.
+
+    The step is safe-by-default: it runs only when a Mermaid CLI is available
+    and skips otherwise (no hard dependency on the toolchain).
+    """
+    tasks = _load_role_tasks()
+    joined = json.dumps(tasks, default=str).lower()
+    assert "mermaid" in joined, (
+        "build_presentation tasks must include a Mermaid syntax validation "
+        "step (optional, skipped when the mermaid CLI is unavailable)"
+    )
+
+
+def test_defaults_declare_mermaid_toggle() -> None:
+    """defaults/main.yml must declare the mermaid validation toggle."""
+    defaults = _load_yaml(ROLE_DIR / "defaults" / "main.yml")
+    assert isinstance(defaults, dict)
+    assert "validate_mermaid_syntax" in defaults, (
+        "defaults/main.yml must define validate_mermaid_syntax"
+    )
+
+
 def test_molecule_scenario_exists() -> None:
     """The molecule scenario files exist so the role runs end-to-end."""
     assert MOLECULE_SCENARIO.is_dir(), f"missing molecule scenario dir: {MOLECULE_SCENARIO}"
