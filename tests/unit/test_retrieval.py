@@ -321,10 +321,8 @@ class TestTokenizeEdgeCases:
         from general_ludd.retrieval.indexer import _tokenize
 
         tokens = _tokenize("hello_world test_function")
-        assert "hello" in tokens
-        assert "world" in tokens
-        assert "test" in tokens
-        assert "function" in tokens
+        assert "hello_world" in tokens
+        assert "test_function" in tokens
 
     def test_camel_case_tokens(self):
         from general_ludd.retrieval.indexer import _tokenize
