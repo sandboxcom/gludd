@@ -71,21 +71,57 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _isolate_root_logger():
-    """Snapshot and restore the root logger around every test.
+    """Snapshot and restore the ENTIRE logging state around every test.
 
-    Prevents caplog pollution: tests that mutate the root logger's level,
+    Prevents caplog pollution: tests that mutate any logger's level,
     propagate flag, or handler list (without restoring) leak into sibling
-    tests on the same xdist worker, causing caplog assertions to fail
-    nondeterministically.
+    tests on the same xdist worker. The root-only snapshot was insufficient
+    because named child loggers (``general_ludd.secrets.migration``,
+    ``general_ludd.models.model_registry``, etc.) carry their own state that
+    doesn't reset when root is restored.
+
+    Implements the durable fix from
+    ``docs/audit/CI_GREEN_PLAN_2026-07-01.md`` Appendix A6: snapshot the
+    root logger, every existing named logger in
+    ``logging.Logger.manager.loggerDict`` (skipping ``PlaceHolder`` entries),
+    and the global ``logging.disable`` level at test entry; restore them
+    wholesale at exit. Loggers created *during* the test are reset to
+    defaults (``NOTSET`` level, ``propagate=True``, no handlers) so they
+    cannot pollute later tests either.
     """
     root = logging.getLogger()
-    snap_level = root.level
-    snap_propagate = root.propagate
-    snap_handlers = list(root.handlers)
+    snap_root = (root.level, root.propagate, list(root.handlers))
+
+    manager = logging.Logger.manager
+    logger_dict = manager.loggerDict
+    snap_named: dict[str, tuple[int, bool, list[logging.Handler]]] = {}
+    for name, logger in logger_dict.items():
+        if isinstance(logger, logging.PlaceHolder):
+            continue
+        snap_named[name] = (logger.level, logger.propagate, list(logger.handlers))
+
+    snap_disable = manager.disable if hasattr(manager, "disable") else 0
+
     yield
-    root.level = snap_level
-    root.propagate = snap_propagate
-    root.handlers[:] = snap_handlers
+
+    root.level, root.propagate, root.handlers[:] = snap_root
+
+    for name, (level, propagate, handlers) in snap_named.items():
+        logger = logger_dict.get(name)
+        if isinstance(logger, logging.Logger):
+            logger.level = level
+            logger.propagate = propagate
+            logger.handlers[:] = handlers
+
+    if hasattr(manager, "disable"):
+        manager.disable = snap_disable
+
+    for new_name in set(logger_dict.keys()) - set(snap_named.keys()):
+        new_logger = logger_dict.get(new_name)
+        if isinstance(new_logger, logging.Logger):
+            new_logger.level = logging.NOTSET
+            new_logger.propagate = True
+            new_logger.handlers.clear()
 
 
 # --- Environmental test-skip probes -----------------------------------------
