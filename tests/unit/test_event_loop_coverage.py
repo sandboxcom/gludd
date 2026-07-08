@@ -137,7 +137,7 @@ class TestReviewPhaseEscalatesOnFailure:
         reviewer = MagicMock()
         reviewer.review_return.side_effect = RuntimeError("reviewer blew up")
 
-        loop, mocks = _make_loop(reviewer=reviewer)
+        loop, _mocks = _make_loop(reviewer=reviewer)
 
         tr = MagicMock()
         tr.return_id = "RET-ESC-1"

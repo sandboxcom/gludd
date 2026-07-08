@@ -109,24 +109,42 @@ class ProjectProfile(BaseModel):
 def load_project_profile(workspace: str | Path, filename: str = "project.yml") -> ProjectProfile:
     """Load + validate ``project.yml`` from ``workspace``.
 
-    Raises :class:`ProjectProfileError` if the file is absent or malformed so
-    callers fail closed (no silent "run nothing").
+    Resolution order (per WP-E1):
+      1. Explicit ``project.yml`` — always wins when present.
+      2. Marker-file detection (:class:`ToolchainDetector`) — fallback for repos
+         that have not authored a ``project.yml``.
+      3. Raise :class:`ProjectProfileError` only when BOTH fail — never silently
+         produce a "run nothing" profile.
+
+    Raises :class:`ProjectProfileError` when neither yields a profile so callers
+    fail closed.
     """
     import yaml
 
     root = Path(workspace).resolve()
     path = root / filename
-    if not path.is_file():
-        raise ProjectProfileError(f"no {filename} in {root}")
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        raise ProjectProfileError(f"{path} is not valid YAML: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ProjectProfileError(f"{path} must be a mapping, got {type(data).__name__}")
-    try:
-        return ProjectProfile(**data)
-    except ProjectProfileError:
-        raise
-    except Exception as exc:  # pydantic ValidationError → our error type
-        raise ProjectProfileError(f"{path} is invalid: {exc}") from exc
+    if path.is_file():
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            raise ProjectProfileError(f"{path} is not valid YAML: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ProjectProfileError(
+                f"{path} must be a mapping, got {type(data).__name__}"
+            )
+        try:
+            return ProjectProfile(**data)
+        except ProjectProfileError:
+            raise
+        except Exception as exc:  # pydantic ValidationError → our error type
+            raise ProjectProfileError(f"{path} is invalid: {exc}") from exc
+    # No explicit project.yml → fall back to marker-file detection.
+    from general_ludd.project_runner.detect import ToolchainDetector
+
+    detected = ToolchainDetector.detect(root)
+    if detected is not None:
+        return detected
+    raise ProjectProfileError(
+        f"no {filename} in {root} and no recognizable toolchain marker "
+        f"(pyproject.toml/package.json/go.mod/Cargo.toml/Makefile) detected"
+    )
