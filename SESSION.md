@@ -5,43 +5,39 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-07 (mid PT) — Session 17 FINAL: type-safety sweep + plugin liveness completion + release-cut wiring. HEAD advanced `4e9d97fc` → `a907382e` (10 commits). Remote sandboxcom/master **VERIFIED** at `a907382e` (no unpushed commits). CI **PENDING** (run 28879470440, queued). Gate background running (PID 21186) — lint PASS, typecheck PASS (583 files), collect PASS; test phase showing failures (likely environmental — Slurm/Postgres/cloud). beta.2 tag NOT yet cut; artifact NOT verified. Prior: game-test lifecycle session (`4e9d97fc` → `e2efa91f`).
+- 2026-07-07 (late PT) — Session 18: CI failure fix wave + gunicorn architecture queued. HEAD advanced `a907382e` → `f2202cae`. Remote sandboxcom/master **VERIFIED** at `f2202cae` (no unpushed commits). CI run 28899396411 **RED** but **improving** — PSK fix reduced failures 147 → 13. Remaining 13 CI failures being fixed by parallel subagents (in flight). beta.2 **STILL NOT SHIPPED** — blocked on CI green. Gunicorn architecture work queued for beta.3 per user direction.
 
 ## Current Work
 
-- **HEAD: `a907382e`** on master (was `e2efa91f` mid-session, was `4e9d97fc` at session 16 end). Remote sandboxcom/master **VERIFIED** at `a907382e` via `make verify-remote BRANCH=master SHA=a907382e` — no unpushed commits.
-- **Gate: background running (PID 21186)** — lint PASS, typecheck PASS (583 files), collect PASS. Test phase has failures (likely environmental — Slurm/Postgres/cloud). Not yet terminal; `.gate-status` not final.
-- **CI: PENDING** — run 28879470440 for `a907382e`, queued at time of update. Cannot cut beta.2 until CI green.
-- **Local state**: version bumped to `0.1.0-beta.2` in pyproject.toml + `src/general_ludd/__init__.py` + README + CHANGELOG. Tag NOT pushed. `make verify-release-artifact TAG=v0.1.0-beta.2` NOT yet run (prerequisite: green CI + green gate).
+- **HEAD: `f2202cae`** on master (was `a907382e` at session 17 end). Remote sandboxcom/master **VERIFIED** at `f2202cae` via `make verify-remote BRANCH=master SHA=f2202cae` — no unpushed commits.
+- **CI: run 28899396411 RED but IMPROVING** — PSK fix WORKED: failures dropped 147 → 13. Still red; cannot cut beta.2 yet.
+  - Remaining 13 CI failures (categorized):
+    - 4 × slurm billing
+    - 3 × connectors_base caplog
+    - 2 × PSK caplog
+    - 2 × tokenizer
+    - 1 × MCPToolRegistry import
+    - 1 × structured_task_spec
+- **Fix wave IN FLIGHT** — parallel subagents dispatched to fix all 13 remaining failures. Not yet committed/pushed.
+- **Local state**: version is `0.1.0-beta.2` in pyproject.toml + `src/general_ludd/__init__.py` + README + CHANGELOG. Tag NOT pushed. `make verify-release-artifact TAG=v0.1.0-beta.2` NOT yet run (prerequisite: green CI).
 
-### Session 17 final 3 commits (this update):
-1. `7ec9f2dc` — feat: type-safety sweep (Any removal) + all parallel work (60 false-done tests, 12 heartbeat tests, 128 audit_roles tests, dispatch.py MAX_CALLS_PER_REQUEST fix, README STATUS-TABLE markers, verify-remote refs/heads pin, enforce-no-wait + enforce-no-suppressions heartbeats, enforce-session-start race fix, enforce-stop hasLocalWork bypass tests, gludd audit-plugins CLI + playbook, release-cut wiring)
-2. `66adb6a9` — chore: secrets baseline refresh + game-audit EOF + SESSION.md note
-3. `a907382e` — fix: baseten.py detect-secrets false positive (`# pragma: allowlist secret`)
+### Session 18 focus: CI failure triage + gunicorn architecture planning
+- PSK fix landed (reduced CI failures 147 → 13).
+- 13 remaining failures categorized; parallel subagents fixing each cluster.
+- Gunicorn architecture work queued for beta.3 per user direction (not started this session).
 
-### Earlier session 17 commits (already on `4e9d97fc` → `e2efa91f`):
-1. `38c9395a` — fix: game-test nondeterminism (10/10 PASS over 25 iterations)
-2. `4dbd14a2` — feat: full-play-lifecycle game tests for 12 games (84 check tuples, lifecycle helpers)
-3. `9b17e895` — feat: self-improvement routes to gludd workspace + failover e2e (13 integration + 13 failover tests)
-4. `5fcea068` — fix: lifecycle harness calls start() before ticking game state
-5. `2522d34b` — fix: ship-commit Makefile target + plugin-count reconciliation
-6. `e2efa91f` — chore: bump version to 0.1.0-beta.2 + changelog + README status
-7. `97446fce` — chore: SESSION.md update (session 16 tail)
-- **Session 16 focus (prior): Ansible enforcement port.** Enforcement infrastructure ported to Ansible: `gludd_push_guard` + `gludd_gate_check` modules, `enforcement_gate` + `watchdog_check` roles, 2 molecule scenarios, 3 remaining test fixes.
+### Prior session 17 deliverables (already on master):
+- type-safety sweep (Any removal), 348+ new tests (false-done, heartbeat, audit_roles), 10/10 plugin liveness probes, verify-remote refs/heads pin, release-cut wiring (require-ci-green step 0 + verify-release-artifact poll step 4), dispatch.py MAX_CALLS_PER_REQUEST duplicate fix, baseten detect-secrets false-positive marker. HEAD advanced `4e9d97fc` → `a907382e`.
 
-- **Session 15 focus (prior): enforcement guardrail hardening.** 10 categories of improvements, all committed:
-  1. **Push-rate guard with force-push tracker** — prevents CI cancellation loop; 5 tests.
-  2. **Gate completion marker** — `.gate-status` now requires terminal `=== GATE: PASSED ===` or `=== GATE: FAILED ===`; 5 tests.
-  3. **Daemon startup smoke test** — catches lifespan crashes (e.g., `_utilization_tracker` OOM); 3 tests.
-  4. **Runtime hook verification** — proves hooks actually fire in-process; 8 tests.
-  5. **Watchdog CI gate injection** — watchdog writes CI-pending/CI-green into `.gate-status`; 5 tests.
-  6. **Anti-wedge counter** — resets on resume + wraps at 100 (was saturating at 999).
-  7. **Enforce-stop.ts CI block** — `hasLocalWork` now includes CI-pending at line 748.
-  8. **Disengage capped at 1h** — plugin clamps to 5min max; was 9999999999999 (permanent).
-  9. **Watchdog `has_pending_work`** — includes `ci_pending` so text.complete blocks when CI is in flight.
-  10. **All enforcement state files reset** — clean state for next session.
+### Bugs being fixed (session 18 fix wave — IN FLIGHT):
+- [ ] 4 × slurm billing CI failures (subagent dispatched)
+- [ ] 3 × connectors_base caplog CI failures (subagent dispatched)
+- [ ] 2 × PSK caplog CI failures (subagent dispatched)
+- [ ] 2 × tokenizer CI failures (subagent dispatched)
+- [ ] 1 × MCPToolRegistry import CI failure (subagent dispatched)
+- [ ] 1 × structured_task_spec CI failure (subagent dispatched)
 
-### Bugs fixed in this session (session 17 final wave):
+### Bugs fixed earlier (session 17 final wave, already on master):
 - [x] typecheck FAIL 5 — RESOLVED. Gate background shows typecheck PASS (583 files).
 - [x] verify-remote branch/tag collision — RESOLVED. `refs/heads/$$BR` pin at Makefile:1075.
 - [x] enforce-session-start race condition — RESOLVED. Atomic writes + latched primed state.
@@ -51,20 +47,8 @@
 - [x] baseten.py detect-secrets false positive — RESOLVED. `# pragma: allowlist secret` marker (`a907382e`).
 - [x] release-cut not enforcing CI-green / not verifying artifact — RESOLVED. require-ci-green step 0 + verify-release-artifact poll step 4 wired.
 
-### Bugs fixed earlier this session:
-- [x] daemon startup crash from `_utilization_tracker` (OOM on startup) — `c05151b9`
-- [x] enforce-stop CI not included in `hasLocalWork` block — commits allowed when CI pending
-- [x] anti-wedge counter saturated at 999 — never reset, permanent block
-- [x] disengage permanent (9999999999999) — now capped at 5min
-- [x] push-cancellation CI loop — force-push tracker prevents wave pushes
-- [x] gate-status false-green — requires terminal PASSED/FAILED marker
-- [x] text.complete not blocking text-only when CI pending — now checks ci_pending
-- [x] Ansible enforcement port — enforcement gate + watchdog roles/modules delivered via molecule scenarios
-
-### Pushes this session:
-- `a907382e` — pushed to sandboxcom, VERIFIED via `make verify-remote BRANCH=master SHA=a907382e`. CI run 28879470440 PENDING.
-- `61a1b347` — pushed to sandboxcom, CI pending run 28763464953 (prior)
-- `564bea6f` — pushed to sandboxcom, CI in progress run 28762985158 (prior)
+### Pushes this session (18):
+- `f2202cae` — pushed to sandboxcom, VERIFIED via `make verify-remote BRANCH=master SHA=f2202cae`. CI run 28899396411 RED (147 → 13 failures; PSK fix working).
 
 ### Bugs still present:
 - **Connector gaps**: no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
@@ -75,6 +59,7 @@
 
 | Hash | Message |
 |------|---------|
+| `f2202cae` | fix: PSK fix reducing CI failures 147 → 13 (session 18, pushed VERIFIED; remaining 13 failures being fixed in flight) |
 | `a907382e` | fix: baseten.py detect-secrets false positive (`# pragma: allowlist secret`) |
 | `66adb6a9` | chore: secrets baseline refresh + game-audit EOF + SESSION.md note |
 | `7ec9f2dc` | feat: type-safety sweep (Any removal) + 60 false-done tests + 12 heartbeat tests + 128 audit_roles tests + dispatch.py MAX_CALLS_PER_REQUEST fix + README STATUS-TABLE markers + verify-remote refs/heads pin + enforce-no-wait/no-suppressions heartbeats + enforce-session-start race fix + enforce-stop hasLocalWork bypass tests + gludd audit-plugins CLI + playbook + release-cut wiring |
@@ -121,33 +106,39 @@
 
 ## Known Gaps
 
-1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `a907382e` pushed to sandboxcom (VERIFIED). CI run 28879470440 PENDING. Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-2. **Gate result PENDING** — gate background running (PID 21186). Lint PASS, typecheck PASS (583 files), collect PASS. Test phase has failures (likely environmental — Slurm/Postgres/cloud). `.gate-status` not terminal; may be RED on environmental tests.
-3. **Plugin liveness** — RESOLVED. All 10/10 plugins now have heartbeat probes (enforce-no-wait + enforce-no-suppressions added this session in `7ec9f2dc`). Current session still runs stale plugin code; opencode restart required to activate probes in-session.
-4. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
-5. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
-6. **verify-remote branch/tag collision** — RESOLVED. `refs/heads/$$BR` pin added at Makefile:1075 prevents branch/tag name collision. Test: `tests/unit/test_verify_remote_recipe.py`. Verified working: `make verify-remote BRANCH=master SHA=a907382e` → `VERIFIED master@a907382e`.
-7. **check-skills-frontmatter** — DONE. Script at `scripts/check_skills_frontmatter.py`, Makefile target at line 1852, wired into `gate` at line 298.
-8. **False "8 GPU providers" claim in `4e9d97fc`** — RESOLVED (gap closed). Commit message claims "8 GPU providers" but only 5 were added at the time (mistral, cohere, nvidia, perplexity, huggingface). Commit is pushed with descendants (`a907382e` among them); NOT amended per no-force-push policy. The 5 missing providers (google, cloudflare, databricks, azure-ai-foundry, ai21) are now implemented — actual provider count is 24 (19 original + 5 new). The `4e9d97fc` commit message still reads "8" but the underlying gap is closed by subsequent work.
+1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `f2202cae` pushed to sandboxcom (VERIFIED). CI run 28899396411 **RED** (13 failures remaining, down from 147). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+2. **13 CI failures remaining** (down from 147) — being fixed by parallel subagents (in flight):
+   - 4 × slurm billing
+   - 3 × connectors_base caplog
+   - 2 × PSK caplog
+   - 2 × tokenizer
+   - 1 × MCPToolRegistry import
+   - 1 × structured_task_spec
+3. **Gunicorn architecture work queued for beta.3** — per user direction. Not started; will begin after beta.2 ships.
+4. **Plugin liveness** — RESOLVED (session 17). All 10/10 plugins have heartbeat probes. Current session may still run stale plugin code; opencode restart required to activate probes in-session.
+5. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
+6. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
+7. **verify-remote branch/tag collision** — RESOLVED. `refs/heads/$$BR` pin added at Makefile:1075 prevents branch/tag name collision. Test: `tests/unit/test_verify_remote_recipe.py`. Verified working: `make verify-remote BRANCH=master SHA=f2202cae` → `VERIFIED master@f2202cae`.
+8. **check-skills-frontmatter** — DONE. Script at `scripts/check_skills_frontmatter.py`, Makefile target at line 1852, wired into `gate` at line 298.
+9. **False "8 GPU providers" claim in `4e9d97fc`** — RESOLVED (gap closed). Commit message claims "8 GPU providers" but only 5 were added at the time (mistral, cohere, nvidia, perplexity, huggingface). Commit is pushed with descendants; NOT amended per no-force-push policy. The 5 missing providers (google, cloudflare, databricks, azure-ai-foundry, ai21) are now implemented — actual provider count is 24 (19 original + 5 new).
 
 ## Next Steps
 
-1. [x] **Fix typecheck FAIL 5** — DONE. Gate background now shows typecheck PASS (583 files). Lint PASS, collect PASS.
-2. [x] **Push unpushed commits to sandboxcom/master** — DONE. `make verify-remote BRANCH=master SHA=a907382e` → `VERIFIED master@a907382e`.
-3. [ ] **Wait for CI green** on `a907382e` — run 28879470440 PENDING at time of update. Prerequisite for beta.2 release cut.
-4. [ ] **Ship v0.1.0-beta.2** — `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'` once CI green. `release-cut` now properly wired (require-ci-green step 0 + verify-release-artifact poll step 4). Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
+1. [ ] **Fix 13 CI failures** — IN FLIGHT (parallel subagents dispatched). Categories: 4 slurm billing, 3 connectors_base caplog, 2 PSK caplog, 2 tokenizer, 1 MCPToolRegistry import, 1 structured_task_spec.
+2. [ ] **Push fixes + wait for CI green** — once fix wave lands, push to sandboxcom, run `make ci-wait`. Prerequisite for beta.2 release cut.
+3. [ ] **Ship v0.1.0-beta.2** — `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'` once CI green. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
+4. [ ] **Start beta.3 gunicorn architecture work** — per user direction, queued for after beta.2 ships. Not started.
 5. [ ] **Restart opencode** to activate all 10/10 plugin liveness probes in-session (probes are committed; session runs stale code).
-6. [ ] **Lift coverage** to gate threshold — gate test phase has failures (likely environmental); classify + triage after gate completes.
-7. [x] **Wire the 6 new audit roles into a playbook** — DONE. `gludd audit-plugins` CLI + `audit_plugins.yml` playbook orchestrating all 6 check roles (commit `7ec9f2dc`).
+6. [ ] **Lift coverage** to gate threshold — gate test phase has failures; classify + triage after CI green.
+7. [x] **Wire the 6 new audit roles into a playbook** — DONE. `gludd audit-plugins` CLI + `audit_plugins.yml` playbook (commit `7ec9f2dc`).
 8. [x] **Add integration tests for 6 new roles** — DONE. 128 audit_roles tests pass (commit `7ec9f2dc`).
-9. [x] **Implement 5 missing GPU providers** — DONE. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21). Actual provider count is now 24 (19 original + 5 new). The `4e9d97fc` commit message still says "8 GPU providers" but is NOT amended per no-force-push policy; the claim was false at commit time but the gap is now closed by subsequent work.
+9. [x] **Implement 5 missing GPU providers** — DONE. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21). Actual provider count is now 24.
 
 ## Current Gate Status (2026-07-07)
 <!-- gate:begin -->
-- **Gate: background running (PID 21186)** — lint PASS 0, typecheck PASS (583 files), collect PASS. Test phase has failures (likely environmental — Slurm/Postgres/cloud). `.gate-status` not terminal.
-- **HEAD**: `a907382e` (local) — **VERIFIED** on remote sandboxcom/master via `make verify-remote BRANCH=master SHA=a907382e`.
-- **CI**: run 28879470440 for `a907382e` — PENDING (queued) at time of update.
-- **beta.2**: version bumped in code, tag NOT yet cut, artifact NOT verified.
+- **HEAD**: `f2202cae` (local) — **VERIFIED** on remote sandboxcom/master via `make verify-remote BRANCH=master SHA=f2202cae`.
+- **CI**: run 28899396411 for `f2202cae` — **RED** (13 failures, down from 147). PSK fix working; remaining 13 being fixed by parallel subagents (in flight).
+- **beta.2**: version bumped in code, tag NOT yet cut, artifact NOT verified. Blocked on CI green.
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
 <!-- gate:end -->
@@ -155,7 +146,7 @@
 > Full test suite times out under 8-worker xdist (OOM). CI-as-gate used for commits.
 > Background gate available via `make gate-background`; check via `make gate-status-check`.
 
-## Session 17 Final (2026-07-07)
+## Session 17 (prior — 2026-07-07)
 
 ### Deliverables
 
@@ -183,7 +174,8 @@
 
 ## Historical State
 
-- **2026-07-07 session 17 (current)**: HEAD `a907382e` (pushed, VERIFIED). 10 commits past `4e9d97fc`: game-test nondeterminism fix (`38c9395a`), full-play-lifecycle game tests for 12 games (`4dbd14a2` — 84 check tuples), self-improvement routing + failover e2e (`9b17e895` — 26 tests), lifecycle harness start() fix (`5fcea068`), ship-commit Makefile target (`2522d34b`), beta.2 version bump (`e2efa91f`), type-safety sweep + all parallel work (`7ec9f2dc` — 60 false-done + 12 heartbeat + 128 audit_roles + dispatch.py fix + README STATUS-TABLE + verify-remote pin + plugin heartbeats + session-start race + hasLocalWork bypass + audit-plugins CLI + release-cut wiring), secrets baseline + game-audit EOF (`66adb6a9`), baseten detect-secrets false positive (`a907382e`). CI run 28879470440 PENDING. Gate background running (PID 21186). Lint PASS, typecheck PASS (583 files), collect PASS. 10/10 plugin liveness probes. verify-remote refs/heads pin. beta.2 tag NOT yet cut.
+- **2026-07-07 session 18 (current)**: HEAD `f2202cae` (pushed, VERIFIED). PSK fix reduced CI failures 147 → 13 on run 28899396411. Remaining 13 failures (4 slurm billing, 3 connectors_base caplog, 2 PSK caplog, 2 tokenizer, 1 MCPToolRegistry import, 1 structured_task_spec) being fixed by parallel subagents in flight. beta.2 still NOT shipped — blocked on CI green. Gunicorn architecture work queued for beta.3 per user direction.
+- **2026-07-07 session 17 (prior)**: HEAD `a907382e` (pushed, VERIFIED). 10 commits past `4e9d97fc`: game-test nondeterminism fix (`38c9395a`), full-play-lifecycle game tests for 12 games (`4dbd14a2` — 84 check tuples), self-improvement routing + failover e2e (`9b17e895` — 26 tests), lifecycle harness start() fix (`5fcea068`), ship-commit Makefile target (`2522d34b`), beta.2 version bump (`e2efa91f`), type-safety sweep + all parallel work (`7ec9f2dc` — 60 false-done + 12 heartbeat + 128 audit_roles + dispatch.py fix + README STATUS-TABLE + verify-remote pin + plugin heartbeats + session-start race + hasLocalWork bypass + audit-plugins CLI + release-cut wiring), secrets baseline + game-audit EOF (`66adb6a9`), baseten detect-secrets false positive (`a907382e`). 10/10 plugin liveness probes. verify-remote refs/heads pin. beta.2 tag NOT yet cut.
 - **2026-07-06 session 16 (prior)**: HEAD `c8904f5f`. Enforcement infrastructure ported to Ansible — gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles, 2 molecule scenarios, 3 remaining test fixes.
 - **2026-07-05 session 15**: HEAD `a8de1930`. Enforcement guardrail hardening: push-rate guard with force-push tracker, gate completion marker, daemon startup smoke test, runtime hook verification, watchdog CI gate injection, anti-wedge counter reset, enforce-stop CI block, disengage 1h cap, watchdog ci_pending, enforcement state reset. 7 bugs fixed. HEAD unpushed — waiting for prior CI runs (28762985158 in progress, 28763464953 pending).
 - **2026-07-05 session 14**: HEAD `46267dfc`. 6 commits: enforcement test fix + Makefile grep-P macOS compat + secrets baseline + openbao symlink cleanup (`6c6d9e45`), CLI compute destroy + 96 tests for 5 untested files (`7d1c036e`), SESSION.md update (`5d96d334`), 18 dead classes wired + 6 response models wired into routes + 98 tests total (`7a25edf4`), SESSION.md update (`d4cdedb3`), .gludd/ .gitignore fix + cache.db untracked (`46267dfc`). All bugs resolved. Connector gaps (Slack/WebSocket/reconnect) remain as feature requests. verify-remote SHA parameter bug under investigation. Pushed to sandboxcom, VERIFIED. CI run 28762103711 PENDING.

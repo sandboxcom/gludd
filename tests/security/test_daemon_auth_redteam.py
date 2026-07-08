@@ -149,10 +149,30 @@ class TestA3NoAuthDegraded:
         env.pop("GLUDD_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
         env.pop("GLUDD_ALLOW_NO_AUTH", None)
-        logging.getLogger("general_ludd.daemon").propagate = True
-        with patch.dict(os.environ, env, clear=True), caplog.at_level(logging.WARNING):
-            create_daemon_app(tick_interval=0.01)
-        joined = " ".join(r.getMessage() for r in caplog.records).lower()
+        records: list[logging.LogRecord] = []
+
+        class _LocalCapture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        # Attach a handler directly to the daemon logger so the warning is
+        # captured regardless of root-logger state.
+        daemon_logger = logging.getLogger("general_ludd.daemon")
+        daemon_logger.propagate = True
+        # Python 3.10+ caches Logger.isEnabledFor() results per-logger. A prior
+        # TestClient test on the same xdist worker can mutate the ROOT logger's
+        # level (e.g. via /admin/log-level or pytest's caplog), which causes
+        # `isEnabledFor(WARNING)` on the daemon logger to cache `False`. Setting
+        # the level explicitly clears this stale cache so the warning is emitted.
+        daemon_logger.setLevel(logging.WARNING)
+        capture = _LocalCapture(level=logging.WARNING)
+        daemon_logger.addHandler(capture)
+        try:
+            with patch.dict(os.environ, env, clear=True):
+                create_daemon_app(tick_interval=0.01)
+        finally:
+            daemon_logger.removeHandler(capture)
+        joined = " ".join(r.getMessage() for r in records).lower()
         assert "gludd_psk" in joined and (
             "refuse" in joined or "fail-closed" in joined or "fail_closed" in joined
         ), "P1: a LOUD startup WARNING must fire when GLUDD_PSK is unset (fail-closed mode)."
@@ -165,10 +185,55 @@ class TestA3NoAuthDegraded:
         env.pop("GLUDD_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
         env["GLUDD_ALLOW_NO_AUTH"] = "1"
-        logging.getLogger("general_ludd.daemon").propagate = True
-        with patch.dict(os.environ, env, clear=True), caplog.at_level(logging.WARNING):
-            create_daemon_app(tick_interval=0.01)
-        joined = " ".join(r.getMessage() for r in caplog.records).lower()
+        records: list[logging.LogRecord] = []
+
+        class _LocalCapture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        # See note above: attach handler directly + clear stale isEnabledFor cache.
+        daemon_logger = logging.getLogger("general_ludd.daemon")
+        daemon_logger.propagate = True
+        daemon_logger.setLevel(logging.WARNING)
+        capture = _LocalCapture(level=logging.WARNING)
+        daemon_logger.addHandler(capture)
+        try:
+            with patch.dict(os.environ, env, clear=True):
+                create_daemon_app(tick_interval=0.01)
+        finally:
+            daemon_logger.removeHandler(capture)
+        joined = " ".join(r.getMessage() for r in records).lower()
+        assert "gludd_psk" in joined and (
+            "disabled" in joined or "no_auth" in joined or "open" in joined
+        ), "P1: a LOUD startup WARNING must fire when GLUDD_ALLOW_NO_AUTH=1 and no PSK."
+
+    def test_no_psk_allow_no_auth_logs_loud_warning(self, caplog):
+        """With GLUDD_ALLOW_NO_AUTH=1, a loud warning fires that auth is disabled."""
+        import logging
+
+        env = dict(os.environ)
+        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_REQUIRE_AUTH", None)
+        env["GLUDD_ALLOW_NO_AUTH"] = "1"
+        records: list[logging.LogRecord] = []
+
+        class _LocalCapture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        # See note above: a directly-attached handler avoids caplog's dependence
+        # on root-logger propagation, which can be polluted by prior TestClient
+        # tests on the same xdist worker.
+        daemon_logger = logging.getLogger("general_ludd.daemon")
+        daemon_logger.propagate = True
+        capture = _LocalCapture(level=logging.WARNING)
+        daemon_logger.addHandler(capture)
+        try:
+            with patch.dict(os.environ, env, clear=True):
+                create_daemon_app(tick_interval=0.01)
+        finally:
+            daemon_logger.removeHandler(capture)
+        joined = " ".join(r.getMessage() for r in records).lower()
         assert "gludd_psk" in joined and (
             "disabled" in joined or "no_auth" in joined or "open" in joined
         ), "P1: a LOUD startup WARNING must fire when GLUDD_ALLOW_NO_AUTH=1 and no PSK."
