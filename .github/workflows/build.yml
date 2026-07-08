@@ -145,18 +145,32 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-        shard: [unit-1, unit-2, unit-3, other]
+        shard: [unit-1a, unit-1b, unit-2, unit-3, other]
         include:
           # Map each shard label to the pytest path(s) it owns.
           # Bash glob expansion inside `run:` handles the wildcard patterns.
-          - shard: unit-1
-            testpaths: "tests/unit/test_[a-e]*.py"
-            # The ~88 test_connector*.py suites (all start with 'c', so they land
-            # in the a-e range) are moved to the fast 'other' shard below to slim
-            # unit-1 back under ~10-12m. Ignore them HERE so they don't also run
-            # in unit-1. This var is set only on the unit-1 include entry, so it
-            # expands empty (a no-op) on every other shard's shared run: block.
-            ignoreglob: "--ignore-glob=**/test_connector*.py"
+          #
+          # unit-1 was split (2026-07-08) into unit-1a + unit-1b after CI run
+          # 28923533095 hit the 30m timeout on both 3.11 + 3.12. The a-e range
+          # was ~235 files / ~63k lines and ran ~30m (3× the 10-12m baseline).
+          # Split point chosen so both halves are ~50% by file count and lines:
+          #   unit-1a = test_[a-bd]*.py  → 129 files, 31,334 lines (49.7%)
+          #   unit-1b = test_[ce]*.py    → 106 files, 31,696 lines (50.3%)
+          # The `d` is grouped with a-b (not c-e) to keep c+e smaller and to
+          # avoid splitting the c-prefixed connector suites away from the
+          # connector ignoreglob below.
+          - shard: unit-1a
+            testpaths: "tests/unit/test_[a-bd]*.py"
+          - shard: unit-1b
+            testpaths: "tests/unit/test_[ce]*.py"
+            # The ~88 test_connector*.py suites (start with 'c', so they land
+            # in unit-1b's range) are moved to the fast 'other' shard below to
+            # keep unit-1b slim. Ignore them HERE so they don't also run in
+            # unit-1b. Also eject mislabeled e2e tests (test_*_e2e.py) that
+            # start with 'e' — they belong in the 'other' shard. This var is
+            # set only on the unit-1b include entry, so it expands empty
+            # (a no-op) on every other shard's shared run: block.
+            ignoreglob: "--ignore-glob=**/test_connector*.py --ignore-glob=**/test_*_e2e.py"
           - shard: unit-2
             testpaths: "tests/unit/test_[f-m]*.py"
           - shard: unit-3
