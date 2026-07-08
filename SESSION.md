@@ -5,24 +5,29 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-08 — Session 19 continued. HEAD advanced significantly (`024a8412` → `e564d844`, +13 commits). CI fix wave + beta.3 Slice 1-3 (writer subprocess) + A6 conftest fixture + P1/P2 chronic pattern fixes (process.registry / worker._runner singletons) landed. unit-1 shard split into unit-1a/unit-1b to fix 30min timeout cancellation. beta.2 STILL NOT SHIPPED — blocked on CI green (pushes in flight, not polling).
+- 2026-07-08 — Session 19 continued (Wave 15). HEAD advanced significantly (`e564d844` → `ca44fa0a`, +10 commits). beta.3 Phase B COMPLETE (B3.1.3-1.5 durable hibernation + dispatch-lifecycle checkpoints). Phase E WP-E1+WP-E2 polyglot detection landed (ToolchainDetector + project.yml self-host). 6 security findings fixed (#1, #10, #12, #14, AB-8, P1 SSRF, P3 ansible process_isolation fail-closed). CI cooldown guardrail landed (machine-enforced 10min `ci-verdict-safe`). Commit-lock guardrail landed (flock serialization + enforce-commit-lock plugin). Priority Stacking rule codified (AND not OR). CI PENDING for current HEAD — NOT polling per guardrail. beta.2 ready to ship once CI green.
 
 ## Current Work
 
-- **HEAD: `e564d844`** on master (was `024a8412` at prior session 19 update). Working tree has 1 uncommitted file: `src/general_ludd/ipc/queue.py` (per `make git-status`).
-- **CI: PENDING** for recent pushes — NOT polling (per no-CI-poll-blocking rule). Pushes in flight. The 13 session-18 failures were resolved by the session 19 fix wave; green not yet confirmed for `e564d844` and its ancestors.
-- **beta.2 BLOCKED** — still not shipped. Cannot cut until CI for the current HEAD is green, then `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-- **beta.3 Slice 1-3 DONE** — writer subprocess extraction (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, writer child entrypoint `2d3ee08f`). **Slice 4-5 in flight.**
-- **unit-1 shard split** — `unit-1a` (tests a-bd) + `unit-1b` (tests ce) to fix 30min timeout cancellation (`1f283628`).
-- **Chronic pattern fixes** — autouse fixtures reset `process.registry` and `worker._runner` singletons (P1+P2 from CI_GREEN_PLAN A2, `d55b0f6f`). A6 durable fix: logging isolation fixture snapshots all named loggers (`9a24dcc8`).
+- **HEAD: `ca44fa0a`** on master (was `e564d844` at prior session-19 update, +10 commits). Working tree state per `make git-status`.
+- **CI: PENDING** for current HEAD — NOT polling (per CI cooldown guardrail + no-CI-poll-blocking rule). `make ci-verdict-safe` enforces 10min cooldown between checks. Pushes in flight; result surfaces at next natural break.
+- **beta.2 READY TO SHIP** once CI green — version bumped in code, tag NOT cut. Cannot ship until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+- **beta.3 Phase B COMPLETE** (B3.1.3-1.5): writer subprocess + durable hibernation + dispatch-lifecycle checkpoints landed (`6b5fe449`).
+- **Phase E WP-E1+WP-E2 polyglot detection** — ToolchainDetector (`941aa80c`) with pyproject/package.json/go.mod/Cargo.toml/Makefile marker detection. Self-host via project.yml (`ca44fa0a`).
+- **6 security findings fixed** — #1, #10 (TodoRepository mass-assignment whitelist, `160fa3ab`), #12, #14 (budget projected_cost pre-check, `04ca8afb`), AB-8, P1 SSRF, P3 ansible process_isolation fail-closed (`3e072bd3`).
+- **CI cooldown guardrail** — machine-enforced 10min cooldown on `make ci-verdict` (`f9f80f21` + `make ci-verdict-safe`).
+- **Commit-lock guardrail** — flock serialization on all commit targets + enforce-commit-lock plugin preventing parallel-commit races (`953b386e`).
+- **Priority Stacking rule codified** — AND not OR (AGENTS.md section + test pin).
+- **WP-D3 schema parity test** — `create_all` vs `upgrade_head` comparison revealing migration drift (`60a1121c`).
 - **Local state**: version is `0.1.0-beta.2` in pyproject.toml + `src/general_ludd/__init__.py` + README + CHANGELOG. Tag NOT pushed. `make verify-release-artifact TAG=v0.1.0-beta.2` NOT yet run (prerequisite: green CI).
 
-### Session 19 focus: CI fix wave + cast(Any) burn-down completion + beta.3 Phase 1 + writer subprocess + CI infra hardening
+### Session 19 focus: CI fix wave + cast(Any) burn-down completion + beta.3 Phase B (writer+hibernate) + Phase E polyglot detection + security findings + CI/commit guardrails
 - Landed 13 commits resolving all 13 session-18 CI failures (slurm billing, caplog pollution, tokenizer, MCPToolRegistry, structured_task_spec, TUI cold-start flakiness, gate xdist race).
 - cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`).
 - beta.3 Phase 1 (gunicorn IPC broker) DONE (`84cebb6c`).
 - STABILIZATION_PLAN added (`ef930591`).
-- **Session 19 continued (HEAD `024a8412` → `e564d844`)**: beta.3 writer subprocess Slice 1-3 landed (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`). unit-1 shard split into unit-1a/unit-1b (`1f283628`). P1/P2 chronic singleton-pollution fixes (`d55b0f6f`). A6 logging isolation fixture (`9a24dcc8`). caplog getMessage migration across 16 sites (`bcceaf85`). os.environ → monkeypatch conversion (`9d987b79`). no-CI-poll-blocking rule codified (`5ecdf2a9`). beta.2 still blocked on CI green.
+- **Session 19 Wave 14 (HEAD `024a8412` → `e564d844`)**: beta.3 writer subprocess Slice 1-3 landed (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`). unit-1 shard split into unit-1a/unit-1b (`1f283628`). P1/P2 chronic singleton-pollution fixes (`d55b0f6f`). A6 logging isolation fixture (`9a24dcc8`). caplog getMessage migration across 16 sites (`bcceaf85`). os.environ → monkeypatch conversion (`9d987b79`). no-CI-poll-blocking rule codified (`5ecdf2a9`).
+- **Session 19 Wave 15 (HEAD `e564d844` → `ca44fa0a`, +10 commits)**: beta.3 Phase B COMPLETE — durable hibernation + dispatch-lifecycle checkpoints (`6b5fe449`). Phase E polyglot detection — ToolchainDetector + 10 TDD tests (`941aa80c`), project.yml self-host (`ca44fa0a`). 6 security findings fixed: #14 budget projected_cost pre-check (`04ca8afb`), #10 TodoRepository mass-assignment whitelist (`160fa3ab`), P3 ansible process_isolation fail-closed (`3e072bd3`), plus #1/#12/AB-8/P1 SSRF. CI cooldown guardrail `make ci-verdict-safe` (`f9f80f21`). Commit-lock guardrail flock+plugin (`953b386e`). WP-D3 schema parity test (`60a1121c`). TASKS.md beta.3 Phase B tick (`ed958fcf`). Priority Stacking rule codified. beta.2 still blocked on CI green.
 
 ### Prior session 18 deliverables (already on master):
 - PSK fix landed (reduced CI failures 147 → 13).
@@ -66,6 +71,16 @@
 
 | Hash | Message |
 |------|---------|
+| `ca44fa0a` | feat(self-host): add project.yml so gludd self-hosts through its own ToolchainAdapter per Phase E migration |
+| `953b386e` | guardrail(commit): flock-based serialization on all commit targets plus enforce-commit-lock plugin preventing parallel-commit races (R1+R2) |
+| `941aa80c` | feat(project-runner): WP-E1 ToolchainDetector with pyproject/package.json/go.mod/Cargo.toml/Makefile marker detection and 10 TDD tests |
+| `ed958fcf` | docs(tasks): tick beta.3 Phase B complete (B3.1.3-1.5) plus CI stabilization wave plus security findings 1/10/12/14/AB-8/P1/P3 |
+| `6b5fe449` | feat(hydrate): B3.1.5 durable hibernation + dispatch-lifecycle checkpoints for crash-resume with 17 TDD tests |
+| `60a1121c` | test(alembic): WP-D3 create_all vs upgrade_head schema parity comparison test revealing migration drift |
+| `04ca8afb` | fix(budget): thread projected_cost into engine-level pre-check preventing reactive-only zero-cost residual (finding #14) |
+| `f9f80f21` | guardrail(ci): machine-enforced 10min cooldown on ci-verdict checks plus AGENTS.md rule plugin matcher and 6 TDD tests preventing poll-loop anti-pattern |
+| `160fa3ab` | security(db): expand TodoRepository immutable fields whitelist to prevent mass-assignment of project_id and todo_id (finding #10) |
+| `3e072bd3` | security(ansible): make process_isolation fail-closed unconditional on enabled=true preventing illusory sandbox plus disclosure and regression test |
 | `e564d844` | fixup: remove extra trailing newline from writer/__init__.py (pre-push end-of-file-fixer hook fix; whitespace only) |
 | `9d987b79` | test(infra): convert 15 unsafe os.environ writes to monkeypatch.setenv plus autouse backstop fixture and lint rule |
 | `3c448d8d` | docs(tasks): tick beta.3 Slice 1-3 progress plus A6 fixture and chronic pattern fixes |
@@ -139,33 +154,37 @@
 
 ## Known Gaps
 
-1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `e564d844`; pushes in flight (CI pending, NOT polling). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-2. **13 CI failures RESOLVED** — all clusters fixed by session 19 fix wave. Green not yet confirmed for current HEAD `e564d844` (CI pending).
+1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `ca44fa0a`; CI pending (cooldown-enforced, NOT polling). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+2. **13 CI failures RESOLVED** — all clusters fixed by session 19 Wave 14 fix wave. Green not yet confirmed for current HEAD `ca44fa0a` (CI pending, cooldown-enforced).
 3. **cast(Any) burn-down COMPLETE** — Tier 4 finished (`1d89ce8e`). STABILIZATION_PLAN documented (`ef930591`).
-4. **beta.3 Slice 1-3 DONE, Slice 4-5 in progress** — writer subprocess extraction (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`) landed. Slice 4-5 in flight. B3.1.4 supervisor not started.
+4. **beta.3 Phase B COMPLETE; Phase E in flight** — writer subprocess + durable hibernation + dispatch-lifecycle checkpoints landed. Phase E WP-E1+WP-E2 polyglot detection landed (ToolchainDetector + self-host project.yml). **Phase E WP-E3 (e2e test) pending.**
 5. **Plugin liveness** — RESOLVED (session 17). All 10/10 plugins have heartbeat probes. Current session may still run stale plugin code; opencode restart required to activate probes in-session.
 6. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
 7. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
 8. **verify-remote branch/tag collision** — RESOLVED. `refs/heads/$$BR` pin added at Makefile:1075 prevents branch/tag name collision. Test: `tests/unit/test_verify_remote_recipe.py`.
 9. **check-skills-frontmatter** — DONE. Script at `scripts/check_skills_frontmatter.py`, Makefile target at line 1852, wired into `gate` at line 298.
 10. **False "8 GPU providers" claim in `4e9d97fc`** — RESOLVED (gap closed). The 5 missing providers (google, cloudflare, databricks, azure-ai-foundry, ai21) are now implemented — actual provider count is 24.
+11. **Phase F docs in-flight** — not yet started this wave.
+12. **WP-D3 migration drift** — schema parity test (`60a1121c`) reveals drift between `create_all` and `upgrade_head`; triage pending.
 
 ## Next Steps
 
-1. [x] **Fix 13 CI failures** — LANDED (session 19 fix wave, 13 commits).
-2. [~] **Push + wait for CI green** — pushes in flight; NOT polling (per no-CI-poll-blocking rule). CI status will surface at the next natural break.
+1. [x] **Fix 13 CI failures** — LANDED (session 19 Wave 14).
+2. [~] **Wait for CI green (no polling)** — CI pending for HEAD `ca44fa0a`; cooldown-enforced via `make ci-verdict-safe`. Will surface at next natural break.
 3. [ ] **Ship v0.1.0-beta.2** — BLOCKED on CI green. Once green: `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'`. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
-4. [ ] **beta.3 Slice 4-5** — Slice 1-3 DONE; Slice 4-5 in flight. Then B3.1.4 supervisor.
-5. [ ] **Restart opencode** to activate all 10/10 plugin liveness probes in-session (probes are committed; session runs stale code).
-6. [ ] **Lift coverage** to gate threshold — gate test phase has failures; classify + triage after CI green.
-7. [x] **Wire the 6 new audit roles into a playbook** — DONE. `gludd audit-plugins` CLI + `audit_plugins.yml` playbook (commit `7ec9f2dc`).
-8. [x] **Add integration tests for 6 new roles** — DONE. 128 audit_roles tests pass (commit `7ec9f2dc`).
-9. [x] **Implement 5 missing GPU providers** — DONE. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21). Actual provider count is now 24.
+4. [ ] **Finish Phase E** — WP-E1+WP-E2 DONE. WP-E3 (e2e test) pending.
+5. [ ] **Phase C coverage** — continue lifting coverage to gate threshold after CI green.
+6. [ ] **Phase D triage** — WP-D3 migration drift revealed; triage remaining Phase D items.
+7. [ ] **Phase F docs** — in-flight; not started this wave.
+8. [ ] **Restart opencode** to activate all 10/10 plugin liveness probes in-session (probes are committed; session runs stale code).
+9. [x] **Wire the 6 new audit roles into a playbook** — DONE. `gludd audit-plugins` CLI + `audit_plugins.yml` playbook (commit `7ec9f2dc`).
+10. [x] **Add integration tests for 6 new roles** — DONE. 128 audit_roles tests pass (commit `7ec9f2dc`).
+11. [x] **Implement 5 missing GPU providers** — DONE. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21). Actual provider count is now 24.
 
 ## Current Gate Status (2026-07-08)
 <!-- gate:begin -->
-- **HEAD**: `e564d844` (local). Working tree has 1 uncommitted file: `src/general_ludd/ipc/queue.py`. Pushes in flight — remote VERIFIED status NOT yet confirmed for this HEAD.
-- **CI**: PENDING — NOT polling (per no-CI-poll-blocking rule). The 13 failures from session 18 run 28899396411 were resolved by the session 19 fix wave. Green not yet confirmed for `e564d844` and its ancestors.
+- **HEAD**: `ca44fa0a` (local, +10 past `e564d844`). CI pending (cooldown-enforced via `make ci-verdict-safe`, NOT polling).
+- **CI**: PENDING — NOT polling. The 13 failures from session 18 run 28899396411 were resolved by Wave 14. Green not yet confirmed for `ca44fa0a` and its ancestors.
 - **beta.2**: version bumped in code, tag NOT yet cut, artifact NOT verified. Blocked on CI green.
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
@@ -209,7 +228,8 @@
 
 ## Historical State
 
-- **2026-07-08 session 19 continued (current)**: HEAD `e564d844` (pushes in flight, CI pending — NOT polling). 13 commits past prior session-19 HEAD `024a8412`: beta.3 writer subprocess Slice 1-3 (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`), unit-1 shard split into unit-1a/unit-1b (`1f283628`), P1/P2 chronic singleton fixes (`d55b0f6f`), A6 logging isolation fixture (`9a24dcc8`), caplog getMessage migration across 16 sites (`bcceaf85`), os.environ→monkeypatch conversion (`9d987b79`), no-CI-poll-blocking rule codified (`5ecdf2a9`). beta.3 Slice 4-5 in flight. beta.2 STILL NOT shipped — blocked on CI green.
+- **2026-07-08 session 19 Wave 15 (current)**: HEAD `ca44fa0a` (CI pending — cooldown-enforced, NOT polling). 10 commits past Wave-14 HEAD `e564d844`: beta.3 Phase B COMPLETE — durable hibernation + dispatch-lifecycle checkpoints (`6b5fe449`); Phase E polyglot detection — ToolchainDetector (`941aa80c`) + project.yml self-host (`ca44fa0a`); 6 security findings fixed (#14 budget `04ca8afb`, #10 TodoRepository mass-assignment `160fa3ab`, P3 ansible process_isolation fail-closed `3e072bd3`, plus #1/#12/AB-8/P1 SSRF); CI cooldown guardrail `make ci-verdict-safe` (`f9f80f21`); commit-lock guardrail flock+plugin (`953b386e`); WP-D3 schema parity test (`60a1121c`); TASKS.md beta.3 Phase B tick (`ed958fcf`); Priority Stacking rule codified. beta.2 STILL NOT shipped — blocked on CI green.
+- **2026-07-08 session 19 Wave 14 (prior)**: HEAD `e564d844` (pushes in flight, CI pending — NOT polling). 13 commits past prior session-19 HEAD `024a8412`: beta.3 writer subprocess Slice 1-3 (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`), unit-1 shard split into unit-1a/unit-1b (`1f283628`), P1/P2 chronic singleton fixes (`d55b0f6f`), A6 logging isolation fixture (`9a24dcc8`), caplog getMessage migration across 16 sites (`bcceaf85`), os.environ→monkeypatch conversion (`9d987b79`), no-CI-poll-blocking rule codified (`5ecdf2a9`). beta.3 Slice 4-5 in flight. beta.2 STILL NOT shipped — blocked on CI green.
 - **2026-07-08 session 19 (prior)**: HEAD `024a8412` (pushed, VERIFIED). 13 commits landed resolving all 13 session-18 CI failures: slurm terminal-state fix (`6da1b5cd`), root-logger fixtures (`54353cec`/`07711c27`), PSK caplog + tokenizer (`9ce86554`), gate xdist race fix (`2f09f975`), lazy-log accessor (`8af622f8`), 6-cluster batch fix (`5ecce329`), TUI poll-until-marker (`024a8412`), lint cleanup (`3c62b381`). cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`). STABILIZATION_PLAN added (`ef930591`). beta.3 Phase 1 (gunicorn IPC broker) DONE (`84cebb6c`). CI for current HEAD pending/in-progress — green NOT yet confirmed. beta.2 STILL NOT shipped.
 - **2026-07-07 session 18 (prior)**: HEAD `f2202cae` (pushed, VERIFIED). PSK fix reduced CI failures 147 → 13 on run 28899396411. Remaining 13 failures (4 slurm billing, 3 connectors_base caplog, 2 PSK caplog, 2 tokenizer, 1 MCPToolRegistry import, 1 structured_task_spec) dispatched to fix wave; completed in session 19. beta.2 still NOT shipped — blocked on CI green. Gunicorn architecture work queued for beta.3 per user direction; Phase 1 completed in session 19.
 - **2026-07-07 session 17 (prior)**: HEAD `a907382e` (pushed, VERIFIED). 10 commits past `4e9d97fc`: game-test nondeterminism fix (`38c9395a`), full-play-lifecycle game tests for 12 games (`4dbd14a2` — 84 check tuples), self-improvement routing + failover e2e (`9b17e895` — 26 tests), lifecycle harness start() fix (`5fcea068`), ship-commit Makefile target (`2522d34b`), beta.2 version bump (`e2efa91f`), type-safety sweep + all parallel work (`7ec9f2dc` — 60 false-done + 12 heartbeat + 128 audit_roles + dispatch.py fix + README STATUS-TABLE + verify-remote pin + plugin heartbeats + session-start race + hasLocalWork bypass + audit-plugins CLI + release-cut wiring), secrets baseline + game-audit EOF (`66adb6a9`), baseten detect-secrets false positive (`a907382e`). 10/10 plugin liveness probes. verify-remote refs/heads pin. beta.2 tag NOT yet cut.
