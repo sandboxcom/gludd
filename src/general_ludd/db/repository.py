@@ -165,6 +165,25 @@ class TodoRepository:
     _IMMUTABLE_FIELDS: frozenset[str] = frozenset(
         {"id", "version", "created_at", "updated_at"}
     )
+    # Finding #10: Fields that must NEVER change via update(). These are the
+    # identity / tenant / audit columns — set once at create() and frozen
+    # thereafter. This is a SEPARATE set from _IMMUTABLE_FIELDS (which guards
+    # create()): todo_id and project_id are legitimately caller-supplied at
+    # create time (they establish the business key and tenant scope) but must
+    # be immutable on every subsequent update. Letting project_id through here
+    # would permit a cross-tenant escape (move a todo into another tenant's
+    # namespace); letting todo_id through would swap the entity's identity.
+    _IMMUTABLE_UPDATE_FIELDS: frozenset[str] = frozenset(
+        {
+            "id",          # DB primary key
+            "todo_id",     # application business key — swap = identity change
+            "project_id",  # tenant scope — reassign = cross-tenant escape
+            "version",     # managed by update() via the expected_version protocol
+            "created_at",  # audit origin
+            "updated_at",  # managed by update() itself
+            "created_by",  # set-once audit attribution
+        }
+    )
     # D-28: Maximum byte length for text columns.  Prevents callers from storing
     # arbitrarily large blobs through the create() path.
     _MAX_TEXT_BYTES: int = 65_536  # 64 KiB
@@ -235,6 +254,22 @@ class TodoRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    @classmethod
+    def _validate_update_fields(cls, updates: dict[str, Any]) -> None:
+        """Raise ValueError if *updates* contains any field that must never
+        change after creation (finding #10). Guards update() against
+        mass-assignment of the tenant scope (``project_id`` → cross-tenant
+        escape), the business key (``todo_id`` → identity swap), and the
+        DB-managed / audit columns. Fires before any DB read or write so a
+        rejected update leaves the row untouched.
+        """
+        bad = cls._IMMUTABLE_UPDATE_FIELDS & updates.keys()
+        if bad:
+            raise ValueError(
+                f"update() rejected: these fields are immutable after "
+                f"creation and must not be supplied to update(): {sorted(bad)}"
+            )
+
     async def update(
         self,
         todo_id: str,
@@ -242,6 +277,9 @@ class TodoRepository:
         expected_version: int,
         project_id: str | None = None,
     ) -> TodoModel:
+        # Finding #10: reject mass-assignment of identity/tenant/audit fields
+        # before any DB read or write. See _validate_update_fields.
+        self._validate_update_fields(updates)
         from sqlalchemy import update as _update
 
         _pid = self._resolve_pid(project_id)
