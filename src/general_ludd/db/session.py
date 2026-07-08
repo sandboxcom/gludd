@@ -99,6 +99,41 @@ def init_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine
     return engine
 
 
+def run_read_only_pragma(engine: AsyncEngine) -> None:
+    if not is_sqlite_url(str(engine.url)):
+        return
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_query_only(dbapi_conn: Any, _connection_record: Any) -> None:
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA query_only=ON")
+        cursor.close()
+
+
+def init_read_only_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine:
+    cfg = config or {}
+    url = _compose_db_url(cfg)
+    if not url:
+        url = get_default_db_url()
+    if not is_sqlite_url(url):
+        raise ValueError(
+            f"Unsupported database URL {url!r}: general_ludd is SQLite only. "
+            "Postgres is not supported (schema creation and migrations are "
+            "SQLite-only). Use a sqlite+aiosqlite:/// URL."
+        )
+    engine = create_async_engine(url)
+    run_wal_pragmas(engine)
+    run_read_only_pragma(engine)
+    db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")
+    if db_path:
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    return engine
+
+
+def create_read_only_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
 def init_async_engine(url: str = "postgresql+psycopg://localhost/general_ludd", **kwargs: Any) -> AsyncEngine:
     engine = create_async_engine(url, **kwargs)
     if is_sqlite_url(url):
