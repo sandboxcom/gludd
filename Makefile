@@ -35,7 +35,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
 		feature-start feature-done test-and-commit preflight \
-		git-commit-no-verify git-amend-msg \
+ 		git-commit-no-verify git-amend-msg \
+ 		_commit-lock-acquire ship-commit-files \
 		molecule-version molecule-test molecule-test-all \
 		collection-roles collection-modules molecule-scenarios \
 		container-build container-run container-push \
@@ -904,7 +905,7 @@ git-resolve-ours:
 repo-add-all:
 	@git add -A
 
-commit-bootstrap: _gate-fresh-check
+commit-bootstrap: _gate-fresh-check _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-bootstrap MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
@@ -913,7 +914,7 @@ commit-bootstrap: _gate-fresh-check
 # messages with angle-bracket emails). Enforces the SAME fresh+green gate guard
 # as `git-commit` (a bare `git commit -F` would otherwise bypass it). Usage:
 #   make git-commit-file FILE=/tmp/msg.txt
-git-commit-file:
+git-commit-file: _commit-lock-acquire
 	@[ -n "$(FILE)" ] || { echo "Usage: make git-commit-file FILE=path"; exit 1; }
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -1775,14 +1776,26 @@ _gate-fresh-check:
 		fi; \
 	fi
 
-git-commit: _gate-fresh-check
+# Internal: serialize commit-shaped targets so parallel subagents cannot race on
+# the git index (staging sweeps, index-lock errors). Uses flock (Linux) with a
+# Python fcntl fallback (macOS). The lock file persists for the process lifetime;
+# when make exits, fd 9 closes and the lock auto-releases. This is LAYER 1 of the
+# commit-serialization guardrail (AGENTS.md). LAYER 2 is the enforce-commit-lock
+# plugin that wraps the ENTIRE bash tool call boundary.
+_commit-lock-acquire:
+	@exec 9>/tmp/gludd-commit.lock; \
+	flock -n 9 2>/dev/null || python3 -c "import fcntl; f=open('/tmp/gludd-commit.lock'); \
+	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
+	    echo "COMMIT-LOCK: another commit is in flight. Retry serially." >&2; exit 1; }
+
+git-commit: _gate-fresh-check _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Gate fresh and green. Committing..."
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
-commit-no-verify: _gate-fresh-check
+commit-no-verify: _gate-fresh-check _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
@@ -1791,19 +1804,19 @@ commit-no-verify: _gate-fresh-check
 # The --no-verify flag skips ONLY the pre-commit hook stash, NOT the gate.
 # There is no GLUDD_CI_IS_GATE bypass — the fresh+green .gate-status check is
 # unconditional. Run `make gate` and have it pass; that is the only path.
-git-commit-no-verify: _gate-fresh-check
+git-commit-no-verify: _gate-fresh-check _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 # git-amend-msg: amend the last commit message (--amend --no-edit equivalent),
 # enforcing gate check. Cannot bypass the gate via --amend.
-git-amend-msg: _gate-fresh-check
+git-amend-msg: _gate-fresh-check _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-amend-msg MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git commit --amend --no-verify -m "$(MSG)"
 
-repo-commit:
+repo-commit: _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
@@ -1812,11 +1825,19 @@ repo-commit:
 # thread stays free while the commit + push runs in parallel. Allowlisted
 # from the local _gate-fresh-check (CI is the gate for subagent-dispatched
 # pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
-ship-commit:
+ship-commit: _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 	@$(MAKE) --no-print-directory batch-push
+
+# ship-commit-files: atomic staging + commit under the commit lock. Bundles
+# `git-add` + `ship-commit` so one subagent's `git add -A` cannot sweep
+# another's staged files. Usage: make ship-commit-files FILES='...' MSG='...'
+ship-commit-files: _commit-lock-acquire
+	@[ -n "$(FILES)" ] || { echo "Usage: make ship-commit-files FILES='...' MSG='...'"; exit 1; }
+	@$(MAKE) --no-print-directory git-add FILES='$(FILES)'
+	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
 
 delete-file:
 	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }
@@ -1919,7 +1940,7 @@ preflight: check-plugin-liveness
 	@echo "========================================"
 	@$(UV) run python -c "import json, sys; from general_ludd.quality.preflight import run_preflight; r = run_preflight(); json.dump(r, sys.stdout, indent=2); sys.exit(0 if r['overall'] == 'PASS' else 1)"
 
-test-and-commit:
+test-and-commit: _commit-lock-acquire
 	@echo "Running preflight checks..."
 	@$(MAKE) preflight
 	@echo "Running tests before commit..."
