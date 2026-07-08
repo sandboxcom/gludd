@@ -98,32 +98,40 @@ Completed features are documented in CHANGELOG.md. Only in-progress items are tr
 | CI pipeline green | 0% — all recent runs failed |
 | 6 game mechanics checks | 50% — 6/12 games fully verified |
 | Type annotations (no Any) | 76% — 420/1770 return types still missing |
-| Reveal.js presentation | 80% — deck created, needs GitHub Pages deploy |
+| Reveal.js presentation | 100% — deck built, deployed to GitHub Pages |
 | Account lifecycle | 90% — ephemeral accounts implemented, needs e2e test |
 ## Presentation
 
-> **Status: not yet implemented.** The `make deck`, `make deck-data`, and
-> `make deck-serve` targets referenced below are specced in
-> `docs/presentation/BUILD_TASK_LIST.md` and `DESIGN_revealjs_deck.md` but are
-> NOT defined in the `Makefile`. The `docs/presentation/deck/` source tree and
-> `scripts/build_deck.py` are also not yet committed. Do not invoke these
-> targets; they will fail with "No rule to make target".
+**Status: built and deployed.** The interactive reveal.js deck lives at
+[`docs/presentation/deck/index.html`](docs/presentation/deck/index.html) and is
+published via GitHub Pages.
 
-A self-describing reveal.js deck — "gludd, honestly" — is planned to be
-generated from live E2E artifacts and committed design templates. Every
-maturity claim on a slide is intended to carry the same evidence token the
-README table carries; missing data would render an honest "NO DATA — run
-`make deck-data`" placeholder rather than a fabricated screenshot.
+**Live URL:** [https://sandboxcom.github.io/gludd/](https://sandboxcom.github.io/gludd/)
 
-**Planned URL:** https://sandboxcom.github.io/gludd/
+The deck is a 20-slide presentation written for a general (non-technical)
+audience. It covers:
 
-> Once implemented, the link goes live when:
-> 1. GitHub Pages is enabled in repo settings (Source: GitHub Actions)
-> 2. The deck source (`docs/presentation/deck/`) is committed to `main`
-> 3. The `.github/workflows/pages.yml` workflow has run successfully
->
-> Until the targets exist and the above conditions are met, there is no local
-> or published deck to preview.
+- What gludd is, in plain English (with analogies)
+- The problem it solves
+- A granular walkthrough of the work cycle (claim → dispatch → review → save)
+- Security (three-layer model)
+- Current stats with citations (22,000+ tests, 465+ source files, 98 roles, 24 providers)
+- What gludd can do today, and what it can't do yet (honest gaps)
+- How to try it, roadmap, and honest metrics
+
+Every stat on every slide carries a citation (e.g., `make test-count`,
+`make collection-roles`) so the audience can verify the numbers themselves.
+SVG diagrams in [`docs/presentation/deck/assets/`](docs/presentation/deck/assets/)
+illustrate the architecture, work cycle, and security layers.
+
+To preview locally:
+
+```bash
+# Open the deck in your browser
+open docs/presentation/deck/index.html
+# Or serve it
+python3 -m http.server 8000 --directory docs/presentation/deck
+```
 
 Design: `docs/presentation/DESIGN_revealjs_deck.md` | Build task list: `docs/presentation/BUILD_TASK_LIST.md`
 

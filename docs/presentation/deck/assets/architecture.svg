@@ -1,118 +1,73 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" font-family="-apple-system, 'SF Mono', Menlo, Monaco, monospace">
+  <style>
+    .box { fill: #161b22; stroke: #58a6ff; stroke-width: 2; rx: 8; }
+    .box-user { fill: #1f6feb; stroke: #58a6ff; stroke-width: 2; rx: 8; }
+    .box-ai { fill: #238636; stroke: #58a6ff; stroke-width: 2; rx: 8; }
+    .box-gate { fill: #d29922; stroke: #58a6ff; stroke-width: 2; rx: 8; }
+    .box-git { fill: #6e40c9; stroke: #58a6ff; stroke-width: 2; rx: 8; }
+    .label { fill: #c9d1d9; font-size: 14px; font-weight: 600; text-anchor: middle; }
+    .sublabel { fill: #8b949e; font-size: 11px; text-anchor: middle; }
+    .arrow { stroke: #58a6ff; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+    .arrow-label { fill: #79c0ff; font-size: 11px; text-anchor: middle; font-style: italic; }
+  </style>
   <defs>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
-      <feOffset dx="0" dy="2" result="offsetblur"/>
-      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
-      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
-    </marker>
-    <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b5cf6"/>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#58a6ff"/>
     </marker>
   </defs>
 
-  <rect width="800" height="600" fill="#f8fafc"/>
+  <!-- User -->
+  <rect class="box-user" x="30" y="200" width="130" height="70"/>
+  <text class="label" x="95" y="230" fill="#fff">You</text>
+  <text class="sublabel" x="95" y="250" fill="#c9d1d9">type a task</text>
 
-  <!-- Title -->
-  <text x="400" y="48" text-anchor="middle" font-size="26" font-weight="700" fill="#0f172a">How gludd Works</text>
-  <text x="400" y="74" text-anchor="middle" font-size="14" fill="#64748b">From a user's task to committed code</text>
+  <!-- gludd daemon -->
+  <rect class="box" x="250" y="170" width="160" height="130"/>
+  <text class="label" x="330" y="210">gludd</text>
+  <text class="sublabel" x="330" y="230">the agent</text>
+  <text class="sublabel" x="330" y="250">picks up tasks</text>
+  <text class="sublabel" x="330" y="270">assigns the work</text>
 
-  <!-- ===== USER (blue) ===== -->
-  <g filter="url(#shadow)">
-    <rect x="30" y="200" width="130" height="100" rx="14" fill="#3b82f6" stroke="#2563eb" stroke-width="2"/>
-  </g>
-  <text x="95" y="232" text-anchor="middle" font-size="30">👤</text>
-  <text x="95" y="262" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">User</text>
-  <text x="95" y="282" text-anchor="middle" font-size="11" fill="#dbeafe">Writes a task</text>
+  <!-- AI Models -->
+  <rect class="box-ai" x="500" y="80" width="160" height="100"/>
+  <text class="label" x="580" y="120" fill="#fff">AI writes code</text>
+  <text class="sublabel" x="580" y="145" fill="#c9d1d9">24 model providers</text>
+  <text class="sublabel" x="580" y="160" fill="#c9d1d9">GPT-4, Claude, DeepSeek...</text>
 
-  <!-- ===== DAEMON (green) ===== -->
-  <g filter="url(#shadow)">
-    <rect x="215" y="200" width="140" height="100" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
-  </g>
-  <text x="285" y="232" text-anchor="middle" font-size="26">🛡️</text>
-  <text x="285" y="262" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">Daemon</text>
-  <text x="285" y="282" text-anchor="middle" font-size="11" fill="#d1fae5">Receives the task</text>
+  <!-- AI Reviewer -->
+  <rect class="box-ai" x="500" y="290" width="160" height="100"/>
+  <text class="label" x="580" y="330" fill="#fff">AI reviews</text>
+  <text class="sublabel" x="580" y="355" fill="#c9d1d9">different model</text>
+  <text class="sublabel" x="580" y="370" fill="#c9d1d9">checks the work</text>
 
-  <!-- ===== EVENT LOOP (green, central, larger) ===== -->
-  <g filter="url(#shadow)">
-    <rect x="410" y="170" width="200" height="160" rx="14" fill="#ffffff" stroke="#059669" stroke-width="2"/>
-  </g>
-  <text x="510" y="196" text-anchor="middle" font-size="14" font-weight="700" fill="#059669">Event Loop</text>
-  <text x="510" y="212" text-anchor="middle" font-size="10" fill="#64748b">runs every second</text>
+  <!-- Quality gate -->
+  <rect class="box-gate" x="720" y="185" width="150" height="100"/>
+  <text class="label" x="795" y="225">Quality gate</text>
+  <text class="sublabel" x="795" y="250">tests + security</text>
 
-  <!-- 4 phase pills inside event loop -->
-  <g>
-    <rect x="425" y="225" width="80" height="26" rx="13" fill="#ecfdf5" stroke="#10b981"/>
-    <text x="465" y="242" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">1. Claim</text>
+  <!-- Git -->
+  <rect class="box-git" x="500" y="420" width="160" height="60"/>
+  <text class="label" x="580" y="445" fill="#fff">Code saved to git</text>
+  <text class="sublabel" x="580" y="465" fill="#c9d1d9">your project</text>
 
-    <rect x="515" y="225" width="80" height="26" rx="13" fill="#ecfdf5" stroke="#10b981"/>
-    <text x="555" y="242" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">2. Dispatch</text>
+  <!-- Arrows -->
+  <path class="arrow" d="M 160 235 L 250 235"/>
+  <text class="arrow-label" x="205" y="225">task</text>
 
-    <rect x="425" y="262" width="80" height="26" rx="13" fill="#ecfdf5" stroke="#10b981"/>
-    <text x="465" y="279" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">3. Review</text>
+  <path class="arrow" d="M 410 210 L 500 130"/>
+  <text class="arrow-label" x="450" y="155">write</text>
 
-    <rect x="515" y="262" width="80" height="26" rx="13" fill="#ecfdf5" stroke="#10b981"/>
-    <text x="555" y="279" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">4. Reconcile</text>
-  </g>
-  <text x="510" y="312" text-anchor="middle" font-size="10" fill="#64748b" font-style="italic">pick → send → check → commit</text>
+  <path class="arrow" d="M 660 130 L 720 210"/>
+  <text class="arrow-label" x="710" y="155">check</text>
 
-  <!-- ===== AI MODEL (purple) ===== -->
-  <g filter="url(#shadow)">
-    <rect x="660" y="200" width="120" height="100" rx="14" fill="#8b5cf6" stroke="#7c3aed" stroke-width="2"/>
-  </g>
-  <text x="720" y="232" text-anchor="middle" font-size="26">🤖</text>
-  <text x="720" y="262" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">AI Model</text>
-  <text x="720" y="282" text-anchor="middle" font-size="11" fill="#ede9fe">Writes the code</text>
+  <path class="arrow" d="M 795 285 L 660 330"/>
+  <text class="arrow-label" x="745" y="315">review</text>
 
-  <!-- ===== Arrows: top row ===== -->
-  <line x1="160" y1="250" x2="210" y2="250" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
-  <text x="185" y="242" text-anchor="middle" font-size="10" fill="#475569">task</text>
+  <path class="arrow" d="M 580 390 L 580 420"/>
+  <text class="arrow-label" x="610" y="408">save</text>
 
-  <line x1="355" y1="250" x2="405" y2="250" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <!-- Event loop <-> AI Model (bidirectional) -->
-  <line x1="610" y1="240" x2="655" y2="240" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arrowPurple)"/>
-  <text x="632" y="232" text-anchor="middle" font-size="10" fill="#8b5cf6">send</text>
-  <line x1="655" y1="265" x2="610" y2="265" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arrowPurple)"/>
-  <text x="632" y="280" text-anchor="middle" font-size="10" fill="#8b5cf6">code</text>
-
-  <!-- ===== Bottom row: supporting layers ===== -->
-
-  <!-- Ansible Collection (teal) -->
-  <g filter="url(#shadow)">
-    <rect x="80" y="430" width="170" height="90" rx="14" fill="#14b8a6" stroke="#0d9488" stroke-width="2"/>
-  </g>
-  <text x="165" y="460" text-anchor="middle" font-size="24">📦</text>
-  <text x="165" y="485" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff">Ansible Collection</text>
-  <text x="165" y="504" text-anchor="middle" font-size="11" fill="#ccfbf1">Execution layer</text>
-
-  <!-- SQLite Database (slate) -->
-  <g filter="url(#shadow)">
-    <rect x="315" y="430" width="170" height="90" rx="14" fill="#6b7280" stroke="#4b5563" stroke-width="2"/>
-  </g>
-  <text x="400" y="460" text-anchor="middle" font-size="24">🗄️</text>
-  <text x="400" y="485" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff">SQLite Database</text>
-  <text x="400" y="504" text-anchor="middle" font-size="11" fill="#e5e7eb">Where tasks are saved</text>
-
-  <!-- Git Repository (orange) -->
-  <g filter="url(#shadow)">
-    <rect x="550" y="430" width="170" height="90" rx="14" fill="#f59e0b" stroke="#d97706" stroke-width="2"/>
-  </g>
-  <text x="635" y="460" text-anchor="middle" font-size="24">🌳</text>
-  <text x="635" y="485" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff">Git Repository</text>
-  <text x="635" y="504" text-anchor="middle" font-size="11" fill="#fef3c7">Where work lands</text>
-
-  <!-- Arrows from event loop down to supporting layers -->
-  <line x1="460" y1="330" x2="200" y2="425" stroke="#475569" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
-  <line x1="510" y1="330" x2="400" y2="425" stroke="#475569" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
-  <line x1="560" y1="330" x2="620" y2="425" stroke="#475569" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
-
-  <!-- Footer legend -->
-  <text x="400" y="568" text-anchor="middle" font-size="11" fill="#94a3b8">
-    Blue = user · Green = daemon/event loop · Purple = AI model · Teal = execution · Slate = storage · Orange = git
-  </text>
+  <!-- Loop back arrow -->
+  <path class="arrow" d="M 250 290 Q 200 400 330 420 L 500 450" stroke-dasharray="5,3"/>
+  <text class="arrow-label" x="300" y="395">next task</text>
 </svg>

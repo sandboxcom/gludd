@@ -1,73 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" font-family="-apple-system, 'SF Mono', Menlo, Monaco, monospace">
+  <style>
+    .step-box { fill: #161b22; stroke: #58a6ff; stroke-width: 2; rx: 8; }
+    .step-number { fill: #58a6ff; font-size: 28px; font-weight: bold; text-anchor: middle; }
+    .step-label { fill: #c9d1d9; font-size: 16px; font-weight: 600; text-anchor: middle; }
+    .step-desc { fill: #8b949e; font-size: 12px; text-anchor: middle; }
+    .arrow { stroke: #58a6ff; stroke-width: 2; fill: none; marker-end: url(#arrowhead-loop); }
+    .loop-label { fill: #d29922; font-size: 13px; text-anchor: middle; font-style: italic; }
+  </style>
   <defs>
-    <filter id="shadow2" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
-      <feOffset dx="0" dy="2" result="offsetblur"/>
-      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
-      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+    <marker id="arrowhead-loop" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#58a6ff"/>
     </marker>
   </defs>
 
-  <rect width="800" height="600" fill="#f8fafc"/>
-
   <!-- Title -->
-  <text x="400" y="52" text-anchor="middle" font-size="26" font-weight="700" fill="#0f172a">The Event Loop</text>
-  <text x="400" y="78" text-anchor="middle" font-size="14" fill="#64748b">Four phases, repeated every second</text>
+  <text x="400" y="30" fill="#58a6ff" font-size="18" font-weight="600" text-anchor="middle">The Work Cycle</text>
 
-  <!-- Center hub -->
-  <circle cx="400" cy="330" r="62" fill="#ffffff" stroke="#059669" stroke-width="2" filter="url(#shadow2)"/>
-  <text x="400" y="320" text-anchor="middle" font-size="13" font-weight="700" fill="#059669">Every</text>
-  <text x="400" y="340" text-anchor="middle" font-size="13" font-weight="700" fill="#059669">1 second</text>
-  <text x="400" y="358" text-anchor="middle" font-size="10" fill="#64748b" font-style="italic">tick</text>
+  <!-- Step 1: Claim -->
+  <rect class="step-box" x="50" y="120" width="140" height="100"/>
+  <text class="step-number" x="120" y="155">1</text>
+  <text class="step-label" x="120" y="185">Claim</text>
+  <text class="step-desc" x="120" y="205">grab next task</text>
 
-  <!-- Curved arrows between phases (clockwise) -->
-  <!-- Claim (top) -> Dispatch (right) -->
-  <path d="M 470 250 Q 540 270 545 320" fill="none" stroke="#059669" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
-  <!-- Dispatch (right) -> Review (bottom) -->
-  <path d="M 545 360 Q 540 410 470 430" fill="none" stroke="#059669" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
-  <!-- Review (bottom) -> Reconcile (left) -->
-  <path d="M 330 430 Q 260 410 255 360" fill="none" stroke="#059669" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
-  <!-- Reconcile (left) -> Claim (top) -->
-  <path d="M 255 320 Q 260 270 330 250" fill="none" stroke="#059669" stroke-width="2.5" marker-end="url(#arrowGreen)"/>
+  <!-- Step 2: Dispatch -->
+  <rect class="step-box" x="240" y="120" width="140" height="100"/>
+  <text class="step-number" x="310" y="155">2</text>
+  <text class="step-label" x="310" y="185">Dispatch</text>
+  <text class="step-desc" x="310" y="205">AI writes code</text>
 
-  <!-- ===== Phase 1: Claim (top) ===== -->
-  <g filter="url(#shadow2)">
-    <rect x="320" y="170" width="160" height="80" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
-  </g>
-  <text x="400" y="198" text-anchor="middle" font-size="13" font-weight="700" fill="#d1fae5">PHASE 1</text>
-  <text x="400" y="218" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Claim</text>
-  <text x="400" y="238" text-anchor="middle" font-size="11" fill="#d1fae5">Pick up the next task</text>
+  <!-- Step 3: Review -->
+  <rect class="step-box" x="430" y="120" width="140" height="100"/>
+  <text class="step-number" x="500" y="155">3</text>
+  <text class="step-label" x="500" y="185">Review</text>
+  <text class="step-desc" x="500" y="205">AI checks work</text>
 
-  <!-- ===== Phase 2: Dispatch (right) ===== -->
-  <g filter="url(#shadow2)">
-    <rect x="550" y="290" width="160" height="80" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
-  </g>
-  <text x="630" y="318" text-anchor="middle" font-size="13" font-weight="700" fill="#d1fae5">PHASE 2</text>
-  <text x="630" y="338" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Dispatch</text>
-  <text x="630" y="358" text-anchor="middle" font-size="11" fill="#d1fae5">Send to the AI model</text>
+  <!-- Step 4: Save -->
+  <rect class="step-box" x="620" y="120" width="140" height="100"/>
+  <text class="step-number" x="690" y="155">4</text>
+  <text class="step-label" x="690" y="185">Save</text>
+  <text class="step-desc" x="690" y="205">code to git</text>
 
-  <!-- ===== Phase 3: Review (bottom) ===== -->
-  <g filter="url(#shadow2)">
-    <rect x="320" y="430" width="160" height="80" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
-  </g>
-  <text x="400" y="458" text-anchor="middle" font-size="13" font-weight="700" fill="#d1fae5">PHASE 3</text>
-  <text x="400" y="478" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Review</text>
-  <text x="400" y="498" text-anchor="middle" font-size="11" fill="#d1fae5">Check the AI's work</text>
+  <!-- Arrows between steps -->
+  <path class="arrow" d="M 190 170 L 240 170"/>
+  <path class="arrow" d="M 380 170 L 430 170"/>
+  <path class="arrow" d="M 570 170 L 620 170"/>
 
-  <!-- ===== Phase 4: Reconcile (left) ===== -->
-  <g filter="url(#shadow2)">
-    <rect x="90" y="290" width="160" height="80" rx="14" fill="#10b981" stroke="#059669" stroke-width="2"/>
-  </g>
-  <text x="170" y="318" text-anchor="middle" font-size="13" font-weight="700" fill="#d1fae5">PHASE 4</text>
-  <text x="170" y="338" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Reconcile</text>
-  <text x="170" y="358" text-anchor="middle" font-size="11" fill="#d1fae5">Commit to git</text>
-
-  <!-- Side notes -->
-  <text x="400" y="555" text-anchor="middle" font-size="12" fill="#94a3b8">
-    After Reconcile, the loop returns to Claim — always looking for the next task.
-  </text>
+  <!-- Loop back arrow -->
+  <path class="arrow" d="M 690 220 Q 690 320 400 320 Q 120 320 120 220" stroke-dasharray="5,3"/>
+  <text class="loop-label" x="400" y="345">repeat &mdash; every second, 24/7</text>
 </svg>

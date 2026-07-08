@@ -1,0 +1,34 @@
+---
+# Run the REAL build_presentation role against the mock daemon.
+#
+# The build pipeline steps that invoke `make deck-data` / `make deck-honesty`
+# are disabled here (regenerate_deck_data / honesty_check_enabled: false) so
+# the molecule scenario exercises the role's gludd_facts + gludd_gate_check +
+# artifact path without depending on the real README status table or
+# build_deck.py being runnable in the test environment. The verify step
+# asserts the role's JSON artifact + the structural path.
+- name: Converge - run build_presentation role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}"
+  tasks:
+    - name: Invoke build_presentation
+      ansible.builtin.include_role:
+        name: general_ludd.agent.build_presentation
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-build-presentation-{{ mock_port }}"
+        presentation_dir: "docs/presentation/deck"
+        deck_data_path: "docs/presentation/deck-data.json"
+        # Disable the make-invoking steps — molecule validates the role
+        # skeleton + facts path, not the real deck build (which needs the
+        # full repo context + README status table).
+        regenerate_deck_data: false
+        honesty_check_enabled: false
+        validate_html_structure: false
+        # No deck-data.json will be regenerated; pre-seed the stat target so
+        # the "deck-data.json was not produced" fail is skipped cleanly. The
+        # verify step checks the role ran, not that make deck-data ran here.

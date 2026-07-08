@@ -1,0 +1,53 @@
+---
+# build_presentation role defaults — SAFE-BY-DEFAULT
+#
+# Codifies the reveal.js deck build / validate / deploy pipeline as a
+# repeatable gludd-managed task. Deploy is OFF by default; only local
+# build + honesty lint + structural validation run unless explicitly opted in.
+
+# ── Daemon connectivity (for gludd_facts + gludd_gate_check) ───────────────
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# ── Artifact output ────────────────────────────────────────────────────────
+artifact_dir: "/tmp/gludd-build-presentation"
+
+# ── Deck source ────────────────────────────────────────────────────────────
+# Directory holding the reveal.js deck (index.html, assets/, etc.).
+presentation_dir: "docs/presentation/deck"
+# Source the deck data is regenerated from (README Feature & Task Completion
+# Status table → deck-data.json). Lives next to the deck.
+deck_data_source: "README.md"
+# Path to the generated deck-data.json artifact.
+deck_data_path: "docs/presentation/deck-data.json"
+
+# ── Repository ─────────────────────────────────────────────────────────────
+repo_path: "."
+
+# ── Gate honesty ───────────────────────────────────────────────────────────
+# Require a fresh green gate before emitting stats (so deck numbers are honest).
+require_green_gate: false
+gate_status_path: "{{ repo_path }}/.gate-status"
+
+# ── Pipeline toggles ───────────────────────────────────────────────────────
+# Regenerate deck-data.json from the README status table.
+regenerate_deck_data: true
+# Run the honesty lint (banned marketing tokens + %-must-match-README).
+honesty_check_enabled: true
+# Validate the reveal.js HTML structure (<section> slides present).
+validate_html_structure: true
+# (Optional) Serve locally for visual QA after build. Off by default —
+# serving is a foreground process and must be opted into explicitly.
+serve_locally: false
+serve_port: 8080
+
+# ── Deploy (SAFE-BY-DEFAULT: off) ──────────────────────────────────────────
+# Deploy target: one of "", "github_pages". Empty = do not deploy.
+deploy_target: ""
+# Commit message used when committing regenerated deck artifacts.
+deploy_commit_message: "docs(deck): rebuild presentation artifacts"
+# Branch the deck is deployed from (GitHub Pages source).
+deploy_branch: "master"
+# Commit + push via gludd_git only when explicitly enabled.
+enable_deploy_commit: true
+enable_deploy_push: false

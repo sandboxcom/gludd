@@ -1,0 +1,60 @@
+---
+- name: Verify - build_presentation wrote its build artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}.pid"
+    artifact: "/tmp/gludd-build-presentation-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}/build_presentation.json"
+    artifact_md: "/tmp/gludd-build-presentation-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}/build_presentation.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'build_presentation'
+          - result.status == 'completed'
+          - result.presentation_dir is defined
+          - result.deck_data_source is defined
+          - result.honesty_passed is defined
+          - result.deploy_outcome is defined
+          - result.deploy_outcome == 'skipped'
+          # Honesty lint step is part of the pipeline even when disabled
+          # (defaults to passed=true so downstream deploy decisions are sound).
+          - result.honesty_passed | bool
+        fail_msg: "build_presentation artifact wrong: {{ result }}"
+        success_msg: "build_presentation ran end-to-end against mock daemon"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-build-presentation-{{ mock_port }}"
+        state: absent
+      failed_when: false

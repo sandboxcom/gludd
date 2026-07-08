@@ -1,0 +1,28 @@
+---
+galaxy_info:
+  role_name: build_presentation
+  author: Agentic Harness Agent
+  description: >
+    Build, validate, and (optionally) deploy the gludd reveal.js presentation
+    as a repeatable gludd-managed task. The pipeline:
+      1. Regenerates deck-data.json from the README Feature & Task Completion
+         Status table (honest, machine-produced stats — no hardcoded numbers).
+      2. Runs the deck honesty lint (banned marketing tokens + every % must
+         match a machine-produced source).
+      3. Validates the reveal.js HTML structure (<section> slides present).
+      4. Optionally serves locally for visual QA.
+      5. Optionally commits + pushes deck artifacts to deploy via GitHub Pages.
+
+    Uses gludd_facts for live project stats, gludd_gate_check to verify the
+    gate is green before emitting numbers (honest-metrics contract), and
+    gludd_git for the deploy commit/push. SAFE-BY-DEFAULT: deploy is OFF.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

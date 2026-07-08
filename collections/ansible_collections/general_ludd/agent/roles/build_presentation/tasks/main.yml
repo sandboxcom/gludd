@@ -1,0 +1,301 @@
+---
+# build_presentation role — codify the reveal.js deck build / validate / deploy
+# pipeline as a repeatable gludd-managed task.
+#
+# Pipeline (each step toggleable via defaults):
+#   1. Gather live gludd_facts for project stats (honest, machine-produced).
+#   2. Optionally verify the gate is green via gludd_gate_check so deck
+#      numbers are backed by a real gate run, not a stale claim.
+#   3. Regenerate deck-data.json from the README status table (make deck-data).
+#   4. Run the honesty lint — banned marketing tokens + %-must-match-README
+#      (make deck-honesty).
+#   5. Validate the reveal.js HTML structure (index.html exists, has <section>).
+#   6. (Optional) Serve locally for visual QA (make deck-serve).
+#   7. (Optional) Deploy: commit + push deck artifacts via gludd_git so
+#      GitHub Pages picks them up.
+#
+# SAFE-BY-DEFAULT: deploy_target="" → no deploy. Deploy push is a second
+# explicit opt-in (enable_deploy_push=false).
+
+- name: Gather live daemon facts for deck stats
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _bp_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Gate honesty check (optional — honest-metrics contract) ────────────────
+
+- name: Verify gate is green before emitting deck numbers
+  general_ludd.agent.gludd_gate_check:
+    gate_path: "{{ gate_status_path }}"
+    state: check
+  register: _bp_gate_result
+  when: require_green_gate | bool
+
+- name: Fail when gate is not green (honest-metrics contract)
+  ansible.builtin.fail:
+    msg: >-
+      require_green_gate=true but the gate at {{ gate_status_path }} is not
+      complete+passing. Refusing to build a deck whose numbers are not backed
+      by a real gate run. Run `make gate` first.
+  when:
+    - require_green_gate | bool
+    - not (_bp_gate_result.gate_complete | default(false) | bool
+           and _bp_gate_result.gate_passed | default(false) | bool)
+
+# ── Step 1: Regenerate deck-data.json from README status table ─────────────
+
+- name: Regenerate deck-data.json (make deck-data)
+  ansible.builtin.command:
+    cmd: make deck-data
+    chdir: "{{ repo_path }}"
+  register: _bp_deck_data
+  changed_when: "'deck-data.json' in _bp_deck_data.stdout | default('')"
+  when:
+    - regenerate_deck_data | bool
+    - not ansible_check_mode
+
+- name: Stat regenerated deck-data.json
+  ansible.builtin.stat:
+    path: "{{ deck_data_path }}"
+  register: _bp_deck_data_stat
+
+- name: Fail when deck-data.json was not produced
+  ansible.builtin.fail:
+    msg: >-
+      Expected artifact {{ deck_data_path }} not found after `make deck-data`.
+      Check scripts/build_deck.py and that {{ deck_data_source }} has a
+      STATUS-TABLE:START..STATUS-TABLE:END block.
+  when: not _bp_deck_data_stat.stat.exists
+
+# ── Step 2: Honesty lint (banned tokens + %-must-match-README) ─────────────
+
+- name: Run honesty lint (make deck-honesty)
+  ansible.builtin.command:
+    cmd: make deck-honesty
+    chdir: "{{ repo_path }}"
+  register: _bp_honesty
+  changed_when: false
+  failed_when: _bp_honesty.rc != 0
+  when:
+    - honesty_check_enabled | bool
+    - not ansible_check_mode
+
+- name: Record honesty verdict
+  ansible.builtin.set_fact:
+    _bp_honesty_passed: "{{ (_bp_honesty.rc | default(0)) == 0 }}"
+  when: honesty_check_enabled | bool
+
+- name: Default honesty verdict when lint disabled
+  ansible.builtin.set_fact:
+    _bp_honesty_passed: true
+  when: not (honesty_check_enabled | bool)
+
+# ── Step 3: Validate reveal.js HTML structure ──────────────────────────────
+
+- name: Stat deck index.html
+  ansible.builtin.stat:
+    path: "{{ presentation_dir }}/index.html"
+  register: _bp_index_stat
+
+- name: Fail when reveal.js index.html is missing
+  ansible.builtin.fail:
+    msg: >-
+      Reveal.js deck missing: {{ presentation_dir }}/index.html not found.
+      Cannot validate structure. Build the deck first (`make deck`).
+  when:
+    - validate_html_structure | bool
+    - not _bp_index_stat.stat.exists
+
+- name: Slurp deck index.html for structural validation
+  ansible.builtin.slurp:
+    src: "{{ presentation_dir }}/index.html"
+  register: _bp_index_raw
+  when:
+    - validate_html_structure | bool
+    - _bp_index_stat.stat.exists
+
+- name: Validate reveal.js structure (≥1 <section> slide + reveal.js load)
+  ansible.builtin.assert:
+    that:
+      - _bp_index_raw.content is defined
+      - "'<section' in (_bp_index_raw.content | b64decode)"
+      - "'reveal.js' in (_bp_index_raw.content | b64decode)"
+    fail_msg: >-
+      {{ presentation_dir }}/index.html is not a valid reveal.js deck:
+      must contain at least one <section> slide and load reveal.js.
+    success_msg: "reveal.js structure OK — slides + reveal.js load present"
+  when:
+    - validate_html_structure | bool
+    - _bp_index_stat.stat.exists
+
+- name: Count slides in deck
+  ansible.builtin.set_fact:
+    _bp_slide_count: >-
+      {{ (_bp_index_raw.content | b64decode | default('')).split('<section') | length - 1 }}
+  when:
+    - validate_html_structure | bool
+    - _bp_index_stat.stat.exists
+
+# ── Step 4: (Optional) Serve locally for visual QA ─────────────────────────
+# Serving is a foreground process — only invoke when explicitly opted in,
+# and never in check mode or molecule converge (would hang the run).
+
+- name: Serve deck locally for visual QA
+  ansible.builtin.command:
+    cmd: "make deck-serve"
+    chdir: "{{ repo_path }}"
+  async: "{{ serve_async_seconds | default(30) }}"
+  poll: 0
+  register: _bp_serve
+  when:
+    - serve_locally | bool
+    - not ansible_check_mode
+  changed_when: false
+  failed_when: false
+
+- name: Report deck-serve launch
+  ansible.builtin.debug:
+    msg: >-
+      deck-serve launched (async); visual QA at http://localhost:{{ serve_port }}/
+      — kill via the async job handle when done.
+  when: serve_locally | bool
+
+# ── Step 5: (Optional) Deploy — commit + push deck artifacts ───────────────
+
+- name: Determine deploy eligibility
+  ansible.builtin.set_fact:
+    _bp_deploy_requested: "{{ deploy_target | length > 0 }}"
+    _bp_deploy_to_github_pages: "{{ deploy_target == 'github_pages' }}"
+
+- name: Commit regenerated deck artifacts via gludd_git
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: commit
+    message: "{{ deploy_commit_message }}"
+  register: _bp_deploy_commit
+  when:
+    - _bp_deploy_requested | bool
+    - enable_deploy_commit | bool
+    - not ansible_check_mode
+
+- name: Push deck artifacts via gludd_git (GitHub Pages deploy)
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: push
+    branch: "{{ deploy_branch }}"
+    remote: origin
+  register: _bp_deploy_push
+  when:
+    - _bp_deploy_to_github_pages | bool
+    - enable_deploy_push | bool
+    - not ansible_check_mode
+
+- name: Determine deploy outcome
+  ansible.builtin.set_fact:
+    _bp_deploy_outcome: >-
+      {%- if not _bp_deploy_requested | bool -%}
+        skipped
+      {%- elif not enable_deploy_commit | bool -%}
+        commit_disabled
+      {%- elif ansible_check_mode -%}
+        check_mode
+      {%- elif not enable_deploy_push | bool -%}
+        committed_no_push
+      {%- elif _bp_deploy_push.result.success | default(false) -%}
+        pushed
+      {%- else -%}
+        push_failed
+      {%- endif -%}
+
+# ── Artifacts ──────────────────────────────────────────────────────────────
+
+- name: Write JSON build artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'build_presentation',
+        'status': 'completed',
+        'presentation_dir': presentation_dir,
+        'deck_data_source': deck_data_source,
+        'deck_data_path': deck_data_path,
+        'deck_data_present': _bp_deck_data_stat.stat.exists,
+        'deck_data_size_bytes': _bp_deck_data_stat.stat.size | default(0),
+        'honesty_check_enabled': honesty_check_enabled | bool,
+        'honesty_passed': _bp_honesty_passed | bool,
+        'validate_html_structure': validate_html_structure | bool,
+        'index_present': _bp_index_stat.stat.exists,
+        'slide_count': _bp_slide_count | default(0),
+        'serve_launched': serve_locally | bool,
+        'deploy_target': deploy_target,
+        'deploy_outcome': _bp_deploy_outcome,
+        'deploy_commit_sha': _bp_deploy_commit.sha | default(none),
+        'deploy_push_success': _bp_deploy_push.result.success | default(false),
+        'gate_required': require_green_gate | bool,
+        'system_context': {
+          'backlog_size': _bp_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+          'success_rate': _bp_facts.ansible_facts.gludd.history.success_rate | default(0)
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/build_presentation.json"
+    mode: "0644"
+
+- name: Write markdown build report
+  ansible.builtin.copy:
+    content: |
+      # Presentation Build Report
+
+      **Deck:** `{{ presentation_dir }}`
+      **Data source:** `{{ deck_data_source }}` → `{{ deck_data_path }}`
+      **Deploy outcome:** {{ _bp_deploy_outcome | upper }}
+
+      ## Pipeline results
+
+      | Step | Result |
+      |------|--------|
+      | deck-data.json regenerated | {{ regenerate_deck_data | bool }} |
+      | deck-data.json present | {{ _bp_deck_data_stat.stat.exists }} |
+      | Honesty lint enabled | {{ honesty_check_enabled | bool }} |
+      | Honesty lint passed | {{ _bp_honesty_passed | bool }} |
+      | HTML structure validated | {{ validate_html_structure | bool }} |
+      | index.html present | {{ _bp_index_stat.stat.exists }} |
+      | Slide count | {{ _bp_slide_count | default(0) }} |
+      | Serve launched | {{ serve_locally | bool }} |
+
+      {% if _bp_deploy_requested | bool %}
+      ## Deploy
+
+      - **Target:** {{ deploy_target }}
+      - **Outcome:** {{ _bp_deploy_outcome }}
+      - **Commit SHA:** {{ _bp_deploy_commit.sha | default('—') }}
+      - **Push success:** {{ _bp_deploy_push.result.success | default(false) }}
+
+      {% if _bp_deploy_to_github_pages and _bp_deploy_push.result.success | default(false) %}
+      GitHub Pages will rebuild shortly — verify at
+      https://sandboxcom.github.io/gludd/
+      {% endif %}
+      {% else %}
+      ## Deploy
+
+      Skipped — `deploy_target` not set.
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.build_presentation*
+    dest: "{{ artifact_dir }}/build_presentation.md"
+    mode: "0644"
+
+- name: Report build_presentation completion
+  ansible.builtin.debug:
+    msg: >-
+      build_presentation: deck_data_present={{ _bp_deck_data_stat.stat.exists }}
+      honesty_passed={{ _bp_honesty_passed | bool }}
+      slides={{ _bp_slide_count | default(0) }}
+      deploy={{ _bp_deploy_outcome }}

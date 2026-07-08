@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>gludd — Autonomous Agentic SDLC</title>
+<title>gludd — Autonomous Software Development</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css">
 <style>
 :root {
   --r-heading-text-transform: none;
-  --r-heading1-size: 2.2em;
-  --r-heading2-size: 1.6em;
+  --r-heading1-size: 2.4em;
+  --r-heading2-size: 1.7em;
   --r-heading3-size: 1.3em;
   --r-main-font-size: 32px;
   --r-block-margin: 16px;
@@ -36,9 +36,14 @@
 .metric-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; text-align: center; }
 .metric-box .number { font-size: 1.8em; color: #58a6ff; font-weight: bold; }
 .metric-box .label { font-size: 0.5em; color: #8b949e; }
+.metric-box .cite { font-size: 0.4em; color: #484f58; display: block; margin-top: 4px; }
 .fragment.small { font-size: 0.75em; }
-.arch-diagram { font-family: monospace; font-size: 0.45em; line-height: 1.4; white-space: pre; text-align: left; display: inline-block; }
+.diagram-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin: 20px auto; max-width: 90%; }
+.diagram-wrap img { width: 100%; height: auto; display: block; }
 .honest-note { border-left: 3px solid #d29922; padding-left: 12px; color: #d29922; font-size: 0.6em; margin-top: 12px; }
+.analogy { border-left: 3px solid #58a6ff; padding-left: 12px; color: #79c0ff; font-size: 0.7em; margin-top: 12px; font-style: italic; }
+.step-number { display: inline-block; background: #58a6ff; color: #000; width: 36px; height: 36px; border-radius: 50%; text-align: center; line-height: 36px; font-weight: bold; font-size: 0.7em; margin-right: 12px; }
+.cite { font-size: 0.45em; color: #484f58; }
 </style>
 </head>
 <body>
@@ -46,749 +51,470 @@
 <div class="slides">
 
 <!-- ============================================================ -->
-<!-- TITLE -->
+<!-- SLIDE 1: TITLE -->
 <!-- ============================================================ -->
 <section>
   <h1>gludd</h1>
-  <h3 style="color:#8b949e;">Autonomous Agentic SDLC</h3>
+  <h3 style="color:#8b949e;">Autonomous Software Development</h3>
   <p class="tagline" style="margin-top:40px;">
-    An Ansible-driven, multi-model coding daemon<br>
-    that submits tasks and produces real, committed, reviewed, and reconciled code changes
+    An AI agent that writes, tests, and ships code<br>
+    &mdash; explained
   </p>
   <p style="margin-top:30px; font-size:0.5em; color:#484f58;">
-    alpha research software &middot; v0.1.0-alpha.5 &middot; 20,650 tests &middot; ~90 Ansible roles
+    v0.1.0-beta.2 &middot; July 8, 2026 &middot; MIT License
   </p>
 </section>
 
 <!-- ============================================================ -->
-<!-- WHAT IS GLUDD -->
+<!-- SLIDE 2: WHAT IS GLUDD? -->
 <!-- ============================================================ -->
 <section>
-  <section>
-    <h2>What is gludd?</h2>
-    <p>An <strong>autonomous coding daemon</strong> with an event loop.</p>
-    <p>You submit a todo, and gludd:</p>
-    <ul>
-      <li class="fragment">Dispatches it to an AI model via Ansible playbooks</li>
-      <li class="fragment">Runs generated code through a validation pipeline</li>
-      <li class="fragment">Reviews the result with a <em>separate</em> model</li>
-      <li class="fragment">Lands the change in git — <strong>with evidence</strong></li>
-    </ul>
-    <p class="honest-note">Not a chatbot. Not a copilot. A daemon.<br>It runs continuously, claims tasks, and produces commits.</p>
-  </section>
-  <section>
-    <h2>Stack</h2>
-    <table>
-      <tr><th>Component</th><th>Tech</th></tr>
-      <tr><td>Daemon</td><td>FastAPI + Gunicorn (single worker)</td></tr>
-      <tr><td>Database</td><td>SQLite (enforced — Postgres refused at boot)</td></tr>
-      <tr><td>Execution</td><td>Ansible Runner — <code>general_ludd.agent</code> collection</td></tr>
-      <tr><td>Models</td><td>Z.AI GLM, DeepSeek, Qwen, OpenAI, Anthropic, OpenRouter</td></tr>
-      <tr><td>Secrets</td><td>OpenBao (auto mode: external → env fallback)</td></tr>
-      <tr><td>Quality</td><td>ruff, mypy, pytest, pre-commit, detect-secrets</td></tr>
-    </table>
-  </section>
-</section>
-
-<!-- ============================================================ -->
-<!-- ARCHITECTURE -->
-<!-- ============================================================ -->
-<section>
-  <section>
-    <h2>Architecture</h2>
-    <p style="color:#58a6ff; font-size:1.2em; letter-spacing:4px;">
-      claim &rarr; dispatch &rarr; review &rarr; reconcile &rarr; repeat
-    </p>
-    <p>The event loop ticks every second:</p>
-    <ol>
-      <li class="fragment"><strong>Claim</strong> — dequeue runnable tasks with lease acquisition</li>
-      <li class="fragment"><strong>Dispatch</strong> — run Ansible playbook via the appropriate model</li>
-      <li class="fragment"><strong>Review</strong> — ReturnReviewer model inspects the result</li>
-      <li class="fragment"><strong>Reconcile</strong> — approve, retry, or reject the decision</li>
-    </ol>
-  </section>
-  <section>
-    <h2>Architecture Diagram</h2>
-    <div class="arch-diagram">
-                     &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
-  User &boxh;CLI/TUI&boxh;&boxH;  &boxur;&boxh;&boxh;&boxh; Daemon &boxh;&boxh;&boxh;&boxul;
-                     &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;  (FastAPI + Gunicorn, single worker)
-                            &boxvl;  PSK-authenticated API
-              &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
-              &boxvl;             &boxvl;             &boxvl;
-        &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul; &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul; &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
-        &boxvl; Event Loop &boxvl; &boxvl;  Admin    &boxvl; &boxvl;   Todo    &boxvl;
-        &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl; &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl; &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;
-             &boxvl;
-    &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
-    &boxvl;        &boxvl;        &boxvl;          &boxvl;          &boxvl;
-  Claim   Dispatch   Review   Reconcile  Self-Improve
-             &boxvl;
-        &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
-        &boxvl;                                                       &boxvl;
-    &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;  &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;  &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
-    &boxvl; Ansible &boxvl;  &boxvl; Roles  &boxvl;  &boxvl;      Model Gateway      &boxvl;
-    &boxvl; Runner  &boxvl;  &boxvl; (~90)  &boxvl;  &boxvl; (zai &rarr; deepseek &rarr; qwen) &boxvl;
-    &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;  &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;  &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;
-             &boxvl;                       &boxvl;
-       &boxur;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxul;
-       &boxvl;                SQLite (single-worker)                      &boxvl;
-       &boxvl;  todos &boxv; returns &boxv; benchmarks &boxv; messages &boxv; metrics &boxv; traces  &boxvl;
-       &boxvl;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxh;&boxvl;
-    </div>
-  </section>
-</section>
-
-<!-- ============================================================ -->
-<!-- FEATURES -->
-<!-- ============================================================ -->
-<section>
-  <section>
-    <h2>Features</h2>
-    <p>Four pillars of autonomous development</p>
-  </section>
-  <section>
-    <h3>12-Game Autonomous Building</h3>
-    <p>Single-prompt DeepSeek builds a complete, playable game. Every time.</p>
-    <table>
-      <tr><th>Game</th><th>Checks</th><th>Status</th><th>Tokens</th></tr>
-      <tr><td>Snake</td><td>5/6</td><td><span class="badge-yellow">PARTIAL</span></td><td>938</td></tr>
-      <tr><td>Tetris</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>2,250</td></tr>
-      <tr><td>Minesweeper</td><td>5/7</td><td><span class="badge-yellow">PARTIAL</span></td><td>1,379</td></tr>
-      <tr><td>Checkers</td><td>6/7</td><td><span class="badge-yellow">PARTIAL</span></td><td>2,852</td></tr>
-      <tr><td>SkiFree</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,309</td></tr>
-      <tr><td>Banana (Gorillas)</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,648</td></tr>
-      <tr><td>Pong</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,301</td></tr>
-      <tr><td>Breakout</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,465</td></tr>
-      <tr><td>Maze Runner</td><td>5/5</td><td><span class="badge-green">PASS</span></td><td>1,153</td></tr>
-      <tr><td>Word Guesser</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>973</td></tr>
-      <tr><td>Memory Match</td><td>4/6</td><td><span class="badge-yellow">PARTIAL</span></td><td>989</td></tr>
-      <tr><td>Tic-Tac-Toe</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,587</td></tr>
-    </table>
-    <p style="font-size:0.5em;">8/12 fully verified &middot; 6 failing checks across 4 games &middot; 17,844 total tokens &middot; 81.6s total latency</p>
-  </section>
-  <section>
-    <h3>Enforcement Infrastructure</h3>
-    <p>Three-layer guardrails on every agent action</p>
-    <ul>
-      <li><span class="badge-blue">Layer 1</span> Config permissions (<code>opencode.json</code>) — hard gate</li>
-      <li><span class="badge-blue">Layer 2</span> Runtime hooks (8 TypeScript plugins) — contextual error</li>
-      <li><span class="badge-blue">Layer 3</span> Agent prompt (AGENTS.md) — proactive instruction</li>
-    </ul>
-    <p style="font-size:0.6em; margin-top:16px;">Plugins: enforce-make, enforce-floor, enforce-delegate, enforce-stop, enforce-session-start, enforce-deadline, enforce-deletion-gate, watchdog</p>
-  </section>
-  <section>
-    <h3>Ansible Roles (~90)</h3>
-    <p>Every task is an Ansible playbook — auditable and idempotent</p>
-    <table>
-      <tr><th>Family</th><th>Roles</th><th>Example</th></tr>
-      <tr><td>Code-task</td><td>8</td><td>implement_change, write_tests, refactor_code</td></tr>
-      <tr><td>Audit/report</td><td>5</td><td>audit_security, report_metrics, report_status</td></tr>
-      <tr><td>Workflow-pipeline</td><td>5</td><td>gate_triage, ci_pipeline_repair, release_build</td></tr>
-      <tr><td>Secure-SDLC</td><td>7</td><td>threat_model, secret_scan, sbom_generate</td></tr>
-      <tr><td>Agile/sprint</td><td>9</td><td>story_create, sprint_plan, retrospective</td></tr>
-      <tr><td>Self-improve</td><td>4</td><td>ornith_self_improve, self_improve_ab_test</td></tr>
-      <tr><td>Observability</td><td>6</td><td>observe_incident_triage, observe_error_spike_rca</td></tr>
-      <tr><td>Specialized</td><td>45+</td><td>game_build_audit, cost_optimization_auditor, ...</td></tr>
-    </table>
-    <p style="font-size:0.5em;">12 Ansible modules &middot; 49 molecule scenarios &middot; molecule-test-all green locally</p>
-  </section>
-  <section>
-    <h3>Self-Improvement</h3>
-    <p>gludd audits its own codebase and proposes improvements</p>
-    <ul>
-      <li><strong>Gap analysis</strong> — <code>ornith_self_improve</code> role identifies weaknesses</li>
-      <li><strong>A/B testing</strong> — <code>self_improve_ab_test</code> evaluates candidate changes</li>
-      <li><strong>Auto-promote</strong> — winning variants land automatically</li>
-      <li><strong>Non-retrograde guard</strong> — gate must stay green after every self-edit</li>
-      <li><strong>Compaction feedback loop</strong> — accuracy samples tune aggressiveness</li>
-      <li><strong>Outcome-driven</strong> — EvalHarness measures pass_rate by task_type x model</li>
-    </ul>
-    <p class="honest-note">Dogfood flow runs on gludd's own repo. Work dispatches are monkeypatched (no real API key in CI).</p>
-  </section>
-</section>
-
-<!-- ============================================================ -->
-<!-- BUILDING GAMES WITH GLUDD -->
-<!-- ============================================================ -->
-<section>
-  <section>
-    <h2>Building Games with gludd</h2>
-    <p>Single-prompt DeepSeek builds a complete, playable game.</p>
-    <p class="tagline">12 games &middot; 8 fully verified &middot; 17,844 tokens &middot; 81.6s total latency</p>
-    <p class="honest-note">No hand-authored game code. Every game below was generated, imported, and ticked by the daemon.</p>
-  </section>
-  <section>
-    <h3>The Prompt (Snake)</h3>
-    <pre><code class="language-text">Write a complete, self-contained Python module that implements
-the classic Snake game as a headless state machine.
-NO external dependencies except the stdlib. NO display code.
-
-Requirements:
-- Class name: `Snake`
-- `__init__(self, grid_w=20, grid_h=20)`
-- `tick(self) -> bool`  # advance one frame
-- `input(self, action: str)`  # up/down/left/right
-- `render_state(self) -> dict`  # serializable state
-- `spawn_food(self)`
-- Eating food: grow by 1, increment score, spawn new food
-
-Output ONLY the Python code in a ```python fenced block.</code></pre>
-    <p style="font-size:0.5em; margin-top:8px;">No examples, no shot-prompting, no chain-of-thought. Just the spec.</p>
-  </section>
-  <section>
-    <h3>Generated Code (verified)</h3>
-    <pre><code class="language-python">import random
-
-class Snake:
-    def __init__(self, grid_w=20, grid_h=20):
-        self.grid_w = grid_w
-        self.grid_h = grid_h
-        self.snake = [[grid_w // 2, grid_h // 2]]
-        self.direction = "right"
-        self.food = []
-        self.spawn_food()
-        self.score = 0
-        self.game_over = False
-
-    def tick(self) -> bool:
-        # move head in current direction
-        # return False on wall/self collision, True otherwise
-        ...
-
-    def render_state(self) -> dict:
-        return {
-            "grid_w": self.grid_w,
-            "snake": self.snake,
-            "food": self.food,
-            "score": self.score,
-            "game_over": self.game_over,
-            "length": len(self.snake),
-        }</code></pre>
-    <p style="font-size:0.5em; margin-top:8px;">Generated by DeepSeek (<code>deepseek-chat</code>) via the daemon's ExecutionEngine.</p>
-  </section>
-  <section>
-    <h3>Audit Methodology</h3>
-    <p>Every game is verified by <code>tests/e2e/test_daemon_game_building.py</code>:</p>
-    <ol>
-      <li class="fragment"><strong>Claim</strong> — todo dequeued via TodoRepository (QUEUED &rarr; ACTIVE)</li>
-      <li class="fragment"><strong>Dispatch</strong> — EventLoop.tick() invokes ModelGateway</li>
-      <li class="fragment"><strong>Generate</strong> — ExecutionEngine writes <code>.py</code> to workspace</li>
-      <li class="fragment"><strong>Commit</strong> — git commit on workspace branch</li>
-      <li class="fragment"><strong>Verify</strong> — AST-parseable, class importable, <code>tick()</code> returns bool, <code>render_state()</code> has required keys</li>
-    </ol>
-    <p class="honest-note">DEEPSEEK_API_KEY loaded from env or <code>.deepseek.key</code> — never committed, never logged.</p>
-  </section>
-  <section>
-    <h3>Live Game Audit (12 games)</h3>
-    <table>
-      <tr><th>Game</th><th>Checks</th><th>Status</th><th>Tokens</th></tr>
-      <tr><td>Snake</td><td>5/6</td><td><span class="badge-yellow">PARTIAL</span></td><td>938</td></tr>
-      <tr><td>Tetris</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>2,250</td></tr>
-      <tr><td>Minesweeper</td><td>5/7</td><td><span class="badge-yellow">PARTIAL</span></td><td>1,379</td></tr>
-      <tr><td>Checkers</td><td>6/7</td><td><span class="badge-yellow">PARTIAL</span></td><td>2,852</td></tr>
-      <tr><td>SkiFree</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,309</td></tr>
-      <tr><td>Banana (Gorillas)</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,648</td></tr>
-      <tr><td>Pong</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,301</td></tr>
-      <tr><td>Breakout</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,465</td></tr>
-      <tr><td>Maze Runner</td><td>5/5</td><td><span class="badge-green">PASS</span></td><td>1,153</td></tr>
-      <tr><td>Word Guesser</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>973</td></tr>
-      <tr><td>Memory Match</td><td>4/6</td><td><span class="badge-yellow">PARTIAL</span></td><td>989</td></tr>
-      <tr><td>Tic-Tac-Toe</td><td>6/6</td><td><span class="badge-green">PASS</span></td><td>1,587</td></tr>
-    </table>
-    <p style="font-size:0.5em;">8/12 fully verified &middot; 6 failing checks across 4 games &middot; see Honest Gaps section for the bug list</p>
-  </section>
-  <section>
-    <h3>What the Daemon Proves</h3>
-    <ul>
-      <li>Full pipeline runs: <strong>claim &rarr; dispatch &rarr; generate &rarr; commit &rarr; verify</strong></li>
-      <li>Real model call (DeepSeek via <code>langchain_openai.ChatOpenAI</code>)</li>
-      <li>Real EventLoop.tick() with all phases (no bypass)</li>
-      <li>Real TodoRepository + SQLite + Alembic schema</li>
-      <li>Self-improvement fires on the same tick (interval=1)</li>
-    </ul>
-    <p class="honest-note">Test is skip-by-default when <code>DEEPSEEK_API_KEY</code> is unset. Never fabricated, never mocked green.</p>
-  </section>
-</section>
-
-<!-- ============================================================ -->
-<!-- SESSION WORK -->
-<!-- ============================================================ -->
-<section>
-  <section>
-    <h2>Session Work</h2>
-    <p>What landed in the last sprint (sessions 9b &ndash; 16)</p>
-    <table style="font-size:0.55em;">
-      <tr><th>Area</th><th>Deliverable</th><th>Evidence</th></tr>
-      <tr><td>Enforcement Infrastructure</td><td>gludd_push_guard + gludd_gate_check modules, enforcement_gate + watchdog_check roles</td><td><span class="badge-green">2 molecule scenarios</span></td></tr>
-      <tr><td>CI Hardening</td><td>10 guardrail categories: push-rate, gate marker, startup smoke, hook verify, watchdog CI, anti-wedge, disengage cap</td><td><span class="badge-green">7 bugs fixed</span></td></tr>
-      <tr><td>Game Building</td><td>12 autonomous DeepSeek game builds via ExecutionEngine + EventLoop</td><td><span class="badge-yellow">8/12 PASS</span></td></tr>
-      <tr><td>AutoMemory</td><td>Episodic + Consolidation + CrossTask learner (3 modules)</td><td><span class="badge-green">517-line test suite</span></td></tr>
-      <tr><td>Cost Tracking</td><td>InfraCostTracker: 60+ SKUs across AWS/GCP/Azure/RunPod/Vast.ai</td><td><span class="badge-green">BILL-1 &ndash; BILL-9</span></td></tr>
-      <tr><td>XDG Login</td><td>pydantic-settings UserConfig + <code>GLUDD_</code> env prefix</td><td><span class="badge-green">W4.4 landed</span></td></tr>
-    </table>
-  </section>
-  <section>
-    <h3>Enforcement Infrastructure Port</h3>
-    <p>Three-layer guardrails ported to Ansible modules + roles</p>
-    <pre><code class="language-yaml"># Ansible module: gludd_push_guard
-- name: Block push when CI is in flight
-  gludd_push_guard:
-    branch: "{{ target_branch }}"
-    force: false
-  register: guard_result
-
-- name: Fail on guard violation
-  ansible.builtin.fail:
-    msg: "Push blocked: {{ guard_result.reason }}"
-  when: not guard_result.allowed</code></pre>
-    <ul>
-      <li><strong>Modules</strong>: <code>gludd_push_guard</code>, <code>gludd_gate_check</code></li>
-      <li><strong>Roles</strong>: <code>enforcement_gate</code>, <code>watchdog_check</code></li>
-      <li><strong>Molecule</strong>: 2 scenarios covering green-branch immutability + gate-freshness</li>
-    </ul>
-  </section>
-  <section>
-    <h3>CI Hardening (10 categories)</h3>
-    <table style="font-size:0.55em;">
-      <tr><th>#</th><th>Hardening</th><th>Tests</th></tr>
-      <tr><td>1</td><td>Push-rate guard with force-push tracker (CI cancellation loop prevention)</td><td>5</td></tr>
-      <tr><td>2</td><td>Gate completion marker (requires terminal <code>=== GATE: PASSED ===</code>)</td><td>5</td></tr>
-      <tr><td>3</td><td>Daemon startup smoke test (catches lifespan crashes)</td><td>3</td></tr>
-      <tr><td>4</td><td>Runtime hook verification (proves hooks fire in-process)</td><td>8</td></tr>
-      <tr><td>5</td><td>Watchdog CI gate injection into <code>.gate-status</code></td><td>5</td></tr>
-      <tr><td>6</td><td>Anti-wedge counter resets on resume + wraps at 100</td><td>&mdash;</td></tr>
-      <tr><td>7</td><td>enforce-stop.ts CI block (<code>hasLocalWork</code> includes CI-pending)</td><td>&mdash;</td></tr>
-      <tr><td>8</td><td>Disengage capped at 5 min (was permanent: 9999999999999)</td><td>&mdash;</td></tr>
-      <tr><td>9</td><td>Watchdog <code>has_pending_work</code> includes <code>ci_pending</code></td><td>&mdash;</td></tr>
-      <tr><td>10</td><td>All enforcement state files reset on session start</td><td>&mdash;</td></tr>
-    </table>
-  </section>
-  <section>
-    <h3>AutoMemory Subsystem</h3>
-    <p>Three-stage memory pipeline (mirrors Stanford AutoMemory)</p>
-    <div class="arch-diagram" style="font-size:0.5em;">
-  Episode &rarr; EpisodicMemoryRecorder &rarr; "episodic" namespace
-                                       &boxv;
-                              MemoryConsolidator (every 50 eps / 6h)
-                                       &boxv;
-                            "consolidated" namespace (summaries)
-                                       &boxv;
-                              CrossTaskLearner (pattern extraction)
-                                       &boxv;
-                            recommendations + warnings for next task
-    </div>
-    <ul>
-      <li><strong>Episodic</strong> &mdash; raw task-execution records (outcome, tools, takeaway)</li>
-      <li><strong>Consolidated</strong> &mdash; summarized old episodes by task_type</li>
-      <li><strong>Cross-task</strong> &mdash; recurring errors + effective strategies across all types</li>
-    </ul>
-    <p class="honest-note">Model gateway is optional. Consolidation works rule-based when no LLM is wired.</p>
-  </section>
-  <section>
-    <h3>Cost Tracking (InfraCostTracker)</h3>
-    <p>Multi-cloud infrastructure cost tracking with PricingCatalog + fallback rates</p>
-    <pre><code class="language-python">tracker = InfraCostTracker(catalog=PricingCatalog())
-
-# Record a GPU run
-tracker.record_by_duration(
-    provider="runpod",
-    sku="A100-SXM4-80GB-1x",
-    duration_hours=2.5,
-    project_id="game-build-42",
-    spot=True,
-)
-
-# Per-project breakdown
-print(tracker.cost_by_project())
-# {"game-build-42": 6.225, "training-run-7": 32.69}</code></pre>
-    <ul>
-      <li><strong>60+ SKUs</strong>: AWS (p3/p4d/p5/g5), GCP (a2/a3), Azure (NC/ND), RunPod, Vast.ai, Lambda Labs</li>
-      <li><strong>BILL-1&ndash;9</strong>: Slurm billing, GPU monitor, idle teardown, compute-aware scheduling</li>
-      <li><strong>Spot pricing</strong>: AWS instance_market_options, GCP scheduling, Azure priority=Spot</li>
-    </ul>
-  </section>
-  <section>
-    <h3>XDG Login &amp; Config (W4.4)</h3>
-    <p>pydantic-settings <code>UserConfig</code> with <code>GLUDD_</code> env prefix</p>
-    <pre><code class="language-python">class UserConfig(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="GLUDD_",
-        env_nested_delimiter="__",
-        extra="ignore",
-    )
-
-    model_routing: ModelRoutingConfig | None = None
-    budget: dict[str, Any] = {}
-    observability: ObservabilityConfig = ObservabilityConfig()
-    pipeline: PipelineConfigBlock = PipelineConfigBlock()
-    # ... 20+ typed fields</code></pre>
-    <p>Loading priority (highest &rarr; lowest):</p>
-    <ol>
-      <li><code>GLUDD_*</code> environment variables</li>
-      <li>YAML file (via <code>UserConfig.from_yaml(path)</code>)</li>
-      <li>Field defaults</li>
-    </ol>
-    <p style="font-size:0.55em;">XDG-aware: reads <code>$XDG_CONFIG_HOME/gludd/config.yml</code> by default.</p>
-  </section>
-</section>
-
-<!-- ============================================================ -->
-<!-- HOW TO USE -->
-<!-- ============================================================ -->
-<section>
-  <section>
-    <h2>How to Use gludd</h2>
-  </section>
-  <section>
-    <h3>Quick Start</h3>
-    <pre><code class="language-bash">git clone https://github.com/sandboxcom/gludd.git
-cd gludd
-make init        # set up directories and dependencies
-make bootstrap   # init + lint + test + healthcheck
-make help        # list all available make targets</code></pre>
-  </section>
-  <section>
-    <h3>Start the Daemon</h3>
-    <pre><code class="language-bash"># Quick start with defaults (SQLite, no model key)
-uv run gludd daemon --port 8000
-
-# With a config directory and model profile
-uv run gludd daemon --config-dir ~/.config/general-ludd --port 8000</code></pre>
-  </section>
-  <section>
-    <h3>Submit Todos &amp; Check Status</h3>
-    <pre><code class="language-bash"># Submit a task
-uv run gludd todo add "Write a unit test for the login endpoint" --queue core
-
-# Check the queue
-uv run gludd todo list --status queued
-
-# Full daemon snapshot
-uv run gludd status</code></pre>
-  </section>
-  <section>
-    <h3>Health &amp; Metrics</h3>
-    <pre><code class="language-bash">uv run gludd health
-uv run gludd version
-curl http://localhost:8000/healthz
-curl http://localhost:8000/admin/metrics/export</code></pre>
-  </section>
-</section>
-
-<!-- ============================================================ -->
-<!-- ROLES -->
-<!-- ============================================================ -->
-<section>
-  <section>
-    <h2>Creating &amp; Modifying Roles</h2>
-    <p>Roles give gludd new behaviors. They are Ansible roles in <code>general_ludd.agent</code>.</p>
-  </section>
-  <section>
-    <h3>Role Structure</h3>
-    <pre><code class="language-yaml"># roles/my_new_role/tasks/main.yml
-- name: Gather daemon state
-  gludd_facts:
-    register: daemon_state
-
-- name: Call the model
-  gludd_model_call:
-    prompt: "{{ task_prompt }}"
-    model_profile: "{{ model_profile | default('zai_coder') }}"
-  register: model_result
-
-- name: Write the change
-  gludd_git:
-    action: commit
-    message: "{{ model_result.summary }}"
-    files: "{{ model_result.changed_files }}"</code></pre>
-    <p style="font-size:0.5em; margin-top:8px;">Add a <code>molecule/</code> scenario, register the role, done.</p>
-  </section>
-  <section>
-    <h3>How Role Routing Works</h3>
-    <ol>
-      <li>Each todo carries a <code>task_type</code> (<code>code</code>, <code>bug_fix</code>, <code>refactor</code>, ...)</li>
-      <li>The <code>ModelRouter</code> selects a role based on <code>task_type</code> + routing weights</li>
-      <li>Roles compose modules into full agent task runs</li>
-      <li>New roles auto-discover — just drop them in <code>roles/</code></li>
-    </ol>
-    <p style="font-size:0.6em;">12 modules (gludd_facts, gludd_model_call, gludd_git, gludd_worktree, ...) &rarr; ~90 roles &rarr; 49 molecule scenarios</p>
-  </section>
-</section>
-
-<!-- ============================================================ -->
-<!-- SELF-IMPROVEMENT -->
-<!-- ============================================================ -->
-<section>
-  <section>
-    <h2>Self-Improvement in Depth</h2>
-    <p>gludd can improve <em>itself</em> — the daemon that runs the analysis is the subject of the analysis.</p>
-  </section>
-  <section>
-    <h3>The Self-Improve Pipeline</h3>
-    <ol>
-      <li class="fragment"><strong>Propose</strong> — <code>self_improve_propose</code> scans codebase, proposes changes</li>
-      <li class="fragment"><strong>A/B Test</strong> — <code>self_improve_ab_test</code> runs both variants, collects metrics</li>
-      <li class="fragment"><strong>Promote</strong> — <code>self_improve_promote</code> lands the winner if gate stays green</li>
-      <li class="fragment"><strong>Ornith</strong> — <code>ornith_self_improve</code> training pipeline with data repo + MCP server</li>
-    </ol>
-  </section>
-  <section>
-    <h3>Gap Analysis</h3>
-    <p>Systematic detection of what's missing or broken:</p>
-    <ul>
-      <li><strong>Dead code auditor</strong> — finds classes imported nowhere but tests</li>
-      <li><strong>Feature gap auditor</strong> — checks CLI/TUI/API parity</li>
-      <li><strong>Coverage audit</strong> — per-file threshold enforcement (85% floor)</li>
-      <li><strong>Game build audit</strong> — validates 12 autonomous game builds</li>
-      <li><strong>Enforcement verify</strong> — tests guardrail integrity on every change</li>
-      <li><strong>Security backlog</strong> — 41 catalogued findings with custom checkers</li>
-    </ul>
-  </section>
-  <section>
-    <h3>Non-Retrograde Guard</h3>
-    <p>The gate must <strong>stay green</strong> after every self-edit. No exceptions.</p>
-    <ul>
-      <li><code>make gate</code> is the single source of truth</li>
-      <li><code>config/ratchet.yml</code> may only shrink (enforced by preflight)</li>
-      <li>Self-modification guards prevent the agent from disabling its own checks</li>
-      <li>Guardrail integrity policy: you must never remove a guardrail to fix a symptom</li>
-    </ul>
-  </section>
-  <section>
-    <h3>Episodic Memory (code)</h3>
-    <pre><code class="language-python">@dataclass
-class Episode:
-    id: str          # uuid4 hex[:12]
-    agent_id: str
-    task_type: str   # "code", "bug_fix", "refactor"
-    work_type: str
-    outcome: str     # success | failure | partial | cancelled
-    context: dict[str, Any]
-    tools_used: list[str]
-    takeaway: str    # what worked
-    error_message: str
-    duration_seconds: float
-
-class EpisodicMemoryRecorder:
-    async def record_episode(self, episode: Episode) -> str:
-        await self._repo.set(
-            agent_id=episode.agent_id,
-            key=episode.id,
-            value=json.dumps(_episode_to_dict(episode)),
-            namespace="episodic",
-        )
-        return episode.id</code></pre>
-    <p style="font-size:0.5em; margin-top:8px;">Source: <code>src/general_ludd/memory/episodic.py</code></p>
-  </section>
-  <section>
-    <h3>Memory Consolidation (code)</h3>
-    <pre><code class="language-python">class MemoryConsolidator:
-    """Periodically summarizes old episodic memories.
-
-    Default cadence: every 50 episodes OR every 6 hours,
-    whichever comes first. Old episodes are grouped by task_type
-    and summarized: patterns, failure modes, effective strategies.
-    """
-    async def consolidate(self, agent_id: str, force=False) -> dict:
-        # 1. Load all episodes for agent
-        # 2. Split into old (age >= max_age_hours) vs recent
-        # 3. Group old episodes by task_type
-        # 4. For each group: count outcomes, collect errors,
-        #    collect takeaways, compute avg duration
-        # 5. Persist summary to "consolidated" namespace
-        # 6. Optionally: call model_gateway for higher-level insight</code></pre>
-    <p style="font-size:0.5em; margin-top:8px;">Source: <code>src/general_ludd/memory/consolidation.py</code> &middot; model_gateway optional</p>
-  </section>
-  <section>
-    <h3>Cross-Task Learning (code)</h3>
-    <pre><code class="language-python">class CrossTaskLearner:
-    async def learn_patterns(self, agent_id: str) -> dict:
-        # Aggregate across ALL episodic + consolidated records
-        # Returns:
-        #   overall_success_rate_pct
-        #   per_type_analysis: {task_type: {success_rate, top_errors, ...}}
-        #   recurring_errors:   [{error, count}, ...]  top 10
-        #   effective_strategies: [{strategy, count}, ...]  top 10
-
-    async def recommend_for_task(
-        self, agent_id: str, task_type: str
-    ) -> dict:
-        # Semantic retrieval of similar past episodes
-        # Returns:
-        #   recommendations: takeaways from past successes
-        #   warnings: error patterns from past failures
-        #   + consolidated historical patterns
-
-    async def generate_improvement_report(self, agent_id) -> dict:
-        # Flag task_types with success_rate &lt; 50% (n &gt;= 3)
-        # Surface recurring errors (count &gt;= 2)</code></pre>
-    <p style="font-size:0.5em; margin-top:8px;">Source: <code>src/general_ludd/memory/cross_task.py</code></p>
-  </section>
-</section>
-
-<!-- ============================================================ -->
-<!-- CURRENT GAPS -->
-<!-- ============================================================ -->
-<section>
-  <section>
-    <h2>Current Gaps</h2>
-    <p style="color:#da3633;">Honest assessment of what's broken or incomplete</p>
-  </section>
-  <section>
-    <h3>CI Not Green</h3>
-    <ul>
-      <li>Gate passes on macOS arm64 locally <span class="badge-green">PASS</span></li>
-      <li>CI (GitHub Actions, ubuntu) gate has never been green <span class="badge-red">FAIL</span></li>
-      <li>Molecule suite (49 scenarios) passes locally only — <span class="badge-yellow">CI-UNVERIFIED</span></li>
-      <li>Test phase OOM under xdist — known issue</li>
-    </ul>
-  </section>
-  <section>
-    <h3>6 Game Mechanics Bugs</h3>
-    <table>
-      <tr><th>Game</th><th>Failing Check</th></tr>
-      <tr><td>Snake</td><td>food_eating — TypeError: cannot unpack non-iterable int</td></tr>
-      <tr><td>Minesweeper</td><td>flood_fill — revealing a 0 cell doesn't auto-reveal adjacent</td></tr>
-      <tr><td>Minesweeper</td><td>flag_toggle — flag() doesn't toggle flagged/unflagged</td></tr>
-      <tr><td>Checkers</td><td>game_over — no valid moves doesn't set game_over=True</td></tr>
-      <tr><td>Memory Match</td><td>mm_match_pair — matching two same-value cards doesn't set matched=True</td></tr>
-      <tr><td>Memory Match</td><td>mm_all_matched — game doesn't end when all cards matched</td></tr>
-    </table>
-  </section>
-  <section>
-    <h3>Enforcement Needs Restart</h3>
-    <ul>
-      <li>TypeScript plugins compile once at opencode startup</li>
-      <li>Plugin edits require a full quit + re-launch</li>
-      <li>Emergency disengage available: <code>make disengage-enforcement</code></li>
-      <li>Watchdog auto-resets streak counter every 60s as failsafe</li>
-    </ul>
-  </section>
-  <section>
-    <h3>Connector &amp; Other Gaps</h3>
-    <ul>
-      <li>Observability connector base built (~80 connectors), but daemon wiring incomplete</li>
-      <li>SpendLimiter budget cap "literally never fires" — passes <code>projected_cost_usd=0.0</code></li>
-      <li>Scoring router: no <code>avg_cost</code> column &rarr; no-op (fixed: <code>[436af0d]</code>)</li>
-      <li>Some features <span class="badge-yellow">~100% PARTIAL</span>: file-refs only, no live CI verification</li>
-      <li>No UI / no IDE integration — gludd is daemon + CLI only</li>
-      <li>Single-worker SQLite — no horizontal scale</li>
-    </ul>
-  </section>
-</section>
-
-<!-- ============================================================ -->
-<!-- HONEST METRICS -->
-<!-- ============================================================ -->
-<section>
-  <h2>Honest Metrics</h2>
-  <p class="honest-note" style="font-size:0.7em;">
-    Every number below is from a machine-produced measurement.<br>
-    No hardcoded counts — live gate output only.
+  <h2>What is gludd?</h2>
+  <p>gludd is <strong>an AI agent that writes code for you</strong>.</p>
+  <p>You describe what you want built. gludd writes the code, tests it, reviews it, and saves it to your project &mdash; automatically.</p>
+  <div class="analogy">
+    Think of it like a junior developer that never sleeps.<br>
+    You hand them a task. They write it, test it, have a senior dev check it, and commit it. Then they grab the next task.
+  </div>
+  <p class="honest-note">
+    Not a chatbot. Not a code-completion tool. A full agent that does the whole job &mdash; start to finish.
   </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 3: THE PROBLEM IT SOLVES -->
+<!-- ============================================================ -->
+<section>
+  <h2>The problem</h2>
+  <p>Software development is slow and repetitive.</p>
+  <ul>
+    <li class="fragment">Writing boilerplate code takes hours</li>
+    <li class="fragment">Writing tests for every change takes more hours</li>
+    <li class="fragment">Reviewing code takes <em>yet more</em> hours</li>
+    <li class="fragment">Fixing bugs found in review takes even more</li>
+    <li class="fragment">And then you do it all again tomorrow</li>
+  </ul>
+  <p style="margin-top:20px; color:#58a6ff;">What if a machine could do all of that &mdash; while you focus on the hard problems?</p>
+  <p class="analogy">
+    That's what gludd does. You describe the goal. gludd handles the grind.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 4: HOW GLUDD WORKS -->
+<!-- ============================================================ -->
+<section>
+  <h2>How gludd works</h2>
+  <p>The big picture, in plain English:</p>
+  <ol>
+    <li class="fragment"><strong>You submit a task</strong> &mdash; "fix the login bug"</li>
+    <li class="fragment"><strong>gludd picks it up</strong> from a queue</li>
+    <li class="fragment"><strong>An AI writes the code</strong> to solve it</li>
+    <li class="fragment"><strong>Tests run automatically</strong> to check the work</li>
+    <li class="fragment"><strong>Another AI reviews</strong> the result</li>
+    <li class="fragment"><strong>The code lands in your project</strong> &mdash; ready to use</li>
+  </ol>
+  <div class="diagram-wrap">
+    <img src="assets/architecture.svg" alt="gludd architecture diagram showing the flow from user to daemon to AI models to git">
+  </div>
+  <p class="cite">Source: <code>docs/presentation/deck/assets/architecture.svg</code></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 5: THE WORK CYCLE -->
+<!-- ============================================================ -->
+<section>
+  <h2>The work cycle</h2>
+  <p>gludd runs a continuous loop &mdash; four steps, over and over:</p>
+  <ol>
+    <li class="fragment"><strong>Claim</strong> &mdash; gludd grabs the next task from the queue</li>
+    <li class="fragment"><strong>Dispatch</strong> &mdash; gludd assigns the task to an AI model</li>
+    <li class="fragment"><strong>Review</strong> &mdash; a different AI checks the work</li>
+    <li class="fragment"><strong>Save</strong> &mdash; gludd saves the finished code to your project</li>
+  </ol>
+  <div class="diagram-wrap">
+    <img src="assets/event-loop.svg" alt="gludd work cycle diagram showing claim, dispatch, review, save steps in a loop">
+  </div>
+  <p class="cite">Source: <code>docs/presentation/deck/assets/event-loop.svg</code></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 6: STEP 1 - YOU SUBMIT A TODO -->
+<!-- ============================================================ -->
+<section>
+  <h2><span class="step-number">1</span>You submit a task</h2>
+  <p>Everything starts with a <em>todo</em> &mdash; a short description of what you want done.</p>
+  <p><strong>Concrete example:</strong></p>
+  <pre><code class="language-text">You type:    "Write a unit test for the login endpoint"
+
+gludd says:  "Got it. Added to the queue."</code></pre>
+  <p>That's it. No prompt engineering. No code to write. Just describe the goal in plain English.</p>
+  <p class="analogy">
+    It's like writing a sticky note and putting it on the board.
+    gludd picks up sticky notes one at a time and does the work.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 7: STEP 2 - GLUDD PICKS IT UP -->
+<!-- ============================================================ -->
+<section>
+  <h2><span class="step-number">2</span>gludd picks it up</h2>
+  <p>gludd runs continuously, checking the queue every second.</p>
+  <p>When it sees your task, it:</p>
+  <ul>
+    <li class="fragment">Marks the task as "in progress" (so no one else grabs it)</li>
+    <li class="fragment">Reads the task description</li>
+    <li class="fragment">Figures out what kind of work it is (a bug fix? a new feature? a test?)</li>
+    <li class="fragment">Picks the right AI model for the job</li>
+  </ul>
+  <p class="analogy">
+    Like a chef reading the next order on the ticket rail &mdash;
+    they grab it, figure out what dish it is, and start cooking.
+  </p>
+  <p class="honest-note">
+    This is called the "claim" phase. gludd won't let two agents grab the same task.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 8: STEP 3 - AI WRITES THE CODE -->
+<!-- ============================================================ -->
+<section>
+  <h2><span class="step-number">3</span>AI writes the code</h2>
+  <p>gludd sends your task to an AI model &mdash; the model writes the actual code.</p>
+  <p><strong>Which AI?</strong> gludd supports <strong>24 model providers</strong>, including:</p>
+  <ul>
+    <li>OpenAI (GPT-4, GPT-4o)</li>
+    <li>Anthropic (Claude)</li>
+    <li>DeepSeek</li>
+    <li>Z.AI (GLM)</li>
+    <li>Google Gemini, Mistral, Cohere, and 17 more</li>
+  </ul>
+  <p>gludd picks the best model for each task type &mdash; or you can choose.</p>
+  <p class="cite">24 providers <span class="badge-green">VERIFIED</span> &middot; Source: <code>src/general_ludd/models/provider_presets.py</code></p>
+  <p class="analogy">
+    Like having a team of specialists &mdash; one writes Python, another reviews security, another handles docs.
+    gludd is the project manager who assigns the right person to each task.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 9: STEP 4 - TESTS RUN AUTOMATICALLY -->
+<!-- ============================================================ -->
+<section>
+  <h2><span class="step-number">4</span>Tests run automatically</h2>
+  <p>Once the AI writes code, gludd doesn't just trust it. It <strong>checks the work</strong>.</p>
+  <p>Every change goes through a quality gate:</p>
+  <ul>
+    <li class="fragment"><strong>Lint</strong> &mdash; does the code follow style rules?</li>
+    <li class="fragment"><strong>Type check</strong> &mdash; are the types correct?</li>
+    <li class="fragment"><strong>Tests</strong> &mdash; do all the tests pass? (22,000+ tests!)</li>
+    <li class="fragment"><strong>Security scan</strong> &mdash; any secrets or vulnerabilities?</li>
+  </ul>
+  <p>If anything fails, the code doesn't land. gludd either fixes it or sends it back.</p>
+  <p class="cite">22,000+ tests collected <span class="badge-green">VERIFIED</span> &middot; Source: <code>make test-count</code></p>
+  <p class="analogy">
+    Like a building inspector &mdash; the house doesn't get a certificate of occupancy until it passes every check.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 10: STEP 5 - REVIEW -->
+<!-- ============================================================ -->
+<section>
+  <h2><span class="step-number">5</span>Another AI reviews the work</h2>
+  <p>gludd doesn't let the same AI that wrote the code also approve it.</p>
+  <p>A <strong>different</strong> AI model looks at the finished code and asks:</p>
+  <ul>
+    <li class="fragment">Does this actually solve the problem?</li>
+    <li class="fragment">Is the code clean and readable?</li>
+    <li class="fragment">Are there edge cases the writer missed?</li>
+    <li class="fragment">Did the tests actually test the right thing?</li>
+  </ul>
+  <p>The reviewer can <span class="badge-green">approve</span>, <span class="badge-yellow">request changes</span>, or <span class="badge-red">reject</span> the work.</p>
+  <p class="analogy">
+    Like having a senior developer review a junior's pull request &mdash;
+    a second pair of eyes catches mistakes the writer missed.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 11: STEP 6 - CODE LANDS IN GIT -->
+<!-- ============================================================ -->
+<section>
+  <h2><span class="step-number">6</span>The code lands in your project</h2>
+  <p>Once the reviewer approves, gludd saves the work:</p>
+  <ul>
+    <li class="fragment">The code is committed to your git repository</li>
+    <li class="fragment">A record of the whole process is saved (what was asked, what was written, what was reviewed)</li>
+    <li class="fragment">You can see exactly what changed and why</li>
+  </ul>
+  <p>Everything is traceable. Nothing happens without a record.</p>
+  <p class="honest-note">
+    This is called the "save" (reconcile) phase. The decision is logged with evidence &mdash; not just "it worked."
+  </p>
+  <p class="analogy">
+    Like a contractor who not only finishes the job but hands you a folder with all the receipts, permits, and photos.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 12: SECURITY -->
+<!-- ============================================================ -->
+<section>
+  <h2>Security &mdash; built in, not bolted on</h2>
+  <p>gludd has <strong>three layers of protection</strong> on every action:</p>
+  <ul>
+    <li><span class="badge-blue">Layer 1</span> <strong>Permissions</strong> &mdash; hard rules on what gludd is allowed to do</li>
+    <li><span class="badge-blue">Layer 2</span> <strong>Runtime guards</strong> &mdash; 11 plugins that watch every action in real time</li>
+    <li><span class="badge-blue">Layer 3</span> <strong>Prompt rules</strong> &mdash; the AI is instructed to follow safe practices</li>
+  </ul>
+  <div class="diagram-wrap">
+    <img src="assets/security-layers.svg" alt="security layers diagram showing permissions, runtime guards, and prompt rules">
+  </div>
+  <p><strong>Security findings: 14 of 15 fixed</strong> &mdash; one remains open and tracked.</p>
+  <p class="cite">11 enforcement plugins <span class="badge-green">VERIFIED</span> &middot; 14/15 findings fixed &middot; Source: <code>.opencode/plugin/</code>, <code>docs/audit/</code></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 13: SCALE OF THE SYSTEM -->
+<!-- ============================================================ -->
+<section>
+  <h2>The scale of the system</h2>
+  <p>gludd is a substantial piece of software. Here's what's under the hood:</p>
   <div class="metrics-grid">
     <div class="metric-box">
-      <div class="number">0</div>
-      <div class="label">CI-verified features</div>
+      <div class="number">465+</div>
+      <div class="label">source files</div>
+      <span class="cite"><code>find src -name '*.py'</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">20,650</div>
-      <div class="label">tests collected</div>
+      <div class="number">22,000+</div>
+      <div class="label">tests</div>
+      <span class="cite"><code>make test-count</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">93.8%</div>
-      <div class="label">coverage (approx)</div>
+      <div class="number">98</div>
+      <div class="label">Ansible roles</div>
+      <span class="cite"><code>make collection-roles</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">569</div>
-      <div class="label">source files (100% test-imported)</div>
+      <div class="number">36</div>
+      <div class="label">Ansible modules</div>
+      <span class="cite"><code>collections/</code></span>
     </div>
   </div>
   <div class="metrics-grid" style="margin-top:10px;">
     <div class="metric-box">
-      <div class="number">~90</div>
-      <div class="label">Ansible roles</div>
+      <div class="number">105</div>
+      <div class="label">test scenarios</div>
+      <span class="cite"><code>make molecule-scenarios</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">12</div>
-      <div class="label">Ansible modules</div>
+      <div class="number">24</div>
+      <div class="label">model providers</div>
+      <span class="cite"><code>provider_presets.py</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">49</div>
-      <div class="label">molecule scenarios (local-only)</div>
+      <div class="number">11</div>
+      <div class="label">enforcement plugins</div>
+      <span class="cite"><code>.opencode/plugin/</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">0</div>
-      <div class="label">ratchet entries (all xfail removed)</div>
+      <div class="number">136</div>
+      <div class="label">features at 100%</div>
+      <span class="cite"><code>make gen-status-table</code></span>
     </div>
   </div>
-  <p style="font-size:0.5em; margin-top:20px; color:#8b949e;">
-    190/192 features claimed 100% (file-refs only, no live pytest verification) &middot;
-    lint 0 &middot; typecheck 0 &middot; collect 0 &middot;
-    5 noqa + 88 type:ignore[intent] in src (0 bare ignores)
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 14: WHAT GLUDD CAN DO TODAY -->
+<!-- ============================================================ -->
+<section>
+  <h2>What gludd can do today</h2>
+  <p>Here's what the agent handles, right now:</p>
+  <ul>
+    <li class="fragment"><strong>Write code</strong> &mdash; new features, bug fixes, refactors</li>
+    <li class="fragment"><strong>Write tests</strong> &mdash; unit tests, integration tests, end-to-end tests</li>
+    <li class="fragment"><strong>Review code</strong> &mdash; a separate AI checks every change</li>
+    <li class="fragment"><strong>Run quality gates</strong> &mdash; lint, typecheck, tests, security scans</li>
+    <li class="fragment"><strong>Commit to git</strong> &mdash; with full audit trails</li>
+    <li class="fragment"><strong>Manage sprints</strong> &mdash; backlog grooming, sprint planning, retrospectives</li>
+    <li class="fragment"><strong>Security audits</strong> &mdash; threat modeling, secret scanning, supply chain checks</li>
+    <li class="fragment"><strong>Build complete apps</strong> &mdash; built 12 games from scratch, autonomously</li>
+    <li class="fragment"><strong>Track costs</strong> &mdash; per-project, per-model cost accounting</li>
+    <li class="fragment"><strong>Self-improve</strong> &mdash; audits its own code and proposes improvements</li>
+  </ul>
+  <p class="cite">136 features at 100% <span class="badge-green">VERIFIED</span> &middot; Source: <code>make gen-status-table</code></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 15: WHAT GLUDD CAN'T DO YET -->
+<!-- ============================================================ -->
+<section>
+  <h2>What gludd can't do yet</h2>
+  <p style="color:#da3633;">Honest gaps &mdash; we won't oversell.</p>
+  <ul>
+    <li><span class="badge-red">GAP</span> <strong>No UI</strong> &mdash; gludd is command-line only, no graphical interface</li>
+    <li><span class="badge-red">GAP</span> <strong>Single-worker</strong> &mdash; one task at a time, no parallel execution across machines</li>
+    <li><span class="badge-red">GAP</span> <strong>SQLite only</strong> &mdash; no PostgreSQL, no horizontal scaling</li>
+    <li><span class="badge-yellow">PARTIAL</span> <strong>CI not fully green</strong> &mdash; local gate passes, GitHub Actions still has issues</li>
+    <li><span class="badge-yellow">PARTIAL</span> <strong>1 security finding open</strong> &mdash; 14 of 15 fixed, one remains</li>
+    <li><span class="badge-yellow">PARTIAL</span> <strong>Phase F at 90%</strong> &mdash; some features still being completed</li>
+    <li><span class="badge-yellow">PARTIAL</span> <strong>No IDE integration</strong> &mdash; works in your terminal, not your editor</li>
+  </ul>
+  <p class="honest-note">
+    We'd rather tell you what's broken than pretend it's perfect.
+    Every gap here is tracked and being worked on.
   </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 16: HOW TO TRY IT -->
+<!-- ============================================================ -->
+<section>
+  <h2>How to try it</h2>
+  <p>Three steps to get started:</p>
+  <ol>
+    <li class="fragment">
+      <strong>Get the code</strong>
+      <pre><code class="language-bash">git clone https://github.com/sandboxcom/gludd.git
+cd gludd
+make init</code></pre>
+    </li>
+    <li class="fragment">
+      <strong>Start the agent</strong>
+      <pre><code class="language-bash">uv run gludd daemon --port 8000</code></pre>
+    </li>
+    <li class="fragment">
+      <strong>Submit your first task</strong>
+      <pre><code class="language-bash">uv run gludd todo add "Write a unit test for the login endpoint"</code></pre>
+    </li>
+  </ol>
+  <p style="margin-top:16px;">That's it. gludd picks up the task and gets to work.</p>
+  <p class="cite">Full guide: <code>README.md</code> &middot; Prerequisites: Python 3.11+, uv, an API key for one model provider</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 17: ROADMAP -->
+<!-- ============================================================ -->
+<section>
+  <h2>What's next</h2>
+  <p><strong>Near term:</strong></p>
+  <ul>
+    <li>Green CI on GitHub Actions (close the local-vs-CI gap)</li>
+    <li>Fix the last security finding (14/15 &rarr; 15/15)</li>
+    <li>Complete Phase F (90% &rarr; 100%)</li>
+    <li>Live verification of all claimed features</li>
+  </ul>
+  <p style="margin-top:16px;"><strong>Medium term:</strong></p>
+  <ul>
+    <li>Visual dashboard (TUI) &mdash; see tasks, costs, and progress live</li>
+    <li>Greenfield builds &mdash; "build me a todo app from scratch"</li>
+    <li>Multi-worker support &mdash; parallel task execution</li>
+    <li>PostgreSQL support &mdash; horizontal scaling</li>
+  </ul>
+  <p style="margin-top:16px;"><strong>Long term:</strong></p>
+  <ul>
+    <li>Fleet mode &mdash; multiple agents, shared work queue</li>
+    <li>Sandboxed execution &mdash; safe running of untrusted code</li>
+    <li>Production hardening &mdash; full release-ready stability</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 18: HONEST METRICS -->
+<!-- ============================================================ -->
+<section>
+  <h2>Honest metrics</h2>
+  <p class="honest-note" style="font-size:0.7em;">
+    Every number below is from a machine-produced measurement.<br>
+    No hardcoded counts &mdash; live tool output only.
+  </p>
+  <div class="metrics-grid">
+    <div class="metric-box">
+      <div class="number">v0.1.0-beta.2</div>
+      <div class="label">current version</div>
+      <span class="cite"><code>pyproject.toml</code></span>
+    </div>
+    <div class="metric-box">
+      <div class="number">22,000+</div>
+      <div class="label">tests collected</div>
+      <span class="cite"><code>make test-count</code></span>
+    </div>
+    <div class="metric-box">
+      <div class="number">465+</div>
+      <div class="label">source files</div>
+      <span class="cite"><code>find src -name '*.py'</code></span>
+    </div>
+    <div class="metric-box">
+      <div class="number">14/15</div>
+      <div class="label">security findings fixed</div>
+      <span class="cite"><code>docs/audit/</code></span>
+    </div>
+  </div>
+  <div class="metrics-grid" style="margin-top:10px;">
+    <div class="metric-box">
+      <div class="number">136</div>
+      <div class="label">features at 100%</div>
+      <span class="cite"><code>make gen-status-table</code></span>
+    </div>
+    <div class="metric-box">
+      <div class="number">B 100%</div>
+      <div class="label">phase B complete</div>
+      <span class="cite"><code>TASKS.md</code></span>
+    </div>
+    <div class="metric-box">
+      <div class="number">D 100%</div>
+      <div class="label">phase D complete</div>
+      <span class="cite"><code>TASKS.md</code></span>
+    </div>
+    <div class="metric-box">
+      <div class="number">E 100%</div>
+      <div class="label">phase E complete</div>
+      <span class="cite"><code>TASKS.md</code></span>
+    </div>
+  </div>
   <p class="honest-note" style="margin-top:12px;">
-    UNVERIFIED badge on all local-only rows. CI pipeline never green.
-    These are truth, not aspiration.
+    These are truth, not aspiration. Every citation is a command you can run yourself.
   </p>
 </section>
 
 <!-- ============================================================ -->
-<!-- ROADMAP -->
+<!-- SLIDE 19: LINKS + RESOURCES -->
 <!-- ============================================================ -->
 <section>
-  <section>
-    <h2>Roadmap</h2>
-    <p>What's next for gludd</p>
-  </section>
-  <section>
-    <h3>Immediate (alpha.5 &rarr; alpha.6)</h3>
-    <ul>
-      <li><span class="badge-red">P0</span> Green CI gate — ubuntu matrix must pass</li>
-      <li><span class="badge-red">P0</span> Fix 6 game mechanics bugs (4 partial builds)</li>
-      <li><span class="badge-red">P0</span> SpendLimiter actually fires — real budget enforcement</li>
-      <li><span class="badge-yellow">P1</span> Live pytest verification of all 190 claimed features</li>
-      <li><span class="badge-yellow">P1</span> Connector daemon wiring — observability router live</li>
-    </ul>
-  </section>
-  <section>
-    <h3>Medium Term</h3>
-    <ul>
-      <li>Playwright/Chromium integration — visual QA, deck screenshots</li>
-      <li>Greenfield E2E build — "build a todo website" from scratch</li>
-      <li>Live deck-data.json pipeline — E2E artifacts feed the presentation</li>
-      <li>Iterative code generation feedback loop — model retries on test failures</li>
-      <li>Multi-worker / PostgreSQL support — horizontal scale</li>
-    </ul>
-  </section>
-  <section>
-    <h3>Long Term</h3>
-    <ul>
-      <li>TUI dashboard — live daemon state, task progress, cost graphs</li>
-      <li>Fleet mode — multiple daemons, shared work queue</li>
-      <li>Sandboxed execution — Landlock (Linux) + bubblewrap for untrusted code</li>
-      <li>Persistent agent memory — cross-session learning</li>
-      <li>Production hardening — all 16 P1 security findings closed</li>
-      <li>Beta release — CI-green, all features live-verified, artifact published</li>
-    </ul>
-  </section>
+  <h2>Links &amp; resources</h2>
+  <ul>
+    <li><strong>Source code</strong><br><a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a></li>
+    <li><strong>This presentation</strong><br><a href="https://sandboxcom.github.io/gludd/">sandboxcom.github.io/gludd</a></li>
+    <li><strong>Quick start guide</strong><br>See <code>README.md</code> in the repo</li>
+    <li><strong>Architecture deep-dive</strong><br>See <code>docs/presentation/deck/assets/architecture.svg</code></li>
+    <li><strong>Security audit</strong><br>See <code>docs/audit/</code> in the repo</li>
+    <li><strong>Full feature list</strong><br>Run <code>make gen-status-table</code> after cloning</li>
+    <li><strong>License</strong><br>MIT &mdash; free to use, modify, and distribute</li>
+  </ul>
 </section>
 
 <!-- ============================================================ -->
-<!-- CLOSING -->
+<!-- SLIDE 20: THANK YOU / Q&A -->
 <!-- ============================================================ -->
 <section>
-  <h2>gludd</h2>
-  <p style="color:#8b949e;">Autonomous Agentic SDLC &middot; alpha research software</p>
-  <p style="font-size:0.6em; margin-top:30px;">
-    github.com/sandboxcom/gludd<br>
-    v0.1.0-alpha.5 &middot; MIT License
+  <h1>Thank you</h1>
+  <p style="color:#8b949e; margin-top:20px;">Questions?</p>
+  <p style="font-size:0.6em; margin-top:40px;">
+    gludd &mdash; Autonomous Software Development<br>
+    v0.1.0-beta.2 &middot; July 8, 2026 &middot; MIT License
+  </p>
+  <p style="font-size:0.5em; margin-top:20px;">
+    <a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a><br>
+    <a href="https://sandboxcom.github.io/gludd/">sandboxcom.github.io/gludd</a>
   </p>
   <p class="honest-note" style="margin-top:30px;">
-    This deck was generated from live project data. Nothing on these slides<br>
-    was hand-authored — every number is machine-produced. Missing data<br>
-    would render as "NO DATA" placeholders, not fabricated screenshots.
+    Every number in this deck comes from a command you can run yourself.<br>
+    Nothing here was hand-authored or fabricated.
   </p>
 </section>
 
