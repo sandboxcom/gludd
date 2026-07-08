@@ -7,13 +7,17 @@ import contextlib
 import logging
 import os
 import re
-import signal
 import subprocess
 import uuid
 from typing import Any
 
 from general_ludd.agents.behavior import AgentBehavior, BehaviorRenderer
 from general_ludd.git_automation.repo import GitAutomation
+from general_ludd.project_runner import (
+    ProjectCommandRunner,
+    ProjectProfileError,
+    load_project_profile,
+)
 from general_ludd.schemas.job import JobSpec
 from general_ludd.schemas.task_return import TaskReturn
 
@@ -188,36 +192,38 @@ def _build_user_prompt(job: JobSpec) -> str:
 
 
 def _run_tests(workspace: str) -> tuple[int, str]:
-    # start_new_session=True puts `make test` (and every recipe grandchild it
-    # spawns: pytest, xdist workers, etc.) into its OWN process group. On timeout
-    # we os.killpg the whole group so no recipe grandchild leaks and keeps running
-    # after we've given up — a plain subprocess.run timeout only kills `make`.
-    proc: subprocess.Popen[str] | None = None
+    """Run the workspace's declared test command via ProjectCommandRunner.
+
+    Migrated (WP-E2) from a hardcoded ``["make", "test"]`` to the
+    ProjectCommandRunner adapter so a polyglot target project runs its own
+    declared test command (pytest / npm / cargo / go test…) instead of
+    assuming make. Zero behavior change for gludd's own workspace: its
+    project.yml declares ``test: make test``, so the resolved argv is still
+    ``['make', 'test']``.
+
+    The 120s timeout + own-process-group kill semantics are preserved by
+    forwarding ``timeout_s=120`` to ``ProjectCommandRunner.run``, which itself
+    uses ``start_new_session`` + ``os.killpg`` on timeout (see
+    ``project_runner/runner.py``). The ``tuple[int, str]`` return shape is
+    preserved because both call sites unpack it.
+    """
     try:
-        proc = subprocess.Popen(
-            ["make", "test"],
-            cwd=workspace,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-        )
-        try:
-            stdout, stderr = proc.communicate(timeout=120)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError, OSError):
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            with contextlib.suppress(Exception):
-                proc.communicate(timeout=5)
-            return 1, "Test run timed out after 120s"
-        output = stdout[-2000:] if len(stdout) > 2000 else stdout
-        if not output and stderr:
-            output = stderr[-2000:] if len(stderr) > 2000 else stderr
-        return proc.returncode, output or "(no output)"
-    except FileNotFoundError:
-        return 0, "No test command available (make not found)"
+        profile = load_project_profile(workspace)
+        runner = ProjectCommandRunner(workspace, profile)
+        result = runner.run("test", timeout_s=120)
+    except ProjectProfileError as exc:
+        return 0, f"No test command available ({exc})"
     except Exception as exc:
         return 1, f"Test run failed: {exc}"
+    if result.timed_out:
+        return 1, "Test run timed out after 120s"
+    if result.error:
+        if "not found" in result.error.lower():
+            return 0, f"No test command available ({result.error})"
+        return 1, f"Test run failed: {result.error}"
+    exit_code = result.exit_code if result.exit_code is not None else 1
+    output = result.stdout_tail or result.stderr_tail or "(no output)"
+    return exit_code, output[-2000:]
 
 
 def _is_git_repo(path: str) -> bool:
@@ -294,18 +300,91 @@ class ExecutionEngine:
         self._background_tasks: set[asyncio.Task[Any]] = set()
         os.makedirs(workspace_path, exist_ok=True)
 
-    def _budget_pre_check(self, guard: Any) -> str | None:
+    def _projected_cost(self) -> float:
+        """Compute per-call projected cost from the default model profile.
+
+        Mirrors the daemon ``_gateway_executor`` projection
+        (daemon.py ~1839-1852): SpendLimiter's ``token_cost_usd`` when the
+        guard exposes it (PricingCatalog primary), static
+        ``infra.pricing.token_cost_usd()`` fallback otherwise.
+
+        Security finding #14: the engine pre-check must NOT pass a hardcoded
+        ``0.0`` — that makes the gate reactive-only (it cannot block the call
+        whose own projection crosses the cap, only react to prior calls'
+        cumulative spend). Returning a positive projection makes the engine
+        pre-check proactive, matching the daemon path.
+
+        Returns:
+            Projected USD cost, or ``0.0`` when no gateway / no profile is
+            available (legacy callers that construct ``ExecutionEngine``
+            without a model_gateway keep the documented 0.0 semantics).
+        """
+        if self._model_gateway is None:
+            return 0.0
+        try:
+            profile = self._model_gateway.get_profile("default")
+        except Exception:
+            logger.debug("_projected_cost: get_profile raised", exc_info=True)
+            return 0.0
+        if profile is None:
+            return 0.0
+        try:
+            model = getattr(profile, "model_name", None) or "__default__"
+            proj_in = min(
+                int(getattr(profile, "max_input_tokens", 1000) or 1000), 1000
+            )
+            proj_out = int(getattr(profile, "max_output_tokens", 0) or 0)
+        except (TypeError, ValueError):
+            logger.debug(
+                "_projected_cost: profile attribute coercion failed; "
+                "returning 0.0",
+                exc_info=True,
+            )
+            return 0.0
+
+        # Prefer the guard's pricing (PricingCatalog primary) when wired so
+        # catalog refreshes are observed by both SpendLimiter and engine.
+        guard_cost = getattr(self._budget_guard, "token_cost_usd", None)
+        if callable(guard_cost):
+            try:
+                return float(guard_cost(model, proj_in, proj_out))
+            except Exception:
+                logger.debug(
+                    "_projected_cost: guard.token_cost_usd raised; "
+                    "falling back to static table",
+                    exc_info=True,
+                )
+        try:
+            from general_ludd.infra.pricing import token_cost_usd as _static
+
+            return float(_static(model, proj_in, proj_out))
+        except Exception:
+            logger.debug("_projected_cost: static fallback raised", exc_info=True)
+            return 0.0
+
+    def _budget_pre_check(
+        self, guard: Any, projected_cost: float | None = None
+    ) -> str | None:
         """Run budget pre-check; return denial string or None (allowed).
 
         Fail-CLOSED: any non-dict result, missing 'allowed' key, or unknown
         guard interface returns a denial string. Only guard=None is an
         intentional no-op (returns None = allowed).
+
+        Security finding #14: thread ``projected_cost`` (computed from the
+        default model profile when not supplied) so the pre-check is
+        proactive — blocking the call whose own projection crosses the cap,
+        not just reactive to prior calls' cumulative spend. A 0.0 projection
+        (no gateway / no profile) keeps the documented reactive-only
+        semantics: it only blocks when already over the cap.
         """
         if guard is None:
             return None
+        if projected_cost is None:
+            projected_cost = self._projected_cost()
         if hasattr(guard, "check_all_limits"):
             try:
-                verdict = guard.check_all_limits(estimated_cost=0.0)
+                verdict = guard.check_all_limits(estimated_cost=projected_cost)
             except Exception as exc:
                 return f"budget check raised: {exc}"
             if not isinstance(verdict, dict):
@@ -315,7 +394,7 @@ class ExecutionEngine:
             return None
         if hasattr(guard, "try_charge"):
             try:
-                verdict = guard.try_charge(cost=0.0)
+                verdict = guard.try_charge(cost=projected_cost)
             except Exception as exc:
                 return f"budget check raised: {exc}"
             if not isinstance(verdict, dict):
