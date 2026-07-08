@@ -1650,6 +1650,32 @@ The generic anti-wait rule above was not specific enough to stop the CI-poll var
 - **Prompt** — this subsection (proactive). The generic anti-wait rule above plus the compulsive-check block on standalone `make ci-verdict` (ANTI-LOOP DIRECTIVE, line 5) cover most cases.
 - **Plugin (future)** — a future `enforce-no-ci-poll.ts` matcher may deny `make ci-wait` dispatches outside of a release-cut context. For now this is procedural — if you dispatch `make ci-wait` or a poll loop as a subagent, you are violating this rule whether or not a plugin catches it.
 
+### Machine-Enforced CI Check Cooldown (2026-07-08)
+
+The CI-poll anti-pattern above is now blocked by a **machine-enforced cooldown** in addition to the prompt rule. The cooldown makes the bad pattern structurally impossible to repeat, not merely discouraged.
+
+**What is enforced:**
+
+- The cooldown is **MACHINE-ENFORCED** via `make ci-verdict-safe` (default 10 min / 600s between CI checks; override via `CI_CHECK_COOLDOWN_SEC`).
+- **NEVER use bare `make ci-verdict` for routine CI status checks** — use `make ci-verdict-safe` instead. The bare target is reserved for the release-cut pipeline (where it is invoked exactly once as part of `make release-cut`'s require-ci-green step), and the compulsive-check block in `enforce-floor.ts` already denies standalone invocations.
+- The cooldown exists because **polling CI does NOT speed it up.** The only thing that finishes a CI run is wall-clock time. A 30-minute poll loop burns one of the 10 floor slots for 30 minutes to produce a result that would have arrived identically without the polling.
+- **Canonical pattern:** `make deploy-and-forget` (pushes + records the timestamp + prints a checkback time) → **resume real work** immediately (dispatch the next wave of feature/test/refactor subagents) → **check back 30+ min later** with a single `make ci-verdict-safe`.
+- `make ci-cooldown-status` is **read-only** and shows the remaining cooldown seconds. It does not affect state and is always safe to call.
+- `FORCE=1` bypass exists for **release-cut ONLY**: `make ci-verdict-safe FORCE=1` skips the cooldown. Any other use is a policy violation. The release-cut pipeline needs a current CI verdict to gate the tag push; nothing else does.
+- Script: `scripts/ci_check_cooldown.py`. State file: `/tmp/gludd-ci-check-state.json` (fields: `last_check_epoch`, `last_push_epoch`, `last_head_sha`, `check_count`). Override the state path via `GLUDD_CI_STATE_FILE` (used by the test suite for per-test isolation).
+
+**Behavioral contract of `make ci-verdict-safe`:**
+
+| State | Return code | Action |
+|---|---|---|
+| Within cooldown window | 3 | Print `CI-COOLDOWN: NmMs remaining` to stderr; do NOT run ci-verdict |
+| Cooldown expired | 0 | Record check timestamp + increment `check_count`; run `make ci-verdict` |
+| `FORCE=1` set | 0 | Skip cooldown check; record + run ci-verdict (release-cut only) |
+
+**Pinned by:** `tests/unit/test_ci_check_cooldown.py` (7 tests covering cooldown refusal, post-cooldown allowance, FORCE bypass, deploy timestamp recording, COOLDOWN-ACTIVE status output, state round-trip, and check_count increment).
+
+**Plugin layer (dispatch-time block):** `.opencode/plugin/enforce-no-wait.ts` exports a `CI_POLL_DISPATCH_PATTERNS` list and a matcher that DENIES Task/agent/workflow dispatches whose prompt contains anti-pattern phrases ("poll CI until terminal", "wait for CI green", "loop on make ci-verdict", "every 60 seconds ... up to N iterations", "until conclusion success"). This blocks the dispatch intent at the source, complementing the runtime cooldown on the `make` side. Fail-open on any error.
+
 ## CRITICAL: Long-Running Operations MUST Be Backgrounded
 
 **Any operation expected to take more than ~30 seconds MUST run in the background and be polled from a subagent — NEVER in the foreground on the main thread.** This is the same anti-pattern as stopping to ask permission: both burn the only non-delegatable resource (main-thread wall time) on something a subagent could own.

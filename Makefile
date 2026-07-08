@@ -1173,6 +1173,9 @@ ci-status:
 # Exits 0=GREEN, 1=RED/no-run, 2=PENDING. Per AGENTS.md "CI-Poll Subagents Are
 # Forbidden": call ONCE at a natural break; NEVER loop on this; NEVER dispatch
 # a subagent to poll it. Use ci-wait ONLY inside release-cut.
+#
+# *** PREFER `make ci-verdict-safe` (cooldown-enforced) OVER this target. ***
+# Bare `ci-verdict` exists for release-cut internals only.
 ci-verdict:
 	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); \
 	RUN=$$(gh run list --commit=$$SHA --json databaseId,conclusion,headSha,status --jq '.[0]' 2>/dev/null || echo "{}"); \
@@ -1189,6 +1192,32 @@ ci-verdict:
 	else \
 		echo "CI RED: no run found for SHA $$SHA"; exit 1; \
 	fi
+
+# ci-verdict-safe: COOLDOWN-ENFORCED CI check. Refuses to run more than once
+# per CI_CHECK_COOLDOWN_SEC (default 600s = 10 min). Prevents the anti-pattern
+# of an agent dispatching a "poll CI until terminal" subagent that loops
+# ci-verdict every 60-90s for 30-40 min, holding a subagent slot.
+#
+# The cooldown is the MACHINE-ENFORCED guardrail. It does not matter whether
+# the agent thinks CI might have finished — the answer is: do real work for
+# 10 more minutes, THEN check. CI runs on its own schedule.
+#
+# Exit codes: 0=GREEN, 1=RED/no-run, 2=PENDING, 3=COOLDOWN-ACTIVE (refused).
+# Override: FORCE=1 (release-cut ONLY; never use for routine checks).
+ci-verdict-safe:
+	@$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) && $(MAKE) --no-print-directory ci-verdict || exit $$?
+
+# deploy-and-forget: push + record timestamp + print checkback time. This is
+# the fire-and-forget deployment pattern. After running this, RESUME REAL
+# WORK — do not poll CI. Check back at the printed time with ci-verdict-safe.
+deploy-and-forget:
+	@$(MAKE) --no-print-directory batch-push COMMIT_THRESHOLD=1 || $(MAKE) --no-print-directory git-push-sandboxcom
+	@$(PYTHON) scripts/ci_check_cooldown.py deploy
+
+# ci-cooldown-status: show how long until the next ci-verdict-safe is allowed.
+# Read-only. Use this to decide whether to dispatch real work or check CI.
+ci-cooldown-status:
+	@$(PYTHON) scripts/ci_check_cooldown.py status $(CI_CHECK_COOLDOWN_SEC)
 
 gha-usage:
 	@$(PYTHON) scripts/gha_usage.py
