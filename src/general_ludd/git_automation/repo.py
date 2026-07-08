@@ -222,17 +222,20 @@ class GitAutomation:
     def __init__(self, repo_path: str = ".") -> None:
         self.repo_path = repo_path
 
-    def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def _run_git(
+        self, *args: str, check: bool = True, _cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        cwd = _cwd if _cwd is not None else self.repo_path
         env = {**os.environ, **_NON_INTERACTIVE_GIT_ENV}
         # Serialize every git invocation per-repo (#63) so concurrent roles/threads
         # cannot collide on .git/index.lock. The lock is re-entrant, so nested
         # _run_git calls in one thread (e.g. add -> commit -> rev-parse) acquire it
         # cheaply without self-deadlocking.
-        with git_repo_lock(self.repo_path):
+        with git_repo_lock(cwd):
             try:
                 return subprocess.run(
                     ["git", *args],
-                    cwd=self.repo_path,
+                    cwd=cwd,
                     capture_output=True,
                     text=True,
                     check=check,
@@ -625,16 +628,10 @@ class GitAutomation:
         # branch (the only checkout form that both switches branches and is
         # option-safe; `git checkout -- <x>` would treat <x> as a pathspec).
         # `target` is also already rejected if it leads with `-`.
-        subprocess.run(
-            ["git", "checkout", target, "--"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        self._run_git("checkout", target, "--", _cwd=repo_path)
         # Options first, then `--`, then the source ref positional, so a
         # leading-dash source could never be parsed as a merge option.
-        merge_args = ["git", "merge"]
+        merge_args = ["merge"]
         if strategy == "ff":
             merge_args.append("--ff-only")
         elif strategy == "no-ff":
@@ -642,25 +639,39 @@ class GitAutomation:
         elif strategy == "squash":
             merge_args.append("--squash")
         merge_args.extend(["--", source])
-        result = subprocess.run(
-            merge_args,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-        )
+        result = self._run_git(*merge_args, check=False, _cwd=repo_path)
         if result.returncode != 0:
             conflicts = []
             if "CONFLICT" in result.stdout or "CONFLICT" in result.stderr:
                 conflicts = [source]
             return MergeResult(success=False, strategy=strategy, message=result.stderr.strip(), conflicts=conflicts)
         if strategy == "squash":
-            subprocess.run(
-                ["git", "commit", "-m", f"Merge {source} into {target} (squash)"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            # Fail-closed on squash commit error (finding #12): ``check=True`` makes
+            # ``_run_git`` raise ``CalledProcessError`` on a non-zero exit, which we
+            # translate into a failure result. The returncode fallback below catches
+            # the case where the caller mocks ``subprocess.run`` (a mock does not
+            # implement subprocess's check logic), so BOTH the real-execution and
+            # the mocked paths are fail-closed — a failed squash commit can never
+            # surface as ``success=True``.
+            try:
+                squash_result = self._run_git(
+                    "commit", "-m", f"Merge {source} into {target} (squash)",
+                    check=True, _cwd=repo_path,
+                )
+            except subprocess.CalledProcessError as exc:
+                return MergeResult(
+                    success=False,
+                    strategy=strategy,
+                    message=(exc.stderr or "").strip() or "squash commit failed",
+                    conflicts=[],
+                )
+            if squash_result.returncode != 0:
+                return MergeResult(
+                    success=False,
+                    strategy=strategy,
+                    message=(squash_result.stderr or squash_result.stdout).strip(),
+                    conflicts=[],
+                )
         return MergeResult(success=True, strategy=strategy, message=result.stdout.strip())
 
     def gated_commit(

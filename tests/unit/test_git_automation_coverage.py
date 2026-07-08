@@ -325,6 +325,56 @@ class TestMergeBranch:
         "general_ludd.git_automation.repo.subprocess.run",
         side_effect=[
             _ok(),
+            _ok(stdout="Squash commit -- not updating HEAD"),
+            _fail(stderr="error: unable to create commit", returncode=1),
+        ],
+    )
+    def test_merge_squash_raises_on_squash_failure(self, mock_run: MagicMock):
+        result = GitAutomation(".").merge_branch("/repo", "feat", "main", "squash")
+        assert result.success is False
+        assert result.strategy == "squash"
+        assert "unable to create commit" in result.message
+
+    @patch(
+        "general_ludd.git_automation.repo.subprocess.run",
+        side_effect=[
+            _ok(),
+            _ok(stdout="Squash commit -- not updating HEAD"),
+            subprocess.CalledProcessError(
+                1, "git commit", stderr="error: empty squash commit (no changes)"
+            ),
+        ],
+    )
+    def test_merge_branch_raises_on_squash_failure(self, mock_run: MagicMock):
+        # Finding #12: a failed squash commit must surface as success=False — never
+        # success=True. With ``check=True`` a real git subprocess raises
+        # CalledProcessError on a non-zero exit; merge_branch must translate that
+        # into a failure MergeResult rather than let it propagate or report success.
+        result = GitAutomation(".").merge_branch("/repo", "feat", "main", "squash")
+        assert result.success is False
+        assert result.strategy == "squash"
+        assert "empty squash commit" in result.message
+
+    @patch("general_ludd.git_automation.repo.subprocess.run", return_value=_ok())
+    def test_merge_branch_routes_through_run_git(self, mock_run: MagicMock):
+        # Finding #12 (structural): merge_branch must not invoke raw subprocess.run
+        # directly — every git call routes through _run_git (timeout + non-interactive
+        # env + per-repo lock). We assert _run_git is the sole gateway by patching it
+        # and confirming the merge path goes through it for every git invocation.
+        auto = GitAutomation(".")
+        with patch.object(auto, "_run_git", return_value=_ok(stdout="merged")) as spy:
+            result = auto.merge_branch("/repo", "feat", "main", "ff")
+            assert result.success is True
+            assert spy.called, "merge_branch must route git calls through _run_git"
+            # Every git invocation went through _run_git (checkout + merge).
+            assert spy.call_count >= 2
+        # The raw subprocess.run mock must NOT have been invoked by merge_branch.
+        mock_run.assert_not_called()
+
+    @patch(
+        "general_ludd.git_automation.repo.subprocess.run",
+        side_effect=[
+            _ok(),
             _fail(stderr="CONFLICT (content): Merge conflict in file.txt", returncode=1),
         ],
     )
