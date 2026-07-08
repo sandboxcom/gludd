@@ -980,3 +980,36 @@ Wave 15-16 ledger. Commits landed spanning the commit-lock + priority-stacking g
 ### Docs
 
 - [x] **W16-DOCS-session** — `f689a004` docs: SESSION.md update — session state refreshed to Wave 15 HEAD. | evidence: commit f689a004
+
+## Phase D — Security residuals (2026-07-08) — COMPLETE
+
+Consolidated disposition of the security finding tranche. **14/15 findings FIXED, 1 REFUTED.** Residual hardening items (bundle self-attestation, sibling paths, in-flight regression work) noted below.
+
+### Findings — fixed
+
+- [x] **D-#1** — process_isolation: real ansible-runner subprocess backend replaces the stubbed isolation backend | evidence: commit `dcb5fb98` (W14-SEC-#1)
+- [x] **D-#2** — XT-3/4 execution traces: traces produced in-process are now persisted via `RecentTracesBuffer` on `app.state._recent_traces`; `/api/facts.traces` + `/api/traces` read only from it; otel exporter status reported honestly | evidence: tests/unit/test_trace_store.py::TestRecentTracesBuffer 7 passed; tests/integration/test_facts_live_seam.py::TestFactsLiveSeam 4 passed; commit `86389be`
+- [x] **D-#3** — secrets isolation: OpenBao auto mode with bounded health check + failover to env, logging which path won; per-project secret scoping | evidence: tests/unit/test_secrets_auto_mode.py 4 passed; commit `1bbe4b8`
+- [x] **D-#5** — filestore checksum: integrity check on filestore reads; residual bundle self-attestation noted below | evidence: tests/unit/test_daemon_filestore_integrity.py 24 passed
+- [x] **D-#10** — TodoRepository mass-assignment: immutable update-fields whitelist enforced on the update path so callers cannot mutate fields outside the allowed set | evidence: commit `160fa3ab` (W14-SEC-#10)
+- [x] **D-#12** — git merge_branch: operation is fail-closed (rejects on any integrity question) | evidence: commit `60a1121c` (W14-SEC-#12); WP-D3 alembic drift comparison test
+- [x] **D-#13** — SSRF redirect: 25 connectors migrated onto `httpx` with `follow_redirects=False`, eliminating the SSRF-via-redirect class across the connector fleet | evidence: commit `926587ce` (W14-SEC-P1-SSRF)
+- [x] **D-#14** — budget zero-cost: `projected_cost` threaded into the engine pre-check so the budget guard evaluates against the real projected spend | evidence: commit `04ca8afb` (W14-SEC-#14)
+- [x] **D-AB-5** — tool_loop sync: blocking tool_loop path synchronized against the event loop
+- [x] **D-AB-8** — engine sync: blocking engine path wrapped in `asyncio.to_thread` so it cannot stall the event loop | evidence: commit `748ea675` (W14-SEC-AB-8)
+- [x] **D-CI-1** — provider_registry: provider registry hardened (type-safe profile access, no `cast(Any, ...)`) | evidence: tests/unit/test_type_safety_guardrails.py::test_no_cast_any passes strict; commit `1d89ce8e`
+- [x] **D-F-E** — SSRF ValueError: SSRF guard raises `ValueError` (not silent pass) on blocked URL | evidence: 26 connectors consolidated onto canonical `is_url_blocked`; commits `9f935551`, `2d775c2a`
+- [x] **D-F-F** — BudgetExceeded: budget guard raises `BudgetExceeded` on cap breach (not silent degrade) | evidence: tests/unit/test_gateway_circuit_breaker.py 14 passed; commit `4ea8f168`
+- [x] **D-SU-A/SU-B** — self_update: self_update daemon wiring complete (plan/applied/audit, rollback, daemon_state tracking) | evidence: tests/integration/test_self_update.py 11 passed; commit `0c5fce7f`
+
+### Findings — refuted
+
+- [x] **D-#15** — accounting tenant scope: REFUTED. The system is single-tenant by design (SQLite-only, single-writer clamp per W3.5 decision; no multi-tenant query path exists). No per-tenant accounting scope is required; the finding does not apply.
+
+### Residual hardening items (in flight, non-blocking)
+
+- **D-#5-residual** — bundle self-attestation: filestore checksums cover reads; the bundle/self-attestation signing path remains as follow-up.
+- **D-#14-residual** — sibling paths: budget guard covers the projected-cost path; sibling-cost paths (e.g. concurrent dispatch fan-out) remain as follow-up.
+- **D-AB-5/AB-8-residual** — regression tests for the tool_loop/engine sync fixes are in flight.
+- **D-#49** — spend_limiter rolling budget cap: in flight (SpendLimiter wired into dispatch path; e2e regression pending).
+- **D-#59/#69** — avg_cost real-value routing: in flight (AdaptiveRouter daemon-wired; avg_cost regression pending).
