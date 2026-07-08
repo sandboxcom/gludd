@@ -1630,6 +1630,25 @@ This rule exists because the agent repeatedly claimed "dispatching 10 parallel a
 
 This rule was added 2026-07-06 after a recurring incident where the agent dispatched a background gate then `sleep 60 && make gate-status-check` on the main thread, blocking ALL subagent dispatch for 5+ minutes. The user explicitly called out: "why are you actively waiting when i specifically asked you to keep working and ensure you are multitasking."
 
+### CI-Poll Subagents Are Forbidden (sub-rule, 2026-07-08)
+
+The generic anti-wait rule above was not specific enough to stop the CI-poll variant. This subsection closes that gap. The anti-pattern: dispatching a "push + poll CI until terminal" subagent that sleeps inside the subagent for 30–40 min waiting for `conclusion: success`, holding a subagent slot and the orchestrator's attention the entire time. This is the same dispatch-blocking failure as `sleep 60 && make gate-status-check` on the main thread — it just hides the sleep inside a subagent.
+
+**Rules:**
+
+1. **NEVER dispatch a "poll CI until terminal" subagent.** A subagent whose job is "run `make ci-wait` (or loop on `make ci-verdict`) and return when CI finishes" is forbidden. It blocks a subagent slot for 30–40 min and produces zero value during that window — CI is going to run regardless of whether anything watches it.
+2. **CI is checked at natural breaks, not polled.** After dispatching real work, a SINGLE `make ci-verdict BRANCH=master` (returns in <1s, read-only, no `&&`, no loop) gives the current state. If PENDING → RESUME WORK immediately. You will see the result at the next natural break.
+3. **Push is fire-and-forget.** `make batch-push` + `make verify-remote BRANCH=<b> SHA=<sha>` confirms the push LANDED on the remote. That is the push's success criterion. CI will run on its own schedule; the result shows up at the next natural break.
+4. **The "wait for CI green before doing X" pattern is FORBIDDEN** for any X that is not `make release-cut`. CI green is a precondition for RELEASE CUT only. For all other work — beta feature work, test improvements, audits, refactors, docs — START IMMEDIATELY. Do not gate non-release work on CI.
+5. **`make ci-wait` is for release-cut only.** It exists in the Makefile because `make release-cut` calls it as one step of the release pipeline. It is NOT a general-purpose "block until green" tool. If you find yourself invoking `make ci-wait` outside of a release-cut flow, stop — you are blocking dispatch for no reason.
+6. **Release-cut is the single legitimate CI-wait path.** `make release-cut` runs `require-ci-green` → push → tag → release-view as a pipeline, and it owns the wait because a release genuinely requires the artifact the CI run produces. Nothing else does.
+
+**Why this matters:** A 30-minute CI-poll subagent holds one of the 10 floor slots for 30 minutes doing nothing — that slot should be running productive work. And because the orchestrator tends to wait for the poll subagent's result before dispatching the next wave, a single CI-poll subagent collapses the floor to 9 (or fewer) for the entire CI window. The user sees "dispatched 10 agents, only 9 are doing anything" and correctly calls it out as a process malfunction.
+
+**Enforcement:**
+- **Prompt** — this subsection (proactive). The generic anti-wait rule above plus the compulsive-check block on standalone `make ci-verdict` (ANTI-LOOP DIRECTIVE, line 5) cover most cases.
+- **Plugin (future)** — a future `enforce-no-ci-poll.ts` matcher may deny `make ci-wait` dispatches outside of a release-cut context. For now this is procedural — if you dispatch `make ci-wait` or a poll loop as a subagent, you are violating this rule whether or not a plugin catches it.
+
 ## CRITICAL: Long-Running Operations MUST Be Backgrounded
 
 **Any operation expected to take more than ~30 seconds MUST run in the background and be polled from a subagent — NEVER in the foreground on the main thread.** This is the same anti-pattern as stopping to ask permission: both burn the only non-delegatable resource (main-thread wall time) on something a subagent could own.

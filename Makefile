@@ -1097,6 +1097,10 @@ repo-visibility:
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
 
+# ci-verdict: NON-BLOCKING point-in-time CI check (returns in <1s).
+# Exits 0=GREEN, 1=RED/no-run, 2=PENDING. Per AGENTS.md "CI-Poll Subagents Are
+# Forbidden": call ONCE at a natural break; NEVER loop on this; NEVER dispatch
+# a subagent to poll it. Use ci-wait ONLY inside release-cut.
 ci-verdict:
 	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); \
 	RUN=$$(gh run list --commit=$$SHA --json databaseId,conclusion,headSha,status --jq '.[0]' 2>/dev/null || echo "{}"); \
