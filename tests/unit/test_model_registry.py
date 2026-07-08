@@ -222,7 +222,7 @@ def test_download_unpinned_warns(caplog):
                 result = reg.download("test/model")
         assert mock_dl.call_args.kwargs["revision"] is None
         assert result.revision is None
-        assert any("without a pinned revision" in r.message for r in caplog.records)
+        assert any("without a pinned revision" in r.getMessage() for r in caplog.records)
 
 
 class TestModelRegistryRevision:
@@ -261,7 +261,7 @@ class TestModelRegistryRevision:
                 mock_dl.return_value = snap_dir
                 with caplog.at_level(logging.WARNING, logger="general_ludd.models.model_registry"):
                     reg.download("test/model", revision="deadbeef")
-            assert not any("without a pinned revision" in r.message for r in caplog.records)
+            assert not any("without a pinned revision" in r.getMessage() for r in caplog.records)
 
     def test_revision_persisted_and_reloaded(self):
         with tempfile.TemporaryDirectory() as tmpdir:

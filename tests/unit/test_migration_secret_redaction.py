@@ -41,9 +41,9 @@ def test_write_failure_does_not_leak_secret(monkeypatch, caplog) -> None:
 
     assert "MY_API_KEY" in result["skipped"]
     assert result["migrated"] == 0
-    blob = "\n".join(r.message for r in caplog.records)
+    blob = "\n".join(r.getMessage() for r in caplog.records)
     assert "sk-SECRET123" not in blob
     assert "rejected value" not in blob
     # The exception TYPE is still logged for debuggability.
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("RuntimeError" in r.message for r in warnings)
+    assert any("RuntimeError" in r.getMessage() for r in warnings)
