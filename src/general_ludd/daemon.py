@@ -37,8 +37,10 @@ from general_ludd.db.repository import (
 )
 from general_ludd.db.session import (
     create_async_session_factory,
+    create_read_only_session_factory,
     ensure_tables,
     init_engine_from_config,
+    init_read_only_engine_from_config,
     is_sqlite_url,
     seed_initial_queues,
 )
@@ -53,6 +55,7 @@ from general_ludd.execution.graph_checkpointer import get_checkpointer
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore as _FS
 from general_ludd.infra.utilization import UtilizationTracker
+from general_ludd.ipc import WriteQueue
 from general_ludd.logging.project_log import ProjectLogAdapter
 from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.metrics.collector import MetricsCollector
@@ -89,6 +92,7 @@ from general_ludd.secrets.project_secrets import ProjectSecretsManager
 from general_ludd.security.adversarial_detector import AdversarialCodeDetector
 from general_ludd.skills.loader import discover_skills
 from general_ludd.skills.registry import SkillRegistry
+from general_ludd.writer import WriterProcess
 
 logger = ProjectLogAdapter(logging.getLogger(__name__))
 
@@ -884,13 +888,61 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         _db_override: str | None = getattr(app.state, "_db_path_override", None)
         if _db_override:
             db_config["url"] = f"sqlite+aiosqlite:///{_db_override}"
+
+        # B3.1.3 Slice 4 — GLUDD_WRITER_MODE selects between the inline
+        # single-process daemon path (default; zero behavioural change) and
+        # the subprocess mode where HTTP workers get a read-only engine and
+        # all DB writes are routed through a WriteQueue to a dedicated writer
+        # subprocess. The env-var read MUST happen before engine construction
+        # so the branch below can pick the right engine/factory pair.
+        writer_mode = os.environ.get("GLUDD_WRITER_MODE", "inline").strip().lower()
+        if writer_mode not in {"inline", "subprocess"}:
+            logger.warning(
+                "GLUDD_WRITER_MODE=%r is not 'inline' or 'subprocess'; "
+                "falling back to inline",
+                writer_mode,
+            )
+            writer_mode = "inline"
+
+        # Schema + seed need write access; the read-only factory published
+        # to HTTP workers in subprocess mode is built AFTER seeding completes.
         engine = init_engine_from_config(db_config)
         await ensure_tables(engine)
 
-        session_factory = create_async_session_factory(engine)
-        async with session_factory() as session:
-            await seed_initial_queues(session)
-            await session.commit()
+        if writer_mode == "subprocess":
+            # Seed on a writable factory, then swap to a read-only factory for
+            # the HTTP workers' runtime sessions. The writer subprocess owns
+            # all subsequent DB writes; HTTP workers enqueue via WriteQueue.
+            _seed_factory = create_async_session_factory(engine)
+            async with _seed_factory() as session:
+                await seed_initial_queues(session)
+                await session.commit()
+            await engine.dispose()
+
+            engine = init_read_only_engine_from_config(db_config)
+            session_factory = create_read_only_session_factory(engine)
+            write_queue: WriteQueue | None = WriteQueue()
+            _wp = WriterProcess(config=dict(db_config))
+            _wp.start()
+            writer_process: WriterProcess | None = _wp
+            logger.info(
+                "GLUDD_WRITER_MODE=subprocess: read-only engine + WriteQueue "
+                "+ WriterProcess(pid=%s) started",
+                _wp.pid,
+            )
+        else:
+            session_factory = create_async_session_factory(engine)
+            async with session_factory() as session:
+                await seed_initial_queues(session)
+                await session.commit()
+            write_queue = None
+            writer_process = None
+
+        # Publish on app.state so router code can branch via enqueue_or_commit.
+        if write_queue is not None:
+            app.state._write_queue = write_queue
+        if writer_process is not None:
+            app.state._writer_process = writer_process
 
         app.state._sts_audit_logger = _build_sts_audit_logger(session_factory)
 
@@ -2048,6 +2100,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if _sw is not None:
         with contextlib.suppress(Exception):
             _sw.stop_sweeper()
+    # B3.1.3 Slice 4 — drain the WriteQueue and stop the writer subprocess
+    # BEFORE disposing the engine: a lingering writer holding a DB handle
+    # during engine.dispose() can deadlock. The queue is cleared (best-effort
+    # lossy drain) because the writer subprocess owns durable writes; anything
+    # still buffered at shutdown is abandoned by design.
+    _write_queue_ref = getattr(app.state, "_write_queue", None)
+    if _write_queue_ref is not None:
+        with contextlib.suppress(Exception):
+            _write_queue_ref.clear()
+    _writer_process_ref = getattr(app.state, "_writer_process", None)
+    if _writer_process_ref is not None:
+        with contextlib.suppress(Exception):
+            _writer_process_ref.stop()
     if engine is not None:
         await engine.dispose()
     _embedding_session_ref = getattr(app.state, "_embedding_session", None)
