@@ -278,6 +278,46 @@ The session-start contract gets turn 1 right. **This section keeps the floor at 
 5. **Main-thread grind is the anti-pattern.** Four or more main-thread tool calls in a row with no delegation triggers a budget warning from the plugin. Heed it by handing the next chunk of work to a subagent — do not continue grinding inline.
 6. **Refill on every completion.** The moment a subagent result arrives, dispatch a replacement (or a research filler) so the count never lingers below 10. Do not wait for the rest of the batch to drain.
 
+## CRITICAL: Priority Stacking (AND not OR)
+
+**When the user issues a new directive, interpret it ADDITIVELY ("AND") not SUBSTITUTIVELY ("OR"). New instructions STACK on top of existing objectives; they do not REPLACE them.**
+
+This is the binding meta-rule that prevents the recurring failure mode where a new priority collapses the 10-agent floor. New instructions do NOT void previous mandates (multitasking, anti-wait, observability, TDD) — they stack on top of them.
+
+### The rule (AND not OR)
+
+- "Fix guardrails NOW" does NOT mean "stop multitasking and only do guardrails." It means "guardrails are the TOP priority AND you still keep multitasking everything else."
+- "Write codified guardrails" does NOT mean "stop everything else to write them." It means "guardrails are the first dispatch AND the first thing you check on return AND the first follow-up — but the rest of the work continues in parallel."
+- "Don't wait on CI" does NOT mean "stop doing CI-related work." It means "never block on CI AND keep doing real work AND check CI only at natural breaks."
+
+### The pattern (mandatory when a new priority arrives)
+
+1. **First dispatch**: the new priority becomes the FIRST subagent dispatched in the next wave.
+2. **First check on return**: when subagents return, the priority item's result is the FIRST one processed.
+3. **First follow-up**: any follow-up to the priority item is dispatched BEFORE other work.
+4. **Multitasking preserved**: the rest of the wave (9 other subagents) continues real work in parallel — the priority does NOT collapse the floor.
+
+### The anti-pattern (forbidden)
+
+- "User said X is the priority, so I'll do X serially and pause everything else."
+- "User gave me a new instruction, so my previous priorities are void."
+- "I'll handle the new task on the main thread, blocking all subagent dispatch."
+
+### Worked examples
+
+| User says | WRONG interpretation | RIGHT interpretation |
+|---|---|---|
+| "fix your guardrails NOW" | stop multitasking; only write guardrails | guardrails = first dispatch + first check + first follow-up; multitasking continues |
+| "don't wait on CI" | stop touching CI work entirely | never block-poll CI AND keep doing CI-related work (pushes, fixes) AND check at natural breaks |
+| "fix CI green" | serial focus on CI fixes; no parallel work | CI fixes = priority stack top; continue beta.3 + security + coverage work in parallel |
+| "do X immediately" | pause everything else; do X alone | X = first dispatch; rest of wave continues |
+
+### Why this matters
+
+The agent repeatedly interpreted new instructions as REPLACING the multitasking mandate. "Fix this NOW" became "stop multitasking, fix only this." "Don't wait on CI" became "stop touching anything CI-related." Both are wrong — they collapse the floor, waste the only non-delegatable resource (main-thread wall time), and produce the "process malfunction" appearance the user has called out repeatedly. A new priority is a stack push, not a stack replacement.
+
+Enforced by: this section (proactive instruction), `tests/unit/test_priority_stacking_rule.py` (structural pin on the rule's presence and completeness).
+
 ## CRITICAL: Instruction-Following Priority
 
 **When the user gives a specific instruction that contradicts your current plan, you MUST follow the instruction IMMEDIATELY, before anything else.**

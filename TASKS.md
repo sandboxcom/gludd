@@ -855,8 +855,8 @@ Four-phase extraction plan (B3.1.x):
   - [x] **B3.1.3 Slice 3 — writer child entrypoint** — writer child process entrypoint with EventLoop ownership and queue drain; 7 TDD tests cover entrypoint wiring, queue drain semantics, and EventLoop ownership handoff. | evidence: tests/unit/test_writer_child.py 7 passed; commit 2d3ee08f
   - [x] **B3.1.3 Slice 4 — daemon lifespan `GLUDD_WRITER_MODE` branch** — daemon lifespan branches on `GLUDD_WRITER_MODE` (default `inline` runs the existing in-process writer; `subprocess` spawns a `WriterProcess` and publishes the `WriteQueue` to `app.state`). 11 tests cover inline default, explicit env, subprocess publish/teardown, invalid-mode fallback, read-before-engine ordering, and lifespan-branch reference. | evidence: tests/integration/test_daemon_writer_mode_lifespan.py 11 passed; commit ffb34b39
   - [x] **B3.1.3 Slice 5 — event_loop drain hook** — EventLoop drains the inbound `WriteQueue` between ticks, applying envelopes in order, stopping on empty, continuing after per-envelope errors (no commit on error), opening a fresh session per envelope, and dropping payloads in no-DB mode; `run_forever` invokes the drain between ticks. | evidence: tests/unit/test_event_loop_drain_hook.py 21 passed; commit 6633587a
-- [ ] **B3.1.4 — Phase 3: supervisor + DB writer process** — application-level supervisor that owns the writer subprocess lifecycle (start/restart/health-check) and surfaces each recovery as an observable event per the No Unseen Events invariant. Pairs with beta.3.4 (self-healing pattern).
-- [ ] **B3.1.5 — Phase 4: agent hydration/dehydration** — serialize in-flight agent state (claim context, tool budget, message-queue position) so a worker can resume an interrupted todo after a process restart rather than dropping it. Depends on B3.1.4.
+- [x] **B3.1.4 — Phase 3: supervisor + DB writer process** — application-level supervisor that owns the writer subprocess lifecycle (start/restart/health-check) and surfaces each recovery as an observable event per the No Unseen Events invariant. Pairs with beta.3.4 (self-healing pattern). | evidence: feat(writer): WriterSupervisor commit 43c597eb
+- [x] **B3.1.5 — Phase 4: agent hydration/dehydration** — serialize in-flight agent state (claim context, tool budget, message-queue position) so a worker can resume an interrupted todo after a process restart rather than dropping it. Depends on B3.1.4. **This completes Phase B (B3.1.1-B3.1.5).** | evidence: feat(hydrate): durable hibernation + dispatch checkpoints 17 tests commit 6b5fe449
 
 ### beta.3.2 — Coverage lifting
 
@@ -873,7 +873,7 @@ Status: 17/17 sites fixed (all tiers complete); ratchet xfail removed (commit 1d
 
 ### beta.3.4 — Self-healing / supervisor pattern
 
-- [ ] **beta.3.4 — Self-healing / supervisor pattern** — add an application-level supervisor that restarts failed phases/workers with bounded retry + exponential backoff and surfaces each recovery as an observable event (per the No Unseen Events invariant). Distinct from the existing process-level `agent_watchdog.py` — this is self-healing of stuck *work*, not stuck *processes*.
+- [x] **beta.3.4 — Self-healing / supervisor pattern** — add an application-level supervisor that restarts failed phases/workers with bounded retry + exponential backoff and surfaces each recovery as an observable event (per the No Unseen Events invariant). Distinct from the existing process-level `agent_watchdog.py` — this is self-healing of stuck *work*, not stuck *processes*. Bundled with B3.1.4 (WriterSupervisor). | evidence: feat(writer): WriterSupervisor commit 43c597eb
 
 ### Ship gate
 
@@ -888,3 +888,47 @@ Landed alongside the beta.3 Phase 2 work to unblock a green CI. Each row is a te
 - [x] **Caplog `.message` → `.getMessage()` migration** — 16 caplog assertion sites switched from the empty `.message` attribute to `LogRecord.getMessage()`, fixing assertions that silently passed against `""` instead of the formatted message. | evidence: commit bcceaf85 (16 sites across tests/); followup d58745ba ruff E501 reflow
 - [x] **No-CI-poll-blocking rule codified** — AGENTS.md section added: CI-poll subagents that sleep waiting for `conclusion: success` are forbidden (dispatch-blocking); CI is checked at natural breaks, not polled; `make ci-wait` is for release-cut only. | evidence: commit 5ecdf2a9 (AGENTS.md "CI-Poll Subagents Are Forbidden" subsection)
 - [x] **P3 — os.environ write conversions (25 sites) + gate wiring** — converts the 25 remaining `os.environ[...] = ...` writes across the test suite to `monkeypatch.setenv(...)` (auto-rollback isolation), and wires `check-test-env-writes` into the gate so unsafe direct env writes are caught on future edits. Follows the earlier 15-site batch (`9d987b79`). | evidence: scripts/check_test_env_writes.py + Makefile gate wiring; 25 conversions across tests/unit/test_alembic_orm_parity.py, test_env_secrets.py, test_multitasking_backlog.py, test_offline_status.py, test_phase3_project_live_reload.py, test_secrets_wiring_startup.py, test_w3_4_readyz.py, test_web_retriever.py, test_zai_secrets_resolution.py; commit 621f23d9
+
+## Phase CI-Stabilization + beta.3 + Security (2026-07-08) — Wave 14
+
+Wave 14 ledger. 21 commits landed in this wave spanning beta.3 Phase B completion (B3.1.3 Slice 4-5, B3.1.4 supervisor, B3.1.5 hydration → Phase B complete), the beta.3.4 self-healing pattern (bundled with B3.1.4), CI stabilization (cooldown, shard split, gate-lite), infra/fixtures (A6, P1-P5), and the security finding tranche (#1, #10, #12, #14, AB-8, P1 SSRF, P3 ansible). Each row = one landed commit with its evidence.
+
+### beta.3 Phase B completion (B3.1.3-B3.1.5)
+
+- [x] **W14-B3.1.3-Slice4** — `ffb34b39` feat(daemon): B3.1.3 Slice 4 GLUDD_WRITER_MODE lifespan branch — daemon lifespan branches on `GLUDD_WRITER_MODE` (inline default vs subprocess spawn + WriteQueue publish). Ticks B3.1.3 Slice 4. | evidence: commit ffb34b39; tests/integration/test_daemon_writer_mode_lifespan.py 11 passed
+- [x] **W14-B3.1.3-Slice5** — `6633587a` feat(event-loop): B3.1.3 Slice 5 drain hook + WriteQueue.get_nowait — EventLoop drains inbound WriteQueue between ticks (ordered, stop-on-empty, per-envelope error isolation, fresh session per envelope, no-DB drop). Ticks B3.1.3 Slice 5; parent B3.1.3 row now reads "Slice 1-5 done." | evidence: commit 6633587a; tests/unit/test_event_loop_drain_hook.py 21 passed
+- [x] **W14-B3.1.4** — `43c597eb` feat(writer): B3.1.4 WriterSupervisor — application-level supervisor owning the writer subprocess lifecycle (start/restart/health-check), each recovery surfaced as an observable event. Ticks B3.1.4. | evidence: commit 43c597eb
+- [x] **W14-B3.1.5** — `6b5fe449` feat(hydrate): B3.1.5 durable hibernation + dispatch checkpoints — serializes in-flight agent state (claim context, tool budget, message-queue position) so a worker resumes an interrupted todo after a restart rather than dropping it. **Completes Phase B (B3.1.1-B3.1.5).** Ticks B3.1.5. | evidence: commit 6b5fe449; 17 tests
+- [x] **W14-beta.3.4** — beta.3.4 self-healing / supervisor pattern — bundled with B3.1.4 (WriterSupervisor); application-level supervisor restarting failed phases/workers with bounded retry + exponential backoff, each recovery an observable event. Distinct from process-level `agent_watchdog.py` (self-healing of stuck *work*, not stuck *processes*). Ticks beta.3.4. | evidence: commit 43c597eb
+
+### Security findings (#1, #10, #12, #14, AB-8, P1 SSRF, P3 ansible)
+
+- [x] **W14-SEC-#1** — `dcb5fb98` feat(ansible): #1 real ansible-runner subprocess backend for process_isolation — replaces the stubbed isolation backend with a real ansible-runner subprocess invocation. Ticks security #1. | evidence: commit dcb5fb98
+- [x] **W14-SEC-#10** — `160fa3ab` security(db): #10 TodoRepository immutable-update-fields whitelist — TodoRepository update path enforces an immutable-fields whitelist so callers cannot mutate fields outside the allowed set. Ticks security #10. | evidence: commit 160fa3ab
+- [x] **W14-SEC-#12** — `60a1121c` security(git): #12 merge_branch fail-closed + test(alembic): WP-D3 drift comparison — merge_branch operation is fail-closed (rejects on any integrity question); alembic drift comparison test (WP-D3) added. Ticks security #12. | evidence: commit 60a1121c
+- [x] **W14-SEC-#14** — `04ca8afb` fix(budget): #14 thread projected_cost into engine pre-check — the engine pre-check now receives `projected_cost` so the budget guard evaluates against the real projected spend, not a stale/missing value. Ticks security #14. | evidence: commit 04ca8afb
+- [x] **W14-SEC-AB-8** — `748ea675` fix(engine): AB-8 asyncio.to_thread wrap — the blocking engine path is wrapped in `asyncio.to_thread` so it cannot stall the event loop. Ticks AB-8. | evidence: commit 748ea675
+- [x] **W14-SEC-P1-SSRF** — `926587ce` security(connectors): P1 SSRF migration of 25 connectors to httpx follow_redirects=False — 25 connectors migrated onto `httpx` with `follow_redirects=False`, eliminating the SSRF-via-redirect class across the connector fleet. Ticks P1 SSRF. | evidence: commit 926587ce
+- [x] **W14-SEC-P3-ansible** — `3e072bd3` security(ansible): P3 process_isolation fail-closed + disclosure — process_isolation is fail-closed (refuses rather than silently degrading) with an honest disclosure of the confinement guarantee. Ticks P3 ansible. | evidence: commit 3e072bd3
+
+### CI stabilization + guardrails
+
+- [x] **W14-CI-cooldown** — `f9f80f21` guardrail(ci): machine-enforced 10min cooldown on ci-verdict checks — `make ci-verdict-safe` (default 10 min / 600s between CI checks) structurally prevents the CI-poll anti-pattern; `make ci-cooldown-status` is read-only; `FORCE=1` bypass reserved for release-cut only. State at `/tmp/gludd-ci-check-state.json`. Pinned by tests/unit/test_ci_check_cooldown.py (7 tests). | evidence: commit f9f80f21; AGENTS.md "Machine-Enforced CI Check Cooldown" section
+- [x] **W14-CI-shard-split** — `1f283628` ci: split unit-1 shard into unit-1a/unit-1b — splits the over-long unit-1 CI shard into two halves to bring per-shard runtime back under the timeout. | evidence: commit 1f283628; .github/workflows/build.yml
+- [x] **W14-gate-lite** — `f61ff202` feat(make): gate-lite target — local fast-validation target (lint + typecheck + collect + smoke + env-writes + skills-frontmatter + tests/unit @2 workers) that skips the full-suite xdist phase that OOMs locally; writes `.gate-lite-status`. NOT the gate of record (CI is). | evidence: commit f61ff202; Makefile gate-lite target
+
+### Infra / fixtures (A6, P1-P5)
+
+- [x] **W14-INFRA-A6** — `9a24dcc8` test(infra): A6 full logging-state isolation fixture — autouse fixture snapshots/restores ALL named loggers (not just root); eliminates cross-test logger-level/handler leakage. (See also Phase CI-Stabilization row above.) | evidence: commit 9a24dcc8
+- [x] **W14-INFRA-P1P2** — `d55b0f6f` test(infra): P1+P2 autouse fixtures — reset `process.registry` + `worker._runner` module-level singletons between tests; kills the two most frequent chronic-pattern leaks. (See also Phase CI-Stabilization row above.) | evidence: commit d55b0f6f
+- [x] **W14-INFRA-P3** — `621f23d9` test(infra): convert 25 os.environ writes to monkeypatch.setenv + gate wiring — 25 `os.environ[...] = ...` writes → `monkeypatch.setenv(...)` (auto-rollback); `check-test-env-writes` wired into gate. (See also Phase CI-Stabilization row above.) | evidence: commit 621f23d9
+- [x] **W14-INFRA-P5** — `eb9dc332` test(infra): P5 _LANGUAGE_PARSERS autouse fixture — autouse fixture isolates the `_LANGUAGE_PARSERS` module-level cache so parser-state leaks cannot produce order-dependent CI failures. | evidence: commit eb9dc332
+- [x] **W14-INFRA-caplog** — `bcceaf85` test: 16 caplog getMessage fixes — 16 caplog assertion sites switched from empty `.message` attribute to `LogRecord.getMessage()`. (See also Phase CI-Stabilization row above.) | evidence: commit bcceaf85
+- [x] **W14-DOCS-no-cipoll** — `5ecdf2a9` docs(agents): no-CI-poll-blocking rule — AGENTS.md "CI-Poll Subagents Are Forbidden" subsection codified. (See also Phase CI-Stabilization row above.) | evidence: commit 5ecdf2a9
+
+### Guardrail notes
+
+- **Landed (machine-enforced):** CI-verdict 10min cooldown (`f9f80f21`, `make ci-verdict-safe` + `ci-cooldown-status` + `FORCE=1` release-cut-only bypass, 7 cooldown tests).
+- **Landed (docs/policy):** no-CI-poll-blocking AGENTS.md subsection (`5ecdf2a9`); gate-lite target (`f61ff202`).
+- **Pending (not in this wave):** commit-lock guardrail (todowrite-references-required commit block) — tracked as follow-up; the nothing-dropped / enforce-stop commit-block path remains active in the meantime.
+- **Fixture coverage:** A6 (logging-state), P1+P2 (singleton resets), P3 (env-write isolation + gate), P5 (_LANGUAGE_PARSERS cache) all landed as autouse fixtures; caplog migration (16 sites) landed. P4/P6-P9 remain as documented CI_GREEN_PLAN follow-ups.
