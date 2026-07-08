@@ -13,9 +13,9 @@ Reveal.js deck design and build tasks.
 
 ## Status
 
-> **Not yet implemented.** The `make deck`, `make deck-data`, and `make deck-serve` targets are specced but NOT defined in the `Makefile`. The `docs/presentation/deck/` source tree and `scripts/build_deck.py` are also not yet committed.
+> **Built and deployed.** The `make deck`, `make deck-serve`, `make deck-data`, `make deck-build`, and `make deck-honesty` targets are defined in the Makefile. The `docs/presentation/deck/` source tree and `scripts/build_deck.py` are committed. GitHub Pages deploys via `.github/workflows/pages.yml`.
 
-## Planned URL
+## Live URL
 
 https://sandboxcom.github.io/gludd/
 

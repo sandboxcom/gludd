@@ -121,8 +121,8 @@ audience. It covers:
 
 Every stat on every slide carries a citation (e.g., `make test-count`,
 `make collection-roles`) so the audience can verify the numbers themselves.
-SVG diagrams in [`docs/presentation/deck/assets/`](docs/presentation/deck/assets/)
-illustrate the architecture, work cycle, and security layers.
+Inline Mermaid diagrams (rendered via the reveal.js mermaid plugin) illustrate
+the architecture, work cycle, and security layers — no binary image artifacts.
 
 To preview locally:
 
