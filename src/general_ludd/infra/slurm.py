@@ -841,6 +841,9 @@ class SlurmJobMonitor:
         """
         info = self._adapter.status(self._job_id)
 
+        if info.state in _TERMINAL_STATES:
+            return False
+
         if self._config.max_cost_usd is not None:
             elapsed = self._adapter.elapsed_seconds(self._job_id)
             if elapsed is not None:
@@ -855,9 +858,6 @@ class SlurmJobMonitor:
                         self._cancel_reason = self.CANCEL_REASON_COST
                     self._adapter.cancel(self._job_id)
                     return False
-
-        if info.state in _TERMINAL_STATES:
-            return False
 
         if (
             self._activity_checker is not None

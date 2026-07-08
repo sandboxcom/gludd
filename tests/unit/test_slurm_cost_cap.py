@@ -201,6 +201,7 @@ class TestLifecycle:
     def test_poll_stops_when_job_fails(self):
         config = SlurmJobConfig(max_cost_usd=10.0, hourly_rate_usd=3.0)
         adapter = MagicMock(spec=SlurmAdapter)
+        adapter.elapsed_seconds.return_value = 0.0
         adapter.status.return_value = SlurmJobInfo("12345", SlurmJobState.FAILED, exit_code=1)
 
         monitor = SlurmJobMonitor(adapter, "12345", config)
@@ -211,12 +212,44 @@ class TestLifecycle:
     def test_poll_stops_when_job_cancelled(self):
         config = SlurmJobConfig(max_cost_usd=10.0, hourly_rate_usd=3.0)
         adapter = MagicMock(spec=SlurmAdapter)
+        adapter.elapsed_seconds.return_value = 0.0
         adapter.status.return_value = SlurmJobInfo("12345", SlurmJobState.CANCELLED)
 
         monitor = SlurmJobMonitor(adapter, "12345", config)
         result = monitor._poll()
 
         assert result is False
+
+    def test_poll_skips_cost_cap_for_terminal_state(self):
+        """A terminal job (COMPLETED/FAILED/CANCELLED) with high elapsed time
+        must NOT trigger cost cancellation — the job is already done."""
+        config = SlurmJobConfig(max_cost_usd=1.0, hourly_rate_usd=3.0)
+        adapter = MagicMock(spec=SlurmAdapter)
+        adapter.status.return_value = SlurmJobInfo("12345", SlurmJobState.COMPLETED)
+        adapter.elapsed_seconds.return_value = 10000.0  # would exceed any cap
+
+        monitor = SlurmJobMonitor(adapter, "12345", config)
+        result = monitor._poll()
+
+        assert result is False
+        adapter.cancel.assert_not_called()
+        assert not monitor.cancelled
+        assert monitor.cost_incurred == 0.0
+
+    def test_poll_skips_cost_cap_for_failed_state(self):
+        """A FAILED job must not have its cost mutated or be re-cancelled."""
+        config = SlurmJobConfig(max_cost_usd=1.0, hourly_rate_usd=3.0)
+        adapter = MagicMock(spec=SlurmAdapter)
+        adapter.status.return_value = SlurmJobInfo("12345", SlurmJobState.FAILED, exit_code=1)
+        adapter.elapsed_seconds.return_value = 100000.0
+
+        monitor = SlurmJobMonitor(adapter, "12345", config)
+        result = monitor._poll()
+
+        assert result is False
+        adapter.cancel.assert_not_called()
+        assert not monitor.cancelled
+        assert monitor.cost_incurred == 0.0
 
     def test_start_stop_thread_lifecycle(self):
         config = SlurmJobConfig()
