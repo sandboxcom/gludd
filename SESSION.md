@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-08 — Session 19 continued (Wave 15). HEAD advanced significantly (`e564d844` → `ca44fa0a`, +10 commits). beta.3 Phase B COMPLETE (B3.1.3-1.5 durable hibernation + dispatch-lifecycle checkpoints). Phase E WP-E1+WP-E2 polyglot detection landed (ToolchainDetector + project.yml self-host). 6 security findings fixed (#1, #10, #12, #14, AB-8, P1 SSRF, P3 ansible process_isolation fail-closed). CI cooldown guardrail landed (machine-enforced 10min `ci-verdict-safe`). Commit-lock guardrail landed (flock serialization + enforce-commit-lock plugin). Priority Stacking rule codified (AND not OR). CI PENDING for current HEAD — NOT polling per guardrail. beta.2 ready to ship once CI green.
+- 2026-07-08 — Session 19 continued (Wave 16). HEAD advanced (`ca44fa0a` → `b4bd6c93`, +10 commits). Presentation rebuilt with Mermaid diagrams + codified abilities (opencode revealjs-presentation skill + gludd build_presentation ansible role). Phase E WP-E2+WP-E3 polyglot project support landed (`13646da0` adapter + `aee58fd9` e2e). WP-D3 migration drift reconciled (`ff8a8298`). Phase D security complete (14/15 FIXED, 1 REFUTED — `b54e75ef`). enforce-stop responseLooksTerminal regression restored (`ae6e8ca9`). CI RED on 7 lint errors (fix in flight). beta.2 ready to ship once CI green.
 
 ## Current Work
 
@@ -71,6 +71,16 @@
 
 | Hash | Message |
 |------|---------|
+| `b4bd6c93` | fix(deck): build_deck.py regenerates HTML from data tokens plus pages.yml builds before deploy |
+| `81bfea53` | feat(role): codify build_presentation ansible role for reveal.js deck build validate deploy via gludd |
+| `19dd629b` | feat(deck): add SVG architecture event-loop and security-layers diagrams for presentation |
+| `e2bd6e69` | docs(tasks): add Phase Presentation section for reveal.js deck codified abilities and diagram work |
+| `0f08af4b` | feat(skill): codify revealjs-presentation skill for opencode covering deck build serve validate deploy workflow |
+| `ff8a8298` | fix(alembic): reconcile migration drift with ORM models adding missing indexes and correcting FK ondelete semantics (WP-D3) |
+| `ae6e8ca9` | fix(plugin): restore responseLooksTerminal in enforce-stop.ts (guardrail audit structural regression) |
+| `b54e75ef` | docs(tasks): declare Phase D security complete with 14/15 findings FIXED and 1 REFUTED plus residual hardening items noted |
+| `aee58fd9` | test(e2e): WP-E3 external polyglot project lifecycle proving gludd can run pytest-based project without make |
+| `13646da0` | feat(engine): WP-E2 migrate _run_tests to ProjectCommandRunner adapter enabling polyglot project support |
 | `ca44fa0a` | feat(self-host): add project.yml so gludd self-hosts through its own ToolchainAdapter per Phase E migration |
 | `953b386e` | guardrail(commit): flock-based serialization on all commit targets plus enforce-commit-lock plugin preventing parallel-commit races (R1+R2) |
 | `941aa80c` | feat(project-runner): WP-E1 ToolchainDetector with pyproject/package.json/go.mod/Cargo.toml/Makefile marker detection and 10 TDD tests |
@@ -154,7 +164,8 @@
 
 ## Known Gaps
 
-1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `ca44fa0a`; CI pending (cooldown-enforced, NOT polling). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `b4bd6c93`; CI RED on 7 lint errors (fix in flight). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+2. **Presentation deployed but NOT yet verified on Pages** — reveal.js deck committed + deployed workflow landed; verification at `sandboxcom.github.io/gludd/` pending.
 2. **13 CI failures RESOLVED** — all clusters fixed by session 19 Wave 14 fix wave. Green not yet confirmed for current HEAD `ca44fa0a` (CI pending, cooldown-enforced).
 3. **cast(Any) burn-down COMPLETE** — Tier 4 finished (`1d89ce8e`). STABILIZATION_PLAN documented (`ef930591`).
 4. **beta.3 Phase B COMPLETE; Phase E in flight** — writer subprocess + durable hibernation + dispatch-lifecycle checkpoints landed. Phase E WP-E1+WP-E2 polyglot detection landed (ToolchainDetector + self-host project.yml). **Phase E WP-E3 (e2e test) pending.**
@@ -169,23 +180,25 @@
 
 ## Next Steps
 
-1. [x] **Fix 13 CI failures** — LANDED (session 19 Wave 14).
-2. [~] **Wait for CI green (no polling)** — CI pending for HEAD `ca44fa0a`; cooldown-enforced via `make ci-verdict-safe`. Will surface at next natural break.
+1. [ ] **Fix 7 lint errors** — fix in flight; unblocks CI green.
+2. [~] **Wait for CI green (no polling)** — CI RED for HEAD `b4bd6c93` on 7 lint errors. Once fixed: cooldown-enforced via `make ci-verdict-safe`. Will surface at next natural break.
 3. [ ] **Ship v0.1.0-beta.2** — BLOCKED on CI green. Once green: `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'`. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
-4. [ ] **Finish Phase E** — WP-E1+WP-E2 DONE. WP-E3 (e2e test) pending.
-5. [ ] **Phase C coverage** — continue lifting coverage to gate threshold after CI green.
-6. [ ] **Phase D triage** — WP-D3 migration drift revealed; triage remaining Phase D items.
-7. [ ] **Phase F docs** — in-flight; not started this wave.
-8. [ ] **Restart opencode** to activate all 10/10 plugin liveness probes in-session (probes are committed; session runs stale code).
-9. [x] **Wire the 6 new audit roles into a playbook** — DONE. `gludd audit-plugins` CLI + `audit_plugins.yml` playbook (commit `7ec9f2dc`).
-10. [x] **Add integration tests for 6 new roles** — DONE. 128 audit_roles tests pass (commit `7ec9f2dc`).
-11. [x] **Implement 5 missing GPU providers** — DONE. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21). Actual provider count is now 24.
+4. [ ] **Verify presentation on Pages** — verify reveal.js deck at `sandboxcom.github.io/gludd/` after deploy completes.
+5. [ ] **Finish Phase E** — WP-E1+WP-E2+WP-E3 DONE. Phase E effectively complete; any residual items triage after beta.2 ship.
+6. [ ] **Phase C coverage** — continue lifting coverage to gate threshold after CI green.
+7. [ ] **Phase D triage** — WP-D3 migration drift reconciled (`ff8a8298`); Phase D security declared complete (`b54e75ef`). Any residual hardening items triage after beta.2 ship.
+8. [ ] **Phase F docs** — in-flight; not started this wave.
+9. [ ] **Restart opencode** to activate all 10/10 plugin liveness probes in-session (probes are committed; session runs stale code).
+10. [x] **Wire the 6 new audit roles into a playbook** — DONE. `gludd audit-plugins` CLI + `audit_plugins.yml` playbook (commit `7ec9f2dc`).
+11. [x] **Add integration tests for 6 new roles** — DONE. 128 audit_roles tests pass (commit `7ec9f2dc`).
+12. [x] **Implement 5 missing GPU providers** — DONE. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21). Actual provider count is now 24.
 
 ## Current Gate Status (2026-07-08)
 <!-- gate:begin -->
-- **HEAD**: `ca44fa0a` (local, +10 past `e564d844`). CI pending (cooldown-enforced via `make ci-verdict-safe`, NOT polling).
-- **CI**: PENDING — NOT polling. The 13 failures from session 18 run 28899396411 were resolved by Wave 14. Green not yet confirmed for `ca44fa0a` and its ancestors.
-- **beta.2**: version bumped in code, tag NOT yet cut, artifact NOT verified. Blocked on CI green.
+- **HEAD**: `b4bd6c93` (local, +10 past `ca44fa0a`). CI RED on 7 lint errors (fix in flight).
+- **CI**: RED — 7 lint errors blocking. NOT polling per cooldown guardrail. Lint fix dispatched; will re-check at next natural break.
+- **beta.2**: version bumped in code, tag NOT yet cut, artifact NOT verified. Blocked on CI green (lint fix).
+- **Presentation**: reveal.js deck committed + deploy workflow landed; verification at `sandboxcom.github.io/gludd/` pending.
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
 <!-- gate:end -->
