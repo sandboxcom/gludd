@@ -29,7 +29,7 @@ from __future__ import annotations
 import os
 import time
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -431,61 +431,119 @@ class TestPlaybookTimeout:
         assert kwargs["timeout"] == 120.0
 
 
-class TestProcessIsolationFailClosed:
-    def test_unsupported_isolation_fails_closed(self):
-        """Isolation requested with a missing executable -> failed, never unconfined."""
+class TestProcessIsolationRouting:
+    """Finding #1 real fix: isolation enabled → ansible-runner subprocess backend.
+
+    The Wave 13 fail-closed guard (refuse to run unconfined) is superseded by
+    actual confinement: when process_isolation.enabled=True, CoreAnsibleRunner
+    delegates to ansible-runner.run() which spawns podman/bwrap. These tests
+    pin that routing and the disabled-path fallback.
+    """
+
+    def test_unsupported_isolation_fails_closed_when_runner_missing(self):
+        """Isolation requested but ansible-runner package absent → failed."""
+        from general_ludd.ansible import core_runner as cr
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
         from general_ludd.ansible.isolation import ProcessIsolationConfig
 
-        with patch.object(
-            __import__("general_ludd.ansible.core_runner", fromlist=["_HAS_ANSIBLE_CORE"]),
-            "_HAS_ANSIBLE_CORE",
-            True,
+        iso = ProcessIsolationConfig(
+            enabled=True, executable="definitely-not-a-real-binary-xyz"
+        )
+        runner = CoreAnsibleRunner(process_isolation=iso)
+        with (
+            patch.object(cr, "_HAS_ANSIBLE_CORE", True),
+            patch.object(cr, "_HAS_ANSIBLE_RUNNER", False),
         ):
-            iso = ProcessIsolationConfig(
-                enabled=True, executable="definitely-not-a-real-binary-xyz"
-            )
-            runner = CoreAnsibleRunner(process_isolation=iso)
             result = runner.run_playbook("/tmp/whatever.yml")
-
         assert result.status == "failed"
         assert result.error is not None
         assert "isolation" in result.error.lower()
 
-    def test_enabled_isolation_fails_closed_even_when_executable_present(self):
-        """Regression for the illusory-sandbox P3 blocker.
-
-        Even when the configured executable IS on PATH, the in-process
-        PlaybookExecutor backend never spawns podman/bwrap, so enabled=True
-        must fail closed unconditionally — not pass through to unconfined
-        execution and report success.
-        """
+    def test_enabled_isolation_invokes_ansible_runner(self):
+        """enabled=True delegates to ansible_runner.run with process_isolation=True."""
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
         from general_ludd.ansible.isolation import ProcessIsolationConfig
 
-        with patch.object(
-            __import__("general_ludd.ansible.core_runner", fromlist=["_HAS_ANSIBLE_CORE"]),
-            "_HAS_ANSIBLE_CORE",
-            True,
+        iso = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            hide_paths=["/secret"],
+        )
+        runner = CoreAnsibleRunner(process_isolation=iso)
+
+        fake_runner_obj = MagicMock()
+        fake_runner_obj.rc = 0
+        fake_runner_obj.status = "successful"
+        fake_runner_obj.stats = {"ok": 1}
+        fake_runner_obj.events = []
+
+        with (
+            patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True),
+            patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_RUNNER", True),
+            patch("general_ludd.ansible.core_runner.ansible_runner") as mock_ar,
         ):
-            iso = ProcessIsolationConfig(enabled=True, executable="podman")
-            runner = CoreAnsibleRunner(process_isolation=iso)
+            mock_ar.run.return_value = fake_runner_obj
+            result = runner.run_playbook("/tmp/whatever.yml", extravars={"k": "v"})
 
-            sentinel = object()
-            with patch.object(
-                runner,
-                "_execute_with_core",
-                return_value=sentinel,
-            ) as fake_exec, patch("shutil.which", return_value="/usr/bin/podman"):
-                result = runner.run_playbook("/tmp/whatever.yml")
+        mock_ar.run.assert_called_once()
+        _, kwargs = mock_ar.run.call_args
+        assert kwargs["process_isolation"] is True
+        assert kwargs["process_isolation_executable"] == "podman"
+        assert "/secret" in kwargs["process_isolation_hide_paths"]
+        assert kwargs["playbook"] == "/tmp/whatever.yml"
+        assert result.status == "successful"
+        assert result.rc == 0
 
-            fake_exec.assert_not_called()
-            assert result.status == "failed"
-            assert result.error is not None
-            assert "cannot honor" in result.error
+    def test_disabled_isolation_uses_playbook_executor(self):
+        """enabled=False keeps the in-process PlaybookExecutor path (not ansible-runner)."""
+        from general_ludd.ansible import core_runner as cr
+        from general_ludd.ansible.core_runner import AnsibleResult, CoreAnsibleRunner
+        from general_ludd.ansible.isolation import ProcessIsolationConfig
+
+        iso = ProcessIsolationConfig(enabled=False, executable="podman")
+        runner = CoreAnsibleRunner(process_isolation=iso)
+        with (
+            patch.object(cr, "_HAS_ANSIBLE_CORE", True),
+            patch.object(
+                runner, "_execute_with_core",
+                return_value=AnsibleResult(status="successful", rc=0),
+            ),
+            patch.dict(os.environ, {"GLUDD_PLAYBOOK_TIMEOUT": "0"}, clear=False),
+            patch("general_ludd.ansible.core_runner.ansible_runner") as mock_ar,
+        ):
+            result = runner.run_playbook("/tmp/whatever.yml")
+        mock_ar.run.assert_not_called()
+        assert result.status == "successful"
+
+    def test_ansible_runner_failure_propagates(self):
+        """runner.run returns failure → AnsibleResult.status='failed'."""
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.isolation import ProcessIsolationConfig
+
+        iso = ProcessIsolationConfig(enabled=True, executable="podman")
+        runner = CoreAnsibleRunner(process_isolation=iso)
+
+        fake_runner_obj = MagicMock()
+        fake_runner_obj.rc = 2
+        fake_runner_obj.status = "failed"
+        fake_runner_obj.stats = {"failures": 1}
+        fake_runner_obj.events = []
+
+        with (
+            patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True),
+            patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_RUNNER", True),
+            patch("general_ludd.ansible.core_runner.ansible_runner") as mock_ar,
+        ):
+            mock_ar.run.return_value = fake_runner_obj
+            result = runner.run_playbook("/tmp/whatever.yml")
+
+        assert result.status == "failed"
+        assert result.rc == 2
+        assert result.error is not None
+        assert "failed" in result.error
 
     def test_disabled_isolation_does_not_fail_closed(self):
-        """Isolation disabled must NOT trip the fail-closed guard."""
+        """Isolation disabled must NOT trip the isolation routing."""
         from general_ludd.ansible import core_runner as cr
         from general_ludd.ansible.core_runner import AnsibleResult, CoreAnsibleRunner
         from general_ludd.ansible.isolation import ProcessIsolationConfig

@@ -75,6 +75,7 @@ class AnsibleRunnerAdapter:
         self._refresh_collections_env()
         self._core_runner = CoreAnsibleRunner(
             process_isolation=isolation_config,
+            private_data_dir=self.private_data_dir,
         )
         if playbooks_dir:
             self._scan_playbook_dir(playbooks_dir)

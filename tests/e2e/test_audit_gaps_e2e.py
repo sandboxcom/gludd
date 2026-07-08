@@ -162,11 +162,18 @@ class TestContainerEntrypoint:
         assert "gludd-worker" not in content
 
 
-class TestPyprojectNoAnsibleRunner:
-    def test_pyproject_does_not_depend_on_ansible_runner(self):
+class TestPyprojectDeclaresAnsibleRunner:
+    def test_pyproject_depends_on_ansible_runner(self):
+        """ansible-runner is a declared dependency.
+
+        It powers the subprocess backend for process_isolation (finding #1
+        real fix). The prior guard asserted it was absent because the
+        in-process PlaybookExecutor was the only backend; now that we delegate
+        to ansible-runner for container confinement, it MUST be declared.
+        """
         pyproject_path = REPO_ROOT / "pyproject.toml"
         content = pyproject_path.read_text()
-        assert "ansible-runner" not in content
+        assert "ansible-runner" in content
 
 
 class TestPyprojectSingleEntrypoint:

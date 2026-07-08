@@ -35,11 +35,20 @@ class _RemainingGuard(Protocol):
     def remaining(self, now: float | None = ...) -> float: ...
 
 
-def budget_pre_check(guard: object) -> str | None:
+def budget_pre_check(
+    guard: object, projected_cost: float = 0.0
+) -> str | None:
     """Run a non-mutating budget pre-check against *guard*.
 
     Args:
-        guard: A budget guard instance, or ``None`` (no budget configured).
+        guard:          A budget guard instance, or ``None`` (no budget configured).
+        projected_cost: Forwarded to the guard so it can block the call whose own
+                        projection crosses the cap, not only react to prior calls'
+                        cumulative spend. Default ``0.0`` preserves the documented
+                        reactive-only semantics for callers that do not yet thread
+                        a projection (security finding #14: the engine path now
+                        threads a positive projection; reviewer / job_invocation /
+                        tool_loop retain the 0.0 default until their own fixes land).
 
     Returns:
         ``None`` when the call is allowed.
@@ -52,7 +61,7 @@ def budget_pre_check(guard: object) -> str | None:
     # --- RunBudgetGuard (and any guard that exposes check_all_limits) ---
     if hasattr(guard, "check_all_limits"):
         try:
-            verdict = guard.check_all_limits(estimated_cost=0.0)
+            verdict = guard.check_all_limits(estimated_cost=projected_cost)
         except Exception as exc:
             logger.warning("budget_pre_check: check_all_limits raised: %s", exc)
             return f"budget check raised: {exc}"
@@ -72,10 +81,11 @@ def budget_pre_check(guard: object) -> str | None:
     # --- SpendLimiter (exposes would_exceed -- the real non-mutating check) ---
     if hasattr(guard, "would_exceed"):
         try:
-            # would_exceed(projected_usd: float, now: float | None = None) -> bool
+            # would_exceed(projected_usd: float, now: float | None = None) -> bool.
             # A projected cost of 0.0 only triggers deferral when the window is
-            # ALREADY over the limit (the guard's own documented semantics).
-            over = guard.would_exceed(0.0)
+            # ALREADY over the limit (the guard's own documented semantics);
+            # a positive projected_cost lets the guard block the over-cap call.
+            over = guard.would_exceed(projected_cost)
         except Exception as exc:
             logger.warning("budget_pre_check: would_exceed raised: %s", exc)
             return f"budget check raised: {exc}"

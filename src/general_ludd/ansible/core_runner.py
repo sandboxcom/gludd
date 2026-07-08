@@ -80,6 +80,14 @@ except ImportError:
     _HAS_ANSIBLE_CORE = False
     CallbackBase = object
 
+try:
+    import ansible_runner
+
+    _HAS_ANSIBLE_RUNNER = True
+except ImportError:
+    _HAS_ANSIBLE_RUNNER = False
+    ansible_runner = None
+
 
 def _get_templar(loader: Any = None, variables: dict[str, Any] | None = None) -> Any:
     if not _HAS_ANSIBLE_CORE:
@@ -209,10 +217,12 @@ class CoreAnsibleRunner:
         module_paths: list[str] | None = None,
         callback_plugins: list[str] | None = None,
         process_isolation: Any | None = None,
+        private_data_dir: str | None = None,
     ) -> None:
         self._module_paths = module_paths or []
         self._callback_plugins = callback_plugins or []
         self._process_isolation = process_isolation
+        self._private_data_dir = private_data_dir
         self._collected_events: list[dict[str, Any]] = []
 
     def run_playbook(
@@ -232,34 +242,35 @@ class CoreAnsibleRunner:
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for playbook execution but is not installed")
 
-        # HIGH (process_isolation): the config used to be stored and silently
-        # ignored. _execute_with_core runs playbooks IN-PROCESS via
-        # PlaybookExecutor — it structurally cannot honor container isolation
-        # (no podman/bwrap subprocess is ever spawned). So when isolation is
-        # REQUESTED (enabled=True), fail CLOSED unconditionally — never run an
-        # isolation-requiring job unconfined, regardless of whether the
-        # executable happens to be on PATH.
-        iso = self._process_isolation
-        if iso is not None and getattr(iso, "enabled", False):
-            return AnsibleResult(
-                status="failed",
-                rc=1,
-                error=(
-                    "process_isolation is enabled but this runtime executes "
-                    "playbooks in-process via PlaybookExecutor, which cannot "
-                    "honor container isolation. Refusing to run unconfined. "
-                    "(Container isolation requires the ansible-runner "
-                    "subprocess backend, not yet wired.)"
-                ),
-            )
-
         # HIGH (unwrapped extravars): wrap EVERY untrusted extra-var value
         # Ansible-unsafe before it reaches the executor, so embedded Jinja in
         # model output (or any other caller-supplied value) is never re-
-        # templated into a shell/command/template task.
+        # templated into a shell/command/template task. Applied to BOTH paths
+        # (in-process PlaybookExecutor and subprocess ansible-runner).
         from general_ludd.ansible.unsafe import wrap_extravars
 
         safe_extravars = wrap_extravars(extravars)
+
+        # HIGH (process_isolation): when isolation is REQUESTED, delegate to the
+        # ansible-runner subprocess backend which spawns podman/bwrap for real
+        # container confinement. The in-process PlaybookExecutor path cannot
+        # honor isolation (no container subprocess is spawned). This is the
+        # finding #1 real fix: the Wave 13 fail-closed guard is replaced by
+        # actual confinement via ansible-runner.
+        iso = self._process_isolation
+        if iso is not None and getattr(iso, "enabled", False):
+            return self._execute_with_runner(
+                playbook_path=playbook_path,
+                inventory=inventory,
+                extravars=safe_extravars,
+                verbosity=verbosity,
+                check=check,
+                tags=tags,
+                skip_tags=skip_tags,
+                connection=connection,
+                become=become,
+                extra_env=extra_env,
+            )
 
         # HIGH (no timeout): bound the run in a killable fork child. An
         # unbounded pb_exec.run() let a runaway/sleeping playbook hang the
@@ -500,6 +511,122 @@ class CoreAnsibleRunner:
         "COLUMNS",
         "LINES",
     })
+
+    def _execute_with_runner(
+        self,
+        playbook_path: str,
+        inventory: list[str] | None = None,
+        extravars: dict[str, Any] | None = None,
+        verbosity: int = 0,
+        check: bool = False,
+        tags: list[str] | None = None,
+        skip_tags: list[str] | None = None,
+        connection: str = "local",
+        become: bool = False,
+        extra_env: dict[str, str] | None = None,
+    ) -> AnsibleResult:
+        """Execute playbook via the ansible-runner subprocess backend.
+
+        Invoked when ``process_isolation.enabled=True``. ansible-runner spawns
+        the configured isolation executable (podman/bwrap) so the playbook runs
+        inside a real container — providing the confinement that the Wave 13
+        fail-closed guard stood in for. Falls back to a failed result if the
+        ansible-runner package is unavailable.
+        """
+        if not _HAS_ANSIBLE_RUNNER:
+            return AnsibleResult(
+                status="failed",
+                rc=1,
+                error=(
+                    "process_isolation is enabled but the ansible-runner "
+                    "package is not installed. Install it (it is a declared "
+                    "dependency in pyproject.toml) to enable container confinement."
+                ),
+            )
+
+        iso = self._process_isolation
+        if iso is None:
+            return AnsibleResult(
+                status="failed",
+                rc=1,
+                error="process_isolation config unexpectedly missing on isolation path",
+            )
+
+        import tempfile
+
+        private_data_dir = self._private_data_dir or tempfile.mkdtemp(prefix="gl-runner-iso-")
+
+        runner_kwargs: dict[str, Any] = {
+            "private_data_dir": private_data_dir,
+            "playbook": playbook_path,
+            **iso.to_runner_kwargs(),
+        }
+        if inventory:
+            runner_kwargs["inventory"] = inventory
+        if extravars:
+            runner_kwargs["extravars"] = extravars
+        if verbosity:
+            runner_kwargs["verbosity"] = verbosity
+
+        cmdline: list[str] = []
+        if check:
+            cmdline.append("--check")
+        if tags:
+            cmdline.extend(["--tags", ",".join(tags)])
+        if skip_tags:
+            cmdline.extend(["--skip-tags", ",".join(skip_tags)])
+        if become:
+            cmdline.append("--become")
+        if connection and connection != "local":
+            cmdline.extend(["--connection", connection])
+        if cmdline:
+            runner_kwargs["cmdline"] = cmdline
+
+        if extra_env:
+            runner_kwargs["envvars"] = dict(extra_env)
+
+        self._collected_events = []
+
+        try:
+            runner_obj = ansible_runner.run(**runner_kwargs)
+        except Exception as exc:
+            return AnsibleResult(
+                status="failed",
+                rc=1,
+                error=f"ansible-runner invocation raised: {type(exc).__name__}: {exc}",
+            )
+
+        rc = int(getattr(runner_obj, "rc", 1) or 0)
+        raw_status = getattr(runner_obj, "status", None)
+        status = str(raw_status).strip() if raw_status else "failed"
+
+        stats: dict[str, Any] = {}
+        stats_attr = getattr(runner_obj, "stats", None)
+        if isinstance(stats_attr, dict):
+            stats = dict(stats_attr)
+
+        events: list[dict[str, Any]] = []
+        events_attr = getattr(runner_obj, "events", None)
+        if events_attr:
+            try:
+                events = [_json_safe(dict(e)) for e in events_attr]
+            except (TypeError, ValueError):
+                events = [_json_safe(e) for e in list(events_attr)]
+
+        if status == "successful" and rc == 0:
+            return AnsibleResult(
+                status="successful",
+                rc=0,
+                stats=stats,
+                events=events,
+            )
+        return AnsibleResult(
+            status="failed",
+            rc=rc if rc != 0 else 1,
+            stats=stats,
+            events=events,
+            error=f"ansible-runner subprocess reported status={status} (rc={rc})",
+        )
 
     def _execute_with_core(
         self,

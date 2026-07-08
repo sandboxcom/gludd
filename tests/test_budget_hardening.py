@@ -708,3 +708,146 @@ class TestBudgetPreCheckRealInstances:
         )
         assert result == (None, None)
         gw.call_model.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Security finding #14: engine-level pre-check must thread projected_cost.
+# A zero projection makes the pre-check reactive-only (it can only block
+# AFTER a prior call's actual cost crossed the cap, never the call whose own
+# projection crosses it). The daemon _gateway_executor path wires a positive
+# projection; the engine path must do the same.
+# ---------------------------------------------------------------------------
+
+class TestEngineBudgetPreCheckProjectedCost:
+    """Engine pre-check must compute a positive projected_cost from the
+    default model profile and thread it into the guard's check_all_limits."""
+
+    def _profile(self):
+        from general_ludd.models.gateway import ModelProfile
+        # claude-3-5-sonnet-20241022 is in infra.pricing.PRICING, so the
+        # static fallback yields a deterministic positive projection.
+        return ModelProfile(
+            model_profile_id="default",
+            model_name="claude-3-5-sonnet-20241022",
+            max_input_tokens=2000,
+            max_output_tokens=1000,
+            enabled=True,
+        )
+
+    def _gateway(self):
+        gw = MagicMock()
+        gw.get_profile.return_value = self._profile()
+        return gw
+
+    def _reactive_guard(self):
+        """Guard that only blocks when projected_cost > 0 (the bug shape).
+
+        Mirrors a budget already at the cap: a zero projection slips through
+        (the documented reactive-only semantics), but a positive projection
+        correctly blocks the over-cap call.
+        """
+
+        def _check(estimated_cost: float = 0.0) -> dict[str, object]:
+            if estimated_cost > 0.0:
+                return {"allowed": False, "reason": f"projected ${estimated_cost:.6f} over cap"}
+            return {"allowed": True}
+
+        g = MagicMock()
+        g.check_all_limits.side_effect = _check
+        return g
+
+    def test_projected_cost_is_positive_when_gateway_has_profile(self):
+        from general_ludd.execution.engine import ExecutionEngine
+        eng = ExecutionEngine(
+            model_gateway=self._gateway(),
+            workspace_path="/tmp/test-proj-positive",
+            budget_guard=None,
+        )
+        projected = eng._projected_cost()
+        assert projected > 0.0, f"expected positive projection, got {projected}"
+
+    def test_engine_budget_pre_check_uses_projected_cost(self):
+        """Non-zero projected cost must block dispatch when over budget.
+
+        Regression: with the hardcoded 0.0 the reactive_guard allows the
+        call; with the projected_cost threaded the guard sees a positive
+        estimate and correctly denies.
+        """
+        from general_ludd.execution.engine import ExecutionEngine
+        gw = self._gateway()
+        guard = self._reactive_guard()
+        eng = ExecutionEngine(
+            model_gateway=gw,
+            workspace_path="/tmp/test-proj-block",
+            budget_guard=guard,
+        )
+        denial = eng._budget_pre_check(eng._budget_guard)
+        assert denial is not None
+        assert "projected" in denial
+        # The guard MUST have observed a positive estimate, not 0.0.
+        _args, kwargs = guard.check_all_limits.call_args
+        assert kwargs.get("estimated_cost", 0.0) > 0.0
+
+    def test_engine_budget_pre_check_allows_when_under_budget(self):
+        """Projected cost under budget proceeds; the projection is still
+        forwarded to the guard (not silently 0.0)."""
+        from general_ludd.execution.engine import ExecutionEngine
+        gw = self._gateway()
+        guard = MagicMock()
+        guard.check_all_limits.return_value = {"allowed": True, "reason": "ok"}
+        eng = ExecutionEngine(
+            model_gateway=gw,
+            workspace_path="/tmp/test-proj-allow",
+            budget_guard=guard,
+        )
+        denial = eng._budget_pre_check(eng._budget_guard)
+        assert denial is None
+        _args, kwargs = guard.check_all_limits.call_args
+        assert kwargs.get("estimated_cost", 0.0) > 0.0
+
+    def test_engine_budget_pre_check_zero_when_no_gateway(self):
+        """No gateway ⇒ projection falls back to 0.0 (no regression for
+        legacy callers that construct ExecutionEngine without a gateway)."""
+        from general_ludd.execution.engine import ExecutionEngine
+        eng = ExecutionEngine(
+            model_gateway=None,
+            workspace_path="/tmp/test-proj-no-gw",
+            budget_guard=MagicMock(),
+        )
+        assert eng._projected_cost() == 0.0
+
+
+# ---------------------------------------------------------------------------
+# budget_guard_check.budget_pre_check — projected_cost plumbing
+# ---------------------------------------------------------------------------
+
+class TestBudgetPreCheckProjectedCostPlumbing:
+    """The standalone budget_pre_check helper must accept and forward a
+    projected_cost (default 0.0 preserves the documented reactive-only
+    semantics for callers that do not yet thread a projection)."""
+
+    def test_budget_pre_check_forwards_projected_cost_to_check_all_limits(self):
+        from general_ludd.budget_guard_check import budget_pre_check
+
+        g = MagicMock()
+        g.check_all_limits.return_value = {"allowed": True}
+        budget_pre_check(g, projected_cost=0.042)
+        _args, kwargs = g.check_all_limits.call_args
+        assert kwargs["estimated_cost"] == 0.042
+
+    def test_budget_pre_check_forwards_projected_cost_to_would_exceed(self):
+        from general_ludd.budget_guard_check import budget_pre_check
+
+        g = MagicMock(spec=["would_exceed"])
+        g.would_exceed.return_value = False
+        budget_pre_check(g, projected_cost=0.042)
+        g.would_exceed.assert_called_once_with(0.042)
+
+    def test_budget_pre_check_defaults_to_zero_for_backwards_compat(self):
+        from general_ludd.budget_guard_check import budget_pre_check
+
+        g = MagicMock()
+        g.check_all_limits.return_value = {"allowed": True}
+        budget_pre_check(g)
+        _args, kwargs = g.check_all_limits.call_args
+        assert kwargs["estimated_cost"] == 0.0

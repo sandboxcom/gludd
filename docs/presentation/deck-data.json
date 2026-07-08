@@ -1,964 +1,945 @@
 {
-  "version": "0.1.0-beta.1",
-  "git_sha": "baaf736",
-  "test_count": 20851,
-  "role_count": 97,
+  "version": "0.1.0-beta.2",
+  "git_sha": "8b8a953",
+  "test_count": 22272,
+  "role_count": 109,
   "features": [
-    {
-      "name": "G0 Daemon starts configured (env-var passthrough, default config search)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: `[b4de809]`"
-    },
-    {
-      "name": "G1 Event loop opens DB session per tick + commits",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[a7a97c6]`"
-    },
-    {
-      "name": "G2 `POST /api/todos` persists to DB",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: `[60cdb4d]`"
-    },
-    {
-      "name": "G3 Playbook resolution real + extravars reach playbook",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[506ed44]`"
-    },
-    {
-      "name": "G4 Dispatched job calls model + applies edits",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[b4de809]`"
-    },
-    {
-      "name": "G5 ReturnReviewer wired; failure escalates (never silent pass)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 3 passed; `[a7a97c6]`"
-    },
-    {
-      "name": "G6 Work lands in git (branch + commit + SHA)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[56fbec7]`"
-    },
-    {
-      "name": "G7 Full pipeline e2e (submit \u2192 model \u2192 review \u2192 commit)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[6915362]`"
-    },
-    {
-      "name": "Worker invokes ModelGateway for generation jobs (W3.1/C1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 3 passed; `[b4de809]`"
-    },
-    {
-      "name": "asyncio.to_thread for playbook runs (W3.3/M9)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[779937c]`"
-    },
-    {
-      "name": "/readyz degraded-state endpoint (W3.4/N1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[779937c]`"
-    },
-    {
-      "name": "SQLite-only enforced + single-worker clamp (W3.5/M8/H18)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 7 passed; `[312e403]`"
-    },
-    {
-      "name": "Self-improvement todos persist via TodoRepository (W3.7/H2)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 2 passed; `[a7a97c6]`"
-    },
-    {
-      "name": "Worker stub endpoints return HTTP 501 (W3.8/H3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[779937c]`"
-    },
-    {
-      "name": "One `select_project()` per tick (W3.14/M14)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 2 passed; `[a7a97c6]`"
-    },
-    {
-      "name": "/api/deployments endpoint + deploy-before-destroy registry (C5/M2)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 7 passed; `[eb84b0c]`"
-    },
-    {
-      "name": "Lease acquisition + expiry reclaim (H15)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[a7a97c6]`"
-    },
-    {
-      "name": "Project workspaces cloned from repo_url + persisted (H13)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 6 passed; `[a4c04a9]`"
-    },
-    {
-      "name": "Hot-reload honesty \u2014 reports only real reloads (H14)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[779937c]`"
-    },
-    {
-      "name": "Scheduler drives parallel dispatch (#23/#32)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 14 unit + 11 integration + 15 e2e tests; `[audit]`"
-    },
-    {
-      "name": "DynamicDispatcher for autonomous tool-call dispatch (#26)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: tool binding; dispatch path wired+tested; e2e proof complete `[8fe3dcb]`"
-    },
-    {
-      "name": "PipelineController async lanes (pipeline/)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 27 unit + 19 integration/e2e tests; daemon config-gated lazy-import; `[audit]`"
-    },
-    {
-      "name": "SpendLimiter rolling budget cap (#27/#49)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 35 passed (e2e: dispatch wiring, concurrency, catalog); `[6761126]`"
-    },
-    {
-      "name": "`GET /api/environment` introspection endpoint + per-work-type advisor",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 17 unit + 24 integration/e2e tests; `[d37f13b]` (advisor), `[5beeee6]` (project facet)`"
-    },
-    {
-      "name": "`agent_orchestrate` role \u2014 advice/budget-driven workflow vs single-shot dispatch",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[d37f13b]` + molecule `[38b0d09]`; NEW 2026-06-25"
-    },
-    {
-      "name": "Project-hierarchy: relationship model + migration + repository (phase 1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: ORM + alembic 008 + repository; `[04ef43f]`; NEW 2026-06-25"
-    },
-    {
-      "name": "Project-hierarchy: relationships facet in `/api/environment` + role var exposure (phase 2)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[5beeee6]`; NEW 2026-06-25"
-    },
-    {
-      "name": "Project-hierarchy: cross-project knowledge borrowing (phase 3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[78c031b]`; default-OFF flag; borrowing path enabled and e2e-tested; NEW 2026-06-25"
-    },
-    {
-      "name": "Model gateway real API calls + cost accounting",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[3ef7eb6]`"
-    },
-    {
-      "name": "Tenacity retry \u2014 hand-rolled loop deleted (W4.1/V3.1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 5 passed incl. `test_call_with_tenacity_demo_deleted`; `[15db868]`"
-    },
-    {
-      "name": "Model failover chain (F6)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: PASS"
-    },
-    {
-      "name": "Router gateway gets metrics_collector (H12)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[779937c]`"
-    },
-    {
-      "name": "Budget guard wired (H11)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: budget config section consumed"
-    },
-    {
-      "name": "Per-todo/daily budget caps (F5)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[c5ffec1]`; retry-on-same-todo idempotent"
-    },
-    {
-      "name": "Secrets auto mode tries OpenBao before env (H17)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 4 passed; `[1bbe4b8]`"
-    },
-    {
-      "name": "CLI \u2194 /admin/code/* endpoint parity (M11/W3.13)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[779937c]`"
-    },
-    {
-      "name": "Scoring cost-constrained routing (#59/#69)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 12 passed (cost-constrained, cache, fallback, fail-closed); `[436af0d]`"
-    },
-    {
-      "name": "Model routing roles + weights (`routing_roles/`)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: TaskRole enum + weight pairs tested (exact values, sum-to-1, coverage, properties, package export, TaskType alignment); integration e2e proves role-based routing + weights end-to-end"
-    },
-    {
-      "name": "BenchmarkResult `task_role` field (P1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `task_role` field added to BenchmarkResult; `[audit resolved]`"
-    },
-    {
-      "name": "BERT/embeddings search verb (similar / compare / search)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 18 passed (multi-corpus: skills/task_types/prompts/traces/events); `[79a84d1]`"
-    },
-    {
-      "name": "`model_weights/` package (seed_data.json, schema, store, loader)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: package landed with seed_data.json, schema, store, loader; `[audit resolved]`"
-    },
-    {
-      "name": "Observability connector base + normalize + registry (80+ connectors)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 25 passed (registry build, routes, health, query, close); `[TASKS.md:obs-connector-base-100]`"
-    },
-    {
-      "name": "gludd_metrics + gludd_traces Ansible modules",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: 145 passed; molecule 27+28; `[86389be]`"
-    },
-    {
-      "name": "/api/metrics + /api/traces endpoints",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 4 passed; `[86389be]`"
-    },
-    {
-      "name": "Observability router (`routers/observe.py`) wired into daemon",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: wire_observability() called at daemon.py:2557-2561 inside create_daemon_app; 3 unit tests + 10 e2e tests (all endpoints, 404, 422, degraded, registry, pricing, sources, health)"
-    },
-    {
-      "name": "Receiver (buffer + parsers + OTLP/webhook/gelf)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 393 lines; wired into daemon; `[audit resolved]`"
-    },
-    {
-      "name": "Issue sources (~17 connectors: GitHub, Linear, CSV, Markdown, etc.)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: base + adapters tested; EventLoop wiring verified; daemon integration tested; integration e2e proves sync engine + adapters end-to-end"
-    },
-    {
-      "name": "Connector dedup cleanup (7 duplicate pairs)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 7 duplicate pairs resolved; non-canonical files deleted; `[d76d5f44]`"
-    },
-    {
-      "name": "MisconfigDetector dedup (`misconfig_detector.py` vs `model_deploy_check.py`)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 59 tests: canonical MisconfigDetector in model_deploy_check.py; orphan deleted; `[32642df7]`"
-    },
-    {
-      "name": "MCP per-request timeouts + kill fallback",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[9d487ab]`"
-    },
-    {
-      "name": "webmcp dogfood + GLUDD_REQUIRE_AUTH (#20)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[9d487ab]`"
-    },
-    {
-      "name": "FS write policy default-DENY + adversarial tests (#43)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit #43 DONE-VERIFIED]`"
-    },
-    {
-      "name": "capability_policy default-DENY per-role (#44)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `capability_lattice.py:211-235`; `[4314a6c]`"
-    },
-    {
-      "name": "Conflict scanner + pre-commit hook (#33)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `make scan-conflicts`; `[9d487ab]`"
-    },
-    {
-      "name": "CI regression guards (#30)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[9d487ab]`"
-    },
-    {
-      "name": "Clone RCE/SSRF hardening (#56)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit #56 DONE-VERIFIED]`"
-    },
-    {
-      "name": "DB races red-team (#52)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit #52 DONE-VERIFIED]`"
-    },
-    {
-      "name": "Secrets lifecycle red-team (#53)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit #53 DONE-VERIFIED]`"
-    },
-    {
-      "name": "Gateway concurrency red-team (#54)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit #54 DONE-VERIFIED]`"
-    },
-    {
-      "name": "Self-modification guards (#58)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit #58 DONE-VERIFIED]`"
-    },
-    {
-      "name": "Ansible SSTI red-team (#50)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 14 passed; `[514bce93]`"
-    },
-    {
-      "name": "Skill renderer SSTI fix (SandboxedEnvironment)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `renderer.py:68`; `[audit BUG-1 DONE-VERIFIED]`"
-    },
-    {
-      "name": "SSRF connector consolidation: 18 connectors onto canonical is_url_blocked (tranche-3 + tranche-4)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: grafana_loki signoz nats kafka_exporter splunk_observability rabbitmq elastic_apm tempo_zipkin travis appdynamics k8s_events gcp_observability gcp_asset_inventory bugsnag graphite rollbar cloudflare cilium_hubble; _ssrf_guard.py deleted; `[9f935551]` `[2d775c2a]`"
-    },
-    {
-      "name": "pause_store fail-closed hardening: MAC verification, keyfile checks, size cap (#60)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 10+11 tests passed; .keyed marker + MAC-sidecar; `[3597559a]`"
-    },
-    {
-      "name": "OpenBao break-glass backup role + molecule scenario (RC.5)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: GPG encrypt/verify path against mock OpenBao + throwaway GPG keyring; `[82862945]`"
-    },
-    {
-      "name": "Sandbox backend: Linux Landlock + bubblewrap; macOS sandbox deprecated (RC.8)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: Fine-grained file access confinement (Landlock LSM) + container sandbox (bubblewrap); macOS deprecated with migration guidance; 8 dedicated tests in test_sandbox_backends.py; `[226e194f]`"
-    },
-    {
-      "name": "base_url SSRF guard (#61)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `gateway.py:396-402`; `[audit #61 DONE-VERIFIED]`"
-    },
-    {
-      "name": "SSH key gitignored + enforcement layers (W5.1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 2 passed; `make git-tracked-keys` NONE TRACKED; `[526104b]`"
-    },
-    {
-      "name": "dist packs LICENSE + THIRD_PARTY_LICENSES + SBOM (W5.2)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 6 passed; `[526104b]`"
-    },
-    {
-      "name": "Fresh secrets scan adjudicated; dist paths clean (W5.3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[526104b]`"
-    },
-    {
-      "name": "Worker /jobs/* require PSK auth (W5.6)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 9 passed; `[526104b]`"
-    },
-    {
-      "name": "Metric-label cardinality guard (#60)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `metrics_exporter.py:34-79`; `[audit #60 DONE-VERIFIED]`"
-    },
-    {
-      "name": "F5b/F6a/F6b security features (fast-follow branch)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref; F5b /docs auth bypass closed, F6a /api/status info-leak stripped, F6b GET /api/todos pagination"
-    },
     {
       "name": "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)",
       "pct": "\u2713 0%",
       "evidence": "**PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
-    },
-    {
-      "name": "D-07 through D-47 security backlog",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 41 backlog items catalogued in NEW_FINDINGS_2026-06-16.md; security_backlog.py tracks 24 categorized items with 4 custom checkers; all D-07 through D-47 range verified catalogued; `[audit]`"
-    },
-    {
-      "name": "CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: adjudicated; does not block ship; `[526104b]`"
-    },
-    {
-      "name": "Permission system + STS Issuer (spec, intersection, escalation)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `PermissionSpec` + `StsIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]`"
-    },
-    {
-      "name": "Renderer system: Jinja2 SandboxedEnvironment for skill bodies",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `render_skill()` with `SandboxedEnvironment` + `StrictUndefined`; adversarial tests; `[audit]`"
-    },
-    {
-      "name": "`general_ludd.agent` Ansible collection skeleton + gludd_ping (W6.1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 12 passed; `[ea2e915]`"
-    },
-    {
-      "name": "gludd_model_call + POST /admin/models/call (W6.2)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 32 passed; `[ea2e915]`"
-    },
-    {
-      "name": "gludd_worktree + gludd_git modules (W6.3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[2aae2ef]`"
-    },
-    {
-      "name": "gludd_db module (W6.4)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[2aae2ef]`"
-    },
-    {
-      "name": "Skill rendering with Jinja2 StrictUndefined (W6.5)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 5 passed; `[2aae2ef]`"
-    },
-    {
-      "name": "gludd_mcp_tool (honestly fenced W3.9, W6.6)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `not_implemented=True`; decision in `TASKS.md:324-342`; `[2aae2ef]`"
-    },
-    {
-      "name": "agent_task role + playbook migration (W6.7/W6.9)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `make ansible-collection-test` 118 passed; `[d0203ba]`"
-    },
-    {
-      "name": "gludd_agent_run (ToolCallLoop kept, W6.8)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[c337fdb]`"
-    },
-    {
-      "name": "AgentMessageRepository + /api/messages (W7.1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 8+4 passed; `[bd80f5a]`"
-    },
-    {
-      "name": "/api/facts aggregation + gludd_facts + gludd_message modules (W7.2/W7.3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 2+11 passed; `[bd80f5a]`"
-    },
-    {
-      "name": "Prompt message-queue section for agent roles (W7.4)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 9 passed; `[bd80f5a]`"
-    },
-    {
-      "name": "7 AI-coding-agent roles (implement_change, write_tests, etc.) (W8.1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 107 passed; `[2eec9e1]`"
-    },
-    {
-      "name": "5 audit/report roles (W8.2)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 107 passed; `[2eec9e1]`"
-    },
-    {
-      "name": "Agent coordination playbooks (W8.3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `make ansible-syntax` 31 playbooks; `[2eec9e1]`"
-    },
-    {
-      "name": "completion_audit 83% \u2192 100% (W9.1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 26 passed; `make preflight` completion_audit PASS 100.0%; `[6915362]`"
-    },
-    {
-      "name": "Molecule mock-daemon harness + 14 module scenarios (W10.1\u2013W10.5)",
-      "pct": "\u2713 100%(local)",
-      "evidence": "**PASS** *(file-refs only)*: `make molecule-test-all` 14/14; CI-green unverified; `[761f79c]`; molecule scenarios at non-standard paths"
-    },
-    {
-      "name": "All 12 role molecule scenarios (W10.6)",
-      "pct": "\u2713 100%(local)",
-      "evidence": "**PASS** *(file-refs only)*: `make molecule-test-all` 26/26; CI-green unverified; `[41889e6]`"
-    },
-    {
-      "name": "5 workflow-pipeline roles + molecule scenarios (W13.1)",
-      "pct": "\u2713 100%(local)",
-      "evidence": "**PASS** *(file-refs only)*: `make molecule-test-all` 33/33; CI-green unverified; `[2a8f97b]`"
-    },
-    {
-      "name": "7 secure-SDLC roles + molecule scenarios (W14.1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `make molecule-test-all` 40/40; 106 e2e structural tests pass locally; CI-pending; `[9629e20]`"
-    },
-    {
-      "name": "9 agile/sprint roles + molecule scenarios (W15.1)",
-      "pct": "\u2713 100%(local)",
-      "evidence": "**PASS** *(file-refs only)*: `make molecule-test-all` 49/49; CI-green unverified; `[8b252e1]`"
-    },
-    {
-      "name": "File-overlap coordination router (#31)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: wired into daemon at /api/coordination; `[audit]`"
-    },
-    {
-      "name": "Per-project cost/time/LoC accounting (#28)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: cost+time+LoC per project; 13 tests; `[e2b21d14]`"
-    },
-    {
-      "name": "Gate-safe + predictive floor controller (floor_controller-consolidated branch)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: wired into daemon + EventLoop claim phase; 18 tests; `[branch abandoned \u2014 re-scoped into master]`"
-    },
-    {
-      "name": "self_update wired into daemon",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 11 e2e tests: plan/applied/audit, rollback, daemon_state tracking; `[2cc8715f]`"
-    },
-    {
-      "name": "Remediation system: blocker detector, dispatcher, chronic reporter",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `BlockerDetector` + `RemediationDispatcher` + `ChronicReporter` wired via `/api/remediation`; `[audit]`"
-    },
-    {
-      "name": "HumanTodo system (bot\u2192human task requests)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `HumanTodoModel` + `HumanTodoRepository` + `/api/human-todos` router + CLI; `[audit]`"
-    },
-    {
-      "name": "Project collections/init (scaffold + precedence)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `project_init` role scaffolds .gludd/collections/; 3-tier precedence: project > user > bundled; `[audit]`"
-    },
-    {
-      "name": "Ornith self-improve role + endpoints + training pipeline",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 9 test files; `ornith_self_improve` role with `improve-one` task; training data repo + MCP server; `[audit]`"
-    },
-    {
-      "name": "PauseController: wired into ModelGateway + EventLoop + daemon (#35 SLICE 2-4)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: ModelPausedError gate in ModelGateway; EventLoop claim gate skips paused projects; quiesce_project dehydrates in-flight agents; pause/resume API router; `[97c89082]` `[2fa2d919]` `[8a5ebe57]`"
-    },
-    {
-      "name": "AgentDispatcher pause gate: blocked dispatch for paused projects (#51)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: pause_controller.is_paused \u2192 dispatch denied with 'blocked' reason; 8 tests; `[2fa2d919]`"
-    },
-    {
-      "name": "Push livelock escape: retry counter + exponential backoff (#53)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: MAX_PUSH_RETRIES=5, independent per-todo counters, BLOCKED transition; 2 tests; `[2fa2d919]`"
-    },
-    {
-      "name": "ToolCallAuditor + PromptEnhancer + BadCallSituationStore (#35 SLICE 3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 21+10+8 tests passed; all green; `[e1c2d41a]` `[c273a408]`"
-    },
-    {
-      "name": "Session-start orchestration plugin: parallel-reads-then-dispatch contract enforced (Q2.1-Q2.3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: \ud83d\udea8 SESSION-START DIRECTIVE injected as first system-prompt block; opt-in hard gate via GLUDD_SESSION_START_ENFORCE; 21 tests; opencode.json registered"
-    },
-    {
-      "name": "Queue-lease concurrency fixes: double-dispatch prevention, priority ordering, orphan-lease cleanup, expires_at index (Q.F1-F4)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: F1 reclaim skip on live lease, F2 priority DESC ordering, F3 lease-row delete on PID-cap release, F4 alembic migration 011; `[4e13936]` `[6e684b4]` `[bba8c92]` `[14ee691]`"
-    },
-    {
-      "name": "gludd_stream module + /admin/stream/dispatch + 3 operator playbooks + molecule scenarios (S.1-S.7)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: stream_audio_to_tasks, stream_video_feature_detection, stream_text_log_tail; 3 molecule scenarios; max_dispatches bounded; `[ea2cc7bc]`"
-    },
-    {
-      "name": "Persistent agent memory (G1)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: MemoryRecordModel + MemoryRepository + migrations 005/022 + HTTP API (POST/GET/DELETE /api/memory with namespace wildcard + TTL expiry); 14 router tests; full CRUD surface"
-    },
-    {
-      "name": "Offline eval harness (G2)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: harness + schema + model evaluator + scorers tested (similarity, assertions, composite score, harness lifecycle); integration e2e proves harness + scoring pipeline end-to-end"
-    },
-    {
-      "name": "Semantic codebase retrieval (G3)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: indexer + searcher tested (chunking, tokenization, cosine similarity, ranking, edge cases); integration e2e proves indexer \u2192 search roundtrip end-to-end"
-    },
-    {
-      "name": "Sandboxed code execution (G4)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: 11 integration tests (wiring+execution); shell=False fix; 32 total tests; `[680bfeef]` `[97a18df5]`"
-    },
-    {
-      "name": "HITL approval gates (G7)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 32 wiring tests (ApprovalGate+HumanGate daemon path); 26+ e2e tests; `[11c18309]`"
-    },
-    {
-      "name": "Multi-agent debate / consensus (G11)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: ConsensusReviewer wired in daemon (was None \u2192 now instantiated); config-gated via consensus_review.enabled; 78+ tests; `[680bfeef]`"
-    },
-    {
-      "name": "Plan/critique layer (G9)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: PlanCritique with real critique logic (title, description, target_files, deps, content, file count checks); POST /admin/plan/critique endpoint; 12 unit + 6 wiring + 12 e2e = 30 tests"
-    },
-    {
-      "name": "Prompt/skill versioning A/B (G6)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 21 passed (variant pipeline: select, dispatch, record, auto-promote, versioning integration); `[387ef3ba]`"
-    },
-    {
-      "name": "Outcome-driven self-improve (G5)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: EvalHarness wired into daemon lifespan; OutcomeAnalyzer with real aggregation (by task_type x model, pass_rate/avg_tokens/duration, threshold-based suggestions); 17 outcome tests + 20 e2e tests"
-    },
-    {
-      "name": "Cost/quality Pareto router (G8)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: ParetoRouter tested (domination, edge cases, ordering, pick_winner, AdaptiveRouter integration, large sets); integration e2e proves cost/quality Pareto routing end-to-end"
-    },
-    {
-      "name": "Per-run replay (G10)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: RunRecorder wired into daemon (EventLoop + AgentDispatcher); GET /api/replays endpoint; 5 daemon-wiring tests + 21 unit + 11 e2e tests"
-    },
-    {
-      "name": "Live web retrieval MCP tool (G12)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: WebRetriever tested (fetch, caching, domain allowlist, error handling, title extraction, content truncation, headers); integration e2e proves live web retrieval end-to-end"
-    },
-    {
-      "name": "Structured task-spec / acceptance_criteria (G13)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: acceptance_criteria + definition_of_done on TodoModel; POST /api/todos accepts both; scheduled todo creation preserves both (bug fix); 5 unit + 7 e2e tests"
-    },
-    {
-      "name": "Compaction subsystem (CompactionAggressiveness + SelfImprovingCompactor)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: CompactionAggressiveness feedback loop wired into EventLoop review phase with AccuracySample collection + dynamic level tuning + disable_signaled; integration e2e proves compaction subsystem end-to-end"
-    },
-    {
-      "name": "LangChain/LangGraph integration (10 modules, 165 tests, replaces 9 custom impls)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: 31 files, 165 tests; PromptRegistry\u2192ChatPromptTemplate adapter; PromptCompactor\u2192ConversationSummaryBufferMemory, VariantGenerator\u2192StateGraph, ResultAggregator\u2192checkpoint, ConsensusEngine\u2192conditional edges, RunRecorder\u2192CallbackHandler, SandboxExecutor\u2192Tool, EvalHarness\u2192StringEvaluator, ExecutionEngine\u2192AgentExecutor; full e2e integration test proves StateGraph + AgentExecutor + CallbackHandler pipeline; `[25d0f40e]`"
-    },
-    {
-      "name": "Alembic 23 \u2192 0 errors (W35)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `make lint 0`; ruff clean; `[9d487ab]`"
-    },
-    {
-      "name": "mypy 18 \u2192 0 errors (W5.4)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `.gate-status typecheck PASS 0`; `MYPY_MAX=0`; `[526104b]`"
-    },
-    {
-      "name": "Alembic stamp_head + SQLite-only enforced",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 7 passed; `[312e403]`"
-    },
-    {
-      "name": "Message queue DB schema (AgentMessageModel)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 8 passed; `[bd80f5a]`"
-    },
-    {
-      "name": "Observability trace store (RecentTracesBuffer)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 7 passed; `[86389be]`"
-    },
-    {
-      "name": "Repository query perf + relationship pagination (P1/P6\u2013P12)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 4 tests: default cap, explicit-limit clamp, type filter, list_children cap; `[db56eee]`; NEW 2026-06-25"
-    },
-    {
-      "name": "CVE diskcache + pip dependency upgrades",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: CVE diskcache + pip dependencies adjudicated. Does not block ship. Upgrades deferred to follow-up cycle. See W5.3-CVE in TASKS.md."
-    },
-    {
-      "name": "avg_cost column in BenchmarkRepository.get_aggregate_scores",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: no longer defaults 0.0; `[436af0d]`"
-    },
-    {
-      "name": "CI gate job Python 3.11/3.12 matrix (V1.7/W16.1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: matrix verified: 3.11 + 3.12, fail-fast:false, gate depends on version; `[11d3060]`"
-    },
-    {
-      "name": "CI version PEP 440 fix (W11.1)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 7 passed; `[11d3060]`"
-    },
-    {
-      "name": "Molecule CI job",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 109 scenarios across 4 CI shards; molecule-test-shard target in Makefile; CI matrix [1,2,3,4] with fail-fast:false; local suite fully green (49/49). E2e test verifies CI workflow structure, shard configuration, and scenario coverage."
-    },
-    {
-      "name": "dist packs LICENSE + SBOM + no build-machine paths",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 6 passed; `[526104b]`"
-    },
-    {
-      "name": "Pre-commit hooks (detect-secrets, ruff, no-tracked-keys, etc.)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `make install-hooks`; enforcing since `[7035e8c]`"
-    },
-    {
-      "name": "make dogfood passes self-hosting",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: target exists (Makefile:1722), e2e tests pass (3/3), dispatch kwarg fix at dd3bfa14"
-    },
-    {
-      "name": "Operator SSH key rotation + history scrub",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: SSH key generation (ed25519/rsa), listing, scrubbing, rotation history recording; tested (generate/list/scrub/history/validation/permissions). Out of agent scope for live credential ops per W5.1 design decision; library supports operator-manual actions. `[audit]`"
-    },
-    {
-      "name": "Wave 3 merge to master",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: feature/wave3-ship-final merged to master. 72c31576"
-    },
-    {
-      "name": "CI fix wave: caplog propagate, budget guard, type fixes, dist readiness, 501 stubs, renderer schema (Q3.x)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 15+ fixes across Q3.1\u2013Q3.16; 10 test_commit_gate_freshness.py passed; typecheck 0 errors in 465 files; `[4ea8f168]`"
-    },
-    {
-      "name": "Unit-1 CI shard rebalance: --ignore-glob test_connector (#62)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: unit-1 drops from 20+min toward ~10-12min; `[43083168]`"
-    },
-    {
-      "name": "make validate-opencode-config gate prerequisite (Q2.8)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: 4 schema-allowed top-level key tests; wired as gate prerequisite; `[4ea8f168]`"
-    },
-    {
-      "name": "Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `Makefile:53`; `nohup` + PID file + phase markers + status poll; `[audit]`"
-    },
-    {
-      "name": "Terraform infrastructure: GPU stacks, IAM modules, policy enforcement (Q2.4-Q2.6)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `infra/terraform/` stacks: aws, azure, gcp, runpod, vast, kubernetes; IAM onboarding modules; OPA policies; `[audit]`"
-    },
-    {
-      "name": "BILL-1: Slurm billing \u2014 account/qos propagation + sub-hour time limits",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 14 e2e tests: full script gen, account/qos validation, time limit formats, param roundtrip; 34 unit passed"
-    },
-    {
-      "name": "BILL-2: SlurmJobMonitor cost caps + idle detection",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 9 e2e tests: lifecycle under/over cap, idle detection, thread start/stop, elapsed parsing, idempotent start; 21 unit passed"
-    },
-    {
-      "name": "BILL-3: Slurm preemption handling",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 13 e2e tests: preempted+resubmit flow, chain tracking, max_resubmits, backoff sequence, multi-job tracking, custom submit params; 19 unit passed"
-    },
-    {
-      "name": "BILL-4: gpu-cost-watchdog on all Terraform stacks",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 12 e2e tests: all 16 stacks coverage, user_data output, exact count, kubernetes validation, module paths, generator integration, tfvars billing fields; 4 unit passed"
-    },
-    {
-      "name": "BILL-5: Spot/preemptible blocks on AWS/GCP/Azure",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: AWS instance_market_options, GCP scheduling preemptible, Azure priority=Spot eviction_policy=Delete; use_spot var default=true; InfraTracker spot pricing via PricingCatalog; 44+20 passed"
-    },
-    {
-      "name": "BILL-6: GPUMetricsCollector NVML-based monitoring",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: GPUMetricsCollector: NVML-based GPU SM%/mem/temp/power collection with graceful macOS/no-GPU degradation; ComputeEndpoint GPU fields; multi-GPU collection; idle detection; 22+17 passed"
-    },
-    {
-      "name": "BILL-7: Compute idle teardown in EventLoop",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: Idle teardown phase: `_phase_check_compute_utilization` in EventLoop; config-gated idle detection (GPU SM% < 5% for 15 min); auto-teardown after threshold ticks; multi-endpoint lifecycle; 12+15 passed"
-    },
-    {
-      "name": "BILL-8: Per-project cost accounting + infra cost tracking",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: Per-project `window_spend()`/`project_breakdown()` in SpendLimiter; InfraTracker.record_gpu_seconds(); combined token+infra accounting; catalog pricing; snapshot/restore; concurrent recording; 25+17 passed"
-    },
-    {
-      "name": "BILL-9: Compute-aware scheduling with GPU affinity",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `ComputeSchedulingHint` with work-type to GPU affinity mapping (analysis->A100, review->T4, self_improve->H100); GPU-type-aware routing in `route_task()`; cost-effective profile selection; heterogeneity; 23+26 passed"
-    },
-    {
-      "name": "Ratchet-growth guard (W1.1) \u2014 RATCHET_MAX constant",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `test_guardrails.py:401 RATCHET_MAX=11`; `[audit W1.1 DONE-VERIFIED]`"
-    },
-    {
-      "name": "TASKS.md tick guard in preflight (W1.2)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: `[audit W1.2 DONE-VERIFIED]`"
-    },
-    {
-      "name": "State-based stop checks only \u2014 vocabulary list deleted (W1.3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]`"
-    },
-    {
-      "name": "status-snapshot writes SESSION.md in place + drift detector (W1.4)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]`"
-    },
-    {
-      "name": "audit-evidence wired into validate (W1.5)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]`"
-    },
-    {
-      "name": "Makefile hygiene: stderr capture, MYPY_MAX var, gate coverage (W1.6)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]`"
-    },
-    {
-      "name": "preflight fails closed on unknown criteria (W1.7/H16)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: asserts FAIL on unknown criterion; `[audit W1.2-W1.7 DONE-VERIFIED]`"
-    },
-    {
-      "name": "Ratchet burn-down: 93 \u2192 11 entries (W2 phases)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: `config/ratchet.yml` 11 entries; `[audit W2.x DONE-VERIFIED]`"
-    },
-    {
-      "name": "Anti-stop fuzz test (6/6 catching BUGS.md incidents)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 6 passed; `[a1c1185]`"
-    },
-    {
-      "name": "W3.6 per-item proof table (50 G/S/F/M proofs, 0 GAP)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `TASKS.md:167-246`; 50 named tests; `[6915362]`; caveat: ~5-6 pass tests of partially-inert prod code"
-    },
-    {
-      "name": "pydantic-settings UserConfig + GLUDD_ env prefix (W4.4)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 5 passed; `[15db868]`"
-    },
-    {
-      "name": "Watchdog FileWatcher in integrity scanner (W4.3)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 2 passed + 3 xpassed; `[15db868]`"
-    },
-    {
-      "name": "deptry installed; langchain/langgraph integrated (W4.5)",
-      "pct": "~ 100%",
-      "evidence": "**PARTIAL** *(file-refs only)*: `make deps-audit` runs deptry successfully; langchain/langgraph integrated (LC feature, 10 modules, 165 tests, 9 custom impls replaced); `[25d0f40e]`"
-    },
-    {
-      "name": "README claims measured / no hardcoded numbers (W5.5)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 5 passed; `[526104b]`"
-    },
-    {
-      "name": "`make release-cut` target exists and runs (enforcement of this table)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green \u2192 check-readme-status \u2192 git-push \u2192 verify-artifact"
-    },
-    {
-      "name": "`TaskDecisionModel.return_id` no FK/unique \u2014 dangling decisions",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 3 tests: FK+unique constraint on return_id; `[9a0d8dd5]`"
-    },
-    {
-      "name": "`TodoModel.version` optimistic lock is no-op",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 3 tests: stale-version reject, concurrent-race, correct-version succeeds; `[cd3e8e9a]`"
-    },
-    {
-      "name": "`resolve()` leaks secret material via `str(exc)` in logs",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 5 tests: secret values redacted in error logs; `[5cf54f70]`"
-    },
-    {
-      "name": "`SecretAlias` path/mount injection \u2014 arbitrary backend path read",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 33 tests: traversal, command injection, null byte blocked; `[23e167cd]`"
-    },
-    {
-      "name": "Worker workspace leak on failure (no cleanup)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: FIXED: try/finally with shutil.rmtree(ignore_errors=True) in worker/app.py:500; `[audit]`"
-    },
-    {
-      "name": "`CosignKey.__repr__` leaks private_key + password to logs",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: FIXED on master: `field(repr=False)` on private_key + password; 14 tests across 2 files; `[6e2bc057]`"
-    },
-    {
-      "name": "`call_model_with_fallback` never checks circuit-breaker health",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: circuit-breaker health check before each fallback model; `[912cfcc3]`"
-    },
-    {
-      "name": "`AgentDispatcher.dispatch_one` never calls `registry.can_invoke` \u2014 permission matrix dead",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: FIXED `[a4a2e1a]`; both dispatch sites stamp `invoker_name=build` (`pipeline/daemon_adapters.py:48,82` + `daemon_wiring.py:153`); verified 2026-06-25"
-    },
-    {
-      "name": "Alembic migration drift: 9 tables created, ORM defines 16+",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 4 tests: all 26 ORM tables in migrations, column parity verified; `[9a0d8dd5]`"
-    },
-    {
-      "name": "`_fire_webhook` calls sync `httpx.post` from async path \u2014 freezes event loop",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: 42 tests: AsyncClient replaces sync httpx.post, non-blocking verified; `[fe8432c2]`"
-    },
-    {
-      "name": "Webhook full event payload leaks model credentials",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; payload filtered/redacted; verified 2026-06-25"
-    },
-    {
-      "name": "MCP tool-name collision silently hijacks routing",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: FIXED `[45fcfe7]`; `MCPToolRegistry.register_tool` (`mcp/registry.py:51`) raises `ValueError(Tool name collision)` \u2014 fail-closes on duplicate registration"
-    },
-    {
-      "name": "`connectors/registry.py` arbitrary code execution via `importlib.import_module`",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; pkgutil-built `_ALLOWED_CONNECTOR_MODULES` frozenset (`registry.py:310-313`) gates every importlib call via `_check_module_allowlist` (`registry.py:370-413`)"
-    },
-    {
-      "name": "PSK fail-open: unset `GLUDD_PSK` + `GLUDD_REQUIRE_AUTH` \u2192 no auth on /admin",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; now fail-closed; verified 2026-06-25"
-    },
-    {
-      "name": "`/api/status` returns db_url (with credentials) to unauthenticated callers",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; db_url redacted/removed from response"
-    },
-    {
-      "name": "`SpendLimiter.restore()` accepts negative cost \u2192 cap evasion",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: FIXED on `feature/alpha4-green-the-gate`; guards against negative cost"
-    },
-    {
-      "name": "F5b/F6a/F6b security features (batch3-security, 14 tests)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: merged into master (ancestor of HEAD); fast-follow branch never existed as named ref"
-    },
-    {
-      "name": "D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch)",
-      "pct": "\u2713 100%",
-      "evidence": "**PASS** *(file-refs only)*: all items independently implemented in master; all individual D-* findings in Security Findings Backlog table show PASS; batch-4 branch superseded"
     }
   ],
-  "generated_at": "2026-07-06T10:37:22Z"
+  "generated_at": "2026-07-08T23:03:28Z",
+  "game_audit": {
+    "report_generated": "2026-07-08T19:46:54Z",
+    "games": {
+      "snake": {
+        "game_id": "snake",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 10,
+        "checks_total": 13,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "tick_loop": {
+            "passed": true,
+            "desc": "tick() returns bool for 100 frames without error"
+          },
+          "direction_change": {
+            "passed": true,
+            "desc": "input('down') then tick advances snake downward"
+          },
+          "wall_collision": {
+            "passed": true,
+            "desc": "snake hitting wall returns game_over True"
+          },
+          "food_eating": {
+            "passed": true,
+            "desc": "moving onto food cell increments score and length"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": false,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": true,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": false,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": true,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 522,
+        "tokens_out": 765,
+        "tool_calls": 0,
+        "content_len": 2777,
+        "model": "unknown",
+        "phases": {
+          "model_call": 4878.9,
+          "extract_code": 0.0,
+          "ast_parse": 0.9,
+          "game_verify": 1.5
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": []
+      },
+      "tetris": {
+        "game_id": "tetris",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 10,
+        "checks_total": 13,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "tick_gravity": {
+            "passed": true,
+            "desc": "tick() moves piece down one row"
+          },
+          "line_clear": {
+            "passed": true,
+            "desc": "filling a row clears it and increments score"
+          },
+          "rotation": {
+            "passed": true,
+            "desc": "rotate_cw changes piece orientation"
+          },
+          "hard_drop": {
+            "passed": true,
+            "desc": "hard_drop instantly places piece"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": true,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": true,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": false,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": false,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 584,
+        "tokens_out": 2221,
+        "tool_calls": 0,
+        "content_len": 8268,
+        "model": "unknown",
+        "phases": {
+          "model_call": 12248.2,
+          "extract_code": 0.1,
+          "ast_parse": 2.7,
+          "game_verify": 3.5
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": [
+          "lifecycle.score_increments: score did not increment in 20 ticks and game did not end (initial=0)",
+          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr=None, won_attr=None)"
+        ]
+      },
+      "minesweeper": {
+        "game_id": "minesweeper",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 11,
+        "checks_total": 14,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "reveal_safe": {
+            "passed": true,
+            "desc": "revealing a non-mine cell returns 'ok'"
+          },
+          "reveal_mine": {
+            "passed": true,
+            "desc": "revealing a mine cell returns 'mine' and game_over=True"
+          },
+          "flood_fill": {
+            "passed": true,
+            "desc": "revealing a 0 cell auto-reveals adjacent cells"
+          },
+          "flag_toggle": {
+            "passed": false,
+            "desc": "flag() toggles between flagged/unflagged"
+          },
+          "win_detection": {
+            "passed": true,
+            "desc": "revealing all non-mine cells sets won=True"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": false,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": true,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": true,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": true,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 613,
+        "tokens_out": 1308,
+        "tool_calls": 0,
+        "content_len": 5356,
+        "model": "unknown",
+        "phases": {
+          "model_call": 8697.5,
+          "extract_code": 0.0,
+          "ast_parse": 8.2,
+          "game_verify": 3.1
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": [
+          "reveal returned unexpected value: 'game_not_active'"
+        ]
+      },
+      "checkers": {
+        "game_id": "checkers",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 13,
+        "checks_total": 14,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "valid_move": {
+            "passed": true,
+            "desc": "valid diagonal move returns valid=True"
+          },
+          "invalid_move": {
+            "passed": true,
+            "desc": "moving to occupied square returns valid=False"
+          },
+          "capture": {
+            "passed": true,
+            "desc": "jump capture removes opponent piece"
+          },
+          "king_promotion": {
+            "passed": true,
+            "desc": "piece reaching back rank becomes king"
+          },
+          "game_over": {
+            "passed": true,
+            "desc": "no valid moves sets game_over=True"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": true,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": true,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": true,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": true,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 728,
+        "tokens_out": 2387,
+        "tool_calls": 0,
+        "content_len": 8705,
+        "model": "unknown",
+        "phases": {
+          "model_call": 17564.5,
+          "extract_code": 0.1,
+          "ast_parse": 8.5,
+          "game_verify": 2.4
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": []
+      },
+      "skifree": {
+        "game_id": "skifree",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 7,
+        "checks_total": 13,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "tick_movement": {
+            "passed": true,
+            "desc": "tick() moves skier down the course"
+          },
+          "left_right": {
+            "passed": true,
+            "desc": "input('left') changes skier x position"
+          },
+          "tree_collision": {
+            "passed": true,
+            "desc": "overlapping a tree sets crashed=True"
+          },
+          "course_completion": {
+            "passed": true,
+            "desc": "reaching bottom sets finished=True"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": false,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": false,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": false,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": false,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": false,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 677,
+        "tokens_out": 1052,
+        "tool_calls": 0,
+        "content_len": 3886,
+        "model": "unknown",
+        "phases": {
+          "model_call": 7356.2,
+          "extract_code": 0.0,
+          "ast_parse": 1.2,
+          "game_verify": 2.7
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": [
+          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='crashed', won_attr=None)"
+        ]
+      },
+      "banana": {
+        "game_id": "banana",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 10,
+        "checks_total": 13,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "throw_arc": {
+            "passed": true,
+            "desc": "throw(45, 10) produces trajectory with multiple points"
+          },
+          "building_hit": {
+            "passed": true,
+            "desc": "throw at low angle hits a building"
+          },
+          "gorilla_hit": {
+            "passed": true,
+            "desc": "direct hit on gorilla returns hit_type='gorilla1' or 'gorilla2'"
+          },
+          "turn_alternation": {
+            "passed": false,
+            "desc": "current_player changes after each throw"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": false,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": true,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": true,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": true,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 767,
+        "tokens_out": 1531,
+        "tool_calls": 0,
+        "content_len": 6313,
+        "model": "unknown",
+        "phases": {
+          "model_call": 9056.0,
+          "extract_code": 0.1,
+          "ast_parse": 13.8,
+          "game_verify": 1.9
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": [
+          "throw trajectory must be a non-empty list, got []"
+        ]
+      },
+      "pong": {
+        "game_id": "pong",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 10,
+        "checks_total": 13,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "pong_ball_move": {
+            "passed": true,
+            "desc": "ball position changes after tick()"
+          },
+          "pong_wall_bounce": {
+            "passed": true,
+            "desc": "ball bounces off top or bottom wall (dy flips)"
+          },
+          "pong_paddle_move": {
+            "passed": true,
+            "desc": "paddle moves in response to input"
+          },
+          "pong_scoring": {
+            "passed": true,
+            "desc": "score increments when ball passes paddle"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": true,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": false,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": true,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": false,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 728,
+        "tokens_out": 958,
+        "tool_calls": 0,
+        "content_len": 3205,
+        "model": "unknown",
+        "phases": {
+          "model_call": 5639.9,
+          "extract_code": 0.0,
+          "ast_parse": 0.8,
+          "game_verify": 1.4
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": []
+      },
+      "breakout": {
+        "game_id": "breakout",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 10,
+        "checks_total": 13,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "brk_ball_moves": {
+            "passed": true,
+            "desc": "ball position changes after tick()"
+          },
+          "brk_brick_smash": {
+            "passed": true,
+            "desc": "tick loop destroys at least one brick"
+          },
+          "brk_paddle_bounce": {
+            "passed": true,
+            "desc": "ball bounces when hitting paddle area"
+          },
+          "brk_life_loss": {
+            "passed": true,
+            "desc": "lives decrement when ball passes bottom"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": true,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": false,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": true,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": false,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 815,
+        "tokens_out": 1107,
+        "tool_calls": 0,
+        "content_len": 4053,
+        "model": "unknown",
+        "phases": {
+          "model_call": 6841.5,
+          "extract_code": 0.1,
+          "ast_parse": 1.5,
+          "game_verify": 3.3
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": []
+      },
+      "maze_runner": {
+        "game_id": "maze_runner",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 10,
+        "checks_total": 12,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "maze_moves": {
+            "passed": true,
+            "desc": "input('right') moves player on a path cell"
+          },
+          "maze_wall_blocks": {
+            "passed": true,
+            "desc": "moving into a wall cell blocks movement"
+          },
+          "maze_reach_end": {
+            "passed": true,
+            "desc": "reaching end position sets won=True"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": false,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": true,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": true,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": true,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 601,
+        "tokens_out": 820,
+        "tool_calls": 0,
+        "content_len": 3062,
+        "model": "unknown",
+        "phases": {
+          "model_call": 5318.4,
+          "extract_code": 0.0,
+          "ast_parse": 1.0,
+          "game_verify": 1.9
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": [
+          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='game_over', won_attr='won')"
+        ]
+      },
+      "word_guesser": {
+        "game_id": "word_guesser",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 11,
+        "checks_total": 13,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "wg_correct_letter": {
+            "passed": true,
+            "desc": "guessing a letter in the word reveals positions"
+          },
+          "wg_wrong_letter": {
+            "passed": true,
+            "desc": "guessing a wrong letter increments wrong_guesses"
+          },
+          "wg_win_word": {
+            "passed": true,
+            "desc": "guessing all letters sets won=True"
+          },
+          "wg_lose_max": {
+            "passed": true,
+            "desc": "reaching max_guesses sets game_over=True and won=False"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": false,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": true,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": true,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": true,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 704,
+        "tokens_out": 722,
+        "tool_calls": 0,
+        "content_len": 2811,
+        "model": "unknown",
+        "phases": {
+          "model_call": 4898.7,
+          "extract_code": 0.0,
+          "ast_parse": 0.7,
+          "game_verify": 1.4
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": []
+      },
+      "memory_match": {
+        "game_id": "memory_match",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 8,
+        "checks_total": 13,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "mm_flip_cards": {
+            "passed": true,
+            "desc": "flip() reveals a card and returns valid dict"
+          },
+          "mm_match_pair": {
+            "passed": true,
+            "desc": "matching two cards with same value sets matched=True"
+          },
+          "mm_mismatch_flips": {
+            "passed": true,
+            "desc": "non-matching pair flips back after second card"
+          },
+          "mm_all_matched": {
+            "passed": false,
+            "desc": "game ends when all cards are matched"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": true,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": false,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": false,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": false,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 702,
+        "tokens_out": 620,
+        "tool_calls": 0,
+        "content_len": 2725,
+        "model": "unknown",
+        "phases": {
+          "model_call": 3771.0,
+          "extract_code": 0.0,
+          "ast_parse": 0.6,
+          "game_verify": 1.4
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": []
+      },
+      "tic_tac_toe": {
+        "game_id": "tic_tac_toe",
+        "imported": true,
+        "instantiated": true,
+        "checks_passed": 11,
+        "checks_total": 13,
+        "checks": {
+          "import_and_instantiate": {
+            "passed": true,
+            "desc": "class imports and instantiates without error"
+          },
+          "ttt_legal_move": {
+            "passed": true,
+            "desc": "move on empty cell returns valid=True"
+          },
+          "ttt_illegal_reject": {
+            "passed": true,
+            "desc": "move on occupied cell returns valid=False"
+          },
+          "ttt_three_in_row": {
+            "passed": true,
+            "desc": "three in a row sets winner and game_over"
+          },
+          "ttt_board_full_draw": {
+            "passed": true,
+            "desc": "full board with no winner sets draw=True"
+          },
+          "render_state": {
+            "passed": true,
+            "desc": "render_state() returns dict with expected keys"
+          },
+          "lifecycle_initial_state": {
+            "passed": false,
+            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
+          },
+          "lifecycle_start": {
+            "passed": true,
+            "desc": "calling start() transitions state to 'playing'"
+          },
+          "lifecycle_score_starts_zero": {
+            "passed": false,
+            "desc": "score is 0 at start of play"
+          },
+          "lifecycle_score_increments": {
+            "passed": true,
+            "desc": "score increases after positive event"
+          },
+          "lifecycle_game_over": {
+            "passed": true,
+            "desc": "triggering lose condition sets game_over=True and state='game_over'"
+          },
+          "lifecycle_game_over_idempotent": {
+            "passed": true,
+            "desc": "tick()/move() after game_over does not change state"
+          },
+          "lifecycle_restart": {
+            "passed": true,
+            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
+          }
+        },
+        "tokens_in": 753,
+        "tokens_out": 1304,
+        "tool_calls": 0,
+        "content_len": 5278,
+        "model": "unknown",
+        "phases": {
+          "model_call": 6825.0,
+          "extract_code": 0.1,
+          "ast_parse": 2.5,
+          "game_verify": 2.1
+        },
+        "errors": [],
+        "gaps": [],
+        "feature_failures": []
+      }
+    },
+    "summary": {
+      "total_games": 12,
+      "games_imported": 12,
+      "games_fully_verified": 0,
+      "total_tokens_in": 8194,
+      "total_tokens_out": 14795,
+      "total_latency_ms": 93165.3,
+      "total_latency_s": 93.17,
+      "most_tokens": "checkers",
+      "most_latency": "checkers"
+    }
+  }
 }
