@@ -1125,6 +1125,7 @@ This is the general-ludd-agent project: an autonomous coding system with Ansible
 - `make healthcheck` - Verify imports work
 - `make collect-check` - Fast collection-error gate (use before every commit)
 - `make gate` - Full gate: lint + typecheck + collect-check + test; writes `.gate-status`
+- `make gate-lite` - Local validation (lint + typecheck + collect + smoke + env-writes + skills-frontmatter + tests/unit @2 workers); skips the full-suite xdist phase that OOMs locally. Writes `.gate-lite-status`. NOT the gate of record (CI is) — the commit-time `_gate-fresh-check` still requires the full `make gate`. Use between commits for fast local feedback. See `docs/STABILIZATION_PLAN.md` WP-C3.
 - `make qa` - Run lint + typecheck + test + healthcheck
 - `make validate` - Full validation including ansible syntax
 

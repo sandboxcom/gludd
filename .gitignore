@@ -18,6 +18,8 @@ build/
 *.egg-info/
 .gate-status
 .gate-failed
+.gate-lite-status
+.gate-lite-failed
 .gate-background.pid
 .gate-logs/
 ci-attempt-logs/

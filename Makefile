@@ -41,7 +41,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		container-build container-run container-push \
         build-executable dist dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security \
-        audit-messages qa validate collect-check gate smoke install-hooks \
+        audit-messages qa validate collect-check gate gate-lite smoke install-hooks \
         status-snapshot audit-evidence deps-audit dogfood-features \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -81,6 +81,7 @@ help:
 	@echo "  qa                    Run lint + typecheck + test + healthcheck"
 	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
+	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
@@ -347,6 +348,74 @@ gate: check-skills-frontmatter
 	else \
 		echo "=== GATE: PASSED ==="; \
 		echo "=== GATE: PASSED ===" >> .gate-status; \
+	fi
+
+# gate-lite: LOCAL validation without the full xdist test phase that OOMs on
+# this machine under 8-worker xdist. Runs the same lint/typecheck/collect/smoke
+# phases as `gate` plus env-writes + skills-frontmatter checks, but replaces the
+# full-suite test phase with a 2-worker TARGETED pytest over tests/unit only
+# (--basetemp isolated, -x fail-fast). Writes .gate-lite-status.
+#
+# This is NOT the gate of record — CI is (see docs/STABILIZATION_PLAN.md WP-C3,
+# "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
+# commit targets still requires the FULL `make gate`; gate-lite is for fast
+# local feedback between commits, not a commit prerequisite.
+gate-lite: check-skills-frontmatter
+	@rm -f .gate-lite-failed
+	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
+	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
+	@# emits a timestamped stdout marker as it STARTS so a running gate-lite
+	@# is visibly advancing through phases — never a silent black box.
+	@echo "=== GATE-LITE PHASE: lint ==="
+	@printf "lint " >> .gate-lite-status
+	@if $(UV) run ruff check src tests --output-format concise > /dev/null 2>&1; then \
+		echo "PASS 0" >> .gate-lite-status; \
+	else \
+		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-lite-status && touch .gate-lite-failed; \
+	fi
+	@echo "=== GATE-LITE PHASE: typecheck ==="
+	@printf "typecheck " >> .gate-lite-status
+	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
+	TC_ERRS=$${TC_ERRS:-0}; \
+	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-lite-status; else echo "FAIL $$TC_ERRS" >> .gate-lite-status && touch .gate-lite-failed; fi
+	@echo "=== GATE-LITE PHASE: collect ==="
+	@printf "collect " >> .gate-lite-status
+	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-lite-status || (echo "FAIL collection-errors" >> .gate-lite-status && touch .gate-lite-failed)
+	@echo "=== GATE-LITE PHASE: env-writes ==="
+	@printf "env-writes " >> .gate-lite-status
+	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
+	@echo "=== GATE-LITE PHASE: skills-frontmatter ==="
+	@printf "skills-frontmatter " >> .gate-lite-status
+	@$(MAKE) --no-print-directory check-skills-frontmatter > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
+	@echo "=== GATE-LITE PHASE: test (unit, 2 workers, fail-fast) ==="
+	@printf "test " >> .gate-lite-status
+	@# 2 workers (not 8) avoids the local OOM; -x fails fast; unique basetemp
+	@# prevents collision with any in-flight full gate; output is tee'd to a
+	@# log so a failure surfaces its cause (No Unseen Events).
+	@BT=$$(mktemp -d /tmp/gludd-gate-lite-XXXXXX); \
+	if $(UV) run python -m pytest tests/unit -q --no-header -x --basetemp="$$BT" -n 2 --maxprocesses=2 > /tmp/gludd-gate-lite-test.log 2>&1; then \
+		echo "PASS 0" >> .gate-lite-status; \
+	else \
+		echo "FAIL non-zero-exit" >> .gate-lite-status; \
+		touch .gate-lite-failed; \
+		echo "[gate-lite] test FAILED — tail of /tmp/gludd-gate-lite-test.log:"; \
+		tail -30 /tmp/gludd-gate-lite-test.log; \
+	fi; \
+	rm -rf "$$BT"
+	@echo "=== GATE-LITE PHASE: smoke ==="
+	@printf "smoke " >> .gate-lite-status
+	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-lite-smoke.log 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed && echo "[gate-lite] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-lite-smoke.log)
+	@echo "---" >> .gate-lite-status
+	@echo "epoch $$(date +%s)" >> .gate-lite-status
+	@cat .gate-lite-status
+	@if [ -f .gate-lite-failed ]; then \
+		rm -f .gate-lite-failed; \
+		echo "=== GATE-LITE: FAILED ==="; \
+		echo "=== GATE-LITE: FAILED ===" >> .gate-lite-status; \
+		exit 1; \
+	else \
+		echo "=== GATE-LITE: PASSED ==="; \
+		echo "=== GATE-LITE: PASSED ===" >> .gate-lite-status; \
 	fi
 
 # Process-hygiene check: list any running pytest/molecule/gate so we never launch
