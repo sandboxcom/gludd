@@ -1883,6 +1883,10 @@ check-readme-status:
 check-skills-frontmatter:
 	@$(UV) run python scripts/check_skills_frontmatter.py
 
+# --- Test env-write lint: forbid bare os.environ[...] = in tests/ (use monkeypatch.setenv) ---
+check-test-env-writes:
+	@$(UV) run python scripts/check_test_env_writes.py tests
+
 # --- Type strictness: flag `Any` usage in Python annotations (tight types only) ---
 # Scans src/ for Any in return/param/annassign annotations (incl. nested dict[...]/Optional[...]).
 # See .opencode/skills/type-safety/SKILL.md for the full policy.

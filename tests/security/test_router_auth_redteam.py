@@ -53,19 +53,19 @@ def _client(app):
 # --------------------------------------------------------------------------- #
 class TestMethodAwarePublicAllowlist:
     @pytest.mark.asyncio
-    async def test_post_to_public_path_is_not_public_when_psk_set(self):
+    async def test_post_to_public_path_is_not_public_when_psk_set(self, monkeypatch):
         # With a PSK configured, a *mutating* verb on a path that is only
         # read-only-public must fall through to auth -> 401 without a token.
-        os.environ["GLUDD_PSK"] = "topsecret"
+        monkeypatch.setenv("GLUDD_PSK", "topsecret")
         app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as client:
             resp = await client.post("/api/todos", json={"title": "x", "queue": "core"})
             assert resp.status_code == 401, resp.text
 
     @pytest.mark.asyncio
-    async def test_get_public_path_stays_public_with_psk(self):
+    async def test_get_public_path_stays_public_with_psk(self, monkeypatch):
         # The read-only verb on the same path stays public (no token needed).
-        os.environ["GLUDD_PSK"] = "topsecret"
+        monkeypatch.setenv("GLUDD_PSK", "topsecret")
         app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as client:
             resp = await client.get("/api/todos")
@@ -80,8 +80,8 @@ class TestMethodAwarePublicAllowlist:
             assert resp.status_code == 201, resp.text
 
     @pytest.mark.asyncio
-    async def test_post_public_path_with_valid_token_passes(self):
-        os.environ["GLUDD_PSK"] = "topsecret"
+    async def test_post_public_path_with_valid_token_passes(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_PSK", "topsecret")
         app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as client:
             resp = await client.post(
@@ -92,10 +92,10 @@ class TestMethodAwarePublicAllowlist:
             assert resp.status_code == 201, resp.text
 
     @pytest.mark.asyncio
-    async def test_require_auth_fail_closed_on_post_public_path(self):
+    async def test_require_auth_fail_closed_on_post_public_path(self, monkeypatch):
         # GLUDD_REQUIRE_AUTH with no PSK: a mutating verb on a public path is
         # NOT public, so it must fail closed (503), while GET stays 200.
-        os.environ["GLUDD_REQUIRE_AUTH"] = "1"
+        monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
         app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as client:
             get_resp = await client.get("/healthz")

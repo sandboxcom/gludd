@@ -69,6 +69,41 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
 
 
+_LEAKY_ENV_VARS: frozenset[str] = frozenset({
+    "GLUDD_PSK",
+    "GLUDD_REQUIRE_AUTH",
+    "GLUDD_ALLOW_NO_AUTH",
+    "GLUDD_WEB_FETCH_ALLOWED_DOMAINS",
+    "DELETION_REASON",
+    "GLUDD_DELETION_GATE_THRESHOLD",
+    "GL_CONFIG_DIR",
+    "DATABASE_URL",
+    "GLUDD_MT_BACKLOG",
+    "ZAI_API_KEY",
+    "ZAI_BASE_URL",
+})
+
+
+@pytest.fixture(autouse=True)
+def _restore_leaky_env_vars():
+    """Snapshot and restore leaky env vars around every test.
+
+    Backstop for tests that still mutate ``os.environ`` directly (or via
+    ``monkeypatch.setenv``). Guarantees that none of the known process-global
+    config knobs leak from one test into a sibling on the same xdist worker,
+    even if a test forgets to clean up. Pairs with
+    ``scripts/check_test_env_writes.py`` which forbids new bare
+    ``os.environ[...] =`` writes in ``tests/``.
+    """
+    snap = {k: os.environ.get(k) for k in _LEAKY_ENV_VARS}
+    yield
+    for k, original in snap.items():
+        if original is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = original
+
+
 @pytest.fixture(autouse=True)
 def _isolate_root_logger():
     """Snapshot and restore the ENTIRE logging state around every test.

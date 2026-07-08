@@ -46,8 +46,8 @@ class TestWorkerAuthParity:
             assert resp.status_code == 400, resp.text
 
     @pytest.mark.asyncio
-    async def test_psk_rejects_missing_token(self):
-        os.environ["GLUDD_PSK"] = "s3cret"
+    async def test_psk_rejects_missing_token(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_PSK", "s3cret")
         app = create_app(gateway=None)
         async with _client(app) as client:
             resp = await client.post(
@@ -57,8 +57,8 @@ class TestWorkerAuthParity:
             assert resp.status_code == 401, resp.text
 
     @pytest.mark.asyncio
-    async def test_psk_rejects_wrong_token(self):
-        os.environ["GLUDD_PSK"] = "s3cret"
+    async def test_psk_rejects_wrong_token(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_PSK", "s3cret")
         app = create_app(gateway=None)
         async with _client(app) as client:
             resp = await client.post(
@@ -69,8 +69,8 @@ class TestWorkerAuthParity:
             assert resp.status_code == 401, resp.text
 
     @pytest.mark.asyncio
-    async def test_psk_accepts_correct_token(self):
-        os.environ["GLUDD_PSK"] = "s3cret"
+    async def test_psk_accepts_correct_token(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_PSK", "s3cret")
         app = create_app(gateway=None)
         async with _client(app) as client:
             # Correct token -> passes auth, hits route, 400 for unknown playbook.
@@ -82,18 +82,18 @@ class TestWorkerAuthParity:
             assert resp.status_code == 400, resp.text
 
     @pytest.mark.asyncio
-    async def test_healthz_public_even_with_psk(self):
-        os.environ["GLUDD_PSK"] = "s3cret"
+    async def test_healthz_public_even_with_psk(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_PSK", "s3cret")
         app = create_app(gateway=None)
         async with _client(app) as client:
             resp = await client.get("/healthz")
             assert resp.status_code == 200, resp.text
 
     @pytest.mark.asyncio
-    async def test_require_auth_fail_closed_no_psk(self):
+    async def test_require_auth_fail_closed_no_psk(self, monkeypatch):
         # A-3: GLUDD_REQUIRE_AUTH set, no PSK -> non-public paths 503 (fail-closed),
         # NOT fail-open serving unauthenticated job execution.
-        os.environ["GLUDD_REQUIRE_AUTH"] = "1"
+        monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
         app = create_app(gateway=None)
         async with _client(app) as client:
             resp = await client.post(
@@ -106,11 +106,11 @@ class TestWorkerAuthParity:
             assert hz.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_require_auth_with_psk_uses_token(self):
+    async def test_require_auth_with_psk_uses_token(self, monkeypatch):
         # When both are set, a valid token still passes (require-auth only bites
         # when there is no PSK at all).
-        os.environ["GLUDD_PSK"] = "s3cret"
-        os.environ["GLUDD_REQUIRE_AUTH"] = "1"
+        monkeypatch.setenv("GLUDD_PSK", "s3cret")
+        monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
         app = create_app(gateway=None)
         async with _client(app) as client:
             resp = await client.post(
