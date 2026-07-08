@@ -2327,10 +2327,7 @@ def create_daemon_app(
     if _no_auth and not _allow_no_auth:
         # Default fail-closed posture: LOUD warning that non-public paths will
         # be refused (503) until a PSK is configured.
-        import sys as _sys
         _dl = logging.getLogger("general_ludd.daemon")
-        _root = logging.getLogger()
-        print(f"DEBUG-DAEMON: isEnabledFor(WARNING)={_dl.isEnabledFor(logging.WARNING)} getEffectiveLevel={_dl.getEffectiveLevel()} level={_dl.level} | root level={_root.level} root eff={_root.getEffectiveLevel()} | manager.disable={_dl.manager.disable}", file=_sys.stderr, flush=True)
         logger.warning(
             "SECURITY: GLUDD_PSK is not set — the daemon will REFUSE all "
             "non-public paths (503, fail-closed). Set GLUDD_PSK to enable auth. "
