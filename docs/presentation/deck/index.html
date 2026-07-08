@@ -115,9 +115,18 @@
     <li class="fragment"><strong>The code lands in your project</strong> &mdash; ready to use</li>
   </ol>
   <div class="diagram-wrap">
-    <img src="assets/architecture.svg" alt="gludd architecture diagram showing the flow from user to daemon to AI models to git">
+    <div class="mermaid">
+graph TD
+  User["👤 You"] -->|task| Daemon["🤖 gludd"]
+  Daemon -->|write| AI1["🧠 AI writes code"]
+  Daemon -->|check| AI2["🧠 AI reviews"]
+  AI1 --> Gate["⚠️ Quality gate"]
+  AI2 --> Gate
+  Gate -->|save| Git[("📦 Git repo")]
+  Daemon -.->|next task| Daemon
+    </div>
   </div>
-  <p class="cite">Source: <code>docs/presentation/deck/assets/architecture.svg</code></p>
+  <p class="cite">Source: inline Mermaid diagram &middot; <code>docs/presentation/deck/index.html</code></p>
 </section>
 
 <!-- ============================================================ -->
@@ -133,9 +142,15 @@
     <li class="fragment"><strong>Save</strong> &mdash; gludd saves the finished code to your project</li>
   </ol>
   <div class="diagram-wrap">
-    <img src="assets/event-loop.svg" alt="gludd work cycle diagram showing claim, dispatch, review, save steps in a loop">
+    <div class="mermaid">
+graph LR
+  Claim["1️⃣ Claim<br/>grab next task"] --> Dispatch["2️⃣ Dispatch<br/>AI writes code"]
+  Dispatch --> Review["3️⃣ Review<br/>AI checks work"]
+  Review --> Save["4️⃣ Save<br/>code to git"]
+  Save -.->|repeat every second| Claim
+    </div>
   </div>
-  <p class="cite">Source: <code>docs/presentation/deck/assets/event-loop.svg</code></p>
+  <p class="cite">Source: inline Mermaid diagram &middot; <code>docs/presentation/deck/index.html</code></p>
 </section>
 
 <!-- ============================================================ -->
@@ -271,7 +286,11 @@ gludd says:  "Got it. Added to the queue."</code></pre>
     <li><span class="badge-blue">Layer 3</span> <strong>Prompt rules</strong> &mdash; the AI is instructed to follow safe practices</li>
   </ul>
   <div class="diagram-wrap">
-    <img src="assets/security-layers.svg" alt="security layers diagram showing permissions, runtime guards, and prompt rules">
+    <div class="mermaid">
+graph TD
+  L1["🔒 Layer 1 — Permissions<br/>hard rules in config files"] --> L2["👁️ Layer 2 — Runtime Guards<br/>11 plugins watch every action"]
+  L2 --> L3["📝 Layer 3 — Prompt Rules<br/>AI instructed to follow safe practices"]
+    </div>
   </div>
   <p><strong>Security findings: 14 of 15 fixed</strong> &mdash; one remains open and tracked.</p>
   <p class="cite">11 enforcement plugins <span class="badge-green">VERIFIED</span> &middot; 14/15 findings fixed &middot; Source: <code>.opencode/plugin/</code>, <code>docs/audit/</code></p>
@@ -491,7 +510,7 @@ make init</code></pre>
     <li><strong>Source code</strong><br><a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a></li>
     <li><strong>This presentation</strong><br><a href="https://sandboxcom.github.io/gludd/">sandboxcom.github.io/gludd</a></li>
     <li><strong>Quick start guide</strong><br>See <code>README.md</code> in the repo</li>
-    <li><strong>Architecture deep-dive</strong><br>See <code>docs/presentation/deck/assets/architecture.svg</code></li>
+    <li><strong>Architecture deep-dive</strong><br>See the architecture diagram in <code>docs/presentation/deck/index.html</code> (slide 4)</li>
     <li><strong>Security audit</strong><br>See <code>docs/audit/</code> in the repo</li>
     <li><strong>Full feature list</strong><br>Run <code>make gen-status-table</code> after cloning</li>
     <li><strong>License</strong><br>MIT &mdash; free to use, modify, and distribute</li>
@@ -524,6 +543,8 @@ make init</code></pre>
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<!-- Mermaid plugin for inline diagrams -->
+<script src="https://cdn.jsdelivr.net/npm/reveal.js-mermaid-plugin@2.1.0/mermaid/mermaid.js"></script>
 <script>
 Reveal.initialize({
   hash: true,
@@ -533,6 +554,25 @@ Reveal.initialize({
   backgroundTransition: 'fade',
   slideNumber: 'c/t',
   plugins: [ RevealHighlight, RevealNotes ]
+}).then(() => {
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#161b22',
+      primaryTextColor: '#c9d1d9',
+      primaryBorderColor: '#58a6ff',
+      lineColor: '#58a6ff',
+      secondaryColor: '#1f6feb',
+      tertiaryColor: '#238636',
+      background: '#161b22',
+      mainBkg: '#161b22',
+      secondBkg: '#1f6feb',
+      fontSize: '16px'
+    }
+  });
+  mermaid.run();
+  Reveal.on('slidechanged', () => mermaid.run());
 });
 </script>
 </body>

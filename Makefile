@@ -2711,6 +2711,13 @@ deck-serve:
 	@echo "Serving deck at http://localhost:8080/"
 	@$(UV) run python3 scripts/build_deck.py --serve
 
+# Remove the legacy SVG artifacts from the deck assets dir (now replaced by inline Mermaid).
+# Physically deletes the files and the assets/ dir if it becomes empty.
+deck-clean-assets:
+	@rm -f $(DECK_DIR)/assets/architecture.svg $(DECK_DIR)/assets/event-loop.svg $(DECK_DIR)/assets/security-layers.svg
+	@if [ -d "$(DECK_DIR)/assets" ] && [ -z "$$(ls -A $(DECK_DIR)/assets)" ]; then rmdir $(DECK_DIR)/assets && echo "removed empty dir: $(DECK_DIR)/assets"; fi
+	@echo "deck assets cleaned"
+
 deck-data:
 	@$(UV) run python3 scripts/build_deck.py --data
 
