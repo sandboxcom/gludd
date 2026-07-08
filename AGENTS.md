@@ -1065,6 +1065,25 @@ This is enforced by:
 - `Makefile` `test-and-commit` target — atomic test-then-commit
 - This AGENTS.md section — proactive instruction
 
+### Clean Tree Before Dispatch (2026-07-08)
+
+NEVER dispatch a subagent when the git working tree is dirty. Uncommitted
+changes left by a prior subagent cause pre-commit hook stash conflicts on
+the next push, forcing `-nv` (no-verify) bypasses that defeat the lint/secret
+guards.
+
+The `enforce-clean-tree.ts` plugin denies dispatch when `git status --porcelain`
+returns non-empty. Commit or stash before dispatching:
+- `make git-add FILES='...' && make ship-commit MSG='...'` — commit the changes
+- `make git-stash` — stash temporarily, `make git-stash-pop` to restore
+
+Set `GLUDD_CLEAN_TREE_ENFORCE=0` to disable for focused single-file work.
+
+Enforced by:
+- `.opencode/plugin/enforce-clean-tree.ts` — `tool.execute.before` hook on task/agent/workflow
+- `tests/unit/test_clean_tree_plugin.py` — behavior pin (deny on dirty, allow on clean, fail-open)
+- This AGENTS.md section — proactive instruction
+
 ## CRITICAL: No-Commit-Bypass Policy
 
 **Every commit-shaped `make` target MUST enforce the `.gate-status` freshness+green check. There are NO exceptions for "feature branches", "stash conflicts", or "pre-existing failures".**

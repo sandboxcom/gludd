@@ -31,7 +31,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
-        git-branch git-checkout git-merge git-staged \
+        git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
 		feature-start feature-done test-and-commit preflight \
@@ -750,6 +750,13 @@ repo-diff:
 
 git-staged:
 	@git diff --cached --stat || echo "Nothing staged"
+
+git-stash:
+	@git stash push -m "gludd-auto-stash-$$(date +%s)" || echo "Nothing to stash"
+	@echo "Stashed. Run 'make git-stash-pop' to restore."
+
+git-stash-pop:
+	@git stash pop || echo "No stash to pop"
 
 repo-staged:
 	@git diff --cached --stat || echo "Nothing staged"
