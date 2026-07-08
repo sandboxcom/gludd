@@ -54,7 +54,7 @@ class LangChainRetryGateway:
                 profile_id,
                 input["messages"],
                 tools=input.get("tools"),
-                **cast(Any, input.get("_call_kwargs", {})),
+                **cast(dict[str, object], input.get("_call_kwargs", {})),
             )
 
         return cast(Runnable[object, object], RunnableLambda(cast(Any, _invoke_profile)))
@@ -84,8 +84,8 @@ class LangChainRetryGateway:
             and falls back to the configured fallback profiles.
         """
         cfg: dict[str, Any] = cast(dict[str, Any], dict(retry_config or {}))
-        stop_after_attempt: int = cast(Any, cfg.pop("stop_after_attempt", 3))
-        wait_exponential_jitter: bool = cast(Any, cfg.pop("wait_exponential_jitter", True))
+        stop_after_attempt: int = cast(int, cfg.pop("stop_after_attempt", 3))
+        wait_exponential_jitter: bool = cast(bool, cfg.pop("wait_exponential_jitter", True))
         retry_exc_types: tuple[type[BaseException], ...] = cast(
             Any,
             cfg.pop("retry_if_exception_type", (Exception,)),

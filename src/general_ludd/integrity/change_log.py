@@ -35,10 +35,11 @@ import json
 import os
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, cast
+from types import ModuleType
+from typing import cast
 
 from general_ludd.integrity.scanner import (
     ChangeRecord,
@@ -145,10 +146,10 @@ class ChangeRecordStore:
         if fcntl is None:  # pragma: no cover - non-POSIX platform
             yield
             return
-        _fcntl = cast(Any, fcntl)
-        _flock = _fcntl.flock
-        _lock_ex = _fcntl.LOCK_EX
-        _lock_un = _fcntl.LOCK_UN
+        _fcntl = cast(ModuleType, fcntl)
+        _flock = cast("Callable[[int, int], None]", _fcntl.__dict__["flock"])
+        _lock_ex = cast(int, _fcntl.__dict__["LOCK_EX"])
+        _lock_un = cast(int, _fcntl.__dict__["LOCK_UN"])
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._lock_path, "w") as handle:
             _flock(handle.fileno(), _lock_ex)

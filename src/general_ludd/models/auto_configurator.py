@@ -118,7 +118,7 @@ class AutoConfigurator:
         this helper returns those directly so the gateway construction site
         stays unchanged when an operator relies on env-var auto-config.
         """
-        return [ModelProfile(**cast(Any, p)) for p in self.auto_configure_from_env(environ)]
+        return [ModelProfile.model_validate(p) for p in self.auto_configure_from_env(environ)]
 
     def generate_profiles(
         self,

@@ -15,7 +15,9 @@ Design constraints:
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Protocol, cast, runtime_checkable
+
+from general_ludd.observability.token_cost import TokenWeight
 
 # When run-budget spend crosses this fraction of the run limit we emit a budget
 # hint nudging the job to reduce scope / prefer the weak (cheap) profile.
@@ -50,6 +52,34 @@ _QUALITY_WORK_TYPES = (
     "planning",
     "debug",
 )
+
+
+@runtime_checkable
+class TokenTrackerProtocol(Protocol):
+    """Structural type for the optional token-cost tracker dependency.
+
+    Matches :class:`~general_ludd.observability.token_cost.TokenCostTracker`
+    without importing the concrete class (the advisor stays pure / I/O-free).
+    """
+
+    def classify(self, key: str) -> str: ...
+    def heaviest(self, n: int | None = None) -> list[TokenWeight]: ...
+
+
+@runtime_checkable
+class MetricsCollectorProtocol(Protocol):
+    """Structural type for the optional metrics-collector dependency.
+
+    Matches :class:`~general_ludd.metrics.collector.MetricsCollector` without
+    importing the concrete class.
+    """
+
+    def is_flaky(
+        self,
+        model_profile_id: str,
+        threshold: float = 0.7,
+        min_calls: int = 4,
+    ) -> bool: ...
 
 
 def _safe_float(value: Any) -> float | None:
@@ -284,8 +314,8 @@ def build_optimization_hints(
     models: list[dict[str, object]] | None = None,
     routing: dict[str, object] | None = None,
     budget: dict[str, object] | None = None,
-    metrics_collector: Any | None = None,
-    token_tracker: Any | None = None,
+    metrics_collector: MetricsCollectorProtocol | None = None,
+    token_tracker: TokenTrackerProtocol | None = None,
 ) -> dict[str, object]:
     """Return ``{"hints": [...], "recommended_profile_for": {...}}``.
 
@@ -393,7 +423,7 @@ def build_optimization_hints(
         learned = "unknown"
         if token_tracker is not None:
             try:
-                learned = cast(Any, token_tracker).classify(work_type)
+                learned = token_tracker.classify(work_type)
             except Exception:
                 # A misbehaving tracker must never break the advisory — fall
                 # back to the static taxonomy.
@@ -430,7 +460,7 @@ def build_optimization_hints(
     #     leaves the static mapping byte-identical.
     if token_tracker is not None:
         try:
-            observed = cast(Any, token_tracker).heaviest()
+            observed = token_tracker.heaviest()
         except Exception:
             observed = []
         for weight_obj in observed:
@@ -438,7 +468,7 @@ def build_optimization_hints(
             if not key or key in recommended:
                 continue
             try:
-                learned = cast(Any, token_tracker).classify(key)
+                learned = token_tracker.classify(key)
             except Exception:
                 continue
             if learned == "light":
@@ -490,11 +520,11 @@ def build_optimization_hints(
                 continue
             if not m.get("enabled"):
                 continue
-            profile_id = m.get("profile_id")
+            profile_id = cast("str | None", m.get("profile_id"))
             if not profile_id:
                 continue
             try:
-                if not cast(Any, metrics_collector).is_flaky(profile_id):
+                if not metrics_collector.is_flaky(profile_id):
                     continue
                 recent: list[str] = []
                 getter = getattr(metrics_collector, "get_recent_failures", None)

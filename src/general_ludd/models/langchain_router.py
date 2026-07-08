@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import cast
 
-from langchain_core.runnables import RunnableBranch
+from langchain_core.runnables import Runnable, RunnableBranch
 from langchain_core.runnables.base import RunnableLambda
 
 
@@ -88,4 +88,10 @@ class LangChainModelRouter:
             else RunnableLambda(lambda _: None)
         )
 
-        return RunnableBranch(*cast(Any, conditions), cast(Any, default))
+        return RunnableBranch(
+            *cast(
+                "list[tuple[Callable[[object], bool], Runnable[object, object]]]",
+                conditions,
+            ),
+            cast("Runnable[object, object]", default),
+        )

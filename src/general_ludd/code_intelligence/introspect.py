@@ -30,7 +30,7 @@ import contextlib
 import logging
 import os
 import xml.etree.ElementTree as ET
-from typing import Any, cast
+from typing import Protocol, cast
 
 from general_ludd.code_intelligence.git_intel import GitIntelligence
 from general_ludd.self_improve.harness import SelfImprovementHarness
@@ -45,13 +45,19 @@ _MAX_FINDINGS = 25
 _LOW_COVERAGE_THRESHOLD = 0.85
 
 
+class PerfBuffer(Protocol):
+    """Structural type for the injected traces buffer's perf facet."""
+
+    def snapshot(self, project_id: str | None = None) -> dict[str, object]: ...
+
+
 class CodebaseIntrospector:
     """Builds a bounded, best-effort snapshot of codebase self-knowledge."""
 
     def __init__(
         self,
         repo_root: str,
-        traces_buffer: object | None = None,
+        traces_buffer: PerfBuffer | None = None,
         recent_failures: dict[str, object] | None = None,
         project_id: str | None = None,
     ) -> None:
@@ -211,7 +217,7 @@ class CodebaseIntrospector:
         if buffer is None or not hasattr(buffer, "snapshot"):
             return None
         try:
-            snap = cast(Any, buffer).snapshot(project_id=self._project_id)
+            snap = buffer.snapshot(project_id=self._project_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("perf_cost unavailable: %s", exc)
             return None

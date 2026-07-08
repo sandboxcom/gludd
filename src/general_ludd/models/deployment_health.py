@@ -14,7 +14,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Protocol, cast
 
 from general_ludd.models.failover import ModelFailoverChain
 from general_ludd.models.timeout_detector import (
@@ -130,6 +130,19 @@ class ContentQualityCheck:
 # ---------------------------------------------------------------------------
 
 
+class AuditRepo(Protocol):
+    """Structural type for an async audit-event repository."""
+
+    async def create(
+        self,
+        event_type: str,
+        entity_type: str,
+        entity_id: str,
+        project_id: str | None = None,
+        details: str | None = None,
+    ) -> None: ...
+
+
 class DeploymentIncidentLog:
     """Structured, optionally-persisted log of :class:`DeploymentIncident`.
 
@@ -141,7 +154,7 @@ class DeploymentIncidentLog:
 
     def __init__(
         self,
-        audit_repo: object | None = None,
+        audit_repo: AuditRepo | None = None,
         max_in_memory: int = 1000,
         project_id: str | None = None,
         in_memory: bool = False,
@@ -182,7 +195,7 @@ class DeploymentIncidentLog:
     async def _persist(self, incident: DeploymentIncident) -> None:
         assert self._audit_repo is not None  # guarded by caller
         try:
-            await cast(Any, self._audit_repo).create(
+            await self._audit_repo.create(
                 event_type="deployment_incident",
                 entity_type="deployment",
                 entity_id=incident.deployment_id,

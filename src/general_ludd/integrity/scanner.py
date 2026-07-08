@@ -18,7 +18,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol
 
 from watchdog.events import (
     FileSystemEvent,
@@ -636,13 +636,19 @@ def verify_signature(signed: dict[str, object]) -> bool:
     return hmac.compare_digest(str(signed.get("signature") or ""), expected)
 
 
+class SecretsWriter(Protocol):
+    """Structural type for a secrets resolver that can persist a signed secret."""
+
+    def write_secret(self, path: str, value: dict[str, object]) -> None: ...
+
+
 def sign_change_openbao(
     path: str,
     signer: str,
     reason: str,
     old_hash: str | None = None,
     new_hash: str | None = None,
-    secrets_resolver: object | None = None,
+    secrets_resolver: SecretsWriter | None = None,
 ) -> dict[str, object]:
     """Sign an integrity approval; hashes are included in the HMAC payload.
 
@@ -667,7 +673,7 @@ def sign_change_openbao(
     }
     if secrets_resolver is not None and hasattr(secrets_resolver, "write_secret"):
         try:
-            cast(Any, secrets_resolver).write_secret(
+            secrets_resolver.write_secret(
                 f"integrity/{path.replace('/', '_')}",
                 {"signature": sig, "reason": reason, "old_hash": old_hash, "new_hash": new_hash},
             )
