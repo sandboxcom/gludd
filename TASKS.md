@@ -1013,3 +1013,15 @@ Consolidated disposition of the security finding tranche. **14/15 findings FIXED
 - **D-AB-5/AB-8-residual** — regression tests for the tool_loop/engine sync fixes are in flight.
 - **D-#49** — spend_limiter rolling budget cap: in flight (SpendLimiter wired into dispatch path; e2e regression pending).
 - **D-#59/#69** — avg_cost real-value routing: in flight (AdaptiveRouter daemon-wired; avg_cost regression pending).
+
+## Phase Presentation — reveal.js deck + codified abilities (2026-07-08)
+
+Wave covering the reveal.js presentation deck rewrite + the codified abilities (opencode skill, gludd ansible role, SVG diagrams) that make the deck regenerable from source rather than hand-edited.
+
+- [x] **PR.1 — opencode skill `revealjs-presentation`** (codified ability) — new opencode skill at `.opencode/skills/revealjs-presentation/SKILL.md` documenting the workflow for generating/rebuilding a reveal.js deck from structured data (slides.yml + SVG diagrams + build script); skill frontmatter passes `make check-skills-frontmatter`.
+- [x] **PR.2 — gludd ansible role `build_presentation`** (codified ability) — new Ansible role in `collections/ansible_collections/general_ludd/agent/roles/build_presentation/` that orchestrates deck regeneration (runs `build_deck.py` from the slides data source, emits HTML + bundled assets, fail-closed on missing diagrams); molecule scenario + role structure tests green.
+- [x] **PR.3 — SVG diagrams (architecture, event-loop, security-layers)** — three source SVG diagrams added under the presentation assets dir (`architecture.svg`, `event-loop.svg`, `security-layers.svg`); diagrams referenced by the deck and shipped as bundled reveal.js assets so the deck renders standalone.
+- [x] **PR.4 — Deck rewrite (non-technical audience, current stats, granular walkthrough)** — reveal.js deck rewritten for a non-technical audience: current project stats pulled from live data (not hardcoded), granular per-subsystem walkthrough slides (spine, event loop, security layers, observability, guardrails), narrative-driven slide ordering.
+- [x] **PR.5 — build_deck.py fix (regenerates HTML from data)** — `build_deck.py` now regenerates the reveal.js HTML output from the structured slides data source on every run (was previously emitting stale HTML that drifted from the data); idempotent rebuild verified.
+- [x] **PR.6 — pages.yml fix (builds before deploy)** — GitHub Pages workflow (`.github/workflows/pages.yml`) now runs the deck build step before the deploy step so the published site reflects the current slides data (was previously deploying stale HTML).
+- [x] **PR.7 — README link fix** — broken presentation link in README.md corrected to point at the published Pages URL.
