@@ -33,12 +33,146 @@ description: Build, serve, and validate reveal.js presentations for gludd. Cover
 - Copy relevant stats into the deck HTML (manual; the build script doesn't auto-inject yet)
 
 ### 3. Create diagrams
-- **Mermaid diagrams**: embed directly in HTML via `<div class="mermaid">...</div>` (reveal.js mermaid plugin)
-- **SVG diagrams**: create as standalone `.svg` files in `docs/presentation/deck/assets/`, reference via `<img src="assets/diagram.svg">`
-- **ASCII art**: convert to SVG using `docs/presentation/scripts/ascii_to_svg.py` (if created) or hand-draw
-- Architecture diagram source: `README.md:188-221` (ASCII)
+- **Mermaid diagrams** (PREFERRED): embed directly in HTML via `<div class="mermaid">...</div>` — renders in-browser via the reveal.js mermaid plugin, no binary artifacts to stage
+- **SVG files** (AVOID): only use if Mermaid genuinely cannot express the diagram; create as standalone `.svg` files in `docs/presentation/deck/assets/` and reference via `<img src="assets/diagram.svg">`
+- **ASCII art**: convert to a Mermaid diagram instead; fall back to SVG only when a diagram can't be expressed textually
+- Architecture diagram source: `README.md:188-221` (ASCII) — port to Mermaid
 - Event loop flow: claim → dispatch → review → reconcile
 - Security layers: 3-layer guardrail model (config → plugin → prompt)
+
+> **NEVER create SVG/PNG binary artifacts when Mermaid can express the diagram.**
+> Text-based diagrams are versionable, diffable, and render without staging files.
+
+#### Mermaid plugin setup
+Add this to `<head>` in `docs/presentation/deck/index.html` (after reveal.js):
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/mermaid/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: false });
+  Reveal.initialize({
+    plugins: [RevealMermaid],
+    dependencies: []
+  });
+</script>
+```
+
+#### Mermaid example — architecture
+```html
+<div class="mermaid">
+graph TD
+  User[User / CLI] --> Daemon[Daemon: FastAPI]
+  Daemon --> Loop[Event Loop]
+  Loop --> Dispatcher[Dispatcher]
+  Dispatcher --> Worker[Worker: uvicorn]
+  Worker --> Model[Model Provider]
+  Worker --> Ansible[Ansible Runner]
+  Ansible --> Repo[(Git Repo)]
+</div>
+```
+
+#### Mermaid example — event loop
+```html
+<div class="mermaid">
+graph LR
+  Claim[Claim todo] --> Dispatch[Dispatch to worker]
+  Dispatch --> Review[Review result]
+  Review --> Reconcile[Reconcile / commit]
+  Reconcile -.->|next todo| Claim
+</div>
+```
+
+#### Mermaid example — security layers
+```html
+<div class="mermaid">
+graph TD
+  subgraph "Layer 1 — Config"
+    Perm[opencode.json permission rules]
+  end
+  subgraph "Layer 2 — Plugin"
+    Hook[".opencode/plugin/*.ts hooks"]
+  end
+  subgraph "Layer 3 — Prompt"
+    Agents[AGENTS.md policy sections]
+  end
+  Perm --> Hook --> Agents
+</div>
+```
+
+### 3a. Diagram patterns
+
+Reusable Mermaid templates — copy and edit node/edge labels.
+
+#### Architecture (`graph TD`)
+```html
+<div class="mermaid">
+graph TD
+  A[Component A] --> B[Component B]
+  B --> C[Component C]
+  C --> D[(Data Store)]
+  A -.->|async| E[Sidecar]
+</div>
+```
+- Solid arrows = sync calls; dotted = async/event flow.
+- One node per top-level directory or service.
+
+#### Event loop (`graph LR` or `stateDiagram`)
+```html
+<div class="mermaid">
+stateDiagram-v2
+  [*] --> Pending
+  Pending --> Claimed: daemon claims
+  Claimed --> Running: dispatched
+  Running --> Reviewed: worker done
+  Reviewed --> Committed: review pass
+  Committed --> [*]
+  Running --> Failed: error
+  Failed --> Pending: retry
+</div>
+```
+- Use `stateDiagram-v2` when phases have transitions/guards.
+- Use `graph LR` for a simple linear pipeline.
+
+#### Security layers (`graph TD`, stacked)
+```html
+<div class="mermaid">
+graph TD
+  subgraph Outer[Outer layer — Config]
+    direction TB
+    C1[permission rule]
+  end
+  subgraph Middle[Middle layer — Plugin]
+    direction TB
+    P1[pretool hook]
+  end
+  subgraph Inner[Inner layer — Prompt]
+    direction TB
+    A1[AGENTS.md section]
+  end
+  Outer --> Middle --> Inner
+</div>
+```
+- Stack subgraphs top→bottom; outermost guard first.
+
+#### Sequence (`sequenceDiagram` for request flows)
+```html
+<div class="mermaid">
+sequenceDiagram
+  participant U as User
+  participant D as Daemon
+  participant W as Worker
+  participant G as Git
+  U->>D: POST /todos
+  D->>W: dispatch(todo)
+  W->>G: clone + edit + commit
+  G-->>W: commit sha
+  W-->>D: result + sha
+  D-->>U: todo status
+</div>
+```
+- Use for end-to-end request traces and inter-service flows.
+- `->>` solid = request; `-->>` dotted = response.
 
 ### 4. Honesty lint
 - Run `make deck-honesty` — checks for banned marketing tokens
