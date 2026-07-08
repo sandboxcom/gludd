@@ -175,6 +175,24 @@ def _reset_process_registry():
 
 
 @pytest.fixture(autouse=True)
+def _reset_language_parsers():
+    """Clear the _LANGUAGE_PARSERS cache around every test.
+
+    Prevents the MagicMock injected by test_returns_cached_parser
+    (tests/unit/test_extractor_coverage.py:15-19) from leaking into sibling
+    tests that call extract_blocks without mocking _get_parser
+    (test_code_intelligence.py, test_code_intel_adversarial.py,
+    test_daemon_endpoint_coverage.py). The setup_method in TestGetParser only
+    clears the cache for tests inside that class; this autouse fixture covers
+    every test in the suite.
+    """
+    import general_ludd.code_intelligence.extractor as ex
+    ex._LANGUAGE_PARSERS.clear()
+    yield
+    ex._LANGUAGE_PARSERS.clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_worker_runner():
     """Reset the worker.app._runner singleton around every test.
 
