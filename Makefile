@@ -62,7 +62,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
 		deck deck-serve deck-data deck-honesty \
 		sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
-		sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix
+		sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
+		script-count
 
 help:
 	@echo "Usage: make [target]"
@@ -1047,6 +1048,11 @@ PUSH_COOLDOWN_SECS ?= 1800
 # Max cancelled CI runs in last 2 hours before blocking pushes. Override with GLUDD_FORCE_PUSH=1.
 MAX_CANCELLED_RUNS ?= 3
 
+# Pre-push guard: refuse to push if working tree has unstaged changes.
+# Prevents pre-commit hook stash conflicts on the remote.
+_clean-tree-check:
+	@$(PYTHON) scripts/check_clean_tree.py
+
 _push-rate-guard:
 	@# Force-push tracker: prevent GLUDD_FORCE_PUSH abuse (max 5 consecutive bypasses in 12h window)
 	@if [ "$$GLUDD_FORCE_PUSH" = "1" ]; then \
@@ -1085,7 +1091,7 @@ _push-rate-guard:
 		exit 1; \
 	fi
 
-git-push-sandboxcom: _push-rate-guard
+git-push-sandboxcom: _clean-tree-check _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
@@ -1094,13 +1100,13 @@ git-push-sandboxcom: _push-rate-guard
 # collect-check local gate). Use when the local 21k-test gate is non-viable
 # and CI is the gate. The _push-rate-guard (CI-pending / cooldown / thrash)
 # is STILL enforced. Mirrors commit-no-verify for the push side.
-git-push-sandboxcom-nv: _push-rate-guard
+git-push-sandboxcom-nv: _clean-tree-check _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Batch push using the no-verify variant. COMMIT_THRESHOLD=1 forces a push.
-batch-push-nv:
+batch-push-nv: _clean-tree-check
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
 	if [ "$$COUNT" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
@@ -1114,7 +1120,7 @@ batch-push-nv:
 # Batch push: only push after substantial local work (default 5+ unpushed commits).
 # Override: COMMIT_THRESHOLD=1 or GLUDD_FORCE_PUSH=1.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
-batch-push:
+batch-push: _clean-tree-check
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
 	if [ "$$COUNT" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
@@ -1127,7 +1133,7 @@ batch-push:
 
 # CI-aware push that waits for CI to go green before returning
 # Same as git-push-sandboxcom but waits for CI completion after push
-ci-push: _push-rate-guard
+ci-push: _clean-tree-check _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd. Waiting for CI..."; \
 	$(MAKE) ci-wait

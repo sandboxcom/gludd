@@ -279,6 +279,28 @@ The session-start contract gets turn 1 right. **This section keeps the floor at 
 5. **Main-thread grind is the anti-pattern.** Four or more main-thread tool calls in a row with no delegation triggers a budget warning from the plugin. Heed it by handing the next chunk of work to a subagent — do not continue grinding inline.
 6. **Refill on every completion.** The moment a subagent result arrives, dispatch a replacement (or a research filler) so the count never lingers below 10. Do not wait for the rest of the batch to drain.
 
+### Pre-Dispatch Self-Check (MECHANICAL — run before sending EVERY message with tool calls)
+
+**Before writing ANY tool call in a message, COUNT the number of task/agent/workflow dispatches in that message.** Then apply this rule mechanically:
+
+- IF the count is fewer than 10 AND there are ≥3 known pending work items (TASKS.md unchecked items, `config/ratchet.yml` entries, or code left to write): **DO NOT SEND THE MESSAGE.** Add more dispatches until the count reaches 10. Read-only research/audit/review tasks are ALWAYS available as filler — there is never a valid excuse for a thin wave.
+- ELSE (count ≥ 10, OR fewer than 3 pending items remain): the message may be sent.
+
+This is a count-and-compare, not a judgment call. If you cannot name 10 dispatches, name research tasks until you can.
+
+### Consequence of a Thin Wave (POLICY VIOLATION)
+
+**A message with 1–9 dispatches when 10+ pending items exist is a POLICY VIOLATION equivalent to a premature stop.** The `enforce-multitask.ts` plugin will block it; the `enforce-stop.ts` plugin will flag it. Treat a blocked thin wave exactly as you would treat a blocked premature-stop: do not argue with it, add the missing dispatches and resend.
+
+### Post-Response Self-Audit (MECHANICAL — run after writing EVERY response with tool calls)
+
+**After writing a response that contains tool calls, COUNT the number of task/agent/workflow dispatches in it.** Then:
+
+- IF fewer than 10 (and 10+ pending items exist): **DELETE the response and add more dispatches before sending.** Do not send it as-is. Do not send a follow-up "correction" message — fix the count in the response itself.
+- ELSE: send it.
+
+The pre-dispatch self-check and this post-response self-audit are the same count applied at two moments (before composing, after composing). Both must pass. A response that fails either is not sent.
+
 ## CRITICAL: Priority Stacking (AND not OR)
 
 **When the user issues a new directive, interpret it ADDITIVELY ("AND") not SUBSTITUTIVELY ("OR"). New instructions STACK on top of existing objectives; they do not REPLACE them.**
