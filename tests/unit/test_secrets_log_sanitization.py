@@ -7,6 +7,7 @@ helpers (_sanitize_error / _redact) prevent leakage.
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,6 +23,7 @@ class _BackendError(RuntimeError):
 
 def test_resolve_exc_message_sanitized():
     """resolve() log and error message must NOT leak the raw exception body."""
+    logging.getLogger("general_ludd.secrets.manager").propagate = True
     client = MagicMock()
     client.secrets.kv.v2.read_secret_version.side_effect = _BackendError(
         f"vault error with token={LEAKED_TOKEN}"

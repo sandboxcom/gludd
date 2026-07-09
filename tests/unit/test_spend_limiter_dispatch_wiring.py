@@ -72,6 +72,7 @@ class TestSpendLimiterDispatchGate:
     @pytest.mark.asyncio
     async def test_over_budget_skips_dispatch(self, caplog: pytest.LogCaptureFixture) -> None:
         """When try_charge() refuses (over budget), the job is NOT dispatched and a warning is logged."""
+        logging.getLogger("general_ludd.event_loop.loop").propagate = True
         limiter = MagicMock()
         # Over budget: the atomic check-and-record refuses the charge.
         limiter.try_charge.return_value = False

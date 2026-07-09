@@ -8,6 +8,7 @@ error bodies) — matching the same pattern already in ``resolve()``.
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,6 +25,7 @@ class _ReadError(RuntimeError):
 def test_read_secret_exc_message_sanitized():
     """SecretsUnavailableError raised by read_secret must not contain the raw
     exception body (which could embed vault secret material)."""
+    logging.getLogger("general_ludd.secrets.manager").propagate = True
     client = MagicMock()
     client.secrets.kv.v2.read_secret_version.side_effect = _ReadError(
         f"vault responded: {LEAKED_SECRET_BODY}"
@@ -79,6 +81,7 @@ class _DestroyError(RuntimeError):
 def test_rotate_approle_warning_sanitized():
     """Warning logged when destroy_secret_id_accessor fails must not contain
     the raw exception body."""
+    logging.getLogger("general_ludd.secrets.manager").propagate = True
     client = MagicMock()
     client.auth.approle.generate_secret_id.return_value = {
         "data": {"secret_id": "new-sid-xyz", "secret_id_accessor": "new-accessor"}
