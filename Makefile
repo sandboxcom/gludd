@@ -177,6 +177,14 @@ skeleton:
 scan-tool-usage:
 	@$(PYTHON) scripts/scan_tool_usage.py
 
+script-count:
+	@echo "Source files: $$(find src -name '*.py' | wc -l)"
+	@echo "Test files: $$(find tests -name '*.py' | wc -l)"
+	@echo "Ansible roles: $$(ls -d collections/ansible_collections/general_ludd/agent/roles/*/ | wc -l)"
+	@echo "Ansible modules: $$(ls collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_*.py 2>/dev/null | wc -l)"
+	@echo "Enforcement plugins: $$(ls .opencode/plugin/*.ts 2>/dev/null | wc -l)"
+	@echo "Make targets: $$(grep -c '^[a-z].*:' Makefile)"
+
 setup-dirs:
 	@mkdir -p src/general_ludd/worker
 	@mkdir -p src/general_ludd/event_loop
