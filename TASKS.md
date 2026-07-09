@@ -1038,7 +1038,7 @@ Three-layer anti-lying guardrail landing so false "done" claims are structurally
 
 ## Phase OpenShell — security transfers from NVIDIA OpenShell (2026-07-09)
 
-- [x] **P0 — L7 network policy** — `NetworkPolicy` class checking HTTP method+path+host on uri/get_url tasks. 12 tests passing. | evidence: commit (pending gate green); tests/unit/test_network_policy.py 12 passed
-- [x] **P1 — structured audit logging** — `PlaybookAuditLogger` with `network_deny`/`credential_access`/`path_blocked` events. 7 tests passing. | evidence: commit (pending gate green); tests/unit/test_ansible_audit.py 7 passed
-- [x] **P2 — seccomp syscall filtering** — `SeccompFilter` blocking mount/setns/unshare/pivot_root with libseccomp + BPF fallback. 7 tests passing (4 Linux-gated). | evidence: commit (pending gate green); tests/unit/test_seccomp.py 7 passed
-- [x] **P3 — credential stripping proxy** — CredentialProxy strips caller Authorization/x-api-key/api-key headers and body api_key from uri/get_url tasks targeting managed LLM endpoints, resolves backend credentials from env vars. 31 tests passing. | evidence: make lint "All checks passed"; make typecheck "Success: no issues found"; make test-iso TESTFILE=tests/unit/test_credential_proxy.py "31 passed in 0.51s"
+- [x] **P0 — L7 network policy** — `NetworkPolicy` class checking HTTP method+path+host on uri/get_url tasks. 12 tests passing. | evidence: commit 48141896; tests/unit/test_network_policy.py 12 passed
+- [x] **P1 — structured audit logging** — `PlaybookAuditLogger` with `network_deny`/`credential_access`/`path_blocked` events. 7 tests passing. | evidence: commit 48141896; tests/unit/test_ansible_audit.py 7 passed
+- [x] **P2 — seccomp syscall filtering** — `SeccompFilter` blocking mount/setns/unshare/pivot_root with libseccomp + BPF fallback. 7 tests passing (4 Linux-gated). | evidence: commit 48141896; tests/unit/test_seccomp.py 7 passed
+- [x] **P3 — credential stripping proxy** — CredentialProxy strips caller Authorization/x-api-key/api-key headers and body api_key from uri/get_url tasks targeting managed LLM endpoints, resolves backend credentials from env vars. 31 tests passing. | evidence: commit 48141896; make lint "All checks passed"; make typecheck "Success: no issues found"; make test-iso TESTFILE=tests/unit/test_credential_proxy.py "31 passed in 0.51s"
