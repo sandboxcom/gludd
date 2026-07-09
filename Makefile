@@ -1232,6 +1232,46 @@ deploy-and-forget:
 ci-cooldown-status:
 	@$(PYTHON) scripts/ci_check_cooldown.py status $(CI_CHECK_COOLDOWN_SEC)
 
+# Consolidated, read-only state report for pre-claim verification. Prints the
+# working tree (CLEAN/DIRTY), HEAD identity + branch, remote sync state
+# (SYNCED/DIVERGED/UNREACHABLE with unpushed commits), recent commits, and the
+# CI verdict for HEAD. Fail-soft: network calls fall back to UNREACHABLE / NO
+# RUN rather than erroring. Always exits 0.
+verify-state:
+	@echo "=== GLUDD STATE REPORT $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+	@echo ""
+	@echo "--- Working Tree ---"
+	@WT=$$(git status --porcelain); \
+	if [ -z "$$WT" ]; then echo "CLEAN"; \
+	else echo "DIRTY ($$(echo "$$WT" | wc -l | tr -d ' ') files):"; echo "$$WT"; fi
+	@echo ""
+	@echo "--- HEAD ---"
+	@echo "Local:  $$(git rev-parse HEAD)"
+	@echo "Branch: $$(git branch --show-current)"
+	@echo ""
+	@echo "--- Remote ---"
+	@REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/master 2>/dev/null | cut -f1); \
+	if [ -z "$$REMOTE" ]; then echo "UNREACHABLE"; \
+	elif [ "$$REMOTE" = "$$(git rev-parse HEAD)" ]; then echo "SYNCED: $$REMOTE"; \
+	else echo "DIVERGED: local=$$(git rev-parse --short HEAD) remote=$$(echo $$REMOTE | cut -c1-12)"; \
+	echo "Unpushed:"; git log --oneline $$REMOTE..HEAD 2>/dev/null | head -10; fi
+	@echo ""
+	@echo "--- Recent Commits ---"
+	@git log --oneline -5
+	@echo ""
+	@echo "--- CI ---"
+	@SHA=$$(git rev-parse HEAD); \
+	RUN=$$(gh run list --commit=$$SHA --json databaseId,conclusion,headSha,status --jq '.[0]' 2>/dev/null || echo "{}"); \
+	CONCLUSION=$$(echo $$RUN | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null); \
+	STATUS=$$(echo $$RUN | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null); \
+	RUN_ID=$$(echo $$RUN | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('databaseId',''))" 2>/dev/null); \
+	if [ "$$CONCLUSION" = "success" ]; then echo "GREEN: run $$RUN_ID"; \
+	elif [ "$$STATUS" = "in_progress" ] || [ "$$STATUS" = "queued" ]; then echo "PENDING: run $$RUN_ID status=$$STATUS"; \
+	elif [ -n "$$CONCLUSION" ]; then echo "RED: run $$RUN_ID conclusion=$$CONCLUSION"; \
+	else echo "NO RUN for $$(echo $$SHA | cut -c1-12)"; fi
+	@echo ""
+	@echo "=== END STATE REPORT ==="
+
 gha-usage:
 	@$(PYTHON) scripts/gha_usage.py
 	@echo ""
