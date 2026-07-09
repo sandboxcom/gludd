@@ -100,16 +100,16 @@ and updates `SESSION.md` (Last Updated, Current Work, Next Steps).
 
 | Area | State | Evidence |
 |---|---|---|
-| HEAD | `3c62b381` (master) — ahead of SESSION.md's `f2202cae` | git status snapshot |
-| CI | Last recorded run 28899396411 **RED**, 13 failures (down from 147 after PSK conftest fix) | SESSION.md session 18 |
+| HEAD | `ed28ee48` (master) | `make git-log` 2026-07-09 |
+| CI | CI gate PASSED (3.11+3.12 green); test shards pending | SESSION.md 2026-07-09 |
 | beta.2 | Version bumped everywhere; **tag NOT cut, artifact NOT verified** | SESSION.md Known Gaps #1 |
-| beta.3 | Phase 1 done (B3.1.1 IPC broker, B3.1.2 read-only engine); Phases 2–4 open | TASKS.md beta.3 section |
+| beta.3 | Phase B (B3.1.1–B3.1.5) COMPLETE | TASKS.md beta.3 section |
 | cast(Any) burn-down | **COMPLETE** — 0 sites in src/, ratchet xfail removed (commit `1d89ce8e`). TASKS.md line ~867 still shows Tier 4 unticked — stale; tick it when touching TASKS.md | git log |
 | SSRF consolidation (#40) | Tranches 3+4 landed (26 connectors on `is_url_blocked`, `_ssrf_guard.py` deleted) | TASKS.md Phase S2026-07-03 |
 | Pause/resume (#35) | Slice 2 wired (PauseController → gateway + event loop + daemon) | TASKS.md S.35.2 |
 | Full local suite | OOMs under xdist; CI-as-gate policy in force | SESSION.md |
 | Known feature gaps | Slack/WebSocket/reconnect connectors (feature requests, non-blocking) | SESSION.md |
-| Disk | ~6.4Gi free; 5 stale worktree venvs (~1.5GB) reclaimable | `make disk` 2026-07-08 |
+| Disk | not measured this session | — |
 
 ### The 13 remaining CI failure clusters (Phase A target)
 

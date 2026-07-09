@@ -224,14 +224,12 @@
 4. [ ] **Phase F docs** — not yet started.
 
 ## Current Gate Status (2026-07-09)
+## Current Gate Status (2026-07-09)
 <!-- gate:begin -->
-- **HEAD**: `9b61065f` on master (+10 past `b4bd6c93`, +20 total from `ca44fa0a`). Gate unblocked: env-writes violation, stale assertion, plugin-count drift fixed.
-- **CI**: PENDING for current HEAD — NOT polling per cooldown guardrail. Commit batcher in flight; result surfaces at next natural break.
-- **beta.2**: version bumped in code, tag NOT yet cut, artifact NOT verified. Blocked on CI green.
-- **Multitasking audit**: P0-P8 COMPLETE. 5 commits: heartbeat verification (P0), fail-closed liveness (P2), message-shape loophole (P4+P6), false-done hardening (P5), FORCE_DELEGATE polarity (P8). 111 tests pass.
-- **Anti-lying guardrails**: enforce-verified-claims + enforce-clean-tree + verify-state landed. AGENTS.md section with SWE-bench/CoVe/Aider/Cline research basis codified.
-- **Presentation**: SVG Mermaid diagrams + build_presentation role + revealjs-presentation skill + pages.yml verified deploy landed.
-- **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
+- CI FAIL pending (run 29050059690)
+- PASS
+- PASS 0
+- PASS
 
 <!-- gate:end -->
 
