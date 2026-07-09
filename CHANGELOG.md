@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## [0.1.0-beta.3] — TBD
+
+### Architecture (beta.3 Phase B)
+- B3.1.1 IPC broker (Broker + WriteQueue) + B3.1.2 read-only engine factory
+- B3.1.3 Writer subprocess extraction (WriterProcess + QueueWriteSession + child entrypoint + lifespan branch + drain hook)
+- B3.1.4 WriterSupervisor with bounded retry + exponential backoff + self-healing
+- B3.1.5 Agent hydration/dehydration for crash-resume (durable hibernation + dispatch checkpoints)
+
+### Security (OpenShell transfers)
+- L7 HTTP network policy for Ansible uri/get_url tasks (method+path+host filtering)
+- Structured audit logging for network denials and credential access
+- Seccomp syscall filtering for playbook child processes (blocking mount/setns/unshare)
+- Credential stripping proxy for managed LLM endpoints
+
+### Enforcement
+- 11 enforcement plugins (enforce-make, enforce-floor, enforce-delegate, enforce-stop, enforce-session-start, enforce-deadline, enforce-clean-tree, enforce-verified-claims, enforce-commit-lock, enforce-multitask, enforce-no-wait)
+- Multitasking floor enforcement (10+ dispatches per wave required)
+- Anti-lying guardrails (done-words blocked without machine evidence)
+- CI cooldown (10-min minimum interval between CI checks)
+- Pre-push clean-tree check (refuses push on dirty working tree)
+
 ## [0.1.0-beta.2] — 2026-07-06
 
 Beta 2: GPU/compute provider expansion, typing hardening, and guardrail codification.
