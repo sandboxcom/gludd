@@ -130,6 +130,7 @@ class TestBuildGatewayConfigError:
     def test_config_load_error_logs_and_returns_none(self, caplog) -> None:
         """E2 fallback: a raising config load is caught -> WARNING logged (with
         traceback) and None returned; the worker never fails to start."""
+        caplog.propagate = True
         logging.getLogger("general_ludd.worker.app").propagate = True
         with (
             patch(

@@ -223,6 +223,7 @@ def test_no_allowlist_preserves_behavior_and_warns(monkeypatch, caplog) -> None:
     preserved (broadcast proceeds WITH the PSK) but a warning is logged so the
     operator knows broadcasts are unrestricted."""
     caplog.propagate = True
+    logging.getLogger(_LOGGER_NAME).propagate = True
     monkeypatch.setenv("GLUDD_PSK", "secret123")
     monkeypatch.delenv("GLUDD_WORKER_ALLOWLIST", raising=False)
     b = WorkerBroadcaster()

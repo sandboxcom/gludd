@@ -40,6 +40,7 @@ class TestBroadcastReload:
 
     def test_401_yields_success_false_unauthorized(self, caplog):
         broadcaster, workers = _make_broadcaster(401)
+        caplog.propagate = True
         logging.getLogger("general_ludd.reload.worker_broadcast").propagate = True
         with caplog.at_level(logging.ERROR, logger="general_ludd.reload.worker_broadcast"), patch(
             "general_ludd.reload.worker_broadcast.httpx.post", return_value=_fake_response(401)
@@ -82,6 +83,7 @@ class TestBroadcastModelUpdate:
 
     def test_401_yields_success_false_unauthorized(self, caplog):
         broadcaster, workers = _make_broadcaster(401)
+        caplog.propagate = True
         logging.getLogger("general_ludd.reload.worker_broadcast").propagate = True
         with caplog.at_level(logging.ERROR, logger="general_ludd.reload.worker_broadcast"), patch(
             "general_ludd.reload.worker_broadcast.httpx.post", return_value=_fake_response(401)

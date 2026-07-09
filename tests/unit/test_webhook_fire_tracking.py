@@ -72,6 +72,7 @@ async def test_failed_webhook_is_tracked_then_cleaned_up_and_logged(monkeypatch,
     hs = HookSystem()
     hs.register_webhook("evt", "http://example.com/hook", retry_count=1)
 
+    caplog.propagate = True
     logging.getLogger(hooks_mod.logger.name).propagate = True
     with caplog.at_level(logging.WARNING, logger=hooks_mod.logger.name):
         hs.fire("evt", {"k": "v"})
