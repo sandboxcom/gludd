@@ -35,7 +35,7 @@ class TestSlurmCostCapE2E:
         adapter.elapsed_seconds.side_effect = [3600.0, 7200.0]
         adapter.status.side_effect = [
             SlurmJobInfo("job-002", SlurmJobState.RUNNING),
-            SlurmJobInfo("job-002", SlurmJobState.CANCELLED),
+            SlurmJobInfo("job-002", SlurmJobState.RUNNING),
         ]
 
         monitor = SlurmJobMonitor(adapter, "job-002", config)
