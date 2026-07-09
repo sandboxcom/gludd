@@ -572,8 +572,8 @@ class TestGateMatrixStructure:
             f"test-shard python-version must be ['3.11', '3.12']; "
             f"got {matrix.get('python-version')!r}"
         )
-        assert matrix.get("shard") == ["unit-1", "unit-2", "unit-3", "other"], (
-            f"test-shard shard dimension must be ['unit-1', 'unit-2', 'unit-3', 'other']; "
+        assert matrix.get("shard") == ["unit-1a", "unit-1b", "unit-2", "unit-3", "other"], (
+            f"test-shard shard dimension must be ['unit-1a', 'unit-1b', 'unit-2', 'unit-3', 'other']; "
             f"got {matrix.get('shard')!r}"
         )
         assert strategy.get("fail-fast") is False, (

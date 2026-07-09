@@ -85,7 +85,7 @@ class TestSpendLimiterDispatchGate:
         with (
             patch.object(loop, "_resolve_adaptive_prompt", new=AsyncMock(return_value=(None, None, None))),
             patch.object(loop, "_load_shared_vars", new=AsyncMock(return_value={})),
-            caplog.at_level(logging.WARNING),
+            caplog.at_level(logging.WARNING, logger="general_ludd.event_loop.loop"),
         ):
             await loop._dispatch_execute_job(_make_todo())
 
