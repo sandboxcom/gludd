@@ -30,6 +30,7 @@ import os
 import shutil
 import socket
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -333,3 +334,64 @@ requires_postgres = pytest.mark.skipif(
     not POSTGRES_AVAILABLE,
     reason="requires PostgreSQL — set POSTGRES_AVAILABLE=1 or run postgres on :5432",
 )
+
+
+# ----------------------------------------------------------------------
+# aiosqlite event-loop teardown guard
+# ----------------------------------------------------------------------
+#
+# aiosqlite.Connection creates a daemon thread (_connection_worker_thread)
+# that processes SQLite operations and sends results/exceptions back to
+# the calling event loop via ``loop.call_soon_threadsafe()``.  When the
+# loop is closed BEFORE the thread processes its stop sentinel
+# (_STOP_RUNNING_SENTINEL), ``call_soon_threadsafe`` raises
+# ``RuntimeError('Event loop is closed')`` — which is caught by the broad
+# ``except BaseException``, and the handler then tries to send the
+# *exception itself* back via ``call_soon_threadsafe`` … which raises
+# *again*, uncaught this time, and the thread dies with an unhandled
+# exception.  Python 3.14 + pytest-asyncio surface this as
+# ``PytestUnhandledThreadExceptionWarning``, and when it happens inside an
+# xdist worker it takes down the entire worker (``[gw0] node down: Not
+# properly terminated``).
+#
+# The fix: monkeypatch the background worker at session start so the
+# ``call_soon_threadsafe`` calls inside the thread are wrapped in a
+# try/except RuntimeError.  A closed loop is a legitimate teardown state;
+# the futures are already orphaned, so silently dropping the result is safe.
+#
+# Session scope is required because the patch must be in place before
+# *any* test creates an async engine (which creates aiosqlite connections).
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _patch_aiosqlite_worker_for_closed_loop_teardown():
+    try:
+        import aiosqlite.core as _ac
+    except ImportError:
+        yield
+        return
+
+    _orig_worker = _ac._connection_worker_thread
+
+    def _safe_worker(tx):
+        while True:
+            future, function = tx.get()
+            try:
+                result = function()
+                if future and not future.done():
+                    with suppress(RuntimeError):
+                        future.get_loop().call_soon_threadsafe(
+                            _ac.set_result, future, result
+                        )
+                if result is _ac._STOP_RUNNING_SENTINEL:
+                    break
+            except BaseException as e:
+                if future and not future.done():
+                    with suppress(RuntimeError):
+                        future.get_loop().call_soon_threadsafe(
+                            _ac.set_exception, future, e
+                        )
+
+    _ac._connection_worker_thread = _safe_worker
+    yield
+    _ac._connection_worker_thread = _orig_worker

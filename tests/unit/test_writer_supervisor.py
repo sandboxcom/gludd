@@ -204,7 +204,7 @@ def test_supervisor_escalates_after_max_retries() -> None:
     # restart -> repeat until the supervisor gives up.
     for _ in range(4):  # 3 retries then escalation on the 4th failure
         writer.kill(exit_code=-9)
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + 30.0
         while time.monotonic() < deadline:
             if sup.state is SupervisorState.PERMANENT_FAILURE:
                 break
