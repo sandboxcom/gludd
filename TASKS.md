@@ -863,7 +863,7 @@ Four-phase extraction plan (B3.1.x):
 
 - [x] **2026-07-09 fix: 3 gate-lite failures** — test_make_lint_passes (lint violations in test_parse_verify_state.py: removed unused import pytest, renamed unused stdout→_stdout), test_search_endpoint_rate_limited_returns_429 (hang due to real network calls: added patch of _web_search to return []), test_windows_amd64_opentofu_url (xdist fail-fast casualty: resolved by lint fix). | evidence: make lint "All checks passed"; test-iso test_guardrails.py "70 passed"; test-iso test_routers_web_search.py "9 passed"; test-iso test_cross_platform_urls.py "8 passed"
 
-- [ ] **beta.3.2 — Coverage lifting** — moved here from Phase SESSION-17. Lift test coverage to the gate threshold; strict-typing burn-down still open. Target the lowest-coverage modules surfaced by the `make test` coverage report. **WP-C1 partial (Wave 15-16 `4273f676`):** coverage lifted for gateway + event_loop + dispatcher + db/repository; remaining modules pending.
+- [~] **beta.3.2 — Coverage lifting** — moved here from Phase SESSION-17. Lift test coverage to the gate threshold; strict-typing burn-down still open. Target the lowest-coverage modules surfaced by the `make test` coverage report. **WP-C1 partial (Wave 15-16 `4273f676`):** coverage lifted for gateway + event_loop + dispatcher + db/repository; remaining modules pending.
 
 ### beta.3.3 — cast(Any) Protocol-based fixes
 
@@ -880,7 +880,7 @@ Status: 17/17 sites fixed (all tiers complete); ratchet xfail removed (commit 1d
 
 ### Ship gate
 
-- [ ] **Ship v0.1.0-beta.2** — Pending: CI green confirmation on current HEAD. Once CI is green, run `make release-cut TAG='v0.1.0-beta.2' MSG='Release v0.1.0-beta.2'`, then `make verify-release-artifact TAG='v0.1.0-beta.2'`.
+- [~] **Ship v0.1.0-beta.2** — Pending: CI green confirmation on current HEAD. Once CI is green, run `make release-cut TAG='v0.1.0-beta.2' MSG='Release v0.1.0-beta.2'`, then `make verify-release-artifact TAG='v0.1.0-beta.2'`.
 
 ## Phase CI-Stabilization — Test isolation + chronic-pattern fixes (2026-07-08)
 
@@ -1056,3 +1056,8 @@ Three-layer anti-lying guardrail landing so false "done" claims are structurally
 ## Phase Presentation-Deploy — GitHub Pages fix (2026-07-09)
 
 - [x] **Pages deploy fix** — GitHub Pages workflow builds presentation before deploy step. | evidence: commit 0ce7fb38
+
+## Phase slurm-cost-cap-fix — Targeted CI fix (2026-07-09)
+
+- [x] **Fix SlurmJobMonitor._poll** — reorder cost computation before terminal state check; tests updated (CANCELLED→RUNNING in mock side_effect). Pending items (beta.3.2 coverage, Ship v0.1.0-beta.2) not gated on this fix.
+
