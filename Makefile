@@ -37,7 +37,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
  		feature-start feature-done test-and-commit preflight \
  		agent-worktree agent-merge agent-cleanup agent-worktree-list \
  		git-commit-no-verify git-amend-msg \
- 		_commit-lock-acquire ship-commit-files \
+ 		_commit-lock-acquire check-clean-tree ship-commit-files \
 		molecule-version molecule-test molecule-test-all \
 		collection-roles collection-modules molecule-scenarios \
 		container-build container-run container-push \
@@ -1058,7 +1058,7 @@ MAX_CANCELLED_RUNS ?= 3
 
 # Pre-push guard: refuse to push if working tree has unstaged changes.
 # Prevents pre-commit hook stash conflicts on the remote.
-_clean-tree-check:
+check-clean-tree:
 	@$(PYTHON) scripts/check_clean_tree.py
 
 _push-rate-guard:
@@ -1099,7 +1099,7 @@ _push-rate-guard:
 		exit 1; \
 	fi
 
-git-push-sandboxcom: _clean-tree-check _push-rate-guard
+git-push-sandboxcom: check-clean-tree _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
@@ -1108,13 +1108,13 @@ git-push-sandboxcom: _clean-tree-check _push-rate-guard
 # collect-check local gate). Use when the local 21k-test gate is non-viable
 # and CI is the gate. The _push-rate-guard (CI-pending / cooldown / thrash)
 # is STILL enforced. Mirrors commit-no-verify for the push side.
-git-push-sandboxcom-nv: _clean-tree-check _push-rate-guard
+git-push-sandboxcom-nv: check-clean-tree _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Batch push using the no-verify variant. COMMIT_THRESHOLD=1 forces a push.
-batch-push-nv: _clean-tree-check
+batch-push-nv: check-clean-tree
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
 	if [ "$$COUNT" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
@@ -1128,7 +1128,7 @@ batch-push-nv: _clean-tree-check
 # Batch push: only push after substantial local work (default 5+ unpushed commits).
 # Override: COMMIT_THRESHOLD=1 or GLUDD_FORCE_PUSH=1.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
-batch-push: _clean-tree-check
+batch-push: check-clean-tree
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
 	if [ "$$COUNT" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
@@ -1141,7 +1141,7 @@ batch-push: _clean-tree-check
 
 # CI-aware push that waits for CI to go green before returning
 # Same as git-push-sandboxcom but waits for CI completion after push
-ci-push: _clean-tree-check _push-rate-guard
+ci-push: check-clean-tree _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd. Waiting for CI..."; \
 	$(MAKE) ci-wait
