@@ -129,6 +129,10 @@ help:
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
+	@echo "  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)"
+	@echo "  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)"
+	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
+	@echo "  agent-worktree-list           List active git worktrees"
 	@echo "  submodule-init        Initialize all git submodules (recursive)"
 	@echo "  submodule-update      Update submodules to latest remote (--merge)"
 	@echo "  submodule-status      Show status of each submodule"
@@ -1941,6 +1945,49 @@ feature-done:
 	@echo "Building distributables..."
 	@$(MAKE) dist
 	@echo "Feature complete. Tests green, distributables built."
+
+# --- Worktree-per-subagent dispatch protocol ---
+# Each subagent that mutates files works in an isolated git worktree on its
+# own branch, so concurrent edits cannot interleave on the shared master
+# checkout (no dirty-tree surprises, no commit races, no misattributed work).
+# Lifecycle: agent-worktree (create) -> subagent edits+commits on the branch
+# -> agent-merge (fan in to master) -> agent-cleanup (teardown). Read-only
+# research tasks skip this entirely — they do not touch the working tree.
+
+# Create an isolated worktree for a subagent. Usage:
+#   make agent-worktree BRANCH=agent-fix-slurm
+# Prints "WORKTREE_PATH=<path>" for the subagent to work in. If the branch
+# already exists (re-dispatch / resume), the worktree is attached to it
+# instead of being re-created from scratch.
+agent-worktree:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-worktree BRANCH=agent-<name>"; exit 1; }
+	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
+	mkdir -p /tmp/gludd-worktrees; \
+	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
+	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
+	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH)"
+
+# Merge a subagent's worktree branch back to master. Run on the MAIN checkout
+# (never from inside a worktree). Usage:
+#   make agent-merge BRANCH=agent-fix-slurm
+agent-merge:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge BRANCH=agent-<name>"; exit 1; }
+	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into master"
+	@echo "Merged $(BRANCH) into master"
+
+# Remove a worktree and its branch after the work has been merged. Safe to
+# run even if the worktree was already removed manually. Usage:
+#   make agent-cleanup BRANCH=agent-fix-slurm
+agent-cleanup:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-cleanup BRANCH=agent-<name>"; exit 1; }
+	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
+	git worktree remove "$$WORKTREE_PATH" --force 2>/dev/null || true; \
+	git branch -d "$(BRANCH)" 2>/dev/null || true; \
+	echo "Cleaned up worktree + branch for $(BRANCH)"
+
+# List active worktrees (read-only diagnostic).
+agent-worktree-list:
+	@git worktree list
 
 preflight: check-plugin-liveness
 	@echo "========================================"

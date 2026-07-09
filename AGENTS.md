@@ -1572,6 +1572,59 @@ merge before the next one lands.
 → one integrator, one hot-file agent at a time → non-isolated agents for
 new-file / read-only tasks.
 
+### Worktree-per-subagent (file-editing tasks MANDATORY)
+
+**Any subagent that mutates files MUST work in an isolated git worktree on its
+own branch — NOT on the shared `/Users/shawnwilson/gludd` master checkout.**
+Concurrent edits to the shared tree interleave on disk: dirty-tree problems,
+commit races, and misattributed commits. A per-agent worktree (`git worktree
+add`) makes the problem structurally impossible — each agent has its own
+checkout, its own index, and its own branch.
+
+**Read-only research / audit tasks stay on the main checkout** — they never
+touch the working tree, so isolation buys nothing and costs disk (~320 MB
+venv per worktree). Apply the decision checklist in `docs/ORCHESTRATION.md`
+§4: if the task does not mutate the shared tree, it does not need a worktree.
+
+**Lifecycle (run on the main checkout):**
+
+```
+1. make agent-worktree BRANCH=agent-<short-descriptive-name>
+   → prints WORKTREE_PATH=/tmp/gludd-worktrees/agent-<name>
+   → dispatch the subagent with cwd=WORKTREE_PATH
+
+2. subagent edits + commits on its branch inside the worktree
+   (it MUST NOT push, merge to master, or spawn its own subagents)
+
+3. make agent-merge BRANCH=agent-<short-descriptive-name>
+   → fan-in: --no-ff merge into master on the main checkout
+
+4. make agent-cleanup BRANCH=agent-<short-descriptive-name>
+   → removes the worktree + deletes the branch
+```
+
+**Rules (machine-supported by the Makefile targets):**
+
+- **One worktree per file-editing subagent, one branch per worktree.** Naming:
+  `agent-<short-descriptive-name>` (e.g. `agent-fix-slurm`, `agent-add-tui-view`).
+- **The subagent works inside its worktree; the orchestrator merges from the
+  main checkout.** Never merge to master from inside a worktree (see
+  `docs/ORCHESTRATION.md` §5 — "Merged from inside a worktree, corrupting
+  integration state").
+- **Re-dispatch is safe.** `make agent-worktree BRANCH=<existing>` attaches a
+  fresh worktree to the existing branch instead of failing, so a resumed
+  subagent picks up where the prior one left off.
+- **Cap concurrent worktree agents at ~5–6** (ENOSPC guard; see constraint 4b
+  above). When no worktree-isolated agents are live, reclaim disk with
+  `make clean-worktree-venvs`.
+- **`make agent-worktree-list`** is the read-only diagnostic — shows every
+  active worktree and its branch.
+
+This is the structural fix for the recurring "concurrent subagents trampled the
+shared tree" failure mode. Tests:
+`tests/unit/test_agent_worktree_targets.py`. Make targets: `agent-worktree`,
+`agent-merge`, `agent-cleanup`, `agent-worktree-list`.
+
 ### Subagent dispatch reliability rules
 
 Subagents fail when they try to run long operations. To maximize success rate:
