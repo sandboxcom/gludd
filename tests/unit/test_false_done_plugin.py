@@ -768,14 +768,21 @@ class TestPredicateBypassScenarios:
 
 
 def _would_block_narrowed(text):
-    """Python port of the v4 narrowed enforce-stop.ts false-done predicate.
+    """Python port of the v5 narrowed enforce-stop.ts false-done predicate.
 
     Block fires ONLY when ALL are true:
       1. A narrowed completion phrase is present.
       2. AND no structured evidence (commit hash / nonzero pass count).
       3. AND no work artifact (file path / gate output / subagent marker /
-         command marker / markdown table).
+         command marker).
       4. AND no tool call or dispatch in the response (text-only fixture → False).
+
+    P5 fix (2026-07-09): a markdown table alone is NOT evidence of work. The
+    agent can write a summary table and stop — that is the "summary table as
+    stopping point" pattern AGENTS.md forbids. A table is only legitimate when
+    accompanied by machine evidence (commit hash / gate output / pass count),
+    which `has_structured` already checks. Removing `has_table` from
+    `has_work_artifact` closes the bypass.
     """
     completion_re = (
         r"\b(?:all done|everything is complete|fully shipped|"
@@ -810,9 +817,10 @@ def _would_block_narrowed(text):
         r"Files changed|tests?\s+(?:passed|failed)|PYTEST|Mypy|ruff"
     )
     has_command = bool(re.search(command_marker_re, text, re.IGNORECASE))
-    has_table = bool(re.search(r"\|.*\|.*\|", text))
+    # P5: markdown table intentionally REMOVED from work-artifact union.
+    # A table alone is not machine evidence; it can be a stopping point.
     has_work_artifact = (
-        has_filepath or has_gate or has_marker or has_command or has_table
+        has_filepath or has_gate or has_marker or has_command
     )
 
     return not has_structured and not has_work_artifact
@@ -923,18 +931,46 @@ class TestHasLocalWorkBypass:
             "blocked by hasLocalWork — subagent-report-marker bypass must fire."
         )
 
-    def test_markdown_table_bypasses_haslocalwork(self):
-        """A subagent report containing a markdown table MUST NOT be blocked."""
+    def test_terminal_claim_with_table_alone_blocked(self):
+        """P5 regression: 'All done.' + a markdown table MUST be blocked.
+
+        A terminal claim combined with ONLY a markdown table (no commit
+        hash, no gate output, no pass count, no file path, no command
+        marker) must still trip the false-done block. This is the bug the
+        P5 fix closes — previously `hasMarkdownTable` was OR'd into
+        `hasWorkArtifact`, letting the agent claim completion behind a
+        summary table.
+        """
         text = (
-            "## Audit Report\n\n"
+            "All done.\n\n"
             "| File | Status |\n"
             "|------|--------|\n"
-            "| enforce-stop.ts | fixed |\n"
-            "| enforce-floor.ts | OK |\n"
+            "| foo.py | done |\n"
+            "| bar.py | done |\n"
+        )
+        assert _would_block_narrowed(text), (
+            "A terminal claim + a markdown table (but NO machine evidence) "
+            "MUST be blocked. The markdown-table bypass was the P5 bug."
+        )
+
+    def test_table_with_machine_evidence_bypasses(self):
+        """P5 fix preserves the legitimate path: table + commit hash → allowed.
+
+        The fix removes ONLY `hasMarkdownTable` from the work-artifact
+        union. Structured evidence (commit hash / pass count / gate
+        output) still cancels the block, so a real work report containing
+        a table AND machine evidence is correctly allowed through.
+        """
+        text = (
+            "All done.\n\n"
+            "| File | Status |\n"
+            "|------|--------|\n"
+            "| foo.py | commit abc1234 |\n"
         )
         assert not _would_block_narrowed(text), (
-            "A subagent report with a markdown table must NOT be blocked by "
-            "hasLocalWork — markdown-table bypass must fire."
+            "A terminal claim + a markdown table + a real commit hash MUST "
+            "be allowed — `has_structured` cancels the block via the commit "
+            "hash, which is real machine evidence."
         )
 
     def test_bare_terminal_claim_still_blocked_when_localwork_pending(self):

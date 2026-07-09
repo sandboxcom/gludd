@@ -301,11 +301,27 @@ function responseLooksTerminal(text: string): boolean {
 // COMMAND_MARKER_RE: subagent final-report shapes (## Report, ## CMD:,
 //   RAW OUTPUT, Files changed, Test result) PLUS tool-output tokens
 //   (PYTEST, Mypy, ruff, tests? (passed|failed)).
-// MARKDOWN_TABLE_RE: a markdown table row is a structured report — never a
-//   bare false-done claim.
+// P5 fix (2026-07-09): MARKDOWN_TABLE_RE is intentionally NOT consulted
+//   in hasWorkArtifact. A markdown table alone is not evidence of work —
+//   the agent can write a summary table and stop, which is the exact
+//   "summary table as stopping point" pattern AGENTS.md forbids. The
+//   regex is kept only for documentation; structured evidence (commit
+//   hash / pass count / gate output) is the legitimate bypass for a
+//   table that accompanies real work.
 const FILE_PATH_RE = /(?:src|tests|\.opencode|collections|playbooks)\/|\b(?:Makefile|README|SESSION|TASKS|BUGS)\b/
 const COMMAND_MARKER_RE = /## CMD:|## Report|## RAW OUTPUT|RAW OUTPUT|Test result|Files changed|tests?\s+(?:passed|failed)|PYTEST|Mypy|ruff/i
-const MARKDOWN_TABLE_RE = /\|.*\|.*\|/
+
+// P5 audit fix: permission-seeking deferral phrases. AGENTS.md Anti-Stop
+// Patterns names each as a hard policy violation:
+//   - "Shall I continue?"
+//   - "Should I proceed?"
+//   - "Want me to ...?" (proceed / start building / fix / etc.)
+// These differ from completion claims (✅ / Done.) — the agent is not
+// claiming work is finished, it is asking the user to green-light the
+// next step before doing it. Both are premature stops. Kept as a single
+// regex literal (not an array) so it cannot silently grow back into the
+// unbounded vocabulary lists the lean-plugin refactor removed.
+const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to)\b/i
 
 // ── DISPATCH TRACKING ─────────────────────────────────────────────────────
 
@@ -878,7 +894,11 @@ export default (async ({ }) => {
         const combinedText = text + turnState.accumulatedText
         const lower = combinedText.toLowerCase()
 
-        const hasDirectFalseDone = responseLooksTerminal(combinedText)
+        // P5 audit fix: permission-seeking deferral phrases ("Shall I continue?",
+        // "Should I proceed?", "Want me to ...?") are premature stops in disguise.
+        // Block them when no machine evidence is present.
+        const hasStopPatternPhrase = STOP_PATTERN_PHRASES.test(combinedText)
+        const hasDirectFalseDone = responseLooksTerminal(combinedText) || hasStopPatternPhrase
 
         const tasksMdUnchecked = cache?.tasksMdUnchecked ?? tasksMdHasUnchecked()
         const ratchetCount = cache?.ratchetEntries ?? ratchetHasEntries()
@@ -911,10 +931,14 @@ export default (async ({ }) => {
           const hasGateOutput = /\b(?:PASS|FAIL|passed|failed)\b/.test(combinedText)
           const hasFilePath = FILE_PATH_RE.test(combinedText)
           const hasCommandMarker = COMMAND_MARKER_RE.test(combinedText)
-          const hasMarkdownTable = MARKDOWN_TABLE_RE.test(combinedText)
           const hasSubagentReportMarker = SUBAGENT_REPORT_MARKERS.some(m => combinedText.includes(m))
           const hasStructuredEvidence = (hasCommitHash || hasPassCount) && combinedText.length < 500
-          const hasWorkArtifact = hasFilePath || hasGateOutput || hasSubagentReportMarker || hasCommandMarker || hasMarkdownTable
+          // P5: hasMarkdownTable intentionally removed from this union. A
+          // table alone is not evidence of work — the agent can write a
+          // summary table and stop. Structured evidence (commit hash / pass
+          // count / gate output) still cancels the block for legitimate
+          // table+evidence reports.
+          const hasWorkArtifact = hasFilePath || hasGateOutput || hasSubagentReportMarker || hasCommandMarker
           const isWorkResponse = turnState.dispatchCount > 0 || turnState.toolCallMade
           if (!hasStructuredEvidence && !hasWorkArtifact && !isWorkResponse) {
             recordBlock("direct-false-done-no-evidence")
@@ -993,10 +1017,12 @@ export default (async ({ }) => {
         const lateHasPassCount = PASS_COUNT_EVIDENCE_RE.test(combinedText)
         const lateHasFilePath = FILE_PATH_RE.test(combinedText)
         const lateHasCommandMarker = COMMAND_MARKER_RE.test(combinedText)
-        const lateHasMarkdownTable = MARKDOWN_TABLE_RE.test(combinedText)
         const lateHasSubagentReportMarker = SUBAGENT_REPORT_MARKERS_LATE.some(m => combinedText.includes(m))
         const lateHasStructuredEvidence = (lateHasCommitHash || lateHasPassCount) && combinedText.length < 500
-        const lateHasWorkArtifact = lateHasFilePath || lateHasCommandMarker || lateHasSubagentReportMarker || lateHasMarkdownTable
+        // P5: lateHasMarkdownTable intentionally removed — mirrors the
+        // hasDirectFalseDone narrowing above. A summary table alone must
+        // not bypass the hasLocalWork block.
+        const lateHasWorkArtifact = lateHasFilePath || lateHasCommandMarker || lateHasSubagentReportMarker
         const isSubagentFinalReport = lateHasStructuredEvidence || lateHasWorkArtifact
         if ((hasLocalWork || ciVerdictPendingOrRed) && !isSubagentFinalReport) {
           logFalseDoneBlock(turnState.accumulatedText, "hasLocalWork-text-only")
