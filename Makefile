@@ -2896,3 +2896,11 @@ sdd-harvest:
 
 sdd-quickfix:
 	@cat .devspark/defaults/commands/quickfix.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
+
+# --- One-shot guardrail: all enforcement checks in a single target ---
+.PHONY: check-all-guardrails
+check-all-guardrails: check-plugin-heartbeats check-test-env-writes check-clean-tree-status
+	@echo "All guardrails active"
+
+check-clean-tree-status:
+	@$(UV) run python3 scripts/check_clean_tree.py
