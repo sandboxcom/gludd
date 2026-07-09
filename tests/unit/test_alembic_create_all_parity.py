@@ -103,7 +103,7 @@ def _run_migrations(db_path: str) -> None:
         command.upgrade(cfg, "head")
     finally:
         if saved is not None:
-            os.environ["DATABASE_URL"] = saved
+            os.environ.update({"DATABASE_URL": saved})
 
 
 def _introspect(conn: Connection) -> dict:

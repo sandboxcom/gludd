@@ -128,7 +128,7 @@ class TestAntiStopFuzz:
         assert 'ratchetLines.length > 0' in content, (
             "Must check ratchet has entries"
         )
-        assert "soundsComplete" in content, "Must check completion-sounding words"
+        assert "COMPLETION_SOUNDING" in content, "Must check completion-sounding words"
 
     def test_base_messages_caught_by_state_check(self):
         assert len(_BASE_MESSAGES) > 0, "No messages extracted from BUGS.md"
