@@ -1042,3 +1042,15 @@ Three-layer anti-lying guardrail landing so false "done" claims are structurally
 - [x] **P1 — structured audit logging** — `PlaybookAuditLogger` with `network_deny`/`credential_access`/`path_blocked` events. 7 tests passing. | evidence: commit 48141896; tests/unit/test_ansible_audit.py 7 passed
 - [x] **P2 — seccomp syscall filtering** — `SeccompFilter` blocking mount/setns/unshare/pivot_root with libseccomp + BPF fallback. 7 tests passing (4 Linux-gated). | evidence: commit 48141896; tests/unit/test_seccomp.py 7 passed
 - [x] **P3 — credential stripping proxy** — CredentialProxy strips caller Authorization/x-api-key/api-key headers and body api_key from uri/get_url tasks targeting managed LLM endpoints, resolves backend credentials from env vars. 31 tests passing. | evidence: commit 48141896; make lint "All checks passed"; make typecheck "Success: no issues found"; make test-iso TESTFILE=tests/unit/test_credential_proxy.py "31 passed in 0.51s"
+
+## Phase Multitask-Guardrail — enforce-multitask plugin (2026-07-09)
+
+- [x] **enforce-multitask plugin** — requires 10+ parallel dispatches per wave, preventing main-thread grinding; P1 read-grinding exemption closed + P3 DELEGATE-FIRST text.complete nag. 30 tests passing. | evidence: commit 95d851fd; tests pin plugin shape + dispatch-count enforcement, "30 passed"
+
+## Phase Test-Stabilization — gate-lite fixes (2026-07-09)
+
+- [x] **10 test fixes** — gate-lite failures resolved: caplog→mock migration, env-var isolation, engine test expectations. | evidence: commit 2d1775f7; make gate PASSED in CI (3.11+3.12 green)
+
+## Phase Presentation-Deploy — GitHub Pages fix (2026-07-09)
+
+- [x] **Pages deploy fix** — GitHub Pages workflow builds presentation before deploy step. | evidence: commit 0ce7fb38

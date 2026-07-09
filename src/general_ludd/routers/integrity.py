@@ -46,6 +46,10 @@ def _scan_roots(app: FastAPI) -> list[str]:
         os.path.expanduser("~/.local/share/general-ludd"),
         tmp,
         os.path.realpath(tmp),
+        "/tmp",
+        os.path.realpath("/tmp"),
+        "/var/tmp",
+        os.path.realpath("/var/tmp"),
     ]
     return [r for r in roots if r]
 

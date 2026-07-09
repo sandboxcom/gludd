@@ -209,12 +209,102 @@ policies in parallel**. A session in either harness gets the same guardrails.
 | `enforce-deletion-gate.ts` | file-deletion approval gate. |
 | `enforce-no-suppressions.ts` | denies `# noqa`, `# type: ignore`, `# pylint: disable`, `# fmt: off/skip`, `# isort:skip` on edit/write. |
 | `enforce-no-wait.ts` | denies `sleep N && make …`, `make gate-tail`, and CI-poll subagent dispatches. |
+| `enforce-verified-claims.ts` | blocks outgoing text with done-words unless it carries machine-produced evidence. |
+| `enforce-clean-tree.ts` | denies task/agent/workflow dispatch when the git working tree is dirty. |
+| `enforce-multitask.ts` | denies dispatch waves below the 10-agent floor when ≥3 work items remain. |
+| `enforce-commit-lock.ts` | serializes commit-shaped make targets so parallel subagents cannot race the git index. |
 | `watchdog.ts` | background daemon that detects idle sessions and auto-resets streak counters. |
 
 Opt-out knobs (`GLUDD_FLOOR_ENFORCE`, `GLUDD_NO_WAIT_ENFORCE`,
-`GLUDD_SESSION_START_ENFORCE`, `GLUDD_TODO_GUARD_ENFORCE`, …) exist for
+`GLUDD_SESSION_START_ENFORCE`, `GLUDD_TODO_GUARD_ENFORCE`,
+`GLUDD_VERIFIED_CLAIMS_ENFORCE`, `GLUDD_CLEAN_TREE_ENFORCE`,
+`GLUDD_MULTITASK_FLOOR_ENFORCE`, `GLUDD_COMMIT_LOCK_ENFORCE`, …) exist for
 focused single-file work. They are **off by default** — never disable a
 guardrail to work around friction; narrow the check instead.
+
+### Multitasking floor — 10 agents minimum
+
+The subagent pool must stay at a **minimum of 10 concurrent threads** while
+work remains. The pipeline is kept primed by dispatching a replacement the
+moment any subagent completes — never draining to zero before refilling.
+
+- Every assistant response containing tool calls must satisfy ONE of: (a) zero
+  task/agent/workflow dispatches (pure read/edit/bash, max 2 consecutive), or
+  (b) **10+ parallel dispatches in a single message**. A wave of 1–9 dispatches
+  is denied when ≥3 work items remain — batch wider or add read-only research
+  filler to reach the floor.
+- Enforced by `.opencode/plugin/enforce-multitask.ts` (`MIN_DISPATCHES` default
+  10, env `GLUDD_MULTITASK_MIN_DISPATCHES`). Below-floor waves are denied; a
+  `text.complete` hook injects "DISPATCH SUBAGENTS NOW" when the agent tries to
+  stop with unchecked `TASKS.md` items and zero subagents in flight.
+- Env `CLAUDE_AGENT_FLOOR` / `GLUDD_MULTITASK_FLOOR_ENFORCE` tune the behavior.
+  See `AGENTS.md § Minimum 10 Subagents at All Times` and `§ Pipeline
+  Orchestration Model`.
+
+### Verification before claim
+
+**Never write `done` / `landed` / `pushed` / `fixed` / `passing` / `shipped` /
+`green` without pasting the machine-produced measurement in the same message.**
+A status word without its evidence is indistinguishable from a false claim.
+
+- Run `make verify-state` before any status claim — it bundles `git status` +
+  `git log` + HEAD-vs-remote + CI verdict into one read-only output.
+- Enforced by `.opencode/plugin/enforce-verified-claims.ts` (`text.complete`
+  hook): outgoing text containing done-words is blocked unless it also carries
+  an evidence token (commit hash, `VERIFIED <branch>@<sha>`, `CI GREEN|RED|
+  PENDING`, `N passed`, `=== GATE: PASSED ===`, `Collection OK`). Fail-open;
+  `GLUDD_VERIFIED_CLAIMS_ENFORCE=0` disables.
+- See the false-"done"-claims table in §7 and `AGENTS.md § Verification Before
+  Claim`.
+
+### Clean tree before dispatch
+
+**Never dispatch a subagent while the git working tree is dirty.** Uncommitted
+changes left by a prior subagent cause pre-commit stash conflicts on the next
+push, forcing `-nv` (no-verify) bypasses that defeat the lint/secret guards.
+
+- Commit or stash first: `make git-add FILES='...' && make ship-commit
+  MSG='...'`, or `make git-stash` (restore with `make git-stash-pop`).
+- Enforced by `.opencode/plugin/enforce-clean-tree.ts` (`tool.execute.before`):
+  task/agent/workflow dispatch is denied when `git status --porcelain` is
+  non-empty. Fail-open; `GLUDD_CLEAN_TREE_ENFORCE=0` disables.
+- File-editing subagents get their own isolated checkout via the
+  `agent-worktree` targets — `make agent-worktree BRANCH=agent-<name>` (create),
+  `make agent-merge BRANCH=agent-<name>` (fan-in `--no-ff`), `make agent-cleanup
+  BRANCH=agent-<name>` (remove), `make agent-worktree-list` (diagnostic).
+  Read-only research tasks stay on the main checkout. See `AGENTS.md §
+  Worktree-per-subagent`.
+
+### CI cooldown — fire-and-forget
+
+Polling CI in a loop does not speed it up and burns a dispatch slot. CI is
+checked at **natural breaks**, never watched.
+
+- `make deploy-and-forget` pushes, records the push timestamp, and prints a
+  check-back time. Resume real work immediately after it returns.
+- `make ci-verdict-safe` is the routine CI status check — it enforces a 10-min
+  cooldown (`CI_CHECK_COOLDOWN_SEC`, exit 3 while cooling down). Bare `make
+  ci-verdict` is reserved for the release-cut pipeline; `FORCE=1` bypasses the
+  cooldown for release-cut only.
+- `make ci-cooldown-status` is a read-only probe of the remaining cooldown.
+- A "poll CI until terminal" subagent is forbidden — `enforce-no-wait.ts`
+  denies CI-poll dispatch patterns. See `AGENTS.md § Machine-Enforced CI Check
+  Cooldown` and `§ CI-Poll Subagents Are Forbidden`.
+
+### Commit lock — serialized commits
+
+Parallel subagents running `make ship-commit` race on the git index — one
+`git add -A` sweeps another's staged files, producing misattributed commits.
+
+- Commit-shaped make targets acquire a lock so commits serialize. Do not run
+  two `ship-commit`s concurrently from different subagents.
+- Enforced at two layers: LAYER 1 is the Makefile `_commit-lock-acquire` flock
+  wrapper; LAYER 2 is `.opencode/plugin/enforce-commit-lock.ts`, which takes an
+  `O_EXCL` lock across the whole bash tool call and denies a second in-flight
+  commit (stale locks older than 5 min are auto-broken). Fail-open;
+  `GLUDD_COMMIT_LOCK_ENFORCE=0` disables.
+- Funnel commits through a single integrator agent, or stagger them. See
+  `AGENTS.md § Pipeline Orchestration Model`.
 
 ---
 

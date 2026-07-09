@@ -189,7 +189,27 @@ function _reportAlive(): void {
   } catch {}
 }
 
-export default (async () => {
+// Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
+// fires. Fail-open. Distinct from the shared alive.json.
+function _writeHeartbeat(): void {
+  try {
+    const hb = JSON.stringify({ plugin: "enforce-session-start", ts: Date.now(), pid: process.pid })
+    fs.writeFileSync("/tmp/gludd-plugin-heartbeat-enforce-session-start.json", hb)
+  } catch { /* fail-open */ }
+}
+
+export default (async ({ }) => {
+  // LOADED self-check: proves opencode invoked the factory (registered, not
+  // merely present on disk). Appended to the shared log.
+  try {
+    fs.appendFileSync(
+      "/tmp/gludd-plugin-loaded.log",
+      `${new Date().toISOString()} LOADED enforce-session-start ` +
+      `tool.execute.before+experimental.chat.system.transform ` +
+      `pid=${process.pid}\n`,
+      "utf8",
+    )
+  } catch { /* fail-open */ }
   return {
     // Inject the SESSION START PROTOCOL banner at the top of the system prompt.
     "experimental.chat.system.transform": async (
@@ -241,6 +261,7 @@ export default (async () => {
       _output: unknown,
     ) => {
       _reportAlive()
+      _writeHeartbeat()
       let denyMessage: string | null = null
       try {
         const tool = String((input as { tool?: string }).tool ?? "")

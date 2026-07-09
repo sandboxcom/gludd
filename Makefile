@@ -263,6 +263,15 @@ test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
 	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS)
 
+repro-caplog-secrets:
+	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s
+
+repro-caplog-overlay:
+	$(UV) run python -m pytest tests/unit/test_overlay_guard.py::TestWarnIfOverlayUnmonitored::test_enabled_and_excluded_warns -n 2 --dist loadgroup -v -s
+
+repro-worker-crash:
+	$(UV) run python -m pytest tests/unit/test_daemon_coverage_lift.py::TestAdminModelsListWithGateway::test_models_list_with_gateway -n 2 --dist loadgroup -v -s
+
 # --- Generic task runner with built-in timeout (GLUDD_TASK_TIMEOUT, default 300s)
 # Every dispatched task MUST have a timeout. Tasks exceeding the timeout are
 # killed by scripts/task_watchdog.py. Use this target to wrap any command that

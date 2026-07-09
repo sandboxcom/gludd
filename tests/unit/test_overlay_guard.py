@@ -7,8 +7,8 @@ because it is outside ``watch_paths`` or because an exclude pattern skips it.
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
+from unittest.mock import patch
 
 from general_ludd.integrity.overlay_guard import (
     resolve_overlay_dirs,
@@ -36,15 +36,13 @@ class TestResolveSelfImproveEnabled:
 
 
 class TestWarnIfOverlayUnmonitored:
-    def test_enabled_and_excluded_warns(self, tmp_path: Path, caplog):
+    def test_enabled_and_excluded_warns(self, tmp_path: Path):
         overlay = tmp_path / "gludd"
         overlay.mkdir()
-        # Overlay IS monitored (its parent is a watch root)...
         watch_paths = [str(tmp_path)]
-        # ...but an exclude pattern matches the overlay's representative file.
         excludes = [r"general-ludd\.yml$"]
 
-        with caplog.at_level(logging.WARNING):
+        with patch("general_ludd.integrity.overlay_guard.logger.warning") as mock_warn:
             warnings = warn_if_overlay_unmonitored(
                 watch_paths,
                 excludes,
@@ -56,20 +54,17 @@ class TestWarnIfOverlayUnmonitored:
         assert str(overlay) in warnings[0]
         assert "skipped" in warnings[0]
         assert "not tracked by FIM" in warnings[0]
-        # Logged at WARNING level too.
-        assert any(
-            r.levelno == logging.WARNING and str(overlay) in r.getMessage()
-            for r in caplog.records
-        )
+        mock_warn.assert_called_once()
+        assert str(overlay) in mock_warn.call_args[0][0]
 
-    def test_enabled_and_not_monitored_warns(self, tmp_path: Path, caplog):
+    def test_enabled_and_not_monitored_warns(self, tmp_path: Path):
         overlay = tmp_path / "overlay" / "gludd"
         overlay.mkdir(parents=True)
         other = tmp_path / "elsewhere"
         other.mkdir()
-        watch_paths = [str(other)]  # overlay NOT under any watch path
+        watch_paths = [str(other)]
 
-        with caplog.at_level(logging.WARNING):
+        with patch("general_ludd.integrity.overlay_guard.logger.warning") as mock_warn:
             warnings = warn_if_overlay_unmonitored(
                 watch_paths,
                 DEFAULT_EXCLUDES,
@@ -80,39 +75,38 @@ class TestWarnIfOverlayUnmonitored:
         assert len(warnings) == 1
         assert str(overlay) in warnings[0]
         assert "NOT within any file-integrity monitored path" in warnings[0]
-        assert any(r.levelno == logging.WARNING for r in caplog.records)
+        mock_warn.assert_called_once()
 
-    def test_enabled_monitored_not_excluded_no_warning(self, tmp_path: Path, caplog):
+    def test_enabled_monitored_not_excluded_no_warning(self, tmp_path: Path):
         overlay = tmp_path / "gludd"
         overlay.mkdir()
-        watch_paths = [str(tmp_path)]  # monitored
+        watch_paths = [str(tmp_path)]
 
-        with caplog.at_level(logging.WARNING):
+        with patch("general_ludd.integrity.overlay_guard.logger.warning") as mock_warn:
             warnings = warn_if_overlay_unmonitored(
                 watch_paths,
-                DEFAULT_EXCLUDES,  # none match general-ludd.yml / general_ludd/x.py
+                DEFAULT_EXCLUDES,
                 self_improve_enabled=True,
                 overlay_dirs=[str(overlay)],
             )
 
         assert warnings == []
-        assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+        mock_warn.assert_not_called()
 
-    def test_disabled_no_false_alarm(self, tmp_path: Path, caplog):
+    def test_disabled_no_false_alarm(self, tmp_path: Path):
         overlay = tmp_path / "gludd"
         overlay.mkdir()
-        # Overlay is both unmonitored AND would be excluded — but self-improve
-        # is OFF, so there must be no warning at all.
-        with caplog.at_level(logging.WARNING):
+
+        with patch("general_ludd.integrity.overlay_guard.logger.warning") as mock_warn:
             warnings = warn_if_overlay_unmonitored(
-                [],  # nothing monitored
-                [r"gludd"],  # would match the overlay
+                [],
+                [r"gludd"],
                 self_improve_enabled=False,
                 overlay_dirs=[str(overlay)],
             )
 
         assert warnings == []
-        assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+        mock_warn.assert_not_called()
 
     def test_no_overlays_no_warning(self):
         assert (
@@ -127,7 +121,7 @@ class TestOverlayResolutionHermetic:
     """Exercise the real XDG-based user-overlay resolution, hermetically."""
 
     def test_xdg_user_overlay_resolved_and_warned(
-        self, tmp_path: Path, monkeypatch, caplog
+        self, tmp_path: Path, monkeypatch
     ):
         xdg = tmp_path / "xdg"
         (xdg / "gludd").mkdir(parents=True)
@@ -140,7 +134,7 @@ class TestOverlayResolutionHermetic:
         # No project overlay leaked in from the real cwd.
         assert overlays == [str(xdg / "gludd")]
 
-        with caplog.at_level(logging.WARNING):
+        with patch("general_ludd.integrity.overlay_guard.logger.warning") as mock_warn:
             warnings = warn_if_overlay_unmonitored(
                 [],  # user overlay not monitored
                 DEFAULT_EXCLUDES,
@@ -149,19 +143,20 @@ class TestOverlayResolutionHermetic:
 
         assert len(warnings) == 1
         assert str(xdg / "gludd") in warnings[0]
+        mock_warn.assert_called_once()
 
     def test_xdg_overlay_disabled_self_improve_no_warn(
-        self, tmp_path: Path, monkeypatch, caplog
+        self, tmp_path: Path, monkeypatch
     ):
         xdg = tmp_path / "xdg"
         (xdg / "gludd").mkdir(parents=True)
         monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
         monkeypatch.setenv("GLUDD_PROJECT_DIR", str(tmp_path / "no-such-project"))
 
-        with caplog.at_level(logging.WARNING):
+        with patch("general_ludd.integrity.overlay_guard.logger.warning") as mock_warn:
             warnings = warn_if_overlay_unmonitored(
                 [], DEFAULT_EXCLUDES, self_improve_enabled=False
             )
 
         assert warnings == []
-        assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+        mock_warn.assert_not_called()

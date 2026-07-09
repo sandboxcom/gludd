@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-09 — Session 19 final. CI gate PASSED (3.11+3.12 green). Push `2d1775f7` VERIFIED. OpenShell P0-P3 security transfers landed. enforce-multitask plugin (30 tests) pushed. 10 test suite fixes landed. Beta.2 ready to ship once CI fully green.
+- 2026-07-09 — Session 19 final. HEAD `2d1775f7` pushed + VERIFIED. CI run 29044016416 in_progress. Gate PASSED in CI (3.11+3.12 green). enforce-multitask plugin (30 tests) landed. Pages deploy fix landed. 10 test fixes landed. OpenShell P0-P3 security transfers landed. Beta.2 ready to ship once CI fully green.
 
 ## Current Work
 
@@ -87,6 +87,7 @@
 | Hash | Message |
 |------|---------|
 | `2d1775f7` | test: fix gate-lite test failures — caplog→mock, env-var isolation, engine test expectations |
+| `0ce7fb38` | fix(pages): correct GitHub Pages deploy — build presentation before deploy step |
 | `d29a2dc2` | docs(tasks): cite actual commit hash for OpenShell P0-P3 transfers |
 | `95d851fd` | guardrail(multitask): enforce-multitask plugin requiring 10+ parallel dispatches per wave preventing main-thread grinding |
 | `60e95635` | fix(plugins): P1 close read-grinding exemption with tightened thresholds (5/30 warn, 10/60 deny) and P3 DELEGATE-FIRST text.complete nag replacing tool-call deny at streak >8 |
