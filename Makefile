@@ -1205,6 +1205,9 @@ repo-visibility:
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
 
+pages-status:
+	@gh run list --workflow pages.yml -R sandboxcom/gludd -L 1 --json conclusion,status,databaseId 2>&1 || echo "gh-run-list-failed"
+
 # ci-verdict: NON-BLOCKING point-in-time CI check (returns in <1s).
 # Exits 0=GREEN, 1=RED/no-run, 2=PENDING. Per AGENTS.md "CI-Poll Subagents Are
 # Forbidden": call ONCE at a natural break; NEVER loop on this; NEVER dispatch
