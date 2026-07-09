@@ -29,6 +29,7 @@ EXPECTED_PLUGIN_FILES = [
     "enforce-commit-lock.ts",
     "enforce-clean-tree.ts",
     "enforce-verified-claims.ts",
+    "enforce-multitask.ts",
 ]
 EXPECTED_PLUGINS_FILES = ["watchdog.ts"]
 

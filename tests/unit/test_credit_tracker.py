@@ -208,8 +208,9 @@ class TestCheckBalanceErrorPaths:
         with pytest.raises(ValueError, match="Unsupported service"):
             ct.check_balance("not-a-real-provider")
 
-    def test_missing_api_key_returns_error_dict(self) -> None:
-        ct = CreditTracker(http_client=_FakeHttpClient({}))
+    def test_missing_api_key_returns_error_dict(self, monkeypatch) -> None:
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        ct = CreditTracker(api_keys={}, http_client=_FakeHttpClient({}))
         result = ct.check_balance("deepseek")
         assert result["service"] == "deepseek"
         assert result["balance_usd"] is None
@@ -272,8 +273,8 @@ class TestShouldRefill:
         )
         assert ct.should_refill("deepseek") is True
 
-    def test_true_when_no_balance_due_to_error(self) -> None:
-        # Missing key → balance is None → conservatively refill
+    def test_true_when_no_balance_due_to_error(self, monkeypatch) -> None:
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
         ct = CreditTracker(http_client=_FakeHttpClient({}))
         assert ct.should_refill("deepseek") is True
 
@@ -351,7 +352,9 @@ class TestSetSpendLimit:
 
 
 class TestCheckAllBalances:
-    def test_fans_out_across_keys_provided(self) -> None:
+    def test_fans_out_across_keys_provided(self, monkeypatch) -> None:
+        for var in ("OPENAI_API_KEY", "ZAI_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
         client = _FakeHttpClient(
             {
                 "https://api.deepseek.com/user/balance": _ds_balance_response(),
@@ -368,7 +371,9 @@ class TestCheckAllBalances:
         assert results["deepseek"]["balance_usd"] == pytest.approx(10.5)
         assert results["openrouter"]["balance_usd"] == pytest.approx(14.75)
 
-    def test_no_keys_returns_empty_dict(self) -> None:
+    def test_no_keys_returns_empty_dict(self, monkeypatch) -> None:
+        for var in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ZAI_API_KEY", "OPENROUTER_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
         ct = CreditTracker(http_client=_FakeHttpClient({}))
         assert ct.check_all_balances() == {}
 
@@ -391,7 +396,9 @@ class TestApiCreditsEndpoint:
         assert resp.status_code == 200
         assert resp.json() == {}
 
-    def test_returns_per_service_balances(self) -> None:
+    def test_returns_per_service_balances(self, monkeypatch) -> None:
+        for var in ("OPENAI_API_KEY", "ZAI_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
         app, client = _make_app()
         ct = CreditTracker(
             api_keys={"deepseek": "k", "openrouter": "k"},

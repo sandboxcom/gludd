@@ -122,20 +122,26 @@ def test_hostname_wildcard() -> None:
 
 
 def test_audit_log_on_deny(caplog: pytest.LogCaptureFixture) -> None:
+    from unittest.mock import patch
+
     policy = _get_only_github()
-    with caplog.at_level(logging.WARNING, logger="general_ludd.ansible.network_policy"):
+    policy_logger = logging.getLogger("general_ludd.ansible.network_policy")
+    with patch.object(policy_logger, "warning", wraps=policy_logger.warning) as mock_warning:
         allowed, _ = policy.check_uri_module(
             {"url": "https://api.github.com/api/v1/x", "method": "POST"}
         )
     assert allowed is False
-    deny_records = [
-        r for r in caplog.records if getattr(r, "event_type", None) == "network_policy_deny"
+    assert mock_warning.call_count >= 1
+    call_args = [call.args[0] for call in mock_warning.mock_calls if call.args]
+    assert any("network_policy_deny" in str(a) for a in call_args), \
+        f"No 'network_policy_deny' in warning args: {call_args}"
+    extra_kwargs = [
+        call.kwargs.get("extra", {}) for call in mock_warning.mock_calls
+        if call.kwargs.get("extra")
     ]
-    assert deny_records, "expected a structured network_policy_deny audit event"
-    rec = deny_records[0]
-    assert getattr(rec, "host", None) == "api.github.com"
-    assert getattr(rec, "method", None) == "POST"
-    assert getattr(rec, "url_path", None) == "/api/v1/x"
+    assert any(e.get("host") == "api.github.com" for e in extra_kwargs)
+    assert any(e.get("method") == "POST" for e in extra_kwargs)
+    assert any(e.get("url_path") == "/api/v1/x" for e in extra_kwargs)
 
 
 def test_default_method_is_get() -> None:

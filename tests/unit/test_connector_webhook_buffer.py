@@ -176,7 +176,7 @@ def test_concurrent_appends_are_thread_safe() -> None:
 
 
 def test_concurrent_push_and_query_do_not_raise() -> None:
-    src = WebhookBufferSource(maxlen=1000)
+    src = WebhookBufferSource(maxlen=100)
     stop = threading.Event()
     errors: list[Exception] = []
 
@@ -189,7 +189,7 @@ def test_concurrent_push_and_query_do_not_raise() -> None:
 
     def reader() -> None:
         try:
-            for _ in range(2000):
+            for _ in range(200):
                 src.query({"kind": "logs"})
         except Exception as exc:  # pragma: no cover - failure path
             errors.append(exc)

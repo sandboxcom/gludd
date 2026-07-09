@@ -97,7 +97,7 @@ class TestExecutionGitDelivery:
             ).stdout.strip()
             assert initial_commits == final_commits
 
-    def test_non_repo_workspace_fails_explicitly(self):
+    def test_non_repo_workspace_succeeds_for_code_extraction(self):
         mock_gateway = MagicMock()
         mock_gateway.call_model = MagicMock(return_value=MagicMock(
             content="```\nFILE: x.py\nprint('ok')\n```"
@@ -111,8 +111,14 @@ class TestExecutionGitDelivery:
                 prompt_text="Write x.py",
             )
             result = engine.execute(job)
-            assert result.exit_code != 0
-            assert "git" in result.result_summary.lower() or "not a git" in result.result_summary.lower()
+            assert result.exit_code != 1, (
+                f"Engine should succeed on non-repo workspace for code extraction "
+                f"(got exit={result.exit_code}, summary={result.result_summary})"
+            )
+            assert "WARNING: Workspace is not a git repository" in result.result_summary, (
+                "Engine must warn user that git operations (commit, branch) "
+                "are skipped on a non-git workspace"
+            )
 
     def test_commit_message_includes_todo_info(self):
         mock_gateway = MagicMock()

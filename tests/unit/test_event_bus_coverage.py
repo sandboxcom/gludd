@@ -124,25 +124,28 @@ class TestPublishWithCoroutineFunctionCallback:
 
 
 class TestPublishCallbackException:
-    def test_sync_callback_exception_logged(self, caplog):
+    def test_sync_callback_exception_logged(self):
+        from unittest.mock import patch
+
         bus = EventBus()
+        bus_logger = logging.getLogger("general_ludd.events.bus")
 
         def bad_handler(event: Event) -> None:
             raise RuntimeError("boom")
 
         bus.subscribe("test.exc", bad_handler)
-        logging.getLogger("general_ludd.events.bus").propagate = True
-        with caplog.at_level(logging.ERROR, logger="general_ludd.events.bus"):
+        with patch.object(bus_logger, "error", wraps=bus_logger.error) as mock_error:
             count = bus.publish(Event(type="test.exc"))
-        # A throwing subscriber is NOT a successful delivery: publish() returns
-        # the count of successful deliveries, so the failing one is excluded.
+
         assert count == 0
-        # The failure must still be surfaced at ERROR (new contract).
-        error_records = [(r.levelno, r.getMessage()) for r in caplog.records]
-        assert any(rec.levelno == logging.ERROR for rec in caplog.records), \
-            f"No ERROR records found. caplog records: {error_records}"
-        assert any("boom" in rec.getMessage() for rec in caplog.records), \
-            f"'boom' not in any log message. Messages: {[r.getMessage() for r in caplog.records]}"
+        assert mock_error.call_count >= 1, \
+            f"logger.error not called. calls: {mock_error.mock_calls}"
+        error_texts = [
+            str(a) for call in mock_error.mock_calls if call.args
+            for a in call.args
+        ]
+        assert any("boom" in t for t in error_texts), \
+            f"'boom' not in any log call arg. Args: {error_texts}"
 
     @pytest.mark.asyncio
     async def test_async_callback_exception_does_not_stop_others(self):

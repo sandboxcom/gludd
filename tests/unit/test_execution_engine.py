@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tempfile
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.schemas.job import JobSpec
@@ -236,7 +236,7 @@ class TestExecutionEngine:
         with open(generated_path) as f:
             assert f.read() == code
 
-    def test_fallback_logs_warning_for_missing_file_markers(self, caplog):
+    def test_fallback_logs_warning_for_missing_file_markers(self):
         """Fallback emits a WARNING log when FILE: markers are absent."""
         import logging
 
@@ -256,14 +256,16 @@ class TestExecutionEngine:
             prompt_text="Set x to 1",
         )
 
-        caplog.propagate = True
-        with caplog.at_level(logging.WARNING):
+        platform_logger = logging.getLogger("general_ludd.execution.engine")
+        with patch.object(platform_logger, "warning", wraps=platform_logger.warning) as mock_warning:
             result = engine.execute(job)
 
         assert result.exit_code != 1
-        assert "no FILE: markers" in caplog.text.lower() or (
-            "no FILE:" in caplog.text
-        ), f"Expected FILE: marker warning in logs, got: {caplog.text}"
+        warning_texts = [
+            str(a) for call in mock_warning.mock_calls if call.args for a in call.args
+        ]
+        assert any("no FILE:" in t for t in warning_texts), \
+            f"Expected FILE: marker warning, got: {warning_texts}"
 
     def test_skill_body_included_in_prompt(self):
         mock_gateway = MagicMock()

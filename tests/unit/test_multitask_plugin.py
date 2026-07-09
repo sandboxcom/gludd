@@ -7,14 +7,8 @@ TypeScript source and validates them against the spec.
 """
 from __future__ import annotations
 
-import json
-import os
 import re
-import tempfile
 from pathlib import Path
-from unittest import mock
-
-import pytest
 
 PLUGIN_PATH = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-multitask.ts"
 

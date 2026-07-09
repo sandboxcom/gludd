@@ -341,11 +341,16 @@ def test_normalized_record_coerces_nan_and_inf_ts_to_none() -> None:
 def test_normalized_record_logs_warning_on_non_finite(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    logging.getLogger("general_ludd.connectors.base").propagate = True
-    # Coercion must never be silent (observability invariant).
-    with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
+    from unittest.mock import patch
+
+    base_logger = logging.getLogger("general_ludd.connectors.base")
+    with patch.object(base_logger, "warning", wraps=base_logger.warning) as mock_warning:
         normalized_record(source="s", kind="metrics", value=float("nan"))
-    assert any("non-finite" in r.getMessage() for r in caplog.records)
+    assert mock_warning.call_count >= 1, \
+        f"logger.warning not called. calls: {mock_warning.mock_calls}"
+    warn_msgs = [call.args[0] for call in mock_warning.mock_calls if call.args]
+    assert any("non-finite" in str(msg) for msg in warn_msgs), \
+        f"'non-finite' not in any warning. Messages: {warn_msgs}"
 
 
 def test_finite_or_none_direct() -> None:
@@ -362,49 +367,57 @@ def test_finite_or_none_direct() -> None:
 def test_find_caps_unbounded_result_set_and_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    logging.getLogger("general_ludd.connectors.base").propagate = True
+    from unittest.mock import patch
+
     cap = Observability.MAX_FIND_RESULTS
     huge = [_rec(ts=float(i), source="flood", message=str(i)) for i in range(cap + 50)]
     reg = SourceRegistry()
     reg.register(_FakeSource("flood", "logs", huge))
     obs = Observability(reg)
 
-    with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
+    base_logger = logging.getLogger("general_ludd.connectors.base")
+    with patch.object(base_logger, "warning", wraps=base_logger.warning) as mock_warning:
         results = obs.find({"q": "x"})
 
-    # Capped at the per-source limit (10_000), not the full flood.
     assert len(results) == 10_000
-    # Truncation is logged, never silent.
-    assert any("truncated" in r.getMessage() for r in caplog.records)
+    warn_msgs = [call.args[0] for call in mock_warning.mock_calls if call.args]
+    assert any("truncated" in str(m) for m in warn_msgs), \
+        f"No 'truncated' in warning args: {warn_msgs}"
 
 
 def test_find_caps_across_multiple_sources(caplog: pytest.LogCaptureFixture) -> None:
-    logging.getLogger("general_ludd.connectors.base").propagate = True
+    from unittest.mock import patch
+
     cap = Observability.MAX_FIND_RESULTS
-    half = cap // 2 + 100  # each source overshoots half the cap
+    half = cap // 2 + 100
     reg = SourceRegistry()
     reg.register(_FakeSource("a", "logs", [_rec(source="a") for _ in range(half)]))
     reg.register(_FakeSource("b", "logs", [_rec(source="b") for _ in range(half)]))
     obs = Observability(reg)
 
-    with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
+    base_logger = logging.getLogger("general_ludd.connectors.base")
+    with patch.object(base_logger, "warning", wraps=base_logger.warning) as mock_warning:
         results = obs.find({"q": "x"})
 
-    # 2 sources x 10_000 per-source cap = 20_000 total.
     assert len(results) == 20_000
-    assert any("truncated" in r.getMessage() for r in caplog.records)
+    warn_msgs = [call.args[0] for call in mock_warning.mock_calls if call.args]
+    assert any("truncated" in str(m) for m in warn_msgs), \
+        f"No 'truncated' in warning args: {warn_msgs}"
 
 
 def test_find_under_cap_returns_all_without_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    logging.getLogger("general_ludd.connectors.base").propagate = True
+    from unittest.mock import patch
+
     reg = SourceRegistry()
     reg.register(_FakeSource("s", "logs", [_rec(ts=float(i), source="s") for i in range(5)]))
     obs = Observability(reg)
 
-    with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
+    base_logger = logging.getLogger("general_ludd.connectors.base")
+    with patch.object(base_logger, "warning", wraps=base_logger.warning) as mock_warning:
         results = obs.find({"q": "x"})
 
     assert len(results) == 5
-    assert not any("truncated" in r.getMessage() for r in caplog.records)
+    warn_msgs = [call.args[0] for call in mock_warning.mock_calls if call.args]
+    assert not any("truncated" in str(m) for m in warn_msgs)
