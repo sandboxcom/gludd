@@ -77,6 +77,72 @@ function isReadTool(toolName: string): boolean {
   return toolName === "read" || toolName === "grep" || toolName === "glob"
 }
 
+// ── SHARED STREAK STATE (P3: cross-call grinding detection) ────────────────
+// Shared between enforce-floor.ts and enforce-stop.ts so EITHER plugin can
+// catch main-thread grinding (serial read/edit/bash with no dispatch). The
+// dedup window prevents double-counting when both plugins fire on the same
+// tool.execute.before event.
+const SHARED_STREAK_FILE = process.env.GLUDD_STREAK_FILE || "/tmp/gludd-tool-streak.json"
+const STREAK_PLUGIN_NAME = "enforce-floor"
+const STREAK_DEDUP_WINDOW_MS = 500
+
+interface SharedStreakState {
+  streak: number
+  lastDispatchTs: number
+  readStreak: number
+  editStreak: number
+  lastUpdateTs: number
+  lastWriter: string
+}
+
+function readSharedStreak(): SharedStreakState {
+  try {
+    if (fs.existsSync(SHARED_STREAK_FILE)) {
+      const raw = JSON.parse(fs.readFileSync(SHARED_STREAK_FILE, "utf8"))
+      return {
+        streak: typeof raw.streak === "number" ? raw.streak : 0,
+        lastDispatchTs: typeof raw.lastDispatchTs === "number" ? raw.lastDispatchTs : 0,
+        readStreak: typeof raw.readStreak === "number" ? raw.readStreak : 0,
+        editStreak: typeof raw.editStreak === "number" ? raw.editStreak : 0,
+        lastUpdateTs: typeof raw.lastUpdateTs === "number" ? raw.lastUpdateTs : 0,
+        lastWriter: typeof raw.lastWriter === "string" ? raw.lastWriter : "",
+      }
+    }
+  } catch {}
+  return { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: 0, lastWriter: "" }
+}
+
+function writeSharedStreak(s: SharedStreakState): void {
+  try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(s), "utf8") } catch {}
+}
+
+// Update the shared streak for a tool call. Dedupes if the other plugin
+// already counted this exact call (within DEDUP_WINDOW_MS). Returns the
+// updated state so callers can check thresholds if needed.
+function updateSharedStreak(tool: string): SharedStreakState {
+  const s = readSharedStreak()
+  const now = Date.now()
+  const isDispatch = tool === "task" || tool === "agent" || tool === "workflow"
+  const isRead = tool === "read" || tool === "grep" || tool === "glob"
+  const alreadyCounted = (now - s.lastUpdateTs) < STREAK_DEDUP_WINDOW_MS
+    && s.lastWriter !== STREAK_PLUGIN_NAME
+    && s.lastWriter !== ""
+  if (isDispatch) {
+    s.streak = 0
+    s.readStreak = 0
+    s.editStreak = 0
+    s.lastDispatchTs = now
+  } else if (!alreadyCounted) {
+    s.streak++
+    if (isRead) s.readStreak++
+    else s.editStreak++
+  }
+  s.lastUpdateTs = now
+  s.lastWriter = STREAK_PLUGIN_NAME
+  writeSharedStreak(s)
+  return s
+}
+
 function isCommitBashCommand(cmd: string): boolean {
   return /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/.test(cmd)
 }
@@ -392,6 +458,12 @@ export default (async ({ }) => {
       try {
         if (!FLOOR_ENFORCE) return
         const tool = (input?.tool ?? "") as string
+
+        // P3: Update the shared cross-plugin streak counter so enforce-stop.ts
+        // can detect grinding even when this plugin's in-memory streak is out
+        // of sync or its hook fails open. Called for ALL tools (dispatch resets,
+        // reads + mutations increment).
+        updateSharedStreak(tool)
 
         if (isDispatchTool(tool)) {
           _streakCount = 0

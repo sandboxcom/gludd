@@ -12,6 +12,78 @@ const BLOCK_COUNTER_FILE = "/tmp/gludd-block-counter.json"
 const BLANKED_RESPONSE_FILE = "/tmp/gludd-blanked-responses.json"
 const FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
 
+// ── SHARED STREAK STATE (P3: cross-call grinding detection) ────────────────
+// Shared between enforce-floor.ts and enforce-stop.ts so EITHER plugin can
+// catch main-thread grinding (serial read/edit/bash with no dispatch). The
+// dedup window prevents double-counting when both plugins fire on the same
+// tool.execute.before event.
+const SHARED_STREAK_FILE = process.env.GLUDD_STREAK_FILE || "/tmp/gludd-tool-streak.json"
+const STREAK_PLUGIN_NAME = "enforce-stop"
+const STREAK_DEDUP_WINDOW_MS = 500
+const DELEGATE_FIRST_THRESHOLD = 8
+const GRINDING_HARD_DENY_THRESHOLD = 12
+
+interface SharedStreakState {
+  streak: number
+  lastDispatchTs: number
+  readStreak: number
+  editStreak: number
+  lastUpdateTs: number
+  lastWriter: string
+}
+
+function readSharedStreak(): SharedStreakState {
+  try {
+    if (fs.existsSync(SHARED_STREAK_FILE)) {
+      const raw = JSON.parse(fs.readFileSync(SHARED_STREAK_FILE, "utf8"))
+      return {
+        streak: typeof raw.streak === "number" ? raw.streak : 0,
+        lastDispatchTs: typeof raw.lastDispatchTs === "number" ? raw.lastDispatchTs : 0,
+        readStreak: typeof raw.readStreak === "number" ? raw.readStreak : 0,
+        editStreak: typeof raw.editStreak === "number" ? raw.editStreak : 0,
+        lastUpdateTs: typeof raw.lastUpdateTs === "number" ? raw.lastUpdateTs : 0,
+        lastWriter: typeof raw.lastWriter === "string" ? raw.lastWriter : "",
+      }
+    }
+  } catch {}
+  return { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: 0, lastWriter: "" }
+}
+
+function writeSharedStreak(s: SharedStreakState): void {
+  try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(s), "utf8") } catch {}
+}
+
+function isStreakReadTool(toolName: string): boolean {
+  return toolName === "read" || toolName === "grep" || toolName === "glob"
+}
+
+// Update the shared streak for a tool call. Dedupes if the other plugin
+// already counted this exact call (within DEDUP_WINDOW_MS). Returns the
+// updated state so the caller can check thresholds.
+function updateSharedStreak(tool: string): SharedStreakState {
+  const s = readSharedStreak()
+  const now = Date.now()
+  const isDispatch = tool === "task" || tool === "agent" || tool === "workflow"
+  const isRead = isStreakReadTool(tool)
+  const alreadyCounted = (now - s.lastUpdateTs) < STREAK_DEDUP_WINDOW_MS
+    && s.lastWriter !== STREAK_PLUGIN_NAME
+    && s.lastWriter !== ""
+  if (isDispatch) {
+    s.streak = 0
+    s.readStreak = 0
+    s.editStreak = 0
+    s.lastDispatchTs = now
+  } else if (!alreadyCounted) {
+    s.streak++
+    if (isRead) s.readStreak++
+    else s.editStreak++
+  }
+  s.lastUpdateTs = now
+  s.lastWriter = STREAK_PLUGIN_NAME
+  writeSharedStreak(s)
+  return s
+}
+
 interface StopStateCache {
   ts: number
   ratchetEntries: number
@@ -510,6 +582,12 @@ export default (async ({ }) => {
           turnState.dispatchCount++
         }
 
+        // P3: Update the shared cross-plugin streak counter. This tracks ALL
+        // consecutive non-dispatch calls (reads + edits + bash) so grinding
+        // detection works even when enforce-floor.ts's in-memory streak is
+        // out of sync or its hook fails open.
+        const streakState = updateSharedStreak(input.tool)
+
         if (input.tool === "question") {
           // Track block
           try {
@@ -583,6 +661,68 @@ export default (async ({ }) => {
               if (ciBad) extraReasons.push("CI pending/red")
               if (repoPending) extraReasons.push("repo dirty")
               throw new Error(stopLikeDenyMessage(taskMd, ratchetCount, extraReasons))
+            }
+          }
+        }
+
+        // P3: Cross-call grinding detection. If the agent has made many
+        // consecutive non-dispatch calls, deny mutations to force delegation.
+        // Reads are NEVER denied (the agent needs them to prepare the next
+        // dispatch wave); dispatch tools are never denied; questions handled above.
+        const isMutationTool = !DISPATCH_TOOLS.has(input.tool)
+          && !isStreakReadTool(input.tool)
+          && input.tool !== "question"
+        if (isMutationTool) {
+          let grindingDisengaged = false
+          try {
+            const disPath = "/tmp/gludd-watchdog-disengage.json"
+            if (fs.existsSync(disPath)) {
+              const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
+              if (d.disengage_until) {
+                const now = Date.now()
+                const MAX_DISENGAGE = now + 3_600_000
+                const effective = Math.min(d.disengage_until, MAX_DISENGAGE)
+                if (effective > now) grindingDisengaged = true
+              }
+            }
+          } catch {}
+          if (!grindingDisengaged) {
+            if (streakState.streak > GRINDING_HARD_DENY_THRESHOLD) {
+              try {
+                const cPath = "/tmp/gludd-stop-tool-counts.json"
+                let data: Record<string, any> = { allowed: 0, blocked: 0 }
+                if (fs.existsSync(cPath)) {
+                  try { data = JSON.parse(fs.readFileSync(cPath, "utf8")) } catch {}
+                }
+                data.blocked = (parseInt(data.blocked, 10) || 0) + 1
+                data.last_blocked = { tool: input.tool, reason: "main-thread-grinding", streak: streakState.streak, ts: Date.now(), iso: new Date().toISOString() }
+                fs.writeFileSync(cPath, JSON.stringify(data), "utf8")
+              } catch {}
+              recordBlock("main-thread-grinding")
+              return {
+                permissionDecision: "deny" as const,
+                message: [
+                  "⛔ MAIN-THREAD GRINDING DETECTED",
+                  `${streakState.streak} consecutive non-dispatch calls.`,
+                  "You are grinding on the main thread with no subagent dispatch.",
+                  "DISPATCH WORK via task/agent/workflow or justify why this must be inline.",
+                  "",
+                  `Streak breakdown: ${streakState.readStreak} reads, ${streakState.editStreak} edits/bash.`,
+                ].join("\n"),
+              }
+            }
+            if (streakState.streak > DELEGATE_FIRST_THRESHOLD) {
+              return {
+                permissionDecision: "deny" as const,
+                message: [
+                  "⛔ DELEGATE-FIRST",
+                  `${streakState.streak} consecutive non-dispatch calls.`,
+                  "You are trending toward main-thread grinding.",
+                  "DISPATCH WORK via task/agent/workflow before continuing inline work.",
+                  "",
+                  `Streak breakdown: ${streakState.readStreak} reads, ${streakState.editStreak} edits/bash.`,
+                ].join("\n"),
+              }
             }
           }
         }

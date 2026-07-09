@@ -1033,18 +1033,29 @@ class TestEnforceDelegateMainthreadStreak:
         )
 
     def test_mainthread_streak_default_on_via_force_delegate_not_zero(self):
-        """The streak blocker must default ON: any GLUDD_FORCE_DELEGATE value
-        other than "0" keeps it active. Polarity must be `!== "0"`, NOT
-        opt-in `=== "1"` (which defaults OFF and was the gap)."""
+        """The streak blocker must default ON via its OWN env var
+        (GLUDD_MAINTHREAD_STREAK_ENFORCE, default "1"), NOT shared with the
+        opt-in GLUDD_FORCE_DELEGATE. Polarity must be `!== "0"`, NOT
+        opt-in `=== "1"` (which defaults OFF and was the gap).
+
+        P8 fix (2026-07-09): previously MAINTHREAD_STREAK_ENABLED read
+        GLUDD_FORCE_DELEGATE !== "0" — the SAME env var as the opt-in
+        force-delegate gate. Setting GLUDD_FORCE_DELEGATE=0 to disable the
+        opt-in gate ALSO disabled the default-on streak blocker. The fix
+        splits them: GLUDD_FORCE_DELEGATE controls only mechanism A;
+        GLUDD_MAINTHREAD_STREAK_ENFORCE controls mechanism B.
+        """
         src = ENFORCE_DELEGATE.read_text()
         m = re.search(
-            r"MAINTHREAD_STREAK_ENABLED\s*=\s*process\.env\.GLUDD_FORCE_DELEGATE\s*!==\s*[\"']0[\"']",
+            r"MAINTHREAD_STREAK_ENABLED\s*=\s*\(\s*process\.env\.GLUDD_MAINTHREAD_STREAK_ENFORCE\s*\|\|\s*[\"']1[\"']\s*\)\s*!==\s*[\"']0[\"']",
             src,
         )
         assert m, (
             "MAINTHREAD_STREAK_ENABLED must be "
-            "`process.env.GLUDD_FORCE_DELEGATE !== \"0\"` (default ON). "
-            "The opt-in polarity (=== \"1\") defaults OFF and is the bug."
+            "`(process.env.GLUDD_MAINTHREAD_STREAK_ENFORCE || \"1\") !== \"0\"` "
+            "(default ON via its OWN env var). Sharing GLUDD_FORCE_DELEGATE was "
+            "the P8 polarity trap — disabling the opt-in gate also killed the "
+            "default enforcement."
         )
         # And mainthreadBudgetBefore must consult the flag.
         assert re.search(
@@ -1052,8 +1063,37 @@ class TestEnforceDelegateMainthreadStreak:
             src,
         ), (
             "mainthreadBudgetBefore must early-return when "
-            "MAINTHREAD_STREAK_ENABLED is false (the GLUDD_FORCE_DELEGATE=0 "
-            "escape hatch)"
+            "MAINTHREAD_STREAK_ENABLED is false (the "
+            "GLUDD_MAINTHREAD_STREAK_ENFORCE=0 escape hatch)"
+        )
+
+    def test_mainthread_streak_env_var_independent_from_force_delegate(self):
+        """GLUDD_FORCE_DELEGATE and GLUDD_MAINTHREAD_STREAK_ENFORCE must be
+        referenced by SEPARATE constants so disabling one cannot disable
+        the other.
+
+        This is the structural pin for the P8 polarity-trap fix: the bug was
+        that a single env var controlled two mechanisms with opposite
+        defaults. The fix requires that MAINTHREAD_STREAK_ENABLED's
+        declaration references ONLY GLUDD_MAINTHREAD_STREAK_ENFORCE (not
+        GLUDD_FORCE_DELEGATE), and FORCE_DELEGATE_ENABLED references ONLY
+        GLUDD_FORCE_DELEGATE.
+        """
+        src = ENFORCE_DELEGATE.read_text()
+        # Extract the MAINTHREAD_STREAK_ENABLED declaration line.
+        m = re.search(
+            r"const\s+MAINTHREAD_STREAK_ENABLED\s*=\s*([^\n]+)",
+            src,
+        )
+        assert m, "MAINTHREAD_STREAK_ENABLED declaration not found"
+        decl = m.group(1)
+        assert "GLUDD_MAINTHREAD_STREAK_ENFORCE" in decl, (
+            "MAINTHREAD_STREAK_ENABLED must reference GLUDD_MAINTHREAD_STREAK_ENFORCE"
+        )
+        assert "GLUDD_FORCE_DELEGATE" not in decl, (
+            "MAINTHREAD_STREAK_ENABLED must NOT reference GLUDD_FORCE_DELEGATE — "
+            "that was the P8 polarity trap (one env var, two mechanisms, "
+            "opposite defaults)."
         )
 
     def test_mainthread_streak_uses_dedicated_json_state_file(self):
@@ -1074,12 +1114,150 @@ class TestEnforceDelegateMainthreadStreak:
         )
 
     def test_mainthread_streak_message_loads_force_delegate_disable_hint(self):
-        """The block message must surface GLUDD_FORCE_DELEGATE=0 as the
-        escape hatch so the agent can tell the operator how to disable."""
+        """The block message must surface GLUDD_MAINTHREAD_STREAK_ENFORCE=0
+        as the escape hatch so the agent can tell the operator how to disable.
+
+        P8 fix (2026-07-09): the disable hint was GLUDD_FORCE_DELEGATE=0, but
+        that env var now controls ONLY the opt-in force-delegate gate
+        (mechanism A). The streak blocker (mechanism B) has its own env var,
+        so the hint must reference GLUDD_MAINTHREAD_STREAK_ENFORCE=0.
+        """
         src = ENFORCE_DELEGATE.read_text()
-        assert "GLUDD_FORCE_DELEGATE=0" in src, (
+        assert "GLUDD_MAINTHREAD_STREAK_ENFORCE=0" in src, (
             "mainthreadBudgetBefore block message must mention "
-            "GLUDD_FORCE_DELEGATE=0 as the disable switch"
+            "GLUDD_MAINTHREAD_STREAK_ENFORCE=0 as the disable switch (not "
+            "GLUDD_FORCE_DELEGATE=0 — that controls a different mechanism now)"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 4e. enforce-delegate.ts — countLiveAgents probe fail-closed (P2 fix)
+# --------------------------------------------------------------------------- #
+# Audit gap P2 (2026-07-09): countLiveAgents() returned null on ANY probe error
+# (python3 missing, agent_liveness.py threw, non-integer stdout), and callers
+# treated null as "can't tell" → enforcement was SKIPPED. A broken probe
+# silently disabled ALL floor enforcement. The fix tracks consecutive failures
+# and fails CLOSED after a threshold (default 3): the probe returns 0 instead
+# of null, so callers treat the floor as unmet and enforcement fires.
+class TestEnforceDelegateProbeFailClosed:
+    """countLiveAgents must fail-CLOSED after N consecutive probe failures,
+    not silently return null forever (which disables all enforcement)."""
+
+    def test_probe_fail_count_variable_exists(self):
+        """A module-level _probeFailCount counter must exist to track
+        consecutive probe failures across calls."""
+        src = ENFORCE_DELEGATE.read_text()
+        assert "_probeFailCount" in src, (
+            "_probeFailCount module-level variable missing — without it the "
+            "probe cannot track consecutive failures and fail-closed after a "
+            "sustained outage (P2: a broken probe silently disabled all floor "
+            "enforcement)"
+        )
+
+    def test_probe_fail_threshold_constant_exists(self):
+        """PROBE_FAIL_THRESHOLD must exist and default to 3."""
+        src = ENFORCE_DELEGATE.read_text()
+        m = re.search(
+            r"PROBE_FAIL_THRESHOLD\s*=\s*parseInt\s*\(\s*process\.env\.GLUDD_PROBE_FAIL_THRESHOLD\s*\|\|\s*[\"'](\d+)[\"']",
+            src,
+        )
+        assert m, (
+            "PROBE_FAIL_THRESHOLD must be declared via "
+            "parseInt(process.env.GLUDD_PROBE_FAIL_THRESHOLD || \"3\", 10)"
+        )
+        assert m.group(1) == "3", (
+            f"PROBE_FAIL_THRESHOLD default is {m.group(1)}, expected 3 — "
+            "after 3 consecutive probe failures the probe must fail-closed"
+        )
+
+    def test_probe_returns_zero_after_threshold_failures(self):
+        """After PROBE_FAIL_THRESHOLD consecutive failures, the probe must
+        return 0 (fail-closed) instead of null (fail-open). The caller then
+        treats the floor as unmet and enforcement fires."""
+        src = ENFORCE_DELEGATE.read_text()
+        # The recordFailure helper must increment the counter and return 0
+        # when _probeFailCount >= PROBE_FAIL_THRESHOLD.
+        assert re.search(
+            r"_probeFailCount\s*\+=\s*1",
+            src,
+        ), "probe failure handler must increment _probeFailCount"
+        assert re.search(
+            r"_probeFailCount\s*>=\s*PROBE_FAIL_THRESHOLD",
+            src,
+        ), "probe failure handler must compare against PROBE_FAIL_THRESHOLD"
+        # Must return 0 (fail-closed) in the threshold branch.
+        assert re.search(
+            r"_probeFailCount\s*>=\s*PROBE_FAIL_THRESHOLD[\s\S]*?return\s+0",
+            src,
+        ), (
+            "After threshold consecutive failures, countLiveAgents must "
+            "return 0 (fail-closed) so enforcement fires — not null (which "
+            "callers treat as 'skip enforcement')"
+        )
+
+    def test_probe_resets_count_on_success(self):
+        """A successful probe must reset _probeFailCount to 0 so a transient
+        failure does not accumulate into a false fail-closed."""
+        src = ENFORCE_DELEGATE.read_text()
+        # After parsing a valid integer, the counter must reset.
+        assert re.search(
+            r"_probeFailCount\s*=\s*0",
+            src,
+        ), (
+            "countLiveAgents must reset _probeFailCount = 0 on a successful "
+            "probe — otherwise transient failures accumulate and trigger a "
+            "false fail-closed"
+        )
+
+    def test_probe_fail_logs_loudly(self):
+        """When the probe fails closed, it must console.warn so the operator
+        can see the probe is broken (not silently enforcing on bad data)."""
+        src = ENFORCE_DELEGATE.read_text()
+        assert "console.warn" in src, (
+            "countLiveAgents must console.warn when it fail-closes so a "
+            "broken probe is observable (No Unseen Events invariant)"
+        )
+        assert "FAIL-CLOSED" in src, (
+            "The fail-closed warning must carry the 'FAIL-CLOSED' marker so "
+            "it is greppable in logs"
+        )
+
+    def test_probe_grace_period_before_threshold(self):
+        """Before reaching the threshold, the probe must still return null
+        (grace period) so a single transient failure does not immediately
+        fail-closed. Only SUSTAINED failures trigger fail-closed."""
+        src = ENFORCE_DELEGATE.read_text()
+        # The recordFailure helper must return null in the below-threshold
+        # branch (the else of the >= check).
+        assert re.search(
+            r"return\s+null",
+            src,
+        ), (
+            "Below the threshold, countLiveAgents must still return null "
+            "(grace period) — a single transient failure must not trigger "
+            "fail-closed"
+        )
+
+    def test_probe_catches_both_failure_modes(self):
+        """Both an exec throw AND non-integer stdout must count as probe
+        failures (the two ways the probe can produce no valid count)."""
+        src = ENFORCE_DELEGATE.read_text()
+        # The catch block must route through recordFailure.
+        m = re.search(r"catch\s*\([^)]*\)\s*\{([\s\S]*?)\n\s*\}", src)
+        assert m, "could not find catch block in countLiveAgents"
+        catch_body = m.group(1)
+        assert "recordFailure" in catch_body, (
+            "The catch (exec threw) path must call recordFailure so an exec "
+            "error counts toward the fail-closed threshold"
+        )
+        # The NaN path must also route through recordFailure.
+        assert re.search(
+            r"Number\.isNaN\s*\(\s*n\s*\)[\s\S]*?recordFailure",
+            src,
+        ), (
+            "The Number.isNaN(n) path (non-integer stdout) must call "
+            "recordFailure so garbage output counts toward the fail-closed "
+            "threshold"
         )
 
 

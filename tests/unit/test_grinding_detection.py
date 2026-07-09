@@ -115,22 +115,31 @@ class TestThresholdConstants:
 
     These are the load-bearing constants — if they drift or are deleted, the
     grinding detection either never fires or fires too aggressively.
+    Accepts either a literal comparison (``> 8``) or a named constant
+    (``DELEGATE_FIRST_THRESHOLD = 8``) — the constant form is preferred for
+    readability but the value must still be pinned.
     """
 
     def test_delegate_first_threshold_present(self):
         src = STOP_PLUGIN.read_text()
-        # The DELEGATE-FIRST threshold (8). Match the literal so a rename is caught.
-        assert "> 8" in src or ">= 9" in src, (
-            "enforce-stop.ts must check streak > 8 (DELEGATE-FIRST threshold). "
+        has_literal = "> 8" in src or ">= 9" in src
+        has_constant = "DELEGATE_FIRST_THRESHOLD = 8" in src or "DELEGATE_FIRST_THRESHOLD=8" in src
+        assert has_literal or has_constant, (
+            "enforce-stop.ts must define the DELEGATE-FIRST threshold as 8 "
+            "(either `> 8` literal or `DELEGATE_FIRST_THRESHOLD = 8` constant). "
             "Without it, grinding escalates to the hard-deny without the "
             "intermediate advisory."
         )
 
     def test_grinding_hard_deny_threshold_present(self):
         src = STOP_PLUGIN.read_text()
-        assert "> 12" in src or ">= 13" in src, (
-            "enforce-stop.ts must check streak > 12 (hard-deny threshold). "
-            "Without it, there is no structural block on prolonged grinding."
+        has_literal = "> 12" in src or ">= 13" in src
+        has_constant = "GRINDING_HARD_DENY_THRESHOLD = 12" in src or "GRINDING_HARD_DENY_THRESHOLD=12" in src
+        assert has_literal or has_constant, (
+            "enforce-stop.ts must define the hard-deny threshold as 12 "
+            "(either `> 12` literal or `GRINDING_HARD_DENY_THRESHOLD = 12` "
+            "constant). Without it, there is no structural block on prolonged "
+            "grinding."
         )
 
 
