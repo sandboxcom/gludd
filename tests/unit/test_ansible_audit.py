@@ -43,7 +43,7 @@ class TestCredentialAccessAudit:
         logger = PlaybookAuditLogger(playbook="deploy.yml")
         logger.credential_access(
             module="community.hashi_vault.vault_read",
-            secret_name="secret/data/aws",
+            secret_name="secret/data/aws",  # pragma: allowlist secret
         )
         events = logger.flush()
         assert len(events) == 1

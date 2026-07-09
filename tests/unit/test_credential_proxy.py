@@ -153,7 +153,7 @@ class TestBodyStripping:
         task = {
             "url": "https://api.openai.com/v1/chat/completions",
             "method": "POST",
-            "body": {"api_key": "sk-abc123", "model": "gpt-4", "prompt": "hello"},
+            "body": {"api_key": "sk-abc123", "model": "gpt-4", "prompt": "hello"},  # pragma: allowlist secret
         }
         result = proxy.scan_and_strip(task)
         assert result.stripped is True
