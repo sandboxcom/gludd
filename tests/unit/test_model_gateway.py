@@ -874,14 +874,16 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
 
     def test_check_budget_rejects_without_requested_cap(self):
         """No requested cap → worst-case max_output_tokens estimate → rejected
-        against the modest run_budget_usd (D-21 security behaviour preserved)."""
+        against a finite remaining budget (D-21 security behaviour preserved).
+        budget_remaining=0.001 ensures the rejection path actually executes
+        rather than being skipped by inf → no-cost-exceeds-inf semantics."""
         gw, _reg = self._make_gateway(run_budget_usd=0.5)
         msg = [{"role": "user", "content": "hi"}]
-        # 8000 * 0.001 = 8.0 USD output leg > 0.5 budget → rejected.
+        # 8000 * 0.001 = 8.0 USD output leg > 0.001 remaining → rejected.
         assert gw.check_budget(
             "lowbudget",
             estimated_cost=0.0,
-            budget_remaining=float("inf"),
+            budget_remaining=0.001,
             messages=msg,
         ) is False
 

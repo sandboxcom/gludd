@@ -29,9 +29,9 @@ class TestZaiSecretsResolution:
         mgr = EnvSecretsManager()
         assert mgr.resolve("zai_api_base") == "https://test.example.com/v4"
 
-    def test_lowercase_alias_direct_env_still_works(self):
+    def test_lowercase_alias_direct_env_still_works(self, monkeypatch):
         """Regression: lowercase env var still resolves (existing path not broken)."""
-        os.environ[_ZAI_API_KEY_ALIAS] = "direct-key-lowercase"
+        monkeypatch.setenv(_ZAI_API_KEY_ALIAS, "direct-key-lowercase")
         mgr = EnvSecretsManager()
         assert mgr.resolve(_ZAI_API_KEY_ALIAS) == "direct-key-lowercase"
 

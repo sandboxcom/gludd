@@ -246,6 +246,56 @@ def _reset_observability_singletons(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+_A3_DENYLIST_PREFIXES: frozenset[str] = frozenset({
+    "live_pkg_", "livepkg", "rbpkg", "smg_",
+    "capability_policy", "fs_write_policy",
+})
+
+
+def _snapshot_sys_modules_and_path() -> tuple[dict[str, object], list[str]]:
+    """Snapshot sys.modules (shallow dict copy) and sys.path (shallow list copy)."""
+    import sys
+
+    return dict(sys.modules), list(sys.path)
+
+
+def _restore_sys_modules_and_path(
+    snap_modules: dict[str, object], snap_path: list[str]
+) -> None:
+    """Restore sys.path verbatim; evict denylisted test-injected sys.modules keys;
+    restore any replaced modules from the snapshot."""
+    import sys
+
+    sys.path[:] = snap_path
+
+    current = set(sys.modules.keys())
+    snap_keys = set(snap_modules.keys())
+    for key in current - snap_keys:
+        is_denylisted = any(key.startswith(p) for p in _A3_DENYLIST_PREFIXES)
+        if is_denylisted:
+            sys.modules.pop(key, None)
+
+    for key in snap_keys & current:
+        if sys.modules[key] is not snap_modules[key]:
+            sys.modules[key] = snap_modules[key]
+
+
+@pytest.fixture(autouse=True)
+def _sandbox_sys_modules_and_path():
+    """Snapshot and restore sys.modules + sys.path around every test.
+
+    Prevents fake-module injection leaks: tests that inject stub modules
+    (live_pkg_*, rbpkg, smg_*, capability_policy, fs_write_policy) into
+    sys.modules without cleanup leak into sibling tests, causing
+    order-dependent import failures.
+
+    Implements CI_GREEN_PLAN_2026-07-01.md Appendix A3.
+    """
+    snap_modules, snap_path = _snapshot_sys_modules_and_path()
+    yield
+    _restore_sys_modules_and_path(snap_modules, snap_path)
+
+
 # --- Environmental test-skip probes -----------------------------------------
 #
 # Integration tests that require SLURM or PostgreSQL can decorate themselves

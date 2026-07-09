@@ -9,7 +9,6 @@ Proves:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 
@@ -30,7 +29,7 @@ class TestPydanticSettingsEnvOverride:
         assert config is not None
         assert hasattr(config, "agents")
 
-    def test_env_var_overrides_yaml_value(self, tmp_path: Path) -> None:
+    def test_env_var_overrides_yaml_value(self, tmp_path: Path, monkeypatch) -> None:
         """GLUDD_ env vars override YAML file values."""
         from general_ludd.config.loader import load_user_config
 
@@ -40,35 +39,23 @@ class TestPydanticSettingsEnvOverride:
         # Set env var to override the 'agents' key (as a JSON string for dict fields).
         env_key = "GLUDD_AGENTS"
         env_val = '{"timeout": 99}'
-        old = os.environ.get(env_key)
-        try:
-            os.environ[env_key] = env_val
-            config = load_user_config(cfg_file)
-            # agents should now come from env var
-            assert config.agents == {"timeout": 99}, (
-                f"Expected env override to produce {{timeout: 99}}, got {config.agents}"
-            )
-        finally:
-            if old is None:
-                os.environ.pop(env_key, None)
-            else:
-                os.environ[env_key] = old
+        monkeypatch.setenv(env_key, env_val)
+        config = load_user_config(cfg_file)
+        # agents should now come from env var
+        assert config.agents == {"timeout": 99}, (
+            f"Expected env override to produce {{timeout: 99}}, got {config.agents}"
+        )
 
-    def test_yaml_used_when_no_env_override(self, tmp_path: Path) -> None:
+    def test_yaml_used_when_no_env_override(self, tmp_path: Path, monkeypatch) -> None:
         """Without env override, YAML value is used."""
         from general_ludd.config.loader import load_user_config
 
         cfg_file = tmp_path / "user.yml"
         cfg_file.write_text("agents:\n  timeout: 42\n")
 
-        env_key = "GLUDD_AGENTS"
-        old = os.environ.pop(env_key, None)
-        try:
-            config = load_user_config(cfg_file)
-            assert config.agents == {"timeout": 42}
-        finally:
-            if old is not None:
-                os.environ[env_key] = old
+        monkeypatch.delenv("GLUDD_AGENTS", raising=False)
+        config = load_user_config(cfg_file)
+        assert config.agents == {"timeout": 42}
 
     def test_existing_consumers_unchanged(self) -> None:
         """UserConfig can be instantiated directly (existing callers unaffected)."""

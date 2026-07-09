@@ -48,15 +48,17 @@ Add this to `<head>` in `docs/presentation/deck/index.html` (after reveal.js):
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/mermaid/mermaid.min.js"></script>
+<!-- Mermaid plugin for reveal.js (correct CDN path) -->
+<script src="https://cdn.jsdelivr.net/npm/reveal.js-mermaid-plugin@2.1.0/plugin/mermaid/mermaid.js"></script>
 <script>
   mermaid.initialize({ startOnLoad: false });
   Reveal.initialize({
     plugins: [RevealMermaid],
-    dependencies: []
   });
 </script>
 ```
+
+**IMPORTANT:** The CDN path MUST include `plugin/` — `reveal.js-mermaid-plugin@2.1.0/plugin/mermaid/mermaid.js` — NOT `reveal.js-mermaid-plugin@2.1.0/mermaid/mermaid.js`. The shorter path without `plugin/` is a 404.
 
 #### Mermaid example — architecture
 ```html

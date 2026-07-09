@@ -153,7 +153,7 @@ class TestEnforceFloorReadGrindingAdvisoryThreshold:
         # The advisory branch must reference console.warn OR return a message
         # object (not just `return` with no side effect).
         # Find any block that mentions READ-GRIND.
-        m = re.search(r"READ[- ]GRIND.*?(?=return\s*\{|^\s*\}\s*$|$)", src, re.IGNORECASE | re.DOTALL)
+        m = re.search(r"if\s*\(\s*_readStreak\s*>\s*20\s*&&.*", src, re.DOTALL)
         assert m, "READ-GRIND advisory block not found"
         block = m.group(0)
         assert "console.warn" in block or "console.error" in block or \

@@ -219,12 +219,18 @@ class CoreAnsibleRunner:
         process_isolation: Any | None = None,
         private_data_dir: str | None = None,
         network_policy: Any | None = None,
+        seccomp_filter: Any | None = None,
     ) -> None:
         self._module_paths = module_paths or []
         self._callback_plugins = callback_plugins or []
         self._process_isolation = process_isolation
         self._private_data_dir = private_data_dir
         self._network_policy = network_policy
+        # OpenShell P2 transfer: an optional seccomp BPF filter installed in the
+        # fork child (before os.setsid) to block container-escape syscalls
+        # (mount/unshare/setns/pivot_root/...). None = no syscall filtering
+        # (backward-compatible default). See general_ludd.security.seccomp.
+        self._seccomp_filter = seccomp_filter
         self._collected_events: list[dict[str, Any]] = []
 
     def run_playbook(
@@ -380,6 +386,24 @@ class CoreAnsibleRunner:
 
         def _target() -> None:
             import contextlib
+
+            # OpenShell P2 transfer: install the seccomp syscall filter FIRST,
+            # before setsid() or any playbook work, so a compromised playbook
+            # cannot unshare/mount/setns its way out of the sandbox. Fail-open:
+            # apply() returns False (never raises) on macOS / no-seccomp kernels.
+            if self._seccomp_filter is not None:
+                try:
+                    applied = self._seccomp_filter.apply()
+                    if not applied:
+                        logger.warning(
+                            "seccomp filter not applied (fail-open); playbook "
+                            "child runs without syscall filtering"
+                        )
+                except Exception:
+                    logger.warning(
+                        "seccomp filter apply raised; continuing unfiltered",
+                        exc_info=True,
+                    )
 
             # Become a process-group leader so a timeout can SIGKILL the whole
             # group (this child + any ansible worker processes it forks).

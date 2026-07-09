@@ -11,7 +11,6 @@ secret into the (mocked) vault, delete the env var, resolution still returns it.
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 from general_ludd.daemon import build_secrets_resolver
@@ -57,7 +56,7 @@ class TestAutoModeFallback:
 
 
 class TestMigratedSecretReadBack:
-    def test_migrated_secret_resolves_after_env_var_deleted(self):
+    def test_migrated_secret_resolves_after_env_var_deleted(self, monkeypatch):
         # In-memory KV behind a real SecretsManager via a mock hvac client.
         store: dict[str, dict] = {}
 
@@ -80,14 +79,13 @@ class TestMigratedSecretReadBack:
         # S-1: alias must match the credential allowlist (*_API_KEY) so migration
         # reads it from the environment; GLUDD_TEST_AUTO_KEY would be skipped.
         env_var = "GLUDD_TEST_AUTO_API_KEY"
-        os.environ[env_var] = "supersecret"  # test value
-        try:
-            profiles = [{"model_profile_id": "p1", "credential_alias": env_var}]
-            result = migrate_profile_secrets(mgr, profiles)
-            assert result["migrated"] == 1
-        finally:
-            # Delete the env var: resolution must now come from the vault.
-            os.environ.pop(env_var, None)
+        monkeypatch.setenv(env_var, "supersecret")
+        profiles = [{"model_profile_id": "p1", "credential_alias": env_var}]
+        result = migrate_profile_secrets(mgr, profiles)
+        assert result["migrated"] == 1
+
+        # Delete the env var: resolution must now come from the vault.
+        monkeypatch.delenv(env_var, raising=False)
 
         # Read-back: the alias resolves from OpenBao even with the env var gone.
         assert mgr.resolve(env_var) == "supersecret"
