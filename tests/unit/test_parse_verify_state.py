@@ -10,8 +10,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "parse_verify_state.py"
 
@@ -195,36 +193,36 @@ class TestParseVerifyState:
         assert "GREEN" in stdout
 
     def test_dirty_exits_1(self) -> None:
-        code, stdout, stderr = _run_with_stdin(DIRTY)
+        code, _stdout, stderr = _run_with_stdin(DIRTY)
         assert code == 1, f"expected 1, got {code}\nstderr: {stderr}"
         assert "DIRTY" in stderr
         assert "commit or stash" in stderr
 
     def test_diverged_exits_2(self) -> None:
-        code, stdout, stderr = _run_with_stdin(DIVERGED)
+        code, _stdout, stderr = _run_with_stdin(DIVERGED)
         assert code == 2, f"expected 2, got {code}\nstderr: {stderr}"
         assert "DIVERGED" in stderr
         assert "push first" in stderr
 
     def test_unreachable_exits_2(self) -> None:
-        code, stdout, stderr = _run_with_stdin(UNREACHABLE)
+        code, _stdout, stderr = _run_with_stdin(UNREACHABLE)
         assert code == 2, f"expected 2, got {code}\nstderr: {stderr}"
         assert "DIVERGED" in stderr
 
     def test_ci_red_exits_3(self) -> None:
-        code, stdout, stderr = _run_with_stdin(CI_RED)
+        code, _stdout, stderr = _run_with_stdin(CI_RED)
         assert code == 3, f"expected 3, got {code}\nstderr: {stderr}"
         assert "RED" in stderr
         assert "fix CI" in stderr
 
     def test_ci_no_run_exits_4(self) -> None:
-        code, stdout, stderr = _run_with_stdin(CI_NO_RUN)
+        code, _stdout, stderr = _run_with_stdin(CI_NO_RUN)
         assert code == 4, f"expected 4, got {code}\nstderr: {stderr}"
         assert "NO RUN" in stderr
         assert "trigger CI" in stderr
 
     def test_ci_pending_is_not_a_failure(self) -> None:
-        code, stdout, stderr = _run_with_stdin(CI_PENDING)
+        code, _stdout, stderr = _run_with_stdin(CI_PENDING)
         assert code == 0, f"expected 0 for PENDING, got {code}\nstderr: {stderr}"
 
     def test_priority_dirty_over_diverged(self) -> None:
@@ -235,11 +233,11 @@ class TestParseVerifyState:
             "SYNCED: abc123def456789012345678901234567890abcd",
             "DIVERGED: local=abc123def456 remote=789012345678",
         )
-        code, stdout, stderr = _run_with_stdin(text)
+        code, _stdout, stderr = _run_with_stdin(text)
         assert code == 1, f"expected 1 (dirty wins), got {code}\nstderr: {stderr}"
 
     def test_empty_input_exits_1(self) -> None:
-        code, stdout, stderr = _run_with_stdin("")
+        code, _stdout, stderr = _run_with_stdin("")
         assert code == 1, f"expected 1 for empty input, got {code}\nstderr: {stderr}"
 
     def test_script_exists(self) -> None:

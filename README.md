@@ -115,7 +115,7 @@ audience. It covers:
 - The problem it solves
 - A granular walkthrough of the work cycle (claim → dispatch → review → save)
 - Security (three-layer model)
-- Current stats with citations (22,000+ tests, 465+ source files, 98 roles, 24 providers)
+- Current stats with citations (22,548 tests, 604 source files, 1,213 test files, 109 Ansible roles, 36 modules, 13 enforcement plugins, 334 Make targets)
 - What gludd can do today, and what it can't do yet (honest gaps)
 - How to try it, roadmap, and honest metrics
 

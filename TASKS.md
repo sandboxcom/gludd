@@ -861,6 +861,8 @@ Four-phase extraction plan (B3.1.x):
 
 ### beta.3.2 — Coverage lifting
 
+- [x] **2026-07-09 fix: 3 gate-lite failures** — test_make_lint_passes (lint violations in test_parse_verify_state.py: removed unused import pytest, renamed unused stdout→_stdout), test_search_endpoint_rate_limited_returns_429 (hang due to real network calls: added patch of _web_search to return []), test_windows_amd64_opentofu_url (xdist fail-fast casualty: resolved by lint fix). | evidence: make lint "All checks passed"; test-iso test_guardrails.py "70 passed"; test-iso test_routers_web_search.py "9 passed"; test-iso test_cross_platform_urls.py "8 passed"
+
 - [ ] **beta.3.2 — Coverage lifting** — moved here from Phase SESSION-17. Lift test coverage to the gate threshold; strict-typing burn-down still open. Target the lowest-coverage modules surfaced by the `make test` coverage report. **WP-C1 partial (Wave 15-16 `4273f676`):** coverage lifted for gateway + event_loop + dispatcher + db/repository; remaining modules pending.
 
 ### beta.3.3 — cast(Any) Protocol-based fixes

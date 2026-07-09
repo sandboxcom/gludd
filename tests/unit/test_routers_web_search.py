@@ -104,9 +104,10 @@ class TestWebSearchEndpoint:
         _RATE_LIMITER._timestamps.clear()
         transport = ASGITransport(app=registered_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            for _ in range(10):
-                await client.get("/admin/web/search?q=test")
-            resp = await client.get("/admin/web/search?q=test")
+            with patch("general_ludd.routers.web_search._web_search", return_value=[]):
+                for _ in range(10):
+                    await client.get("/admin/web/search?q=test")
+                resp = await client.get("/admin/web/search?q=test")
         assert resp.status_code == 429
 
     @pytest.mark.asyncio
