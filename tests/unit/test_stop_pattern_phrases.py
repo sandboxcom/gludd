@@ -171,5 +171,3 @@ class TestMarkdownTableBypassRemoved:
             "P5 REGRESSION: lateHasWorkArtifact includes lateHasMarkdownTable. "
             "The hasLocalWork bypass must not let a summary table through."
         )
-
-
