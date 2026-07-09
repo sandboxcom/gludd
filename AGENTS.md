@@ -6,7 +6,7 @@
 
 The enforcement plugins mechanically prevent this:
 - **enforce-floor.ts**: blocks bash calls to `make git-log`, `make ci-verdict`, and `make git-diff` when open work exists (ANTI-LOOP directive); also blocks non-dispatch tool calls via streak counter and message-shape (1-4 dispatch) enforcement
-- **enforce-delegate.ts**: blocks after 1 non-dispatch call (threshold lowered from 4 → 1)
+- **enforce-delegate.ts**: blocks after 4 consecutive non-dispatch calls (`MAINTHREAD_THRESHOLD` default 4; the 5th call is hard-denied). Threshold aligned with the `enforce-floor.ts` streak counter (line ~1615) and the mainthread-budget rule (line ~279).
 - **text.complete nag**: injects "DELEGATE-FIRST" into responses when streak exceeds 2
 - **agent_watchdog.py**: background daemon auto-resets streak every 60s as failsafe
 
@@ -755,7 +755,7 @@ repo's history became a permanent hiding place for a real bug.
 
 The Claude Code layer (`.claude/hooks/*.sh`, 23 shell scripts registered in
 `.claude/settings.json`) and the opencode layer (`.opencode/plugin/*.ts` +
-`.opencode/plugins/*.ts`, 9 TypeScript plugins registered in `opencode.json`)
+`.opencode/plugins/*.ts`, 11 TypeScript plugins registered in `opencode.json`)
 **enforce the same policies in parallel**. An opencode-only session gets the
 same guardrails as a Claude-only session. The port map:
 
@@ -770,6 +770,7 @@ same guardrails as a Claude-only session. The port map:
 | `enforce-deletion-gate.ts` | (file-deletion gate; no direct Claude hook equivalent) |
 | `enforce-no-suppressions.ts` | (lint-suppression comment block on edit/write; no direct Claude hook equivalent) |
 | `enforce-verified-claims.ts` | (done-words-without-evidence block on `text.complete`; complements `no_false_completion_stop.sh` at the text-emission surface) |
+| `enforce-clean-tree.ts` | (denies task/agent/workflow dispatch on a dirty git tree; no direct Claude hook equivalent — see "Verification Before Claim") |
 | `watchdog.ts` | (background daemon watchdog; no direct Claude hook equivalent) |
 
 Both layers are registered and active by default. The env-var knobs are
@@ -1154,6 +1155,95 @@ This is enforced by:
 - `.opencode/plugin/enforce-make.ts` — injects evidence policy into system prompt
 - `src/general_ludd/review/evidence_checker.py` — runtime claim auditing
 - This AGENTS.md section — proactive instruction
+
+## CRITICAL: Verification Before Claim (Anti-Lying Guardrails)
+
+**NEVER claim work is done/landed/pushed/fixed/green without pasting the
+verification command output in the SAME response.** A status word without its
+measurement in the same message is a lie, regardless of intent — the project's
+history (false alpha.3 ship, 12 confirmed-inert features, the reviewer silently
+failing, the tool-call loop reported "✅ Landed" while uncommitted) proves that
+unverified claims are indistinguishable from false ones.
+
+This section consolidates the three enforcement layers added 2026-07-09
+(commits `ae9861f3`, `71b8edce`, `416b6285`) that make false claims structurally
+impossible, not merely discouraged. It extends "Done Claims Require Observable
+Verification Evidence" (above) with the mechanical guardrails and the research
+basis behind them.
+
+### Three enforcement layers
+
+1. **`enforce-verified-claims.ts`** (`.opencode/plugin/`, `text.complete` hook) —
+   mechanically blocks ANY outgoing text containing done-words ("landed",
+   "committed", "pushed", "fixed", "passing", "shipped", "done", "complete",
+   "green", "resolved", "deployed", "verified", "passed", "working") unless the
+   SAME text carries machine-produced evidence (commit hash, `VERIFIED
+   <branch>@<sha>`, `CI GREEN|RED|PENDING`, `N passed`, `=== GATE: PASSED ===`,
+   `Collection OK`). Fail-open; `GLUDD_VERIFIED_CLAIMS_ENFORCE=0` disables.
+   Proof: `make test TESTFILE=tests/unit/test_verified_claims_plugin.py`.
+2. **`enforce-clean-tree.ts`** (`.opencode/plugin/`, `tool.execute.before` hook) —
+   DENIES task/agent/workflow dispatch when `git status --porcelain` is
+   non-empty. Uncommitted changes left by a prior subagent cause pre-commit hook
+   stash conflicts on the next push, forcing `-nv` (no-verify) bypasses that
+   defeat the lint/secret guards. Commit or stash before dispatching. Fail-open;
+   `GLUDD_CLEAN_TREE_ENFORCE=0` disables. Proof:
+   `make test TESTFILE=tests/unit/test_clean_tree_plugin.py`.
+3. **`agent-worktree` targets** (`make agent-worktree` / `agent-merge` /
+   `agent-cleanup` / `agent-worktree-list`) — give every file-editing subagent
+   its own isolated git checkout + branch, so concurrent edits cannot trample
+   the shared `master` tree. The structural prevention of shared-tree races
+   removes the "two agents edited the same file, one commit was lost" failure
+   mode that historically produced false "done" claims. Read-only research
+   tasks stay on the main checkout. Proof:
+   `make test TESTFILE=tests/unit/test_agent_worktree_targets.py`.
+
+### Forbidden patterns (each is a policy violation)
+
+- Saying "committed" without `make git-log` output showing the hash in the SAME response.
+- Saying "pushed" without `make verify-remote BRANCH=<b> SHA=<sha>` → `VERIFIED <branch>@<sha>` output.
+- Saying "CI green" without `make ci-verdict BRANCH=<b>` output (headSha == branch tip).
+- Saying "tests pass" without the test runner output including the pass count.
+- Using `-nv` / `--no-verify` (no-verify) or `GLUDD_FORCE_PUSH=1` WITHOUT
+  explicit, in-message user authorization for that specific invocation. These
+  flags bypass the lint/secret/gate guards; using them unprompted is the
+  2026-06-22 commit-bypass bug replayed.
+
+### Research basis
+
+These guardrails are not ad-hoc — they reflect empirically validated failure
+modes of autonomous coding agents documented in the literature:
+
+- **SWE-bench FAIL_TO_PASS**: the benchmark grades an agent on tests that must
+  flip from failing to passing; an agent that claims "fixed" without running
+  those tests scores zero. "Fixed" is operationally defined as a measurable
+  state transition, not an assertion. `enforce-verified-claims.ts` is the
+  in-session analogue: a claim is only true if its evidence is present.
+- **Chain-of-Verification (CoVe) independence principle**: verification must be
+  independent of generation — the same model that produced a claim cannot also
+  vouch for it without an external check. The requirement that the verification
+  OUTPUT (not the agent's memory) be pasted enforces this separation.
+- **Aider "dirty commits"**: Aider was found to commit unintended/stale
+  working-tree state when the tree was dirty, producing commits that did not
+  match the claimed change. `enforce-clean-tree.ts` makes this impossible at
+  dispatch time.
+- **Cline "shadow git"**: Cline's hidden git operations made changes that were
+  neither observable nor attributable, so "done" claims could not be audited.
+  The `agent-worktree` isolation + `verify-state` bundle make every change
+  observable and attributable.
+
+### Mandatory verification command
+
+**Before ANY status claim, run `make verify-state` and paste its output.** It
+is a read-only bundle of `git status` + `git log` + HEAD-vs-remote + CI verdict
+— the evidence an agent needs in one command. A response that claims
+done/landed/pushed/green without this output (or the specific per-claim command
+from the "Done Claims" table above) in the same message is a false claim and
+will be blocked by `enforce-verified-claims.ts`.
+
+Enforced by: this section (proactive), `.opencode/plugin/enforce-verified-claims.ts`
++ `.opencode/plugin/enforce-clean-tree.ts` + the `agent-worktree` Makefile
+targets, and `tests/unit/test_verified_claims_plugin.py` +
+`tests/unit/test_clean_tree_plugin.py` + `tests/unit/test_agent_worktree_targets.py`.
 
 ## Project Overview
 
@@ -1711,7 +1801,7 @@ The goal is a **continuous, pipelined** stream of subagent batches — not a saw
 ### Message-shape mechanical rule (HARD ENFORCEMENT)
 
 Every assistant response containing tool calls MUST satisfy ONE of:
-- **(a) Zero task/agent/workflow dispatches** — pure read/edit/bash, no subagent fan-out. Valid for: serial mutations to hot files (daemon.py, loop.py), git operations, single-file edits during a hot-file conflict.
+- **(a) Zero task/agent/workflow dispatches** — pure read/edit/bash, no subagent fan-out. Valid for: serial mutations to hot files (daemon.py, loop.py), git operations, single-file edits during a hot-file conflict. **At most 2 consecutive zero-dispatch responses.** The 3rd zero-dispatch response in a row MUST include a dispatch (task/agent/workflow) OR explicitly justify why dispatch is impossible (quota exhausted, rate-limited, waiting for blocker). A 4th consecutive zero-dispatch response is a hard policy violation regardless of justification. Enforced mechanically by the `_readStreak` counter in `.opencode/plugin/enforce-floor.ts` (advisory at >10 reads AND >60s since last dispatch; hard `permissionDecision:deny` at >20 reads AND >120s since last dispatch; reset to 0 on any dispatch) and the `MAINTHREAD_THRESHOLD` streak in `.opencode/plugin/enforce-delegate.ts` (default 4; the 5th consecutive non-dispatch call is hard-denied).
 - **(b) Five or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern. This is the steady-state.
 
 A response with 1–4 task dispatches is a **policy violation** when ≥3 known work items remain. The agent MUST either batch them into a ≥5-wide wave OR add read-only research/dispatch filler to reach 5.
