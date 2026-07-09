@@ -168,6 +168,7 @@ that ends on a completion claim carrying no evidence token and no honest hedge
 (`GLUDD_FALSE_DONE_ENFORCE=1`; proof: `make test-no-false-completion`). Mirrors
 Mechanical Contract rule 3 and "A Release is an Artifact, Not a Tag".
 Enforced in opencode by `.opencode/plugin/enforce-stop.ts` (false-done claim detection + stop-pattern block); mirrors `.claude/hooks/no_false_completion_stop.sh`.
+Additionally enforced by `.opencode/plugin/enforce-verified-claims.ts` (`text.complete` hook) — structurally blocks ANY outgoing text containing done-words ("landed", "committed", "pushed", "fixed", "passing", "shipped", "done", "complete", "green", "resolved", "deployed", "verified", "passed", "working") unless it also carries machine-produced evidence (commit hash, `VERIFIED <branch>@<sha>`, `CI GREEN|RED|PENDING`, `N passed`, `=== GATE: PASSED ===`, `Collection OK`). Fail-open; `GLUDD_VERIFIED_CLAIMS_ENFORCE=0` disables. Proof: `make test TESTFILE=tests/unit/test_verified_claims_plugin.py` (23 tests).
 
 ## No Unseen Events (observability invariant)
 
@@ -768,6 +769,7 @@ same guardrails as a Claude-only session. The port map:
 | `enforce-deadline.ts` | (deadline enforcement; no direct Claude hook equivalent) |
 | `enforce-deletion-gate.ts` | (file-deletion gate; no direct Claude hook equivalent) |
 | `enforce-no-suppressions.ts` | (lint-suppression comment block on edit/write; no direct Claude hook equivalent) |
+| `enforce-verified-claims.ts` | (done-words-without-evidence block on `text.complete`; complements `no_false_completion_stop.sh` at the text-emission surface) |
 | `watchdog.ts` | (background daemon watchdog; no direct Claude hook equivalent) |
 
 Both layers are registered and active by default. The env-var knobs are

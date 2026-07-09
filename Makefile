@@ -34,7 +34,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
-		feature-start feature-done test-and-commit preflight \
+ 		feature-start feature-done test-and-commit preflight \
+ 		agent-worktree agent-merge agent-cleanup agent-worktree-list \
  		git-commit-no-verify git-amend-msg \
  		_commit-lock-acquire ship-commit-files \
 		molecule-version molecule-test molecule-test-all \
