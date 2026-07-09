@@ -407,7 +407,27 @@ function _reportAlive(): void {
   } catch {}
 }
 
+// Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
+// fires. Fail-open. Distinct from the shared alive.json.
+function _writeHeartbeat(): void {
+  try {
+    const hb = JSON.stringify({ plugin: "enforce-stop", ts: Date.now(), pid: process.pid })
+    fs.writeFileSync("/tmp/gludd-plugin-heartbeat-enforce-stop.json", hb)
+  } catch { /* fail-open */ }
+}
+
 export default (async ({ }) => {
+  // LOADED self-check: proves opencode invoked the factory (registered, not
+  // merely present on disk). Appended to the shared log.
+  try {
+    fs.appendFileSync(
+      "/tmp/gludd-plugin-loaded.log",
+      `${new Date().toISOString()} LOADED enforce-stop ` +
+      `event+tool.execute.before+experimental.text.complete+experimental.chat.system.transform ` +
+      `pid=${process.pid}\n`,
+      "utf8",
+    )
+  } catch { /* fail-open */ }
   return {
     event: async ({ event }: { event: { type: string } }) => {
       if (event.type === "session.idle") {
@@ -459,6 +479,7 @@ export default (async ({ }) => {
 
     "tool.execute.before": async (input: any, output: any) => {
       _reportAlive()
+      _writeHeartbeat()
       try {
         // Increment tool counter — proves tool.execute.before fires
         try {

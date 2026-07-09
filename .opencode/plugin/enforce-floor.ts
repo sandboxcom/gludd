@@ -256,6 +256,19 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
 const MAX_STREAK = 0
 let _streakCount = 0
 
+// Read-grinding detection (2026-07-09 — multitasking audit P1 fix).
+// The old isReadTool() early-return exempted read/grep/glob from ALL streak
+// counters, so an agent could do 100 serial reads with zero dispatches and
+// no plugin caught it — the primary mechanical failure of the floor guard.
+// This SEPARATE counter tracks reads independently of the edit/write/bash
+// streak, with TIME-BASED detection so a legitimate investigation burst
+// (many reads in a few seconds, right after a dispatch) is NOT blocked.
+//   ADVISORY: >10 reads AND >60s since last dispatch -> console.warn
+//   DENY:     >20 reads AND >120s since last dispatch -> permissionDecision:deny
+// Reset to 0 on any dispatch (isDispatchTool branch below).
+let _readStreak = 0
+let _lastDispatchTs = Date.now()
+
 let _dispatchCount = 0
 let _dispatchPeak = 0
 let _resultProcessingGrace = 0
@@ -348,16 +361,42 @@ function _reportAlive(): void {
   } catch {}
 }
 
+// Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
+// fires (not just that the module was imported). Fail-open: a write failure
+// must never block the hook. Distinct from the shared alive.json so one
+// plugin's bad write cannot mask another's silence.
+function _writeHeartbeat(): void {
+  try {
+    const hb = JSON.stringify({ plugin: "enforce-floor", ts: Date.now(), pid: process.pid })
+    fs.writeFileSync("/tmp/gludd-plugin-heartbeat-enforce-floor.json", hb)
+  } catch { /* fail-open */ }
+}
+
 export default (async ({ }) => {
+  // LOADED self-check: proves opencode actually invoked the factory (i.e. the
+  // plugin is registered, not merely present on disk). Appended so all three
+  // plugins share the log file.
+  try {
+    fs.appendFileSync(
+      "/tmp/gludd-plugin-loaded.log",
+      `${new Date().toISOString()} LOADED enforce-floor ` +
+      `tool.execute.before+session.idle+experimental.text.complete ` +
+      `pid=${process.pid}\n`,
+      "utf8",
+    )
+  } catch { /* fail-open */ }
   return {
     "tool.execute.before": async (input: { tool?: string }, output: unknown) => {
       _reportAlive()
+      _writeHeartbeat()
       try {
         if (!FLOOR_ENFORCE) return
         const tool = (input?.tool ?? "") as string
 
         if (isDispatchTool(tool)) {
           _streakCount = 0
+          _readStreak = 0
+          _lastDispatchTs = Date.now()
           _dispatchCount++
           _thisMessageDispatchCount++
           _thisMessageTotalCalls++
@@ -370,6 +409,36 @@ export default (async ({ }) => {
 
         if (isReadTool(tool)) {
           _thisMessageTotalCalls++
+          _readStreak++
+          // Hard-deny: 20+ reads AND >120s since last dispatch — clear grinding.
+          // An agent doing 20+ serial reads over 2+ minutes without dispatching
+          // is grinding inline instead of delegating. Both conditions must hold
+          // (AND) so a legitimate fast investigation burst is never blocked.
+          if (_readStreak > 20 && (Date.now() - _lastDispatchTs) > 120_000) {
+            const sinceDispatchMs = Date.now() - _lastDispatchTs
+            return {
+              permissionDecision: "deny" as const,
+              message: [
+                "READ-GRINDING DETECTED — READ BLOCKED",
+                "",
+                `${_readStreak} consecutive reads with no dispatch, ${Math.round(sinceDispatchMs / 1000)}s since last dispatch.`,
+                "An agent doing 20+ serial reads over 2+ minutes without dispatching",
+                "is grinding inline instead of delegating. DISPATCH WORK.",
+                "",
+                "REQUIRED: Dispatch task/agent subagents on pending work.",
+                "Reads are for investigating BETWEEN dispatch waves, not replacing them.",
+              ].join("\n"),
+            }
+          }
+          // Advisory: 10+ reads AND >60s since last dispatch — warning nudge.
+          // Same AND logic: a short investigation burst must NOT trigger this.
+          if (_readStreak > 10 && (Date.now() - _lastDispatchTs) > 60_000) {
+            const sinceDispatchMs = Date.now() - _lastDispatchTs
+            console.warn(
+              `READ-GRINDING DETECTED: ${_readStreak} consecutive reads, ` +
+              `${Math.round(sinceDispatchMs / 1000)}s since last dispatch. DISPATCH WORK.`
+            )
+          }
           return
         }
 
@@ -544,6 +613,7 @@ export default (async ({ }) => {
       // last turn may still be running), but the grace window and refill
       // flag decay so a new turn doesn't inherit a stale pass.
       _resultProcessingGrace = 0
+      _readStreak = 0
       _updateRefillState()
       // Gap 2: message-shape tracking — reset per-message counters on idle
       _thisMessageDispatchCount = 0

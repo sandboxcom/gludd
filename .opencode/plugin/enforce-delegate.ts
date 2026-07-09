@@ -40,14 +40,38 @@ const FORCE_DELEGATE_STATE = process.env.GLUDD_FORCE_DELEGATE_STATE || "/tmp/glu
 // MAINTHREAD STREAK (2026-06-29 strengthening): consecutive main-thread mutating
 // tool calls with no intervening dispatch. After MAINTHREAD_THRESHOLD (default
 // 4) consecutive calls, the 5th is HARD-DENIED. Default ON; disable with
-// GLUDD_FORCE_DELEGATE=0 (same env var as the opt-in targeted force-delegate
-// gate, but inverted polarity: the streak blocker is default-on so inline
-// grinding is blocked even when the opt-in gate is off). State file is a
-// separate JSON file so the nothing-dropped plugin's frequency caps cannot
-// interfere.
-const MAINTHREAD_STREAK_ENABLED = process.env.GLUDD_FORCE_DELEGATE !== "0"
+// GLUDD_MAINTHREAD_STREAK_ENFORCE=0.
+//
+// P8 FIX (2026-07-09 — polarity trap): previously MAINTHREAD_STREAK_ENABLED was
+// wired to `GLUDD_FORCE_DELEGATE !== "0"` — the SAME env var that controls the
+// opt-in force-delegate gate (mechanism A, FORCE_DELEGATE_ENABLED above). But
+// the two mechanisms have OPPOSITE defaults:
+//   - mechanism A (force-delegate): opt-IN, default OFF (`=== "1"` enables)
+//   - mechanism B (mainthread streak): default ON (`!== "0"` keeps enabled)
+// Setting GLUDD_FORCE_DELEGATE=0 to disable mechanism A ALSO disabled mechanism
+// B — silently turning off the default enforcement. The fix splits them into
+// independent env vars so each polarity is correct on its own:
+//   - GLUDD_FORCE_DELEGATE          -> mechanism A (default "0" / opt-in)
+//   - GLUDD_MAINTHREAD_STREAK_ENFORCE -> mechanism B (default "1" / default-on)
+// State file is a separate JSON file so the nothing-dropped plugin's frequency
+// caps cannot interfere.
+const MAINTHREAD_STREAK_ENABLED = (process.env.GLUDD_MAINTHREAD_STREAK_ENFORCE || "1") !== "0"
 const MAINTHREAD_STREAK_FILE = process.env.GLUDD_MAINTHREAD_STREAK_FILE || "/tmp/gludd-mainthread-streak.json"
 const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || "4", 10)
+
+// READ-GRINDING detection (2026-07-09 — multitasking audit P1 fix).
+// Investigation tools (grep/glob/file-view) don't count toward the
+// edit/write/bash streak, but they DO count toward a SEPARATE counter with
+// time-based detection:
+//   ADVISORY: >10 calls AND >60s since last dispatch -> console.warn
+//   BLOCK:    >20 calls AND >120s since last dispatch -> throw (hard-deny)
+// This closes the hole where 100 serial investigation calls went undetected
+// because they were exempt from ALL streak counters.
+const READ_GRIND_FILE = process.env.GLUDD_READ_GRIND_FILE || "/tmp/gludd-read-grind.json"
+const READ_GRIND_ADVISORY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY_COUNT || "10", 10)
+const READ_GRIND_ADVISORY_MS = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY_MS || "60000", 10)
+const READ_GRIND_DENY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_DENY_COUNT || "20", 10)
+const READ_GRIND_DENY_MS = parseInt(process.env.GLUDD_READ_GRIND_DENY_MS || "120000", 10)
 
 const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
 const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1.0")
@@ -60,8 +84,32 @@ const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
 
 // Live-agent ground-truth probe (shared with enforce-floor.ts and the claude
 // shell hooks). Uses scripts/agent_liveness.py so all layers agree on the
-// live count. FAIL-OPEN: any error -> null (caller treats as "can't tell").
+// live count.
+//
+// PROBE FAILURE HANDLING (P2 fix, 2026-07-09): previously, ANY probe error
+// returned null and callers SKIPPED enforcement — a broken probe silently
+// disabled ALL floor enforcement. Now we track consecutive failures and
+// FAIL-CLOSED after PROBE_FAIL_THRESHOLD (default 3): the probe returns 0
+// instead of null, so callers treat the floor as unmet and enforcement fires.
+// A single transient failure still returns null (grace period); only a
+// SUSTAINED probe failure triggers fail-closed. The counter resets on any
+// successful probe. The threshold is logged loudly when breached.
+let _probeFailCount = 0
+const PROBE_FAIL_THRESHOLD = parseInt(process.env.GLUDD_PROBE_FAIL_THRESHOLD || "3", 10)
+
 function countLiveAgents(): number | null {
+  const recordFailure = (reason: string): number | null => {
+    _probeFailCount += 1
+    if (_probeFailCount >= PROBE_FAIL_THRESHOLD) {
+      console.warn(
+        `[enforce-delegate] countLiveAgents probe failed ${_probeFailCount}x ` +
+        `consecutively (${reason}) — FAIL-CLOSED: returning 0 so the floor ` +
+        `enforces. Reset occurs on the next successful probe.`,
+      )
+      return 0
+    }
+    return null
+  }
   try {
     const { execSync } = require("node:child_process")
     const out = execSync(
@@ -75,9 +123,13 @@ function countLiveAgents(): number | null {
       },
     )
     const n = parseInt(String(out).trim(), 10)
-    return Number.isNaN(n) ? null : n
-  } catch {
-    return null
+    if (Number.isNaN(n)) {
+      return recordFailure("non-integer stdout")
+    }
+    _probeFailCount = 0
+    return n
+  } catch (e) {
+    return recordFailure("exec threw: " + String(e).substring(0, 120))
   }
 }
 
@@ -501,10 +553,38 @@ function writeStreak(n: number): void {
   } catch { /* fail open */ }
 }
 
+// ---------------------------------------------------------------------------
+// Read-grind state helpers (separate from the edit-streak file above).
+// Tracks consecutive investigation-tool calls + the timestamp of the last
+// dispatch so time-based detection can distinguish a legitimate burst from
+// a grinding spree.
+// ---------------------------------------------------------------------------
+function loadReadGrindState(): { count: number; lastDispatchTs: number } {
+  try {
+    const obj = JSON.parse(fs.readFileSync(READ_GRIND_FILE, "utf8"))
+    return {
+      count: typeof obj.count === "number" ? obj.count : 0,
+      lastDispatchTs: typeof obj.lastDispatchTs === "number" ? obj.lastDispatchTs : Date.now(),
+    }
+  } catch {
+    return { count: 0, lastDispatchTs: Date.now() }
+  }
+}
+
+function saveReadGrindState(count: number, lastDispatchTs: number): void {
+  try {
+    const tmp = READ_GRIND_FILE + ".tmp"
+    fs.writeFileSync(tmp, JSON.stringify({ count, lastDispatchTs, ts: Date.now() }))
+    fs.renameSync(tmp, READ_GRIND_FILE)
+  } catch { /* fail open */ }
+}
+
+function isReadTool(tool: string): boolean {
+  return tool === "read" || tool === "grep" || tool === "glob"
+}
+
 function isMainthreadTool(tool: string): boolean {
-  // Mutation tools that should be blocked after threshold.
-  // Read-only tools (read, glob, grep) are ALWAYS allowed so the orchestrator
-  // can investigate before dispatching — only bash/edit/write are gated.
+  // Only mutation tools gated here — investigation tools tracked separately.
   return ["edit", "write", "bash"].includes(tool)
 }
 
@@ -515,6 +595,31 @@ function isDelegateTool(tool: string): boolean {
 function mainthreadBudgetBefore(tool: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
+
+    // Read-grind check (separate from the edit-streak below): investigation
+    // tools don't count toward the edit/write/bash streak, but they DO count
+    // toward a SEPARATE counter with time-based detection. Both conditions
+    // (count AND time) must hold — a legitimate fast burst is never blocked.
+    if (isReadTool(tool)) {
+      const rs = loadReadGrindState()
+      const sinceDispatchMs = Date.now() - rs.lastDispatchTs
+      if (rs.count > READ_GRIND_DENY_COUNT && sinceDispatchMs > READ_GRIND_DENY_MS) {
+        return [
+          `READ-GRINDING DETECTED: ${rs.count} consecutive investigation calls,`,
+          `${Math.round(sinceDispatchMs / 1000)}s since last dispatch.`,
+          `20+ serial calls over 2+ minutes without dispatching is grinding.`,
+          `DISPATCH WORK. A dispatch resets this counter.`,
+        ].join(" ")
+      }
+      if (rs.count > READ_GRIND_ADVISORY_COUNT && sinceDispatchMs > READ_GRIND_ADVISORY_MS) {
+        console.warn(
+          `READ-GRINDING: ${rs.count} calls, ` +
+          `${Math.round(sinceDispatchMs / 1000)}s since dispatch. DISPATCH WORK.`
+        )
+      }
+      return null
+    }
+
     if (!isMainthreadTool(tool)) return null
     const streak = readStreak()
     if (streak < MAINTHREAD_THRESHOLD) return null
@@ -544,7 +649,7 @@ function mainthreadBudgetBefore(tool: string): string | null {
       "== SPECIFIC DISPATCH COMMANDS ==",
       cmdDetail || "  (no TASKS.md/ratchet/gate items — dispatch research tasks)",
       "",
-      `Set GLUDD_FORCE_DELEGATE=0 to disable. (If subagent dispatch is blocked by a`,
+      `Set GLUDD_MAINTHREAD_STREAK_ENFORCE=0 to disable. (If subagent dispatch is blocked by a`,
       `rate-limit/quota, this is expected; resume delegating once it clears.)`,
     ].join("\n")
   } catch {
@@ -556,8 +661,14 @@ function mainthreadBudgetAfter(tool: string): void {
   try {
     if (isDelegateTool(tool)) {
       writeStreak(0)
+      // Reset the read-grind counter + update dispatch timestamp.
+      saveReadGrindState(0, Date.now())
     } else if (isMainthreadTool(tool)) {
       writeStreak(readStreak() + 1)
+    } else if (isReadTool(tool)) {
+      // Increment the read-grind counter; preserve the last dispatch timestamp.
+      const rs = loadReadGrindState()
+      saveReadGrindState(rs.count + 1, rs.lastDispatchTs)
     }
   } catch { /* fail open */ }
 }
@@ -574,10 +685,31 @@ function _reportAlive(): void {
   } catch {}
 }
 
+// Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
+// fires. Fail-open. Distinct from the shared alive.json.
+function _writeHeartbeat(): void {
+  try {
+    const hb = JSON.stringify({ plugin: "enforce-delegate", ts: Date.now(), pid: process.pid })
+    fs.writeFileSync("/tmp/gludd-plugin-heartbeat-enforce-delegate.json", hb)
+  } catch { /* fail-open */ }
+}
+
 export default (async ({ }) => {
+  // LOADED self-check: proves opencode invoked the factory (registered, not
+  // merely present on disk). Appended to the shared log.
+  try {
+    fs.appendFileSync(
+      "/tmp/gludd-plugin-loaded.log",
+      `${new Date().toISOString()} LOADED enforce-delegate ` +
+      `tool.execute.before+tool.execute.after ` +
+      `pid=${process.pid}\n`,
+      "utf8",
+    )
+  } catch { /* fail-open */ }
   return {
     "tool.execute.before": async (input, output) => {
       _reportAlive()
+      _writeHeartbeat()
       const tool = input.tool
       const args = output?.args
 

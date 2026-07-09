@@ -2700,6 +2700,15 @@ write-plugin-manifest:
 check-plugin-liveness:
 	@$(UV) run python3 scripts/check_plugin_liveness.py
 
+# --- Plugin heartbeat check — runtime evidence that the core enforcement
+# plugins (enforce-floor, enforce-delegate, enforce-stop) are ACTUALLY
+# executing their tool.execute.before hook, not merely registered. Reads
+# /tmp/gludd-plugin-heartbeat-<name>.json (freshness) + the LOADED log.
+# Exits 0 if all plugins fired within GLUDD_HEARTBEAT_STALE_SECS (default 60s),
+# 1 otherwise. Use after editing .ts files to confirm a restart is needed.
+check-plugin-heartbeats:
+	@$(UV) run python3 scripts/verify_plugin_liveness.py
+
 # --- Restart opencode for plugin changes to take effect ---
 # TypeScript plugin changes are compiled once at opencode startup — edits to
 # .opencode/plugin/*.ts do NOT take effect until opencode is restarted.
