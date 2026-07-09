@@ -329,8 +329,8 @@ let _streakCount = 0
 // This SEPARATE counter tracks reads independently of the edit/write/bash
 // streak, with TIME-BASED detection so a legitimate investigation burst
 // (many reads in a few seconds, right after a dispatch) is NOT blocked.
-//   ADVISORY: >10 reads AND >60s since last dispatch -> console.warn
-//   DENY:     >20 reads AND >120s since last dispatch -> permissionDecision:deny
+//   ADVISORY: >5 reads AND >30s since last dispatch -> console.warn
+//   DENY:     >10 reads AND >60s since last dispatch -> permissionDecision:deny
 // Reset to 0 on any dispatch (isDispatchTool branch below).
 let _readStreak = 0
 let _lastDispatchTs = Date.now()
@@ -482,11 +482,11 @@ export default (async ({ }) => {
         if (isReadTool(tool)) {
           _thisMessageTotalCalls++
           _readStreak++
-          // Hard-deny: 20+ reads AND >120s since last dispatch — clear grinding.
-          // An agent doing 20+ serial reads over 2+ minutes without dispatching
+          // Hard-deny: 10+ reads AND >60s since last dispatch — clear grinding.
+          // An agent doing 10+ serial reads over 1+ minute without dispatching
           // is grinding inline instead of delegating. Both conditions must hold
           // (AND) so a legitimate fast investigation burst is never blocked.
-          if (_readStreak > 20 && (Date.now() - _lastDispatchTs) > 120_000) {
+          if (_readStreak > 10 && (Date.now() - _lastDispatchTs) > 60_000) {
             const sinceDispatchMs = Date.now() - _lastDispatchTs
             return {
               permissionDecision: "deny" as const,
@@ -494,7 +494,7 @@ export default (async ({ }) => {
                 "READ-GRINDING DETECTED — READ BLOCKED",
                 "",
                 `${_readStreak} consecutive reads with no dispatch, ${Math.round(sinceDispatchMs / 1000)}s since last dispatch.`,
-                "An agent doing 20+ serial reads over 2+ minutes without dispatching",
+                "An agent doing 10+ serial reads over 1+ minute without dispatching",
                 "is grinding inline instead of delegating. DISPATCH WORK.",
                 "",
                 "REQUIRED: Dispatch task/agent subagents on pending work.",
@@ -502,9 +502,9 @@ export default (async ({ }) => {
               ].join("\n"),
             }
           }
-          // Advisory: 10+ reads AND >60s since last dispatch — warning nudge.
+          // Advisory: 5+ reads AND >30s since last dispatch — warning nudge.
           // Same AND logic: a short investigation burst must NOT trigger this.
-          if (_readStreak > 10 && (Date.now() - _lastDispatchTs) > 60_000) {
+          if (_readStreak > 5 && (Date.now() - _lastDispatchTs) > 30_000) {
             const sinceDispatchMs = Date.now() - _lastDispatchTs
             console.warn(
               `READ-GRINDING DETECTED: ${_readStreak} consecutive reads, ` +

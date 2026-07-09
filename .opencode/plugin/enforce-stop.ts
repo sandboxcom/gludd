@@ -728,17 +728,12 @@ export default (async ({ }) => {
               }
             }
             if (streakState.streak > DELEGATE_FIRST_THRESHOLD) {
-              return {
-                permissionDecision: "deny" as const,
-                message: [
-                  "⛔ DELEGATE-FIRST",
-                  `${streakState.streak} consecutive non-dispatch calls.`,
-                  "You are trending toward main-thread grinding.",
-                  "DISPATCH WORK via task/agent/workflow before continuing inline work.",
-                  "",
-                  `Streak breakdown: ${streakState.readStreak} reads, ${streakState.editStreak} edits/bash.`,
-                ].join("\n"),
-              }
+              console.warn(
+                `DELEGATE-FIRST: ${streakState.streak} consecutive non-dispatch calls. ` +
+                `You are trending toward main-thread grinding. ` +
+                `DISPATCH WORK via task/agent/workflow before continuing inline work. ` +
+                `Streak breakdown: ${streakState.readStreak} reads, ${streakState.editStreak} edits/bash.`
+              )
             }
           }
         }
@@ -836,6 +831,23 @@ export default (async ({ }) => {
 
         // BUG #12 fix: check disengaged state first — legitimate admin override
         if (isDisengaged()) return
+
+        // P3: DELEGATE-FIRST nag — when shared streak > 8, prepend a nag
+        // that survives subagent-report bypass and text-only blocks.
+        // Uses the shared streak file (written by enforce-floor.ts) so it
+        // catches grinding even when enforce-stop.ts's own tool.execute.before
+        // hasn't fired recently.
+        const shared = readSharedStreak()
+        if (shared.streak > DELEGATE_FIRST_THRESHOLD) {
+          output.text = [
+            `⛔ DELEGATE-FIRST — ${shared.streak} consecutive non-dispatch calls.`,
+            `Streak: ${shared.readStreak} reads, ${shared.editStreak} edits/bash.`,
+            `DISPATCH WORK via task/agent/workflow immediately.`,
+            "",
+            output.text,
+          ].join("\n")
+          return output
+        }
 
         // Check short completion claims (✅, "Done.") before the 60-char minimum
         if (text.trim().length < 60) {

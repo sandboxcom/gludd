@@ -8,8 +8,8 @@ no plugin would catch it — the primary mechanical failure of the floor guard.
 THE FIX: a SEPARATE read-streak counter with time-based detection. Reads
 don't count toward the edit/write/bash streak (they're legitimate during
 investigation), but they DO count toward a read-streak that:
-  - emits an ADVISORY after 10 reads + 60s since last dispatch
-  - HARD-DENIES after 20 reads + 120s since last dispatch
+  - emits an ADVISORY after 5 reads + 30s since last dispatch
+  - HARD-DENIES after 10 reads + 60s since last dispatch
   - resets to 0 on any dispatch
 
 These tests are STRUCTURAL (we cannot execute TypeScript from Python). They
@@ -111,27 +111,27 @@ class TestEnforceFloorReadStreakCounter:
 
 
 class TestEnforceFloorReadGrindingAdvisoryThreshold:
-    """At >10 reads AND >60s since last dispatch, an ADVISORY must fire."""
+    """At >5 reads AND >30s since last dispatch, an ADVISORY must fire."""
 
     def test_advisory_threshold_constants_exist(self):
         src = _floor_src()
-        # The advisory threshold is 10 reads; the time threshold is 60s.
-        # Accept named constants OR inline literals (60000 ms OR 60 seconds).
-        assert re.search(r"READ_GRIND_ADVISORY_COUNT|readStreak\s*>\s*10", src) or \
-               re.search(r"READ_GRIND.*?COUNT.*?=\s*10", src, re.DOTALL) or \
-               re.search(r"\b10\b.*?read", src.lower()), (
-            "Advisory read-count threshold (10) not found — the advisory must "
-            "fire after 10+ reads"
+        # The advisory threshold is 5 reads; the time threshold is 30s.
+        # Accept named constants OR inline literals.
+        assert re.search(r"READ_GRIND_ADVISORY_COUNT|readStreak\s*>\s*5", src) or \
+               re.search(r"READ_GRIND.*?COUNT.*?=\s*5", src, re.DOTALL) or \
+               re.search(r"\b5\b.*?read", src.lower()), (
+            "Advisory read-count threshold (5) not found — the advisory must "
+            "fire after 5+ reads"
         )
 
-    def test_advisory_time_threshold_60s(self):
+    def test_advisory_time_threshold_30s(self):
         src = _floor_src()
-        # 60s = 60000 ms. Accept either form OR a named constant referencing 60.
-        assert ("60_000" in src or "60000" in src or
-                re.search(r"READ_GRIND_ADVISORY_MS.*?=\s*60", src, re.DOTALL) or
-                re.search(r"60\s*\*\s*1000", src)), (
-            "Advisory time threshold (60s / 60000ms) not found — the advisory "
-            "must only fire after >60s since the last dispatch"
+        # 30s = 30000 ms. Accept either form OR a named constant referencing 30.
+        assert ("30_000" in src or "30000" in src or
+                re.search(r"READ_GRIND_ADVISORY_MS.*?=\s*30", src, re.DOTALL) or
+                re.search(r"30\s*\*\s*1000", src)), (
+            "Advisory time threshold (30s / 30000ms) not found — the advisory "
+            "must only fire after >30s since the last dispatch"
         )
 
     def test_advisory_message_text_present(self):
@@ -153,7 +153,7 @@ class TestEnforceFloorReadGrindingAdvisoryThreshold:
         # The advisory branch must reference console.warn OR return a message
         # object (not just `return` with no side effect).
         # Find any block that mentions READ-GRIND.
-        m = re.search(r"if\s*\(\s*_readStreak\s*>\s*20\s*&&.*", src, re.DOTALL)
+        m = re.search(r"if\s*\(\s*_readStreak\s*>\s*10\s*&&.*", src, re.DOTALL)
         assert m, "READ-GRIND advisory block not found"
         block = m.group(0)
         assert "console.warn" in block or "console.error" in block or \
@@ -164,24 +164,24 @@ class TestEnforceFloorReadGrindingAdvisoryThreshold:
 
 
 class TestEnforceFloorReadGrindingDenyThreshold:
-    """At >20 reads AND >120s since last dispatch, the read MUST be DENIED."""
+    """At >10 reads AND >60s since last dispatch, the read MUST be DENIED."""
 
-    def test_deny_threshold_20_reads(self):
+    def test_deny_threshold_10_reads(self):
         src = _floor_src()
-        assert re.search(r"READ_GRIND_DENY_COUNT|readStreak\s*>\s*20", src) or \
-               re.search(r"READ_GRIND.*?DENY.*?COUNT.*?=\s*20", src, re.DOTALL) or \
-               re.search(r"\b20\b.*?read", src.lower()), (
-            "Deny read-count threshold (20) not found — the hard deny must "
-            "fire after 20+ reads"
+        assert re.search(r"READ_GRIND_DENY_COUNT|readStreak\s*>\s*10", src) or \
+               re.search(r"READ_GRIND.*?DENY.*?COUNT.*?=\s*10", src, re.DOTALL) or \
+               re.search(r"\b10\b.*?read", src.lower()), (
+            "Deny read-count threshold (10) not found — the hard deny must "
+            "fire after 10+ reads"
         )
 
-    def test_deny_time_threshold_120s(self):
+    def test_deny_time_threshold_60s(self):
         src = _floor_src()
-        assert ("120_000" in src or "120000" in src or
-                re.search(r"READ_GRIND_DENY_MS.*?=\s*120", src, re.DOTALL) or
-                re.search(r"120\s*\*\s*1000", src)), (
-            "Deny time threshold (120s / 120000ms) not found — the hard deny "
-            "must only fire after >120s since the last dispatch"
+        assert ("60_000" in src or "60000" in src or
+                re.search(r"READ_GRIND_DENY_MS.*?=\s*60", src, re.DOTALL) or
+                re.search(r"60\s*\*\s*1000", src)), (
+            "Deny time threshold (60s / 60000ms) not found — the hard deny "
+            "must only fire after >60s since the last dispatch"
         )
 
     def test_deny_returns_permission_decision_deny(self):
@@ -216,17 +216,17 @@ class TestEnforceFloorReadGrindingTimeGate:
 
     def test_advisory_requires_both_count_and_time(self):
         """The advisory must AND the count and time conditions — NOT OR. A
-        short investigation burst (10 reads in 10s) must NOT fire."""
+        short investigation burst (5 reads in 10s) must NOT fire."""
         src = _floor_src()
         # Find the advisory threshold check. It must combine both conditions
         # with && (AND), not || (OR).
-        # Look for a pattern like: readStreak > 10 && (now - _lastDispatchTs) > 60000
+        # Look for a pattern like: readStreak > 5 && (now - _lastDispatchTs) > 30000
         m = re.search(
-            r"readStreak\s*>\s*10\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs",
+            r"readStreak\s*>\s*5\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs",
             src,
         )
         assert m, (
-            "Advisory must AND the count (>10) and time (>60s) conditions with "
+            "Advisory must AND the count (>5) and time (>30s) conditions with "
             "&& — OR would fire on a legitimate fast investigation burst"
         )
 
@@ -234,11 +234,11 @@ class TestEnforceFloorReadGrindingTimeGate:
         """The deny must AND the count and time conditions — NOT OR."""
         src = _floor_src()
         m = re.search(
-            r"readStreak\s*>\s*20\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs",
+            r"readStreak\s*>\s*10\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs",
             src,
         )
         assert m, (
-            "Deny must AND the count (>20) and time (>120s) conditions with "
+            "Deny must AND the count (>10) and time (>60s) conditions with "
             "&& — OR would deny a legitimate fast investigation burst"
         )
 

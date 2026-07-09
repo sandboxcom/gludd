@@ -63,15 +63,15 @@ const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || 
 // Investigation tools (grep/glob/file-view) don't count toward the
 // edit/write/bash streak, but they DO count toward a SEPARATE counter with
 // time-based detection:
-//   ADVISORY: >10 calls AND >60s since last dispatch -> console.warn
-//   BLOCK:    >20 calls AND >120s since last dispatch -> throw (hard-deny)
+//   ADVISORY: >5 calls AND >30s since last dispatch -> console.warn
+//   BLOCK:    >10 calls AND >60s since last dispatch -> throw (hard-deny)
 // This closes the hole where 100 serial investigation calls went undetected
 // because they were exempt from ALL streak counters.
 const READ_GRIND_FILE = process.env.GLUDD_READ_GRIND_FILE || "/tmp/gludd-read-grind.json"
-const READ_GRIND_ADVISORY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY_COUNT || "10", 10)
-const READ_GRIND_ADVISORY_MS = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY_MS || "60000", 10)
-const READ_GRIND_DENY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_DENY_COUNT || "20", 10)
-const READ_GRIND_DENY_MS = parseInt(process.env.GLUDD_READ_GRIND_DENY_MS || "120000", 10)
+const READ_GRIND_ADVISORY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY_COUNT || "5", 10)
+const READ_GRIND_ADVISORY_MS = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY_MS || "30000", 10)
+const READ_GRIND_DENY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_DENY_COUNT || "10", 10)
+const READ_GRIND_DENY_MS = parseInt(process.env.GLUDD_READ_GRIND_DENY_MS || "60000", 10)
 
 const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
 const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1.0")
@@ -607,7 +607,7 @@ function mainthreadBudgetBefore(tool: string): string | null {
         return [
           `READ-GRINDING DETECTED: ${rs.count} consecutive investigation calls,`,
           `${Math.round(sinceDispatchMs / 1000)}s since last dispatch.`,
-          `20+ serial calls over 2+ minutes without dispatching is grinding.`,
+          `10+ serial calls over 1+ minute without dispatching is grinding.`,
           `DISPATCH WORK. A dispatch resets this counter.`,
         ].join(" ")
       }
