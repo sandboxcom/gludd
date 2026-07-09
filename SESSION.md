@@ -5,14 +5,16 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-09 — Session 19 continued (Waves 16-17). HEAD `9b61065f` (+10 past `b4bd6c93`, +20 total from `ca44fa0a`). Multitasking audit + enforcement hardening complete (P0-P8: heartbeat verification, fail-closed liveness, message-shape loophole closure, false-done detection hardening, FORCE_DELEGATE polarity split). Anti-lying guardrail trilogy landed: enforce-verified-claims (`71b8edce`), enforce-clean-tree (`ae9861f3`), verify-state (`9f55812d`). Agent-worktree isolation targets codified (`416b6285`). Presentation SVG diagrams + pages.yml verified deploy landed (`b4bd6c93`-`19dd629b`). Gate unblocked with env-writes/stale-assertion/plugin-count fixes (`9b61065f`). CI pending; commit batcher in flight.
+- 2026-07-09 — Session 19 final. CI gate PASSED (3.11+3.12 green). Push `2d1775f7` VERIFIED. OpenShell P0-P3 security transfers landed. enforce-multitask plugin (30 tests) pushed. 10 test suite fixes landed. Beta.2 ready to ship once CI fully green.
 
 ## Current Work
 
-- **HEAD: `9b61065f`** on master (+10 past `b4bd6c93`, +20 total from `ca44fa0a`). Working tree state per `make git-status`.
-- **CI: PENDING** — NOT polling (per CI cooldown guardrail + no-CI-poll-blocking rule). `make ci-verdict-safe` enforces 10min cooldown. Gate unblocked at `9b61065f` (env-writes violation, stale assertion, plugin-count drift fixed). Commit batcher in flight.
-- **beta.2 READY TO SHIP** once CI green — version bumped in code, tag NOT cut. Blocked on CI green + `make release-cut` + `make verify-release-artifact TAG=v0.1.0-beta.2`.
-- **Multitasking audit + enforcement hardening COMPLETE** — P0-P8 addressed in 5 commits: heartbeat verification on enforce-floor/delegate/stop (`e2d211de` P0), fail-closed countLiveAgents + FORCE_DELEGATE polarity split (`44e25984` P2+P8, 111 tests), message-shape loophole closure capping zero-dispatch at 2 (`3aaddc89` P4+P6), false-done markdown-table bypass removed + stop-pattern phrases (`efd9a557` P5). Gate-blocking test fixes (`9b61065f`).
+- **HEAD: `2d1775f7`** on master. CI gate PASSED (3.11 + 3.12 green). Push `2d1775f7` VERIFIED on sandboxcom/master. beta.2 release-cut READY.
+- **CI: PASSED** — 3.11 + 3.12 both green on the gate. beta.2 release-cut ready; final full-green confirmation to be checked at next natural break before `make release-cut`.
+- **beta.2 READY TO SHIP** once CI fully green — version bumped in code, tag NOT cut. `make release-cut TAG='v0.1.0-beta.2' MSG='...'` + `make verify-release-artifact TAG=v0.1.0-beta.2`.
+- **OpenShell P0-P3 security transfers LANDED** — audited + implemented (`d29a2dc2` cites actual commit hashes; `48141896` batch commit of P0-P3 enforcement fixes).
+- **enforce-multitask plugin LANDED** — requires 10+ parallel dispatches per wave preventing main-thread grinding (`95d851fd`, 30 tests). P1 read-grinding exemption closed + P3 DELEGATE-FIRST nag (`60e95635`).
+- **10 test suite fixes LANDED** — gate-lite failures (caplog→mock, env-var isolation, engine expectations `2d1775f7`), detect-secrets false-positive pragmas (`a99b3505`, `893ca9a7`), end-of-file-fixer trailing newlines (`f517d30d`, `21873277`).
 - **Anti-lying guardrail trilogy COMPLETE** — enforce-verified-claims blocks done-words without machine evidence (`71b8edce`), enforce-clean-tree denies dispatch on dirty git tree (`ae9861f3`), verify-state command for consolidated pre-claim verification (`9f55812d`). AGENTS.md section codified covering SWE-bench FAIL_TO_PASS, CoVe independence, Aider dirty commits, Cline shadow git research basis.
 - **Agent-worktree isolation** — per-subagent git worktree targets: agent-worktree/agent-merge/agent-cleanup/agent-worktree-list (`416b6285`). Prevents shared-tree edit races structurally.
 - **Presentation codified + deployed** — build_presentation ansible role (`81bfea53`), SVG architecture event-loop + security-layers Mermaid diagrams (`19dd629b`), revealjs-presentation opencode skill (`0f08af4b`), pages.yml builds before deploy verified (`b4bd6c93`).
@@ -84,6 +86,16 @@
 
 | Hash | Message |
 |------|---------|
+| `2d1775f7` | test: fix gate-lite test failures — caplog→mock, env-var isolation, engine test expectations |
+| `d29a2dc2` | docs(tasks): cite actual commit hash for OpenShell P0-P3 transfers |
+| `95d851fd` | guardrail(multitask): enforce-multitask plugin requiring 10+ parallel dispatches per wave preventing main-thread grinding |
+| `60e95635` | fix(plugins): P1 close read-grinding exemption with tightened thresholds (5/30 warn, 10/60 deny) and P3 DELEGATE-FIRST text.complete nag replacing tool-call deny at streak >8 |
+| `21873277` | fix(test): trailing newline for end-of-file-fixer |
+| `f517d30d` | fix(test): add trailing newline to stop_pattern_phrases test for end-of-file-fixer |
+| `893ca9a7` | fix(test): mark remaining detect-secrets false positives with pragma allowlist secret |
+| `a99b3505` | fix(test): mark detect-secrets false positives with pragma allowlist secret in credential proxy and audit test fixtures |
+| `48141896` | chore: batch commit all pending work OpenShell P0-P3 security enforcement fixes A3 A4 pages.yml Mermaid URL and TASKS staleness |
+| `464549b1` | docs: update SESSION.md with OpenShell security transfers multitasking audit enforcement fixes and presentation state |
 | `9b61065f` | fix(tests): env-writes violation, stale assertion, and plugin-count drift to unblock gate |
 | `efd9a557` | fix(plugin): remove markdown-table bypass from false-done detection plus add missing stop-pattern phrases P5 |
 | `44e25984` | fix(plugins): P2 fail-closed countLiveAgents after 3 probe failures + P8 split GLUDD_FORCE_DELEGATE polarity trap (111 tests pass) |
@@ -187,8 +199,9 @@
 
 ## Known Gaps
 
-1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `9b61065f`; CI PENDING. Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-2. **CI green NOT yet confirmed** — CI PENDING for current HEAD. Gate unblocked at `9b61065f` (env-writes + stale assertion + plugin-count fixes). Commit batcher in flight.
+1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `2d1775f7`; CI gate PASSED (3.11+3.12 green). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+2. **CI fully green** — gate PASSED on 3.11 + 3.12. Push `2d1775f7` VERIFIED. Confirm full-green (all jobs) at next natural break before release-cut.
+3. **Restart opencode needed** — to activate the new enforce-multitask plugin + P1/P3 read-grinding fixes in-session (committed; session runs stale plugin code).
 3. **Presentation deployed + pages.yml verified** — RESOLVED. SVG diagrams + build_presentation role + revealjs-presentation skill landed (`b4bd6c93`-`0f08af4b`). pages.yml builds before deploy verified.
 4. **Multitasking audit P0-P8** — RESOLVED. All 8 enforcement hardening items addressed (`e2d211de`-`9b61065f`).
 5. **Anti-lying guardrail trilogy** — RESOLVED. enforce-verified-claims (`71b8edce`) + enforce-clean-tree (`ae9861f3`) + verify-state (`9f55812d`) landed.
@@ -204,15 +217,10 @@
 
 ## Next Steps
 
-1. [~] **Wait for CI green (no polling)** — cooldown-enforced via `make ci-verdict-safe`. Will surface at next natural break.
-2. [ ] **Ship v0.1.0-beta.2** — BLOCKED on CI green. Once green: `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'`. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
-3. [x] **Multitasking audit P0-P8** — DONE. Heartbeat verification (P0), fail-closed liveness (P2), message-shape loophole (P4+P6), false-done hardening (P5), FORCE_DELEGATE polarity (P8). 111 tests pass.
-4. [x] **Anti-lying guardrail trilogy** — DONE. enforce-verified-claims + enforce-clean-tree + verify-state landed. AGENTS.md section with research basis codified.
-5. [x] **Presentation Mermaid fix + pages.yml verified** — DONE. SVG diagrams + build_presentation role + pages.yml deploy verified.
-6. [x] **Agent-worktree isolation** — DONE. agent-worktree/agent-merge/agent-cleanup targets landed.
-7. [x] **Gate unblocked** — DONE. env-writes violation, stale assertion, plugin-count drift fixed (`9b61065f`).
-8. [ ] **Phase F docs** — not yet started.
-9. [ ] **Restart opencode** to activate all 10/10 plugin liveness probes in-session (probes are committed; session runs stale code).
+1. [~] **Check CI at natural break** — gate PASSED (3.11+3.12); confirm all jobs fully green via `make ci-verdict-safe`.
+2. [ ] **Ship v0.1.0-beta.2** — READY once CI fully green: `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'`. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
+3. [ ] **Restart opencode** to activate the enforce-multitask plugin + P1/P3 read-grinding fixes in-session (committed; session runs stale code).
+4. [ ] **Phase F docs** — not yet started.
 
 ## Current Gate Status (2026-07-09)
 <!-- gate:begin -->
