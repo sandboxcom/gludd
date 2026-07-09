@@ -50,7 +50,7 @@ class TestCredentialAccessAudit:
         event = events[0]
         assert event.event_type == "credential_access"
         assert event.module == "community.hashi_vault.vault_read"
-        assert event.detail["secret_name"] == "secret/data/aws"
+        assert event.detail["secret_name"] == "secret/data/aws"  # pragma: allowlist secret
 
 
 class TestPathWriteBlockedAudit:

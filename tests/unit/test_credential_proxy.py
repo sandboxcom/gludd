@@ -421,7 +421,7 @@ class TestAuditEvents:
         events = audit.flush()
         assert len(events) == 1
         assert events[0].event_type == "credential_access"
-        assert events[0].detail["secret_name"] == "Authorization"
+        assert events[0].detail["secret_name"] == "Authorization"  # pragma: allowlist secret
         assert events[0].module == "uri"
 
     def test_audit_emits_credential_access_on_inject(self) -> None:
@@ -507,7 +507,7 @@ class TestAnsibleValidity:
                 "Authorization": "Bearer sk-abc123",
                 "Content-Type": "application/json",
             },
-            "body": {"model": "gpt-4", "api_key": "sk-abc123", "messages": []},
+            "body": {"model": "gpt-4", "api_key": "sk-abc123", "messages": []},  # pragma: allowlist secret
             "status_code": [200],
         }
         result = proxy.scan_and_strip(task)
