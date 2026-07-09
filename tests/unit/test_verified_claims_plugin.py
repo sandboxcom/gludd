@@ -20,8 +20,6 @@ import json
 import re
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-verified-claims.ts"
 OPENCODE_JSON = ROOT / "opencode.json"
@@ -91,10 +89,7 @@ def _has_done_word(text: str, done_words: list[str], not_done_phrases: list[str]
     # completion claim, so "working" should not count as a done word there.
     for phrase in not_done_phrases:
         lower = re.sub(phrase, " ", lower, flags=re.IGNORECASE)
-    for w in done_words:
-        if re.search(rf"\b{re.escape(w)}\b", lower):
-            return True
-    return False
+    return any(re.search(rf"\b{re.escape(w)}\b", lower) for w in done_words)
 
 
 def _has_evidence(text: str, patterns: list[str]) -> bool:

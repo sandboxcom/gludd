@@ -15,8 +15,6 @@ import re
 import subprocess
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-clean-tree.ts"
 MAKEFILE_PATH = ROOT / "Makefile"
@@ -60,7 +58,7 @@ def _is_tree_dirty(cwd: Path) -> bool:
 def _count_dirty_files(status: str) -> int:
     if not status.strip():
         return 0
-    return len([l for l in status.strip().split("\n") if l.strip()])
+    return len([line for line in status.strip().split("\n") if line.strip()])
 
 
 def _build_deny_message(count: int) -> str:
