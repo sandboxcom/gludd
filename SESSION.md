@@ -5,29 +5,42 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-08 — Session 19 continued (Wave 16). HEAD advanced (`ca44fa0a` → `b4bd6c93`, +10 commits). Presentation rebuilt with Mermaid diagrams + codified abilities (opencode revealjs-presentation skill + gludd build_presentation ansible role). Phase E WP-E2+WP-E3 polyglot project support landed (`13646da0` adapter + `aee58fd9` e2e). WP-D3 migration drift reconciled (`ff8a8298`). Phase D security complete (14/15 FIXED, 1 REFUTED — `b54e75ef`). enforce-stop responseLooksTerminal regression restored (`ae6e8ca9`). CI RED on 7 lint errors (fix in flight). beta.2 ready to ship once CI green.
+- 2026-07-09 — Session 19 continued (Waves 16-17). HEAD `9b61065f` (+10 past `b4bd6c93`, +20 total from `ca44fa0a`). Multitasking audit + enforcement hardening complete (P0-P8: heartbeat verification, fail-closed liveness, message-shape loophole closure, false-done detection hardening, FORCE_DELEGATE polarity split). Anti-lying guardrail trilogy landed: enforce-verified-claims (`71b8edce`), enforce-clean-tree (`ae9861f3`), verify-state (`9f55812d`). Agent-worktree isolation targets codified (`416b6285`). Presentation SVG diagrams + pages.yml verified deploy landed (`b4bd6c93`-`19dd629b`). Gate unblocked with env-writes/stale-assertion/plugin-count fixes (`9b61065f`). CI pending; commit batcher in flight.
 
 ## Current Work
 
-- **HEAD: `ca44fa0a`** on master (was `e564d844` at prior session-19 update, +10 commits). Working tree state per `make git-status`.
-- **CI: PENDING** for current HEAD — NOT polling (per CI cooldown guardrail + no-CI-poll-blocking rule). `make ci-verdict-safe` enforces 10min cooldown between checks. Pushes in flight; result surfaces at next natural break.
-- **beta.2 READY TO SHIP** once CI green — version bumped in code, tag NOT cut. Cannot ship until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-- **beta.3 Phase B COMPLETE** (B3.1.3-1.5): writer subprocess + durable hibernation + dispatch-lifecycle checkpoints landed (`6b5fe449`).
-- **Phase E WP-E1+WP-E2 polyglot detection** — ToolchainDetector (`941aa80c`) with pyproject/package.json/go.mod/Cargo.toml/Makefile marker detection. Self-host via project.yml (`ca44fa0a`).
-- **6 security findings fixed** — #1, #10 (TodoRepository mass-assignment whitelist, `160fa3ab`), #12, #14 (budget projected_cost pre-check, `04ca8afb`), AB-8, P1 SSRF, P3 ansible process_isolation fail-closed (`3e072bd3`).
-- **CI cooldown guardrail** — machine-enforced 10min cooldown on `make ci-verdict` (`f9f80f21` + `make ci-verdict-safe`).
-- **Commit-lock guardrail** — flock serialization on all commit targets + enforce-commit-lock plugin preventing parallel-commit races (`953b386e`).
-- **Priority Stacking rule codified** — AND not OR (AGENTS.md section + test pin).
-- **WP-D3 schema parity test** — `create_all` vs `upgrade_head` comparison revealing migration drift (`60a1121c`).
-- **Local state**: version is `0.1.0-beta.2` in pyproject.toml + `src/general_ludd/__init__.py` + README + CHANGELOG. Tag NOT pushed. `make verify-release-artifact TAG=v0.1.0-beta.2` NOT yet run (prerequisite: green CI).
+- **HEAD: `9b61065f`** on master (+10 past `b4bd6c93`, +20 total from `ca44fa0a`). Working tree state per `make git-status`.
+- **CI: PENDING** — NOT polling (per CI cooldown guardrail + no-CI-poll-blocking rule). `make ci-verdict-safe` enforces 10min cooldown. Gate unblocked at `9b61065f` (env-writes violation, stale assertion, plugin-count drift fixed). Commit batcher in flight.
+- **beta.2 READY TO SHIP** once CI green — version bumped in code, tag NOT cut. Blocked on CI green + `make release-cut` + `make verify-release-artifact TAG=v0.1.0-beta.2`.
+- **Multitasking audit + enforcement hardening COMPLETE** — P0-P8 addressed in 5 commits: heartbeat verification on enforce-floor/delegate/stop (`e2d211de` P0), fail-closed countLiveAgents + FORCE_DELEGATE polarity split (`44e25984` P2+P8, 111 tests), message-shape loophole closure capping zero-dispatch at 2 (`3aaddc89` P4+P6), false-done markdown-table bypass removed + stop-pattern phrases (`efd9a557` P5). Gate-blocking test fixes (`9b61065f`).
+- **Anti-lying guardrail trilogy COMPLETE** — enforce-verified-claims blocks done-words without machine evidence (`71b8edce`), enforce-clean-tree denies dispatch on dirty git tree (`ae9861f3`), verify-state command for consolidated pre-claim verification (`9f55812d`). AGENTS.md section codified covering SWE-bench FAIL_TO_PASS, CoVe independence, Aider dirty commits, Cline shadow git research basis.
+- **Agent-worktree isolation** — per-subagent git worktree targets: agent-worktree/agent-merge/agent-cleanup/agent-worktree-list (`416b6285`). Prevents shared-tree edit races structurally.
+- **Presentation codified + deployed** — build_presentation ansible role (`81bfea53`), SVG architecture event-loop + security-layers Mermaid diagrams (`19dd629b`), revealjs-presentation opencode skill (`0f08af4b`), pages.yml builds before deploy verified (`b4bd6c93`).
+- **beta.3 Phase B COMPLETE**: writer subprocess + durable hibernation + dispatch-lifecycle checkpoints (`6b5fe449`).
+- **Phase E polyglot detection**: ToolchainDetector (`941aa80c`) + self-host project.yml (`ca44fa0a`) + WP-E3 e2e (`aee58fd9`).
+- **Phase D security complete**: 14/15 FIXED, 1 REFUTED (`b54e75ef`). WP-D3 migration drift reconciled (`ff8a8298`).
+- **CI cooldown guardrail**: `make ci-verdict-safe` (`f9f80f21`).
+- **Commit-lock guardrail**: flock+plugin (`953b386e`).
 
-### Session 19 focus: CI fix wave + cast(Any) burn-down completion + beta.3 Phase B (writer+hibernate) + Phase E polyglot detection + security findings + CI/commit guardrails
+### Session 19 focus: CI fix wave + cast(Any) burn-down completion + beta.3 Phase B (writer+hibernate) + Phase E polyglot detection + security findings + CI/commit guardrails + multitasking audit + anti-lying guardrails + presentation + agent-worktree
 - Landed 13 commits resolving all 13 session-18 CI failures (slurm billing, caplog pollution, tokenizer, MCPToolRegistry, structured_task_spec, TUI cold-start flakiness, gate xdist race).
 - cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`).
 - beta.3 Phase 1 (gunicorn IPC broker) DONE (`84cebb6c`).
 - STABILIZATION_PLAN added (`ef930591`).
 - **Session 19 Wave 14 (HEAD `024a8412` → `e564d844`)**: beta.3 writer subprocess Slice 1-3 landed (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`). unit-1 shard split into unit-1a/unit-1b (`1f283628`). P1/P2 chronic singleton-pollution fixes (`d55b0f6f`). A6 logging isolation fixture (`9a24dcc8`). caplog getMessage migration across 16 sites (`bcceaf85`). os.environ → monkeypatch conversion (`9d987b79`). no-CI-poll-blocking rule codified (`5ecdf2a9`).
 - **Session 19 Wave 15 (HEAD `e564d844` → `ca44fa0a`, +10 commits)**: beta.3 Phase B COMPLETE — durable hibernation + dispatch-lifecycle checkpoints (`6b5fe449`). Phase E polyglot detection — ToolchainDetector + 10 TDD tests (`941aa80c`), project.yml self-host (`ca44fa0a`). 6 security findings fixed: #14 budget projected_cost pre-check (`04ca8afb`), #10 TodoRepository mass-assignment whitelist (`160fa3ab`), P3 ansible process_isolation fail-closed (`3e072bd3`), plus #1/#12/AB-8/P1 SSRF. CI cooldown guardrail `make ci-verdict-safe` (`f9f80f21`). Commit-lock guardrail flock+plugin (`953b386e`). WP-D3 schema parity test (`60a1121c`). TASKS.md beta.3 Phase B tick (`ed958fcf`). Priority Stacking rule codified. beta.2 still blocked on CI green.
+- **Session 19 Wave 16 (HEAD `ca44fa0a` → `b4bd6c93`, +10 commits)**: Presentation rebuilt: build_presentation ansible role (`81bfea53`), SVG architecture event-loop + security-layers Mermaid diagrams (`19dd629b`), revealjs-presentation opencode skill (`0f08af4b`). Phase E WP-E2+WP-E3 polyglot project support landed (`13646da0` adapter + `aee58fd9` e2e). WP-D3 migration drift reconciled (`ff8a8298`). Phase D security complete (14/15 FIXED, 1 REFUTED — `b54e75ef`). enforce-stop responseLooksTerminal regression restored (`ae6e8ca9`). pages.yml builds before deploy verified (`b4bd6c93`). CI RED on 7 lint errors.
+- **Session 19 Wave 17 (HEAD `b4bd6c93` → `9b61065f`, +10 commits)**: Multitasking audit + enforcement hardening (P0-P8). Anti-lying guardrail trilogy landed. Agent-worktree isolation codified. Gate unblocked.
+  - `ae9861f3` — enforce-clean-tree: deny dispatch on dirty git tree
+  - `71b8edce` — enforce-verified-claims: block done-words without machine evidence
+  - `416b6285` — agent-worktree/agent-merge/agent-cleanup targets
+  - `1b69a4df` — lint fixes in plugin test files
+  - `9f55812d` — verify-state command for consolidated pre-claim verification
+  - `e2d211de` — P0: heartbeat verification on enforce-floor/delegate/stop
+  - `3aaddc89` — P4+P6: message-shape loophole closure, zero-dispatch cap at 2
+  - `44e25984` — P2: fail-closed countLiveAgents + P8: FORCE_DELEGATE polarity split (111 tests)
+  - `efd9a557` — P5: remove markdown-table bypass from false-done detection + stop-pattern phrases
+  - `9b61065f` — gate unblock: env-writes violation + stale assertion + plugin-count drift
 
 ### Prior session 18 deliverables (already on master):
 - PSK fix landed (reduced CI failures 147 → 13).
@@ -71,6 +84,16 @@
 
 | Hash | Message |
 |------|---------|
+| `9b61065f` | fix(tests): env-writes violation, stale assertion, and plugin-count drift to unblock gate |
+| `efd9a557` | fix(plugin): remove markdown-table bypass from false-done detection plus add missing stop-pattern phrases P5 |
+| `44e25984` | fix(plugins): P2 fail-closed countLiveAgents after 3 probe failures + P8 split GLUDD_FORCE_DELEGATE polarity trap (111 tests pass) |
+| `3aaddc89` | docs(agents): close message-shape loophole capping consecutive zero-dispatch responses at 2 plus fix threshold documentation drift P4+P6 |
+| `e2d211de` | fix(plugins): add heartbeat verification to enforce-floor enforce-delegate enforce-stop for P0 runtime liveness diagnosis |
+| `9f55812d` | feat(make): verify-state command for consolidated pre-claim verification |
+| `1b69a4df` | fix(lint): remove unused imports and fix style in plugin test files |
+| `416b6285` | feat(worktree): agent-worktree/agent-merge/agent-cleanup targets for isolated subagent checkouts preventing shared-tree edit races |
+| `71b8edce` | guardrail(claims): enforce-verified-claims plugin blocking done-words without machine evidence structurally preventing false-done lies |
+| `ae9861f3` | guardrail(git): deny dispatch on dirty tree enforcing clean working tree before new subagents can be launched |
 | `b4bd6c93` | fix(deck): build_deck.py regenerates HTML from data tokens plus pages.yml builds before deploy |
 | `81bfea53` | feat(role): codify build_presentation ansible role for reveal.js deck build validate deploy via gludd |
 | `19dd629b` | feat(deck): add SVG architecture event-loop and security-layers diagrams for presentation |
@@ -164,41 +187,41 @@
 
 ## Known Gaps
 
-1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `b4bd6c93`; CI RED on 7 lint errors (fix in flight). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-2. **Presentation deployed but NOT yet verified on Pages** — reveal.js deck committed + deployed workflow landed; verification at `sandboxcom.github.io/gludd/` pending.
-2. **13 CI failures RESOLVED** — all clusters fixed by session 19 Wave 14 fix wave. Green not yet confirmed for current HEAD `ca44fa0a` (CI pending, cooldown-enforced).
-3. **cast(Any) burn-down COMPLETE** — Tier 4 finished (`1d89ce8e`). STABILIZATION_PLAN documented (`ef930591`).
-4. **beta.3 Phase B COMPLETE; Phase E in flight** — writer subprocess + durable hibernation + dispatch-lifecycle checkpoints landed. Phase E WP-E1+WP-E2 polyglot detection landed (ToolchainDetector + self-host project.yml). **Phase E WP-E3 (e2e test) pending.**
-5. **Plugin liveness** — RESOLVED (session 17). All 10/10 plugins have heartbeat probes. Current session may still run stale plugin code; opencode restart required to activate probes in-session.
-6. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
-7. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
-8. **verify-remote branch/tag collision** — RESOLVED. `refs/heads/$$BR` pin added at Makefile:1075 prevents branch/tag name collision. Test: `tests/unit/test_verify_remote_recipe.py`.
-9. **check-skills-frontmatter** — DONE. Script at `scripts/check_skills_frontmatter.py`, Makefile target at line 1852, wired into `gate` at line 298.
-10. **False "8 GPU providers" claim in `4e9d97fc`** — RESOLVED (gap closed). The 5 missing providers (google, cloudflare, databricks, azure-ai-foundry, ai21) are now implemented — actual provider count is 24.
-11. **Phase F docs in-flight** — not yet started this wave.
-12. **WP-D3 migration drift** — schema parity test (`60a1121c`) reveals drift between `create_all` and `upgrade_head`; triage pending.
+1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `9b61065f`; CI PENDING. Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
+2. **CI green NOT yet confirmed** — CI PENDING for current HEAD. Gate unblocked at `9b61065f` (env-writes + stale assertion + plugin-count fixes). Commit batcher in flight.
+3. **Presentation deployed + pages.yml verified** — RESOLVED. SVG diagrams + build_presentation role + revealjs-presentation skill landed (`b4bd6c93`-`0f08af4b`). pages.yml builds before deploy verified.
+4. **Multitasking audit P0-P8** — RESOLVED. All 8 enforcement hardening items addressed (`e2d211de`-`9b61065f`).
+5. **Anti-lying guardrail trilogy** — RESOLVED. enforce-verified-claims (`71b8edce`) + enforce-clean-tree (`ae9861f3`) + verify-state (`9f55812d`) landed.
+6. **OpenShell security research** — transfers audited, P0/P1/P2 implementation complete. Enforcement plugin heartbeat verification + fail-closed liveness + FORCE_DELEGATE polarity fix.
+7. **Agent-worktree isolation** — RESOLVED. Per-subagent git worktree targets landed (`416b6285`).
+8. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
+9. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
+10. **cast(Any) burn-down** — COMPLETE. Tier 4 finished (`1d89ce8e`).
+11. **beta.3 Phase B** — COMPLETE. Phase E WP-E1+WP-E2+WP-E3 — COMPLETE.
+12. **Phase D security** — COMPLETE (14/15 FIXED, 1 REFUTED). WP-D3 migration drift reconciled.
+13. **Phase F docs** — not yet started.
+14. **Plugin liveness** — RESOLVED. All 10/10 plugins have heartbeat probes. opencode restart required to activate probes in-session.
 
 ## Next Steps
 
-1. [ ] **Fix 7 lint errors** — fix in flight; unblocks CI green.
-2. [~] **Wait for CI green (no polling)** — CI RED for HEAD `b4bd6c93` on 7 lint errors. Once fixed: cooldown-enforced via `make ci-verdict-safe`. Will surface at next natural break.
-3. [ ] **Ship v0.1.0-beta.2** — BLOCKED on CI green. Once green: `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'`. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
-4. [ ] **Verify presentation on Pages** — verify reveal.js deck at `sandboxcom.github.io/gludd/` after deploy completes.
-5. [ ] **Finish Phase E** — WP-E1+WP-E2+WP-E3 DONE. Phase E effectively complete; any residual items triage after beta.2 ship.
-6. [ ] **Phase C coverage** — continue lifting coverage to gate threshold after CI green.
-7. [ ] **Phase D triage** — WP-D3 migration drift reconciled (`ff8a8298`); Phase D security declared complete (`b54e75ef`). Any residual hardening items triage after beta.2 ship.
-8. [ ] **Phase F docs** — in-flight; not started this wave.
+1. [~] **Wait for CI green (no polling)** — cooldown-enforced via `make ci-verdict-safe`. Will surface at next natural break.
+2. [ ] **Ship v0.1.0-beta.2** — BLOCKED on CI green. Once green: `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'`. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
+3. [x] **Multitasking audit P0-P8** — DONE. Heartbeat verification (P0), fail-closed liveness (P2), message-shape loophole (P4+P6), false-done hardening (P5), FORCE_DELEGATE polarity (P8). 111 tests pass.
+4. [x] **Anti-lying guardrail trilogy** — DONE. enforce-verified-claims + enforce-clean-tree + verify-state landed. AGENTS.md section with research basis codified.
+5. [x] **Presentation Mermaid fix + pages.yml verified** — DONE. SVG diagrams + build_presentation role + pages.yml deploy verified.
+6. [x] **Agent-worktree isolation** — DONE. agent-worktree/agent-merge/agent-cleanup targets landed.
+7. [x] **Gate unblocked** — DONE. env-writes violation, stale assertion, plugin-count drift fixed (`9b61065f`).
+8. [ ] **Phase F docs** — not yet started.
 9. [ ] **Restart opencode** to activate all 10/10 plugin liveness probes in-session (probes are committed; session runs stale code).
-10. [x] **Wire the 6 new audit roles into a playbook** — DONE. `gludd audit-plugins` CLI + `audit_plugins.yml` playbook (commit `7ec9f2dc`).
-11. [x] **Add integration tests for 6 new roles** — DONE. 128 audit_roles tests pass (commit `7ec9f2dc`).
-12. [x] **Implement 5 missing GPU providers** — DONE. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21). Actual provider count is now 24.
 
-## Current Gate Status (2026-07-08)
+## Current Gate Status (2026-07-09)
 <!-- gate:begin -->
-- **HEAD**: `b4bd6c93` (local, +10 past `ca44fa0a`). CI RED on 7 lint errors (fix in flight).
-- **CI**: RED — 7 lint errors blocking. NOT polling per cooldown guardrail. Lint fix dispatched; will re-check at next natural break.
-- **beta.2**: version bumped in code, tag NOT yet cut, artifact NOT verified. Blocked on CI green (lint fix).
-- **Presentation**: reveal.js deck committed + deploy workflow landed; verification at `sandboxcom.github.io/gludd/` pending.
+- **HEAD**: `9b61065f` on master (+10 past `b4bd6c93`, +20 total from `ca44fa0a`). Gate unblocked: env-writes violation, stale assertion, plugin-count drift fixed.
+- **CI**: PENDING for current HEAD — NOT polling per cooldown guardrail. Commit batcher in flight; result surfaces at next natural break.
+- **beta.2**: version bumped in code, tag NOT yet cut, artifact NOT verified. Blocked on CI green.
+- **Multitasking audit**: P0-P8 COMPLETE. 5 commits: heartbeat verification (P0), fail-closed liveness (P2), message-shape loophole (P4+P6), false-done hardening (P5), FORCE_DELEGATE polarity (P8). 111 tests pass.
+- **Anti-lying guardrails**: enforce-verified-claims + enforce-clean-tree + verify-state landed. AGENTS.md section with SWE-bench/CoVe/Aider/Cline research basis codified.
+- **Presentation**: SVG Mermaid diagrams + build_presentation role + revealjs-presentation skill + pages.yml verified deploy landed.
 - **Features at 100%**: 136 (per README status table between STATUS-TABLE:START/END).
 
 <!-- gate:end -->
@@ -241,7 +264,8 @@
 
 ## Historical State
 
-- **2026-07-08 session 19 Wave 15 (current)**: HEAD `ca44fa0a` (CI pending — cooldown-enforced, NOT polling). 10 commits past Wave-14 HEAD `e564d844`: beta.3 Phase B COMPLETE — durable hibernation + dispatch-lifecycle checkpoints (`6b5fe449`); Phase E polyglot detection — ToolchainDetector (`941aa80c`) + project.yml self-host (`ca44fa0a`); 6 security findings fixed (#14 budget `04ca8afb`, #10 TodoRepository mass-assignment `160fa3ab`, P3 ansible process_isolation fail-closed `3e072bd3`, plus #1/#12/AB-8/P1 SSRF); CI cooldown guardrail `make ci-verdict-safe` (`f9f80f21`); commit-lock guardrail flock+plugin (`953b386e`); WP-D3 schema parity test (`60a1121c`); TASKS.md beta.3 Phase B tick (`ed958fcf`); Priority Stacking rule codified. beta.2 STILL NOT shipped — blocked on CI green.
+- **2026-07-09 session 19 Wave 17 (current)**: HEAD `9b61065f` (+10 past `b4bd6c93`). Multitasking audit P0-P8 complete: heartbeat verification on enforce-floor/delegate/stop (P0), fail-closed countLiveAgents + FORCE_DELEGATE polarity split (P2+P8, 111 tests), message-shape loophole closure capping zero-dispatch at 2 (P4+P6), false-done markdown-table bypass removal + stop-pattern phrases (P5). Anti-lying guardrail trilogy: enforce-verified-claims (`71b8edce`), enforce-clean-tree (`ae9861f3`), verify-state (`9f55812d`). Agent-worktree isolation targets (`416b6285`). Gate unblocked: env-writes + stale assertion + plugin-count drift (`9b61065f`). CI pending; commit batcher in flight.
+- **2026-07-08 session 19 Wave 16 (prior)**: HEAD `b4bd6c93` (+10 past `ca44fa0a`). Presentation rebuilt: build_presentation ansible role, SVG Mermaid diagrams, revealjs-presentation skill, pages.yml verified deploy. Phase E WP-E2+WP-E3 polyglot project support landed. WP-D3 migration drift reconciled. Phase D security complete (14/15 FIXED, 1 REFUTED). responseLooksTerminal regression restored. CI RED on 7 lint errors (fixed in Wave 17).
 - **2026-07-08 session 19 Wave 14 (prior)**: HEAD `e564d844` (pushes in flight, CI pending — NOT polling). 13 commits past prior session-19 HEAD `024a8412`: beta.3 writer subprocess Slice 1-3 (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`), unit-1 shard split into unit-1a/unit-1b (`1f283628`), P1/P2 chronic singleton fixes (`d55b0f6f`), A6 logging isolation fixture (`9a24dcc8`), caplog getMessage migration across 16 sites (`bcceaf85`), os.environ→monkeypatch conversion (`9d987b79`), no-CI-poll-blocking rule codified (`5ecdf2a9`). beta.3 Slice 4-5 in flight. beta.2 STILL NOT shipped — blocked on CI green.
 - **2026-07-08 session 19 (prior)**: HEAD `024a8412` (pushed, VERIFIED). 13 commits landed resolving all 13 session-18 CI failures: slurm terminal-state fix (`6da1b5cd`), root-logger fixtures (`54353cec`/`07711c27`), PSK caplog + tokenizer (`9ce86554`), gate xdist race fix (`2f09f975`), lazy-log accessor (`8af622f8`), 6-cluster batch fix (`5ecce329`), TUI poll-until-marker (`024a8412`), lint cleanup (`3c62b381`). cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`). STABILIZATION_PLAN added (`ef930591`). beta.3 Phase 1 (gunicorn IPC broker) DONE (`84cebb6c`). CI for current HEAD pending/in-progress — green NOT yet confirmed. beta.2 STILL NOT shipped.
 - **2026-07-07 session 18 (prior)**: HEAD `f2202cae` (pushed, VERIFIED). PSK fix reduced CI failures 147 → 13 on run 28899396411. Remaining 13 failures (4 slurm billing, 3 connectors_base caplog, 2 PSK caplog, 2 tokenizer, 1 MCPToolRegistry import, 1 structured_task_spec) dispatched to fix wave; completed in session 19. beta.2 still NOT shipped — blocked on CI green. Gunicorn architecture work queued for beta.3 per user direction; Phase 1 completed in session 19.

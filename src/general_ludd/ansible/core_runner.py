@@ -218,11 +218,13 @@ class CoreAnsibleRunner:
         callback_plugins: list[str] | None = None,
         process_isolation: Any | None = None,
         private_data_dir: str | None = None,
+        network_policy: Any | None = None,
     ) -> None:
         self._module_paths = module_paths or []
         self._callback_plugins = callback_plugins or []
         self._process_isolation = process_isolation
         self._private_data_dir = private_data_dir
+        self._network_policy = network_policy
         self._collected_events: list[dict[str, Any]] = []
 
     def run_playbook(
@@ -241,6 +243,35 @@ class CoreAnsibleRunner:
     ) -> AnsibleResult:
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for playbook execution but is not installed")
+
+        # L7 network policy (OpenShell P0 transfer): before ANY execution, scan
+        # the playbook for ansible.builtin.uri / get_url tasks and validate each
+        # outbound HTTP request (method + path + host) against the declarative
+        # policy. Blocks a POST to an allowed host under a GET-only rule even
+        # when the host matches the sandbox net: allowlist. On any violation the
+        # run is fail-closed BEFORE the playbook process starts.
+        if self._network_policy is not None:
+            from general_ludd.ansible.network_policy import scan_playbook_tasks
+
+            violations = scan_playbook_tasks(playbook_path, self._network_policy)
+            if violations:
+                logger.warning(
+                    "network_policy blocked playbook execution: %s",
+                    "; ".join(violations),
+                    extra={
+                        "event_type": "network_policy_block_playbook",
+                        "playbook": playbook_path,
+                        "violations": violations,
+                    },
+                )
+                return AnsibleResult(
+                    status="failed",
+                    rc=1,
+                    error=(
+                        "network policy denied outbound HTTP request(s): "
+                        + "; ".join(violations)
+                    ),
+                )
 
         # HIGH (unwrapped extravars): wrap EVERY untrusted extra-var value
         # Ansible-unsafe before it reaches the executor, so embedded Jinja in

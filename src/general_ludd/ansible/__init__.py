@@ -7,6 +7,7 @@ from general_ludd.ansible.action_policy import (
     validate_action,
 )
 from general_ludd.ansible.ara import ARAConfig
+from general_ludd.ansible.audit import AuditEvent, PlaybookAuditLogger
 from general_ludd.ansible.core_runner import AnsibleResult, CoreAnsibleRunner
 from general_ludd.ansible.galaxy import (
     get_builtin_modules,
@@ -26,7 +27,9 @@ __all__ = [
     "AnsibleResult",
     "AnsibleRunnerAdapter",
     "AnsibleTemplater",
+    "AuditEvent",
     "CoreAnsibleRunner",
+    "PlaybookAuditLogger",
     "PolicyResult",
     "ProcessIsolationConfig",
     "generate_manifest",
