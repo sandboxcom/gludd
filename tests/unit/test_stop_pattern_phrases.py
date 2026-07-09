@@ -172,3 +172,4 @@ class TestMarkdownTableBypassRemoved:
             "The hasLocalWork bypass must not let a summary table through."
         )
 
+
