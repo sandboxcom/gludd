@@ -1060,4 +1060,3 @@ Three-layer anti-lying guardrail landing so false "done" claims are structurally
 ## Phase slurm-cost-cap-fix — Targeted CI fix (2026-07-09)
 
 - [x] **Fix SlurmJobMonitor._poll** — reorder cost computation before terminal state check; tests updated (CANCELLED→RUNNING in mock side_effect). Pending items (beta.3.2 coverage, Ship v0.1.0-beta.2) not gated on this fix.
-
