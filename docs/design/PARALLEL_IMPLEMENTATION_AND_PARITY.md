@@ -402,3 +402,61 @@ everything else is new. Highest-leverage new work = **P-2 autonomous task entryp
 notification list/update facility** (§2.0 — NOT a REPL) + **P-4 edit-repair loop** +
 **P-3 indexer wiring**, all on top of the keystone **P-1 toolchain runner**. P-6 is
 autonomous per-task commit + a non-interactive `rollback` command. P-9 composes them.
+
+---
+
+## Landing-order + Wave-P corrections (2026-07-10 verification)
+
+A follow-up review verified the landing-order matrix's hot-collision claims and the
+Wave P dead-wiring claims directly against the tree. Corrections below supersede the
+conflicting statements above where noted; everything not called out here held up.
+
+**Landing-order matrix corrections**
+
+- The 5 named hot-collision files — `models/gateway.py`, `event_loop/loop.py`,
+  `execution/engine.py`, `security/permissions.py` (+ `sts.py`/`secrets/manager.py`),
+  `execution/tool_loop.py` — 4 of 5 hold up.
+- **CORRECTION: `models/gateway.py` is a 2-design collision, not 3.** D-DEPLOY does
+  NOT touch `gateway.py` — `add_deploy_profile` does not exist in the tree; D-DEPLOY's
+  real targets are a new `infra/endpoint_registrar.py` + `admin_compute_destroy`. Only
+  C-GATEWAY + C-BUDGET converge, and they overlap in `_invoke_and_bill` (def @766, SSRF
+  guards @832-868, spend @989) — real ordered serialization is C-GATEWAY → C-BUDGET.
+  Note: C-GATEWAY's real scope is SSRF-rejection + a bare-float timeout-fallback branch
+  (NOT the mis-cited "148-202/511/833-864" — 148-205 are model classes, 511/833-864 are
+  SSRF guards, timeout logic is ~915-960); C-BUDGET is a single `record_spend@989` today,
+  not two-phase reserve/commit.
+- **CORRECTION: `event_loop/loop.py` PHASE_ORDER is shifted by ONE design (C-SPD1,
+  17→18), not multiple.** D-SATURATE edits the `check_compute_utilization` phase BODY
+  (phase already exists @PHASE_ORDER:100), not the list; other designs hit disjoint
+  methods. SSTI (`_resolve_prompt_text_static`@179) is already fixed → drop from the
+  live collision set (4 pending designs on `loop.py`, not 5). Citation drift:
+  `_dispatch_jobs_via_scheduler@1487` (not 1552), `_resolve_prompt_text_static@179`
+  (not 192).
+- **MISSED serialization points — add these as hot-collision files:** `daemon.py`
+  (C-ENGINE shutdown @2050-2159, C26 @2079/1382, H-RATELIMIT @2468/2344, C-BUDGET
+  reinforcement @1206-1216 — 3-4 designs) and the `self_update/*` package (C9
+  deny-list, C-RELOAD `apply.py:154`, C-SELFIMP Hole1 `router.py`/`apply.py`,
+  H-SELFUPD-TOCTOU `safe_writer.py`/`applier.py` — 4 designs). Any parallel batch
+  MUST serialize writes to `daemon.py` and `self_update/*`.
+- Supersession CONFIRMED genuine — build the corrected version directly, don't
+  build-then-rework: C-RELOAD module-level-lock supersedes per-instance (addendum
+  refutes the mutex premise); C-SEC-1 5-hole addendum supersedes the 3-step original
+  AND reverses C-SEC-1b (drops the `is_subset` hard-reject, keeps only the clamp).
+
+**Wave P dead-wiring corrections**
+
+- P-3 (retrieval indexer dead), P-4 (no repair loop), P-5 (LSP absent +
+  NEEDS_MORE_WORK dead-end) — accurate, keep as-is.
+- **P-7 → soften to PARTIAL.** `WorktreeMonitor` IS instantiated
+  (`daemon.py:1795-1802`) and the on-demand `/admin/worktree/scan` is live; only the
+  continuous filesystem-watch `WorktreeEventDispatcher.start_watching()`
+  (`worktree/core.py:510`) is truly never-called. Watch-mode = the fs-observer piece
+  only.
+- **P-9 → correct to LIVE.** `create_worktree`/`remove_worktree`
+  (`git_automation/repo.py:465/526`) ARE wired end-to-end via Ansible modules
+  (collections `.../gludd_worktree.py:157/199`, `gludd_git.py:248/255`) → roles
+  (`agent_task`/`implement_change`/`refactor_code`/`self_improve_propose`) →
+  playbooks → `AnsibleRunnerAdapter.run_playbook` from the live dispatch path
+  (`event_loop/loop.py:1039/2648`). NOT test-only. If Wave P intends a *different*
+  in-process (non-Ansible) worktree API, say so explicitly rather than claiming the
+  existing one is unused.

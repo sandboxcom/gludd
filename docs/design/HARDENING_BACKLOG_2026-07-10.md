@@ -376,3 +376,131 @@ pattern.
 **Tests:** a 302 toward the metadata IP is not followed (redirect-handler unit
 test); a malicious-template `SecurityError` from `prompt_adapter.py`'s
 `registry.render` call is caught, not propagated.
+
+## Round-3 additions (2026-07-10 deep-audit sweeps)
+
+### H-SELFMOD-DENYLIST (MED-HIGH, CONFIRMED) — policy docs missing from self-mod deny-lists
+
+**Defect:** `AGENTS.md`/`CLAUDE.md`/`TASKS.md` are in **neither** self-modification
+protected-path deny-list: `security/capability_lattice.py:41-75`
+(`PROTECTED_FILE_STEMS`/`PROTECTED_FILE_SUBSTRINGS`/`PROTECTED_PATH_SEGMENTS`) and
+`self_update/applier.py:41-64` (`PROTECTED_PATH_MARKERS`) both omit them, though
+AGENTS.md is the repo's stated policy authority. `self_update/apply.py` hard-denies
+`settings.json` but not these. Reachable: CONFIG-tier auto-apply
+(`auto_apply_config=True`) of a markdown rewrite needs no approval token, and
+pipelines like `planning/debt_applier.py:137-141` merge LLM-supplied paths into
+`plan.target_files`.
+
+**Fix:** add `AGENTS.md`/`CLAUDE.md`/`TASKS.md` (+ `.md` policy docs generally) to
+both deny-lists (stem + exact-name match).
+
+**Tests:** `is_protected_path("AGENTS.md")`/`("CLAUDE.md")` == `True`; an
+`apply_plan` targeting them is refused.
+
+### H-ENGINE-WRITE-GUARD (MED, CONFIRMED) — engine write path has no deny-list backstop
+
+**Defect:** `execution/engine.py` `_write_file` (:833) / `_apply_unified_diff`
+(:886) never consult the protected-path deny-list (no import of
+`capability_lattice`); they rely solely on `_resolve_in_workspace` (:808-831)
+workspace-confinement. If a project's `workspace_path` is ever gludd's own repo
+(dogfood/self-host, or the `self_improve.py:246` `Path.cwd()` fallback), there's
+no second line of defense at the write site.
+
+**Fix:** call `check_self_modification`/`is_protected_path` in `_write_file`/
+`_apply_unified_diff` before writing (defense-in-depth even inside the workspace
+jail).
+
+**Tests:** an engine write targeting `.claude/` or `AGENTS.md` within a
+repo-root workspace is refused.
+
+### H-RELOAD-BATCH-F1 (LATENT, CONFIRMED) — hot-reload batch path bypasses single-module guards
+
+**Defect:** `reload/hot_reloader.py:391-413` `reload_changed_modules` batch path
+executes self-improve-workspace file bytes via `shutil.copy2`+
+`importlib.reload`/`import_module`, bypassing the single-module path's
+protected-path/authenticity/rollback guards (docstring falsely claims it
+delegates to `reload_code_module`). Only caller `harness.apply_self_improvement`
+has no production caller (live `/admin/self-improve/apply` uses the guarded
+`reload_code_module`).
+
+**Fix (before it's wired):** route each batch per-file swap through
+`check_self_modification` + authenticity + rollback (or actually call
+`reload_code_module` per file as the docstring claims).
+
+**Tests:** batch reload of a protected/forged file is refused/rolled back.
+
+### H-WEBRETRIEVE-DOS (MED-HIGH, CONFIRMED) — sync fetch + unclamped timeout stalls the event loop
+
+**Defect:** `mcp/builtins.py` `_web_retrieve` calls `fetch_web_page`
+synchronously inline (no `asyncio.to_thread`, unlike `run_project_check`) and
+`timeout_seconds` (:209-213) is `int()`-cast with no min/max clamp → a
+model-chosen large timeout on a slow endpoint stalls the entire event loop
+(`ToolCallLoop`'s `asyncio.wait_for` can't preempt a non-yielding sync call).
+
+**Fix:** wrap `fetch_web_page` in `asyncio.to_thread` and clamp
+`timeout_seconds` to a sane max (e.g. 60s).
+
+**Tests:** a large `timeout_seconds` is clamped; the fetch runs off the loop
+(assert thread offload).
+
+### H-WEBRETRIEVE-REBIND (MED, CONFIRMED) — fetch_web_page vulnerable to DNS rebind
+
+**Defect:** `retrieval/web.py` `fetch_web_page` uses only the no-DNS
+`is_url_blocked`; a hostname resolving at connect time to
+loopback/RFC-1918/169.254.169.254 bypasses it (the
+`GLUDD_WEB_FETCH_ALLOWED_DOMAINS` allowlist matches the hostname string, not the
+resolved IP). Ties to H-CONNECTOR's `resolve_and_pin`.
+
+**Fix:** resolve-and-pin the host (reuse the planned
+`security/ssrf.py::resolve_and_pin`) or call `resolved_host_is_blocked` before
+fetch.
+
+**Tests:** a `FlipResolver` public→metadata rejected.
+
+### H-MCP-ARGCAP (MED, CONFIRMED) — tool-call args decoded with no size cap
+
+**Defect:** `execution/tool_loop.py:243-255` `json.loads` of model tool-call
+args has no byte/size cap (only post-hoc token budget); outbound model→tool
+payloads unbounded (`client.py:116-126`/`transport.py:463-469` → subprocess
+stdin), asymmetric with inbound's 64KB `StreamReader` limit.
+
+**Fix:** cap decoded arg byte size (reject oversized tool-call args).
+
+**Tests:** oversized args rejected.
+
+### H-OTEL-TLS (MED, CONFIRMED) — OTLP exporter hardcodes insecure transport
+
+**Defect:** `observability/otel_bridge.py:64` hardcodes
+`OTLPSpanExporter(insecure=True)`.
+
+**Fix:** `ObservabilityConfig.otel_insecure: bool = False` (secure default) +
+`otel_ca_cert` path; emit insecure only on opt-in; else secure system-root TLS
+(or CA creds). Wire `daemon.py:2013-2016`.
+
+**Tests:** default→secure, opt-in→insecure.
+
+### H-DB-TENANT-SCOPING (MED-HIGH, BROAD, CONFIRMED) — ~15 repository methods unscoped by project_id
+
+**Defect:** ~15 repository methods in `db/repository.py` return rows without a
+`project_id` filter despite the model having the column: unscoped
+`get_by_id`/`list` (`TaskReturnRepository.get_by_id:621`,
+`AuditEventRepository.list_by_entity:807`,
+`QueueRepository.get_by_name:1174`/`list_all:1179`,
+`AgentMessageRepository.get_by_id:1429`, `RemediationActionRepository.get:2221`,
+`BenchmarkRepository.get_model_scores:1029`/`list_recent:1042`,
+`FeatureRepository.get_by_name:1698`) + weak optional-default-`None`
+(`TaskReturnRepository.work_summary`/`history_summary`/`claim_unreviewed`,
+`AgentMessageRepository.inbox`/`unread_counts`,
+`SpendRepository.list_since`/`total_since`,
+`RoleRunRepository.count_by_role`/`list_all`,
+`RemediationActionRepository.list_since`) + 2 write-side
+(`FeatureRepository.set_status:1659` breaks its own `.scoped()` invariant;
+`ProjectRelationshipRepository.remove:1400` deletes by id with no project
+check). Correct pattern exists: `TodoRepository.scoped()`/`_resolve_pid`.
+
+**Fix:** generalize `.scoped()` — zero-caller methods → required `project_id`
+(fail-closed like `AuditEventRepository.create`); weak-default → required/
+raise-if-`None`; write-side → add `project_id` to guarded WHERE.
+
+**Tests:** cross-tenant `get_by_id`/`set_status`/`remove` for a foreign project
+returns `None`/refuses; same-tenant works.

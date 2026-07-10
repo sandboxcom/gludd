@@ -461,3 +461,99 @@ admission checks actually gate** (thread real `estimated_cost`/`budget_remaining
 hold the reservation across the call). Also NOT bugs (audit confirmed correct):
 cache-hit and empty-200 paths correctly skip `record_spend` (empty-200 raises BEFORE
 `record_spend` at `gateway.py:948-961`); fallback-chain hops single-bill correctly.
+
+## Round-3 corrections (2026-07-10 deep review)
+
+### 1. Runtime bundle-signing: DROP the HWM, use version-binding + downstream verify
+**Design being corrected:** the "Runtime bundle signing self-referential" entry above
+(this doc, lines ~56-62), specifically its proposed high-water-mark anti-rollback.
+**Hole:** the HWM protects NOTHING. `ReleaseArtifactValidator.validate_release` runs
+ONLY at build time (`release_orchestrator.py:49`, invoked via `make release-validate`)
+— it is absent from `dist`/`gate`/CI/release-cut, and the bundle is NEVER re-validated
+at install/deploy time (`Dockerfile:133`'s entrypoint and `install.sh` do no signature
+check at all). Since "the verifying host" is in practice always "the build host," an
+HWM stored on/checked by the verifier is an HWM checked by the builder — the same
+party that would rewrite it on a rollback. It guards against nothing an attacker
+couldn't also rewrite.
+**CORRECTED DESIGN** (matches this doc's own OPEN entry, tightened): sign the
+canonical manifest with the EXISTING `GL_INTEGRITY_KEY` (do not introduce a new
+`GL_RELEASE_SIGNING_KEY` — no provisioning precedent for it), sidecar
+`MANIFEST.json.mac`, and BIND the release `version` (and ideally artifact digests)
+into the signed message itself. This makes anti-downgrade STATELESS — the bound
+version travels with the bundle and is checked by comparing against the
+currently-installed version at verify time, with no persistent HWM state needed on
+either host. The real security value requires MOVING verification to install/deploy
+time on the CONSUMING host: add a fail-closed verify step to the Docker entrypoint /
+`install.sh` / daemon-startup path, mirroring the pinned-checksum pattern already
+implemented in `filestore/bootstrap.py:118-134`. Also flag: a fail-closed
+`GL_*_KEY` requirement breaks the currently-manual `make release-validate` workflow
+with no key-provisioning precedent — CI today only provisions `GITHUB_TOKEN` +
+`DEEPSEEK_API_KEY`, nothing signing-related — so the design must specify key
+provenance per environment (dev/CI/release/install) before this can land.
+
+### 2. Per-project secret isolation: the WORKER path is UNSCOPED — "ENFORCED" claim overstated
+**Design being corrected:** the "Per-project secret isolation" entry in the
+Already-Fixed section above (this doc, lines ~15-24), which asserts the scoping is
+fully wired daemon→gateway→job.
+**Hole:** that's true for the daemon path but false for the worker path.
+`worker/app.py::build_gateway_from_config` never constructs a project-scoped
+resolver at all — its default is a bare `EnvSecretsManager()` (`worker/app.py:106`)
+or a bare `SecretsManager(config, permission_spec)` (`worker/app.py:112-115`), neither
+of which is project-aware. `for_project` exists ONLY on `daemon._LazyProjectSecrets`
+(`daemon.py:394`) — it is never constructed or called anywhere in `worker/`. This gap
+is currently masked by a green test: `test_project_scoped_secret_wiring.py:131-142`
+asserts a non-project-aware resolver returns the unscoped shared value, i.e. the test
+encodes the bug as expected behavior rather than catching it.
+**FIX:** promote/share the `LazyProjectSecretsResolver` construction so the worker
+factory can build one too (not just the daemon), and wrap it in
+`build_gateway_from_config`'s default path; drop the `projects_active` startup gate
+that currently short-circuits scoping; do not trust a wire-supplied `project_id`
+without authenticating it first (this depends on C20's auth work landing first);
+integrate `projects/*` config with the existing `openbao_paths` capability gate so
+worker-side secret access is scoped the same way daemon-side access already is.
+
+### 3. C-CONNECTOR resolve_and_pin: SNI alone is insufficient — also set Host header + pinned-IP URL
+**Design being corrected:** the connector `resolve_and_pin` design (guarded_get /
+DNS-rebinding defense for `nomad.py` and `cilium_hubble.py`).
+**Verified:** httpx's `extensions={"sni_hostname": host}` DOES set TLS SNI
+independently of the URL host (`httpcore` `_sync/connection.py:107,151-152`) — cert
+validation correctly still checks against the original hostname. BUT the TCP dial
+target is taken from the URL's host, not from the SNI extension. So pinning is only
+real if the URL itself is built with the pinned IP as its host. And once the URL host
+is the raw IP, httpx will auto-derive the `Host` header from that IP/netloc unless
+told otherwise — which both leaks the pinned IP to the origin and breaks
+name-based virtual hosting.
+**Required design change:** `resolve_and_pin`'s consumer must set all THREE of the
+following together, not just SNI:
+1. URL host = the pinned IP (this is what actually gets dialed).
+2. `headers={"Host": original_host}` set explicitly (else httpx derives it from the
+   IP netloc).
+3. `extensions={"sni_hostname": original_host}` (for correct TLS SNI + cert
+   validation).
+Also note: `cilium_hubble.py` has NO existing default transport today (unlike
+`nomad.py`, which does) — wiring `guarded_get` into `cilium_hubble.py` is a NET-NEW
+default transport there, not a drop-in swap of an existing one, and should be scoped/
+tested accordingly.
+
+### 4. Logging design (LOGGING_CONFIGURATION.md) corrections
+Pointer corrections to the logging design, by priority:
+- **P0 — `disable_existing_loggers` must be explicit `False`.** `build_dict_config`
+  MUST set `disable_existing_loggers: False` in the dictConfig payload. The stdlib
+  default is `True`, which would silently disable all ~180 already-imported module
+  loggers on the first `install()` call — directly contradicting the design's own
+  "no-op by default" claim.
+- **P1 — bind `RunContextFilter`'s contextvar at the per-todo coroutine, not the
+  outer dispatch phase.** Bind at `_dispatch_execute_job_isolated` /
+  `_dispatch_execute_job` (`event_loop/loop.py`), NOT at the outer
+  `_phase_dispatch_execute_jobs`. Dispatch runs multiple todos concurrently via
+  `asyncio.gather` (`loop.py:1552-1567`); binding at the outer phase would smear one
+  todo's run-context onto log lines from a different concurrently-running todo.
+- **P1 — the per-task FileHandler cache needs a hard LRU cap.** Unbounded per-task
+  file handles is the steady-state failure mode for a long-lived daemon (handle
+  exhaustion over the process lifetime), not an edge case to defer — the cap must be
+  in the initial design, not a follow-up.
+- **P2 — validate pluggable handlers before dictConfig; close discarded handlers on
+  hot-reload.** Before passing a pluggable handler class into dictConfig, validate it
+  is actually a `logging.Handler` subclass (fail closed / skip + warn otherwise); when
+  a hot-reload replaces a previously-configured handler, explicitly close the
+  discarded one rather than leaking it.
