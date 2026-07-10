@@ -281,3 +281,183 @@ first** (its target, `execute()`, is dead code per the Already-Fixed note above,
 diff is lower-risk and unblocks the async-execute migration sooner); the fix-loop
 unification must then be designed against a fresh Read of the post-C-ENGINE
 `engine.py`, the same discipline already required for C-GATEWAY→C-BUDGET above.
+
+### C-SELFIMP code-tier approval-gate holes (3 confirmed)
+
+**Hole 1 — Ungated hot-rotation via `queue=="self_update"`.**
+`self_update/router.py:94-137` (`admin_self_update_enqueue`) calls `classify()` +
+`to_todo_spec()` + `repo.create()` but NEVER calls `apply_plan()`. `to_todo_spec()`
+never sets `status`, so `TodoModel.status` defaults to `BACKLOG` (`db/models.py:192`).
+Generic `BACKLOG→QUEUED→ACTIVE` promotion reaches `_dispatch_execute_job`
+(`loop.py:1889-1891`) which routes `queue=="self_update"` straight to
+`_apply_self_update_code` (`loop.py:2826-2947`), which fabricates
+`ApplyResult(applied=True, validation_passed=True)` and hot-swaps via
+`reload_if_needed` with ZERO approval check (only checks `module:`/`candidate:` tags,
+which `to_todo_spec` doesn't even write). The `approval_token` gate
+(`self_update/apply.py:278-291`, `apply_plan`) is only invoked by the read-only `/plan`
+endpoint. Also `SelfImproveApprovalManager._release` (`self_improve/approval.py:210-215`)
+hard-checks `work_type==SELF_IMPROVE_WORK_TYPE` but self-update todos are stamped
+`work_type=INFRA` (`priority.py:99`) so they can't even be approved through the
+existing surface.
+**FIX:** (1) `router.py:94-137` call `apply_plan` before `repo.create`; REFUSED→no
+todo; non-APPLIED (CODE tier always lands AWAITING_APPROVAL/VALIDATION_FAILED)→set
+`spec["status"]=APPROVAL_REQUIRED`; APPLIED (config/scaffold)→unchanged BACKLOG. (2)
+`to_todo_spec`: add optional `status` param. (3) `approval.py:210-215` widen the
+work-type gate to also accept `queue=="self_update"`. (4) Defense-in-depth:
+`_apply_self_update_code` parse a `tier:` tag, require an explicit `"approved"` marker
+tag when `tier=="code"`, fail-closed to FAILED otherwise; stamp `"approved"` tag at
+release time.
+**Tests must accompany the fix:**
+`test_enqueue_code_tier_request_creates_approval_required_todo`.
+
+**Hole 2 — Check-then-act TOCTOU double-submission.**
+`routers/self_improve.py:203-306` (`_apply_approved_config_change`) reads
+`todo.status==QUEUED` (228), runs expensive `applier.apply()` (288), only THEN
+CAS-transitions `QUEUED→ACTIVE` (293). Two concurrent calls both read QUEUED, both
+call `applier.apply()` (both write disk), loser's transition raises an uncaught
+`ConcurrencyError` → 500 AFTER the duplicate write. Same act-before-claim pattern in
+`loop.py:2826-2947` (`_apply_self_update_code`): `reload_if_needed` (2925) runs before
+the version-guarded CAS (2944); loser's `ConcurrencyError` is silently swallowed
+(2989-2993), masking a double hot-swap.
+**FIX:** move the CAS claim `QUEUED→ACTIVE` BEFORE `applier.apply()`; catch
+`ConcurrencyError`→`HTTPException(409)`; always land a terminal COMPLETE/FAILED (also
+fixes a failed apply stranding QUEUED forever). For `loop.py`: claim exclusivity via a
+version-guarded `todo_repo.update` (bump version via the `assigned_agent` field, a
+mutable field) BEFORE `reload_if_needed`; `ConcurrencyError`→skip the duplicate
+hot-rotation.
+**Tests must accompany the fix:**
+`test_concurrent_apply_approved_config_change_second_caller_gets_409`.
+
+**Hole 3 — project_id/workspace_root bait-and-switch.**
+`routers/self_improve.py:344-379` (`admin_self_improve_apply`) resolves
+`workspace_root` from the REQUEST BODY's `project_id` on every call incl. the
+approved-apply call, passing it into `AtomicSafeWriter(workspace_root=...)`. Change
+content is locked at enqueue but the confinement ROOT is recomputed from whatever
+`project_id` the apply-call body carries — an approval enqueued against project A can
+be replayed with `project_id=B` to land confined to B's workspace.
+**FIX:** stamp `project_id` into the locked spec at enqueue (`_enqueue_config_change`);
+in `_apply_approved_config_change` derive `workspace_root` FROM
+`spec.get("project_id")` (the immutable stored spec), not the live request body; fall
+back to `Path.cwd()` when the spec has no `project_id`.
+**Tests must accompany the fix:**
+`test_apply_approved_ignores_bait_and_switch_project_id`.
+
+### C-RELOAD concurrency-hole correction (mutex premise refuted + real fix)
+Findings verified against the tree:
+- There is NO shared/singleton HotReloader. Every caller builds a fresh instance:
+  routers/reload.py:87-97 (per-request), reload/self_improve.py:26
+  (SelfImprovementWorkflow.__init__), and SelfImprovementWorkflow itself is built fresh at
+  routers/self_improve.py:386 AND event_loop/loop.py:2901. So a per-instance `self._lock`
+  would protect NOTHING.
+- Worse: reload/hot_reloader.py has NO lock at all today (grep confirms locks exist
+  elsewhere but none in reload/).
+- Concurrent reload IS reachable (not theoretical): POST /admin/reload and POST
+  /admin/self-improve/apply are both async FastAPI handlers offloading to
+  asyncio.to_thread; two simultaneous requests (or an event-loop self_update reload
+  racing an HTTP apply) run read→merge→os.replace→importlib.reload in parallel OS
+  threads, each with its own `original_bytes` snapshot. The issue-#70 3-way anti-clobber
+  merge does NOT help — it only compares against the caller's own snapshot, blind to a
+  second in-flight writer.
+- The realpath-based protected-path false-negative (from the earlier review) is REFUTED
+  against the current tree: capability_lattice.py is_protected_path/is_collections_path
+  operate on lexical `_normalise` only (backslash→slash), NO .resolve()/realpath — so a
+  protected-looking path is still caught regardless of symlink target. hot_reloader.py:
+  183-204 passes the un-resolved `module.__file__`. No realpath false-negative exists
+  here.
+
+CORRECTED FIX:
+1. Lock scope: NOT a per-instance lock. Use a MODULE-LEVEL lock table keyed by resolved
+   live-file path (dict[str, threading.Lock] behind its own guard lock, at
+   general_ludd.reload.hot_reloader module scope), acquired BEFORE
+   `original_bytes = live_path.read_bytes()` (hot_reloader.py:213) and held through the
+   health-gate decision + any rollback (~line 322). This serializes concurrent swaps to
+   the SAME file across independent instances/threads without over-serializing unrelated
+   modules. Optionally add an fcntl.flock sidecar lock if reload can ever be triggered
+   cross-process.
+2. Protected-path check: keep the current lexical check (it already avoids the realpath
+   false-negative) but ADD a defensive resolved-form check too, mirroring
+   self_update/applier.py::_first_protected which checks BOTH the lexical path AND
+   Path(path).resolve().as_posix().lower() and fails closed if .resolve() raises. That
+   gives both-direction coverage (protected symlink target AND ../ traversal into a
+   protected tree) by reusing an already-hardened sibling pattern.
+
+### MCP tool-surface findings (web_retrieve SSRF is HIGH, live)
+- **Finding 1 (HIGH, live bug):** web_retrieve (mcp/builtins.py:203-230) →
+  retrieval/web.py fetch_web_page calls urllib urlopen (~line 90) with NO SSRF guard: no
+  scheme check, no host_is_blocked, no loopback/RFC-1918/link-local/169.254.169.254
+  blocking. Only an OPT-IN domain allowlist (GLUDD_WEB_FETCH_ALLOWED_DOMAINS, off by
+  default). It is the ONE live egress path in the repo missing the canonical guard that
+  every other path (security/auth.py, skills/fetcher.py, connectors/*, issue_sources/*,
+  gateway, git repo) enforces. FIX: wire is_safe_fetch_url/host_is_blocked into
+  fetch_web_page before urlopen. (NOTE: a separate worktree agent is implementing+testing
+  this fix now — this doc entry records the finding and its acceptance test:
+  http://169.254.169.254/, 127.0.0.1, 10.0.0.5 rejected; public https allowed.)
+- **Finding 2 (MED-HIGH):** the only gate before any MCP call is coarse
+  check_dispatch(role,"mcp") (tool_loop.py:148-149) — all-or-nothing; any role with "mcp"
+  may call EVERY tool identically incl run_project_check (shell exec, though
+  subprocess-hardened) and external stdio servers (fs write, git, slack, db). No per-tool
+  danger tiering. The ToolCallAuditor is purely a quality/efficiency filter, zero
+  security semantics. Recommend per-tool capability tiers.
+- **Finding 3 (MED):** external MCP server tool `description` and `input_schema` pass
+  through UNSANITIZED (transport.py:440-451 → client.py:83-84 → verbatim to model at
+  tool_loop.py:163-170); only `name` is regex-validated. A supply-chain-compromised npm
+  MCP package could embed prompt-injection in its tool description. Mitigated (not
+  eliminated) by operator-only server registration (daemon.py:268-282; untrusted target
+  repo's .gludd overlay merges only into UserConfig, not mcp_servers) + version pinning
+  (catalog.py._harden_registry_entry). Recommend sanitizing/length-capping external
+  descriptions.
+- **Finding 4 (LOW-MED):** no local jsonschema validation of tool-call args against
+  input_schema for external server tools — args forwarded verbatim to subprocess
+  (transport.py:463-469). Ties into C-TOOLLOOP's jsonschema-validation item; note the
+  over-strict-coercion caveat already recorded there.
+
+### C-BUDGET reinforcement: the gateway budget gate is structurally DEAD (4 confirmed HIGH)
+A concurrency audit CONFIRMED these against the current tree — recorded here as the
+concrete failure surface C-BUDGET must close. Cross-reference the existing C-BUDGET
+entry above (F3 reserve/commit TOCTOU, and the C-GATEWAY↔C-BUDGET try/finally-scope
+correction): these findings are the evidence for why that entry is HIGH, not
+theoretical.
+
+1. **Gateway budget gate is a no-op in practice (HIGH).** `ModelGateway._invoke_and_bill`
+   (`models/gateway.py:766-989`) calls `check_budget(profile_id, estimated_cost,
+   budget_remaining)` at ~679-690, then `chat_model.invoke()` at 913 (no lock), then
+   `record_spend(cost)` at 988-989 — a check-then-act with NO reservation. Worse:
+   `budget_remaining` defaults to `float("inf")` (`gateway.py:648`) and `estimated_cost`
+   defaults to `0.0`, and a grep of every call site (`daemon.py:1898-1906`,
+   `job_invocation.py:148`, `execution/engine.py:637`, `self_improve/harness.py:78`,
+   `review/reviewer.py:226`, etc.) found ZERO that pass `budget_remaining=`. So
+   `check_budget` always passes everywhere — the gateway's own gate is structurally
+   dead.
+2. **RunBudgetGuard on the main dispatch path is never queried, only accumulated
+   (HIGH).** `daemon.py:1206-1216` builds a `RunBudgetGuard` and wires it into
+   `ModelGateway(budget_guard=...)`, but on the primary `_gateway_executor` path
+   (`daemon.py:1872-1919`) `call_model_with_retry` is invoked with no
+   `estimated_cost`/`budget_remaining`, and nothing calls
+   `RunBudgetGuard.check_run_budget()`/`check_all_limits()` to GATE a call —
+   `record_spend` only accumulates. So the operator-configured `run_budget_usd`/
+   `per_call_budget_usd` caps (`bc.daily_limit`/`bc.per_task_limit`) are decorative on
+   the main path.
+3. **Admission gates are check-then-act with no lock spanning to commit (HIGH).**
+   `routers/models.py:498` `check_all_limits(estimated_cost=0.0)` and
+   `event_loop/loop.py:981-983` `check_all_limits(...)` read a snapshot, decide, return
+   — no reservation, no lock held across the subsequent call_model + record_spend. N
+   concurrent requests all read the same pre-commit total, all pass, all bill after —
+   overshoot bounded only by in-flight concurrency × per-call cost.
+4. **Ad-hoc fallback ModelGateway has no budget_guard (MEDIUM, narrow branch).**
+   `routers/models.py:526-538` constructs a fallback `ModelGateway` with no
+   `budget_guard=` when `app.state._model_gateway` is unset — its spend never reaches
+   the app-level `RunBudgetGuard` whose `check_all_limits` gate (line 498) is
+   nonetheless consulted, so that gate can never reflect this path's real spend.
+
+**POSITIVE (already correct — the fix pattern already exists in-repo):**
+`BudgetManager` (`controllers/budget_manager.py`) DOES implement a race-free
+reserve-then-reconcile (`check_todo_budget`/`check_daily_budget_reserved` hold
+projected cost under `_spend_lock` BEFORE the call at 79-111/152-195;
+`record_spend`/`release_reservation` reconcile after) and `_gateway_executor` uses it
+correctly (reserve 1876/1885, reconcile 1907-1911, release 1917-1918). The codebase
+already solved this TOCTOU class once — **C-BUDGET's job is to apply that same
+reserve/commit pattern to ModelGateway's own gate and make the RunBudgetGuard
+admission checks actually gate** (thread real `estimated_cost`/`budget_remaining`,
+hold the reservation across the call). Also NOT bugs (audit confirmed correct):
+cache-hit and empty-200 paths correctly skip `record_spend` (empty-200 raises BEFORE
+`record_spend` at `gateway.py:948-961`); fallback-chain hops single-bill correctly.

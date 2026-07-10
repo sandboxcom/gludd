@@ -119,6 +119,113 @@ routable provider) and **D-SATURATE** (keep it optimally filled). Grounded in so
 
 ---
 
+### D-DEPLOY deeper gap: the terraform GENERATION path is non-functional (2026-07-10 audit)
+
+A readiness audit went one level below the register/discover gaps above and
+CONFIRMED against the tree that the generation path itself cannot provision a
+real, reachable compute endpoint today — independent of D-DEPLOY.1-5. These are
+BLOCKING PREREQUISITES: the register → discover → saturate work already specced
+above assumes `deploy()` produces a live box with a real `base_url`; it does not.
+
+1. **Module source path is unresolvable at apply time.** `TerraformGenerator`
+   (`src/general_ludd/infra/terraform.py`, e.g. `_generate_aws` ~228-281) emits
+   `module "vllm_server" { source = "./modules/vllm-server" }` (`"../modules/
+   vllm-server"` for vsphere) into a per-deploy tempdir `deploy_dir =
+   os.path.join(self._working_dir, f"d-{uuid}")` (`deployment.py:112`). Nothing
+   copies or symlinks the real module source into that tempdir — confirmed by
+   reading `deploy()` (`deployment.py:106-149`): it only `os.makedirs(deploy_dir)`
+   and writes the generated `main.tf`, then runs `init`/`apply`/`output -json`
+   (120-123) directly; there is no `shutil.copy`/symlink of `infra/terraform/
+   modules/` anywhere in `deployment.py` or `terraform.py`. `terraform init`
+   therefore cannot resolve the relative module source from an otherwise-empty
+   directory — real deploys fail at `init`, before any cloud API call is made.
+   REQUIRED FIX: copy (or vendor) the `infra/terraform/modules/*` tree into
+   `deploy_dir` before `init`, or emit an absolute/registry module source.
+
+2. **Even resolved, the module provisions nothing.** `infra/terraform/modules/
+   vllm-server/main.tf` (read in full) only creates a `terraform_data`
+   resource (`vllm_server_cloud_init`, lines 49-64) — a local no-op holding
+   cloud-init text as its `input`/`output`, no cloud provider block, no compute
+   resource. `outputs.tf:10-13` hardcodes `base_url = "http://localhost:8000/v1"`
+   as a literal string for every provider — it is not derived from any
+   instance attribute. Applying this module (once item 1 is fixed) would
+   "succeed" with zero real infrastructure and a `base_url` that never points
+   at anything actually running. REQUIRED FIX: the module must create a real
+   compute resource (`aws_instance` / `azurerm_linux_virtual_machine` /
+   `vsphere_virtual_machine` / etc.) per provider and derive `base_url` from
+   that resource's actual IP/DNS output.
+
+3. **The only real instance resource is orphaned.** A real `aws_instance.
+   inference` exists at `infra/terraform/stacks/aws-vllm/main.tf:50` (read in
+   full), composing `../../modules/{vllm-server,network,gpu-cost-watchdog}`
+   with a genuine `vpc_security_group_ids`/`user_data`/spot-market block — this
+   is the one place a real box would actually get created. But it is exercised
+   ONLY by `make tf-init`/`tf-validate STACK=aws-vllm` and its own tests;
+   `DeploymentManager.deploy()` (`deployment.py:106`) and `admin_compute_deploy`
+   (`routers/compute.py:139-313`, confirmed by full read) never invoke the
+   stack tree, only `TerraformGenerator.generate()`'s inline HCL. Even the
+   stack's own outputs (`security_group_id`, `watchdog_user_data`,
+   `main.tf:72-80`) don't expose an instance IP. REQUIRED FIX: either route
+   `DeploymentManager` at the stack tree per provider, or promote the stack's
+   real-instance resources into the generated module so both paths converge.
+
+4. **No readiness probe before marking running.** `deploy()`
+   (`deployment.py:106-147`) sets `state="running"` on the `DeploymentRecord`
+   and returns a `ComputeInstance(status="running", ...)` immediately after
+   `terraform output -json` succeeds (123-147) — no wait for the server
+   process on the box to come up. `DeploymentHealthChecker`
+   (`models/deployment_health.py:224`, confirmed by full read of its
+   docstring/API) is purely reactive: `is_healthy`/`record_failure`/
+   `record_success`/`get_status` — nothing polls an endpoint. The only actual
+   poll loop in the codebase, `_wait_for_ready` (`infra/local_inference.py:
+   207-224`, confirmed by read), is the SEPARATE local-inference path (spawns
+   a local subprocess and polls `http://{host}:{port}/health`) — it is never
+   called by `DeploymentManager`. REQUIRED FIX: this is exactly D-DEPLOY.1
+   (`infra/endpoint_registrar.py::probe_ready`) above — flagging here that
+   today there is truly zero readiness gate on the remote-deploy path, not
+   even a stub.
+
+5. **Teardown leaks: no unregister, no secrets delete.**
+   `admin_compute_destroy` (`routers/compute.py:315-331`, confirmed by full
+   read) runs real `terraform destroy` via `mgr.destroy(instance_id)` and pops
+   `app.state._compute_deployments`, but never calls `util.unregister_endpoint`
+   (nothing registered it in the first place — see gap 1 in Part A) and never
+   deletes secrets (no `secrets_resolver.delete`/equivalent call exists
+   anywhere in the repo grep-checked at authoring). Ephemeral credentials
+   stamped onto `app.state._compute_deployments_ephemeral` (`routers/
+   compute.py:231-232, 270`) during deploy are never read back or consumed on
+   destroy — the code comment "the EventLoop reconcile phase can find it" (231,
+   267) describes a consumer that does not exist. REQUIRED FIX: implement the
+   reconcile-phase consumer that reads `_compute_deployments_ephemeral` and
+   revokes/deletes the ephemeral account on workload completion or teardown,
+   OR — as a smaller interim fix — delete ephemeral creds inline in
+   `admin_compute_destroy` when present. This is also exactly where D-DEPLOY.5
+   (registrar `secrets.delete` for both aliases) must land once D-DEPLOY.2
+   actually creates those aliases.
+
+**Prerequisite ordering.** Items 1-3 are the blocking core: until the module
+source resolves (1) and the module (or the stack it should route to, 3)
+creates a real compute resource with a real `base_url` (2), there is no
+reachable endpoint for D-DEPLOY.1's readiness probe to poll, D-DEPLOY.2's
+registrar to register, or D-DEPLOY.3's SSRF trusted-origin allowance to guard.
+Items 4-5 are real gaps but are already captured by the existing D-DEPLOY.1/
+D-DEPLOY.5 spec items above — restated here to make explicit that today they
+have literally nothing to gate/clean up, not merely an incomplete version.
+
+**What already works (do not rebuild, confirmed by this audit):** the
+terraform BINARY invocation is real (`deployment.py:176-201`,
+`asyncio.create_subprocess_exec` against the resolved `tofu`/`terraform`
+binary, real stdout/stderr capture and non-zero-exit `RuntimeError`); the HTTP
+deploy-trigger glue (`admin_compute_deploy`, full request validation → config
+→ precheck → `mgr.deploy()` → response) is real; the static misconfig precheck
+(`infra/deploy_precheck.py::precheck`, invoked at `compute.py:178`) runs and
+can fail-closed with `force` override; and `terraform destroy`
+(`deployment.py:151-174`, deploy-before-destroy registry guard) is real. The
+gap this audit found is entirely in the HCL content + module wiring — not in
+the Python plumbing around it.
+
+---
+
 ## Part B — D-SATURATE: keep the deployed endpoint optimally filled
 
 ### Built today (reuse, don't reinvent)
@@ -182,6 +289,60 @@ routable provider) and **D-SATURATE** (keep it optimally filled). Grounded in so
   raised, never exceeding the ceiling; backlog + headroom → fill loop re-dispatches without
   waiting the full tick (fake-clock sleep-count); e2e N≫max todos never exceed max in-flight
   and drain to 0 without idle ticks.
+
+### D-SATURATE adversarial-review corrections (2026-07-10)
+
+Adversarial review of the D-SATURATE spec items above found 4 CONFIRMED holes.
+These are corrections/hardening to D-SATURATE.1 and D-SATURATE.2, not new scope —
+apply them when those items are implemented.
+
+1. **The "asyncio pattern to mirror" is actually threading, not asyncio.**
+   `_fallback_semaphore` (`src/general_ludd/models/gateway.py:413-414,1394-1431`)
+   uses `threading.Semaphore` + `threading.Lock`, invoked synchronously from a
+   plain `def`. Only the SHAPE is reusable (lazy dict, sized from config,
+   create-on-first-use) — the primitive MUST be swapped to `asyncio.Semaphore`.
+   Blocking on a `threading.Semaphore` inside the async dispatch path
+   (`loop.py:1487 _dispatch_jobs_via_scheduler`, a real `async def`) would freeze
+   the entire event loop for all coroutines while held. State this swap
+   explicitly as a hard requirement on D-SATURATE.1 — do not literally copy
+   gateway's primitive.
+
+2. **`plan_backfill_by_source` has no item↔source affinity model.**
+   `saturation.py:170-178` is first-fit, assuming any backlog item runs on any
+   source with headroom. D-SATURATE.2 routes todos to specific endpoints by
+   role/model compatibility — nothing in the spec says how todos get
+   pre-filtered to compatible endpoints before this call. As written it could
+   hand a todo needing model X to an endpoint serving model Y. **Required:** add
+   a compatibility/affinity pre-filter step ahead of `plan_backfill_by_source` in
+   D-SATURATE.2. (Also note: `SourceCapacity`'s field is `source_id`, not `id` —
+   correct the naming used above.)
+
+3. **Mid-flight endpoint teardown orphans blocked waiters (sharpest hole).**
+   `admin_compute_destroy` (`routers/compute.py:315-331`) pops the deployment and
+   `UtilizationTracker.unregister_endpoint` (`utilization.py:86-89`) fully
+   removes the endpoint. Releasing a *held* `asyncio.Semaphore` is safe, but a
+   coroutine *blocked* in `await sem.acquire()` for a torn-down endpoint hangs
+   forever — nothing signals teardown to a blocked waiter. **Required:** D-SATURATE.1
+   must wire a cancellation/timeout on endpoint acquire (e.g. `asyncio.wait_for`
+   around `acquire()`, or a teardown event that wakes and fails blocked waiters)
+   as part of the teardown path added in D-DEPLOY.5.
+
+4. **Semaphore lifetime is spec-ambiguous.** "lazily sized from
+   `ComputeEndpoint.max_concurrent`" doesn't pin per-call vs daemon-lifetime.
+   **Required:** state explicitly that `_endpoint_semaphores` is an
+   instance-lifetime dict on the long-lived `EventLoop`, constructed once via
+   create-if-absent GUARDED by an `asyncio.Lock` — the create-if-absent step is
+   an unguarded check-then-act race under concurrent coroutines otherwise. Mirror
+   gateway's `threading.Lock`-guarded equivalent but with `asyncio.Lock`.
+
+**Framing correction:** `UtilizationTracker` is ALREADY wired into `EventLoop`
+(`daemon.py:1732` passes the `app.state._utilization_tracker` singleton into
+`loop.py:329`) — the gap is purely missing `route_task`/`release_task` calls at
+dispatch time, not plumbing. Separately, `UtilizationTracker` has NO locking:
+`register_endpoint` (`utilization.py:80-84`) overwrites silently, discarding any
+in-flight `current_load` for a re-registered endpoint — worth a guard when
+D-DEPLOY.2/D-DEPLOY.5 re-register/deregister endpoints that may have in-flight
+work.
 
 ## End-to-end acceptance ("fully able to do this when the spec is implemented")
 `POST /admin/compute/deploy` provisions a GPU box, vLLM/llama.cpp serves `/v1` restricted

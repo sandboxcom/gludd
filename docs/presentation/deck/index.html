@@ -68,9 +68,10 @@
   .metric-box { padding: 10px; }
   .metric-box .number { font-size: 1.4em; }
   .diagram-wrap { padding: 8px; max-width: 100%; margin: 10px auto; }
-  .reveal .mermaid { font-size: 12px; }
+  .reveal .mermaid { font-size: 12px; overflow-x: auto; }
   .reveal .mermaid svg { font-size: 12px; }
   .reveal pre code { font-size: 0.42em; max-height: 320px; }
+  .reveal pre code.language-bash { white-space: pre-wrap; word-break: break-all; }
   .reveal table { font-size: 0.5em; }
   .path { font-size: 0.8em; }
   .bullets-tight li { font-size: 0.8em; }
@@ -166,7 +167,7 @@ graph TD
   <p>Nine stages, each backed by a named function and a database table. The next slides walk each one.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart LR
+flowchart TD
   n1["1 Submit<br/>routers/todos.py"] --> n2["2 Tick loop<br/>event_loop/loop.py"]
   n2 --> n3["3 Schedule<br/>event_loop/scheduler.py"]
   n3 --> n4["4 Claim<br/>db/repository.py"]
@@ -216,6 +217,13 @@ stateDiagram-v2
   <div class="stage-kicker">Flagship flow &middot; stage 1 of 9</div>
   <h2><span class="step-number">1</span>Submit</h2>
   <p>Everything starts with a todo &mdash; a short description of what you want done, submitted over HTTP.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  A["POST /api/todos<br/>routers/todos.py:170"] --> B["TodoRepository.create<br/>db/repository.py"]
+  B --> C["INSERT todos<br/>status = BACKLOG"]
+    </div>
+  </div>
   <ul class="bullets-tight">
     <li class="fragment"><span class="path">POST /api/todos</span> is handled by <span class="path">api_add_todo</span> &mdash; <span class="path">src/general_ludd/routers/todos.py:170</span></li>
     <li class="fragment">The router calls <span class="path">TodoRepository.create</span> &mdash; <span class="path">src/general_ludd/db/repository.py</span></li>
@@ -232,15 +240,37 @@ stateDiagram-v2
   <div class="stage-kicker">Flagship flow &middot; stage 2 of 9</div>
   <h2><span class="step-number">2</span>The tick loop &mdash; 17 phases</h2>
   <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:88</span>) &mdash; the same 17 phases, in the same order, inside one DB session.</p>
-  <pre><code class="language-text">load_config_snapshot        claim_unreviewed_task_returns
-dispatch_return_review_jobs evaluate_pid_controllers
-refill_task_buckets         run_scheduler
-claim_runnable_todos        evaluate_rules
-dispatch_execute_jobs       reconcile_completed_decisions
-refresh_model_performance   check_compute_utilization
-check_service_credits       remediate_blocked_tasks
-self_improve                poll_issue_sources
-emit_tick_metrics</code></pre>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  subgraph G1["Config + review intake"]
+    A1["load_config_snapshot"] --> A2["claim_unreviewed_<br/>task_returns"]
+    A2 --> A3["dispatch_return_<br/>review_jobs"]
+    A3 --> A4["evaluate_pid_<br/>controllers"]
+  end
+  subgraph G2["Scheduling + buckets"]
+    B1["refill_task_buckets"] --> B2["run_scheduler"]
+    B2 --> B3["claim_runnable_todos"]
+    B3 --> B4["evaluate_rules"]
+  end
+  subgraph G3["Execution + reconcile"]
+    C1["dispatch_execute_jobs"] --> C2["reconcile_completed_<br/>decisions"]
+    C2 --> C3["refresh_model_<br/>performance"]
+  end
+  subgraph G4["Compute + credits"]
+    D1["check_compute_<br/>utilization"] --> D2["check_service_credits"]
+    D2 --> D3["remediate_blocked_<br/>tasks"]
+  end
+  subgraph G5["Self-improve + metrics"]
+    E1["self_improve"] --> E2["poll_issue_sources"]
+    E2 --> E3["emit_tick_metrics"]
+  end
+  G1 --> G2
+  G2 --> G3
+  G3 --> G4
+  G4 --> G5
+    </div>
+  </div>
   <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-106 (PHASE_ORDER, 17 entries)</p>
 </section>
 
@@ -252,7 +282,7 @@ emit_tick_metrics</code></pre>
   <p>The load-bearing phases of <span class="path">PHASE_ORDER</span>, in the exact order they run inside a single tick's DB session.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart LR
+flowchart TD
   A["load_config<br/>snapshot"] --> B["claim + dispatch<br/>return review"]
   B --> C["run_scheduler<br/>promote due todos"]
   C --> D["claim_runnable<br/>todos (CAS)"]
@@ -274,6 +304,14 @@ flowchart LR
   <div class="stage-kicker">Flagship flow &middot; stage 3 of 9</div>
   <h2><span class="step-number">3</span>Schedule promotion</h2>
   <p>The <code>run_scheduler</code> phase calls <span class="path">TodoScheduler.tick()</span> &mdash; <span class="path">src/general_ludd/event_loop/scheduler.py:107</span> (class <span class="path">TodoScheduler</span> at <span class="path">scheduler.py:88</span>).</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  A["TodoScheduler.tick()"] --> B{"one-shot<br/>or cron?"}
+  B -->|one-shot, due| C["SCHEDULED -> QUEUED"]
+  B -->|cron fire| D["spawn QUEUED child<br/>advance next_run_at"]
+    </div>
+  </div>
   <ul class="bullets-tight">
     <li class="fragment">A one-shot todo promotes <code>SCHEDULED</code> &rarr; <code>QUEUED</code> once <code>now &ge; scheduled_at</code></li>
     <li class="fragment">A cron todo (<code>todos.cron</code>, croniter grammar) stays a <code>SCHEDULED</code> template forever &mdash; each fire spawns a <code>QUEUED</code> child clone and advances <code>next_run_at</code></li>
@@ -289,9 +327,17 @@ flowchart LR
   <div class="stage-kicker">Flagship flow &middot; stage 4 of 9</div>
   <h2><span class="step-number">4</span>Claim &mdash; version-guarded CAS</h2>
   <p>gludd won't let two workers grab the same todo. The <code>claim_runnable_todos</code> phase (<span class="path">EventLoop._phase_claim_runnable_todos</span>, <span class="path">loop.py:1365</span>) calls a compare-and-swap.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  A["claim_runnable_todos<br/>phase"] --> B["TodoRepository.claim_runnable<br/>CAS: QUEUED -> ACTIVE"]
+  B --> C["acquire_lease()<br/>bucket_leases row"]
+  C --> D["todo_events row<br/>actor=claim_runnable"]
+    </div>
+  </div>
   <ul class="bullets-tight">
-    <li class="fragment"><span class="path">TodoRepository.claim_runnable</span> &mdash; <span class="path">db/repository.py:424</span> &mdash; UPDATEs <code>QUEUED</code> &rarr; <code>ACTIVE</code> guarded by the <code>todos.version</code> column; losing the race just leaves the row <code>QUEUED</code> for next tick. This same call also appends the todo's <strong>first</strong> <span class="path">todo_events</span> row (<code>actor="claim_runnable"</code>)</li>
-    <li class="fragment"><span class="path">acquire_lease</span> &mdash; <span class="path">event_loop/lease.py:15</span> &mdash; takes an exclusive lease on the todo's resource bucket</li>
+    <li class="fragment"><span class="path">db/repository.py:424</span> guards the UPDATE with the <code>todos.version</code> column; losing the race just leaves the row <code>QUEUED</code> for next tick</li>
+    <li class="fragment"><span class="path">event_loop/lease.py:15</span> takes an exclusive lease on the todo's resource bucket</li>
     <li class="fragment">The lease is a real row in <span class="path">bucket_leases</span> (<span class="path">db/models.py:495</span>): <code>bucket_key</code>, <code>holder_id</code>, <code>expires_at</code> &mdash; a stale lease just expires</li>
   </ul>
 </section>
@@ -303,10 +349,19 @@ flowchart LR
   <div class="stage-kicker">Flagship flow &middot; stage 5 of 9</div>
   <h2><span class="step-number">5</span>Dispatch &mdash; the spend gate</h2>
   <p><span class="path">_dispatch_execute_job</span> (<span class="path">event_loop/loop.py:1844</span>) runs from the <code>dispatch_execute_jobs</code> phase &mdash; but it checks the budget before it checks anything else.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  A["_dispatch_execute_job"] --> B{"SpendLimiter.try_charge<br/>(in-memory gate)"}
+  B -->|accepted| C["proceed to model call"]
+  B -->|rejected| D["defer todo<br/>(retry later tick)"]
+  C --> E["periodic flush -><br/>spend_records"]
+    </div>
+  </div>
   <ul class="bullets-tight">
-    <li class="fragment"><code>SpendLimiter.try_charge</code> (<span class="path">controllers/spend_limiter.py:278</span>) gates the call against a rolling-window budget <em>before</em> a single token is spent &mdash; this is an <strong>in-memory</strong> check-and-record, not a DB write</li>
-    <li class="fragment">Every accepted charge is later drained by a periodic flush (<span class="path">SpendRepository.add</span>, <span class="path">db/repository.py:1773</span>, wired in <span class="path">daemon.py</span>) into <span class="path">spend_records</span> (<span class="path">db/models.py:633</span>) &mdash; the limiter's in-memory ledger is the source of truth for the live gate, the table is the durable record</li>
-    <li class="fragment">A rejected charge defers the todo silently: no model call is made, no cost is incurred, and the todo is retried on a later tick</li>
+    <li class="fragment"><code>SpendLimiter.try_charge</code> (<span class="path">controllers/spend_limiter.py:278</span>) checks a rolling-window budget <em>before</em> a single token is spent &mdash; an in-memory check-and-record, not a DB write</li>
+    <li class="fragment">Accepted charges drain via a periodic flush (<span class="path">SpendRepository.add</span>, <span class="path">db/repository.py:1773</span>) into <span class="path">spend_records</span> (<span class="path">db/models.py:633</span>) &mdash; the in-memory ledger is the source of truth for the live gate, the table is the durable record</li>
+    <li class="fragment">A rejected charge defers the todo silently: no model call, no cost incurred</li>
   </ul>
   <p class="honest-note">The gate runs first. gludd cannot overspend by dispatching, then discovering it should not have.</p>
 </section>
@@ -317,11 +372,20 @@ flowchart LR
 <section>
   <div class="stage-kicker">Flagship flow &middot; stage 6 of 9</div>
   <h2><span class="step-number">6</span>Model call &mdash; gateway + tool loop</h2>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  A["invoke_model_for_generation"] --> B["ModelGateway.call_model<br/>(LangChain + tenacity retries)"]
+  B --> C["INSERT model_call_logs<br/>+ model_performance rollup"]
+  B --> D["ToolCallLoop.run_with_tools<br/>(if tool use needed)"]
+  D --> E["DynamicDispatcher<br/>fails closed on unknown tool"]
+    </div>
+  </div>
   <ul class="bullets-tight">
-    <li class="fragment"><span class="path">invoke_model_for_generation</span> (<span class="path">models/job_invocation.py:41</span>) calls <span class="path">ModelGateway.call_model</span> (<span class="path">models/gateway.py:642</span>) &mdash; a LangChain provider registry with tenacity retries</li>
+    <li class="fragment"><span class="path">models/job_invocation.py:41</span> calls <span class="path">models/gateway.py:642</span> &mdash; a LangChain provider registry with tenacity retries</li>
     <li class="fragment">Every call is billed and logged to <span class="path">model_call_logs</span> (<span class="path">db/models.py:962</span>) and rolled up into <span class="path">model_performance</span> (<span class="path">db/models.py:1005</span>)</li>
-    <li class="fragment">Work needing autonomous tool use hands off to <span class="path">ToolCallLoop.run_with_tools</span> (<span class="path">execution/tool_loop.py:139</span>): model proposes a tool call, gludd executes it, feeds the result back, repeats</li>
-    <li class="fragment">Tool calls route through <span class="path">DynamicDispatcher</span> (<span class="path">dispatch/dynamic_dispatcher.py:198</span>) &mdash; a capability lattice that fails <strong>closed</strong> on any tool it doesn't recognize</li>
+    <li class="fragment">Autonomous tool use hands off to <span class="path">execution/tool_loop.py:139</span>: model proposes a tool call, gludd executes it, feeds the result back, repeats</li>
+    <li class="fragment">Tool calls route through <span class="path">dispatch/dynamic_dispatcher.py:198</span> &mdash; a capability lattice that fails <strong>closed</strong> on any tool it doesn't recognize</li>
   </ul>
 </section>
 
@@ -332,6 +396,14 @@ flowchart LR
   <div class="stage-kicker">Flagship flow &middot; stage 7 of 9</div>
   <h2><span class="step-number">7</span>Execute &mdash; playbook or worker HTTP</h2>
   <p>Two execution paths converge on the same persistence call.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  A["local: run_playbook<br/>ansible/runner.py"] --> C["_persist_task_return<br/>loop.py:3016"]
+  B["remote: POST /jobs/execute<br/>worker/app.py:315"] --> C
+  C --> D["INSERT task_returns<br/>(unreviewed)"]
+    </div>
+  </div>
   <ul class="bullets-tight">
     <li class="fragment"><strong>Local:</strong> <span class="path">runner.write_vars</span> (<span class="path">ansible/runner.py:140</span>) + <span class="path">run_playbook</span> (<span class="path">ansible/runner.py:166</span>) hand the job to an Ansible playbook</li>
     <li class="fragment"><strong>Remote/isolated:</strong> <span class="path">POST /jobs/execute</span> &mdash; <span class="path">worker/app.py:315</span> &mdash; runs the same job over HTTP against a worker process</li>
@@ -347,23 +419,14 @@ flowchart LR
   <h2>Submit &rarr; execute, and what each step writes</h2>
   <div class="diagram-wrap">
     <div class="mermaid">
-sequenceDiagram
-  participant U as You
-  participant API as routers/todos.py
-  participant EL as EventLoop
-  participant GW as models/gateway.py
-  participant RN as runner / worker
-  participant DB as DB tables
-  U->>API: POST /api/todos
-  API->>DB: INSERT todos (BACKLOG)
-  EL->>DB: claim QUEUED -> ACTIVE + todo_events
-  EL->>EL: SpendLimiter.try_charge (gate)
-  EL->>GW: call_model
-  GW-->>EL: generation
-  EL->>DB: INSERT model_call_logs
-  EL->>RN: execute job
-  RN-->>EL: result
-  EL->>DB: INSERT task_returns (unreviewed)
+flowchart TD
+  s1["1 POST /api/todos<br/>(You -> routers/todos.py)"] --> s2["2 INSERT todos<br/>(BACKLOG)"]
+  s2 --> s3["3 claim QUEUED -> ACTIVE<br/>+ todo_events (EventLoop)"]
+  s3 --> s4["4 SpendLimiter.try_charge<br/>(gate)"]
+  s4 --> s5["5 call_model<br/>(models/gateway.py)"]
+  s5 --> s6["6 INSERT model_call_logs"]
+  s6 --> s7["7 execute job<br/>(runner / worker)"]
+  s7 --> s8["8 INSERT task_returns<br/>(unreviewed)"]
     </div>
   </div>
   <p class="cite">Source: routers/todos.py api_add_todo, event_loop/loop.py (_dispatch_execute_job, _persist_task_return), models/gateway.py call_model</p>
@@ -376,10 +439,20 @@ sequenceDiagram
   <div class="stage-kicker">Flagship flow &middot; stage 8 of 9</div>
   <h2><span class="step-number">8</span>Review &mdash; a second AI, adversarially</h2>
   <p>gludd doesn't let the same model that wrote the code approve it.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  A["ReturnReviewer.review_return()"] --> B{"output parseable?"}
+  B -->|no| C["decision = failed"]
+  B -->|yes| D["decision = approve /<br/>changes / reject"]
+  C --> E["apply_decision()<br/>task_decisions + audit_events"]
+  D --> E
+    </div>
+  </div>
   <ul class="bullets-tight">
-    <li class="fragment"><span class="path">ReturnReviewer.review_return</span> &mdash; <span class="path">review/reviewer.py:49</span> &mdash; runs an adversarial scan against the <code>task_return</code>, not just "did it run"</li>
+    <li class="fragment"><span class="path">review/reviewer.py:49</span> runs an adversarial scan against the <code>task_return</code>, not just "did it run"</li>
     <li class="fragment">Model output is parsed <strong>JSON-fence tolerant</strong> (strips <code>```json</code> fences) &mdash; an unparseable verdict becomes <code>decision=failed</code>, <strong>never</strong> a silent pass</li>
-    <li class="fragment"><span class="path">apply_decision</span> &mdash; <span class="path">review/decision_applier.py:28</span> &mdash; writes the verdict</li>
+    <li class="fragment"><span class="path">review/decision_applier.py:28</span> writes the verdict</li>
     <li class="fragment">Results land in <span class="path">task_decisions</span> (<span class="path">db/models.py:344</span>, 1:1 with <code>task_returns</code>) and <span class="path">audit_events</span> (<span class="path">db/models.py:413</span>)</li>
   </ul>
 </section>
@@ -391,24 +464,15 @@ sequenceDiagram
   <h2>The review loop, in detail</h2>
   <div class="diagram-wrap">
     <div class="mermaid">
-sequenceDiagram
-  participant EX as Execute (stage 7)
-  participant EL as EventLoop
-  participant RV as ReturnReviewer
-  participant DA as decision_applier
-  participant DB as DB tables
-  EX->>EL: job result
-  EL->>DB: INSERT task_returns (loop.py:3016)
-  EL->>RV: claim_unreviewed_task_returns phase -> review_return()
-  RV->>RV: adversarial scan + JSON-fence-tolerant parse
-  alt output unparseable
-    RV-->>EL: decision = failed
-  else output parsed
-    RV-->>EL: decision = approve / changes / reject
-  end
-  EL->>DA: apply_decision(decision)
-  DA->>DB: INSERT task_decisions + audit_events
-  EL->>EL: reconcile_completed_decisions (loop.py:3066)
+flowchart TD
+  A["Execute (stage 7)<br/>job result"] --> B["INSERT task_returns<br/>(loop.py:3016)"]
+  B --> C["ReturnReviewer.review_return()<br/>adversarial scan + JSON-fence-tolerant parse"]
+  C --> D{"output parsed?"}
+  D -->|no| E["decision = failed"]
+  D -->|yes| F["decision = approve /<br/>changes / reject"]
+  E --> G["apply_decision()<br/>INSERT task_decisions + audit_events"]
+  F --> G
+  G --> H["reconcile_completed_decisions<br/>(loop.py:3066)"]
     </div>
   </div>
   <p class="cite">Source: src/general_ludd/review/reviewer.py:49, src/general_ludd/review/decision_applier.py:28</p>
@@ -420,6 +484,14 @@ sequenceDiagram
 <section>
   <div class="stage-kicker">Flagship flow &middot; stage 9 of 9</div>
   <h2><span class="step-number">9</span>Reconcile + commit</h2>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  A["reconcile_completed_decisions<br/>loop.py:3066"] --> B["_try_commit_completed_work<br/>loop.py:3355"]
+  B --> C["GitAutomation<br/>commit + push (repo.py:180)"]
+  C --> D["optional: PRDelivery<br/>_maybe_open_pr"]
+    </div>
+  </div>
   <ul class="bullets-tight">
     <li class="fragment"><span class="path">_phase_reconcile_completed_decisions</span> &mdash; <span class="path">event_loop/loop.py:3066</span> &mdash; reads the latest <code>task_decisions</code> and updates todo status</li>
     <li class="fragment"><span class="path">_try_commit_completed_work</span> &mdash; <span class="path">event_loop/loop.py:3355</span> &mdash; the git-delivery path: the <strong>only</strong> point where a todo's affected files are actually known (worktree changes don't exist before this)</li>
@@ -443,15 +515,9 @@ sequenceDiagram
   <div class="diagram-wrap">
     <div class="mermaid">
 flowchart TD
-  todos[("todos<br/>180")] --> todo_events[("todo_events<br/>280")]
-  todos --> task_returns[("task_returns<br/>306")]
-  task_returns --> task_decisions[("task_decisions<br/>344")]
-  task_decisions --> audit_events[("audit_events<br/>413")]
-  todos --> queues[("queues<br/>388")]
-  todos --> bucket_leases[("bucket_leases<br/>495")]
-  todos --> spend_records[("spend_records<br/>633")]
-  todos --> model_call_logs[("model_call_logs<br/>962")]
-  model_call_logs --> model_performance[("model_performance<br/>1005")]
+  DB[("27 tables<br/>db/models.py")] --> WC["Work-cycle spine<br/>(4 tables, next slide)"]
+  DB --> SC["Scheduling + safety<br/>+ cost (4 tables)"]
+  DB --> MM["Models + memory<br/>+ compute (5 tables)"]
     </div>
   </div>
   <p class="cite">Source: src/general_ludd/db/models.py (27 tables) &middot; alembic/versions/001-024 &middot; tests/unit/test_alembic_orm_parity.py</p>
@@ -471,6 +537,14 @@ flowchart TD
       <tr><td><code>task_decisions</code></td><td>344</td><td>Reviewer verdict for one <code>task_return</code> (1:1, FK CASCADE)</td></tr>
     </tbody>
   </table>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  todos[("todos<br/>180")] --> todo_events[("todo_events<br/>280")]
+  todos --> task_returns[("task_returns<br/>306")]
+  task_returns --> task_decisions[("task_decisions<br/>344")]
+    </div>
+  </div>
   <p class="cite">Source: src/general_ludd/db/models.py</p>
 </section>
 
@@ -488,6 +562,15 @@ flowchart TD
       <tr><td><code>spend_records</code></td><td>633</td><td>One row per spend event for the rolling-window cost limiter</td></tr>
     </tbody>
   </table>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  todos[("todos")] --> queues[("queues<br/>388")]
+  todos --> bucket_leases[("bucket_leases<br/>495")]
+  todos --> spend_records[("spend_records<br/>633")]
+  task_decisions[("task_decisions")] --> audit_events[("audit_events<br/>413")]
+    </div>
+  </div>
   <p class="cite">Source: src/general_ludd/db/models.py</p>
 </section>
 
@@ -506,6 +589,16 @@ flowchart TD
       <tr><td><code>slurm_jobs</code></td><td>1093</td><td>HPC/Slurm job tracking for compute-heavy tasks</td></tr>
     </tbody>
   </table>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  todos[("todos")] --> model_call_logs[("model_call_logs<br/>962")]
+  model_call_logs --> model_performance[("model_performance<br/>1005")]
+  todos --> human_todos[("human_todos<br/>857")]
+  todos --> memory_records[("memory_records<br/>739")]
+  todos --> slurm_jobs[("slurm_jobs<br/>1093")]
+    </div>
+  </div>
   <p class="cite">Source: src/general_ludd/db/models.py</p>
 </section>
 
@@ -812,6 +905,7 @@ Reveal.initialize({
   margin: 0.045,
   minScale: 0.2,
   maxScale: 1.8,
+  overflow: 'scroll',
   transition: 'slide',
   transitionSpeed: 'default',
   backgroundTransition: 'fade',

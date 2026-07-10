@@ -269,6 +269,50 @@ test (no `index.lock` collision), and a timeout-carrying test for `create_worktr
 worktree path, a different key from the main repo's — shared refs/objects not
 serialized; close later by locking on `git rev-parse --git-common-dir`.
 
+### GA-1 worktree-lock fix (adversarial-review correction, CONFIRMED, 2026-07-10)
+
+Adversarial review closes the "known residual" above: **the worktree lock buys
+zero protection today, not just a weaker key.**
+
+`locking.py` `_git_dir` (120-131) uses `os.path.isdir(repo_path/.git)` — a
+worktree's `.git` is a **file** (gitlink), so `isdir` is `False` → `_git_dir`
+returns `None` → the cross-process `flock` is **skipped entirely** for every
+worktree. `_normalize` (86-96) separately keys the in-process `RLock` on the
+worktree's own `realpath`, so two worktrees get two distinct `RLock`s. Net:
+`GitAutomation(worktree_path)` from `loop.py:3373` (`_try_commit_completed_work`,
+H6 delivery) gets a private in-process lock and **zero** flock — concurrent
+writers across the main repo and its worktrees are unserialized against shared
+`refs`/objects. Also: `push_to_remote` (`repo.py:785-819`) has **zero** locking
+of any kind (raw `subprocess.run`, not even the flock GA-1 above adds via
+`_run_git`).
+
+**Fix:**
+1. Resolve the git **common dir** via `git rev-parse --git-common-dir` (git
+   itself parses the gitlink for us; this reports the *main* repo's `.git` for
+   both a plain repo and any of its worktrees). Cache the result keyed by
+   `realpath(repo_path)`, and use that cached common-dir as the single lock key
+   in **both** `_normalize` and `_git_dir` — this is what makes a worktree and
+   its main repo serialize on the same lock.
+2. **Guard:** `os.path.exists(repo_path/.git)` as a cheap pre-check before
+   spawning the `git rev-parse` subprocess — preserves zero-subprocess cost for
+   not-a-repo-yet paths, and keeps tests that probe nonexistent paths (e.g.
+   `/tmp/repo`, `/repo`) from spawning git with a bad cwd.
+3. **Only cache SUCCESS.** Never cache `None` — a repo that doesn't exist yet at
+   probe time must not be poisoned forever; self-heal (re-probe) if the cached
+   common-dir has since vanished.
+4. **`push_to_remote`:** wrap its existing raw `subprocess.run` in `with
+   git_repo_lock(repo_path):` directly. Do **NOT** route it through `_run_git` —
+   on timeout `_run_git` **raises** `CalledProcessError(124)` rather than
+   returning a result, so a `returncode == 124` check in `push_to_remote` would
+   be dead code and the exception would propagate uncaught, breaking
+   `test_push_to_remote_times_out_cleanly`. Keep `push_to_remote`'s own
+   subprocess call and timeout handling as-is; only add the lock around it.
+
+**Test:** `test_worktree_lock_blocks_while_main_repo_lock_held` (new, in
+`tests/unit/test_git_locking.py`) — deterministic (two threads/processes,
+one holds the main-repo lock, assert the worktree-path lock attempt blocks
+until release). Fails today (worktree flock is skipped), passes after the fix.
+
 ---
 
 ## C-TOOLLOOP — per-response cap (MED) + arg schema validation (MED) + key injection (LOW/MED)
