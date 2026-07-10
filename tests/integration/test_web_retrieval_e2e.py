@@ -373,8 +373,9 @@ class TestFetchWebPageCaching:
             urlopen_calls.append(1)
             return mock_resp
 
+        _opener = MagicMock(open=MagicMock(side_effect=_tracking_urlopen))
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=_tracking_urlopen))):
+                patch("urllib.request.build_opener", return_value=_opener):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://example.com/cached")
 
@@ -414,8 +415,9 @@ class TestFetchWebPageCaching:
             urlopen_calls.append(1)
             return mock_resp
 
+        _opener = MagicMock(open=MagicMock(side_effect=_tracking_urlopen))
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=FakeCache()), \
-                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=_tracking_urlopen))):
+                patch("urllib.request.build_opener", return_value=_opener):
             retriever = WebRetriever()
             result1 = retriever.fetch_web_page("http://example.com/hit")
             result2 = retriever.fetch_web_page("http://example.com/hit")

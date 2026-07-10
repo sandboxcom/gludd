@@ -25,7 +25,6 @@ This test proves:
 
 from __future__ import annotations
 
-import pytest
 from jinja2.exceptions import SecurityError, TemplateError
 
 from general_ludd.prompts.registry import PromptRegistry

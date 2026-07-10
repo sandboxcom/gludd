@@ -22,6 +22,7 @@ from __future__ import annotations
 import io
 import urllib.error
 import urllib.request
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -147,7 +148,7 @@ class TestWebRetrieverRedirectGuard:
 
         class _FakeResp(io.BytesIO):
             status = 200
-            headers: dict[str, str] = {}
+            headers: ClassVar[dict[str, str]] = {}
 
         def capturing_build_opener(*handlers: object) -> MagicMock:
             for h in handlers:
