@@ -17,6 +17,7 @@ benign https url + in-base workspace_path still works.
 from __future__ import annotations
 
 import os
+import socket
 
 import pytest
 
@@ -111,6 +112,76 @@ def test_benign_public_urls_pass_url_guard():
         "git://github.com/org/repo.git",
     ):
         assert reject_unsafe_repo_url(good) == good.strip()
+
+
+# --- SSRF: metadata name aliases / CGNAT / resolved-DNS (canonical predicate) -
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://metadata.google.internal/repo.git",
+        "http://metadata.goog/repo.git",
+        "http://instance-data/repo.git",
+        "http://ip6-localhost/repo.git",
+    ],
+)
+def test_metadata_alias_names_rejected(bad_url):
+    # Previously missing from this guard's own 6-literal blocklist; now
+    # covered via the canonical general_ludd.security.ssrf.resolved_host_is_blocked
+    # delegation (host_is_blocked's BLOCKED_HOST_NAMES).
+    with pytest.raises(ValueError):
+        reject_unsafe_repo_url(bad_url)
+
+
+def test_alibaba_metadata_ip_literal_rejected():
+    # 100.100.100.200 sits in the 100.64.0.0/10 CGNAT range: is_private is
+    # False for it in Python's ipaddress, so the OLD 6-literal blocklist
+    # (which did not name it) would NOT have caught it. BLOCKED_METADATA_IPS
+    # names it explicitly.
+    with pytest.raises(ValueError):
+        reject_unsafe_repo_url("http://100.100.100.200/repo.git")
+
+
+def test_cgnat_literal_rejected():
+    # 100.65.1.1 sits in the 100.64.0.0/10 CGNAT range: is_private is False,
+    # so only the canonical guard's `not is_global` flag closes this gap (the
+    # old local blocklist had no numeric-range check beyond the 6 literals).
+    with pytest.raises(ValueError):
+        reject_unsafe_repo_url("http://100.65.1.1/repo.git")
+
+
+def test_hostname_resolving_to_cgnat_address_rejected(monkeypatch):
+    from general_ludd.security import ssrf as ssrf_mod
+
+    def _fake_getaddrinfo(host, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("100.70.1.1", 0))]
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _fake_getaddrinfo)
+    with pytest.raises(ValueError):
+        reject_unsafe_repo_url("http://internal-git.example.com/repo.git")
+
+
+def test_hostname_resolving_to_private_address_rejected(monkeypatch):
+    from general_ludd.security import ssrf as ssrf_mod
+
+    def _fake_getaddrinfo(host, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 0))]
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _fake_getaddrinfo)
+    with pytest.raises(ValueError):
+        reject_unsafe_repo_url("https://internal-git.example.com/repo.git")
+
+
+def test_unresolvable_hostname_fails_closed(monkeypatch):
+    from general_ludd.security import ssrf as ssrf_mod
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("name or service not known")
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _boom)
+    with pytest.raises(ValueError):
+        reject_unsafe_repo_url("https://does-not-resolve.example.com/repo.git")
 
 
 # --- workspace_path traversal ------------------------------------------------

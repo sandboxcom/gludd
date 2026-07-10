@@ -20,7 +20,6 @@ uses ``shell=True`` and is strictly time-bound.
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import urllib.error
@@ -29,6 +28,8 @@ from collections.abc import Callable, Mapping
 from email.message import Message
 from typing import IO, TypedDict, cast
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import host_is_blocked
 
 
 class MondayColumnValue(TypedDict, total=False):
@@ -99,28 +100,23 @@ def _is_blocked_host(host: str) -> bool:
 
     Only literal inspection is performed; no DNS resolution happens here so
     that a hostile DNS answer cannot move a name from "allowed" to "internal"
-    after the check. Bare/internal-looking hostnames are also rejected.
+    after the check. Delegates the loopback/metadata-name/IP-literal decision
+    to the canonical :func:`general_ludd.security.ssrf.host_is_blocked` (so
+    this adapter's classification — previously missing ``metadata.goog``/
+    ``instance-data``/the ``ip6-*`` aliases and the ``not is_global`` catch
+    for CGNAT/TEST-NET ranges — can never drift from the single source of
+    truth), then ADDITIVELY also rejects any bare hostname with no dot and
+    any hostname ending in ``.local``/``.internal``/``.localhost``/
+    ``.intranet`` — a stricter rule this adapter had before consolidation
+    that the canonical guard does not apply (it would be too strict for
+    other callers).
     """
     host = (host or "").strip().lower()
     if not host:
         return True
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
-    ip: ipaddress.IPv4Address | ipaddress.IPv6Address | None
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        ip = None
-    if ip is not None:
-        return bool(
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_unspecified
-            or ip.is_multicast
-        )
-    if host in {"localhost", "localhost.localdomain"}:
+    if host_is_blocked(host):
         return True
     if "." not in host:
         return True

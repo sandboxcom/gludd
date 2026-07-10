@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import ipaddress
 import logging
 import os
 import re
-import socket
 import subprocess
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
@@ -21,6 +19,7 @@ from general_ludd.git_automation.types import (
     WorktreeInfo,
     WorktreeResult,
 )
+from general_ludd.security.ssrf import resolved_host_is_blocked
 
 logger = logging.getLogger(__name__)
 
@@ -62,62 +61,22 @@ def _reject_leading_dash(value: str, *, kind: str) -> str:
 # vet for SSRF below.
 _ALLOWED_REPO_SCHEMES = frozenset({"https", "http", "git", "ssh"})
 
-# Host literals that must never be reached over the network from a clone — the
-# classic SSRF targets: loopback, the cloud metadata endpoint, and its DNS name.
-_BLOCKED_HOST_LITERALS = frozenset(
-    {
-        "localhost",
-        "metadata.google.internal",
-        "metadata",
-        "169.254.169.254",
-        "[::1]",
-        "::1",
-    }
-)
-
-
 def _host_is_blocked(host: str) -> bool:
     """True if ``host`` is (or resolves to) an address we refuse to clone from.
 
-    Blocks loopback, link-local (incl. 169.254.169.254 cloud-metadata),
-    RFC-1918 / unique-local private ranges, and unspecified/reserved addresses.
-    A hostname is resolved and EVERY resolved address is checked, so a name that
-    points at an internal IP cannot smuggle past a literal check.
+    Blocks loopback, link-local (incl. 169.254.169.254 / 100.100.100.200
+    cloud-metadata), RFC-1918 / unique-local private ranges, CGNAT/TEST-NET
+    ranges, and unspecified/reserved addresses. Delegates entirely to the
+    canonical :func:`general_ludd.security.ssrf.resolved_host_is_blocked`,
+    which resolves a non-literal hostname to its A/AAAA records (bounded,
+    fail-closed) and vets EVERY resolved address, so a name that points at an
+    internal IP cannot smuggle past a literal check — matching this
+    function's prior DNS-resolving behavior. This also closes gaps the old
+    local blocklist had: the ``not is_global`` catch for CGNAT/TEST-NET
+    ranges, the Alibaba metadata IP, and the ``metadata.goog``/
+    ``instance-data``/``ip6-*`` name aliases.
     """
-    host = host.strip().strip("[]").lower()
-    if not host:
-        return True
-    if host in _BLOCKED_HOST_LITERALS:
-        return True
-
-    candidates: list[str] = [host]
-    # If it is not already an IP literal, resolve the name to its A/AAAA records
-    # and vet each one (fail closed: a resolution error is treated as blocked).
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        try:
-            infos = socket.getaddrinfo(host, None)
-            candidates = [str(info[4][0]) for info in infos] or candidates
-        except (socket.gaierror, OSError, UnicodeError):
-            return True
-
-    for cand in candidates:
-        try:
-            ip = ipaddress.ip_address(cand.split("%", 1)[0])
-        except ValueError:
-            # Unresolvable / malformed -> fail closed.
-            return True
-        if (
-            ip.is_loopback
-            or ip.is_link_local
-            or ip.is_private
-            or ip.is_unspecified
-            or ip.is_reserved
-            or ip.is_multicast
-        ):
-            return True
-    return False
+    return resolved_host_is_blocked(host)
 
 
 def reject_unsafe_repo_url(url: str) -> str:

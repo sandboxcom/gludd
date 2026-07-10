@@ -145,6 +145,36 @@ def test_internal_base_url_rejected() -> None:
             BitbucketIssueSource(_cfg(base_url=bad), transport=RecordingTransport([]), env={})
 
 
+@pytest.mark.parametrize(
+    "bad_url",
+    ["http://metadata.google.internal/", "http://metadata.goog/", "http://instance-data/"],
+)
+def test_metadata_alias_names_rejected(bad_url: str) -> None:
+    # Previously missing from this adapter's own literal blocklist; now covered
+    # via the canonical general_ludd.security.ssrf.host_is_blocked delegation.
+    with pytest.raises(ValueError):
+        BitbucketIssueSource(_cfg(base_url=bad_url), transport=RecordingTransport([]), env={})
+
+
+def test_alibaba_metadata_ip_rejected() -> None:
+    # 100.100.100.200 sits in the 100.64.0.0/10 CGNAT range: is_private is
+    # False for it in Python's ipaddress, so the OLD is_private-only check
+    # would NOT have caught it. BLOCKED_METADATA_IPS names it explicitly.
+    with pytest.raises(ValueError):
+        BitbucketIssueSource(
+            _cfg(base_url="http://100.100.100.200/"), transport=RecordingTransport([]), env={}
+        )
+
+
+def test_cgnat_address_rejected() -> None:
+    # 100.65.1.1 sits in the 100.64.0.0/10 CGNAT range: is_private is False,
+    # so only the canonical guard's `not is_global` flag closes this gap.
+    with pytest.raises(ValueError):
+        BitbucketIssueSource(
+            _cfg(base_url="http://100.65.1.1/"), transport=RecordingTransport([]), env={}
+        )
+
+
 def test_health_ok() -> None:
     tx = RecordingTransport([(200, {"uuid": "{u-1}", "username": "ada"})])
     src = BitbucketIssueSource(_cfg(), transport=tx, env={"BITBUCKET_TOKEN": "t"})

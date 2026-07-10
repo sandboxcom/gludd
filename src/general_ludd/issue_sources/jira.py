@@ -23,11 +23,12 @@ package ``__init__``; it stands alone.
 from __future__ import annotations
 
 import base64
-import ipaddress
 import os
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import host_is_blocked
 
 __all__ = ["JiraIssueSource"]
 
@@ -60,16 +61,6 @@ class HttpTransport(Protocol):
         timeout: float | None = ...,
     ) -> HttpResponse: ...
 
-
-# Hostnames that must never be reached, regardless of resolution.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "metadata",
-        "metadata.google.internal",
-    }
-)
 
 _DEFAULT_TIMEOUT = 30.0
 
@@ -106,33 +97,18 @@ def _default_transport() -> HttpTransport:
 def _is_blocked_host(host: str) -> bool:
     """Return True if *host* is a literal address/name we refuse to contact.
 
-    Purely literal — no DNS. A bare hostname that is not in the block list is
-    allowed (it will be resolved by the transport at request time, outside our
-    control); the point of this gate is to stop the obvious internal targets
-    (loopback, RFC-1918, link-local, cloud metadata) that an attacker would put
-    directly into ``base_url``.
+    Purely literal — no DNS. A bare hostname that is not blocked by the
+    canonical guard is allowed (it will be resolved by the transport at
+    request time, outside our control); the point of this gate is to stop the
+    obvious internal targets (loopback, RFC-1918, link-local, cloud metadata)
+    that an attacker would put directly into ``base_url``. Delegates entirely
+    to :func:`general_ludd.security.ssrf.host_is_blocked` so this adapter's
+    classification (previously a local 4-name blocklist missing
+    ``metadata.goog``/``instance-data``/the ``ip6-*`` aliases and the
+    ``not is_global`` catch for CGNAT/TEST-NET ranges) can never drift from
+    the single source of truth.
     """
-    host = host.strip().lower()
-    if not host:
-        return True
-    if host in _BLOCKED_HOSTNAMES:
-        return True
-
-    # Strip IPv6 brackets if present, e.g. "[::1]".
-    candidate = host[1:-1] if host.startswith("[") and host.endswith("]") else host
-    try:
-        ip = ipaddress.ip_address(candidate)
-    except ValueError:
-        return False  # Not a literal IP and not a blocked name → allow.
-
-    return bool(
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified  # 0.0.0.0 / ::
-    )
+    return host_is_blocked(host)
 
 
 class JiraIssueSource:

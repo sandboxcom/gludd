@@ -25,10 +25,11 @@ Normalized issue dict shape (``fetch_issues``)::
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
+
+from general_ludd.security.ssrf import host_is_blocked
 
 SYSTEM = "gitlab"
 
@@ -83,28 +84,14 @@ def _is_internal_host(host: str) -> bool:
 
     Literal-host only — this never performs DNS resolution. A hostname that is
     not an IP literal is treated as external (resolution-time SSRF is out of
-    scope for a config-time guard and would require a DNS lookup).
+    scope for a config-time guard and would require a DNS lookup). Delegates
+    entirely to the canonical
+    :func:`general_ludd.security.ssrf.host_is_blocked` so this adapter's
+    classification (previously a local reimplementation missing the
+    ``not is_global`` catch for CGNAT/TEST-NET ranges and the cloud-metadata
+    NAME/IP blocklist) can never drift from the single source of truth.
     """
-
-    if not host:
-        return True
-    bare = host.strip().lower()
-    # Strip an IPv6 zone id / brackets if present.
-    bare = bare.strip("[]").split("%", 1)[0]
-    if bare in {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}:
-        return True
-    try:
-        ip = ipaddress.ip_address(bare)
-    except ValueError:
-        return False
-    return bool(
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return host_is_blocked(host)
 
 
 def _default_transport() -> HTTPTransport:

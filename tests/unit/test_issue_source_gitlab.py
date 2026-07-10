@@ -192,6 +192,38 @@ def test_internal_base_localhost_rejected() -> None:
         src.fetch_issues()
 
 
+@pytest.mark.parametrize(
+    "bad_url",
+    ["https://metadata.google.internal", "https://metadata.goog", "https://instance-data"],
+)
+def test_metadata_alias_names_rejected(bad_url: str) -> None:
+    # Previously missing from this adapter's own 4-name blocklist; now covered
+    # via the canonical general_ludd.security.ssrf.host_is_blocked delegation.
+    src, transport = _make([_Resp(200, [])], config={"base_url": bad_url})
+    with pytest.raises(PermissionError):
+        src.fetch_issues()
+    assert transport.calls == []
+
+
+def test_alibaba_metadata_ip_rejected() -> None:
+    # 100.100.100.200 sits in the 100.64.0.0/10 CGNAT range: is_private is
+    # False for it in Python's ipaddress, so the OLD is_private-only check
+    # would NOT have caught it. BLOCKED_METADATA_IPS names it explicitly.
+    src, transport = _make([_Resp(200, [])], config={"base_url": "http://100.100.100.200"})
+    with pytest.raises(PermissionError):
+        src.fetch_issues()
+    assert transport.calls == []
+
+
+def test_cgnat_address_rejected() -> None:
+    # 100.65.1.1 sits in the 100.64.0.0/10 CGNAT range: is_private is False,
+    # so only the canonical guard's `not is_global` flag closes this gap.
+    src, transport = _make([_Resp(200, [])], config={"base_url": "http://100.65.1.1"})
+    with pytest.raises(PermissionError):
+        src.fetch_issues()
+    assert transport.calls == []
+
+
 def test_health_ok() -> None:
     src, transport = _make([_Resp(200, {"id": 42})])
     health = src.health()

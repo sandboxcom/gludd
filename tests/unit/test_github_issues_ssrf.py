@@ -77,6 +77,38 @@ def test_imds_metadata_endpoint_rejected() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://metadata.google.internal/",
+        "http://metadata.goog/",
+        "http://instance-data/",
+        "http://ip6-localhost/",
+    ],
+)
+def test_metadata_alias_names_rejected_at_construction(bad_url: str) -> None:
+    # Previously missing from the base guard's own 4-name blocklist; now
+    # covered via the canonical general_ludd.security.ssrf.host_is_blocked
+    # delegation.
+    with pytest.raises(ValueError, match="internal base_url host"):
+        GitHubIssuesSource({"repo": "owner/name", "base_url": bad_url})
+
+
+def test_alibaba_metadata_ip_rejected_at_construction() -> None:
+    # 100.100.100.200 sits in the 100.64.0.0/10 CGNAT range: is_private is
+    # False for it in Python's ipaddress, so the OLD is_private-only check
+    # would NOT have caught it. BLOCKED_METADATA_IPS names it explicitly.
+    with pytest.raises(ValueError, match="internal base_url host"):
+        GitHubIssuesSource({"repo": "owner/name", "base_url": "http://100.100.100.200/"})
+
+
+def test_cgnat_address_rejected_at_construction() -> None:
+    # 100.65.1.1 sits in the 100.64.0.0/10 CGNAT range: is_private is False,
+    # so only the canonical guard's `not is_global` flag closes this gap.
+    with pytest.raises(ValueError, match="internal base_url host"):
+        GitHubIssuesSource({"repo": "owner/name", "base_url": "http://100.65.1.1/"})
+
+
 # ---------------------------------------------------------------------------
 # Public host allowed and reaches the transport
 # ---------------------------------------------------------------------------

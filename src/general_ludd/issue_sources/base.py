@@ -38,11 +38,12 @@ DESIGN INVARIANTS
 from __future__ import annotations
 
 import enum
-import ipaddress
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, TypedDict, runtime_checkable
 from urllib.parse import urlparse
+
+from general_ludd.security.ssrf import host_is_blocked
 
 if TYPE_CHECKING:
     from general_ludd.schemas.todo import TodoStatus
@@ -548,24 +549,15 @@ def new_issue_record(
 
 
 def _is_internal_host(host: str) -> bool:
-    """Return True for a literal internal/loopback host (no DNS resolution)."""
-    if not host:
-        return True
-    bare = host.strip().lower().strip("[]").split("%", 1)[0]
-    if bare in {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}:
-        return True
-    try:
-        ip = ipaddress.ip_address(bare)
-    except ValueError:
-        return False
-    return bool(
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    """Return True for a literal internal/loopback host (no DNS resolution).
+
+    Delegates entirely to the canonical
+    :func:`general_ludd.security.ssrf.host_is_blocked` so this guard's
+    classification (previously a local reimplementation missing the
+    ``not is_global`` catch for CGNAT/TEST-NET ranges and the cloud-metadata
+    NAME/IP blocklist) can never drift from the single source of truth.
+    """
+    return host_is_blocked(host)
 
 
 class IssueSource:
