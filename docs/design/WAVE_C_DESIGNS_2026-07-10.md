@@ -154,7 +154,7 @@ All needed imports already present.
 **M1 (no timeout):** provider construction passes no `timeout=` at
 `get_chat_model` (ctor line 516) or `_invoke_and_bill` (ctor line 878) → SDK
 default (openai/anthropic 600s) unbounded by the gateway. Only 3 wrapper families
-exist: `ChatOpenAI` (accepts `httpx.Timeout`), `ChatAnthropic` (float), 
+exist: `ChatOpenAI` (accepts `httpx.Timeout`), `ChatAnthropic` (float),
 `HuggingFaceEndpoint` (int). **No litellm in tree.**
 
 **Fix:** `import httpx`; add 4 `DEFAULT_MODEL_*_TIMEOUT_S` constants (connect 10 /
@@ -329,7 +329,7 @@ into `PHASE_ORDER` between `check_service_credits` and `remediate_blocked_tasks`
 → **length 17→18**. No daemon config wiring required (pure `.config.get` default).
 
 **Phase-count test updates (all four):** `test_obj04_event_loop.py:12-31`
-(add to expected list), `test_event_loop.py:533-534` (17→18), 
+(add to expected list), `test_event_loop.py:533-534` (17→18),
 `test_audit_gaps_e2e.py:52` (17→18), `test_event_loop_session_per_tick.py:44-46`
 (16→17, since one phase raises).
 

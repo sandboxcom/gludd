@@ -55,7 +55,7 @@ for _path in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
 importlib.import_module("general_ludd.routing_roles")
 
 
-def pytest_collection_modifyitems(items: "list[pytest.Item]") -> None:
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Serialize every hook-liveness test that shares HARDCODED_TMP_PATHS onto a
     single xdist worker.
 
