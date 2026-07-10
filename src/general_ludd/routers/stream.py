@@ -17,17 +17,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import subprocess
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.stream import SUPPORTED_PROCESSOR_TOOLS, RoleCloner
 
 logger = logging.getLogger(__name__)
+
+# Role names are directory names under collection_root/roles/ — restrict to a
+# simple identifier so a caller cannot smuggle path-traversal segments (e.g.
+# "../../../etc") through into a filesystem join / shutil.copytree source.
+_ROLE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class StreamDispatchRequest(BaseModel):
@@ -40,6 +46,13 @@ class StreamDispatchRequest(BaseModel):
     wait_for_completion: bool = False
     priority: int = Field(default=5, ge=0, le=20)
     work_type: str = Field(default="stream_chunk")
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role_name(cls, v: str) -> str:
+        if not _ROLE_NAME_RE.match(v):
+            raise ValueError("role must be a simple identifier ([A-Za-z0-9_-]+)")
+        return v
 
 
 def _get_role_cloner(app: FastAPI) -> RoleCloner | None:
@@ -80,8 +93,19 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 detail="RoleCloner not configured (collection root unavailable)",
             )
 
-        # Validate role exists in the collection.
-        role_dir = cloner.collection_root / "roles" / req.role
+        # Validate role exists in the collection. `req.role` is already
+        # restricted to a simple identifier by the pydantic validator above,
+        # but resolve + confine defensively in case this handler is ever
+        # invoked with a pre-validated / constructed request object.
+        roles_root = (cloner.collection_root / "roles").resolve()
+        role_dir = (roles_root / req.role).resolve()
+        try:
+            role_dir.relative_to(roles_root)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Role {req.role!r} resolves outside the roles directory",
+            ) from exc
         if not role_dir.is_dir():
             raise HTTPException(
                 status_code=422,

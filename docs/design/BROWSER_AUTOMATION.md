@@ -613,3 +613,86 @@ allowlist the fixture host.
    `playbooks/browse_web.yml`.
 7. Full test suite (§7); `make ansible-syntax`; `make gate-async` before claiming
    any item closed.
+
+---
+
+## Implementation corrections (2026-07-10 verification)
+
+The spec above is implementable as designed, but the following 5 corrections
+must be folded in before implementation starts.
+
+1. **Module-pattern precedent is mis-cited (§4).** §4 says the
+   `gludd_browser_*` modules mirror `gludd_git.py`/`gludd_worktree.py`'s
+   **direct in-process import** shape (`from general_ludd... import`), but §4b
+   correctly says the stateful browser **session** lives in the **daemon**,
+   reached via the `GluddClient` HTTP shim — that is `gludd_human_todo.py`'s
+   pattern (`GluddClient(base_url, psk, timeout)` + `Authorization: Bearer` +
+   `X-PSK`, `no_log` on the psk — `module_utils/gludd.py:146-154`), **not** the
+   git modules' pattern. A Playwright session can't be a same-process direct
+   import from a short-lived Ansible module invocation — the browser subprocess
+   must outlive the module process. **Correction:** cite `gludd_human_todo.py`
+   (not `gludd_git.py`/`gludd_worktree.py`) as the precedent in §4's opening
+   paragraph; the `DOCUMENTATION`/`EXAMPLES`/`RETURN` docstring shape and
+   `ok_result`/`error_result` helpers still apply from the git modules, but the
+   session-reach mechanism is the human-todo module's `GluddClient` HTTP shim.
+
+2. **`locator.type(text, delay=…)` is deprecated (§1).** Playwright deprecated
+   `locator.type()` around 1.28+ in favor of `locator.press_sequentially(text,
+   delay=…)`, which is the current per-keystroke-delay API. **Correction:**
+   update the §1 human-input verb table row ("Human-like typing/mouse/timing")
+   to reference `locator.press_sequentially(text, delay=…)` instead of
+   `locator.type(text, delay=…)`.
+
+3. **CDP deep-TLS path is Chromium-only (§5/§2a).** `context.new_cdp_session()`
+   — used for the deep cert-chain via the CDP Network/Security domains — is
+   **unavailable** on Firefox and WebKit; CDP is a Chromium-specific protocol.
+   Since §5 exposes `engine: chromium | firefox | webkit`, `get_tls_info()`'s
+   deep-chain path is not portable across engines. **Correction:** state
+   plainly that on non-Chromium engines, `get_tls_info()` degrades to
+   `response.security_details()` (issuer/subject/protocol/validFrom/validTo
+   only, no full chain) — or must explicitly fail/report "chain unavailable on
+   this engine" rather than silently returning a partial `TlsInfo` that looks
+   complete.
+
+4. **Process-isolation is opt-in / off by default in prod (§6.1) —
+   overstated confinement.** §6.1 reads as though sandbox confinement is
+   guaranteed; it is not, by default. `core_runner.py:298` only routes to the
+   podman/bwrap backend when `iso.enabled`, and `UserConfig.process_isolation`
+   defaults to `{}` (`user_config.py:169`) — i.e. disabled unless an operator
+   opts in. **Correction — state plainly:** by default, Chromium gets only
+   fork-group-kill (`setsid`+`killpg` reap) and env-scrub, **not** real OS
+   sandboxing. Two things genuinely ARE unconditional and can be relied on as
+   a floor regardless of `iso.enabled`: (a) the `_PLAYBOOK_ENV_ALLOWLIST` env
+   scrub at `core_runner.py:782-800` — `GLUDD_PSK`/API keys/`AWS_*`/
+   `DATABASE_URL` are scrubbed from the child env even without isolation
+   enabled; (b) the `setsid`+`killpg` reap that kills the whole process group
+   on timeout. Real OS-level sandboxing (podman/bwrap/seccomp) requires the
+   operator to set `process_isolation.enabled=True` — it is not the default
+   posture, and §6.1 must say so explicitly rather than imply blanket
+   containment.
+
+5. **Missing operational requirements (§1/§6 bootstrap).** Headless Chromium
+   in a container has two routine, currently-absent operational
+   requirements: (a) `/dev/shm` must be sized up (or Chromium launched with
+   `--disable-dev-shm-usage`) — the default container `/dev/shm` (64 MB) is
+   too small for Chromium's shared-memory usage and causes crashes/renders
+   failing under load; (b) font packages (e.g. `fonts-liberation` or
+   equivalent) must be installed in the container image, or text renders as
+   tofu/missing-glyph boxes, corrupting `visible_text`/screenshot output.
+   **Correction:** add both to the §1 binary-install / §6 bootstrap
+   requirements list.
+
+**Also (minor, fold in alongside the above):**
+
+- `read_iframe(index)` (§2a) should use `page.frames[index]` (a `Frame` object
+  exposing `.content()`/`.locator()`), **not** `frame_locator()` — the latter
+  takes a **CSS selector** that resolves *into* a frame element on the parent
+  page, it does not index the flat frame list the way `list_iframes()`
+  enumerates it. Fix the implementation note under §2a / the `read_iframe`
+  signature comment in §2a's code block.
+- Captcha handoff (§3b) must pass a **synthetic `confidence=0.0`** into
+  `HumanGate.await_approval(...)` to force the interrupt — `await_approval`
+  only interrupts when `confidence < threshold`; without an explicit
+  below-threshold value, a captcha encounter could fail to trigger the
+  LangGraph-side pause even though the `gludd_human_todo` filing (§3b step 1)
+  still fires. Add this to §3b step 2's description.

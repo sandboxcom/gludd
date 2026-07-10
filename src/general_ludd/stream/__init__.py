@@ -58,12 +58,20 @@ class RoleCloner:
 
         Returns the clone directory ``Path``. Raises ``FileNotFoundError`` when
         the requested role is not present under ``collection_root/roles/``.
+        Raises ``ValueError`` when ``role_name`` resolves outside
+        ``collection_root/roles/`` (path-traversal confinement — defense in
+        depth behind the router's own identifier validation).
         """
-        src = self.collection_root / "roles" / role_name
+        roles_root = (self.collection_root / "roles").resolve()
+        src = (roles_root / role_name).resolve()
+        try:
+            src.relative_to(roles_root)
+        except ValueError:
+            raise ValueError(
+                f"Role {role_name!r} resolves outside {roles_root}"
+            ) from None
         if not src.is_dir():
-            raise FileNotFoundError(
-                f"Role {role_name!r} not found under {self.collection_root / 'roles'}"
-            )
+            raise FileNotFoundError(f"Role {role_name!r} not found under {roles_root}")
         self.work_root.mkdir(parents=True, exist_ok=True)
         clone_path = self.work_root / f"{role_name}-{uuid.uuid4().hex}"
         shutil.copytree(src, clone_path)

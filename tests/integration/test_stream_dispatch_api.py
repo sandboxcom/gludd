@@ -34,6 +34,17 @@ def _build_collection_root(tmp_path: Path) -> Path:
     return root
 
 
+def _build_collection_root_with_lint_role(tmp_path: Path) -> Path:
+    """Collection root containing a role literally named ``lint_and_check`` —
+    mirrors a real role name from the bundled ansible collection, used for the
+    happy-path regression check on the role-name validator."""
+    root = tmp_path / "collection-lint"
+    tasks = root / "roles" / "lint_and_check" / "tasks"
+    tasks.mkdir(parents=True)
+    (tasks / "main.yml").write_text("- name: noop\n  ansible.builtin.debug:\n    msg: hi\n")
+    return root
+
+
 def _build_trivial_collection_root(tmp_path: Path) -> Path:
     """A collection root whose ``foo`` role writes a known file to artifact_dir."""
     root = tmp_path / "trivial-collection"
@@ -265,3 +276,97 @@ class TestStreamDispatchApi:
         finally:
             await client.aclose()
             await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_role_path_traversal_returns_422_and_never_clones(
+        self, monkeypatch, tmp_path
+    ):
+        """role="../..", "/etc/passwd", "a/../../b" must be rejected by pydantic
+        validation (422) before ever reaching RoleCloner.clone / shutil.copytree.
+
+        CONFIRMED HIGH path-traversal regression test: prior to the fix, a
+        role like "../../../etc" would be joined unconfined into the
+        collection's roles/ path and copytree'd, letting a caller copy an
+        arbitrary directory and then run ansible-playbook against it.
+        """
+        col_root = _build_collection_root(tmp_path)
+        work_root = tmp_path / "clones"
+        engine, _factory, client, _app = await _make_app(monkeypatch, col_root, work_root)
+
+        import shutil
+
+        copytree_calls: list[tuple[object, ...]] = []
+        original_copytree = shutil.copytree
+
+        def _spy_copytree(*args: object, **kwargs: object) -> Path:
+            copytree_calls.append(args)
+            return original_copytree(*args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(shutil, "copytree", _spy_copytree)
+
+        try:
+            for bad_role in ("../..", "/etc/passwd", "a/../../b"):
+                resp = await client.post(
+                    "/admin/stream/dispatch",
+                    json={
+                        "role": bad_role,
+                        "source_role_invocation": {},
+                        "extra_vars": {},
+                    },
+                    headers=AUTH,
+                )
+                assert resp.status_code == 422, (bad_role, resp.text)
+            assert copytree_calls == []
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_legit_underscored_role_name_still_works(
+        self, monkeypatch, tmp_path
+    ):
+        """Happy-path regression: a real role name containing underscores
+        (e.g. the bundled ``lint_and_check`` role) must still dispatch
+        successfully after the role-name validator was added."""
+        col_root = _build_collection_root_with_lint_role(tmp_path)
+        work_root = tmp_path / "clones"
+        engine, _factory, client, _app = await _make_app(monkeypatch, col_root, work_root)
+        try:
+            resp = await client.post(
+                "/admin/stream/dispatch",
+                json={
+                    "role": "lint_and_check",
+                    "source_role_invocation": {},
+                    "extra_vars": {},
+                    "wait_for_completion": False,
+                },
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["status"] == "queued"
+            assert Path(data["clone_path"]).is_dir()
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestStreamDispatchRequestRoleValidation:
+    """Direct pydantic-model tests for the ``role`` field validator — no app
+    or filesystem needed; these confirm the rejection happens at request
+    parsing, before ``admin_stream_dispatch`` ever touches the RoleCloner."""
+
+    @pytest.mark.parametrize("bad_role", ["../..", "/etc/passwd", "a/../../b"])
+    def test_role_path_traversal_rejected(self, bad_role: str) -> None:
+        import pydantic
+
+        from general_ludd.routers.stream import StreamDispatchRequest
+
+        with pytest.raises(pydantic.ValidationError):
+            StreamDispatchRequest(role=bad_role)
+
+    def test_role_simple_identifier_accepted(self) -> None:
+        from general_ludd.routers.stream import StreamDispatchRequest
+
+        req = StreamDispatchRequest(role="lint_and_check")
+        assert req.role == "lint_and_check"

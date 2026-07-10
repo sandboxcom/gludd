@@ -67,6 +67,60 @@ class TestClone:
             cloner.clone("does_not_exist", overrides={})
 
 
+class TestCloneConfinement:
+    """Path-traversal confinement (defense in depth behind the router's own
+    identifier validation). ``RoleCloner.clone`` must never copytree from
+    outside ``collection_root/roles/``, whether the escape is via a literal
+    ``..`` role_name or a symlink planted under ``roles/``."""
+
+    def test_clone_dotdot_role_name_raises_value_error(
+        self, collection_root: Path, tmp_path: Path
+    ) -> None:
+        work_root = tmp_path / "clones"
+        cloner = RoleCloner(collection_root=collection_root, work_root=work_root)
+        with pytest.raises(ValueError):
+            cloner.clone("../../etc", overrides={})
+        assert not work_root.exists() or not any(work_root.iterdir())
+
+    def test_clone_dotdot_role_name_never_calls_copytree(
+        self, collection_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import shutil
+
+        calls: list[tuple[object, ...]] = []
+        monkeypatch.setattr(
+            shutil, "copytree", lambda *a, **k: calls.append(a) or Path(a[1])
+        )
+        work_root = tmp_path / "clones"
+        cloner = RoleCloner(collection_root=collection_root, work_root=work_root)
+        with pytest.raises(ValueError):
+            cloner.clone("../../etc", overrides={})
+        assert calls == []
+
+    def test_clone_symlink_escape_raises_value_error(
+        self, collection_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # roles/evil -> a directory outside collection_root/roles entirely.
+        outside = tmp_path / "outside-target"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("nope")
+        evil_link = collection_root / "roles" / "evil"
+        evil_link.symlink_to(outside, target_is_directory=True)
+
+        import shutil
+
+        calls: list[tuple[object, ...]] = []
+        monkeypatch.setattr(
+            shutil, "copytree", lambda *a, **k: calls.append(a) or Path(a[1])
+        )
+        work_root = tmp_path / "clones"
+        cloner = RoleCloner(collection_root=collection_root, work_root=work_root)
+        with pytest.raises(ValueError):
+            cloner.clone("evil", overrides={})
+        assert calls == []
+        assert not work_root.exists() or not any(work_root.iterdir())
+
+
 class TestMaterializeProcessor:
     def test_materialize_processor_whisper(
         self, collection_root: Path, tmp_path: Path

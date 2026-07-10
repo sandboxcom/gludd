@@ -557,3 +557,69 @@ Pointer corrections to the logging design, by priority:
   is actually a `logging.Handler` subclass (fail closed / skip + warn otherwise); when
   a hot-reload replaces a previously-configured handler, explicitly close the
   discarded one rather than leaking it.
+
+## Round-4 findings (2026-07-10 night audits)
+
+### H-HUMANTODO-OWNERSHIP (HIGH) — human-in-the-loop facility has NO ownership/tenant check
+**Files:** `db/repository.py:2004-2157`, `db/models.py:842-892`, `routers/human_todos.py:187-342`,
+`routers/security.py:183-218`, `renderers/runner.py:227-229`.
+`HumanTodoRepository.get/mark_done/dismiss/mark_in_progress/supersede/add_tag/remove_tag`
+(db/repository.py:2004-2157) take only `human_todo_id` — no agent_id/session_id/project_id
+param, no caller comparison. `HumanTodoModel` (db/models.py:842-892) has NO `project_id`
+column at all (unlike `TodoModel`/`RemediationActionModel`). The router endpoints
+(routers/human_todos.py:187-342) never check the row's agent_id/session_id vs caller.
+Every dispatched agent holds the same admin PSK (renderers/runner.py:227-229 injects
+`GLUDD_PSK` into the agent subprocess env), so ANY agent can read/resolve/dismiss ANOTHER
+agent's human-todo. WORST: routers/security.py:183-218 `_sync_escalation_from_human_todo`
+(invoked from the generic PATCH handler human_todos.py:280-310) flips a linked
+permission-escalation to approved/denied when ANY human-todo carrying the
+`escalation:<id>` tag transitions to done — with NO check that the resolver is a real
+human or belongs to that escalation → a PSK-holding agent can PATCH the
+escalation-linked human-todo with a self-supplied `human_resolver` and record a
+permission escalation as human-approved WITHOUT real review. Precedent for the missing
+guard: `AgentMessageModel` DOES have a project-ownership guard
+(`tests/unit/test_agent_message_ack_project_scope.py`). **FIX:** add a `project_id`
+column to `HumanTodoModel` (migration) + thread ownership (agent_id/session_id/project_id)
+into every get/mutate and reject on mismatch (mirror `AgentMessage.ack`); the
+escalation-sync must verify the resolver is a human + the todo belongs to the
+escalation's requester. **TEST:** agent A cannot resolve agent B's human-todo;
+escalation cannot be self-approved via the human-todo PATCH.
+
+### H-HUMANTODO-FLOOD (MED) — no rate limit / creation cap / sanitization on human-todos
+**Files:** `routers/human_todos.py:72-145`, `cli_human_todos.py:118-142`,
+`routers/security.py:130-137`.
+No rate limit / per-agent creation cap on POST /api/human-todos (human_todos.py:92-145);
+body has no max length (`CreateHumanTodoRequest.body` `Field(min_length=1)` only, :72);
+tags list has no max count/length on create. An agent floods the operator's queue /
+storage. Content is not sanitized before CLI display (cli_human_todos.py:118-142 prints
+raw title/body/tags — ANSI/control-seq terminal-injection). Escalation notification
+f-string mixes trusted instructions with attacker-controlled `esc_row['reason']`
+(routers/security.py:130-137) — a fake "Resolve via..." line could social-engineer the
+operator. **FIX:** per-agent/per-category creation cap + body/tags length caps + strip
+control chars on display + delimit/escape untrusted segments in notifications. **NOTE:**
+the new TIME_TIMERS_SCOPED_NOTIFICATIONS feature sits on this store — it MUST add the
+project_id column + ownership + flood cap as part of its own design (recurring timers
+amplify the flood gap).
+
+### H-SKILL-SHADOW (MED) — project skills shadow global skills BY NAME (prompt-injection, not RCE)
+**Files:** `daemon.py:2251-2252`, `skills/loader.py:11-52`, `daemon_wiring.py:98-104`,
+`skill.skill.py`.
+A target repo's `.gludd/skills/*.md` shadows a global skill BY NAME (daemon.py:2251-2252
+"last write wins", registers project skills AFTER global). Text-only (no exec —
+skills/loader.py:11-52 does `yaml.safe_load` + strict pydantic; `make_skill_handler`
+daemon_wiring.py:98-104 returns `skill.body` as a string, never executed), so it's
+prompt-injection/policy-override, NOT RCE. But dormant fields `Skill.tools`/
+`Skill.model_profile` (skill.skill.py) — if ever wired into a permission grant, the
+shadowing becomes privilege-escalation. **FIX:** for the `general_ludd`/reserved skill
+namespace, refuse project-tier shadowing of global/operator skills (or mark provenance +
+never let a project skill grant tools); flag the dormant tools/model_profile fields as
+future-wiring risk.
+
+### H-GATEWAY-EXC-SCRUB (LOW, defense-in-depth) — unredacted str(exc) sinks near header-bearing clients
+**Files:** `gateway.py:931/1504` → `failover.py:44`, `job_invocation.py:160`,
+`quantization.py:154`, `openrouter_discovery.py:52`.
+~5 unredacted `str(exc)` sinks near header-bearing clients. SAFE today (httpx/openai
+`__str__` embeds URL+status+body, NOT the Authorization header), but add a header-scrub
+as defense-in-depth in case an SDK's exception shape changes. Keys themselves are
+alias-resolved + project-scoped + caller-override-rejected + the one DEBUG line is
+`***REDACTED***` (gateway.py:904-909) — CONFIRMED no live leak.
