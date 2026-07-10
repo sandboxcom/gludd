@@ -4,6 +4,10 @@ Companion to `docs/AGENTIC_IMPLEMENTATION_SPEC.md` (Wave D items). Each section 
 produced by a read-only design pass against the live tree on 2026-07-10 with every cited
 seam verified by reading the file. Re-pin line numbers with a Read at apply time.
 
+### Numbering & scope note
+
+Section numbers in this compendium (D2–D8, SPD-1) are LOCAL to this file and do NOT correspond to the spec's Wave D item IDs. Mapping: §D2→spec D2 (project gate), §D3→spec D3 (self-improve externalization), §D4→spec D12 slice 1 (Slack OUTBOUND notifications — the connector/inbound half of D12 remains undesigned), §D5→spec D5 (compute discovery), §D6→spec D9 (#52 remediation tick) + D10 (#53 file-claim livelock), §D7→spec D11 (#57 chain guards — NOT spec D7), §D8→spec D4 (DAST), §SPD-1→spec SPD-1. Spec D7 (pause/resume) carries its full design inline in the spec (items D7.1–D7.4) and is deliberately absent here.
+
 ---
 
 ## D2 — Wire `run_project_gate()` into the COMPLETE-transition path
@@ -225,6 +229,46 @@ proceeds); integration: claim → simulated crash → tick succeeds after TTL, d
 
 ---
 
+## D8 — DAST slice 1 (project_runner/dast.py)
+
+**Files:** NEW src/general_ludd/project_runner/dast.py + tests/project_runner/test_dast.py; EDIT
+profile.py (:65 dast field, :67 DastConfig model, :106 check_exec_allowed sharing the allowlist
+tail), runner.py (:328 extract run()'s body into _execute; add run_argv + start_background/
+BackgroundProcess with process-group terminate), findings.py (:24 _ZAP constant, :44-48 dispatch,
+_parse_zap after :80 mapping riskcode 0-3 → INFO/LOW/MEDIUM/HIGH in the existing
+"SEVERITY path:line rule — message" shape), __init__.py exports, PROJECT_RUNNER.md:68 +
+docs/examples/project.yml:69-73.
+
+**Schema:** dast: block — exactly ONE of start_command|target_url (model_validator);
+start_command requires port (gludd builds http://127.0.0.1:<port> ITSELF — target_url is never
+attacker-supplied in the start_command case); health_path (default /), startup_timeout_s (60),
+tool: zap-baseline (only slice-1 value), max_duration_s (900), fail_on LOW/MEDIUM/HIGH (default
+HIGH). zap-baseline.py must be in allowed_exec.
+
+**Lifecycle (run_dast_scan):** start via runner.start_background → health-poll (urlopen, 1s
+interval, bounded by startup_timeout_s) → check_exec_allowed + run_argv([zap, -t, url, -J,
+report.json], timeout=max_duration_s) → parse_findings("zap-baseline", report) → severity gate
+(_any_at_or_above vs fail_on) → ALWAYS terminate the app in finally. Never raises for scan
+failures — DastResult(passed/skipped/reason/scan/findings), mirroring CheckResult fail-soft.
+
+**SSRF allow rule (_target_url_allowed):** scheme http/https; loopback (localhost/*.localhost/
+127.0.0.0/8/::1) → ALLOW (the legitimate primary case — canonical host_is_blocked denies loopback
+by design for a different threat model); else ALLOW only if NOT host_is_blocked(host) (blocks
+RFC1918/link-local/metadata pivots from a malicious project.yml); no DNS resolution (parity with
+the canonical predicate). Deny → DastResult(reason=...), not an exception.
+
+**Degraded:** tool not in allowed_exec OR not on PATH → DastResult(skipped=True) with an
+actionable reason; skipped is advisory, never fails an otherwise-green gate.
+
+**Tests (20 cases):** schema validators (one-of, port-required); _target_url_allowed loopback/
+private/metadata/public; health-poll success/timeout (bounded wall-clock); terminate-always (on
+health timeout AND scan exception); absent-tool both paths → skipped; clean/HIGH/mixed reports vs
+fail_on thresholds both directions; malformed JSON → [] fail-soft; parser riskcode mapping.
+
+**Sequencing:** D1 profile → D3 check_exec_allowed → D2 runner refactor (D4 findings parser in
+parallel) → D5 dast.py → D6 exports → D7 docs. Non-goals: other tools, project_gate aggregation,
+MCP tool exposure, authenticated scans, Docker ZAP.
+
 ## D7 — #57 subagent chain guards (full design)
 
 **Verdicts (all four claimed defects confirmed UNPROTECTED, file:line verified):**
@@ -281,3 +325,150 @@ validation (empty task_id, max_concurrent=0, negative max_steps construct silent
 validation when adding the depth/visited_agents fields. Tool-loop budget/safety branches
 (per_iteration_timeout :193-206, max_total_tokens :211-223, budget_guard denial :174-186,
 adversarial block :225-238, auditor recovery :245-280) untested — separate hardening item.
+
+---
+
+## SPD-1 — spend persistence design
+
+Companion to spec item **SPD-1** (`docs/AGENTIC_IMPLEMENTATION_SPEC.md` § 3.3). Read-only design
+pass 2026-07-10; every cited seam verified by reading the file. Re-pin line numbers with a Read at
+apply time.
+
+**Gap (verified by grep + read):** `SpendRepository.add()` (`db/repository.py:1773-1802`) has ZERO
+production callers — every call site in the tree is a test constructing a `SpendRepository` directly
+and calling `add()` itself. Consequently the `spend_records` table (`db/models.py:603-622`
+`SpendRecordModel`) is never populated by the running daemon. The read side already exists and is
+wired: `daemon.py:437-477 _restore_persisted_spend` calls `SpendRepository.list_since()` and feeds
+the rows into `spend_limiter.restore()`, and is invoked at startup from `daemon.py:1551-1555`
+(inside the `SpendLimiter` construction block, guarded by `spend_limiter is not None`). Because
+nothing ever writes, this restore path always rehydrates zero records — the advertised
+restart-survives-the-cap behavior is dead code today, and a daemon restart silently resets the
+rolling spend window to zero (the exact cap-evasion-by-restart bug the read side was built to
+close).
+
+### Seam 1 — `SpendLimiter` sequencing (`controllers/spend_limiter.py`)
+
+The in-memory limiter (`SpendLimiter`, ctor near the top of the file) keeps accepted charges as
+`(ts, cost_usd, project_id)` 3-tuples in `self._records`, mutated under `self._lock`. Three existing
+methods are the seam:
+
+- **`try_charge()` (`:248-308`)** — the atomic check-and-record entry point (also used by
+  `daemon_wiring.py:311-368 make_spend_guarded_executor` and the tick-level pre-call gate at
+  `event_loop/loop.py:1874-1887`). This is where a charge becomes a durable-candidate record.
+- **`snapshot()` (`:310-321`)** — returns a copy of all in-window records (used today only for
+  logging/introspection, not persistence).
+- **`restore(records)` (`:323-`)** — reloads previously-snapshotted/persisted records back into the
+  limiter on startup; already drops invalid (negative/non-finite/future-timestamp) rows defensively.
+
+Add a monotonically increasing `self._seq: int = 0` counter, incremented under the same lock every
+time `record()` (called from `try_charge`) appends a tuple; store it as a 4th tuple element
+`(ts, cost_usd, project_id, seq)`. Add:
+
+- `unflushed_records(after_seq: int) -> list[tuple[float, float, str | None, int]]` — records with
+  `seq > after_seq`, still under `self._lock`.
+- `mark_flushed(upto_seq: int) -> None` — advances an internal `self._flushed_seq` watermark
+  (monotonic — never regresses even if called out of order).
+- `restore()` gains an optional `seed_seq: int | None = None` param: when the caller (daemon
+  startup) knows the max `seq` already durably persisted before the crash, seed both `self._seq` and
+  `self._flushed_seq` to it so newly-recorded charges continue the sequence and the very next flush
+  does not re-`INSERT` rows the DB already has. Backward compatible: omitted → both start at 0 (today's
+  behavior, matches a fresh/empty `spend_records` table).
+
+### Seam 2 — `EventLoop` flush phase (`event_loop/loop.py`)
+
+`PHASE_ORDER` (`:88-105`) is the tick's fixed phase list, ending
+`..., "check_service_credits", "self_improve", "poll_issue_sources", "emit_tick_metrics"`. Insert a
+new phase `"flush_spend_ledger"` immediately AFTER `"check_service_credits"` (whose implementation,
+`_phase_check_service_credits`, lives at `:3625-`, and which already establishes the
+interval-gated-phase idiom this new phase should copy) and before `"self_improve"`.
+
+New method `async def _phase_flush_spend_ledger(self) -> None`:
+1. No-op fast paths: `self._spend_limiter is None`, `self._session_factory is None` (flush needs its
+   own session — see below), or `spend_persist_interval_ticks <= 0` (kill switch, mirrors the
+   `credit_check_interval_ticks`/`remediation_check_interval_ticks` pattern already used by sibling
+   phases at `:3635-3636` and in `docs/design/WAVE_D_DESIGNS_2026-07-10.md` § D6).
+2. Interval check: `self._total_ticks % spend_persist_interval_ticks != 0` → return (same
+   `self._total_ticks` counter other interval-gated phases already read).
+3. `records = self._spend_limiter.unflushed_records(after_seq=self._last_flushed_spend_seq)` (new
+   instance attr, initialized from the DB-side max-seq at startup — see Seam 3).
+4. If `records` is empty, return (cheap no-op every tick that has nothing new).
+5. Open a DEDICATED session: `async with self._session_factory() as session:` — explicitly NOT
+   `self._active_session` / `self._session` (the shared tick-scoped session, which per spec item E10
+   must be committed/closed BEFORE the dispatch gather and must not be held across this phase's
+   writes). Construct `SpendRepository(session)` and call `.add(ts, cost_usd, kind="token",
+   project_id=project_id)` per record, `await session.commit()`.
+6. On success: `self._spend_limiter.mark_flushed(upto_seq=max(seq for *_, seq in records))`;
+   `self._last_flushed_spend_seq = ...` (mirror the watermark locally too, so a mid-tick exception in
+   step 5 that partially commits — SQLite is transactional per session, so this is actually
+   all-or-nothing — can't advance the watermark past what was truly durable).
+7. `except Exception:` → `logger.warning(...)`, do NOT re-raise, do NOT call `mark_flushed` (so the
+   same records are retried next interval — see Failure semantics).
+
+Config: `spend_persist_interval_ticks: int = 60` (new field alongside the other `*_interval_ticks`
+settings the EventLoop constructor already accepts; wired through `daemon.py`'s `EventLoop(...)`
+construction the same way `credit_check_interval_ticks` and
+`remediation_check_interval_ticks`/`compute_idle_check_interval_ticks` are, per `daemon.py:1652-1658`
+pattern noted in the D6 design above). `<=0` disables the phase entirely (kill switch consistent
+with every other interval-gated phase in this codebase).
+
+### Seam 3 — daemon startup wiring (`daemon.py`, `daemon_wiring.py`)
+
+- `daemon.py:437-477 _restore_persisted_spend` already does the read+`restore()` call at startup
+  (invoked at `daemon.py:1551-1555`). Extend it to also compute `max(r.id for r in rows)` (or track
+  max `ts`/insertion order — `id` is the autoincrement PK on `SpendRecordModel`, the simplest durable
+  ordinal) from the same `rows` it already fetched via `SpendRepository.list_since`, and pass it as
+  `restore(records, seed_seq=max_id_or_0)` so the `EventLoop`'s `_last_flushed_spend_seq` (set right
+  after construction, or passed into the `EventLoop` ctor alongside `spend_limiter`) starts exactly
+  where the DB left off — no re-inserts, no gap.
+- `daemon.py:1867` area — `app.state._agent_dispatcher` construction and
+  `daemon_wiring.py:311-368 make_spend_guarded_executor` are the CHARGE-recording seams (they call
+  `spend_limiter.try_charge`, which is what populates `self._records`/`self._seq` that this design
+  later flushes). They need NO changes — this design only adds a reader (the new EventLoop phase) on
+  top of the existing writer.
+- `EventLoop.__init__` needs no new required constructor param beyond what it already has
+  (`session_factory`, `spend_limiter`) — `spend_persist_interval_ticks` is a config value read the
+  same way sibling interval configs are.
+
+### Failure semantics
+
+A persist failure (DB error, connection issue) at flush time is logged at WARNING and MUST NOT
+raise into the tick loop or block dispatch — the in-memory `SpendLimiter` remains authoritative for
+enforcing the live cap regardless of whether persistence succeeds; only the DURABILITY of the
+restart-survival guarantee degrades. Because `mark_flushed` is only called on a successful
+`commit()`, a failed flush leaves the same records in `unflushed_records()` for the next interval —
+self-healing, no manual intervention, no duplicate-record risk (retrying is idempotent from the
+caller's perspective because the records are the same tuples until `mark_flushed` advances the
+watermark). A crash BETWEEN flushes loses at most one `spend_persist_interval_ticks` worth of
+records from the restart-survival ledger (bounded, operator-tunable exposure) — never silent
+unbounded loss, and never a correctness issue for the live in-process cap (which is memory-resident
+regardless).
+
+### Test plan (4 parts)
+
+1. **Unit — `SpendLimiter` sequencing** (`tests/unit/test_spend_limiter.py` or sibling): `try_charge`
+   increments `_seq`; `unflushed_records(after_seq=N)` returns only records with `seq > N`;
+   `mark_flushed` advances the watermark monotonically (calling it with a smaller value than already
+   flushed is a no-op, not a regression).
+2. **Unit — `restore()` seeding**: `restore(records, seed_seq=K)` sets both `_seq` and the flushed
+   watermark to `K`; a subsequent `try_charge` produces `seq == K+1`; `unflushed_records(after_seq=K)`
+   on the freshly-restored limiter is empty (nothing spuriously re-flushable immediately after a
+   restore).
+3. **Integration — cross-path regression**: charge via `make_spend_guarded_executor`
+   (`daemon_wiring.py`) inside a constructed `EventLoop`, advance `self._total_ticks` to the flush
+   interval, run `_phase_flush_spend_ledger`, and assert the charge is now visible via
+   `SpendRepository.list_since()` on the same session factory — proves the charge-recording seam and
+   the new flush phase are actually connected, not just unit-correct in isolation.
+4. **Real restart-survival e2e**: flush at least one record → construct a FRESH `SpendLimiter` +
+   session factory pointed at the same (test) database (simulating a process restart, not just an
+   object reset) → call `_restore_persisted_spend` → assert `spend_limiter.window_spend()` is
+   non-zero and matches the flushed total. This is the test that would have caught today's dead-code
+   bug (a unit test with a directly-constructed `SpendRepository` cannot catch "nothing in production
+   ever calls `.add()`").
+
+### Acceptance
+
+`spend_records` receives rows from a running daemon tick under normal operation (verified via the
+integration test in part 3, not merely a unit test that constructs `SpendRepository` and calls
+`.add()` itself); `_restore_persisted_spend` rehydrates a non-empty rolling window after a simulated
+restart in the part-4 e2e test; `spend_persist_interval_ticks <= 0` fully disables the phase with no
+behavior change from today (regression safety for anyone who doesn't opt in).

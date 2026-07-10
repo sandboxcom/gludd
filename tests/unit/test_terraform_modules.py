@@ -301,8 +301,6 @@ class TestStacksPhase4:
         assert STACKS_DIR.is_dir(), f"expected {STACKS_DIR} to exist"
 
     def test_expected_stacks_present(self):
-        if not STACKS_DIR.is_dir():
-            pytest.skip("stacks dir not present yet")
         actual = {p.name for p in STACKS_DIR.iterdir() if p.is_dir()}
         missing = EXPECTED_STACKS - actual
         assert not missing, f"missing stack dirs: {missing}"
@@ -370,8 +368,6 @@ class TestStacksPhase4:
     @pytest.mark.parametrize("stack_name", sorted(EXPECTED_STACKS))
     def test_stack_no_hardcoded_credentials(self, stack_name: str):
         stack = STACKS_DIR / stack_name
-        if not stack.is_dir():
-            pytest.skip(f"stack {stack_name} not present yet")
         for fname in REQUIRED_FILES:
             f = stack / fname
             if not f.is_file():

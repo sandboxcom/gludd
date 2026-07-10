@@ -236,10 +236,7 @@ def test_field_metadata_extraction(schema: dict[str, Any]) -> None:
     list of ``FieldMeta`` dataclasses (one per top-level property) carrying at
     least {name, title, description, required, type}.
     """
-    try:
-        from general_ludd.renderers.schema_loader import extract_field_metadata
-    except ImportError:
-        pytest.skip("schema_loader.extract_field_metadata not yet implemented")
+    from general_ludd.renderers.schema_loader import extract_field_metadata
 
     metadata = extract_field_metadata(schema)
     assert isinstance(metadata, list)
@@ -285,9 +282,6 @@ def test_schema_driven_rendering_produces_html(
     HTML must surface the schema title, schema description, every top-level
     property title, and the top-level ``title`` data value.
     """
-    if not TEMPLATE_PATH.is_file():
-        pytest.skip("schema_page.html.j2 not yet implemented")
-
     from jinja2 import Environment, FileSystemLoader, select_autoescape
 
     env = Environment(

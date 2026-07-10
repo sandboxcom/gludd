@@ -185,7 +185,7 @@ disable_error_code = ["type-arg"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-v --tb=short --ignore=tests/fixtures"
+addopts = "-v --tb=short --ignore=tests/fixtures -m \"not hook_live\""
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # UNIVERSAL per-test stall guard: no single test may hang the suite. Applies to
@@ -199,6 +199,7 @@ markers = [
     "xdist_group: serialize tests that share a fixed resource (e.g. port 8000 or the daemon PID file) under pytest-xdist",
     "requires_slurm: skip unless SLURM_AVAILABLE=1 is set in env or sbatch is on PATH",
     "requires_postgres: skip unless POSTGRES_AVAILABLE=1 is set in env or port 5432 is open",
+    "hook_live: exercises a real opencode CLI against the .opencode/plugin/*.ts hooks; excluded from the default run (`-m \"not hook_live\"` in addopts) — run via `make test-hooks-live` or `-m hook_live`",
 ]
 
 [tool.coverage.run]

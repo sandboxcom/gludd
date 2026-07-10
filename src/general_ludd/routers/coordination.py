@@ -121,10 +121,18 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         Response shape:
           {
             "claims": {file: [worker_ids]},
-            "merge_plan": {file: "union"|"serialize"}
+            "merge_plan": {file: "union"|"serialize"},
+            "claims_by_worker": {
+                worker_id: {"files": [...], "claimed_at": float, "age_seconds": float}
+            }
           }
+
+        Stale (past-TTL, unreleased) claims are reaped before this response is
+        built, so ``claims``/``claims_by_worker`` never show ghost entries from
+        a crashed worker (#53). ``claims_by_worker`` is additive.
         """
         return {
             "claims": registry.all_claims(),
             "merge_plan": registry.merge_plan(),
+            "claims_by_worker": registry.claims_with_age(),
         }

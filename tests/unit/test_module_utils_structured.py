@@ -45,8 +45,6 @@ def _load_module_utils() -> ModuleType:
     ``import`` would not resolve it. importlib.util gives us the module object
     without polluting the package namespace.
     """
-    if not MODULE_UTILS_PATH.is_file():
-        pytest.skip(f"module_utils not present yet: {MODULE_UTILS_PATH}")
     spec = importlib.util.spec_from_file_location(
         "_gludd_module_utils_under_test", MODULE_UTILS_PATH
     )

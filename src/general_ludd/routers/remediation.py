@@ -23,7 +23,7 @@ import json as _json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import TypeVar, cast
+from typing import TypeVar
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
@@ -114,6 +114,22 @@ def _config_to_dict(cfg: RemediationConfig) -> dict[str, object]:
     }
 
 
+def _get_remediation_config(daemon_state: dict[str, object]) -> RemediationConfig:
+    """Single config-source read for every ``/admin/remediation/*`` handler (#52).
+
+    ``daemon_state["remediation_config"]`` is populated once at daemon
+    startup (``daemon.py``'s ``_remediation_config_from_uc``) from
+    ``UserConfig.remediation`` — the SAME instance the EventLoop tick phase
+    (``_phase_remediate_blocked_tasks``) reads via ``self._daemon_state``.
+    Centralized here (rather than each handler repeating the cast+fallback)
+    so the HTTP path and the tick path can never disagree on where the
+    config comes from. Falls back to ``RemediationConfig()`` defaults when
+    unset (e.g. a bare test app) or of the wrong type.
+    """
+    cfg = daemon_state.get("remediation_config")
+    return cfg if isinstance(cfg, RemediationConfig) else RemediationConfig()
+
+
 def _build_detector(
     app: FastAPI, project_id: str | None, config: RemediationConfig | None = None
 ) -> BlockerDetector:
@@ -180,7 +196,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
     @app.get("/admin/remediation/scan", response_model=None)
     async def get_scan(project_id: str | None = Query(default=None)) -> dict[str, object]:
         """Run the detector once; return findings without applying remediation."""
-        cfg = cast(RemediationConfig, daemon_state.get("remediation_config")) or RemediationConfig()
+        cfg = _get_remediation_config(daemon_state)
 
         async def _run(
             *,
@@ -208,7 +224,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
         project_id: str | None = Query(default=None),
     ) -> dict[str, object]:
         """Run the detector once AND apply remediation for each finding."""
-        cfg = cast(RemediationConfig, daemon_state.get("remediation_config")) or RemediationConfig()
+        cfg = _get_remediation_config(daemon_state)
 
         async def _run(
             *,
@@ -253,7 +269,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
         lookback_days: int | None = Query(default=None),
     ) -> dict[str, object]:
         """Return the chronic-blocker report."""
-        cfg = cast(RemediationConfig, daemon_state.get("remediation_config")) or RemediationConfig()
+        cfg = _get_remediation_config(daemon_state)
 
         async def _run(
             *,
@@ -308,7 +324,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
     )
     async def get_config() -> RemediationConfigResponse:
         """Return the current RemediationConfig thresholds."""
-        cfg = cast(RemediationConfig, daemon_state.get("remediation_config")) or RemediationConfig()
+        cfg = _get_remediation_config(daemon_state)
         return RemediationConfigResponse(
             human_input_block_hours=cfg.human_input_block_hours,
             permission_escalation_block_hours=cfg.permission_escalation_block_hours,

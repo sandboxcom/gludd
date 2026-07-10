@@ -140,7 +140,7 @@ win over all file layers. Load priority (high → low):
 
 | Path | Format | Purpose |
 |---|---|---|
-| `config/general-ludd.yml` | YAML | **Main config.** Holds `model_routing`, `database`, `agents`, `process_isolation`, `budget`. The default profile is `zai_coder`. |
+| `config/general-ludd.yml` | YAML | **Main config.** Holds `model_routing`, `database`, `agents`, `process_isolation`, `budget`. The default profile is `deepseek_coder` (fallback chain `qwen_coder` → `zai_coder`). |
 | `config/model_routing.yml` | YAML | Standalone routing table (alternative to the `model_routing:` block in `general-ludd.yml`). Defines `default_profile`, `fallback_chain`, role/quality/latency/pattern routing. |
 | `config/binary_paths.yml` | YAML | Overrides paths to external binaries (terraform, opentofu, vault, openbao, podman, docker, ansible-playbook, git, uv, opa, conftest). Defaults to `shutil.which()` PATH lookup. |
 | `config/ratchet.yml` | YAML | Known-failing test tracker (`node_id: reason`). Read by `tests/conftest.py`; the suite stays red until a passing test's marker is lifted. **Not a runtime config** — operators do not edit it. |
@@ -224,11 +224,11 @@ dispatch (effective spec = lowest-common-subset of human ∩ agent ∩ requested
 
 ```yaml
 model_routing:
-  default_profile: zai_coder        # must match a model_profile_id
-  weak_model_profile: zai_coder
-  role_routing:    {coder: zai_coder, planner: zai_coder, reviewer: zai_coder}
-  quality_routing: {high: zai_coder, medium: zai_coder}
-  latency_routing: {fast: zai_coder}
+  default_profile: deepseek_coder   # must match a model_profile_id
+  weak_model_profile: deepseek_coder
+  role_routing:    {coder: deepseek_coder, planner: deepseek_coder, reviewer: deepseek_coder}
+  quality_routing: {high: deepseek_coder, medium: deepseek_coder}
+  latency_routing: {fast: deepseek_coder}
   pattern_routing: {code_generation: coder, commit_message: weak}
 database:                           # SQLite-only; block is forward-compat
   host: localhost
@@ -283,8 +283,8 @@ export ZAI_API_KEY=your-key-here
 # export ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 ```
 
-The default profile (`zai_coder`, set in `config/general-ludd.yml` →
-`model_routing.default_profile`) reads `ZAI_API_KEY` at call time via its
+The default profile (`deepseek_coder`, set in `config/general-ludd.yml` →
+`model_routing.default_profile`) reads `DEEPSEEK_API_KEY` at call time via its
 `credential_alias`. No file edit is required for the default path.
 
 **To switch provider:** either (a) edit `default_profile:` in

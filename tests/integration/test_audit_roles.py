@@ -190,8 +190,6 @@ class TestAuditRoleStructure:
     @pytest.mark.parametrize("role_name", ALL_ROLES)
     def test_role_tasks_is_valid_yaml(self, role_name: str):
         content = _read_tasks(role_name)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {role_name} not yet created")
         parsed = yaml.safe_load(content)
         assert isinstance(parsed, list), (
             f"roles/{role_name}/tasks/main.yml must be a list of tasks"
@@ -200,8 +198,6 @@ class TestAuditRoleStructure:
     @pytest.mark.parametrize("role_name", ALL_ROLES)
     def test_role_defaults_is_valid_yaml(self, role_name: str):
         content = _read_defaults(role_name)
-        if not content:
-            pytest.skip(f"defaults/main.yml for {role_name} not yet created")
         parsed = yaml.safe_load(content)
         assert isinstance(parsed, dict), (
             f"roles/{role_name}/defaults/main.yml must be a mapping"
@@ -210,8 +206,6 @@ class TestAuditRoleStructure:
     @pytest.mark.parametrize("role_name", ALL_ROLES)
     def test_role_meta_is_valid_yaml(self, role_name: str):
         content = _read_meta(role_name)
-        if not content:
-            pytest.skip(f"meta/main.yml for {role_name} not yet created")
         parsed = yaml.safe_load(content)
         assert isinstance(parsed, dict), (
             f"roles/{role_name}/meta/main.yml must be a mapping"
@@ -235,8 +229,6 @@ class TestAuditRolesUseGluddFacts:
     @pytest.mark.parametrize("role_name", ROLES_REQUIRING_FACTS)
     def test_role_references_gludd_facts(self, role_name: str):
         content = _read_tasks(role_name)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {role_name} not yet created")
         assert "gludd_facts" in content, (
             f"roles/{role_name}/tasks/main.yml must reference gludd_facts "
             "to gather live system context"
@@ -244,8 +236,6 @@ class TestAuditRolesUseGluddFacts:
 
     def test_deletion_gate_excluded_from_gludd_facts(self):
         content = _read_tasks("deletion_gate")
-        if not content:
-            pytest.skip("tasks/main.yml for deletion_gate not yet created")
         assert "gludd_facts" not in content, (
             "deletion_gate is purely computational — it must NOT depend on "
             "gludd_facts (no daemon connectivity required)"
@@ -269,8 +259,6 @@ class TestCheckRolesReadStateFiles:
     )
     def test_role_references_state_file_variables(self, role_name: str, state_vars: list[str]):
         content = _read_tasks(role_name)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {role_name} not yet created")
         for var_name in state_vars:
             assert var_name in content, (
                 f"roles/{role_name}/tasks/main.yml must reference "
@@ -290,8 +278,6 @@ class TestCheckRoleArtifactKeys:
     )
     def test_artifact_emits_expected_keys(self, role_name: str, expected_keys: list[str]):
         content = _read_tasks(role_name)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {role_name} not yet created")
         for key in expected_keys:
             assert key in content, (
                 f"roles/{role_name}/tasks/main.yml must emit "
@@ -311,8 +297,6 @@ class TestAuditRoleDefaultsHaveExpectedKeys:
     )
     def test_defaults_declares_expected_keys(self, role_name: str, expected_keys: list[str]):
         content = _read_defaults(role_name)
-        if not content:
-            pytest.skip(f"defaults/main.yml for {role_name} not yet created")
         for key in expected_keys:
             assert key in content, (
                 f"roles/{role_name}/defaults/main.yml must declare "
@@ -329,8 +313,6 @@ class TestCheckRolesAreReadOnly:
     @pytest.mark.parametrize("role_name", list(CHECK_ROLES))
     def test_readside_role_never_uses_git(self, role_name: str):
         content = _read_tasks(role_name)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {role_name} not yet created")
         assert "gludd_git" not in content, (
             f"roles/{role_name} is read-side: must not use gludd_git "
             "(no git mutations)"
@@ -339,8 +321,6 @@ class TestCheckRolesAreReadOnly:
     @pytest.mark.parametrize("role_name", list(CHECK_ROLES))
     def test_readside_role_never_uses_todo_update(self, role_name: str):
         content = _read_tasks(role_name)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {role_name} not yet created")
         assert "todo_update_status" not in content, (
             f"roles/{role_name} is read-side: must not use todo_update_status"
         )
@@ -355,8 +335,6 @@ class TestAuditRolesWriteArtifacts:
     @pytest.mark.parametrize("role_name", ALL_ROLES)
     def test_role_uses_artifact_dir(self, role_name: str):
         content = _read_tasks(role_name)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {role_name} not yet created")
         assert "artifact_dir" in content, (
             f"roles/{role_name}/tasks/main.yml must use artifact_dir "
             "to write structured output"
@@ -365,8 +343,6 @@ class TestAuditRolesWriteArtifacts:
     @pytest.mark.parametrize("role_name", ALL_ROLES)
     def test_defaults_declares_artifact_dir(self, role_name: str):
         content = _read_defaults(role_name)
-        if not content:
-            pytest.skip(f"defaults/main.yml for {role_name} not yet created")
         assert "artifact_dir" in content, (
             f"roles/{role_name}/defaults/main.yml must default artifact_dir"
         )
@@ -374,8 +350,6 @@ class TestAuditRolesWriteArtifacts:
     @pytest.mark.parametrize("role_name", ALL_ROLES)
     def test_task_creates_artifact_directory(self, role_name: str):
         content = _read_tasks(role_name)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {role_name} not yet created")
         has_mkdir = "file:" in content and '"{{ artifact_dir }}"' in content
         has_dir_state = "state: directory" in content
         assert has_mkdir or has_dir_state, (
@@ -394,16 +368,12 @@ class TestSpecLifecycleRole:
 
     def test_tasks_validates_operation(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "Assert operation is set and valid" in content, (
             "spec_lifecycle must validate the operation variable"
         )
 
     def test_tasks_declares_all_valid_operations(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         for op in ACTION_ROLES[self.ROLE]["valid_operations"]:
             assert op in content, (
                 f"spec_lifecycle tasks must declare operation '{op}'"
@@ -411,32 +381,24 @@ class TestSpecLifecycleRole:
 
     def test_tasks_requires_task_name_for_scoped_ops(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "task_name | length > 0" in content, (
             "spec_lifecycle must assert task_name is set for scoped operations"
         )
 
     def test_tasks_gathers_daemon_facts(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "gludd_facts" in content, (
             "spec_lifecycle must gather live daemon facts for context"
         )
 
     def test_tasks_creates_spec_dirs_on_init(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "drafts" in content
         assert "active" in content
         assert "archive" in content
 
     def test_tasks_writes_artifact_per_operation(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         artifact_ops = ACTION_ROLES[self.ROLE]["artifact_operations"]
         for op, _expected in artifact_ops.items():
             assert op in content, (
@@ -445,8 +407,6 @@ class TestSpecLifecycleRole:
 
     def test_readme_documents_operations(self):
         content = _read_readme(self.ROLE)
-        if not content:
-            pytest.skip(f"README.md for {self.ROLE} not yet created")
         for op in ACTION_ROLES[self.ROLE]["valid_operations"]:
             assert op in content, (
                 f"spec_lifecycle README must document operation '{op}'"
@@ -463,24 +423,18 @@ class TestEnforceDisengageRole:
 
     def test_tasks_writes_disengage_signal_file(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "/tmp/gludd-watchdog-disengage.json" in content, (
             "enforce_disengage must write the disengage signal file"
         )
 
     def test_tasks_resets_block_counter(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "/tmp/gludd-block-counter.json" in content, (
             "enforce_disengage must reset the block counter"
         )
 
     def test_tasks_asserts_duration_within_bounds(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "disengage_duration_hours | int" in content, (
             "enforce_disengage must assert disengage window bounds"
         )
@@ -490,32 +444,24 @@ class TestEnforceDisengageRole:
 
     def test_tasks_precheck_warns_on_normal_targets(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "skip_pre_checks" in content, (
             "enforce_disengage must support skip_pre_checks toggle"
         )
 
     def test_tasks_gathers_daemon_facts(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "gludd_facts" in content, (
             "enforce_disengage must gather live daemon facts"
         )
 
     def test_tasks_writes_disengage_artifact(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "disengage.json" in content, (
             "enforce_disengage must write disengage.json artifact"
         )
 
     def test_tasks_emits_restart_reminder(self):
         content = _read_tasks(self.ROLE)
-        if not content:
-            pytest.skip(f"tasks/main.yml for {self.ROLE} not yet created")
         assert "restart" in content.lower(), (
             "enforce_disengage must emit a restart-reminder message"
         )
@@ -530,8 +476,6 @@ class TestAuditRoleMetaQuality:
     @pytest.mark.parametrize("role_name", ALL_ROLES)
     def test_meta_declares_galaxy_info(self, role_name: str):
         content = _read_meta(role_name)
-        if not content:
-            pytest.skip(f"meta/main.yml for {role_name} not yet created")
         assert "galaxy_info" in content, (
             f"roles/{role_name}/meta/main.yml must declare galaxy_info"
         )
@@ -539,8 +483,6 @@ class TestAuditRoleMetaQuality:
     @pytest.mark.parametrize("role_name", ALL_ROLES)
     def test_readme_is_not_empty(self, role_name: str):
         content = _read_readme(role_name)
-        if not content:
-            pytest.skip(f"README.md for {role_name} not yet created")
         stripped = content.strip()
         assert len(stripped) > 50, (
             f"roles/{role_name}/README.md is too short "
@@ -550,8 +492,6 @@ class TestAuditRoleMetaQuality:
     @pytest.mark.parametrize("role_name", ALL_ROLES)
     def test_readme_describes_role_purpose(self, role_name: str):
         content = _read_readme(role_name)
-        if not content:
-            pytest.skip(f"README.md for {role_name} not yet created")
         assert role_name in content.lower(), (
             f"roles/{role_name}/README.md must mention the role name '{role_name}'"
         )

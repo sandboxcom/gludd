@@ -10,8 +10,6 @@ import os
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from general_ludd.daemon import create_daemon_app
 from general_ludd.execution.graph_checkpointer import TickCheckpointer, get_checkpointer
 from general_ludd.execution.langgraph_agent import LangGraphAgentLoop
@@ -146,32 +144,26 @@ class TestPlaybookRoutingLangGraph:
     def test_langchain_generate_playbook_registered(self) -> None:
         from pathlib import Path
 
+        import yaml
+
         ROOT = Path(__file__).resolve().parents[2]
         playbook_path = ROOT / "playbooks" / "langchain_generate.yml"
-        if playbook_path.is_file():
-            import yaml
-
-            content = playbook_path.read_text()
-            parsed = yaml.safe_load(content)
-            assert isinstance(parsed, list)
-            assert len(parsed) > 0
-        else:
-            pytest.skip("playbooks/langchain_generate.yml not present yet")
+        content = playbook_path.read_text()
+        parsed = yaml.safe_load(content)
+        assert isinstance(parsed, list)
+        assert len(parsed) > 0
 
     def test_langgraph_decide_playbook_registered(self) -> None:
         from pathlib import Path
 
+        import yaml
+
         ROOT = Path(__file__).resolve().parents[2]
         playbook_path = ROOT / "playbooks" / "langgraph_decide.yml"
-        if playbook_path.is_file():
-            import yaml
-
-            content = playbook_path.read_text()
-            parsed = yaml.safe_load(content)
-            assert isinstance(parsed, list)
-            assert len(parsed) > 0
-        else:
-            pytest.skip("playbooks/langgraph_decide.yml not present yet")
+        content = playbook_path.read_text()
+        parsed = yaml.safe_load(content)
+        assert isinstance(parsed, list)
+        assert len(parsed) > 0
 
     def test_langgraph_decision_role_exists(self) -> None:
         from pathlib import Path
@@ -181,10 +173,7 @@ class TestPlaybookRoutingLangGraph:
             ROOT / "collections" / "ansible_collections" / "general_ludd"
             / "agent" / "roles" / "langgraph_decision"
         )
-        if role_dir.is_dir():
-            assert (role_dir / "tasks" / "main.yml").is_file()
-        else:
-            pytest.skip("langgraph_decision role not present yet")
+        assert (role_dir / "tasks" / "main.yml").is_file()
 
 
 class TestLangChainModelRouterRunnableBranch:

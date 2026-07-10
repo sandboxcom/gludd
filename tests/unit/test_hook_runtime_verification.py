@@ -1,226 +1,218 @@
-"""TDD runtime-verification tests for hook surfaces (BUGS.md item 6).
+"""CI-runnable hook-liveness tests for hook surfaces (BUGS.md item 6, Wave E).
 
 BUGS.md line 375-414 documented that `experimental.chat.response.transform` was
 dead code in ALL 5 response-scanning plugins — the hook name is NOT a real member
 of the @opencode-ai/plugin Hooks interface, so the runtime never invokes it.
 Every plugin has since been migrated to `session.idle` and `text.complete`.
 
-These tests verify that the migrated hooks produce observable side effects
-(state files written to /tmp). Per BUGS.md line 414: "Every hook registration
-MUST have a runtime-verification test that proves the hook actually fires."
+Per BUGS.md line 414: "Every hook registration MUST have a runtime-verification
+test that proves the hook actually fires." The original version of this module
+proved that only by CHECKING FOR SIDE-EFFECT FILES LEFT BY A PRIOR LIVE SESSION
+— every assertion was gated behind `pytest.skip` if the file happened to be
+absent, so the suite could pass green forever without ever actually exercising
+a hook.
 
-For each test, missing files are skipped (not failed) since hooks may not fire
-in all environments (e.g. test runners, CI). Assertions about file existence
-and structure are made where reasonable.
+This version (Wave E) ACTUALLY INVOKES each plugin's hook handler via
+scripts/hook_plugin_harness.mjs (node --experimental-strip-types — no npm
+install needed, see that script's docstring) through the `hook_plugin_env`
+fixture in `_hook_fixtures.py`, and asserts on the resulting state file with a
+hard (non-skippable) assertion. The only remaining skip is the fixture's own
+node-version probe (`pytest.skip` when node < 22.6 / absent on this machine —
+see HOOK_LIVE_SKIP_REASON), which is an environment precondition, not a soft
+"maybe it fired" check.
 """
 
+from __future__ import annotations
+
 import json
+import time
 from pathlib import Path
 
 import pytest
+
+from tests.unit._hook_fixtures import (
+    HookEnv,
+    hook_plugin_env_impl,
+    invoke_text_complete_and_confirm_increment,
+    teardown_watchdog_session,
+)
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 
+
+@pytest.fixture
+def hook_plugin_env(tmp_path: Path):
+    yield from hook_plugin_env_impl(tmp_path)
+
 # ── Helpers ─────────────────────────────────────────────────────────────────
+
 
 def _plugin_ts_files():
     return sorted(list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts")))
 
 
-def _read_state_file(path_str: str):
-    """Read a JSON state file, returning (exists, data_or_none)."""
-    try:
-        with open(path_str) as f:
-            return True, json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return False, None
-
-
 # ── Test 1: enforce-stop.ts writes state files via session.idle ──────────────
 
+
 class TestEnforceStopWritesStateFiles:
-    """Prove enforce-stop.ts session.idle hook actually fires by checking for
-    /tmp/gludd-stop-state.json, which is written at session.idle (line 324).
-    BUGS.md line 380 proves the old chat.response.transform path NEVER fired
-    (/tmp/gludd-false-done-blocks.json was MISSING). The migrated session.idle
-    hook should produce this file.
-    """
+    """enforce-stop.ts's `event` handler writes GLUDD_STOP_STATE_FILE on a
+    `session.idle` event (BUGS.md line 324's migrated equivalent). Drive the
+    hook directly and assert the resulting state file's shape."""
 
-    STATE_FILE = "/tmp/gludd-stop-state.json"
-
-    def test_stop_state_file_exists(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist — session.idle may not have fired yet")
-
-        assert isinstance(data, dict), (
-            f"{self.STATE_FILE} must contain a JSON object"
+    def test_stop_state_file_exists_and_is_dict(self, hook_plugin_env: HookEnv):
+        result = hook_plugin_env.invoke(
+            "enforce-stop.ts", "event", input={"event": {"type": "session.idle"}}
         )
+        assert result.returncode == 0, result.stderr
+        data = hook_plugin_env.read_json("GLUDD_STOP_STATE_FILE")
+        assert isinstance(data, dict), f"expected a dict, got {data!r}"
 
-    def test_stop_state_has_expected_keys(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
+    def test_stop_state_has_expected_keys_and_types(self, hook_plugin_env: HookEnv):
+        hook_plugin_env.invoke(
+            "enforce-stop.ts", "event", input={"event": {"type": "session.idle"}}
+        )
+        data = hook_plugin_env.read_json("GLUDD_STOP_STATE_FILE")
         expected_keys = {
             "ts", "ratchetEntries", "tasksMdUnchecked", "gateStatusRed",
             "repoPending", "hasPendingWork", "hasLocalWork", "healthScore",
         }
         missing = expected_keys - set(data.keys())
-        assert not missing, (
-            f"{self.STATE_FILE} missing expected keys: {missing}"
-        )
-
-    def test_stop_state_has_valid_types(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert isinstance(data["ts"], (int, float)), "ts must be a number"
-        assert isinstance(data["ratchetEntries"], int), "ratchetEntries must be an integer"
-        assert isinstance(data["tasksMdUnchecked"], bool), "tasksMdUnchecked must be a boolean"
-        assert isinstance(data["gateStatusRed"], bool), "gateStatusRed must be a boolean"
-        assert isinstance(data["repoPending"], bool), "repoPending must be a boolean"
-        assert isinstance(data["hasPendingWork"], bool), "hasPendingWork must be a boolean"
-        assert isinstance(data["hasLocalWork"], bool), "hasLocalWork must be a boolean"
-        assert isinstance(data["healthScore"], (int, float)), "healthScore must be a number"
+        assert not missing, f"missing expected keys: {missing}"
+        assert isinstance(data["ts"], (int, float))
+        assert isinstance(data["ratchetEntries"], int)
+        assert isinstance(data["tasksMdUnchecked"], bool)
+        assert isinstance(data["gateStatusRed"], bool)
+        assert isinstance(data["repoPending"], bool)
+        assert isinstance(data["hasPendingWork"], bool)
+        assert isinstance(data["hasLocalWork"], bool)
+        assert isinstance(data["healthScore"], (int, float))
 
 
 # ── Test 2: enforce-deadline.ts writes state files via tool.execute.before ────
 
+
 class TestEnforceDeadlineWritesStateFiles:
-    """Prove enforce-deadline.ts tool.execute.before hook fires by checking for
-    /tmp/gludd-task-deadlines.json, written at dispatch time (line 163).
-    BUGS.md line 383 proves tool.execute.before hooks DO work.
-    """
+    """enforce-deadline.ts's tool.execute.before records a dispatch timestamp
+    for task/agent/workflow tool calls into GLUDD_TASK_DEADLINE_STATE."""
 
-    STATE_FILE = "/tmp/gludd-task-deadlines.json"
-
-    def test_deadline_state_file_exists(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist — no tasks dispatched yet in this session")
-
-        assert isinstance(data, dict), (
-            f"{self.STATE_FILE} must contain a JSON object"
+    def test_deadline_state_file_written_on_task_dispatch(self, hook_plugin_env: HookEnv):
+        result = hook_plugin_env.invoke(
+            "enforce-deadline.ts",
+            "tool.execute.before",
+            input={"tool": "task"},
+            output={"args": {"description": "hook-liveness smoke", "subagent_type": "general-purpose"}},
         )
+        assert result.returncode == 0, result.stderr
+        data = hook_plugin_env.read_json("GLUDD_TASK_DEADLINE_STATE")
+        assert isinstance(data, dict)
+        assert len(data) == 1, f"expected exactly one recorded dispatch, got {data}"
 
-    def test_deadline_state_has_valid_entries(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-        if len(data) == 0:
-            pytest.skip(f"{self.STATE_FILE} is empty (no tasks dispatched this session)")
-
+    def test_deadline_state_has_valid_entries(self, hook_plugin_env: HookEnv):
+        hook_plugin_env.invoke(
+            "enforce-deadline.ts",
+            "tool.execute.before",
+            input={"tool": "task"},
+            output={"args": {"description": "hook-liveness smoke", "subagent_type": "general-purpose"}},
+        )
+        data = hook_plugin_env.read_json("GLUDD_TASK_DEADLINE_STATE")
         for task_id, start_time in data.items():
-            assert isinstance(task_id, str), f"task id {task_id!r} must be a string"
-            assert isinstance(start_time, (int, float)), (
-                f"task {task_id!r} start_time must be a number"
-            )
+            assert isinstance(task_id, str)
+            assert isinstance(start_time, (int, float))
 
-    def test_deadline_entries_are_recent(self):
-        """Entry timestamps should be within the last 24 hours (fresh session)."""
-        import time
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
+    def test_deadline_entries_are_recent(self, hook_plugin_env: HookEnv):
+        hook_plugin_env.invoke(
+            "enforce-deadline.ts",
+            "tool.execute.before",
+            input={"tool": "task"},
+            output={"args": {"description": "hook-liveness smoke", "subagent_type": "general-purpose"}},
+        )
+        data = hook_plugin_env.read_json("GLUDD_TASK_DEADLINE_STATE")
         now_ms = time.time() * 1000
-        stale_entries = []
         for task_id, start_time in data.items():
             age_ms = now_ms - start_time
-            if age_ms > 86_400_000:  # 24 hours
-                stale_entries.append((task_id, age_ms / 1000))
-
-        assert not stale_entries, (
-            f"Stale task deadline entries (>24h old): {stale_entries}"
-        )
+            assert age_ms < 60_000, f"task {task_id!r} timestamp is {age_ms/1000:.1f}s old"
 
 
 # ── Test 3: enforce-session-start.ts writes files via tool.execute.before ─────
 
+
 class TestEnforceSessionStartWritesStateFiles:
-    """enforce-session-start.ts writes /tmp/gludd-session-start.json via
-    tool.execute.before (loadState at system.transform time, dispatches
-    counted at tool.execute.before). BUGS.md line 382 proves this file
-    exists and contains non-zero dispatches.
-    """
+    """enforce-session-start.ts writes GLUDD_SESSION_STATE via
+    tool.execute.before. A `read` of TASKS.md marks readsDone=true (see
+    isTaskFileRead()); this is also the deduped conversion of the two
+    identical hook-state tests formerly duplicated in test_process_overhead.py
+    (see that file's TestGuardrailEffectivenessRatio)."""
 
-    STATE_FILE = "/tmp/gludd-session-start.json"
-
-    def test_session_start_state_file_exists(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist — session may not have started yet")
-
-        assert isinstance(data, dict), (
-            f"{self.STATE_FILE} must contain a JSON object"
+    def test_session_start_state_file_written_and_shape(self, hook_plugin_env: HookEnv):
+        result = hook_plugin_env.invoke(
+            "enforce-session-start.ts",
+            "tool.execute.before",
+            input={"tool": "read", "filePath": "TASKS.md"},
         )
+        assert result.returncode == 0, result.stderr
+        data = hook_plugin_env.read_json("GLUDD_SESSION_STATE")
+        assert isinstance(data, dict)
+        assert "started_at" in data
+        assert "readsDone" in data
+        assert "dispatches" in data
+        assert data["readsDone"] is True, "reading TASKS.md must set readsDone=true"
 
-    def test_session_start_has_expected_keys(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert "started_at" in data, "must have started_at timestamp"
-        assert "readsDone" in data, "must have readsDone flag"
-        assert "dispatches" in data, "must have dispatches count"
-
-    def test_session_start_dispatches_non_negative(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert isinstance(data["dispatches"], (int, float)), (
-            "dispatches must be a number"
+    def test_session_start_dispatches_non_negative(self, hook_plugin_env: HookEnv):
+        hook_plugin_env.invoke(
+            "enforce-session-start.ts",
+            "tool.execute.before",
+            input={"tool": "read", "filePath": "TASKS.md"},
         )
-        assert data["dispatches"] >= 0, (
-            f"dispatches must be non-negative, got {data['dispatches']}"
-        )
+        data = hook_plugin_env.read_json("GLUDD_SESSION_STATE")
+        assert isinstance(data["dispatches"], (int, float))
+        assert data["dispatches"] >= 0
 
 
-# ── Test 3b: enforce-delegate.ts writes mainthread-streak file ─────────────
+# ── Test 3b: enforce-delegate.ts writes mainthread-streak + force-delegate files
+
 
 class TestEnforceDelegateWritesStateFiles:
-    """enforce-delegate.ts writes /tmp/gludd-mainthread-streak.json via
-    mainthreadBudgetAfter() in tool.execute.after. Also writes
-    /tmp/gludd-force-delegate.json for force-delegate state.
-    """
+    """enforce-delegate.ts writes GLUDD_MAINTHREAD_STREAK_FILE via
+    tool.execute.after (mainthreadBudgetAfter), and GLUDD_FORCE_DELEGATE_STATE
+    via tool.execute.before (enforceForceDelegate, opt-in GLUDD_FORCE_DELEGATE=1)."""
 
-    STREAK_FILE = "/tmp/gludd-mainthread-streak.json"
-    FORCE_FILE = "/tmp/gludd-force-delegate.json"
+    def test_mainthread_streak_file_increments(self, hook_plugin_env: HookEnv):
+        for _ in range(3):
+            result = hook_plugin_env.invoke(
+                "enforce-delegate.ts", "tool.execute.after", input={"tool": "edit"}
+            )
+            assert result.returncode == 0, result.stderr
+        data = hook_plugin_env.read_json("GLUDD_MAINTHREAD_STREAK_FILE")
+        assert isinstance(data, dict)
+        assert data["count"] == 3, f"expected count==3 after 3 edit calls, got {data}"
 
-    def test_mainthread_streak_file_exists(self):
-        exists, data = _read_state_file(self.STREAK_FILE)
-        if not exists:
-            pytest.skip(f"{self.STREAK_FILE} does not exist — no main-thread tool calls yet")
-
-        assert isinstance(data, dict), (
-            f"{self.STREAK_FILE} must contain a JSON object"
-        )
-
-    def test_mainthread_streak_has_expected_shape(self):
-        exists, data = _read_state_file(self.STREAK_FILE)
-        if not exists:
-            pytest.skip(f"{self.STREAK_FILE} does not exist")
-
-        # Back-compat shape: {"count": int, ...}
-        assert "count" in data, f"{self.STREAK_FILE} must have 'count' key"
-        assert isinstance(data["count"], (int, float)), "count must be a number"
-
-    def test_force_delegate_file_if_exists(self):
-        exists, data = _read_state_file(self.FORCE_FILE)
-        if not exists:
-            pytest.skip(f"{self.FORCE_FILE} does not exist — GLUDD_FORCE_DELEGATE likely not active")
-
-        assert isinstance(data, dict), (
-            f"{self.FORCE_FILE} must contain a JSON object"
+    def test_force_delegate_state_accumulates_consecutive_targeted(self, hook_plugin_env: HookEnv):
+        # FORCE_DELEGATE_GRACE defaults to 3; drive grace+1 = 4 targeted edit
+        # calls (opt-in via GLUDD_FORCE_DELEGATE=1) against a non-memory file
+        # path and assert the state file's consecutive_targeted counter.
+        scratch_file = str(hook_plugin_env.cwd / "scratch.py")
+        grace_plus_one = 4
+        last = None
+        for _ in range(grace_plus_one):
+            last = hook_plugin_env.invoke(
+                "enforce-delegate.ts",
+                "tool.execute.before",
+                input={"tool": "edit"},
+                output={"args": {"filePath": scratch_file}},
+                env_overrides={"GLUDD_FORCE_DELEGATE": "1"},
+            )
+        assert last is not None and last.returncode == 0, last.stderr if last else "no calls made"
+        data = hook_plugin_env.read_json("GLUDD_FORCE_DELEGATE_STATE")
+        assert isinstance(data, dict)
+        assert data["consecutive_targeted"] == grace_plus_one, (
+            f"expected consecutive_targeted=={grace_plus_one}, got {data}"
         )
 
 
 # ── Test 4: Verify no chat.response.transform registrations ─────────────────
+
 
 class TestNoChatResponseTransformRegistrations:
     """Prove that all plugins have been migrated OFF the dead
@@ -238,7 +230,6 @@ class TestNoChatResponseTransformRegistrations:
         for ts_file in _plugin_ts_files():
             content = ts_file.read_text()
             if "chat.response.transform" in content:
-                # Check if it's a comment-only reference (migration note)
                 lines = content.split("\n")
                 for lineno, line in enumerate(lines, 1):
                     if "chat.response.transform" in line:
@@ -251,7 +242,6 @@ class TestNoChatResponseTransformRegistrations:
                             "is_comment": is_comment,
                         })
 
-        # Filter to only real registrations (non-comment occurrences)
         real_violations = [v for v in violations if not v["is_comment"]]
         assert len(real_violations) == 0, (
             f"Found {len(real_violations)} chat.response.transform hook registration(s) "
@@ -286,6 +276,7 @@ class TestNoChatResponseTransformRegistrations:
 
 
 # ── Test 5: All plugins export default ────────────────────────────────────
+
 
 class TestAllPluginsExportDefault:
     """Every .ts plugin file under .opencode/plugin/ must export a default
@@ -335,322 +326,266 @@ class TestAllPluginsExportDefault:
 
 # ── Test 6: Block counter files (enforce-stop.ts false-positive cascade) ─────
 
+
 class TestEnforceStopBlockCounter:
-    """enforce-stop.ts writes /tmp/gludd-block-counter.json and
-    /tmp/gludd-block-reason.json to track consecutive blocks and prevent
-    false-positive cascades (lines 42-87).
+    """enforce-stop.ts's main-thread-grinding guard (GRINDING_HARD_DENY_THRESHOLD
+    = 12) returns a `permissionDecision: "deny"` and calls recordBlock(), which
+    writes /tmp/gludd-block-counter.json and /tmp/gludd-block-reason.json.
+    These two paths are HARDCODED in enforce-stop.ts (no env override) — the
+    hook_plugin_env fixture snapshots/restores them around this test (see
+    _hook_fixtures.py HARDCODED_TMP_PATHS) so this never leaks into a live
+    session's shared state.
+
+    Pre-seed GLUDD_STREAK_FILE (env-overridable) with streak=13 (> threshold)
+    so a single `edit` tool.execute.before call is denied deterministically.
     """
 
-    COUNTER_FILE = "/tmp/gludd-block-counter.json"
-    REASON_FILE = "/tmp/gludd-block-reason.json"
+    BLOCK_COUNTER_FILE = "/tmp/gludd-block-counter.json"
+    BLOCK_REASON_FILE = "/tmp/gludd-block-reason.json"
 
-    def test_block_counter_file_if_exists(self):
-        exists, data = _read_state_file(self.COUNTER_FILE)
-        if not exists:
-            pytest.skip(f"{self.COUNTER_FILE} does not exist — no blocks have occurred")
+    def _seed_streak(self, hook_plugin_env: HookEnv, streak: int) -> None:
+        streak_path = hook_plugin_env.state_path("GLUDD_STREAK_FILE")
+        streak_path.write_text(json.dumps({
+            "streak": streak, "lastDispatchTs": 0, "readStreak": 0,
+            "editStreak": streak, "lastUpdateTs": 0, "lastWriter": "",
+        }))
 
+    def test_grinding_streak_denies_and_writes_block_counter(self, hook_plugin_env: HookEnv):
+        self._seed_streak(hook_plugin_env, 13)
+        result = hook_plugin_env.invoke(
+            "enforce-stop.ts", "tool.execute.before", input={"tool": "edit"}
+        )
+        assert result.returncode == 0, result.stderr  # deny is a RETURN value, not a throw
+        payload = json.loads(result.stdout)
+        assert payload is not None and payload.get("permissionDecision") == "deny", payload
+
+        data = json.loads(Path(self.BLOCK_COUNTER_FILE).read_text())
         assert isinstance(data, dict)
         assert "consecutiveBlocks" in data
         assert "totalBlocks" in data
+        assert data["totalBlocks"] >= 1
 
-    def test_block_reason_file_if_exists(self):
-        exists, data = _read_state_file(self.REASON_FILE)
-        if not exists:
-            pytest.skip(f"{self.REASON_FILE} does not exist — no blocks have occurred")
-
+    def test_grinding_streak_writes_block_reason(self, hook_plugin_env: HookEnv):
+        self._seed_streak(hook_plugin_env, 13)
+        hook_plugin_env.invoke(
+            "enforce-stop.ts", "tool.execute.before", input={"tool": "edit"}
+        )
+        data = json.loads(Path(self.BLOCK_REASON_FILE).read_text())
         assert isinstance(data, dict)
-        assert "reason" in data
+        assert data["reason"] == "main-thread-grinding"
         assert isinstance(data["reason"], str)
 
 
-# ── Test 7: enforce-stop.ts writes text.complete count file ─────────────────
+# ── Test 7 / 8: stop / floor text.complete counters increment across calls ──
+
 
 class TestEnforceStopTextComplete:
-    """enforce-stop.ts writes /tmp/gludd-stop-text-complete-count.json via
-    experimental.text.complete. BUGS.md line 414 mandates runtime-verification
-    of every migrated hook surface.
-    """
+    """enforce-stop.ts's experimental.text.complete writes
+    /tmp/gludd-stop-text-complete-count.json (HARDCODED path — see
+    HARDCODED_TMP_PATHS). Drive it twice and assert the count strictly
+    increases between calls. Retried (see
+    invoke_text_complete_and_confirm_increment) because this hardcoded path
+    is shared with any live opencode session on this machine, which can
+    occasionally race a single pair of calls to a tie."""
 
     STATE_FILE = "/tmp/gludd-stop-text-complete-count.json"
 
-    def test_text_complete_count_file_exists(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist — text.complete may not have fired yet")
+    def test_text_complete_count_increments_across_two_calls(self, hook_plugin_env: HookEnv):
+        invoke_text_complete_and_confirm_increment(hook_plugin_env, "enforce-stop.ts", self.STATE_FILE)
 
-        assert isinstance(data, dict), (
-            f"{self.STATE_FILE} must contain a JSON object"
-        )
-
-    def test_text_complete_has_count(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert "count" in data, (
-            f"{self.STATE_FILE} missing 'count' key"
-        )
-
-    def test_text_complete_count_non_negative(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert isinstance(data["count"], (int, float)), "count must be a number"
-        assert data["count"] >= 0, f"count must be non-negative, got {data['count']}"
-
-    def test_text_complete_count_increasing(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert data["count"] > 0, (
-            f"text.complete count should be > 0 (hook has fired), got {data['count']}"
-        )
-
-
-# ── Test 8: enforce-floor.ts writes text.complete count file ────────────────
 
 class TestEnforceFloorTextComplete:
-    """enforce-floor.ts writes /tmp/gludd-floor-text-complete-count.json via
-    experimental.text.complete. Confirms the hook surface is live.
-    """
+    """enforce-floor.ts's experimental.text.complete writes
+    /tmp/gludd-floor-text-complete-count.json (HARDCODED path). Same
+    increment-across-two-calls proof as TestEnforceStopTextComplete."""
 
     STATE_FILE = "/tmp/gludd-floor-text-complete-count.json"
 
-    def test_floor_text_complete_file_exists(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist — text.complete may not have fired yet")
-
-        assert isinstance(data, dict), (
-            f"{self.STATE_FILE} must contain a JSON object"
-        )
-
-    def test_floor_text_complete_has_count(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert "count" in data, (
-            f"{self.STATE_FILE} missing 'count' key"
-        )
-
-    def test_floor_text_complete_count_non_negative(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert isinstance(data["count"], (int, float)), "count must be a number"
-        assert data["count"] >= 0, f"count must be non-negative, got {data['count']}"
-
-    def test_floor_text_complete_count_increasing(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert data["count"] > 0, (
-            f"text.complete count should be > 0 (hook has fired), got {data['count']}"
-        )
+    def test_floor_text_complete_count_increments_across_two_calls(self, hook_plugin_env: HookEnv):
+        invoke_text_complete_and_confirm_increment(hook_plugin_env, "enforce-floor.ts", self.STATE_FILE)
 
 
 # ── Test 9: enforce-stop.ts writes tool-counts file via tool.execute.before ─
 
+
 class TestEnforceStopToolCounts:
-    """enforce-stop.ts writes /tmp/gludd-stop-tool-counts.json via
-    tool.execute.before. Tracks per-tool invocation counts for the
-    anti-loop / anti-grind enforcement logic.
-    """
+    """enforce-stop.ts writes /tmp/gludd-stop-tool-counts.json (HARDCODED
+    path) via tool.execute.before on every call, tracking per-outcome counts."""
 
     STATE_FILE = "/tmp/gludd-stop-tool-counts.json"
 
-    def test_tool_counts_file_exists(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist — no tool calls yet in this session")
-
-        assert isinstance(data, dict), (
-            f"{self.STATE_FILE} must contain a JSON object"
+    def test_tool_counts_file_written_and_shape(self, hook_plugin_env: HookEnv):
+        result = hook_plugin_env.invoke(
+            "enforce-stop.ts", "tool.execute.before", input={"tool": "read"}
         )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(Path(self.STATE_FILE).read_text())
+        assert isinstance(data, dict)
+        assert data.get("allowed", 0) >= 1
+        assert "last_allowed" in data
 
-    def test_tool_counts_has_expected_shape(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert len(data) > 0, (
-            f"{self.STATE_FILE} should contain at least one entry"
-        )
-
-        # Entries may be mixed: numeric counts for tools, dict metadata for
-        # keys like "last_fired". Validate numeric entries only.
-        for key, value in data.items():
-            assert isinstance(key, str), f"entry key {key!r} must be a string"
-            if isinstance(value, (int, float)):
-                assert value >= 0, (
-                    f"tool {key!r} count must be non-negative, got {value}"
-                )
-            elif isinstance(value, dict):
-                assert "ts" in value, (
-                    f"metadata entry {key!r} must have 'ts' timestamp"
-                )
-            elif isinstance(value, str):
-                pass  # Metadata strings like "_outcome" are fine
-            else:
-                pytest.fail(
-                    f"Unexpected type {type(value).__name__} for key {key!r} "
-                    f"in {self.STATE_FILE}"
-                )
-
-    def test_tool_counts_positive_total(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        numeric_counts = [
-            v for v in data.values() if isinstance(v, (int, float))
-        ]
-        assert len(numeric_counts) > 0, (
-            f"{self.STATE_FILE} should contain at least one numeric count"
-        )
-        total = sum(numeric_counts)
-        assert total > 0, (
-            f"{self.STATE_FILE} total tool count should be > 0, got {total}"
-        )
+    def test_tool_counts_positive_total(self, hook_plugin_env: HookEnv):
+        hook_plugin_env.invoke("enforce-stop.ts", "tool.execute.before", input={"tool": "read"})
+        data = json.loads(Path(self.STATE_FILE).read_text())
+        numeric_counts = [v for v in data.values() if isinstance(v, (int, float))]
+        assert numeric_counts and sum(numeric_counts) > 0
 
 
 # ── Test 10: enforce-delegate.ts writes model-util file via tool.execute.before
 
+
 class TestEnforceDelegateModelUtil:
-    """enforce-delegate.ts writes /tmp/gludd-model-util.json via
-    tool.execute.before (or modelUtilBefore). Tracks per-model dispatch
-    counts for the sonnet ratio enforcement logic.
-    """
+    """enforce-delegate.ts writes GLUDD_MODEL_UTIL_STATE via
+    tool.execute.before when a task/agent/workflow tool is dispatched with an
+    explicit model. A model:"sonnet" dispatch is always recorded and allowed."""
 
-    STATE_FILE = "/tmp/gludd-model-util.json"
-
-    def test_model_util_file_exists(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist — no model dispatches recorded yet")
-
-        assert isinstance(data, dict), (
-            f"{self.STATE_FILE} must contain a JSON object"
+    def test_model_util_file_written_on_sonnet_dispatch(self, hook_plugin_env: HookEnv):
+        result = hook_plugin_env.invoke(
+            "enforce-delegate.ts",
+            "tool.execute.before",
+            input={"tool": "task"},
+            output={"args": {"model": "sonnet", "description": "hook-liveness smoke"}},
         )
+        assert result.returncode == 0, result.stderr
+        data = hook_plugin_env.read_json("GLUDD_MODEL_UTIL_STATE")
+        assert isinstance(data, dict)
+        assert data["history"] == ["sonnet"], data
 
-    def test_model_util_has_valid_entries(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        assert len(data) > 0, (
-            f"{self.STATE_FILE} should contain at least one entry"
+    def test_model_util_last_model_is_string(self, hook_plugin_env: HookEnv):
+        hook_plugin_env.invoke(
+            "enforce-delegate.ts",
+            "tool.execute.before",
+            input={"tool": "task"},
+            output={"args": {"model": "sonnet", "description": "hook-liveness smoke"}},
         )
-
-        # Entries may be mixed: string lists for "history", dict views for
-        # per-model entries, or nested dicts. Validate each type.
-        for key, entry in data.items():
-            assert isinstance(key, str), f"entry key {key!r} must be a string"
-            if isinstance(entry, list):
-                assert all(isinstance(m, str) for m in entry), (
-                    f"{key!r} list entries must be strings (model names)"
-                )
-            elif isinstance(entry, dict):
-                if "count" in entry:
-                    assert isinstance(entry["count"], (int, float)), (
-                        f"{key!r}: count must be a number"
-                    )
-            elif isinstance(entry, (int, float)):
-                pass
-            else:
-                pytest.fail(
-                    f"Unexpected type {type(entry).__name__} for key {key!r} "
-                    f"in {self.STATE_FILE}"
-                )
-
-    def test_model_util_last_model_is_string(self):
-        exists, data = _read_state_file(self.STATE_FILE)
-        if not exists:
-            pytest.skip(f"{self.STATE_FILE} does not exist")
-
-        if "last_model" in data:
-            assert isinstance(data["last_model"], str), (
-                "last_model must be a string"
-            )
+        data = hook_plugin_env.read_json("GLUDD_MODEL_UTIL_STATE")
+        assert all(isinstance(m, str) for m in data["history"])
 
 
 # ── Test 11: watchdog.ts writes PID file via event/session.created ──────────
 
+
 class TestWatchdogPidFile:
-    """watchdog.ts writes /tmp/gludd-watchdog.pid via event/session.created.
-    Confirms the watchdog daemon has started and its PID file exists.
-    Not a JSON file — contains a plain integer PID.
-    """
+    """watchdog.ts's `session.created` event handler spawns
+    `python3 scripts/agent_watchdog.py` and writes its PID to the HARDCODED
+    /tmp/gludd-watchdog.pid. SAFETY: the hook is invoked with cwd=the
+    fixture's isolated tmp_path (no scripts/ dir there), so the spawned
+    python3 process exits almost immediately with a "file not found" error
+    instead of becoming a real long-running watchdog daemon. The real PID
+    file is ALSO snapshotted/restored by hook_plugin_env, and — belt and
+    braces — pre-seeded with an unreachable placeholder PID before the call
+    so the plugin's "kill any existing watchdog" step can never touch a real
+    process on this machine. session.deleted teardown is MANDATORY (fires
+    below) so the test-spawned PID is always reaped."""
 
     PID_FILE = "/tmp/gludd-watchdog.pid"
 
-    def test_watchdog_pid_file_exists(self):
-        path = Path(self.PID_FILE)
-        if not path.exists():
-            pytest.skip(f"{self.PID_FILE} does not exist — watchdog may not be running")
-
-        assert path.is_file(), f"{self.PID_FILE} must be a regular file"
-
-    def test_watchdog_pid_is_valid_number(self):
-        path = Path(self.PID_FILE)
-        if not path.exists():
-            pytest.skip(f"{self.PID_FILE} does not exist")
-
-        content = path.read_text().strip()
-        assert content, f"{self.PID_FILE} must not be empty"
-        assert content.isdigit(), (
-            f"{self.PID_FILE} must contain a positive integer PID, got {content!r}"
-        )
-        pid = int(content)
-        assert pid > 0, f"PID must be positive, got {pid}"
-
-    def test_watchdog_pid_is_running_process(self):
-        import os
-        path = Path(self.PID_FILE)
-        if not path.exists():
-            pytest.skip(f"{self.PID_FILE} does not exist")
-
-        pid = int(path.read_text().strip())
-        import contextlib
-        with contextlib.suppress(OSError):
-            os.kill(pid, 0)  # May not run in test/CI; skip is too strong
+    def test_watchdog_pid_file_written_and_valid(self, hook_plugin_env: HookEnv):
+        # Defense in depth: neutralize any real watchdog PID recorded on this
+        # machine before the plugin's "kill existing watchdog" step runs.
+        Path(self.PID_FILE).write_text("2147483647")
+        try:
+            result = hook_plugin_env.invoke(
+                ".opencode/plugins/watchdog.ts",
+                "event",
+                input={"event": {"type": "session.created"}},
+            )
+            assert result.returncode == 0, result.stderr
+            content = Path(self.PID_FILE).read_text().strip()
+            assert content, "PID file must not be empty"
+            assert content.isdigit(), f"PID file must contain digits, got {content!r}"
+            pid = int(content)
+            assert pid > 0
+        finally:
+            # MANDATORY teardown: fire session.deleted so the test-spawned
+            # (already-exited) child is reaped and the PID file is removed.
+            teardown_watchdog_session(hook_plugin_env)
 
 
 # ── Test 12: enforce-deletion-gate.ts writes audit log via tool.execute.before
 
+
 class TestDeletionGateAuditLog:
-    """enforce-deletion-gate.ts writes .deletion-audit.log via
-    tool.execute.before when a file-deletion attempt is audited.
-    Not a JSON file — line-oriented audit log with timestamps.
-    """
+    """enforce-deletion-gate.ts's tool.execute.before appends to
+    `.deletion-audit.log` (CWD-RELATIVE — resolves inside the fixture's
+    isolated tmp cwd, no hardcoded-path guard needed) when a deletion exceeds
+    GLUDD_DELETION_GATE_THRESHOLD AND DELETION_REASON is set."""
 
-    AUDIT_LOG = ROOT / ".deletion-audit.log"
-
-    def test_deletion_audit_log_exists(self):
-        if not self.AUDIT_LOG.exists():
-            pytest.skip(f"{self.AUDIT_LOG} does not exist — no deletion attempts have been audited")
-
-        assert self.AUDIT_LOG.is_file(), f"{self.AUDIT_LOG} must be a regular file"
-
-    def test_deletion_audit_log_is_not_empty(self):
-        if not self.AUDIT_LOG.exists():
-            pytest.skip(f"{self.AUDIT_LOG} does not exist")
-
-        content = self.AUDIT_LOG.read_text().strip()
-        assert content, f"{self.AUDIT_LOG} must not be empty"
-
-    def test_deletion_audit_log_has_lines(self):
-        if not self.AUDIT_LOG.exists():
-            pytest.skip(f"{self.AUDIT_LOG} does not exist")
-
-        lines = self.AUDIT_LOG.read_text().strip().split("\n")
-        assert len(lines) >= 1, (
-            f"{self.AUDIT_LOG} must contain at least one audit entry"
+    def test_audit_log_written_with_reason_above_threshold(self, hook_plugin_env: HookEnv):
+        old_string = "\n".join(f"line {i}" for i in range(20))  # 20 lines
+        new_string = "line 0"  # 1 line -> 19 lines removed
+        result = hook_plugin_env.invoke(
+            "enforce-deletion-gate.ts",
+            "tool.execute.before",
+            input={
+                "tool": "edit",
+                "args": {
+                    "file_path": "scratch.py",
+                    "old_string": old_string,
+                    "new_string": new_string,
+                },
+            },
+            env_overrides={
+                "GLUDD_DELETION_GATE_THRESHOLD": "5",
+                "DELETION_REASON": "hook-liveness-test",
+            },
         )
-        for i, line in enumerate(lines):
-            assert line.strip(), f"line {i + 1} in {self.AUDIT_LOG} must not be blank"
+        assert result.returncode == 0, result.stderr
+
+        audit_log = hook_plugin_env.cwd / ".deletion-audit.log"
+        assert audit_log.exists(), "deletion audit log must be written"
+        content = audit_log.read_text().strip()
+        assert content
+        assert "lines_removed=19" in content
+        assert 'reason="hook-liveness-test"' in content
+
+    def test_deletion_denied_without_reason(self, hook_plugin_env: HookEnv):
+        old_string = "\n".join(f"line {i}" for i in range(20))
+        new_string = "line 0"
+        result = hook_plugin_env.invoke(
+            "enforce-deletion-gate.ts",
+            "tool.execute.before",
+            input={
+                "tool": "edit",
+                "args": {
+                    "file_path": "scratch.py",
+                    "old_string": old_string,
+                    "new_string": new_string,
+                },
+            },
+            env_overrides={"GLUDD_DELETION_GATE_THRESHOLD": "5"},
+        )
+        assert result.returncode != 0, "deletion above threshold with no reason must be denied"
+        assert "BASH BLOCKED" in result.stderr or "threshold" in result.stderr.lower()
+
+
+# ── Test 13: opt-in live smoke test against a real opencode binary ──────────
+
+
+@pytest.mark.hook_live
+class TestOpencodeBinaryLive:
+    """Opt-in (GLUDD_HOOK_LIVE=1 + OPENCODE_BIN) end-to-end smoke test against
+    a REAL opencode CLI binary, distinct from the harness-based tests above
+    (which invoke plugin hooks directly via node, never through opencode
+    itself). Excluded from the default run by pyproject.toml's
+    `-m "not hook_live"` addopts; run via `make test-hooks-live`."""
+
+    def test_opencode_binary_runs(self):
+        import os
+        import shutil
+        import subprocess
+
+        if os.environ.get("GLUDD_HOOK_LIVE") != "1":
+            pytest.skip("set GLUDD_HOOK_LIVE=1 to run the live opencode binary smoke test")
+        opencode_bin = os.environ.get("OPENCODE_BIN")
+        if not opencode_bin or not shutil.which(opencode_bin):
+            pytest.skip("OPENCODE_BIN not set to a resolvable executable")
+
+        result = subprocess.run(
+            [opencode_bin, "--help"], capture_output=True, text=True, timeout=30
+        )
+        # Some CLIs exit non-zero on --help while still printing usage; either
+        # a clean exit OR non-empty output proves the binary actually ran.
+        assert result.returncode == 0 or result.stdout.strip() or result.stderr.strip(), (
+            "opencode binary produced no output and a non-zero exit"
+        )

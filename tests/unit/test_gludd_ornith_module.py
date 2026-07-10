@@ -32,8 +32,6 @@ MODULE_PATH = (
 
 def _load_module():
     """Import gludd_ornith.py from disk, bypassing the ansible collection path."""
-    if not MODULE_PATH.exists():
-        pytest.skip(f"module not yet implemented at {MODULE_PATH}")
     spec = importlib.util.spec_from_file_location("gludd_ornith", str(MODULE_PATH))
     assert spec is not None
     assert spec.loader is not None

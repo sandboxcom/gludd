@@ -363,3 +363,181 @@ class TestRecordGuard:
         accepted = sl.try_charge(2.0, kind="token")
         assert accepted is True
         assert sl.window_spend() == pytest.approx(2.0)
+
+
+class TestFlushWatermark:
+    """SPD-1: the limiter-side watermark API consumed by a periodic EventLoop
+    flush phase (not implemented here) that persists in-memory records to the
+    ``spend_records`` table.  These tests only exercise the limiter's own
+    bookkeeping: unflushed_records() scoping, mark_flushed() monotonicity,
+    restore()'s dedupe seeding, and thread-safety of the seq counter.
+    """
+
+    def test_unflushed_records_empty_when_nothing_recorded(self) -> None:
+        sl, _ = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        assert sl.unflushed_records() == []
+
+    def test_unflushed_records_returns_all_before_any_flush(self) -> None:
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(1.0, kind="token", project_id="proj-a")
+        sl.record(2.0, kind="infra", project_id="proj-b")
+        unflushed = sl.unflushed_records()
+        assert len(unflushed) == 2
+        # (seq, ts, cost, project_id)
+        assert unflushed[0] == (1, 1.0, 1.0, "proj-a")
+        assert unflushed[1] == (2, 1.0, 2.0, "proj-b")
+
+    def test_mark_flushed_scopes_unflushed_records(self) -> None:
+        """After mark_flushed(upto_seq), only records with seq > upto_seq remain."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(1.0, kind="token")  # seq=1
+        sl.record(2.0, kind="token")  # seq=2
+        sl.record(3.0, kind="token")  # seq=3
+        assert len(sl.unflushed_records()) == 3
+        sl.mark_flushed(2)
+        remaining = sl.unflushed_records()
+        assert len(remaining) == 1
+        assert remaining[0][0] == 3
+        assert remaining[0][2] == pytest.approx(3.0)
+
+    def test_mark_flushed_full_drain(self) -> None:
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(1.0, kind="token")
+        sl.record(2.0, kind="token")
+        sl.mark_flushed(2)
+        assert sl.unflushed_records() == []
+
+    def test_mark_flushed_is_monotonic_noop_on_lower_value(self) -> None:
+        """A lower (or equal) mark_flushed() call must never move the
+        watermark backwards — that would resurrect already-flushed records
+        as unflushed and cause duplicate DB inserts."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(1.0, kind="token")  # seq=1
+        sl.record(2.0, kind="token")  # seq=2
+        sl.record(3.0, kind="token")  # seq=3
+        sl.mark_flushed(3)
+        assert sl.unflushed_records() == []
+        # Regress with a lower value -> must be a no-op.
+        sl.mark_flushed(1)
+        assert sl.unflushed_records() == []
+        # Equal value -> also a no-op (not an error).
+        sl.mark_flushed(3)
+        assert sl.unflushed_records() == []
+
+    def test_mark_flushed_advances_only_forward(self) -> None:
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(1.0, kind="token")  # seq=1
+        sl.record(2.0, kind="token")  # seq=2
+        sl.mark_flushed(1)
+        assert len(sl.unflushed_records()) == 1
+        # Advancing forward from 1 -> 2 must further shrink the unflushed set.
+        sl.mark_flushed(2)
+        assert sl.unflushed_records() == []
+        # Attempting to go back down to 1 must not resurrect seq=2 as flushed
+        # again in a way that breaks anything — it's simply ignored.
+        sl.mark_flushed(1)
+        assert sl.unflushed_records() == []
+
+    def test_restore_ingested_records_never_appear_unflushed(self) -> None:
+        """The critical dedupe property: restore() must seed the watermark
+        PAST every ingested record so a post-restart flush never re-INSERTs
+        rows that were already persisted before the restart."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 100.0
+        sl.restore([(90.0, 1.0, "proj-a"), (95.0, 2.0, None)])
+        assert sl.unflushed_records() == []
+        # window_spend must still reflect the restored records (restore()
+        # ingesting them for the watermark must not affect cap math).
+        assert sl.window_spend() == pytest.approx(3.0)
+
+    def test_restore_then_new_charge_only_new_charge_is_unflushed(self) -> None:
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 100.0
+        sl.restore([(90.0, 1.0, "proj-a")])
+        assert sl.unflushed_records() == []
+        sl.record(5.0, kind="token", project_id="proj-b")
+        unflushed = sl.unflushed_records()
+        assert len(unflushed) == 1
+        assert unflushed[0][2] == pytest.approx(5.0)
+        assert unflushed[0][3] == "proj-b"
+
+    def test_seq_survives_interleaved_charges_and_flushes(self) -> None:
+        """seq must keep incrementing monotonically across interleaved
+        record/try_charge and mark_flushed calls — never reused, never reset."""
+        sl, clock = _make_limiter(limit_usd=100.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(1.0, kind="token")  # seq=1
+        sl.mark_flushed(1)
+        sl.record(1.0, kind="token")  # seq=2
+        sl.try_charge(1.0, kind="token")  # seq=3
+        assert [rec[0] for rec in sl.unflushed_records()] == [2, 3]
+        sl.mark_flushed(2)
+        assert [rec[0] for rec in sl.unflushed_records()] == [3]
+        sl.record(1.0, kind="token")  # seq=4
+        assert [rec[0] for rec in sl.unflushed_records()] == [3, 4]
+        sl.mark_flushed(4)
+        assert sl.unflushed_records() == []
+        # One more charge after full drain must continue from seq=5, not reset.
+        sl.record(1.0, kind="token")  # seq=5
+        assert [rec[0] for rec in sl.unflushed_records()] == [5]
+
+    def test_thread_safety_smoke_charges_from_n_threads_while_flushing(self) -> None:
+        """N threads charging concurrently while a flusher repeatedly reads
+        unflushed_records() + mark_flushed() must never lose or duplicate a
+        seq, and the final unflushed count must reconcile with total charges
+        minus what was actually marked flushed."""
+        import threading as _threading
+
+        sl, clock = _make_limiter(limit_usd=1_000_000.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        n_threads = 8
+        charges_per_thread = 50
+        stop = _threading.Event()
+        flushed_seqs: list[int] = []
+        flush_lock = _threading.Lock()
+
+        def charger() -> None:
+            for _ in range(charges_per_thread):
+                sl.record(0.01, kind="token")
+
+        def flusher() -> None:
+            while not stop.is_set():
+                pending = sl.unflushed_records()
+                if pending:
+                    upto = max(rec[0] for rec in pending)
+                    sl.mark_flushed(upto)
+                    with flush_lock:
+                        flushed_seqs.append(upto)
+
+        charger_threads = [_threading.Thread(target=charger) for _ in range(n_threads)]
+        flusher_thread = _threading.Thread(target=flusher)
+        flusher_thread.start()
+        for t in charger_threads:
+            t.start()
+        for t in charger_threads:
+            t.join()
+        # Drain any remaining unflushed records after all charges landed.
+        pending = sl.unflushed_records()
+        if pending:
+            upto = max(rec[0] for rec in pending)
+            sl.mark_flushed(upto)
+        stop.set()
+        flusher_thread.join()
+
+        total_charges = n_threads * charges_per_thread
+        # Every seq from 1..total_charges must have been assigned exactly
+        # once (no duplicate/lost seq under concurrent record() calls) and
+        # everything must end up flushed.
+        assert sl.unflushed_records() == []
+        with sl._lock:  # test-only introspection of seq bookkeeping
+            assert sl._seq == total_charges
+            assert sl._last_flushed_seq == total_charges
+        # snapshot() must still expose only the public 3-tuple shape (no seq leak).
+        snap = sl.snapshot()
+        assert len(snap) == total_charges
+        assert all(len(rec) == 3 for rec in snap)

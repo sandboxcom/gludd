@@ -181,9 +181,11 @@
 
 ## Current Gate Status (2026-07-10)
 <!-- gate:begin -->
-- CI RED — run 29055665462 (master @ a7ab5d15): unit-3 FAIL (11, both pythons) | other FAIL (5: 2 PSK + 3 GPU-metrics) | unit-2 FAIL (1, 3.11) | unit-1a CANCELLED (both pythons)
-- Fixes committed LOCALLY (2543152b + 4113f206); pre-push verification 749 passed / 0 failed (7 xdist bundles) + lint clean + collect OK; push + CI re-verification pending
-- Pages workflow: was failing at configure-pages (site didn't exist); site created via make pages-enable; next deploy not yet confirmed green
+- PUSHED 13 commits a7ab5d15..0618b39c to sandboxcom/master
+- Build run 29072795238 (master @ 0618b39c): IN_PROGRESS at last check — release gated on GREEN. KNOWN CAVEAT: unit-3 will fail exactly one test (tests/unit/test_routers_registration.py plural pin missed eval/remediation rows added in 2543152b) — fix already in tree (39 passed), re-push follows the verdict
+- Pages run 29072795239: SUCCESS — https://sandboxcom.github.io/gludd/ live, 28-slide deck verified, tokens resolved
+- Pre-push verification: 749 passed / 0 failed (7 xdist bundles) + lint clean + collect OK
+- Post-push wave UNCOMMITTED in tree (security_backlog gate 58, tool-loop guards 13, payment CLI 47, file-claim TTL 25+77, spend-limiter API 47+166, skip-guard cleanup 297 re-verified, spec 70 items, registration-pin fix 39); commit + push follows the Build verdict
 <!-- gate:end -->
 
 > Full test suite times out under 8-worker xdist (OOM). CI-as-gate used for commits.

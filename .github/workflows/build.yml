@@ -217,6 +217,14 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      # Node >= 22.6 for `node --experimental-strip-types` (tests/unit/_hook_fixtures.py's
+      # hook_plugin_env fixture, which runs scripts/hook_plugin_harness.mjs against
+      # .opencode/plugin/*.ts — see tests/unit/test_hook_runtime_verification.py,
+      # test_hooks_actually_fire.py). Without this, ubuntu-latest's default node may be
+      # too old and the fixture would skip those assertions instead of running them.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0 (node20)
+        with:
+          node-version: "22"
       - name: Inject version
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py

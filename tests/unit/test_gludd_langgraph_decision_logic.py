@@ -27,8 +27,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, ClassVar
 
-import pytest
-
 # tests/unit/<file> -> parents[2] == repo root
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = (
@@ -105,8 +103,6 @@ class FakeClient:
 
 
 def _load_decision_module() -> ModuleType:
-    if not MODULE_PATH.is_file():
-        pytest.skip(f"decision module not present yet: {MODULE_PATH}")
     spec = importlib.util.spec_from_file_location(
         "_gludd_langgraph_decision_under_test", MODULE_PATH
     )

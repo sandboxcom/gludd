@@ -16,10 +16,9 @@ via a daemon API call (the `gludd_db` module → daemon DB), NOT via artifacts o
 runner events. `test_decision_surfaced_via_daemon_api` is a regression guard for
 exactly that: it asserts the role contains a `general_ludd.agent.gludd_db` task.
 
-These tests are written to run *before* the feature files exist (other agents may
-be creating them concurrently). Missing feature files produce a clear
-``pytest.skip`` with a reason (when the whole feature dir/files are absent) rather
-than a collection error; once the files are present the real assertions run.
+The feature has shipped (role, modules, and playbooks are present on disk), so
+these tests now assert directly; a missing file is a real regression and
+surfaces as a natural assertion/IOError failure rather than a skip.
 """
 
 from __future__ import annotations
@@ -54,33 +53,8 @@ NEW_PLAYBOOKS = [
 ]
 
 
-def _feature_present() -> bool:
-    """A coarse probe: is *any* of the feature surface on disk yet?
-
-    Used to decide skip-vs-assert at the suite level so that a wholly-unbuilt
-    feature skips cleanly while a partially/fully-built one is asserted against.
-    """
-    if ROLE_DIR.is_dir():
-        return True
-    if any((MODULES_DIR / f"{m}.py").is_file() for m in NEW_MODULES):
-        return True
-    return bool(any((PLAYBOOKS_DIR / p).is_file() for p in NEW_PLAYBOOKS))
-
-
-# Suite-level guard: if nothing has landed yet, skip everything with a reason.
-pytestmark = pytest.mark.skipif(
-    not _feature_present(),
-    reason=(
-        "langchain/langgraph Ansible feature not built yet "
-        "(no role dir, modules, or playbooks present) — "
-        "tests will run once the feature files land"
-    ),
-)
-
-
 def _read_text_or_skip(path: Path, what: str) -> str:
-    if not path.is_file():
-        pytest.skip(f"{what} not present yet: {path}")
+    del what  # kept for call-site symmetry; failures now surface naturally
     return path.read_text()
 
 
@@ -275,8 +249,6 @@ class TestVarsAreDefaultGuarded:
     def _role_and_defaults_text(self) -> str:
         tasks_path = ROLE_DIR / "tasks" / "main.yml"
         defaults_path = ROLE_DIR / "defaults" / "main.yml"
-        if not tasks_path.is_file():
-            pytest.skip(f"role tasks/main.yml not present yet: {tasks_path}")
         text = tasks_path.read_text()
         if defaults_path.is_file():
             text += "\n" + defaults_path.read_text()

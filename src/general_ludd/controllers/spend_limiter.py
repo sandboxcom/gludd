@@ -17,6 +17,24 @@ Design notes
 Integration: would_exceed() is wired into the dispatch path via
 ``make_spend_guarded_executor`` (daemon_wiring) and consulted in
 ``EventLoop`` before every model/infra call.
+
+Flush watermark (SPD-1)
+------------------------
+Internally every recorded charge is stamped with a monotonically increasing
+``_seq`` counter.  This is purely an in-process bookkeeping detail — it is
+NOT part of the public 3-tuple record shape returned by :meth:`snapshot` /
+accepted by :meth:`restore` (which daemon.py persists/reloads verbatim).
+
+The counter backs a periodic-flush watermark API consumed by a separate
+EventLoop phase (not part of this module) that persists in-memory records to
+``spend_records`` via ``SpendRepository.add()``:
+
+* :meth:`unflushed_records` returns records recorded since the last flush.
+* :meth:`mark_flushed` advances the watermark once those records are durably
+  written.
+* :meth:`restore` seeds the watermark PAST every ingested record so the
+  first post-restart flush never re-INSERTs rows that were already persisted
+  before the restart (the critical dedupe property).
 """
 
 from __future__ import annotations
@@ -73,8 +91,19 @@ class SpendLimiter:
         self._window_seconds = window_seconds
         self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
         self._catalog = catalog
-        # Each record: (timestamp_float, cost_usd_float, project_id_or_None)
-        self._records: list[tuple[float, float, str | None]] = []
+        # Each record: (seq_int, timestamp_float, cost_usd_float, project_id_or_None).
+        # ``seq`` is an internal-only monotonic stamp (SPD-1 flush watermark) —
+        # it is NEVER exposed via the public 3-tuple shape used by snapshot()/
+        # restore()/daemon.py; see module docstring "Flush watermark (SPD-1)".
+        self._records: list[tuple[int, float, float, str | None]] = []
+        # Monotonic counter stamped on every recorded charge (record() calls,
+        # including those ingested via restore()). Never decreases.
+        self._seq: int = 0
+        # Watermark: records with seq <= _last_flushed_seq are considered
+        # already durably persisted and are excluded from unflushed_records().
+        # restore() advances this past every ingested record so a post-restart
+        # flush never re-inserts rows that were already in the DB.
+        self._last_flushed_seq: int = 0
         # Re-entrant lock guards the check-and-record sequence so concurrent
         # charges in one window cannot collectively race past the cap (#3).
         # Re-entrant because try_charge() calls window_spend()/record() which
@@ -243,7 +272,8 @@ class SpendLimiter:
             )
         ts = at if at is not None else self._clock()
         with self._lock:
-            self._records.append((ts, cost_usd, project_id))
+            self._seq += 1
+            self._records.append((self._seq, ts, cost_usd, project_id))
 
     def try_charge(
         self,
@@ -318,7 +348,7 @@ class SpendLimiter:
             A list of ``(timestamp, cost_usd, project_id)`` tuples.
         """
         with self._lock:
-            return list(self._records)
+            return [(ts, c, pid) for _seq, ts, c, pid in self._records]
 
     def restore(self, records: list[tuple[float, float]] | list[tuple[float, float, str | None]] | None) -> None:
         """Reload previously-snapshotted records into this limiter.
@@ -355,6 +385,14 @@ class SpendLimiter:
               far-future timestamp creates a record that never expires from the
               rolling window, allowing an attacker to peg window spend high
               indefinitely as a DoS against legitimate dispatches.
+
+        Flush watermark (SPD-1):
+            Every ingested record is stamped with a fresh ``_seq`` and the
+            flush watermark (``_last_flushed_seq``) is advanced past it. These
+            records were, by construction, already durably persisted (they
+            came from a prior snapshot/DB read) — so the first post-restart
+            flush must never re-INSERT them.  Without this, ``restore()``
+            followed by a flush cycle would duplicate every restored row.
         """
         if not records:
             return
@@ -397,8 +435,51 @@ class SpendLimiter:
                     ts_f = now
                 if pid is not None and not isinstance(pid, str):
                     pid = None
-                valid.append((ts_f, c_f, pid))
+                self._seq += 1
+                valid.append((self._seq, ts_f, c_f, pid))
             self._records.extend(valid)
+            if valid:
+                # seq is assigned in strictly increasing order above, so the
+                # last-appended record carries the highest seq of this batch.
+                self._last_flushed_seq = max(self._last_flushed_seq, valid[-1][0])
+
+    # ------------------------------------------------------------------
+    # Flush watermark (SPD-1) — consumed by a separate EventLoop phase that
+    # periodically persists in-memory records to the ``spend_records`` table
+    # via SpendRepository.add(). This module does no I/O itself.
+    # ------------------------------------------------------------------
+
+    def unflushed_records(self) -> list[tuple[int, float, float, str | None]]:
+        """Return records recorded since the last :meth:`mark_flushed` call.
+
+        Read-only: does not prune, mutate, or advance the watermark. Safe to
+        call repeatedly / speculatively before a flush actually commits.
+
+        Returns:
+            A list of ``(seq, timestamp, cost_usd, project_id)`` tuples, in
+            ascending ``seq`` order (append order), for every record with
+            ``seq > self._last_flushed_seq``. Empty when nothing is pending
+            or no cap/records exist.
+        """
+        with self._lock:
+            last = self._last_flushed_seq
+            return [rec for rec in self._records if rec[0] > last]
+
+    def mark_flushed(self, upto_seq: int) -> None:
+        """Advance the flush watermark to ``upto_seq`` (monotonic, no-op on regress).
+
+        Call this only AFTER the corresponding records have been durably
+        written (e.g. the DB transaction committed). A lower or equal
+        ``upto_seq`` than the current watermark is ignored — the watermark
+        must never move backwards, which would cause already-flushed records
+        to be re-flushed (duplicate INSERTs).
+
+        Args:
+            upto_seq: The highest ``seq`` that has been durably persisted.
+        """
+        with self._lock:
+            if upto_seq > self._last_flushed_seq:
+                self._last_flushed_seq = upto_seq
 
     def window_spend(
         self,
@@ -424,11 +505,11 @@ class SpendLimiter:
         with self._lock:
             # Prune in-place: keep records where ts >= cutoff
             self._records = [
-                (ts, c, pid) for ts, c, pid in self._records if ts >= cutoff
+                (seq, ts, c, pid) for seq, ts, c, pid in self._records if ts >= cutoff
             ]
             if project_id is not None:
-                return sum(c for _, c, pid in self._records if pid == project_id)
-            return sum(c for _, c, _ in self._records)
+                return sum(c for _, _, c, pid in self._records if pid == project_id)
+            return sum(c for _, _, c, _ in self._records)
 
     def project_spend(self, project_id: str, now: float | None = None) -> float:
         """Convenience: spend for a single project within the window.
@@ -457,10 +538,10 @@ class SpendLimiter:
         cutoff = now - self._window_seconds
         with self._lock:
             self._records = [
-                (ts, c, pid) for ts, c, pid in self._records if ts >= cutoff
+                (seq, ts, c, pid) for seq, ts, c, pid in self._records if ts >= cutoff
             ]
             breakdown: dict[str, float] = {}
-            for _, c, pid in self._records:
+            for _, _, c, pid in self._records:
                 key = pid or ""
                 breakdown[key] = breakdown.get(key, 0.0) + c
             return breakdown
@@ -497,7 +578,7 @@ class SpendLimiter:
             now = self._clock()
         cutoff = now - seconds
         with self._lock:
-            return sum(c for ts, c, _ in self._records if ts >= cutoff)
+            return sum(c for _seq, ts, c, _pid in self._records if ts >= cutoff)
 
     def would_exceed(self, projected_usd: float, now: float | None = None) -> bool:
         """Return True if dispatching a call with ``projected_usd`` cost would

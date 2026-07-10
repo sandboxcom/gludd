@@ -72,6 +72,33 @@ class CompactionConfigBlock(BaseModel):
     level: int = 1
 
 
+class RemediationSettings(BaseModel):
+    """Operator tunables for the auto-remediation tick phase (#52) and the
+    ``/admin/remediation/*`` HTTP endpoints.
+
+    ``check_interval_ticks`` gates how often
+    ``EventLoop._phase_remediate_blocked_tasks`` runs (0 disables the phase —
+    a kill switch). ``max_actions_per_tick`` caps how many blocked-task
+    findings the phase acts on per tick so a large backlog is drained
+    gradually instead of flooding the todo/human-todo tables in one pass.
+
+    The remaining fields mirror
+    :class:`~general_ludd.remediation.blocker_detector.RemediationConfig`
+    1:1 so ``daemon.py`` can build the SAME ``RemediationConfig`` instance
+    that both the tick phase and the HTTP endpoints read — a single config
+    source rather than each falling back to its own defaults independently.
+    """
+
+    check_interval_ticks: int = 30
+    max_actions_per_tick: int = 5
+    human_input_block_hours: int = 24
+    permission_escalation_block_hours: int = 4
+    max_requeues_before_chronic: int = 3
+    chronic_lookback_days: int = 7
+    min_chronic_incidents: int = 5
+    retry_delay_hours: int = 4
+
+
 class _YamlSettingsSource(PydanticBaseSettingsSource):
     """Custom settings source that reads from a YAML file.
 
@@ -155,6 +182,12 @@ class UserConfig(BaseSettings):
     # Reachable SLM context-compaction on the generation path (#56). Default OFF
     # → generation path unchanged. Enable via ``compaction.enabled: true``.
     compaction: CompactionConfigBlock = CompactionConfigBlock()
+    # Auto-remediation tick phase (#52): scans for blocked todos every
+    # ``check_interval_ticks`` and acts (dispatch/retry/human-todo) on up to
+    # ``max_actions_per_tick`` findings. Default ON at interval 30 — inert on
+    # a healthy project (BlockerDetector finds nothing to act on) and every
+    # action is audited via RemediationActionRepository.
+    remediation: RemediationSettings = RemediationSettings()
     # Project-hierarchy phase 3: cross-project knowledge borrowing. Optional and
     # default None → borrowing OFF, router unchanged. Set a block (or
     # GLUDD_RELATIONSHIP_ROUTING JSON) to enable + tune it.

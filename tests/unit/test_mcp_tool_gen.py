@@ -221,9 +221,7 @@ def test_write_and_reload_manifest(tmp_path: Path, monkeypatch):
 
 
 def test_committed_manifest_is_valid_if_present():
-    """If the manifest has been generated/committed, it must be valid + complete."""
-    if not gen.MANIFEST_PATH.exists():
-        pytest.skip("manifest not generated yet")
+    """The committed manifest must be valid + complete."""
     loaded = json.loads(gen.MANIFEST_PATH.read_text(encoding="utf-8"))
     assert isinstance(loaded, list)
     assert len(loaded) == len(gen.iter_module_paths())

@@ -77,6 +77,7 @@ from general_ludd.prompts.enhancer import PromptEnhancer
 from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.quality.preflight import run_preflight
 from general_ludd.reload.worker_broadcast import WorkerBroadcaster
+from general_ludd.remediation.blocker_detector import RemediationConfig
 from general_ludd.replay.recorder import RunRecorder
 from general_ludd.retrieval.searcher import SemanticSearcher
 from general_ludd.review.estimation_tracker import EstimationTracker
@@ -109,6 +110,45 @@ def _compaction_config_dict(uc: Any) -> dict[str, Any]:
     if callable(dump):
         return dict(dump())
     return {}
+
+
+def _remediation_tick_settings(uc: Any) -> tuple[int, int]:
+    """Return ``(check_interval_ticks, max_actions_per_tick)`` for the
+    auto-remediation tick phase (#52), fail-soft to ``(30, 5)`` when ``uc``
+    or the ``remediation`` block is absent.
+    """
+    rs = getattr(uc, "remediation", None) if uc else None
+    if rs is None:
+        return 30, 5
+    return rs.check_interval_ticks, rs.max_actions_per_tick
+
+
+def _remediation_config_from_uc(uc: Any) -> RemediationConfig:
+    """Build the operator RemediationConfig from UserConfig.remediation (#52).
+
+    Single source of truth for BOTH the auto-remediation tick phase
+    (``EventLoop._phase_remediate_blocked_tasks``, via ``daemon_state``) and
+    the ``/admin/remediation/*`` HTTP endpoints (``routers/remediation.py``,
+    also via ``daemon_state``). Previously ``daemon_state`` never carried a
+    ``RemediationConfig`` at all — ``load_startup_config``'s
+    ``startup_config["remediation_config"]`` was hardcoded ``None`` and
+    nothing ever copied it (or anything else) into ``daemon_state``, so the
+    router silently fell back to ``RemediationConfig()`` defaults on every
+    request even when an operator set overrides. Fail-soft to defaults when
+    ``uc`` or the ``remediation`` block is absent.
+    """
+    rs = getattr(uc, "remediation", None) if uc else None
+    if rs is None:
+        return RemediationConfig()
+    return RemediationConfig(
+        human_input_block_hours=rs.human_input_block_hours,
+        permission_escalation_block_hours=rs.permission_escalation_block_hours,
+        max_requeues_before_chronic=rs.max_requeues_before_chronic,
+        chronic_lookback_days=rs.chronic_lookback_days,
+        min_chronic_incidents=rs.min_chronic_incidents,
+        retry_delay_hours=rs.retry_delay_hours,
+    )
+
 
 # Back-compat default. ``create_daemon_app()`` builds a FRESH per-app dict
 # (see ``app.state.daemon_state``) so state no longer bleeds between FastAPI
@@ -1656,6 +1696,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "compute_idle_gpu_sm_pct": getattr(uc, "compute_idle_gpu_sm_pct", 5.0) if uc else 5.0,
                 "compute_idle_preemption_notice_ticks": getattr(uc, "compute_idle_preemption_notice_ticks", 1)
                 if uc else 1,
+                # #52: auto-remediation tick-phase cadence + per-tick action cap.
+                # The RemediationConfig thresholds themselves are NOT read from
+                # here — they live on daemon_state["remediation_config"] (set
+                # below via _remediation_config_from_uc) so the tick phase and
+                # the /admin/remediation/* HTTP endpoints share one instance.
+                "remediation_check_interval_ticks": _remediation_tick_settings(uc)[0],
+                "remediation_max_actions_per_tick": _remediation_tick_settings(uc)[1],
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,
@@ -1694,6 +1741,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
         daemon_state["human_gate"] = event_loop._human_gate
+        # #52: single config source for the auto-remediation tick phase AND
+        # the /admin/remediation/* HTTP endpoints (see
+        # _remediation_config_from_uc — daemon_state previously never
+        # carried a RemediationConfig, so the router always fell back to
+        # hardcoded defaults regardless of operator config).
+        daemon_state["remediation_config"] = _remediation_config_from_uc(uc)
         app.state._runner = runner
         app.state._db_engine = engine
         app.state._session_factory = session_factory

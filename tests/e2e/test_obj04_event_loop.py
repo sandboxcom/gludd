@@ -23,6 +23,7 @@ class TestEventLoopE2E:
             "refresh_model_performance",
             "check_compute_utilization",
             "check_service_credits",
+            "remediate_blocked_tasks",
             "self_improve",
             "poll_issue_sources",
             "emit_tick_metrics",

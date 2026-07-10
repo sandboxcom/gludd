@@ -9,8 +9,7 @@ importer checks:
 
 `terraform validate` and `opa check` are invoked via subprocess.run; the tests
 monkeypatch subprocess.run so they pass without those binaries installed. The
-combined-policy test (test 3) skips cleanly when conftest or the s3 fixture is
-absent.
+combined-policy test (test 3) skips cleanly when conftest/opa are absent.
 """
 
 from __future__ import annotations

@@ -11,8 +11,11 @@
 #
 # ALLOWLISTED (never denied, regardless):
 #   Agent, Workflow — always allowed; also RESET the consecutive-targeted counter.
+#   SendMessage — resuming/continuing a subagent thread is delegation-equivalent;
+#     also RESETS the streak (defect 4c, 2026-07-10: a SendMessage-driven fork
+#     resumption is healthy delegation, not main-thread grinding).
 #   Read, Glob, Grep, ToolSearch, Skill — read-only query tools.
-#   TodoWrite, TodoRead, ExitPlanMode, AskUserQuestion, SendMessage, TaskStop, NotebookEdit
+#   TodoWrite, TodoRead, ExitPlanMode, AskUserQuestion, TaskStop, NotebookEdit
 #   Bash with a read-only make target (git-status/log/diff, ci-*, lint, typecheck, etc.)
 #   Write/Edit whose file_path is under ~/.claude/projects/.../memory/
 #
@@ -24,9 +27,22 @@
 #   Count consecutive targeted main-thread calls since last Agent/Workflow dispatch.
 #   DENY when: GLUDD_FORCE_DELEGATE=1 AND live < CLAUDE_AGENT_FLOOR AND consecutive > GRACE.
 #
+#   HEALTHY-DELEGATION RESET (defect 4a, 2026-07-10): on every TARGETED call, if
+#   the live-subagent count already meets/exceeds the floor, the streak is reset
+#   and the call is allowed unconditionally — a healthy fleet means there is no
+#   grind to punish, so a streak accumulated before the fleet refilled must not
+#   silently carry forward and trip a denial later once live dips again.
+#
+#   TIME DECAY (defect 4b, 2026-07-10): a streak idle for longer than
+#   GLUDD_FORCE_DELEGATE_DECAY_SEC (default 600s / 10min) is discarded before
+#   being incremented — a streak that went quiet (e.g. the operator was reading,
+#   or blocked on a long gate run) no longer reflects live grinding, so it must
+#   not compound into a denial the moment main-thread activity resumes.
+#
 # BOUNDED ESCAPE (anti-wedge):
 #   After GLUDD_FORCE_DELEGATE_MAXBLOCK consecutive denials → FAIL OPEN (allow),
-#   so unavoidable coordination steps are never permanently blocked.
+#   so unavoidable coordination steps are never permanently blocked. UNCHANGED
+#   by the 2026-07-10 revision.
 #
 # FAIL-OPEN: any parse error / python failure → exit 0 silently.
 # NEVER exit non-zero (that would be a hook error).
@@ -36,8 +52,16 @@
 #   GLUDD_FORCE_DELEGATE_GRACE    — consecutive targeted calls before first denial (default: 3)
 #   GLUDD_FORCE_DELEGATE_MAXBLOCK — consecutive denials before fail-open (default: 4)
 #   GLUDD_FORCE_DELEGATE_STATE    — state file path override (default: /tmp/gludd-force-delegate.json)
+#   GLUDD_FORCE_DELEGATE_DECAY_SEC — idle seconds before a streak is discarded (default: 600)
 #   CLAUDE_AGENT_FLOOR            — live-subagent floor (shared with agent_floor hooks, default: 6)
 #   FLOOR_LIVE_OVERRIDE           — test seam: forces live count to a fixed integer (see agent_liveness.py)
+#
+# SESSION-ID FORWARDING (2026-07-10, agent_liveness.py defect #1/#3 fix): this
+# hook already has the current session id in the PreToolUse payload
+# (`payload["session_id"]`) — it is forwarded to the liveness probe as
+# GLUDD_SESSION_ID so the probe resolves ITS OWN session's tasks/workflow
+# transcripts deterministically instead of guessing via an mtime heuristic that
+# can be hijacked by an unrelated, newer, near-empty session dir.
 
 STATE_FILE="${GLUDD_FORCE_DELEGATE_STATE:-/tmp/gludd-force-delegate.json}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,6 +70,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 GRACE="${GLUDD_FORCE_DELEGATE_GRACE:-3}"
 MAXBLOCK="${GLUDD_FORCE_DELEGATE_MAXBLOCK:-4}"
 FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
+DECAY_SEC="${GLUDD_FORCE_DELEGATE_DECAY_SEC:-600}"
 # Live floor override (see agent_floor_stop.sh): a valid integer in this file wins,
 # so the force-delegate gate honors the operator's mid-session floor retune too.
 if [ -r /tmp/gludd-floor-override ]; then
@@ -67,8 +92,8 @@ fi
 # All classification and gate logic in a single python3 call to avoid
 # partial-state risk and keep the bash layer thin.
 HOOK_INPUT="$input" python3 - "$STATE_FILE" "$REPO_ROOT" "$GRACE" "$MAXBLOCK" "$FLOOR" \
-          "${FLOOR_LIVE_OVERRIDE:-}" <<'PYEOF' 2>/dev/null
-import sys, json, os, re
+          "${FLOOR_LIVE_OVERRIDE:-}" "$DECAY_SEC" <<'PYEOF' 2>/dev/null
+import sys, json, os, re, time
 
 state_file = sys.argv[1]
 repo_root  = sys.argv[2]
@@ -76,6 +101,10 @@ grace      = int(sys.argv[3])
 maxblock   = int(sys.argv[4])
 floor      = int(sys.argv[5])
 live_override = sys.argv[6]  # empty string if not set
+try:
+    decay_sec = float(sys.argv[7])
+except Exception:
+    decay_sec = 600.0
 
 try:
     payload = json.loads(os.environ.get("HOOK_INPUT", "{}"))
@@ -86,6 +115,8 @@ tool_name  = (payload.get("tool_name") or "").strip()
 tool_input = payload.get("tool_input") or {}
 command    = (tool_input.get("command") or "").strip()
 file_path  = (tool_input.get("file_path") or "").strip()
+# Forwarded to the liveness probe (see SESSION-ID FORWARDING header comment).
+session_id = str(payload.get("session_id") or "").strip()
 
 # ---------------------------------------------------------------------------
 # CLASSIFICATION
@@ -189,22 +220,33 @@ def load_state():
         with open(state_file) as fh:
             s = json.load(fh)
         if not isinstance(s, dict):
-            return {"consecutive_targeted": 0, "consecutive_denied": 0}
+            return {"consecutive_targeted": 0, "consecutive_denied": 0, "last_ts": 0.0}
         return {
             "consecutive_targeted": int(s.get("consecutive_targeted", 0)),
             "consecutive_denied": int(s.get("consecutive_denied", 0)),
+            "last_ts": float(s.get("last_ts", 0.0)),
         }
     except Exception:
-        return {"consecutive_targeted": 0, "consecutive_denied": 0}
+        return {"consecutive_targeted": 0, "consecutive_denied": 0, "last_ts": 0.0}
 
 def save_state(s):
     try:
+        out = {
+            "consecutive_targeted": int(s.get("consecutive_targeted", 0)),
+            "consecutive_denied": int(s.get("consecutive_denied", 0)),
+            "last_ts": float(s.get("last_ts", time.time())),
+        }
         tmp = state_file + ".tmp"
         with open(tmp, "w") as fh:
-            json.dump(s, fh)
+            json.dump(out, fh)
         os.replace(tmp, state_file)
     except Exception:
         pass  # fail open
+
+def reset_state():
+    """Clear the grind streak entirely (healthy delegation, decay, or a
+    SendMessage resumption — defects 4a/4b/4c all funnel through this)."""
+    save_state({"consecutive_targeted": 0, "consecutive_denied": 0, "last_ts": time.time()})
 
 def deny(consecutive_targeted, consecutive_denied, live):
     reason = (
@@ -228,7 +270,13 @@ def deny(consecutive_targeted, consecutive_denied, live):
 
 if AGENT_WORKFLOW:
     # Reset counter: a delegation happened, grind streak is broken.
-    save_state({"consecutive_targeted": 0, "consecutive_denied": 0})
+    reset_state()
+    sys.exit(0)
+
+if tool_name == "SendMessage":
+    # Resuming/continuing a subagent thread is delegation-equivalent (defect
+    # 4c): reset the streak the same way an Agent/Workflow dispatch does.
+    reset_state()
     sys.exit(0)
 
 if ALLOWLISTED:
@@ -237,6 +285,14 @@ if ALLOWLISTED:
 
 if TARGETED:
     state = load_state()
+    now = time.time()
+
+    # TIME DECAY (defect 4b): discard a streak that has been idle for longer
+    # than decay_sec BEFORE incrementing it -- an idle streak no longer
+    # reflects live grinding.
+    if decay_sec > 0 and (now - state.get("last_ts", 0.0)) > decay_sec:
+        state = {"consecutive_targeted": 0, "consecutive_denied": 0, "last_ts": now}
+
     consecutive_targeted = state["consecutive_targeted"] + 1
 
     # Determine live agent count
@@ -246,10 +302,13 @@ if TARGETED:
     else:
         try:
             import subprocess
+            env = dict(os.environ)
+            if session_id:
+                env["GLUDD_SESSION_ID"] = session_id
             result = subprocess.run(
                 ["python3", "scripts/agent_liveness.py", "--count"],
                 capture_output=True, text=True, timeout=10,
-                cwd=repo_root
+                cwd=repo_root, env=env,
             )
             val = result.stdout.strip()
             if val.isdigit():
@@ -259,17 +318,25 @@ if TARGETED:
         except Exception:
             live = 0
 
-    if consecutive_targeted > grace and live < floor:
+    # HEALTHY-DELEGATION RESET (defect 4a): a fleet already at/above the floor
+    # is not grinding -- reset unconditionally and allow, regardless of how
+    # long the streak had grown before the fleet refilled.
+    if live >= floor:
+        reset_state()
+        sys.exit(0)
+
+    if consecutive_targeted > grace:
         # Potential deny — check maxblock
         consecutive_denied = state["consecutive_denied"] + 1
         if consecutive_denied > maxblock:
-            # FAIL OPEN — bounded escape
-            save_state({"consecutive_targeted": 0, "consecutive_denied": 0})
+            # FAIL OPEN — bounded escape (unchanged)
+            reset_state()
             sys.exit(0)
         else:
             save_state({
                 "consecutive_targeted": consecutive_targeted,
                 "consecutive_denied": consecutive_denied,
+                "last_ts": now,
             })
             deny(consecutive_targeted, consecutive_denied, live)
             sys.exit(0)
@@ -278,6 +345,7 @@ if TARGETED:
         save_state({
             "consecutive_targeted": consecutive_targeted,
             "consecutive_denied": state["consecutive_denied"],
+            "last_ts": now,
         })
         sys.exit(0)
 

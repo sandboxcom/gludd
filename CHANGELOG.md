@@ -64,7 +64,38 @@ All notable changes to this project are documented here. Format follows [Keep a 
 ### Security (2026-07-10, in progress)
 
 - Adversarial scan-file path jail + secrets redaction widening.
-- SSRF guard consolidation for 7 connectors onto `security/ssrf.py`.
+- SSRF guard consolidation for 7 connectors onto `security/ssrf.py` (`issue_sources/{base,jira,monday,bitbucket_issues,clickup,gitlab_issues}.py`
+  + `git_automation/repo.py reject_unsafe_repo_url`, SSRF tranche 5, 200 tests passed; `4113f206`).
+
+### Fixed (2026-07-10, continued)
+
+- Failover gaps closed: `call_model_with_fallback` structured all-down error,
+  correlation-ID propagation, `failover_count` facet, and a fallback
+  concurrency cap — closes the D17 failover xfail gaps (xfails flipped to
+  plain assertions) (`803b75c5`).
+- Validation worktree symlink confinement + review-dispatch playbook timeout
+  (`557f895e`).
+- NaN/Inf sort-key guards in `connectors/base.py` and `observe/facade.py`,
+  plus response-size caps for `GitHubSkillSource` via a shared capped-get
+  helper (`6a19f747`).
+
+### Changed (2026-07-10, continued)
+
+- README accuracy fixes: role/module counts, login/services provider table,
+  routing example, release-trigger wording, contributor links (`1d147d6e`).
+- Spec review corrections applied across 70 work items with landed-verify
+  annotations and the MCP argv residual documented as C27 (`2b17e7e3`).
+
+### Added (2026-07-10, continued)
+
+- Wave D implementation-ready design compendium
+  (`docs/design/WAVE_D_DESIGNS_2026-07-10.md`) (`557f895e`).
+
+### Performance (2026-07-10)
+
+- Migration 025 adds a `task_decisions.created_at` index and a
+  `todos (status, priority, created_at)` composite index for the event-loop
+  tick hot paths (`97db7cc1`).
 
 ## [0.1.0-beta.2] — 2026-07-06
 

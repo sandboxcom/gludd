@@ -42,7 +42,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		collection-roles collection-modules molecule-scenarios \
 		container-build container-run container-push \
         build-executable dist dist-clean bundle-binaries bundle-ripgrep \
-        sast sbom pip-audit security \
+        sast sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check gate gate-lite smoke install-hooks \
         status-snapshot audit-evidence deps-audit dogfood-features \
         skill-install skill-list bootstrap-skills scan-tool-usage \
@@ -63,7 +63,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		deck deck-serve deck-preview deck-data deck-honesty \
 		sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
 		sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
-		script-count
+		script-count test-hooks-live
 
 help:
 	@echo "Usage: make [target]"
@@ -589,6 +589,14 @@ test-tui-daemon:
 
 test-guardrails:
 	@$(UV) run python -m pytest tests/unit/test_guardrails.py tests/unit/test_user_requested_guardrails.py $(_XD) -v
+
+# CI-runnable hook-liveness harness (Wave E): actually invokes .opencode/plugin/*.ts
+# hooks via scripts/hook_plugin_harness.mjs (node --experimental-strip-types, no
+# npm install) and asserts real state-file side effects. Excluded from the default
+# `-m "not hook_live"` addopts filter; run explicitly here or via `-m hook_live`.
+# Skips cleanly (not fails) when node < 22.6 / absent.
+test-hooks-live:
+	@$(UV) run python -m pytest -m hook_live -v
 
 test-db:
 	@$(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
@@ -2363,7 +2371,13 @@ pip-upgrade:
 	@$(UV) pip install --reinstall 'pip>=26.1.2'
 	@$(UV) run python -m pip --version
 
-security: sast sbom pip-audit
+# Landed-guard regression gate for the D-07..D-30 security backlog: static
+# probes on D-14/D-18/D-27 fail closed if their guard is silently removed;
+# every other item is an honest OPEN ledger entry (never fails the gate).
+security-backlog-gate:
+	@$(UV) run python -m general_ludd.security.security_backlog
+
+security: sast sbom pip-audit security-backlog-gate
 
 qa: lint typecheck test healthcheck
 	@echo "QA gate passed."

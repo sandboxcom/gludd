@@ -7,14 +7,20 @@ pattern-list growth, and the ratio of state-based vs vocabulary-based checks.
 """
 
 import json
-import os
 import time
 from pathlib import Path
 
 import pytest
 
+from tests.unit._hook_fixtures import HookEnv, hook_plugin_env_impl
+
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+
+
+@pytest.fixture
+def hook_plugin_env(tmp_path: Path):
+    yield from hook_plugin_env_impl(tmp_path)
 
 
 def _read_json(path: str) -> dict | None:
@@ -203,38 +209,44 @@ class TestProcessChainLength:
 class TestGuardrailEffectivenessRatio:
     """Verify guardrails produce observable state (not dead weight)."""
 
-    @pytest.mark.skipif(
-        os.environ.get("CI") == "true",
-        reason="opencode plugin runtime not active under pure pytest; "
-        "/tmp/gludd-session-start.json is written by enforce-session-start.ts "
-        "tool.execute.before hook during a live opencode session",
-    )
-    def test_session_start_plugin_produces_state(self):
-        """Session-start plugin must write its state file."""
-        state_path = Path("/tmp/gludd-session-start.json")
-        assert state_path.exists(), (
-            "Missing /tmp/gludd-session-start.json. The session-start plugin "
-            "(enforce-session-start.ts) must produce observable state to prove it "
-            "fires. A registered plugin with no state file is a dead registration."
+    # Wave E: these two tests used to be soft, CI-skipped probes that only
+    # checked whether a PRIOR live opencode session happened to have left a
+    # state file behind. Deduped to the shared `hook_plugin_env` harness
+    # (see tests/unit/_hook_fixtures.py and test_hook_runtime_verification.py's
+    # TestEnforceSessionStartWritesStateFiles / TestEnforceDeadlineWritesStateFiles
+    # for the fuller assertion coverage) — driven DIRECTLY here, no skipif.
+    def test_session_start_plugin_produces_state(self, hook_plugin_env: HookEnv):
+        """Session-start plugin must write its state file when driven directly."""
+        result = hook_plugin_env.invoke(
+            "enforce-session-start.ts", "tool.execute.before",
+            input={"tool": "read", "filePath": "TASKS.md"},
         )
-
-    @pytest.mark.skipif(
-        os.environ.get("CI") == "true",
-        reason="opencode plugin runtime not active under pure pytest; "
-        "/tmp/gludd-task-deadlines.json is written by enforce-deadline.ts "
-        "tool.execute.before hook during a live opencode session",
-    )
-    def test_deadline_plugin_tracks_tasks(self):
-        """Deadline plugin must write valid JSON state file."""
-        state_path = Path("/tmp/gludd-task-deadlines.json")
-        assert state_path.exists(), (
-            "Missing /tmp/gludd-task-deadlines.json. The deadline plugin "
-            "(enforce-deadline.ts) must produce observable state to prove it "
-            "fires."
-        )
-        data = _read_json(str(state_path))
+        assert result.returncode == 0, result.stderr
+        data = hook_plugin_env.read_json("GLUDD_SESSION_STATE")
         assert isinstance(data, dict), (
-            f"Deadline state file {state_path} is not valid JSON or not a dict"
+            f"enforce-session-start.ts must produce observable state to prove it "
+            f"fires. A registered plugin with no state file is a dead "
+            f"registration. Got: {data!r}"
+        )
+        for key in ("started_at", "readsDone", "dispatches"):
+            assert key in data, f"GLUDD_SESSION_STATE missing key {key!r}: {data!r}"
+        assert data["readsDone"] is True, "reading TASKS.md must set readsDone=true"
+
+    def test_deadline_plugin_tracks_tasks(self, hook_plugin_env: HookEnv):
+        """Deadline plugin must write valid JSON state file when driven directly."""
+        result = hook_plugin_env.invoke(
+            "enforce-deadline.ts", "tool.execute.before",
+            input={"tool": "task"},
+            output={"args": {"description": "process-overhead smoke", "subagent_type": "general-purpose"}},
+        )
+        assert result.returncode == 0, result.stderr
+        data = hook_plugin_env.read_json("GLUDD_TASK_DEADLINE_STATE")
+        assert isinstance(data, dict), (
+            f"Deadline state file is not valid JSON or not a dict: {data!r}"
+        )
+        assert data, (
+            f"Deadline plugin must track at least one dispatch after being "
+            f"driven directly with a task call; got empty state: {data!r}"
         )
 
 

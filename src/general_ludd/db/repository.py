@@ -2254,6 +2254,24 @@ class RemediationActionRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def exists_recent(self, blocked_todo_id: str, since: datetime) -> bool:
+        """True if an action was already recorded for this blocked task since ``since``.
+
+        Used by the auto-remediation tick phase (#52) for idempotency: a
+        finding whose ``blocked_todo_id`` already has an audit row within the
+        configured ``retry_delay_hours`` cooldown is skipped so a
+        still-blocked task doesn't get a fresh dispatch/retry/human-todo
+        filed on every single tick before the operator has had time to react.
+        """
+        stmt = (
+            select(RemediationActionModel.id)
+            .where(RemediationActionModel.blocked_todo_id == blocked_todo_id)
+            .where(RemediationActionModel.created_at >= since)
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
 
 class ModelPerformanceRepository:
     """Persistence for model call logs and aggregated performance stats.

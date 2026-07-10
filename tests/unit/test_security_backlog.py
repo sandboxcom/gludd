@@ -1,12 +1,29 @@
-"""Tests for D-07 through D-47 security backlog stub implementation."""
+"""Tests for the D-07..D-30 security backlog landed-guard regression gate.
+
+Replaces the old all-pass stub tests. This module now asserts:
+  * static probes (D-14, D-18, D-27) actually FAIL when the guard they verify
+    is removed (proving the gate is a real regression check, not a rubber
+    stamp) and PASS against the real, currently-landed code;
+  * the explicit OPEN items (D-07, D-11, D-13, D-17) honestly report OPEN,
+    never a fabricated pass;
+  * every item with no custom checker reports OPEN + deferred;
+  * ``__main__``'s exit-code semantics: a probe regression is the only thing
+    that turns the gate red, OPEN items never do.
+"""
 
 from __future__ import annotations
 
+import general_ludd.security.security_backlog as sb
 from general_ludd.security.security_backlog import (
     BACKLOG_ITEMS,
+    STATUS_LANDED,
+    STATUS_OPEN,
     SecurityBacklogResult,
     run_backlog_checks,
 )
+
+_EXPLICIT_OPEN_IDS = frozenset({"D-07", "D-11", "D-13", "D-17"})
+_PROBE_IDS = frozenset({"D-14", "D-18", "D-27"})
 
 
 class TestSecurityBacklogResult:
@@ -28,6 +45,18 @@ class TestSecurityBacklogResult:
         r = SecurityBacklogResult(item_id="D-08", title="test", passed=True)
         assert r.deferred is False
         assert r.detail == ""
+
+    def test_status_derived_landed_when_passed(self) -> None:
+        r = SecurityBacklogResult(item_id="D-14", title="t", passed=True)
+        assert r.status == STATUS_LANDED
+
+    def test_status_derived_open_when_not_passed(self) -> None:
+        r = SecurityBacklogResult(item_id="D-07", title="t", passed=False)
+        assert r.status == STATUS_OPEN
+
+    def test_status_explicit_override_respected(self) -> None:
+        r = SecurityBacklogResult(item_id="D-07", title="t", passed=False, status="CUSTOM")
+        assert r.status == "CUSTOM"
 
 
 class TestBacklogItems:
@@ -56,39 +85,175 @@ class TestRunBacklogChecks:
         result_ids = {r.item_id for r in results}
         assert result_ids == set(BACKLOG_ITEMS)
 
-    def test_all_pass_by_default(self) -> None:
-        results = run_backlog_checks()
-        for r in results:
-            assert r.passed is True, f"{r.item_id} failed: {r.detail}"
-
-    def test_items_without_custom_checker_are_deferred(self) -> None:
-        results = run_backlog_checks()
-        for r in results:
-            if r.item_id not in ("D-07", "D-14", "D-17", "D-27"):
-                assert r.deferred is True, f"{r.item_id} should be deferred"
-
-    def test_d07_has_custom_checker(self) -> None:
-        results = run_backlog_checks()
-        d07 = next(r for r in results if r.item_id == "D-07")
-        assert d07.deferred is False
-        assert "deferred" in d07.detail
-
-    def test_d14_has_custom_checker(self) -> None:
-        results = run_backlog_checks()
-        d14 = next(r for r in results if r.item_id == "D-14")
-        assert d14.deferred is False
-
-    def test_d17_has_custom_checker(self) -> None:
-        results = run_backlog_checks()
-        d17 = next(r for r in results if r.item_id == "D-17")
-        assert d17.deferred is False
-
-    def test_d27_has_custom_checker(self) -> None:
-        results = run_backlog_checks()
-        d27 = next(r for r in results if r.item_id == "D-27")
-        assert d27.deferred is False
-
     def test_results_sorted_by_item_id(self) -> None:
         results = run_backlog_checks()
         ids = [r.item_id for r in results]
         assert ids == sorted(ids)
+
+    def test_no_item_falsely_claims_landed_unless_probed(self) -> None:
+        """The old bug: every item silently passed. Now only real probes may
+        report LANDED-VERIFIED — everything else must be honest OPEN."""
+        results = run_backlog_checks()
+        for r in results:
+            if r.item_id not in _PROBE_IDS:
+                assert r.status == STATUS_OPEN, (
+                    f"{r.item_id} is not a probed item but reports {r.status}"
+                )
+                assert r.passed is False
+
+    def test_explicit_open_items_report_open(self) -> None:
+        results = {r.item_id: r for r in run_backlog_checks()}
+        for item_id in _EXPLICIT_OPEN_IDS:
+            r = results[item_id]
+            assert r.passed is False, f"{item_id} should be OPEN (not landed)"
+            assert r.status == STATUS_OPEN
+            assert "OPEN" in r.detail
+            assert r.deferred is False, f"{item_id} has a custom checker, should not be 'deferred'"
+
+    def test_items_without_custom_checker_are_deferred_and_open(self) -> None:
+        results = run_backlog_checks()
+        custom = _EXPLICIT_OPEN_IDS | _PROBE_IDS
+        for r in results:
+            if r.item_id not in custom:
+                assert r.deferred is True, f"{r.item_id} should be deferred"
+                assert r.status == STATUS_OPEN
+                assert r.passed is False
+
+    def test_probe_items_pass_against_real_landed_code(self) -> None:
+        """D-14/D-18/D-27 verify guards that are ACTUALLY landed on master —
+        against the real, unmocked source tree they must report LANDED-VERIFIED."""
+        results = {r.item_id: r for r in run_backlog_checks()}
+        for item_id in _PROBE_IDS:
+            r = results[item_id]
+            assert r.passed is True, f"{item_id} probe failed against real code: {r.detail}"
+            assert r.status == STATUS_LANDED
+            assert r.deferred is False
+
+
+class TestD14ProbeRegressionDetection:
+    """Prove the D-14 probe is a REAL check by making it fail on symbol removal."""
+
+    def test_fails_if_reject_clone_url_missing(self, monkeypatch) -> None:
+        import general_ludd.git_automation.repo as repo_mod
+
+        monkeypatch.delattr(repo_mod, "_reject_clone_url")
+        passed, detail = sb._check_d14_url_parsing()
+        assert passed is False
+        assert "_reject_clone_url" in detail
+
+    def test_fails_if_reject_unsafe_repo_url_missing(self, monkeypatch) -> None:
+        import general_ludd.git_automation.repo as repo_mod
+
+        monkeypatch.delattr(repo_mod, "reject_unsafe_repo_url")
+        passed, detail = sb._check_d14_url_parsing()
+        assert passed is False
+        assert "reject_unsafe_repo_url" in detail
+
+    def test_fails_if_clone_stops_calling_guard(self, monkeypatch) -> None:
+        import general_ludd.git_automation.repo as repo_mod
+
+        def _fake_clone(self, *args, **kwargs):  # pragma: no cover - never called
+            raise NotImplementedError
+
+        monkeypatch.setattr(repo_mod.GitAutomation, "clone", _fake_clone)
+        passed, detail = sb._check_d14_url_parsing()
+        assert passed is False
+        assert "no longer calls _reject_clone_url" in detail
+
+    def test_fails_if_manager_stops_referencing_guard(self, monkeypatch) -> None:
+        def _fake_source(mod: object) -> str:
+            if getattr(mod, "__name__", "") == "general_ludd.projects.manager":
+                return ""
+            return sb.inspect.getsource(mod)
+
+        monkeypatch.setattr(sb, "_read_module_source", _fake_source)
+        passed, detail = sb._check_d14_url_parsing()
+        assert passed is False
+        assert "projects.manager" in detail
+
+
+class TestD27ProbeRegressionDetection:
+    """Prove the D-27 probe is a REAL check by making it fail on symbol removal."""
+
+    def test_fails_if_apply_limits_missing(self, monkeypatch) -> None:
+        import general_ludd.system.rlimit as rlimit_mod
+
+        monkeypatch.delattr(rlimit_mod, "apply_limits")
+        passed, detail = sb._check_d27_sandbox_limits()
+        assert passed is False
+        assert "apply_limits" in detail
+
+    def test_fails_if_runner_stops_importing(self, monkeypatch) -> None:
+        import general_ludd.project_runner.runner as runner_mod
+
+        monkeypatch.setattr(
+            sb,
+            "_read_module_source",
+            lambda mod: "" if mod is runner_mod else sb.inspect.getsource(mod),
+        )
+        passed, detail = sb._check_d27_sandbox_limits()
+        assert passed is False
+        assert "project_runner.runner" in detail
+
+    def test_fails_if_child_stops_importing(self, monkeypatch) -> None:
+        import general_ludd.abtest._child as child_mod
+
+        monkeypatch.setattr(
+            sb,
+            "_read_module_source",
+            lambda mod: "" if mod is child_mod else sb.inspect.getsource(mod),
+        )
+        passed, detail = sb._check_d27_sandbox_limits()
+        assert passed is False
+        assert "abtest._child" in detail
+
+
+class TestD18ProbeRegressionDetection:
+    """Prove the D-18 probe is a REAL check by making it fail on symbol removal."""
+
+    def test_fails_if_record_typed_missing(self, monkeypatch) -> None:
+        import general_ludd.db.repository as repo_mod
+
+        monkeypatch.delattr(repo_mod.AuditEventRepository, "record_typed")
+        passed, detail = sb._check_d18_audit_log()
+        assert passed is False
+        assert "record_typed" in detail
+
+    def test_fails_if_loop_stops_calling_it(self, monkeypatch) -> None:
+        import general_ludd.event_loop.loop as loop_mod
+
+        monkeypatch.setattr(
+            sb,
+            "_read_module_source",
+            lambda mod: "" if mod is loop_mod else sb.inspect.getsource(mod),
+        )
+        passed, detail = sb._check_d18_audit_log()
+        assert passed is False
+        assert "event_loop.loop" in detail
+
+
+class TestMainExitCodeSemantics:
+    def test_main_returns_zero_when_all_probes_pass(self) -> None:
+        # Against the real tree, all three probes are landed — the gate is green
+        # even though 21 of 24 items are honestly OPEN.
+        assert sb._main() == 0
+
+    def test_main_returns_nonzero_on_probe_regression(self, monkeypatch, capsys) -> None:
+        import general_ludd.system.rlimit as rlimit_mod
+
+        monkeypatch.delattr(rlimit_mod, "apply_limits")
+        rc = sb._main()
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "GATE: FAIL" in out
+        assert "D-27" in out
+
+    def test_main_stays_zero_when_only_open_items_present(self, monkeypatch, capsys) -> None:
+        # Force every checker to report OPEN (simulating "nothing landed yet")
+        # except leave the probes untouched -- but here we directly verify that
+        # OPEN items alone (the D-07/D-11/D-13/D-17/default set) never flip the
+        # exit code, regardless of how many of them exist.
+        rc = sb._main()
+        out = capsys.readouterr().out
+        assert "OPEN=" in out
+        assert rc == 0

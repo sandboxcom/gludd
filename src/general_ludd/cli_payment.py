@@ -1,11 +1,14 @@
 """``gludd payment`` CLI subcommand — PCI-DSS style payment card vault.
 
 Stores card data under envelope encryption in OpenBao (see
-``general_ludd.secrets.payment_vault``). Full PANs/CVCs are never accepted in
-cleartext on the command line: ``add`` reads the card number (and CVC) via
-``getpass`` when the corresponding flags are omitted, so they never enter
-shell history. Only masked metadata (last4, brand, expiry, holder) and the
-opaque processor token are ever printed.
+``general_ludd.secrets.payment_vault``). By default ``add`` reads the card
+number and CVC interactively via ``getpass`` so they never enter shell
+history or a process listing. The ``--card-number``/``--cvc`` flags exist for
+non-interactive/scripted use but are DISCOURAGED: values passed on the
+command line are exposed in shell history and to any local user who can read
+the process list (``ps``); prefer the interactive prompt whenever a human is
+present. Only masked metadata (last4, brand, expiry, holder) and the opaque
+processor token are ever printed.
 """
 from __future__ import annotations
 
@@ -42,19 +45,25 @@ def _cmd_payment_add(args: argparse.Namespace) -> None:
 
     vault = _open_vault()
     card_number = args.card_number
-    if not card_number:
+    if card_number is None:
         try:
             card_number = getpass.getpass("Card number: ")
         except (EOFError, KeyboardInterrupt):
             print("\nAborted.", file=sys.stderr)
             sys.exit(1)
+    elif card_number == "":
+        print("Error: --card-number must not be empty", file=sys.stderr)
+        sys.exit(1)
     cvc = args.cvc
-    if not cvc:
+    if cvc is None:
         try:
             cvc = getpass.getpass("CVC: ")
         except (EOFError, KeyboardInterrupt):
             print("\nAborted.", file=sys.stderr)
             sys.exit(1)
+    elif cvc == "":
+        print("Error: --cvc must not be empty", file=sys.stderr)
+        sys.exit(1)
 
     try:
         vault.store_card(
@@ -70,18 +79,31 @@ def _cmd_payment_add(args: argparse.Namespace) -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    last4 = vault.get_card_last4(args.label) or "????"
-    meta = vault.get_card_metadata(args.label) or {}
+    try:
+        last4 = vault.get_card_last4(args.label)
+        meta = vault.get_card_metadata(args.label) or {}
+    except PaymentVaultError as exc:
+        print(
+            f"Card stored under label '{args.label}', but confirmation "
+            f"read-back failed: {exc}",
+            file=sys.stderr,
+        )
+        return
+
     brand = meta.get("brand", "unknown")
-    print(
-        f"Stored card {redact_card_number('0' * 12 + last4)} ({brand}) "
-        f"as label '{args.label}'."
-    )
+    masked = redact_card_number("0" * 12 + last4) if last4 else "**** **** **** ????"
+    print(f"Stored card {masked} ({brand}) as label '{args.label}'.")
 
 
 def _cmd_payment_list(args: argparse.Namespace) -> None:
+    from general_ludd.secrets.payment_vault import PaymentVaultError
+
     vault = _open_vault()
-    cards = vault.list_cards()
+    try:
+        cards = vault.list_cards()
+    except PaymentVaultError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     if not cards:
         print("No cards stored.")
         return
@@ -97,8 +119,14 @@ def _cmd_payment_list(args: argparse.Namespace) -> None:
 
 
 def _cmd_payment_show(args: argparse.Namespace) -> None:
+    from general_ludd.secrets.payment_vault import PaymentVaultError
+
     vault = _open_vault()
-    meta = vault.get_card_metadata(args.label)
+    try:
+        meta = vault.get_card_metadata(args.label)
+    except PaymentVaultError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     if meta is None:
         print(f"No card stored under label '{args.label}'.", file=sys.stderr)
         sys.exit(1)
@@ -168,10 +196,20 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     payment_sub = payment_parser.add_subparsers(dest="payment_command")
 
     p = payment_sub.add_parser("add", help="Store a card under a label.")
-    p.add_argument("--card-number", default=None, help="Card number (prompted via getpass if omitted).")
+    p.add_argument(
+        "--card-number",
+        default=None,
+        help="Card number (prompted via getpass if omitted). DISCOURAGED: visible in "
+        "shell history and `ps`; prefer the interactive prompt.",
+    )
     p.add_argument("--expiry-month", required=True, help="Expiry month (01-12).")
     p.add_argument("--expiry-year", required=True, help="Expiry year (2-digit, e.g. 30).")
-    p.add_argument("--cvc", default=None, help="CVC (prompted via getpass if omitted).")
+    p.add_argument(
+        "--cvc",
+        default=None,
+        help="CVC (prompted via getpass if omitted). DISCOURAGED: visible in shell "
+        "history and `ps`; prefer the interactive prompt.",
+    )
     p.add_argument("--holder-name", required=True, help="Cardholder name.")
     p.add_argument("--label", default="default", help="Label to store the card under (default: 'default').")
     p.add_argument("--processor", default="stripe", help="Payment processor name (default: 'stripe').")

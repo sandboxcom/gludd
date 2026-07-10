@@ -63,10 +63,19 @@ TESTABILITY:
     unit-tested against a temp dir. FLOOR_LIVE_OVERRIDE is a test seam that skips
     probing entirely (print the override and exit). GLUDD_LIVENESS_WINDOW_SEC is
     env-tunable so tests can pass a short window without patching module globals.
+    GLUDD_SESSION_ID (added 2026-07-10, defect #1/#3 fix) lets a caller that
+    knows the current session id (e.g. a hook reading it from the tool-call
+    payload) resolve the tasks dir and workflow transcripts deterministically
+    instead of relying on the mtime-activity heuristic. GLUDD_LIVENESS_CACHE_FILE
+    is a hard override for the per-session cache path (see _cache_file_for);
+    without it the cache file is derived from a hash of the resolved tasks dir
+    so concurrent sessions never share/clobber each other's cached count
+    (defect #2 fix).
 """
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
 import sqlite3
@@ -91,22 +100,90 @@ import time
 LIVENESS_WINDOW_SEC = float(os.environ.get("GLUDD_LIVENESS_WINDOW_SEC", "300.0"))
 
 
+def _dir_activity_mtime(path: str) -> float | None:
+    """Return the max mtime among the files directly inside ``path``, or
+    ``None`` if the directory is empty/unreadable.
+
+    Ranking session dirs by this INSTEAD OF the containing dir's own mtime is
+    the fix for defect #1 (2026-07-10): a brand-new near-empty session dir
+    (created a moment ago, 0-1 small files) can sort ABOVE an older session dir
+    that has 10 actively-streaming transcripts, because dir mtime reflects
+    entry creation/removal, not the content writes happening inside the files.
+    Ranking by the newest FILE mtime inside ``tasks/`` directly measures actual
+    activity instead of directory-entry churn.
+    """
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return None
+    best: float | None = None
+    for name in names:
+        try:
+            m = os.path.getmtime(os.path.join(path, name))
+        except OSError:
+            continue
+        if best is None or m > best:
+            best = m
+    return best
+
+
 def _tasks_dir() -> str | None:
     """Resolve the transcript dir holding per-agent ``*.output`` files.
 
     Resolution order:
       1. ``GLUDD_TASKS_DIR`` env override (used by tests against a temp dir).
-      2. The newest claude session's ``tasks/`` dir for this repo+uid.
+      2. ``GLUDD_SESSION_ID`` env override (set by hooks that have the current
+         session id from the hook payload, e.g. force_delegate_pretool.sh) --
+         deterministic: this repo+uid+session's ``tasks/`` dir wins outright
+         when it exists, no ranking heuristic needed.
+      3. The claude session whose ``tasks/`` dir has the most recent ACTIVITY
+         (max mtime of the files inside ``tasks/``, not the dir's own mtime --
+         see ``_dir_activity_mtime``), falling back to the dir's own mtime only
+         when ``tasks/`` is empty or unreadable.
 
     Returns the directory path, or ``None`` if none can be resolved.
+
+    BUG FIXED (2026-07-10, defect #1): the prior implementation ranked
+    candidate session dirs by ``os.path.getmtime`` of the SESSION DIR itself.
+    A brand-new session dir (created moments ago, near-empty ``tasks/``) sorts
+    above an older session dir with a full, actively-streaming fleet, because
+    appends to files inside ``tasks/`` don't bump the session dir's own mtime.
+    This silently hijacked the live count to ~0 mid-fleet. Ranking by the
+    ``tasks/`` dir's actual file activity fixes it.
     """
     override = os.environ.get("GLUDD_TASKS_DIR")
     if override:
         return override if os.path.isdir(override) else None
 
     base = "/private/tmp/claude-%d/-Users-shawnwilson-gludd" % os.getuid()
-    sessions = sorted(glob.glob(base + "/*/"), key=os.path.getmtime, reverse=True)
-    return next((s + "tasks" for s in sessions if os.path.isdir(s + "tasks")), None)
+
+    session_id = os.environ.get("GLUDD_SESSION_ID", "").strip()
+    if session_id:
+        candidate = os.path.join(base, session_id, "tasks")
+        if os.path.isdir(candidate):
+            return candidate
+        # Declared session has no tasks dir (yet, or never will) -> fall
+        # through to the activity-ranking heuristic below rather than
+        # returning None outright (fail toward still finding a usable dir).
+
+    sessions = glob.glob(base + "/*/")
+    candidates: list[tuple[float, str]] = []
+    for s in sessions:
+        tasks = s + "tasks"
+        if not os.path.isdir(tasks):
+            continue
+        activity = _dir_activity_mtime(tasks)
+        if activity is None:
+            try:
+                activity = os.path.getmtime(s)
+            except OSError:
+                activity = 0.0
+        candidates.append((activity, tasks))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda pair: pair[0], reverse=True)
+    return candidates[0][1]
 
 
 def _is_agent_transcript(path: str) -> bool:
@@ -118,18 +195,36 @@ def _is_agent_transcript(path: str) -> bool:
     Those plain-text bash outputs were being counted as live "agents", inflating
     the floor count. An agent transcript is JSONL whose first non-empty line is a
     JSON object carrying agent fields; a bash output is plain text -> excluded.
+
+    BUG FIXED (2026-07-10, defect #5): the original check decided on LINE 1
+    ALONE -- if the very first non-empty line parsed as a JSON dict lacking the
+    marker fields (e.g. a leading metadata/system line before the first real
+    agent message), the transcript was misclassified as non-agent and dropped
+    entirely, even though later lines clearly carry ``agentId``/``parentUuid``.
+    Fix: scan up to the first 5 non-empty lines; a match on ANY of them counts
+    the file as an agent transcript. A line that fails to parse as JSON is
+    skipped (not treated as a verdict) so a single malformed/partial line does
+    not short-circuit the scan.
     """
     try:
         with open(path, "rb") as fh:
             head = fh.read(8192)
+        checked = 0
         for line in head.split(b"\n"):
             s = line.strip()
             if not s:
                 continue
-            obj = json.loads(s.decode("utf-8", errors="replace"))
-            return isinstance(obj, dict) and bool(
+            checked += 1
+            try:
+                obj = json.loads(s.decode("utf-8", errors="replace"))
+            except Exception:
+                obj = None
+            if isinstance(obj, dict) and bool(
                 {"type", "agentId", "message", "parentUuid"} & set(obj.keys())
-            )
+            ):
+                return True
+            if checked >= 5:
+                break
         return False
     except Exception:
         return False
@@ -185,7 +280,7 @@ def _is_terminal(path: str) -> bool:
         return False
 
 
-def _workflow_transcript_files() -> list[str]:
+def _workflow_transcript_files(window: float = LIVENESS_WINDOW_SEC) -> list[str]:
     """Return Workflow-subagent transcript file paths to include in liveness counting.
 
     Workflow subagents (the parallel pools spawned by a Workflow run) write their
@@ -202,14 +297,31 @@ def _workflow_transcript_files() -> list[str]:
     per-run ``journal.jsonl`` are NOT agent transcripts — the ``agent-*.jsonl``
     glob deliberately excludes both so a workflow is not over-counted.)
 
+    BUG FIXED (2026-07-10, defect #3): the prior implementation globbed
+    ``.../<session>/subagents/workflows/**/agent-*.jsonl`` across ALL session
+    dirs under ``~/.claude/projects/-Users-shawnwilson-gludd/`` unconditionally
+    — every stale/completed session tree left over from earlier work fed
+    transcripts into every subsequent liveness count, permanently inflating
+    ``total`` (and, for any transcript whose terminal-detection false-negatived,
+    ``live`` too). Fix: per SESSION dir, only include its workflow transcripts
+    when EITHER (a) ``GLUDD_SESSION_ID`` is set and matches that session dir's
+    name exactly (deterministic — the hook told us which session is live), OR
+    (b) the newest agent-transcript mtime within that session's workflow tree
+    falls inside the liveness ``window`` (recency fallback, reusing the same
+    check ``live_count`` applies to individual files). Session dirs whose
+    workflow tree is entirely stale are excluded outright.
+
     Resolution:
       1. ``GLUDD_WORKFLOW_DIRS`` (colon-separated) test override — each dir is
          scanned non-recursively for ``*.jsonl`` and ``*.output`` files (the test
-         fixtures use those names directly).
-      2. Otherwise the verified ``~/.claude/projects/.../agent-*.jsonl`` glob, plus
-         a defensive ``/private/tmp/claude-<uid>/.../agent-*.jsonl`` fallback in
-         case a future harness version relocates the tree there (currently empty —
-         confirmed no workflow transcripts live under /private/tmp today).
+         fixtures use those names directly). Back-compat: NOT recency-filtered,
+         matching the pre-existing test seam contract (callers that use this
+         override are asserting file presence directly).
+      2. Otherwise: enumerate session dirs under the verified
+         ``~/.claude/projects/.../*/`` glob (plus a defensive
+         ``/private/tmp/claude-<uid>/.../*/`` fallback in case a future harness
+         version relocates the tree there), apply the session/window filter
+         above, then collect ``agent-*.jsonl`` files from the kept sessions.
 
     Returns an empty list on any error (fail-open).
     """
@@ -225,23 +337,60 @@ def _workflow_transcript_files() -> list[str]:
                 results.extend(glob.glob(os.path.join(d, "*.output")))
             return results
 
+        session_id = os.environ.get("GLUDD_SESSION_ID", "").strip()
         uid = os.getuid()
         # Match the VERIFIED real filename (agent-*.jsonl) so journal.jsonl and
         # *.meta.json siblings are excluded. recursive=True lets ** span the
         # workflows/<runid>/ nesting level.
-        patterns = [
-            os.path.expanduser(
-                "~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/agent-*.jsonl"
-            ),
-            "/private/tmp/claude-%d/-Users-shawnwilson-gludd/*/subagents/workflows/**/agent-*.jsonl"
-            % uid,
+        session_dir_patterns = [
+            os.path.expanduser("~/.claude/projects/-Users-shawnwilson-gludd/*/"),
+            "/private/tmp/claude-%d/-Users-shawnwilson-gludd/*/" % uid,
         ]
-        results = []
-        for pattern in patterns:
+
+        now = time.time()
+        cutoff = now - window
+        results: list[str] = []
+        seen_sessions: set[str] = set()
+        for sp in session_dir_patterns:
             try:
-                results.extend(glob.glob(pattern, recursive=True))
+                session_dirs = glob.glob(sp)
             except Exception:
-                pass
+                session_dirs = []
+            for sess_dir in session_dirs:
+                norm = os.path.normpath(sess_dir)
+                if norm in seen_sessions:
+                    continue
+                seen_sessions.add(norm)
+
+                wf_root = os.path.join(sess_dir, "subagents", "workflows")
+                if not os.path.isdir(wf_root):
+                    continue
+                try:
+                    agent_files = glob.glob(
+                        os.path.join(wf_root, "**", "agent-*.jsonl"), recursive=True
+                    )
+                except Exception:
+                    agent_files = []
+                if not agent_files:
+                    continue
+
+                sess_name = os.path.basename(norm)
+                if session_id and sess_name == session_id:
+                    # Deterministic match -> always include, regardless of mtime.
+                    results.extend(agent_files)
+                    continue
+
+                newest_mtime = 0.0
+                for f in agent_files:
+                    try:
+                        m = os.path.getmtime(f)
+                    except OSError:
+                        continue
+                    if m > newest_mtime:
+                        newest_mtime = m
+                if newest_mtime >= cutoff:
+                    results.extend(agent_files)
+                # else: this session's workflow tree is entirely stale -> excluded.
         return results
     except Exception:
         return []
@@ -273,8 +422,10 @@ def live_count(
     fs = glob.glob(tasks + "/*.output") if tasks else []
 
     # Also include workflow-subagent transcripts so the floor hook never
-    # reports "0 live" while a Workflow-based parallel pool is running.
-    wf_files = _workflow_transcript_files()
+    # reports "0 live" while a Workflow-based parallel pool is running. The
+    # SAME window is passed through so stale workflow session trees are
+    # excluded consistently with the recency check applied below (defect #3).
+    wf_files = _workflow_transcript_files(window=window)
 
     # Single clock snapshot — all files evaluated against the same ``now``.
     now = time.time()
@@ -329,9 +480,29 @@ def live_count(
 # under the 500ms budget we cache the result for a few seconds so only one
 # actual probe runs per TTL window.
 CACHE_TTL_SEC = float(os.environ.get("GLUDD_LIVENESS_CACHE_TTL", "3"))
-CACHE_FILE = os.environ.get(
-    "GLUDD_LIVENESS_CACHE_FILE", "/tmp/gludd-live-count-cache.json"
-)
+
+
+def _cache_file_for(tasks_dir: str | None) -> str:
+    """Resolve the cache file path for the CURRENT session.
+
+    BUG FIXED (2026-07-10, defect #2): the cache used a single machine-global
+    path (``/tmp/gludd-live-count-cache.json``) shared by EVERY concurrent
+    Claude Code process on the box. Two sessions running at once would read
+    and overwrite each other's cached count within the TTL window, so one
+    session's liveness read could silently leak into another's floor/delegate
+    decision. Fix: key the cache file by a short hash of the RESOLVED tasks-dir
+    path (which is unique per session — see ``_tasks_dir``), so each session
+    gets an independent cache file and no cross-talk is possible.
+
+    ``GLUDD_LIVENESS_CACHE_FILE`` remains a hard override (test seam / explicit
+    opt-out of per-session keying) and wins outright when set.
+    """
+    override = os.environ.get("GLUDD_LIVENESS_CACHE_FILE")
+    if override:
+        return override
+    key = tasks_dir or "__unresolved__"
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
+    return "/tmp/gludd-live-count-%s.json" % digest
 
 
 def _opencode_db_path() -> str | None:
@@ -424,11 +595,11 @@ def _detect_harness() -> str:
     return "unknown"
 
 
-def _read_cache() -> tuple[float, int] | None:
-    """Return (timestamp, count) from the cache file, or None if missing/stale/
+def _read_cache(cache_file: str) -> tuple[float, int] | None:
+    """Return (timestamp, count) from ``cache_file``, or None if missing/stale/
     unparseable. Caller decides freshness against CACHE_TTL_SEC."""
     try:
-        with open(CACHE_FILE, "r") as fh:
+        with open(cache_file, "r") as fh:
             data = json.load(fh)
         ts = float(data["ts"])
         count = int(data["count"])
@@ -437,9 +608,9 @@ def _read_cache() -> tuple[float, int] | None:
         return None
 
 
-def _write_cache(count: int) -> None:
+def _write_cache(count: int, cache_file: str) -> None:
     try:
-        with open(CACHE_FILE, "w") as fh:
+        with open(cache_file, "w") as fh:
             json.dump({"ts": time.time(), "count": int(count)}, fh)
     except Exception:
         pass
@@ -453,10 +624,14 @@ def _count_live_total(
 
     When ``use_cache`` is True and the cache is fresh (within CACHE_TTL_SEC),
     returns the cached count without probing. This keeps the per-tool-call cost
-    under the 500ms budget.
+    under the 500ms budget. The cache file is keyed per-session (defect #2) —
+    see ``_cache_file_for``.
     """
+    tasks_dir = _tasks_dir()
+    cache_file = _cache_file_for(tasks_dir)
+
     if use_cache and CACHE_TTL_SEC > 0:
-        cached = _read_cache()
+        cached = _read_cache(cache_file)
         if cached is not None and (time.time() - cached[0]) < CACHE_TTL_SEC:
             return cached[1]
 
@@ -464,7 +639,7 @@ def _count_live_total(
     oc_n = _count_opencode_live(window=window)
     total = max(claude_n, oc_n)
     if use_cache:
-        _write_cache(total)
+        _write_cache(total, cache_file)
     return total
 
 
@@ -476,16 +651,18 @@ def _count_live_total_debug(
     Returns ``(total, claude_n, opencode_n, harness, cache_used)``.
     """
     harness = _detect_harness()
+    tasks_dir = _tasks_dir()
+    cache_file = _cache_file_for(tasks_dir)
     cache_used = False
     if CACHE_TTL_SEC > 0:
-        cached = _read_cache()
+        cached = _read_cache(cache_file)
         if cached is not None and (time.time() - cached[0]) < CACHE_TTL_SEC:
             cache_used = True
             return cached[1], -1, -1, harness, cache_used
     claude_n = _count_claude_live(window=window)
     oc_n = _count_opencode_live(window=window)
     total = max(claude_n, oc_n)
-    _write_cache(total)
+    _write_cache(total, cache_file)
     return total, claude_n, oc_n, harness, cache_used
 
 

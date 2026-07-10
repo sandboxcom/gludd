@@ -7,10 +7,23 @@ SURVIVES a daemon restart.  Every mutation (``pause`` / ``resume``) rewrites the
 whole record set to disk, and a fresh controller rebuilds its sets from that
 store on construction — this is what gives restart survival.
 
-SLICE 1 scope: the controller is pure (no daemon wiring, no app.state) and does
-not act on the ``resources`` / ``agent_handles`` a record can carry — capturing
-and later releasing those live handles is SLICE 3.  Here they are inert fields
-that round-trip through the store.
+Daemon wiring (SLICE 2+): ``daemon.py`` constructs a single process-wide
+instance at ``app.state._pause_controller`` and injects it into the gateway,
+the event loop, and the agent dispatcher, so ``is_paused()`` gates model
+calls, tick claiming, and dispatch for a paused project/model.
+
+Persistence discipline: every mutation (``pause`` / ``resume``) persists the
+CANDIDATE record set to the store FIRST and only mutates in-RAM state after
+that write succeeds — a failed or crashed write can therefore never diverge
+memory from disk (``is_paused()`` never observes a pause/resume that is not
+already durable). A crash between the successful persist and the RAM update
+simply leaves this process's RAM one step behind — always a state the store
+already durably held; a restart re-reads the store and converges to the
+latest value.
+
+The controller does not act on the ``resources`` / ``agent_handles`` a record
+can carry — capturing and later releasing those live handles is SLICE 3. Here
+they are inert fields that round-trip through the store.
 """
 
 from __future__ import annotations
@@ -66,9 +79,13 @@ class PauseController:
         # cannot lose an update or persist a torn view.
         self._lock = threading.Lock()
         self._records: dict[tuple[str, str], PauseRecord] = {}
-        # Hot-path membership sets — read by is_paused() without the lock.
-        self._paused_projects: set[str] = set()
-        self._paused_models: set[str] = set()
+        # Hot-path membership — read by is_paused() WITHOUT the lock.  Each is
+        # a frozenset that is only ever REBOUND (never mutated in place) under
+        # self._lock, after a successful persist.  Attribute rebinding is an
+        # atomic reference store, so a lock-free reader always observes either
+        # the prior committed frozenset or the new one — never a torn view.
+        self._paused_projects: frozenset[str] = frozenset()
+        self._paused_models: frozenset[str] = frozenset()
         self._rebuild_from_store()
 
     # ------------------------------------------------------------------
@@ -76,29 +93,58 @@ class PauseController:
     # ------------------------------------------------------------------
 
     def _rebuild_from_store(self) -> None:
-        """Re-materialize the in-RAM sets from persisted records.
+        """Re-materialize the in-RAM state from already-persisted records.
 
         A record that fails validation (e.g. an unknown ``kind`` from a
         forward-incompatible on-disk schema) is skipped rather than crashing the
-        whole controller — one bad record must not wedge every pause.
+        whole controller — one bad record must not wedge every pause. Since
+        every entry here was already written by a prior successful ``_persist``,
+        no further persistence is needed — this only (re)populates RAM.
         """
+        records: dict[tuple[str, str], PauseRecord] = {}
+        projects: set[str] = set()
+        models: set[str] = set()
         for raw in self._store.load():
             try:
                 record = PauseRecord.model_validate(raw)
             except Exception:  # tolerate a single bad record, don't wedge all
                 continue
-            self._index(record)
+            records[(record.kind, record.target_id)] = record
+            (projects if record.kind == "project" else models).add(record.target_id)
+        self._records = records
+        self._paused_projects = frozenset(projects)
+        self._paused_models = frozenset(models)
 
-    def _index(self, record: PauseRecord) -> None:
-        self._records[(record.kind, record.target_id)] = record
-        self._set_for(record.kind).add(record.target_id)
-
-    def _set_for(self, kind: str) -> set[str]:
+    def _set_for(self, kind: str) -> frozenset[str]:
         return self._paused_projects if kind == "project" else self._paused_models
 
-    def _persist(self) -> None:
-        # Called under self._lock.
-        self._store.save([r.model_dump() for r in self._records.values()])
+    def _rebind_add(self, kind: str, target_id: str) -> None:
+        # Called under self._lock, AFTER a successful persist. Builds a new
+        # frozenset and rebinds the attribute — never mutates the existing one
+        # in place — so is_paused() (lock-free) never sees a torn set.
+        if kind == "project":
+            self._paused_projects = self._paused_projects | {target_id}
+        else:
+            self._paused_models = self._paused_models | {target_id}
+
+    def _rebind_discard(self, kind: str, target_id: str) -> None:
+        # Called under self._lock, AFTER a successful persist. See _rebind_add.
+        if kind == "project":
+            self._paused_projects = self._paused_projects - {target_id}
+        else:
+            self._paused_models = self._paused_models - {target_id}
+
+    def _persist(self, candidate: dict[tuple[str, str], PauseRecord]) -> None:
+        """Durably write *candidate* — the would-be post-mutation record set.
+
+        Called under self._lock, BEFORE self._records / the membership
+        frozensets are mutated. Raises (propagating the store's exception,
+        e.g. :class:`PauseStoreError`) on a write failure, in which case the
+        caller must NOT touch in-RAM state — leaving memory exactly as it was
+        (a state the store already durably held) is what keeps is_paused()
+        from ever observing a non-durable mutation.
+        """
+        self._store.save([r.model_dump() for r in candidate.values()])
 
     # ------------------------------------------------------------------
     # SLICE 3b — agent quiescing
@@ -168,6 +214,13 @@ class PauseController:
         *agent_handles* (SLICE 3b) are :class:`HibernationHandle` references
         for agents that were quiesced (dehydrated) when the project was paused.
         They are stored in the record so a later resume can rehydrate them.
+
+        Persist-before-mutate: the candidate record set (current + this new
+        record) is written to the store FIRST; ``self._records`` and the
+        membership frozenset are only updated after that write succeeds. If
+        the store raises (e.g. a disk failure), this method propagates the
+        exception and leaves in-RAM state untouched — ``is_paused()`` keeps
+        reporting the entity as NOT paused, matching what is durably on disk.
         """
         key = (kind, target_id)
         with self._lock:
@@ -183,8 +236,11 @@ class PauseController:
                 last_state=last_state or {},
                 agent_handles=agent_handles if agent_handles is not None else [],
             )
-            self._index(record)
-            self._persist()
+            candidate = dict(self._records)
+            candidate[key] = record
+            self._persist(candidate)  # raises -> in-RAM state stays untouched
+            self._records = candidate
+            self._rebind_add(kind, target_id)
             return record
 
     def resume(self, kind: PauseKind, target_id: str) -> PauseRecord | None:
@@ -192,18 +248,40 @@ class PauseController:
 
         Idempotent: returns ``None`` when the entity was not paused (a
         double-resume is a no-op, not an error).
+
+        Persist-before-mutate: the candidate record set (current minus this
+        record) is written to the store FIRST; ``self._records`` and the
+        membership frozenset are only updated after that write succeeds. If
+        the store raises, this method propagates the exception and leaves
+        in-RAM state untouched — ``is_paused()`` keeps reporting the entity as
+        PAUSED, matching what is durably on disk. A crash in this exact window
+        (write succeeded, in-RAM update not yet applied) leaves this process
+        showing "paused" one step behind disk's "resumed"; a restart re-reads
+        the store and converges to resumed.
         """
         key = (kind, target_id)
         with self._lock:
-            record = self._records.pop(key, None)
+            record = self._records.get(key)
             if record is None:
                 return None
-            self._set_for(kind).discard(target_id)
-            self._persist()
+            candidate = dict(self._records)
+            del candidate[key]
+            self._persist(candidate)  # raises -> in-RAM state stays untouched
+            self._records = candidate
+            self._rebind_discard(kind, target_id)
             return record
 
     def is_paused(self, kind: PauseKind, target_id: str) -> bool:
-        """O(1) hot-path check — is ``(kind, target_id)`` currently paused?"""
+        """O(1) hot-path check — is ``(kind, target_id)`` currently paused?
+
+        Lock-free by design (called from hot paths in the gateway/dispatcher/
+        event loop). Invariant: this NEVER observes a pause/resume mutation
+        that is not already durable — ``pause()``/``resume()`` only rebind the
+        membership frozenset here after their store write has succeeded, and
+        rebinding a frozenset reference is atomic, so a concurrent reader sees
+        either the previous durable state or the new durable state, never a
+        partial/torn one.
+        """
         return target_id in self._set_for(kind)
 
     def list_paused(self) -> list[PauseRecord]:

@@ -1,5 +1,14 @@
 # NEW_FINDINGS triage — 2026-06-18
 
+> **STALE — superseded by 2026-07-10 re-triage.** 13/16 High items FIXED; 1 PARTIAL
+> (TodoModel version_id_col — now spec item C30); alembic drift separately verified
+> FIXED (parity suites 8/8); gateway budget/NaN sub-claims verified FAIL-CLOSED
+> 2026-07-10. New gaps found during re-triage: SpendRepository.add() has zero
+> production callers (spend-cap restart survival dead code — spec SPD-1) and a
+> dormant LangGraph budget bypass (spec C29). This doc's 'OPEN Medium: 15' count
+> never itemized 7 of the 15. Do not use these verdicts without re-checking current
+> source.
+
 Re-adjudication of `docs/audit/NEW_FINDINGS_2026-06-16.md` against the current tree
 (agent `aa795ffc`, read-only, source-verified). Status = OPEN / FIXED / PARTIAL.
 

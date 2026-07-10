@@ -211,17 +211,36 @@ The authoritative failure inventory is from run **29055665462** (master @ `a7ab5
 
 > **C4 — Budget/spend correctness family (BACKLOG_FINDINGS F1-F6).** [RE-VERIFY each]
 > - F1: `estimate_call_cost` returns 0.0 for unknown models → gates treat as free (`src/general_ludd/execution/engine.py:200,210`, `budget_guard_check.py:72`). Fix: unknown-cost → conservative configurable default + loud log, or deny when `strict_budget`.
-> - F2: `RunBudgetGuard.check_per_call` fails OPEN on NaN (`budget.py:82`) → `math.isnan` check, fail closed.
+> - F2: `RunBudgetGuard.check_per_call` fails OPEN on NaN (`budget.py:82`) → `math.isnan` check, fail closed. **STATUS: VERIFIED CLOSED 2026-07-10 — do not re-audit this sub-claim.** `check_per_call` (`controllers/budget.py:82-102`) fails closed on any non-finite `estimated_cost` (`controllers/budget.py:86-91`). Independently, `ModelGateway.check_budget` — the gate actually wired into `call_model` at `gateway.py:679` — also fails closed: NaN `budget_remaining` is clamped to `0.0` and a non-finite `estimated_cost` is clamped to `+inf` so it can never slip under a finite cap (`gateway.py:560-563`).
 > - F3: no reservation → concurrent TOCTOU overshoot → reserve-then-commit ledger in `SpendLimiter`.
 > - F4/F5/F6: `SpendLimiter.restore` monotonic-ts restart bug; restore double-count; daily-rollover stale reservations.
 > - Also D-#14-residual (sibling cost paths on concurrent fan-out) and D-#49 (rolling-cap e2e regression test) and D-#59/#69 (avg_cost regression test) from `TASKS.md:1012-1018`.
 > Test plan: `tests/unit/test_budget_guards.py` additions incl. NaN, unknown-model, concurrent-reserve; e2e over-budget dispatch skip already exists (`test_spend_limiter_dispatch_wiring.py`) — extend for reservation.
+
+> **SPD-1 (P1) — Spend persistence: dead restart-survival code path.**
+> Evidence: `db/repository.py:1773` `SpendRepository.add()` has ZERO production callers (grep-verified) — `spend_records` is never written, so `daemon.py:437-477 _restore_persisted_spend` (called at `daemon.py:1551-1555`) always rehydrates an empty table on startup. The cap's advertised restart-survival (the premise behind C4/F4) is dead code today.
+> Fix: a periodic `EventLoop` flush phase `_phase_flush_spend_ledger`, appended to `PHASE_ORDER` (`event_loop/loop.py:88-105`) immediately after `check_service_credits` (`loop.py:3625 _phase_check_service_credits`), interval-gated by a new `spend_persist_interval_ticks` config (default 60; `<=0` disables). `SpendLimiter` (`controllers/spend_limiter.py`) gains a monotonic `_seq` watermark incremented on every accepted charge (`try_charge`/`record`, :248), plus `unflushed_records()` (records with `_seq` past the last-flushed watermark; alongside `snapshot()` at :310) and `mark_flushed(upto_seq)`; `restore()` (:323) seeds the watermark from the restored records so a restart does not re-INSERT rows already persisted before the crash.
+> The flush phase opens a DEDICATED session via the session factory — NOT the shared tick session held across `dispatch_execute_jobs` per E10 — writes each unflushed record through `SpendRepository.add()` (`db/repository.py:1773`, backed by `SpendRecordModel` at `db/models.py:603-622`), then calls `mark_flushed`. The charge-recording seams that populate the in-memory records this phase later flushes (`daemon_wiring.py:311-368 make_spend_guarded_executor`, `loop.py:1874-1887`'s dispatch-time `try_charge`) need no change.
+> Failure semantics: a persist failure (DB error) is logged at WARNING and never blocks dispatch — the in-memory limiter stays authoritative for the live cap; only the next tick's flush retries. A restart between flushes loses at most one flush interval's worth of records (bounded exposure), not silent unbounded loss.
+> Test plan: (1) unit — `try_charge`/`record` increment `_seq`; `unflushed_records`/`mark_flushed` watermark semantics; (2) unit — `restore()` seeds the watermark so post-restart records are never re-flushed as duplicates; (3) integration — a charge made via `make_spend_guarded_executor` surfaces in the next `_phase_flush_spend_ledger` run (cross-path regression closing the "wired but never exercised" gap); (4) a real restart-survival e2e — flush → simulate process restart (`_restore_persisted_spend`) → assert the rehydrated rolling-window total matches the flushed amount.
+> Acceptance: `spend_records` receives rows from a running daemon tick (not just a directly-constructed-repository unit test); `_restore_persisted_spend` rehydrates a non-empty window in the e2e test. Full design: `docs/design/WAVE_D_DESIGNS_2026-07-10.md` § SPD-1.
+
+> **C29 (P1) — LangGraph budget bypass (dormant).**
+> Evidence: `ModelGateway.get_chat_model` (`gateway.py:465-533`) has no `check_budget`/`record_spend` call; `LangGraphAgentLoop.__init__` (`execution/langgraph_agent.py:46-56`) takes no `budget_guard` param. The iteration loop lives INSIDE LangGraph (`create_react_agent` → `graph.ainvoke` at `langgraph_agent.py:136`) — unlike `ToolCallLoop`, there is no Python `for` loop to place a per-iteration pre-check inside, so enforcement must wrap the chat-model seam instead. Currently DORMANT: live-wired only behind `use_langgraph_tool_loop` (default `False`; `event_loop/loop.py:2352-2372`), constructed with no `budget_guard` forwarded at `loop.py:2363-2369` — contrast the sibling `ToolCallLoop` branch which DOES receive `budget_guard=self._budget_guard` at `loop.py:2459`.
+> Fix: wrap the chat model returned by `_resolve_chat_model()` (`langgraph_agent.py:181`) in a runnable adapter that, per model invocation, (1) runs `budget_pre_check` with the same denial semantics as `tool_loop.py:174-186` and (2) records spend via the gateway's existing billing seam using the response's token usage. Thread `budget_guard` through `LangGraphAgentLoop.__init__` (default `None` only for the benchmark `_run_plain` path); pass `self._budget_guard` at `loop.py:2363-2369` (mirroring `:2459`); forward it through `make_langgraph_tool_loop` (`agents/capabilities.py:198-219`). Defense-in-depth: keep a total-iteration cap in the per-tool wrappers built by `_build_langchain_tools` (`langgraph_agent.py:192`).
+> Constructor sites needing the new param: `event_loop/loop.py:2363`, `agents/capabilities.py:214`, `benchmark/langgraph_bench.py:198` (`None` is fine there — benchmark harness, no live budget). Test files needing signature updates: `tests/unit/test_langgraph_tool_loop.py` (~13 instantiations), `tests/integration/test_langchain_daemon_integration.py` (:63-92, :119-122), `tests/unit/test_langgraph_benchmark.py` (:306, :334, :689).
+> Acceptance: exhausted budget stops dispatch before the next model call (call-count assertion); every completed model call under the LangGraph path has a matching spend record.
 
 > **C5 — Integrity store (H1/H2/M1).** [RE-VERIFY]
 > `integrity_db.json` baseline unsigned; corrupt store silently re-baselines; non-canonical HMAC payload allows field-injection. Files: grep `integrity_db` under `src/general_ludd/`. Fix: HMAC the canonical-JSON baseline with the PSK-derived key; corrupt store → fail closed + require explicit re-baseline command; canonicalize (sorted keys, separators) before MAC.
 
 > **C6 — Model gateway (H1/M1/M3).** [RE-VERIFY]
 > `src/general_ludd/models/gateway.py:561`-area: caller kwargs can override SSRF-validated `base_url`/`api_key`; no request/connect timeout; alias-resolved URL leaked in SSRF error text. Fix: strip/deny `base_url`/`api_key` in per-call kwargs after validation; default httpx timeout; redact resolved URL in errors.
+
+> **C28 (P1) — Failover follow-ups (post-`803b75c5`).**
+> Evidence: `call_model_with_fallback` (`models/gateway.py:1620-1674`) discards the per-attempt exception context gathered by `_walk_fallbacks` (the `_attempts` return value is unused) and, on total exhaustion, raises a bare `CircuitBreakerOpenError` (`gateway.py:1663-1674`) without routing through `_enrich_all_down_message` (defined `gateway.py:247`, already used at `:1173` and `:1390` on other call paths) — so the structured all-down error D17 landed has zero callers on THIS path. Separately, the fallback concurrency gate (`_fallback_semaphore`, `gateway.py:1394-1410`) is a bare `threading.Semaphore` acquired with a blocking `with` at `_call_fallback` (`gateway.py:1431`) — no timeout: a hung secondary provider can hold a slot indefinitely and, because `call_model_with_fallback` is invoked via `asyncio.to_thread` from async callers, starve the shared thread-pool workers app-wide (ties into C11's ThreadPoolExecutor-saturation note), not just the calling request. Also undocumented: the failover walk is TRANSITIVE — each hop follows ITS OWN `fallback_profiles`, so a chain can cascade through more than one fallback hop with no depth cap or operator opt-out. `ModelFailoverChain.record_failover` (`models/failover.py:38-46`) appends to `self._failover_events` with no lock (cosmetic — single-threaded call sites today, but a latent race if that changes).
+> Fix: (a) accumulate per-attempt exception summaries in `call_model_with_fallback` and surface them via `_enrich_all_down_message` even on the bare-raise path (net-new behavior on a currently-uncalled path, not a regression risk); (b) wrap the semaphore acquire in a bounded wait (e.g. `asyncio.wait_for` around a thread-safe acquire, or a stdlib `Semaphore.acquire(timeout=...)`) with a fail-fast error distinguishing "no fallback capacity" from "all profiles down"; (c) document the transitive-cascade behavior (docstring + `docs/audit/FAILOVER_GAPS.md`) and add an explicit per-profile opt-out (e.g. `allow_transitive_fallback: bool`, default `True` for back-compat); (d) lock `record_failover`'s list append.
+> Test plan: unit test asserting an all-down raise carries the enriched multi-attempt message; unit test for the bounded semaphore wait (mock a hung acquire, assert bounded wait + a distinct timeout error); integration test proving a 2-hop transitive cascade fires only when opted in; concurrency test for `record_failover`.
 
 > **C7 — MCP transport allowlist (M2).** Verified CLOSED (argv allowlisting per interpreter landed; version pins fixed for the npm-family/`uvx` path) — do not re-audit. One LOW residual filed separately as **C27 / MCP-1**.
 
@@ -272,6 +291,11 @@ The authoritative failure inventory is from run **29055665462** (master @ `a7ab5
 > - `src/general_ludd/event_loop/loop.py:1330-1361` — PID/concurrency cap applied AFTER rows are marked ACTIVE (over-cap todos sit ACTIVE-without-dispatch in the window). Fix: cap check before the CAS claim, or requeue-on-cap in the same transaction.
 > - `src/general_ludd/event_loop/loop.py:1031-1035` — `_dispatch_review_job` `to_thread(run_playbook)` with no timeout. Fix: `asyncio.wait_for` with a config-driven review timeout + BLOCKED transition on expiry.
 
+> **C30 (P1) — `TodoModel.version` wire-vs-remove decision.**
+> Evidence: `TodoModel.version` (`db/models.py`) exists but is not wired as SQLAlchemy's `version_id_col` — repository-level compare-and-swap (`db/repository.py:277-315,565-605`) is the SOLE concurrency guard today and, per the M-13 mitigation note above, is verified stronger than the original audit assumed. The `version` column is therefore either dead weight or a redundant defense-in-depth guard, depending on intent — an undocumented ambiguity, not an active bug.
+> Fix: pick one and document it — (a) wire `version_id_col=TodoModel.version` as defense-in-depth alongside the existing CAS repository guard (verify it does not double-increment or conflict with the CAS path), or (b) remove the unused column via a migration + a `TASKS.md` rationale citing the CAS guard as sufficient. Either way, add a concurrent-writers test proving two simultaneous updates to the same todo cannot both silently succeed.
+> Test plan: a CAS concurrency test (sibling of the repository's existing CAS tests) — two concurrent updates on the same row, assert exactly one wins and the loser gets a detectable conflict signal.
+
 > **C22 — SSTI sweep residuals.** [RE-VERIFY]
 > `docs/audit/ssti_bugclass_sweep.md`: engine.py reachability (CRITICAL), core_runner/templating full-Templar trusted-only contract (HIGH ×2 — enforce with a boundary assert), skills frontmatter injection (MED ×2), loader.py contributory.
 
@@ -312,21 +336,25 @@ The authoritative failure inventory is from run **29055665462** (master @ `a7ab5
 > Evidence: `src/general_ludd/quality/project_gate.py:35` fully implemented, zero callers. Only `run_project_check` (single check, `mcp/builtins.py`) and `execution/engine.py:194 _run_tests` are live — an external project's lint/typecheck failures never gate a merge decision.
 > Fix: call `run_project_gate` from the review/decision path (`src/general_ludd/review/decision_applier.py` `verify_completion` gate is the natural seam) for todos whose project has a `project.yml`; record per-check results into `task_returns.result` payload; surface via CLI.
 > Test plan: integration test — todo on a fixture project with a failing lint check → decision blocked; passing project → completes.
+> Design: docs/design/WAVE_D_DESIGNS_2026-07-10.md §D2.
 
 > **D3 (P1) — Generalize the self-improve APPLY path to external projects.**
 > Evidence: gap-finding half is project-neutral (`self_improve/harness.py`), but `src/general_ludd/reload/self_improve.py:88` hardcodes `test_commands=["make test-unit"]`; `reload/hot_reloader.py` reloads the RUNNING daemon's own `sys.modules` (cannot target external repos by construction); `routers/self_improve.py:343,386` builds `SelfImprovementWorkflow()` with no project routing; `_apply_approved_config_change` anchors on `Path.cwd()`.
 > Fix: (a) inject the target's `ProjectProfile` (from `project_runner/detect.py`) so `test_commands` come from the detected toolchain; (b) split "apply" into `SelfApplyStrategy` (current hot-reload, only when target == gludd itself) vs `ExternalApplyStrategy` (write to the project checkout → run `ProjectCommandRunner` gate → commit via `GitAutomation`); (c) route by `project_id` end-to-end from the router.
 > Test plan: fixture external Python + Node projects; e2e: self-improve proposes+applies a fix in the external checkout and the project gate passes; unit tests for strategy selection.
+> Design: docs/design/WAVE_D_DESIGNS_2026-07-10.md §D3.
 
 > **D4 (P1) — DAST driver + findings parser.**
 > Evidence: SAST real (`project_runner/findings.py` parses semgrep/bandit); DAST nonexistent (`docs/examples/project.yml:69-73` comment only; `docs/design/PROJECT_RUNNER.md:68` "Later").
 > Fix: `project_runner/dast.py` — lifecycle wrapper (start target via profile's serve command, wait healthz, run scanner, teardown) with a ZAP-baseline JSON parser into the same `Finding` model; declare via `project.yml` `dast:` block; allowlisted executables only.
 > Test plan: unit tests with canned ZAP JSON; integration with a dummy HTTP server + stub scanner binary (no network).
+> Design: docs/design/WAVE_D_DESIGNS_2026-07-10.md §D8.
 
 > **D5 (P2) — Compute discovery + auto-select.**
 > Evidence: `src/general_ludd/infra/terraform.py:607,630-633` hardcodes vSphere `DC0/Cluster0/datastore0/VM Network`; kubernetes has no dispatch entry (`terraform.py:159-169` falls to `_generate_generic`); `ProviderRegistry.get_cheapest_for_gpu` (`infra/providers.py:225-244`) sorts a static table and has no callers; `provider` is a required caller-supplied field (`routers/compute.py:74`).
 > Fix in slices: (1) k8s dispatch entry generating real manifests/HCL; (2) vSphere params from config with pyvmomi inventory validation; (3) auto-select: make `provider` optional, resolve via `get_cheapest_for_gpu` + `pricing_intel` + budget, record into UtilizationTracker. (The `compute-resource-discovery` skill in `.claude/` covers this feature's full design.)
 > Test plan: per-slice unit tests; HCL golden files; auto-select scoring table test.
+> Design: docs/design/WAVE_D_DESIGNS_2026-07-10.md §D5.
 
 > **D6 (P2) — Wire `OrchestrationPlanner` (#54) or delete it.**
 > Evidence: `src/general_ludd/scheduling/planner.py:60` referenced only by itself; every real caller uses `Scheduler` directly; `docs/design/feature_package_wiring.md` recommends wiring.
@@ -357,18 +385,22 @@ The authoritative failure inventory is from run **29055665462** (master @ `a7ab5
 > **D9 (P1) — Auto-remediation never fires on tick (#52).**
 > Evidence: only referenced in `docs/SESSION_HANDOFF_2026-07-03.md:69`. Candidate causes listed there: non-atomic claim+dispatch, suppressed over-cap requeue, uncounted timed-out batches, lease-acquire failure leaving ACTIVE-no-lease todos.
 > Fix: trace `MisconfigDetector`/remediation phase in `event_loop/loop.py` PHASE_ORDER; add an integration test that seeds a detectable misconfig and asserts a `remediation_actions` row after N ticks.
+> Design: docs/design/WAVE_D_DESIGNS_2026-07-10.md §D6 (#52 subsection).
 
 > **D10 (P1) — Commit-path file-claim livelock (#53).**
 > Evidence: `src/general_ludd/event_loop/loop.py:2521-2543` [RE-VERIFY exact lines] — claims in `FileClaimRegistry` can livelock the commit path.
 > Fix: total-order claim acquisition (sorted file list) + claim TTL + backoff-with-jitter; test with two synthetic todos claiming overlapping files concurrently.
+> Design: docs/design/WAVE_D_DESIGNS_2026-07-10.md §D6 (#53 subsection).
 
 > **D11 (P1) — Subagent orchestration defects (#57).**
 > Evidence: `docs/audit/status_security_orchestration.md` — nesting/escalation/control-loop/spiral defects, "zero implementation found". Define + implement: max nesting depth, capability non-escalation on child spawn (child caps ⊆ parent caps — ties into C14), dispatch-rate control loop, spiral detection (same-task re-dispatch counter with cutoff).
 > Test plan: unit tests per guard; adversarial test spawning a self-re-dispatching agent chain that must be cut off.
+> Design: docs/design/WAVE_D_DESIGNS_2026-07-10.md §D7.
 
 > **D12 (P2) — Slack connector.**
 > Evidence: `SESSION.md` Known Gaps #9; no Slack anywhere in `connectors/` (~90 modules) or `issue_sources/` (12 adapters).
 > Fix: `connectors/slack.py` following the established connector base (auth, SSRF-guarded webhook/API URL via C1 canonical module, notification send + channel history read), registered in `connectors/registry.py`; optional `issue_sources` intake from a channel.
+> Design (outbound-notifications slice only): docs/design/WAVE_D_DESIGNS_2026-07-10.md §D4; the inbound/connector half remains undesigned.
 
 > **D13 (P2) — `security_backlog.py`: wire or delete.**
 > Evidence: `src/general_ludd/security/security_backlog.py:53` `run_backlog_checks()` — 20/24 checkers return hardcoded "deferred", 4 return stub `True`; zero production callers (tests only). It LOOKS like a security gate and gates nothing — an audit-trust hazard.
@@ -427,7 +459,7 @@ The authoritative failure inventory is from run **29055665462** (master @ `a7ab5
 > Six src modules have NO test references at all (originally eight — `routers/remediation.py`/`routers/eval.py` struck: now wired+tested per D21) — write unit suites in this priority order:
 > 1. `src/general_ludd/cli_payment.py` (201 lines, PCI-adjacent payment-vault CLI — HIGH risk untested).
 > 2. `src/general_ludd/self_update/router.py` (470 lines, deprecated-but-reachable capability-assigning router — HIGH-MED; NOTE `tests/unit/test_self_update_router.py` misleadingly tests apply/model logic, NOT this router — rename it or extend it honestly).
-> 3. `src/general_ludd/runtime/release_orchestrator.py` (60, release composition point). 4. `src/general_ludd/renderers/cache.py` (63, TTL expiry logic). 5. `src/general_ludd/event_loop/benchmark.py` (42). 6. `src/general_ludd/renderers/executor.py` (17, shim).
+> 3. ~~`src/general_ludd/runtime/release_orchestrator.py` (60, release composition point)~~ **STALE — now covered** (verified 2026-07-10: `tests/unit/test_completion_audit_wiring.py:261` `TestReleaseOrchestratorWiring::test_orchestrator_builds_and_validates` imports and exercises it; remaining modules 1-2 and 4-6 re-verified as still zero-reference the same day). 4. `src/general_ludd/renderers/cache.py` (63, TTL expiry logic). 5. `src/general_ludd/event_loop/benchmark.py` (42). 6. `src/general_ludd/renderers/executor.py` (17, shim).
 > Acceptance: each module has a dedicated test file exercising its public functions; `make audit-coverage` shows them ≥85%.
 
 > **E8 — Router HTTP layer systematically thin.**
@@ -539,6 +571,6 @@ If CI reds: `make ci-jobs-anon RUN=<id>` → `make ci-failed-tests RUN=<id>` →
 | Release | `make release-cut TAG='...' MSG='...'` → `make verify-release-artifact TAG='...'` → `make release-view TAG='...'` |
 | Process hygiene | `make ps-pytest` / `make kill-stale` / `make run-watched CMD='...'` |
 
-**Priority totals:** P0: 14 (A0-A10 + A6-discipline, B1, B2, D1) · P1: 42 (A11, A12, C1-C27 family, D2, D3, D4, D7.1-D7.3, D9-D11, D21, E1-E4, E6-E11, F1-F4) · P2: 14 (D5, D6, D7.4, D12-D20, E5, E12, F5). Of these, the §3.0.1 landed-locally set (A1-A5, A7, A8, A9, A10, C1, C2, C3, D1, D17 (partial), D21, parts of C21/C26/F1) is annotated **[LANDED — verify]**/**[PARTIALLY LANDED]** in place and awaits push + CI confirmation before being struck outright; do not re-implement any of it.
+**Priority totals:** P0: 14 (A0-A10 + A6-discipline, B1, B2, D1) · P1: 46 (A11, A12, C1-C30 family + SPD-1, D2, D3, D4, D7.1-D7.3, D9-D11, D21, E1-E4, E6-E11, F1-F4) · P2: 14 (D5, D6, D7.4, D12-D20, E5, E12, F5). Of these, the §3.0.1 landed-locally set (A1-A5, A7, A8, A9, A10, C1, C2, C3, D1, D17 (partial), D21, parts of C21/C26/F1) is annotated **[LANDED — verify]**/**[PARTIALLY LANDED]** in place and awaits push + CI confirmation before being struck outright; do not re-implement any of it.
 
 *Maintain this spec: when an item closes, strike it here AND tick TASKS.md with evidence in the same commit. When re-verification refutes an item, mark it REFUTED here with the evidence so no one re-opens it.*

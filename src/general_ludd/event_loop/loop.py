@@ -99,6 +99,7 @@ PHASE_ORDER = [
     "refresh_model_performance",
     "check_compute_utilization",
     "check_service_credits",
+    "remediate_blocked_tasks",
     "self_improve",
     "poll_issue_sources",
     "emit_tick_metrics",
@@ -3658,6 +3659,86 @@ class EventLoop:
         if low:
             self._tick_metrics["low_credit_services"] = low
             logger.warning("Low service credit balance: %s", ", ".join(low))
+
+    async def _phase_remediate_blocked_tasks(self) -> None:
+        """Auto-remediation tick phase (#52): scan for blocked todos and act.
+
+        Runs the read-only :class:`BlockerDetector` scan against the tick's
+        live session/todo_repo, then hands at most
+        ``remediation_max_actions_per_tick`` findings to
+        :class:`RemediationDispatcher` per tick — a large blocked backlog is
+        drained gradually rather than flooding the todo/human-todo tables in
+        one pass. Idempotent: a finding already acted on within the
+        configured ``retry_delay_hours`` cooldown is skipped via
+        ``RemediationActionRepository.exists_recent`` so a still-blocked task
+        does not get a fresh dispatch/retry/human-todo filed every tick.
+
+        Interval: ``remediation_check_interval_ticks`` (default 30). Set to 0
+        to disable (kill switch) — mirrors
+        ``_phase_refresh_model_performance``'s interval idiom. Reads the
+        SAME ``RemediationConfig`` the ``/admin/remediation/*`` HTTP
+        endpoints read (``self._daemon_state["remediation_config"]``, wired
+        by daemon.py from ``UserConfig.remediation``) so the tick path and
+        the HTTP path never disagree on thresholds. Actions are conservative
+        (todo/retry/human-todo) and never touch code — every action is
+        audited via ``RemediationActionRepository``.
+        """
+        interval = int(self.config.get("remediation_check_interval_ticks", 30))
+        if interval <= 0 or self._total_ticks % interval != 0:
+            return
+        if self._todo_repo is None or self._active_session is None:
+            return
+        try:
+            from general_ludd.db.repository import (
+                HumanTodoRepository,
+                RemediationActionRepository,
+            )
+            from general_ludd.remediation.blocker_detector import (
+                BlockerDetector,
+                RemediationConfig,
+            )
+            from general_ludd.remediation.dispatcher import RemediationDispatcher
+
+            cfg = (
+                self._daemon_state.get("remediation_config")
+                if self._daemon_state is not None
+                else None
+            )
+            if not isinstance(cfg, RemediationConfig):
+                cfg = RemediationConfig()
+            human_todo_repo = HumanTodoRepository(self._active_session)
+            detector = BlockerDetector(
+                todo_repo=self._todo_repo,
+                human_todo_repo=human_todo_repo,
+                config=cfg,
+                session=self._active_session,
+            )
+            findings = await detector.scan(project_id=self._tick_project_id)
+            self._tick_metrics["remediation_scanned"] = len(findings)
+            if not findings:
+                return
+            remediation_repo = RemediationActionRepository(self._active_session)
+            max_actions = int(self.config.get("remediation_max_actions_per_tick", 5))
+            since = datetime.now(UTC) - timedelta(hours=cfg.retry_delay_hours)
+            dispatcher = RemediationDispatcher(
+                detector=detector,
+                todo_repo=self._todo_repo,
+                human_todo_repo=human_todo_repo,
+                remediation_repo=remediation_repo,
+            )
+            acted = 0
+            for blocked in findings:
+                if acted >= max_actions:
+                    break
+                if await remediation_repo.exists_recent(blocked.todo_id, since):
+                    continue
+                await dispatcher.remediate(blocked)
+                acted += 1
+            self._tick_metrics["remediation_actions"] = acted
+        except Exception as exc:
+            logger.warning(
+                "Auto-remediation tick phase failed: %s", exc, exc_info=True
+            )
 
     async def _phase_self_improve(self) -> None:
         interval = self._self_improve_interval
