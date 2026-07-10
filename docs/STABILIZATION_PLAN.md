@@ -35,7 +35,7 @@ gludd ("General Ludd") is an autonomous software-development agent system:
 - **Enforcement plugins** (`.opencode/plugin/*.ts`) and shell hooks guard the
   orchestrating agent itself (gate freshness, push-rate, anti-false-done).
 
-Current version: `0.1.0-beta.2` (bumped in code, **tag not cut**).
+Current version: `0.1.0-beta.3` (bumped in code, **tag not cut**).
 DB decision of record (W3.5): **SQLite only, single worker** — being replaced
 in beta.3 by a broker/writer-process architecture (see Phase B).
 

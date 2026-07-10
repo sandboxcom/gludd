@@ -76,7 +76,7 @@ docs/
 
 ## Status & Version
 
-- **Version**: `0.1.0-beta.2` (`pyproject.toml`) — prereleases built automatically on every push to master
+- **Version**: `0.1.0-beta.3` (`pyproject.toml`) — prereleases built automatically on every push to master
 - **Stability**: Alpha-quality research software — see [README](../README.md#current-stability)
 - **CI**: GitHub Actions runs on every push; gate = lint + typecheck + collect + test + smoke
 - **Authoritative Status**: Run `make gate` and check `.gate-status` — stale numbers in docs are a bug

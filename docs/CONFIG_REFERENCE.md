@@ -1,7 +1,7 @@
 # Configuration Reference (WP-F1)
 
 **Project:** general-ludd-agent
-**Version:** 0.1.0-beta.2 (`src/general_ludd/__init__.py`)
+**Version:** 0.1.0-beta.3 (`src/general_ludd/__init__.py`)
 **Audience:** weaker-model AI executors and human operators. This doc is
 self-sufficient — no other file is required to understand how to configure and
 run the daemon end-to-end.

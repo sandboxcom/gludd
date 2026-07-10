@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [0.1.0-beta.3] — TBD
+## [0.1.0-beta.3] — 2026-07-10
 
 ### Architecture (beta.3 Phase B)
 - B3.1.1 IPC broker (Broker + WriteQueue) + B3.1.2 read-only engine factory
@@ -35,6 +35,14 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - GPU-metrics cross-test `pynvml` mock leak: new `gpu_metrics.reset_probe` +
   autouse reset.
 - TASKS.md tick-guard evidence.
+- Hook-liveness harness now skips cleanly when the CI Node runtime cannot parse
+  the `.opencode` plugins (probe-and-soft-skip instead of a hard failure), and
+  the stale `phases_completed == 16` pin in the audit-gaps e2e was corrected to
+  17 after `PHASE_ORDER` grew a remediation phase (`46a43597`).
+- D-07: bounded the previously-unbounded `Text` blob columns on `task_decisions`
+  and `audit_events` with 64 KiB `CHECK(length(col) <= N)` constraints via
+  migration `026`, with create_all↔migration parity coverage and a landed
+  security-backlog probe (`1c6afab0`).
 - Daemon event-loop freeze on MCP/role dispatch: `_sync_bridge` removed —
   handlers now awaited natively.
 - Blocking `urlopen` on the tick path (`issue_ingestor`) moved to

@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+from general_ludd import __version__
 from general_ludd.ansible.isolation import ProcessIsolationConfig
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.config.binary_paths import BinaryPaths
@@ -2340,7 +2341,7 @@ def create_daemon_app(
     if playbooks_dir is None:
         playbooks_dir = os.environ.get("GLUDD_PLAYBOOKS_DIR")
 
-    app = FastAPI(title="General Ludd Agent", version="0.1.0", lifespan=_lifespan)
+    app = FastAPI(title="General Ludd Agent", version=__version__, lifespan=_lifespan)
     # Per-app daemon state: each app owns a fresh dict so todos / tick_metrics /
     # quality_gate cannot bleed across FastAPI instances in one process (the
     # module-level ``_daemon_state`` used to be shared — a test-isolation hazard).
