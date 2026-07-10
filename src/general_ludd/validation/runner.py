@@ -9,6 +9,8 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import Any
 
+from general_ludd.worktree.core import confine_worktree_path
+
 logger = logging.getLogger(__name__)
 
 # Shell metacharacters that imply the command author expected shell semantics
@@ -28,17 +30,23 @@ class CommandValidationError(ValueError):
     """Raised when a config-supplied test command fails safety validation."""
 
 
-def _validate_worktree_path(path: str) -> str:
+def _validate_worktree_path(path: str, *, expected_root: str | None = None) -> str:
     """Validate a worktree path before use as subprocess cwd (D7).
 
     Rejects:
     * Paths beginning with ``-`` (would be parsed as a CLI option).
     * Non-absolute paths (relative paths allow ``../`` traversal).
 
-    Returns the path unchanged on success.  Callers that need full symlink
-    confinement should use ``worktree.core.confine_worktree_path`` with an
-    explicit ``allowed_base``; ValidationRunner does not know its base so it
-    applies the weaker but still meaningful absolute-path guard.
+    When ``expected_root`` is supplied, delegates to
+    ``worktree.core.confine_worktree_path`` for the full fail-closed guard:
+    symlinks are resolved (``os.path.realpath``) and the resolved path must
+    be ``expected_root`` itself or a descendant of it — this catches ``..``
+    traversal AND a symlink planted at (or under) ``path`` that resolves
+    somewhere outside the expected root. A caller that does not know its
+    root falls back to the weaker but still meaningful absolute-path guard.
+
+    Returns the (possibly symlink-resolved, when ``expected_root`` is given)
+    path on success.
     """
     if not path or not path.strip():
         raise CommandValidationError("worktree_path must not be empty")
@@ -50,6 +58,15 @@ def _validate_worktree_path(path: str) -> str:
         raise CommandValidationError(
             f"worktree_path must be an absolute path (got relative path): {path!r}"
         )
+    if expected_root is not None:
+        try:
+            return confine_worktree_path(path, expected_root)
+        except ValueError as exc:
+            # Fail closed: a path that escapes the expected root (traversal or
+            # symlink escape) is a validation failure, not a crash.
+            raise CommandValidationError(
+                f"worktree_path escapes expected root {expected_root!r}: {exc}"
+            ) from exc
     return path
 
 
@@ -112,9 +129,12 @@ class ValidationRunner:
         *,
         enforce_runner_allowlist: bool = True,
         runner_allowlist: frozenset[str] = _DEFAULT_RUNNER_ALLOWLIST,
+        expected_worktree_root: str | None = None,
     ) -> None:
         self.todo_id = todo_id
-        self.worktree_path = _validate_worktree_path(worktree_path)
+        self.worktree_path = _validate_worktree_path(
+            worktree_path, expected_root=expected_worktree_root
+        )
         self.test_commands = test_commands
         self.enforce_runner_allowlist = enforce_runner_allowlist
         self.runner_allowlist = runner_allowlist

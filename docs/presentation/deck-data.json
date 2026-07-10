@@ -1,7 +1,7 @@
 {
   "version": "0.1.0-beta.2",
-  "git_sha": "0e34db6",
-  "test_count": 22766,
+  "git_sha": "2b17e7e",
+  "test_count": 22816,
   "role_count": 109,
   "features": [
     {
@@ -10,7 +10,7 @@
       "evidence": "**PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
     }
   ],
-  "generated_at": "2026-07-10T01:08:30Z",
+  "generated_at": "2026-07-10T05:50:23Z",
   "game_audit": {
     "report_generated": "2026-07-09T21:13:29Z",
     "games": {

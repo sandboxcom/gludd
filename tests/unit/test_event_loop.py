@@ -96,6 +96,76 @@ class TestEventLoop:
         assert "return-review" in url
 
     @pytest.mark.asyncio
+    async def test_dispatch_review_job_playbook_timeout_releases_claim(self):
+        """ALPHA4 residual: _dispatch_review_job's runner-path playbook run
+        had no timeout, so a hung ``run_playbook`` blocked that return
+        forever AND left it stuck at 'claimed_for_review' (no reaper
+        re-claims that status; claim_unreviewed only selects 'created').
+
+        Proof: a run_playbook that outlives a tiny configured
+        ``review.playbook_timeout`` must not raise out of
+        _dispatch_review_job, and must release the claim back to 'created'
+        (with the session flushed) so a later claim_unreviewed can re-claim
+        it — the documented failure state instead of a permanent stall.
+        """
+        import time as _time
+
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/review-timeout-job"}
+        runner.write_vars.return_value = None
+
+        def _slow_run_playbook(*, playbook_name, private_data_dir):
+            _time.sleep(0.05)
+            return {"rc": 0}
+
+        runner.run_playbook.side_effect = _slow_run_playbook
+
+        loop, mocks = _make_loop(
+            runner=runner,
+            config={"tick_interval": 1.0, "review": {"playbook_timeout": 0.005}},
+        )
+        tr = TaskReturn(
+            return_id="RET-TIMEOUT",
+            job_id="JOB-TIMEOUT",
+            playbook="noop.yml",
+            queue="core",
+            status=TaskReturnStatus.CLAIMED_FOR_REVIEW,
+        )
+
+        await loop._dispatch_review_job(tr)
+
+        assert tr.status == "created"
+        mocks["session"].flush.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_review_job_runner_path_completes_within_timeout(self):
+        """Sanity companion: a normal (fast) runner-path playbook still
+        completes successfully under the new asyncio.wait_for wrapper —
+        the timeout guard must not interfere with the happy path."""
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/review-ok-job"}
+        runner.write_vars.return_value = None
+        runner.run_playbook.return_value = {"rc": 0}
+
+        loop, _mocks = _make_loop(
+            runner=runner,
+            config={"tick_interval": 1.0, "review": {"playbook_timeout": 5.0}},
+        )
+        tr = TaskReturn(
+            return_id="RET-OK",
+            job_id="JOB-OK",
+            playbook="noop.yml",
+            queue="core",
+            status=TaskReturnStatus.CLAIMED_FOR_REVIEW,
+        )
+
+        await loop._dispatch_review_job(tr)
+
+        runner.run_playbook.assert_called_once()
+        # Happy path must not touch/release the claim.
+        assert tr.status == TaskReturnStatus.CLAIMED_FOR_REVIEW
+
+    @pytest.mark.asyncio
     async def test_event_loop_skips_reviewed_return(self):
         loop = EventLoop()
         task_return = TaskReturn(

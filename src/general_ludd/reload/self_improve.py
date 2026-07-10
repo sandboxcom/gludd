@@ -82,16 +82,33 @@ class SelfImprovementWorkflow:
         return todo
 
     def validate_improvement(self, worktree_path: str) -> ValidationResult:
-        runner = ValidationRunner(
-            todo_id="self-improve",
-            worktree_path=worktree_path,
-            test_commands=["make test-unit"],
-        )
+        # D7 hardening: worktree_path reaches here from the (attacker-facing)
+        # self-improve HTTP payload unconfined. ValidationRunner does not know
+        # the caller's worktree layout, so this call site derives the
+        # confinement root itself — the path's own parent directory — and
+        # requires the (symlink-resolved) worktree_path to remain a
+        # descendant of it. This does not defend a fully attacker-chosen
+        # standalone path, but it DOES fail closed on the concrete attack this
+        # guard exists for: a worktree entry that is (or resolves through) a
+        # symlink escaping to somewhere outside its own parent, e.g. planted
+        # by a prior compromised run. Trailing slashes are stripped first so
+        # ``dirname`` doesn't degenerate to the path itself.
+        import os
+
+        expected_root = os.path.dirname(worktree_path.rstrip("/")) or "/"
         try:
+            runner = ValidationRunner(
+                todo_id="self-improve",
+                worktree_path=worktree_path,
+                test_commands=["make test-unit"],
+                expected_worktree_root=expected_root,
+            )
             return runner.run_validation()
-        except (FileNotFoundError, NotADirectoryError, OSError) as exc:
-            # A missing/unusable worktree is a validation failure, not a crash —
-            # fail closed so the improvement is not applied.
+        except (FileNotFoundError, NotADirectoryError, OSError, ValueError) as exc:
+            # A missing/unusable/out-of-root worktree is a validation
+            # failure, not a crash — fail closed so the improvement is not
+            # applied. ValueError covers CommandValidationError raised by
+            # ValidationRunner's confinement guard (a ValueError subclass).
             return ValidationResult(
                 success=False,
                 passed_count=0,

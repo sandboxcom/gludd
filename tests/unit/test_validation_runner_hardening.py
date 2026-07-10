@@ -25,6 +25,7 @@ import pytest
 from general_ludd.validation.runner import (
     CommandValidationError,
     ValidationRunner,
+    _validate_worktree_path,
 )
 
 
@@ -155,3 +156,82 @@ class TestAllowlistOptOut:
         )
         with pytest.raises(CommandValidationError):
             evil_runner.run_validation()
+
+
+class TestWorktreePathConfinement:
+    """expected_root confinement (ALPHA4 residual): a worktree_path whose
+    resolved (symlink-followed) target escapes the caller-supplied expected
+    root must be rejected fail-closed, never silently accepted as subprocess
+    cwd. Without an expected_root the legacy weaker absolute-path guard still
+    applies (exercised by the other classes in this file)."""
+
+    def test_in_root_path_is_accepted(self, tmp_path) -> None:
+        base = tmp_path / "worktrees"
+        base.mkdir()
+        target = base / "wt-1"
+        target.mkdir()
+        resolved = _validate_worktree_path(str(target), expected_root=str(base))
+        assert resolved.startswith(str(base.resolve()))
+
+    def test_symlink_escape_is_rejected(self, tmp_path) -> None:
+        base = tmp_path / "worktrees"
+        base.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        link = base / "wt-evil"
+        link.symlink_to(outside)
+        with pytest.raises(CommandValidationError):
+            _validate_worktree_path(str(link), expected_root=str(base))
+
+    def test_traversal_is_rejected(self, tmp_path) -> None:
+        base = tmp_path / "worktrees"
+        base.mkdir()
+        with pytest.raises(CommandValidationError):
+            _validate_worktree_path(
+                str(base / ".." / ".." / "etc"), expected_root=str(base)
+            )
+
+    @patch("general_ludd.validation.runner.subprocess.run")
+    def test_validation_runner_rejects_symlink_escape_via_expected_root(
+        self, mock_run: MagicMock, tmp_path
+    ) -> None:
+        base = tmp_path / "worktrees"
+        base.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        link = base / "wt-evil"
+        link.symlink_to(outside)
+        with pytest.raises(CommandValidationError):
+            ValidationRunner(
+                todo_id="TODO-escape",
+                worktree_path=str(link),
+                test_commands=["make test-unit"],
+                expected_worktree_root=str(base),
+            )
+        mock_run.assert_not_called()
+
+    @patch("general_ludd.validation.runner.subprocess.run")
+    def test_validation_runner_accepts_in_root_path_via_expected_root(
+        self, mock_run: MagicMock, tmp_path
+    ) -> None:
+        mock_run.return_value = _passing_proc()
+        base = tmp_path / "worktrees"
+        base.mkdir()
+        target = base / "wt-1"
+        target.mkdir()
+        runner = ValidationRunner(
+            todo_id="TODO-ok-root",
+            worktree_path=str(target),
+            test_commands=["make test-unit"],
+            expected_worktree_root=str(base),
+        )
+        result = runner.run_validation()
+        assert result.success is True
+        _args, kwargs = mock_run.call_args
+        assert kwargs.get("cwd") == runner.worktree_path
+        assert runner.worktree_path.startswith(str(base.resolve()))
+
+    def test_no_expected_root_preserves_legacy_weak_guard(self) -> None:
+        # Backward compatibility: callers that don't know their root (existing
+        # behavior, unchanged) still just get the absolute-path guard.
+        assert _validate_worktree_path("/tmp/worktree") == "/tmp/worktree"

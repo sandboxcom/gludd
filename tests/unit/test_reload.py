@@ -130,6 +130,45 @@ class TestSelfImprovementValidateFails:
         assert result.failed_count == 1
 
 
+class TestSelfImprovementValidateRejectsSymlinkEscape:
+    """ALPHA4 residual (D7): validate_improvement's worktree_path reaches
+    ValidationRunner unconfined; this call site now derives an expected root
+    (the path's own parent) and confines via confine_worktree_path, so a
+    worktree entry that is (or resolves through) a symlink escaping that
+    parent is rejected fail-closed rather than used as subprocess cwd."""
+
+    @patch("general_ludd.validation.runner.subprocess.run")
+    def test_self_improvement_validate_rejects_symlink_escape(
+        self, mock_run: MagicMock, tmp_path
+    ) -> None:
+        base = tmp_path / "worktrees"
+        base.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        link = base / "wt-evil"
+        link.symlink_to(outside)
+        wf = SelfImprovementWorkflow()
+        result = wf.validate_improvement(str(link))
+        assert result.success is False
+        assert result.failed_count == 1
+        mock_run.assert_not_called()
+
+
+class TestSelfImprovementValidateAcceptsInRootPath:
+    @patch("general_ludd.validation.runner.subprocess.run")
+    def test_self_improvement_validate_accepts_in_root_path(
+        self, mock_run: MagicMock, tmp_path
+    ) -> None:
+        mock_run.return_value = MagicMock(returncode=0, stdout="1 passed", stderr="")
+        base = tmp_path / "worktrees"
+        base.mkdir()
+        target = base / "wt-1"
+        target.mkdir()
+        wf = SelfImprovementWorkflow()
+        result = wf.validate_improvement(str(target))
+        assert result.success is True
+
+
 class TestSelfImprovementApplyAndReload:
     def test_self_improvement_apply_and_reload(self) -> None:
         wf = SelfImprovementWorkflow()

@@ -1028,11 +1028,45 @@ class EventLoop:
                 "return_id": job.return_id, "queue": job.queue,
                 "work_type": job.work_type,
             }, shared_vars=None)
-            await asyncio.to_thread(
-                self._runner.run_playbook,
-                playbook_name="return_review.yml",
-                private_data_dir=dirs["root"],
+            review_cfg = (
+                self.config.get("review", {}) if isinstance(self.config, dict) else {}
             )
+            review_playbook_timeout = float(review_cfg.get("playbook_timeout", 600.0))
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self._runner.run_playbook,
+                        playbook_name="return_review.yml",
+                        private_data_dir=dirs["root"],
+                    ),
+                    timeout=review_playbook_timeout,
+                )
+            except TimeoutError:
+                # The subprocess-backed playbook is unbounded without this
+                # guard, and tr was already flipped 'created'->
+                # 'claimed_for_review' by claim_unreviewed's guarded UPDATE
+                # (db/repository.py) before dispatch. A silent timeout here
+                # would leave it stuck at 'claimed_for_review' forever — no
+                # reaper re-claims that status. Release the claim back to
+                # 'created' so a later tick's claim_unreviewed picks it up
+                # again, mirroring the concurrent-dispatch-batch timeout
+                # handling above (log + recover, never re-raise and abort the
+                # rest of this tick's claimed returns).
+                logger.warning(
+                    "Review playbook for return %s (job_id=%s) timed out "
+                    "after %.0fs; releasing claim for re-claim",
+                    tr.return_id,
+                    job.job_id,
+                    review_playbook_timeout,
+                )
+                if self._active_session is not None:
+                    with contextlib.suppress(Exception):
+                        tr.status = "created"
+                    if hasattr(tr, "updated_at"):
+                        with contextlib.suppress(Exception):
+                            tr.updated_at = datetime.now(UTC)
+                    with contextlib.suppress(Exception):
+                        await self._active_session.flush()
             return
         if self._http_client is None:
             return
