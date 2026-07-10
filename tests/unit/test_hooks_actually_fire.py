@@ -169,7 +169,7 @@ class TestHooksActuallyFire:
             input={}, output={"text": "investigating the failure before making a change"},
         )
         assert result.returncode == 0, result.stderr
-        counter_path = Path("/tmp/gludd-stop-text-complete-count.json")
+        counter_path = Path(hook_plugin_env.env["GLUDD_STOP_TEXT_COMPLETE_COUNT"])
         data = json.loads(counter_path.read_text())
         count = data.get("count", 0)
         assert count > 0, "text.complete counter exists but count is 0 — hook may be dead"
@@ -183,7 +183,7 @@ class TestHooksActuallyFire:
         single pair of calls to a tie.
         """
         invoke_text_complete_and_confirm_increment(
-            hook_plugin_env, "enforce-stop.ts", "/tmp/gludd-stop-text-complete-count.json"
+            hook_plugin_env, "enforce-stop.ts", hook_plugin_env.env["GLUDD_STOP_TEXT_COMPLETE_COUNT"]
         )
 
     def test_tool_execute_before_fires(self, hook_plugin_env: HookEnv):

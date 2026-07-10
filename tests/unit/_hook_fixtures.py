@@ -144,6 +144,8 @@ STATE_FILE_ENV_VARS = [
     "GLUDD_READ_GRIND_FILE",
     "GLUDD_SONNET_TARGET_CONFIG",
     "GLUDD_MAIN_MODEL_FILE",
+    "GLUDD_STOP_TEXT_COMPLETE_COUNT",
+    "GLUDD_FLOOR_TEXT_COMPLETE_COUNT",
 ]
 
 # Absolute /tmp paths hardcoded in plugin source with NO env-var override.
@@ -157,8 +159,6 @@ HARDCODED_TMP_PATHS = [
     "/tmp/gludd-force-dispatch.json",        # enforce-stop.ts / enforce-delegate.ts
     "/tmp/gludd-false-done-blocks.json",     # enforce-stop.ts FALSE_DONE_BLOCKS_FILE
     "/tmp/gludd-stop-tool-counts.json",      # enforce-stop.ts tool.execute.before
-    "/tmp/gludd-stop-text-complete-count.json",   # enforce-stop.ts text.complete
-    "/tmp/gludd-floor-text-complete-count.json",  # enforce-floor.ts text.complete
     "/tmp/gludd-plugin-alive.json",          # _reportAlive() shared across plugins
     "/tmp/gludd-plugin-heartbeat-enforce-stop.json",
     "/tmp/gludd-plugin-heartbeat-enforce-delegate.json",

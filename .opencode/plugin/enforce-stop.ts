@@ -814,7 +814,7 @@ export default (async ({ }) => {
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       // Increment fire counter — proves text.complete actually fires
       try {
-        const cPath = "/tmp/gludd-stop-text-complete-count.json"
+        const cPath = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "/tmp/gludd-stop-text-complete-count.json"
         let count = 1
         if (fs.existsSync(cPath)) {
           try { const d = JSON.parse(fs.readFileSync(cPath, "utf8")); count = (parseInt(d.count, 10) || 0) + 1 } catch {}

@@ -697,7 +697,7 @@ export default (async ({ }) => {
       try {
         // Increment fire counter — proves text.complete actually fires
         try {
-          const cPath = "/tmp/gludd-floor-text-complete-count.json"
+          const cPath = process.env.GLUDD_FLOOR_TEXT_COMPLETE_COUNT || "/tmp/gludd-floor-text-complete-count.json"
           let count = 1
           if (fs.existsSync(cPath)) {
             try { const d = JSON.parse(fs.readFileSync(cPath, "utf8")); count = (parseInt(d.count, 10) || 0) + 1 } catch {}
