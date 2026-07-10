@@ -399,6 +399,35 @@ class TestExtendedSubsystemsWiring:
             "Without pre-assignment of _health_tracker, router gets None (old bug documented)"
         )
 
+    def test_adaptive_router_built_when_preset_to_none_on_app_state(self):
+        """H-ADAPTIVE-ROUTER-NULL: create_daemon_app() pre-seeds
+        app.state._adaptive_router = None BEFORE the lifespan runs. The guard
+        used to be `not hasattr(app.state, "_adaptive_router")`, which is False
+        once the attribute exists as None — so the real router was never built
+        and ext["adaptive_router"] stayed None for the process life (flowing into
+        EventLoop(adaptive_router=None) + ReturnReviewer(router=None), silently
+        disabling adaptive model/prompt routing). The guard now also fires when
+        the pre-seeded value is None.
+        """
+        from unittest.mock import MagicMock
+
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _get_or_create_extended_subsystems
+
+        app = FastAPI()
+        app.state._adaptive_router = None  # mirrors create_daemon_app()'s pre-seed
+        mock_sf = MagicMock()
+        ext = _get_or_create_extended_subsystems(app, session_factory=mock_sf)
+
+        router = ext.get("adaptive_router")
+        assert router is not None, (
+            "adaptive_router must be built even when app.state._adaptive_router "
+            "was pre-seeded to None (the real daemon-boot precondition) — the "
+            "hasattr-only guard left it permanently None"
+        )
+        assert app.state._adaptive_router is router
+
     def test_adaptive_router_receives_live_quantization_tracker_ca_t9(self):
         """CA-T9: adaptive_router must receive a non-empty quantization_map source.
 

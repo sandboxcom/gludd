@@ -84,3 +84,39 @@ class TestDaemonStartupDoesNotCrash:
                 )
 
         asyncio.run(_run())
+
+
+class TestDaemonStartupWiresComputeBilling:
+    """bill-7: idle-GPU cost recording (loop.py:3595 record_gpu_seconds) and
+    teardown (loop.py:3610 deployment_manager.destroy) are permanently inert
+    unless daemon startup wires a live InfraTracker + DeploymentManager into the
+    EventLoop. Before the fix both were passed as
+    getattr(app.state, "_infra_tracker"/"_deployment_manager", None) BEFORE those
+    objects existed (InfraTracker built ~170 lines later; DeploymentManager never
+    built in the daemon), so the EventLoop held None for both — GPU-seconds were
+    never recorded and idle GPUs were unregistered from bookkeeping but never
+    actually destroyed (ongoing cloud spend).
+    """
+
+    @pytest.mark.asyncio
+    async def test_event_loop_gets_live_infra_tracker_and_deployment_manager(self):
+        from general_ludd.daemon import create_daemon_app
+
+        app = create_daemon_app(config_dir=None)
+        async with app.router.lifespan_context(app):
+            loop = app.state.event_loop
+            assert loop is not None, "EventLoop must be constructed after lifespan"
+            assert loop._infra_tracker is not None, (
+                "EventLoop._infra_tracker must be non-None after startup — else "
+                "GPU-seconds cost is never recorded (loop.py:3595)"
+            )
+            assert loop._deployment_manager is not None, (
+                "EventLoop._deployment_manager must be non-None after startup — "
+                "else idle GPUs are unregistered but never destroyed (loop.py:3610)"
+            )
+            # routers/compute.py reuses app.state._deployment_manager via its
+            # identity-check cache (compute.py:65-67), so it must be the SAME
+            # instance the loop got — otherwise /admin/compute/destroy and the
+            # idle-teardown tick would disagree on deployment state.
+            assert app.state._deployment_manager is loop._deployment_manager
+            assert app.state._infra_tracker is loop._infra_tracker

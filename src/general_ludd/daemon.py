@@ -1655,6 +1655,35 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             from general_ludd.execution.graph_checkpointer import TickCheckpointer
             app.state.checkpointer = TickCheckpointer(saver=None)
 
+        # Cost-tracking deps constructed BEFORE the EventLoop so the bill-7
+        # idle-GPU teardown phase (loop.py:3595 record_gpu_seconds / loop.py:3610
+        # deployment_manager.destroy) receives live instances, not None. Prior to
+        # this, InfraTracker was built ~170 lines later and DeploymentManager was
+        # never built in the daemon (only lazily by routers/compute.py), so both
+        # were permanently None on the EventLoop → GPU-seconds never recorded and
+        # idle GPUs unregistered from bookkeeping but never actually destroyed.
+        # InfraTracker shares the SAME pricing_catalog as the SpendLimiter (H3).
+        # Publishing deployment_manager on app.state lets routers/compute.py's
+        # identity-check cache reuse the SAME instance so /admin/compute/destroy
+        # and the idle-teardown tick agree on deployment state.
+        from general_ludd.infra.deployment import DeploymentManager
+        from general_ludd.infra.pricing import InfraTracker
+
+        infra_tracker = InfraTracker(catalog=pricing_catalog)
+        app.state._infra_tracker = infra_tracker
+
+        deployment_manager = getattr(app.state, "_deployment_manager", None)
+        if deployment_manager is None:
+            _cfg_dir = getattr(app.state, "_config_dir", None)
+            _deploy_working_dir = (
+                os.path.join(_cfg_dir, "deployments") if _cfg_dir else None
+            )
+            deployment_manager = DeploymentManager(
+                secrets_resolver=secrets_resolver,
+                working_dir=_deploy_working_dir,
+            )
+            app.state._deployment_manager = deployment_manager
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -1730,10 +1759,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             run_recorder=run_recorder,
             checkpointer=app.state.checkpointer,
             utilization_tracker=getattr(app.state, "_utilization_tracker", None),
-            deployment_manager=getattr(app.state, "_deployment_manager", None),
+            deployment_manager=deployment_manager,
             floor_controller=floor_controller,
             issue_ingestor=issue_ingestor,
-            infra_tracker=getattr(app.state, "_infra_tracker", None),
+            infra_tracker=infra_tracker,
             compaction_controller=getattr(
                 app.state, "_compaction_aggressiveness_controller", None
             ),
@@ -1819,19 +1848,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # block below.
         from general_ludd.daemon_wiring import make_spend_guarded_executor
 
-        # InfraTracker wraps infra_cost_usd() the same way SpendLimiter wraps
-        # token_cost_usd(): PricingCatalog is the PRIMARY price source for GPU
-        # compute projection; infra/pricing.py:infra_cost_usd is the static
-        # fallback when the catalog misses / errors / returns a non-time
-        # granularity.  Shares the SAME pricing_catalog instance as the
-        # SpendLimiter so catalog refreshes are observed by both.  Published on
-        # app.state so routers/consumers can serve live compute pricing without
-        # re-instantiating the catalog (mirrors _pricing_catalog above).
-        from general_ludd.infra.pricing import InfraTracker
-
-        infra_tracker = InfraTracker(catalog=pricing_catalog)
-        app.state._infra_tracker = infra_tracker
-
+        # InfraTracker / DeploymentManager are constructed earlier, before the
+        # EventLoop constructor (see the "Cost-tracking deps" block above), so
+        # the loop's bill-7 teardown phase receives live instances instead of
+        # None. InfraTracker shares the SAME pricing_catalog as the SpendLimiter.
         if model_gateway is not None:
             logger.info(
                 "Gateway-backed executor enabled with %d model profile(s)",
@@ -2258,7 +2278,10 @@ def _get_or_create_extended_subsystems(
         app.state._skill_registry = registry
 
     adaptive_router = None
-    if session_factory is not None and not hasattr(app.state, "_adaptive_router"):
+    if session_factory is not None and (
+        not hasattr(app.state, "_adaptive_router")
+        or app.state._adaptive_router is None
+    ):
         benchmark_repo = BenchmarkRepository(session_factory=session_factory)
         quantization_map: dict[str, tuple[str, float]] = {}
         tracker = getattr(app.state, "_quantization_tracker", None)
