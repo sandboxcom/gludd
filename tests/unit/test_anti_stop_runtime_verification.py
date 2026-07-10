@@ -186,7 +186,12 @@ class TestStopStateFile:
         if not state_path.exists():
             return  # Plugin has not fired in this session yet — that's fine
 
-        raw = state_path.read_text()
+        try:
+            raw = state_path.read_text()
+        except OSError:
+            # TOCTOU: file may be unlinked by a concurrent writer/xdist sibling
+            # between exists() and read_text() — treat as "not present".
+            return
         data = json.loads(raw)
         assert isinstance(data, dict), "State file must be a JSON object"
         # Expected keys from the StopStateCache interface
@@ -206,7 +211,14 @@ class TestFalseDoneBlockStateFile:
         if not state_path.exists():
             return  # Plugin has not fired in this session yet — that's fine
 
-        raw = state_path.read_text()
+        try:
+            raw = state_path.read_text()
+        except OSError:
+            # TOCTOU: a sibling pytest-xdist worker's hook_plugin_env _restore()
+            # snapshots+unlinks this shared /tmp path between exists() and
+            # read_text(). File vanishing mid-read is equivalent to "not present"
+            # — nothing to validate. (CI flake class: FileNotFoundError.)
+            return
         data = json.loads(raw)
         if isinstance(data, list):
             assert len(data) > 0, "Block state array must have at least one entry"
