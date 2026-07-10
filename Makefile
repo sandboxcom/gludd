@@ -2130,6 +2130,23 @@ clean:
 	@git rm --cached .coverage coverage.xml 2>/dev/null || true
 	@echo "Cleaned."
 
+# disk-reclaim: free disk headroom when the APFS container nears full (ENOSPC on
+# task-output writes wedges the whole harness). Safe + idempotent — everything
+# pruned here is a regenerable cache, never source/repo/user data:
+#   * uv download/build cache (usually the biggest win, multi-GB)
+#   * pip cache
+#   * local pytest/mypy/ruff caches
+#   * gludd tmp workspaces + stale harness task-output files
+# Prints free space before/after so the reclaim is measured, not assumed.
+disk-reclaim:
+	@echo "=== BEFORE ==="; df -h / | tail -1
+	@echo "--- pruning uv cache ---"; $(UV) cache prune 2>/dev/null || true
+	@echo "--- pruning pip cache ---"; $(PYTHON) -m pip cache purge 2>/dev/null || true
+	@rm -rf .pytest_cache .mypy_cache .ruff_cache 2>/dev/null || true
+	@rm -rf /tmp/gludd-workspace /tmp/gludd-workspaces/* /tmp/gludd-worktrees/* 2>/dev/null || true
+	@find /tmp -maxdepth 1 -name 'gludd-*.txt' -mtime +1 -delete 2>/dev/null || true
+	@echo "=== AFTER ==="; df -h / | tail -1
+
 test-live-zai:
 	@echo "Running live Z.AI integration tests..."
 	@_zai_key=$$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.local/share/opencode/auth.json'))).get('zai-coding-plan',{}).get('key',''))") && \
