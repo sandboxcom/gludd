@@ -1,10 +1,10 @@
 """Tests for the D-07..D-30 security backlog landed-guard regression gate.
 
 Replaces the old all-pass stub tests. This module now asserts:
-  * static probes (D-14, D-18, D-27) actually FAIL when the guard they verify
-    is removed (proving the gate is a real regression check, not a rubber
-    stamp) and PASS against the real, currently-landed code;
-  * the explicit OPEN items (D-07, D-11, D-13, D-17) honestly report OPEN,
+  * static probes (D-07, D-14, D-18, D-27) actually FAIL when the guard they
+    verify is removed (proving the gate is a real regression check, not a
+    rubber stamp) and PASS against the real, currently-landed code;
+  * the explicit OPEN items (D-11, D-13, D-17) honestly report OPEN,
     never a fabricated pass;
   * every item with no custom checker reports OPEN + deferred;
   * ``__main__``'s exit-code semantics: a probe regression is the only thing
@@ -22,8 +22,8 @@ from general_ludd.security.security_backlog import (
     run_backlog_checks,
 )
 
-_EXPLICIT_OPEN_IDS = frozenset({"D-07", "D-11", "D-13", "D-17"})
-_PROBE_IDS = frozenset({"D-14", "D-18", "D-27"})
+_EXPLICIT_OPEN_IDS = frozenset({"D-11", "D-13", "D-17"})
+_PROBE_IDS = frozenset({"D-07", "D-14", "D-18", "D-27"})
 
 
 class TestSecurityBacklogResult:

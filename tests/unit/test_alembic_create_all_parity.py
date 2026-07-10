@@ -19,8 +19,8 @@ Two SQLite databases are built from EMPTY state:
 
 Both are then introspected via ``PRAGMA table_info``, ``PRAGMA index_list``,
 ``PRAGMA index_info``, ``PRAGMA foreign_key_list``, and ``sqlite_master``.
-The four tests below assert the two schemas are identical at the table,
-column, index, and foreign-key levels.
+The five tests below assert the two schemas are identical at the table,
+column, index, foreign-key, and CHECK-constraint levels.
 
 When any of these tests fail, the failure message IS the migration drift
 delta. Fixing the migrations to match the ORM is a separate task — this test
@@ -75,12 +75,50 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection
 
 from general_ludd.db.models import Base
+
+# Matches `CONSTRAINT <name> CHECK (` in a CREATE TABLE statement. The
+# condition itself (which may contain nested parens, e.g. `length(col) <= N`)
+# is extracted separately by walking paren-depth from the end of this match —
+# a single regex cannot balance arbitrarily nested parens.
+_CHECK_CONSTRAINT_HEADER_RE = re.compile(
+    r"CONSTRAINT\s+(\S+)\s+CHECK\s*\(", re.IGNORECASE
+)
+
+
+def _extract_check_constraints(create_table_sql: str) -> set[tuple[str, str]]:
+    """Return ``{(constraint_name, normalized_condition), ...}`` from DDL text.
+
+    ``sqlite_master.sql`` for a table gives the exact ``CREATE TABLE`` text
+    (whether produced by ``create_all`` or by an alembic batch-recreate), so
+    parsing it directly is the only way to see CHECK constraint conditions —
+    ``PRAGMA table_info`` does not expose them. Conditions like
+    ``length(col) <= N`` contain nested parens, so the closing paren of the
+    CHECK clause is found by balance-counting rather than a greedy regex.
+    """
+    out: set[tuple[str, str]] = set()
+    for match in _CHECK_CONSTRAINT_HEADER_RE.finditer(create_table_sql):
+        name = match.group(1)
+        start = match.end()  # just past the CHECK clause's opening "("
+        depth = 1
+        i = start
+        while i < len(create_table_sql) and depth > 0:
+            ch = create_table_sql[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            i += 1
+        cond = create_table_sql[start : i - 1]
+        normalized = " ".join(cond.split())
+        out.add((name, normalized))
+    return out
 
 
 def _run_migrations(db_path: str) -> None:
@@ -121,6 +159,7 @@ def _introspect(conn: Connection) -> dict:
             "indexes": {table: [{"name", "columns", "unique"}]},
             "foreign_keys": {table: [{"referred_table", "constrained_column",
                                       "referred_column", "on_delete", "on_update"}]},
+            "check_constraints": {table: {(name, normalized_condition), ...}},
         }
     """
     table_rows = conn.execute(
@@ -134,7 +173,13 @@ def _introspect(conn: Connection) -> dict:
     ).fetchall()
     tables = {r[0] for r in table_rows}
 
-    out: dict = {"tables": tables, "columns": {}, "indexes": {}, "foreign_keys": {}}
+    out: dict = {
+        "tables": tables,
+        "columns": {},
+        "indexes": {},
+        "foreign_keys": {},
+        "check_constraints": {},
+    }
 
     for t in sorted(tables):
         col_rows = conn.execute(text(f"PRAGMA table_info('{t}')")).fetchall()
@@ -184,6 +229,13 @@ def _introspect(conn: Connection) -> dict:
         out["foreign_keys"][t] = sorted(
             fk_list, key=lambda x: (x["referred_table"], x["constrained_column"])
         )
+
+        create_sql_row = conn.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name = :t"),
+            {"t": t},
+        ).fetchone()
+        create_sql = (create_sql_row[0] or "") if create_sql_row else ""
+        out["check_constraints"][t] = _extract_check_constraints(create_sql)
 
     return out
 
@@ -331,5 +383,28 @@ class TestCreateAllMatchesAlembicUpgradeHead:
                 )
         assert not diffs, (
             "Foreign-key drift between create_all and alembic upgrade head:\n"
+            + "\n".join(diffs)
+        )
+
+    def test_create_all_matches_alembic_upgrade_head_check_constraints(
+        self, create_all_schema: dict, migrated_schema: dict
+    ) -> None:
+        common = (
+            set(create_all_schema["check_constraints"])
+            & set(migrated_schema["check_constraints"])
+        )
+        diffs: list[str] = []
+        for t in sorted(common):
+            ca_keys = create_all_schema["check_constraints"][t]
+            mig_keys = migrated_schema["check_constraints"][t]
+            if ca_keys != mig_keys:
+                only_ca = ca_keys - mig_keys
+                only_mig = mig_keys - ca_keys
+                diffs.append(
+                    f"  {t}:\n    only_create_all={sorted(only_ca)}\n"
+                    f"    only_migrations={sorted(only_mig)}"
+                )
+        assert not diffs, (
+            "CHECK-constraint drift between create_all and alembic upgrade head:\n"
             + "\n".join(diffs)
         )

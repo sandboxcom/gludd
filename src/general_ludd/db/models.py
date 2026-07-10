@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -24,6 +25,26 @@ from general_ludd.schemas.todo import TodoStatus
 
 class Base(DeclarativeBase):
     pass
+
+
+# D-07 (docs/audit/NEW_FINDINGS_2026-06-16.md db/models.py P2): several Text
+# columns store JSON-in-Text blobs (task-decision review payloads, audit-event
+# details, ...) with no upper bound. An unbounded write is a DoS vector — a
+# single giant row blows up WAL size, query memory, and backup/restore time.
+# 64 KiB is generous headroom for the JSON payloads these columns actually
+# carry (small lists/dicts of ids and short strings) while still capping the
+# worst case.
+MAX_JSON_BLOB_LEN = 65536
+
+
+def _len_check(column: str, table: str, max_len: int = MAX_JSON_BLOB_LEN) -> CheckConstraint:
+    """Return a ``CHECK(length(col) <= max_len)`` constraint bounding a Text blob.
+
+    ``length()`` is SQLite's byte-length builtin, evaluated per-row on every
+    INSERT/UPDATE — this is enforced by the database itself, not just at the
+    ORM layer, so it also protects direct SQL writes.
+    """
+    return CheckConstraint(f"length({column}) <= {max_len}", name=f"ck_{table}_{column}_len")
 
 
 def _utcnow() -> datetime:
@@ -353,6 +374,13 @@ class TaskDecisionModel(Base):
         # every tick. Without an index that is a full-table scan per tick that
         # only grows as decisions accumulate.
         Index("ix_task_decisions_created_at", "created_at"),
+        # D-07: bound unbounded JSON-in-Text blob columns (DoS via giant rows).
+        _len_check("todo_updates", "task_decisions"),
+        _len_check("child_todos", "task_decisions"),
+        _len_check("validation_requests", "task_decisions"),
+        _len_check("git_requests", "task_decisions"),
+        _len_check("audit_notes", "task_decisions"),
+        _len_check("policy_flags", "task_decisions"),
     )
 
 
@@ -407,6 +435,8 @@ class AuditEventModel(Base):
 
     __table_args__ = (
         Index("ix_audit_events_entity", "entity_type", "entity_id"),
+        # D-07: bound unbounded JSON-in-Text blob column (DoS via giant rows).
+        _len_check("details", "audit_events"),
     )
 
 

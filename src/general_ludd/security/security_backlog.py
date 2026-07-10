@@ -8,15 +8,15 @@ active misinformation about the state of the backlog.
 It is now two things:
 
 1. A **static regression probe** for the handful of items that DID land a real
-   guard (currently D-14, D-18, and D-27 — see ``_PROBE_ITEM_IDS``). These
-   checkers source-scan the relevant modules (no subprocess execution, no
-   network I/O) to confirm the guard symbol still exists AND is still wired
-   into the code path it protects. If a future refactor silently drops the
-   wiring, the probe flips to failing — this is a regression gate, not a
+   guard (currently D-07, D-14, D-18, and D-27 — see ``_PROBE_ITEM_IDS``).
+   These checkers source-scan the relevant modules (no subprocess execution,
+   no network I/O) to confirm the guard symbol still exists AND is still
+   wired into the code path it protects. If a future refactor silently drops
+   the wiring, the probe flips to failing — this is a regression gate, not a
    rubber stamp.
 2. An **honest open-items ledger** for every item that has NOT landed. Those
-   checkers (the explicit ones for D-07, D-11, D-13, and D-17, plus the
-   default checker used by every item with no custom checker) report
+   checkers (the explicit ones for D-11, D-13, and D-17, plus the default
+   checker used by every item with no custom checker) report
    ``status="OPEN"`` and a message describing what is actually missing. OPEN
    is informational — it is not a failure of the module under test, it is a
    backlog item that has not been picked up yet.
@@ -94,7 +94,7 @@ BACKLOG_ITEMS: dict[str, dict[str, str]] = {
 # Items with a real static regression probe against landed code. Only these
 # can turn the __main__ gate non-zero (see _main) — everything else is an
 # honest OPEN item, not a thing under active regression test.
-_PROBE_ITEM_IDS: frozenset[str] = frozenset({"D-14", "D-18", "D-27"})
+_PROBE_ITEM_IDS: frozenset[str] = frozenset({"D-07", "D-14", "D-18", "D-27"})
 
 
 def run_backlog_checks() -> list[SecurityBacklogResult]:
@@ -139,11 +139,41 @@ def _read_module_source(module: object) -> str:
 
 
 def _check_d07_input_validation() -> tuple[bool, str]:
-    return False, (
-        "OPEN — db/models.py TaskDecisionModel.todo_updates/child_todos/"
-        "validation_requests and AuditEventModel.details have no "
-        "CheckConstraint(length(col) <= N); unbounded Text blob DoS remains "
-        "reachable (see docs/audit/NEW_FINDINGS_2026-06-16.md db/models.py P2)"
+    """Static probe: unbounded Text-blob columns are bounded by a length CHECK.
+
+    Source-scans (no execution) ``general_ludd.db.models`` for the
+    ``CheckConstraint``-based length guard (``MAX_JSON_BLOB_LEN`` +
+    ``_len_check``) that bounds ``TaskDecisionModel``'s six JSON-in-Text blob
+    columns (``todo_updates``, ``child_todos``, ``validation_requests``,
+    ``git_requests``, ``audit_notes``, ``policy_flags``) and
+    ``AuditEventModel.details``. Migration
+    ``026_add_blob_length_check_constraints`` reproduces the same
+    constraints for SQLite via ``batch_alter_table``.
+    """
+    try:
+        import general_ludd.db.models as models_mod
+    except ImportError as exc:
+        return False, f"OPEN — general_ludd.db.models failed to import: {exc}"
+
+    models_src = _read_module_source(models_mod)
+    if "CheckConstraint" not in models_src:
+        return False, (
+            "OPEN — general_ludd.db.models no longer imports/uses CheckConstraint "
+            "(regression — unbounded Text blob DoS guard removed; see "
+            "docs/audit/NEW_FINDINGS_2026-06-16.md db/models.py P2)"
+        )
+    if "MAX_JSON_BLOB_LEN" not in models_src:
+        return False, (
+            "OPEN — general_ludd.db.models no longer defines MAX_JSON_BLOB_LEN "
+            "(regression — unbounded Text blob DoS guard removed; see "
+            "docs/audit/NEW_FINDINGS_2026-06-16.md db/models.py P2)"
+        )
+
+    return True, (
+        "LANDED-VERIFIED — general_ludd.db.models declares "
+        "CheckConstraint(length(col) <= MAX_JSON_BLOB_LEN) on "
+        "TaskDecisionModel's 6 blob columns and AuditEventModel.details "
+        "(migration 026_add_blob_length_check_constraints)"
     )
 
 
