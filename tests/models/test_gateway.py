@@ -33,7 +33,7 @@ class TestSecurityBatch4Gateway:
         resp = MagicMock()
         with (
             patch.object(gw, 'call_model', return_value=resp) as mock_call,
-            patch.object(gw, '_walk_fallbacks', return_value=(resp, None)),
+            patch.object(gw, '_walk_fallbacks', return_value=(resp, None, [])),
         ):
             result = gw.call_model_with_fallback("primary", [])
         # call_model should NOT have been called for primary (tripped)
@@ -49,7 +49,7 @@ class TestSecurityBatch4Gateway:
         tracker = MagicMock()
         tracker.is_healthy.return_value = False
         gw = self._make_gw(health_tracker=tracker)
-        with patch.object(gw, '_walk_fallbacks', return_value=(None, None)):
+        with patch.object(gw, '_walk_fallbacks', return_value=(None, None, [])):
             import pytest
             with pytest.raises(CircuitBreakerOpenError, match=r"All circuits open for fallback chain"):
                 gw.call_model_with_fallback("primary", [])

@@ -12,6 +12,7 @@ import tenacity
 from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
+from general_ludd.models.failover import ModelFailoverChain
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
@@ -88,6 +89,11 @@ class _MetricsCollectorProtocol(Protocol):
         success: bool,
         cost_per_input_token: float,
         cost_per_output_token: float,
+        error: str | None = None,
+    ) -> None: ...
+
+    def record_failover(
+        self, from_profile: str, to_profile: str, error: str = ""
     ) -> None: ...
 
 
@@ -162,6 +168,15 @@ class ModelProfile(BaseModel):
     quality_class: str | None = None
     fallback_profiles: list[str] = Field(default_factory=list)
     probe_enabled: bool = False
+    # Anti-thundering-herd cap (test 13a / docs/audit/FAILOVER_GAPS.md
+    # fallback-concurrency-limit): bounds how many callers may be in-flight to
+    # THIS profile at once when it is acting as a fallback target. Without
+    # this, an open primary circuit routed every concurrent caller straight to
+    # the secondary with no cap, so a primary outage could cascade into a
+    # secondary outage. The primary's OWN half-open probe already has a
+    # separate, unrelated single-flight guard (ModelHealthTracker); this field
+    # only gates the fallback-fan-out path (_call_fallback).
+    fallback_max_concurrency: int = 2
 
     @field_validator("model_profile_id", mode="before")
     @classmethod
@@ -172,7 +187,7 @@ class ModelProfile(BaseModel):
             raise ValueError("model_profile_id must not be empty")
         return v
 
-    @field_validator("context_window", "max_input_tokens", "max_output_tokens")
+    @field_validator("context_window", "max_input_tokens", "max_output_tokens", "fallback_max_concurrency")
     @classmethod
     def _positive_int(cls, v: int) -> int:
         if v < 1:
@@ -207,6 +222,49 @@ class ModelResponse:
     # NO tool was ever dispatched in production. _extract_tool_calls normalizes
     # either provider shape into the nested shape and we store it here.
     tool_calls: list[dict[str, object]] | None = None
+    # Correlation ID threaded through call_model_with_retry(correlation_id=...)
+    # so a request that crosses provider boundaries during failover (primary ->
+    # secondary -> ...) can still be traced as ONE logical operation. None when
+    # the caller did not supply one (the overwhelming majority of calls today).
+    correlation_id: str | None = None
+
+
+def _attach_correlation_id(
+    response: ModelResponse, correlation_id: str | None
+) -> ModelResponse:
+    """Stamp ``correlation_id`` onto ``response`` when the caller supplied one.
+
+    A tiny helper so every return point in ``call_model_with_retry`` (primary
+    success, fallback success, single-fallback-probe success) consistently
+    surfaces the caller's correlation ID without duplicating the `if` at each
+    call site. See docs/audit/FAILOVER_GAPS.md (correlation-id-propagation).
+    """
+    if correlation_id is not None:
+        response.correlation_id = correlation_id
+    return response
+
+
+def _enrich_all_down_message(
+    exc: BaseException, attempts: list[dict[str, str]]
+) -> None:
+    """Rewrite ``exc``'s message in place to enumerate every attempted
+    provider profile and why each one failed — WITHOUT changing the
+    exception's type. Callers that pattern-match on the concrete exception
+    type (e.g. ``httpx.HTTPStatusError``) keep seeing exactly that type; only
+    ``str(exc)`` changes, so operators (and any HTTP layer) see the full
+    all-providers-down picture instead of only the last provider's status.
+    A no-op when ``attempts`` is empty (nothing to enrich with).
+    See docs/audit/FAILOVER_GAPS.md (structured-all-down-error).
+    """
+    if not attempts:
+        return
+    ids = ", ".join(a["profile_id"] for a in attempts)
+    detail = "; ".join(f"{a['profile_id']} ({a['reason']})" for a in attempts)
+    message = f"all providers down [{ids}]: {detail}"
+    try:
+        exc.args = (message, *exc.args[1:])
+    except Exception:  # pragma: no cover - defensive; args is always settable
+        logger.debug("could not enrich all-providers-down exception", exc_info=True)
 
 
 def _extract_retry_after_seconds(exc: BaseException) -> float | None:
@@ -344,6 +402,16 @@ class ModelGateway:
         self._health_tracker = health_tracker
         self._pause_controller = pause_controller
         self._langsmith_tracer = langsmith_tracer
+        # Gateway-wide failover event log (not tied to any single profile's
+        # own chain config): every hop walked by _walk_fallbacks is recorded
+        # here for audit/debugging, independent of whether a metrics collector
+        # is configured. See docs/audit/FAILOVER_GAPS.md (failover-metrics-facets).
+        self._failover_log = ModelFailoverChain(primary_profile="_gateway")
+        # Per-profile fallback concurrency semaphores (test 13a /
+        # docs/audit/FAILOVER_GAPS.md fallback-concurrency-limit), created
+        # lazily on first use and sized from ModelProfile.fallback_max_concurrency.
+        self._fallback_semaphores: dict[str, threading.Semaphore] = {}
+        self._fallback_semaphore_lock = threading.Lock()
         # Per-cache-key single-flight locks: under concurrency, N identical
         # cache misses would all call the provider (cache stampede). We serialize
         # identical misses on a per-key lock so only the first does the provider
@@ -845,6 +913,28 @@ class ModelGateway:
             raw_response = chat_model.invoke(lc_messages)
         except Exception as exc:
             self.record_timeout_on_failure(profile_id, exc)
+            # Surface the failure in the metrics facet too (previously ONLY the
+            # health tracker recorded primary/fallback failures, so an operator
+            # could not see per-profile error_count from /api/facts). Best-effort:
+            # a metrics hiccup must never mask the real provider failure below.
+            # See docs/audit/FAILOVER_GAPS.md (failover-metrics-facets).
+            if self._metrics_collector is not None and self._metrics_agent_id:
+                try:
+                    self._metrics_collector.record_model_call(
+                        agent_id=self._metrics_agent_id,
+                        model_id=profile_id,
+                        input_tokens=0,
+                        output_tokens=0,
+                        success=False,
+                        cost_per_input_token=profile.cost_per_input_token,
+                        cost_per_output_token=profile.cost_per_output_token,
+                        error=str(exc),
+                    )
+                except Exception:  # pragma: no cover - metrics must never break the call
+                    logger.debug(
+                        "metrics_collector.record_model_call(failure) failed",
+                        exc_info=True,
+                    )
             raise
 
         content = getattr(raw_response, "content", str(raw_response))
@@ -1032,6 +1122,7 @@ class ModelGateway:
         *,
         max_retries: int = 3,
         base_backoff_seconds: float = 1.0,
+        correlation_id: str | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         """Retry a model call using tenacity with TimeoutRetryPolicy semantics.
@@ -1045,6 +1136,14 @@ class ModelGateway:
           primary profile and walk the fallback_profiles chain.
         - Health tracker: records timeout events and checks profile health
           before attempting; unhealthy primary → skip to fallbacks immediately.
+
+        ``correlation_id`` (optional): when supplied, it is stamped onto the
+        returned ``ModelResponse.correlation_id`` regardless of which profile
+        in the chain ultimately served the call — so a caller can trace a
+        single logical request across a primary -> secondary -> ... failover.
+        It is a keyword-only, gateway-local concern and is deliberately kept
+        out of ``**kwargs`` (never forwarded to the provider constructor).
+        See docs/audit/FAILOVER_GAPS.md (correlation-id-propagation).
         """
         import time as _time
 
@@ -1065,15 +1164,21 @@ class ModelGateway:
         # and its success/failure is recorded on the health tracker.
         if tracker is not None and not tracker.is_healthy(profile_id):
             fallback_ids = list(profile.fallback_profiles)
-            result, last_fb_exc = self._walk_fallbacks(fallback_ids, messages, **kwargs)
+            result, last_fb_exc, attempts = self._walk_fallbacks(
+                fallback_ids, messages, from_profile_id=profile_id, **kwargs
+            )
             if result is not None:
-                return result
+                return _attach_correlation_id(result, correlation_id)
             if last_fb_exc is not None:
+                _enrich_all_down_message(last_fb_exc, attempts)
                 raise last_fb_exc from None
             if fallback_ids:
                 # All fallbacks failed is_healthy and none was attempted: probe
                 # the first as a last resort (records its own success/failure).
-                return self._call_fallback(fallback_ids[0], messages, **kwargs)
+                return _attach_correlation_id(
+                    self._call_fallback(fallback_ids[0], messages, **kwargs),
+                    correlation_id,
+                )
             # CIRCUIT-BREAKER HOLE FIX: primary is unhealthy AND there are no
             # fallbacks — falling through to the retry loop would hammer the
             # unhealthy primary instead of failing fast. Raise the same error
@@ -1233,7 +1338,7 @@ class ModelGateway:
                         # _invoke_and_bill (via call_model) on every billed
                         # success. A second call here would double-count and
                         # trip the breaker at half the configured threshold.
-                        return result
+                        return _attach_correlation_id(result, correlation_id)
                     except _retryable_exc_types as exc:
                         _last_exc[0] = exc
                         kind = TimeoutClassifier.classify(exc)
@@ -1255,17 +1360,54 @@ class ModelGateway:
             raise RuntimeError("failover path exited without return or raise")
 
         # Tenacity exhausted (failover_after attempts tried on primary) → walk
-        # fallbacks. _walk_fallbacks skips any fallback that fails is_healthy and
-        # records success/failure for the ones it attempts (Fix 3).
+        # fallbacks. _walk_fallbacks skips any fallback that fails is_healthy,
+        # cascades into each attempted fallback's OWN fallback_profiles when it
+        # also fails (so a 3+ profile chain is walked to full exhaustion, not
+        # just one hop), and records success/failure for the ones it attempts
+        # (Fix 3).
         fallback_ids = list(profile.fallback_profiles)
-        result, last_fb_exc = self._walk_fallbacks(fallback_ids, messages, **kwargs)
+        result, last_fb_exc, attempts = self._walk_fallbacks(
+            fallback_ids, messages,
+            from_profile_id=profile_id,
+            from_error=_last_exc[0],
+            **kwargs,
+        )
         if result is not None:
-            return result
+            return _attach_correlation_id(result, correlation_id)
 
         last = last_fb_exc or _last_exc[0]
         if last is not None:
+            # Structured all-providers-down error (test 6b /
+            # docs/audit/FAILOVER_GAPS.md structured-all-down-error): enumerate
+            # the primary's own exhaustion reason ahead of every fallback hop
+            # attempts already recorded, then enrich the exception's message
+            # in place (type is preserved) so it names every provider tried.
+            primary_reason = str(_last_exc[0]) if _last_exc[0] is not None else "unknown"
+            full_attempts = [
+                {"profile_id": profile_id, "reason": primary_reason},
+                *attempts,
+            ]
+            _enrich_all_down_message(last, full_attempts)
             raise last from None
         raise RuntimeError(f"call_model_with_retry: all attempts failed for profile '{profile_id}'")
+
+    def _fallback_semaphore(self, fb_id: str) -> threading.Semaphore:
+        """Return (creating on first use) the concurrency gate for ``fb_id``.
+
+        Sized from the profile's ``fallback_max_concurrency`` (default 2, or 2
+        again for an unknown profile_id — should not happen since ``fb_id``
+        always comes from a configured ``fallback_profiles`` entry, but a
+        missing profile must not raise here). See docs/audit/FAILOVER_GAPS.md
+        (fallback-concurrency-limit).
+        """
+        with self._fallback_semaphore_lock:
+            sem = self._fallback_semaphores.get(fb_id)
+            if sem is None:
+                profile = self._profiles.get(fb_id)
+                limit = profile.fallback_max_concurrency if profile is not None else 2
+                sem = threading.Semaphore(max(1, limit))
+                self._fallback_semaphores[fb_id] = sem
+            return sem
 
     def _call_fallback(
         self,
@@ -1279,31 +1421,90 @@ class ModelGateway:
         records both failures (via record_timeout_on_failure on exception) AND
         successes (via _invoke_and_bill → health_tracker.record_success), so no
         additional record_success call is needed here — that would double-count.
+
+        Gated by a per-profile semaphore (test 13a / fallback-concurrency-limit,
+        docs/audit/FAILOVER_GAPS.md) so a primary outage cannot thundering-herd
+        the fallback: at most ``fb_id``'s configured ``fallback_max_concurrency``
+        callers are ever in-flight to it at once; the rest block here until a
+        slot frees up.
         """
-        result = self.call_model(fb_id, messages, **kwargs)
+        with self._fallback_semaphore(fb_id):
+            result = self.call_model(fb_id, messages, **kwargs)
         return result
+
+    def _record_failover(
+        self, from_profile_id: str, to_profile_id: str, error: str
+    ) -> None:
+        """Best-effort observability hook fired on every fallback hop walked.
+
+        Wires the gateway-wide ``ModelFailoverChain`` event log (audit trail +
+        WARNING log line) and, when a metrics collector is configured,
+        increments its global ``failover_count`` facet (surfaced via
+        ``get_full_report()["model_usage"]``). A logging/metrics failure must
+        never break the actual failover, so both are swallowed.
+        See docs/audit/FAILOVER_GAPS.md (failover-metrics-facets).
+        """
+        try:
+            self._failover_log.record_failover(from_profile_id, to_profile_id, error)
+        except Exception:  # pragma: no cover - defensive; must never break the call
+            logger.debug("failover_log.record_failover failed", exc_info=True)
+        collector = self._metrics_collector
+        if collector is None:
+            return
+        record_failover = getattr(collector, "record_failover", None)
+        if callable(record_failover):
+            try:
+                record_failover(from_profile_id, to_profile_id, error)
+            except Exception:  # pragma: no cover - defensive; must never break the call
+                logger.debug("metrics_collector.record_failover failed", exc_info=True)
 
     def _walk_fallbacks(
         self,
         fallback_ids: list[str],
         messages: list[dict[str, str]],
+        *,
+        from_profile_id: str | None = None,
+        from_error: BaseException | None = None,
         **kwargs: Any,
-    ) -> tuple[ModelResponse | None, BaseException | None]:
-        """Try fallbacks in order, skipping circuit-open ones; return the first
-        success (or the last exception if all attempted ones failed).
+    ) -> tuple[ModelResponse | None, BaseException | None, list[dict[str, str]]]:
+        """Try fallbacks in order, CASCADING into each attempted fallback's own
+        configured ``fallback_profiles`` when it also fails, so a 3+ profile
+        chain (primary -> secondary -> tertiary -> ...) is walked to full
+        exhaustion rather than stopping after one hop. Skips circuit-open
+        profiles and never revisits a profile already tried in this walk
+        (cycle-safe: a fallback chain that loops back to an earlier profile,
+        including ``from_profile_id`` itself, is not retried).
 
-        Returns (response, None) on success, or (None, last_exc) if every
-        attempted fallback raised. A fallback that fails is_healthy is skipped
-        (circuit honored) and does NOT count as an attempt.
+        Returns (response, None, attempts) on success, or
+        (None, last_exc, attempts) if every reachable profile failed.
+        ``attempts`` records, in call order, each profile actually attempted
+        (skipped/circuit-open profiles are excluded) with its failure reason —
+        used by callers to build a structured "all providers down" error
+        enumerating the full chain (docs/audit/FAILOVER_GAPS.md
+        structured-all-down-error). Each attempted hop is also recorded via
+        ``_record_failover`` for the ``failover_count`` metrics facet
+        (docs/audit/FAILOVER_GAPS.md failover-metrics-facets).
         """
         tracker = self._health_tracker
-        last_exc: BaseException | None = None
-        for fb_id in fallback_ids:
+        last_exc: BaseException | None = from_error
+        attempts: list[dict[str, str]] = []
+        visited: set[str] = {from_profile_id} if from_profile_id else set()
+        queue: list[str] = list(fallback_ids)
+        prev_id = from_profile_id
+        while queue:
+            fb_id = queue.pop(0)
+            if fb_id in visited:
+                continue
+            visited.add(fb_id)
             if tracker is not None and not tracker.is_healthy(fb_id):
                 # Circuit open for this fallback: skip without billing/calling.
                 continue
+            if prev_id is not None:
+                self._record_failover(
+                    prev_id, fb_id, str(last_exc) if last_exc is not None else ""
+                )
             try:
-                return self._call_fallback(fb_id, messages, **kwargs), None
+                result = self._call_fallback(fb_id, messages, **kwargs)
             except BudgetExceededError:
                 # F-F: a budget rejection on the fallback path MUST propagate.
                 # Previously the bare ``except Exception`` below swallowed it and
@@ -1321,10 +1522,18 @@ class ModelGateway:
                 raise
             except ModelPausedError:
                 raise
-            except Exception as exc:  # try the next fallback
+            except Exception as exc:  # try the next hop (this fallback's own chain)
                 last_exc = exc
+                attempts.append({"profile_id": fb_id, "reason": str(exc)})
+                prev_id = fb_id
+                next_profile = self._profiles.get(fb_id)
+                if next_profile is not None:
+                    for nxt in next_profile.fallback_profiles:
+                        if nxt not in visited and nxt not in queue:
+                            queue.append(nxt)
                 continue
-        return None, last_exc
+            return result, None, attempts
+        return None, last_exc, attempts
 
     def record_timeout_on_failure(
         self,
@@ -1426,7 +1635,7 @@ class ModelGateway:
         # Thread budget params into kwargs so _try_call_model / _walk_fallbacks
         # forward them to call_model (they are explicit keyword-only params of
         # call_model_with_fallback, NOT in **kwargs).
-        _call_kwargs: dict[str, object] = {
+        _call_kwargs: dict[str, Any] = {
             "estimated_cost": estimated_cost,
             "budget_remaining": budget_remaining,
             **kwargs,
@@ -1443,7 +1652,9 @@ class ModelGateway:
                 fallback_ids = list(profile.fallback_profiles)
 
         # D-04: route fallback walk through _walk_fallbacks (health-gated)
-        result, last_exc = self._walk_fallbacks(fallback_ids, messages, **_call_kwargs)
+        result, last_exc, _attempts = self._walk_fallbacks(
+            fallback_ids, messages, from_profile_id=profile_id, **_call_kwargs
+        )
         if result is not None:
             return result
 

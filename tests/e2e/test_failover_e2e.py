@@ -395,14 +395,6 @@ class TestAllProvidersDownGracefulError:
                 "primary", _MSGS, max_retries=1, base_backoff_seconds=0.0
             )
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "GAP: the gateway raises the raw last-provider exception but does NOT "
-            "return a structured error body enumerating each provider + its failure "
-            "reason. See docs/audit/FAILOVER_GAPS.md (structured-all-down-error)."
-        ),
-    )
     def test_all_providers_down_error_includes_provider_names(self, sleep_recorder) -> None:
         _ScriptedChatModel.SCRIPTS[_PRIMARY] = [_server_error(500)] * 12
         _ScriptedChatModel.SCRIPTS[_SECONDARY] = [_server_error(503)] * 12
@@ -602,14 +594,6 @@ class TestExponentialBackoff:
 
 
 class TestCorrelationIdPreserved:
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "GAP: ModelGateway has no X-Correlation-ID threading. The failover "
-            "path does not accept, propagate, or log a correlation ID. See "
-            "docs/audit/FAILOVER_GAPS.md (correlation-id-propagation)."
-        ),
-    )
     def test_failover_preserves_correlation_id(self, sleep_recorder) -> None:
         _ScriptedChatModel.SCRIPTS[_PRIMARY] = [httpx.ConnectError("down")] * 10
         _ScriptedChatModel.SCRIPTS[_SECONDARY] = ["from secondary"]
@@ -633,16 +617,6 @@ class TestCorrelationIdPreserved:
 
 
 class TestConcurrentFailoverNoThunderingHerd:
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "GAP: no fallback concurrency limiter. When the primary circuit is "
-            "open, concurrent callers all route to the secondary with no cap. "
-            "Anti-herd protection exists ONLY for the primary's half-open probe "
-            "(single-flight), not for fallback fan-out. See "
-            "docs/audit/FAILOVER_GAPS.md (fallback-concurrency-limit)."
-        ),
-    )
     def test_concurrent_failover_caps_secondary_inflight(self) -> None:
         tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
         gw, tracker = _build_gateway(tracker)
@@ -759,17 +733,6 @@ class TestFailoverEmitsMetrics:
         assert usage.total_calls >= 1
         assert usage.successful_calls >= 1
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "GAP: no failover_count / per-profile error_count facet is emitted or "
-            "surfaced. record_model_call records only per-call success/token usage; "
-            "failovers are logged (ModelFailoverChain.record_failover) but NOT wired "
-            "to the metrics collector, and primary failures are recorded on the "
-            "health tracker only. See docs/audit/FAILOVER_GAPS.md "
-            "(failover-metrics-facets)."
-        ),
-    )
     def test_failover_count_incremented(self, sleep_recorder) -> None:
         from general_ludd.metrics.collector import MetricsCollector
 

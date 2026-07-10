@@ -92,15 +92,18 @@ class TestWalkFallbacksBudgetPropagates:
 
     def test_walk_fallbacks_still_swallows_generic_exception(self):
         # Non-budget failures still fall through to the next fallback / return
-        # (None, last_exc); the budget re-raise must not break that behavior.
+        # (None, last_exc, attempts); the budget re-raise must not break that
+        # behavior. The attempts list records the failed hop (structured
+        # all-providers-down error, docs/audit/FAILOVER_GAPS.md).
         gw, _ = _make_gateway()
         err = RuntimeError("transient")
         with patch.object(gw, "_call_fallback", side_effect=err):
-            resp, last_exc = gw._walk_fallbacks(
+            resp, last_exc, attempts = gw._walk_fallbacks(
                 ["fallback"], [{"role": "user", "content": "hi"}]
             )
         assert resp is None
         assert last_exc is err
+        assert attempts == [{"profile_id": "fallback", "reason": "transient"}]
 
 
 _MSG = [{"role": "user", "content": "hi"}]

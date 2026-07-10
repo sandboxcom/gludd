@@ -118,6 +118,13 @@ class MetricsCollector:
     def __init__(self) -> None:
         self._agents: dict[str, AgentMetrics] = {}
         self._global_model_usage: dict[str, ModelUsage] = {}
+        # Count of failover hops recorded via record_failover (a call routed
+        # from one profile to another because the former failed). Surfaced as
+        # the "failover_count" facet in get_full_report()["model_usage"] so an
+        # operator can answer "how many requests failed over in the last
+        # hour?" from /api/facts. See docs/audit/FAILOVER_GAPS.md
+        # (failover-metrics-facets).
+        self._failover_count: int = 0
         # Bounded per-model ring of recent failure descriptions (most-recent
         # appended last). Keyed by model_profile_id (the same key used in
         # _global_model_usage). Each deque is capped at _FAILURE_RING_MAXLEN so
@@ -223,6 +230,20 @@ class MetricsCollector:
                     ring = deque(maxlen=_FAILURE_RING_MAXLEN)
                     self._recent_failures[model_id] = ring
                 ring.append(error if error else "unspecified failure")
+
+    def record_failover(
+        self, from_profile: str, to_profile: str, error: str = ""
+    ) -> None:
+        """Record one failover hop (a call routed from ``from_profile`` to
+        ``to_profile`` because the former failed). Increments the global
+        ``failover_count`` facet surfaced by ``get_full_report()``. ``error``
+        is accepted for parity with ``ModelFailoverChain.record_failover`` but
+        is not currently retained per-event here (the bounded per-model
+        failure ring already captures recent failure reasons via
+        ``record_model_call(success=False, error=...)``).
+        """
+        with self._lock:
+            self._failover_count += 1
 
     def get_recent_failures(
         self, model_profile_id: str, window_calls: int = 10
@@ -335,6 +356,25 @@ class MetricsCollector:
                         "total_cost_usd": u.total_cost_usd,
                     }
                     for mid, u in self._global_model_usage.items()
+                },
+                # "model_usage" facet (docs/audit/FAILOVER_GAPS.md
+                # failover-metrics-facets): failover_count is the global hop
+                # counter from record_failover; each per-profile entry exposes
+                # error_count (== failed_calls) so an operator can see which
+                # primary is erroring most, in addition to the existing
+                # "global_model_usage" cost/success-rate facet above.
+                "model_usage": {
+                    "failover_count": self._failover_count,
+                    **{
+                        mid: {
+                            "total_calls": u.total_calls,
+                            "successful_calls": u.successful_calls,
+                            "failed_calls": u.failed_calls,
+                            "error_count": u.failed_calls,
+                            "success_rate": u.success_rate,
+                        }
+                        for mid, u in self._global_model_usage.items()
+                    },
                 },
             }
 
