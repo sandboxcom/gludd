@@ -151,9 +151,61 @@ is named `osquery*`/`system_monitor*`/anything osquery-adjacent):
   `gludd_osquery` as the house style. Neither of these two is a duplicate of
   what this design adds.
 
+### 1.6 Other prior art to reuse, not re-derive
+
+- **`config/skills/osquery_system_state.md`** (101 lines) — model-facing
+  guidance already teaches SELECT-only rules and a house table reference
+  (`processes`, `users`, `logged_in_users`, `system_info`, `mounts`,
+  `listening_ports`, `process_open_sockets`, package tables, `crontab`,
+  `kernel_info`). The new roles' READMEs point here rather than
+  re-documenting the table reference.
+- **`docs/privileges/databases_mq_host.md:571-598` §15c "osquery (Linux host
+  internals)"** — marked `(NOT YET WIRED IN gludd)` — is the house's own
+  already-written least-privilege prescription: *"osqueryd runs as root to
+  populate its tables; gludd should **not** run osqueryd itself. Least
+  privilege = read-only access to the osquery results"* via either a
+  group-readable results log (`chgrp gludd /var/log/osquery/
+  osqueryd.results.log; chmod 0640 ...`, `:576-585`) or the read-only
+  extension socket. **This design's §7 implements exactly this
+  prescription** (closing its `NOT YET WIRED IN` status) rather than
+  inventing a separate privilege model — see §7.
+- **`docs/design/HARDENING_BACKLOG_2026-07-10.md:701-732`
+  `H-BINARY-BUNDLING-GAPS (MED)`** — independently names the same
+  `connectors/osquery.py:95` PATH-only gap as `BINARY_BUNDLING.md` (§1.2);
+  cite both, fix once.
+- **`docs/design/PROJECT_LOCAL_GLUDD_DIR.md:27`** — documents `.gludd/
+  binaries/` as an optional project-pinned overlay ahead of the user-level
+  filestore for tools including osquery; `osquery_bootstrap` (§3.1) checks
+  this tier too, alongside `get_bundled_binary_path`/`get_binary_path`.
+- **Molecule precedent**: `molecule/playbooks/test_gludd_osquery/` already
+  exists (full `molecule.yml` + `default/{prepare,converge,verify}.yml`) and
+  is the exact pattern §9 extends — `prepare.yml` writes a fake `osqueryi`
+  shell script that ignores the query and prints canned JSON (`printf
+  '[{"pid":"1","name":"init"},...]'`, `default/prepare.yml:36-48`), so no
+  real osquery binary is ever required in CI.
+- **Closest structural role analog**: `roles/manage_processes/tasks/
+  main.yml:1-126` — composes two modules (`gludd_process` + `gludd_proc_monitor`)
+  into one role with a `dry_run: true`-by-default mutating branch
+  (report → dry-run plan → real signal only when `not dry_run`, `:38-77`) —
+  the template `osquery_pack_deploy`'s `manage_process`/privileged branch
+  (§3.3, §7) follows for "never mutate unless explicitly un-safed."
+
 ---
 
 ## 2. Role roster
+
+Role layout follows the two conventions observed across existing roles: every
+role has `README.md`/`defaults/main.yml`/`tasks/main.yml`; SOME (e.g.
+`observe_security_signal`, `watchdog_check`) additionally carry a
+`meta/main.yml` `galaxy_info` block — the six roles below include one for
+consistency with that subset. Artifact output defaults to
+`/tmp/gludd-<role-name-with-dashes>` (the established default,
+e.g. `watchdog_check.json`/`.md`), overridable via `artifact_dir`. No
+role bundles its own molecule tests inside the role directory — those live
+externally under `molecule/playbooks/role_<name>/` (§9). There is no
+separate role-registration/`feature_seed` file to update: dropping a role
+directory under `agent/roles/` is sufficient; `make collection-roles`
+enumerates roles for audit only.
 
 New package: query-pack JSON files live under
 `collections/ansible_collections/general_ludd/agent/roles/osquery_pack_deploy/files/packs/`
@@ -262,24 +314,22 @@ argument_spec:
   config_dir: {type: str, default: "/etc/osquery"} # falls back to a user-writable dir when unprivileged, see below
   logger_path: {type: str, default: ""}            # "" = role default (see §5)
   osqueryd_path: {type: str, required: true}       # from osquery_bootstrap's ansible_facts
-  manage_process: {type: bool, default: true}      # start/restart via the daemon's process API vs. "config-only, operator manages the daemon"
+  manage_process: {type: bool, default: false}     # false (recommended, §7) = config-only, operator/OS-package owns osqueryd; true = gludd starts/restarts it itself (requires the privileged capability, §7)
   daemon_url: {type: str, default: "http://localhost:8000"}
   psk: {type: str, no_log: true, default: ""}
 ```
 
-Steps: (1) write `pack_json` to `<config_dir>/packs/<pack_name>.json`
-(content-hash compare against the existing file first — `changed=false` if
-identical, matching every other idempotent gludd module); (2) render/refresh
-an `osquery.conf` flagfile pointing `--pack_path` at every deployed pack and
-`--logger_path` at the results-log directory; (3) validate with `osqueryd
---config_check --config_path=<flagfile>` (never skip this — a broken pack
-must never reach a running daemon); (4) if `manage_process` and the config
-actually changed, (re)start `osqueryd` via `POST /api/dispatch` (kind=`process`,
-mirroring `gludd_dispatch.py`'s existing generic dispatch shape, §1.4 of
-`PIPELINE_INTERACTION_ROLES.md`'s sibling-module precedent) so the daemon's
-own process registry tracks it (same registry `gludd_proc_monitor` already
-reads) instead of an orphan subprocess Ansible loses track of after the play
-ends.
+Steps: (1) write `pack_json` to `<config_dir>/packs/<pack_name>.json`,
+content-hash compared against the existing file (`changed=false` if
+identical); (2) render/refresh an `osquery.conf` flagfile pointing
+`--pack_path` at every deployed pack and `--logger_path` at the results-log
+directory; (3) validate with `osqueryd --config_check --config_path=<flagfile>`
+— never skipped, a broken pack must never reach a running daemon; (4) only
+if `manage_process: true` (opt-in, §7) and the config actually changed,
+(re)start `osqueryd` via `POST /api/dispatch` (kind=`process`, mirroring
+`gludd_dispatch.py`'s generic dispatch shape) so the daemon's own process
+registry tracks it — the same registry `gludd_proc_monitor` reads — instead
+of an orphan subprocess Ansible loses track of after the play ends.
 
 **Returns** `ansible_facts.gludd_osquery_pack`:
 ```json
@@ -339,26 +389,13 @@ when a fact is `default(0)`).
 # the report_status set_fact/when/artifact pattern, roles/report_status/
 # tasks/main.yml:23-121)
 - name: Ingest osquery results
-  ansible.builtin.include_role:
-    name: osquery_results_ingest
+  ansible.builtin.include_role: {name: osquery_results_ingest}
 
-- name: Flag rogue listening ports
+- name: Flag rogue listening ports and new setuid binaries
   ansible.builtin.set_fact:
-    _osw_rogue_ports: >-
-      {{ ansible_facts.gludd_osquery_results.rows_by_query.listening_ports
-         | default([])
-         | selectattr('action', 'equalto', 'added')
-         | rejectattr('local_port', 'in', osquery_allowed_ports)
-         | list }}
-
-- name: Flag new setuid binaries
-  ansible.builtin.set_fact:
-    _osw_new_suid: >-
-      {{ ansible_facts.gludd_osquery_results.rows_by_query.suid_bin | default([])
-         | selectattr('action', 'equalto', 'added') | list }}
-
-# ... same shape for new_kernel_modules, new_users, fileless_processes,
-# unexpected_egress (§4 pack 1, queries 3-7)
+    _osw_rogue_ports: "{{ ansible_facts.gludd_osquery_results.rows_by_query.listening_ports | default([]) | selectattr('action', 'equalto', 'added') | rejectattr('local_port', 'in', osquery_allowed_ports) | list }}"
+    _osw_new_suid: "{{ ansible_facts.gludd_osquery_results.rows_by_query.suid_bin | default([]) | selectattr('action', 'equalto', 'added') | list }}"
+    # ... same selectattr shape for new_kernel_modules, new_root_user, fileless_processes, unexpected_egress (§4 pack 1, queries 3-7)
 
 - name: Set overall security verdict
   ansible.builtin.set_fact:
@@ -373,14 +410,14 @@ when a fact is `default(0)`).
     sender: osquery_security_watch
     recipient: "{{ osquery_alert_recipient }}"
     topic: "osquery_security_watch.{{ _osw_verdict }}"
-    body: "{{ {'rogue_ports': _osw_rogue_ports, 'new_suid': _osw_new_suid, ...} | to_json }}"
+    body: "{{ {'rogue_ports': _osw_rogue_ports, 'new_suid': _osw_new_suid} | to_json }}"
   when: _osw_verdict != 'clean'
 
 - name: Escalate CRITICAL findings to a human todo
   general_ludd.agent.gludd_human_todo:
     state: create
     title: "osquery: CRITICAL host-security finding on {{ ansible_hostname | default('localhost') }}"
-    description: "{{ {'new_suid': _osw_new_suid, 'fileless_processes': _osw_fileless, 'new_root_user': _osw_new_root_user} | to_nice_json }}"
+    description: "{{ {'new_suid': _osw_new_suid, 'fileless_processes': _osw_fileless} | to_nice_json }}"
     priority: high
   when: _osw_verdict == 'critical'
 ```
@@ -392,23 +429,18 @@ when a fact is `default(0)`).
 
 ### 3.6 `osquery_host_health_watch`
 
-Same shape as §3.5 over the SDLC-host-health pack (§4 pack 2): disk
-`pct_used` / memory `pct_used` threshold branches (`>90` → warn, `>97` →
-critical), service-down detection against an operator-supplied
-`osquery_expected_services` allowlist, critical-binary hash mismatch against
-a baseline artifact (`osquery_binary_baseline.json`, written once on first run
-and diffed thereafter — the same "baseline written first run, diffed on
-subsequent runs" idiom used for `_osw_new_suid`-style "new since last known
-state" detections, except here the state IS the differential log's own
-`action` field so no separate baseline file is needed for suid/kmod/users —
-only the `hash` table's on-demand rows need an explicit baseline since that
-query is deliberately re-run fresh each interval rather than logged
-differentially, see §4 pack 2 query 6), and an orphaned-gludd-process
-cross-check against `gludd_proc_monitor`'s own managed-process list
-(`ansible_facts.gludd_proc_monitor.processes | map(attribute='pid') | list`)
-— a `processes` pack row named `gludd_self_processes` whose `pid` is absent
-from that list is an **unmanaged gludd process** worth a warn-level alert
-(process escaped the registry, or a stale/duplicate instance).
+Same shape as §3.5 over the SDLC-host-health pack (§4 pack 2): disk/memory
+`pct_used` threshold branches (`>90` → warn, `>97` → critical), service-down
+detection against an `osquery_expected_services` allowlist, and a
+critical-binary hash check against a baseline artifact
+(`osquery_binary_baseline.json` — written once on first run, diffed
+thereafter; only `critical_binary_hash` needs this explicit baseline file
+since, unlike the differential security-pack queries, it is a snapshot query
+re-run fresh each interval with no built-in "new since last time" signal).
+An orphaned-gludd-process check cross-references the `gludd_self_processes`
+row's `pid` against `ansible_facts.gludd_proc_monitor.processes | map
+(attribute='pid') | list` — a pid absent from that list is an unmanaged/
+escaped gludd process, worth a warn-level alert.
 
 ---
 
@@ -461,11 +493,14 @@ the full curated set turnkey.
 
 **Path auto-detect** (`gludd_osquery_results.py`, called with
 `logger_path=""`): search order —
-1. The path last written by `osquery_pack_deploy`'s flagfile (read back from
+1. `GLUDD_OSQUERY_RESULTS_LOG` env var — the operator-configured grant from
+   `docs/privileges/databases_mq_host.md` §15c (§7); highest priority because
+   it's an explicit operator statement of where the group-readable log lives.
+2. The path last written by `osquery_pack_deploy`'s flagfile (read back from
    `<config_dir>/osquery.conf`'s `--logger_path=` line, if that file exists).
-2. Platform default: `/var/log/osquery/` (Linux/macOS package default) —
+3. Platform default: `/var/log/osquery/` (Linux/macOS package default) —
    check for `osqueryd.results.log` there.
-3. Fallback, unprivileged dev-box path: `~/.local/share/general-ludd/osquery/log/`
+4. Fallback, unprivileged dev-box path: `~/.local/share/general-ludd/osquery/log/`
    (created by `osquery_pack_deploy` when `config_dir` isn't root-writable —
    see §7's unprivileged-mode branch).
 
@@ -511,113 +546,91 @@ truncated; the module resets to offset 0 for that file and logs a warning
 
 Extends `BinaryBootstrapper` per the gap identified in §1.4:
 
-1. **Add `osqueryd` as a second manifest name.** `KNOWN_VERSIONS["osqueryd"]
-   = OSQUERY_VERSION` (same pin as `"osquery"` — literally the same upstream
-   tarball, just extracting a different member) at `bootstrap.py:82`'s
-   sibling line; `_TARBALL_BINARIES["osqueryd"] = "osqueryd"` at
-   `bootstrap.py:353-356`'s sibling line. `get_download_url` (`:223-249`)
-   gets a new `if name == "osqueryd": return self._osquery_download_url(...)`
-   branch identical to the existing `"osquery"` branch (`:227-228`) — same
-   URL, because it's the same asset; only `_TARBALL_BINARIES` changes which
-   member gets extracted after download. **No change needed to `download()`
-   itself** (`:371-427`) — it is already generic over `name`.
+1. **Add `osqueryd` as a second manifest name**: `KNOWN_VERSIONS["osqueryd"]
+   = OSQUERY_VERSION` sibling to `bootstrap.py:82`; `_TARBALL_BINARIES
+   ["osqueryd"] = "osqueryd"` sibling to `:353-356`; `get_download_url`
+   (`:223-249`) gets a new `if name == "osqueryd"` branch identical to the
+   existing `"osquery"` one (`:227-228`) — same URL/asset, only the
+   extracted member differs. **No change needed to `download()`** (`:371-
+   427`), already generic over `name`.
 2. **Checksum pin**: `KNOWN_SHA256["osqueryd"]` must equal
-   `KNOWN_SHA256["osquery"]` (both verify the identical downloaded tarball
-   bytes, `_verify_digest` runs before extraction, `:117-140` — extraction
-   member choice is irrelevant to the pin). Document this explicitly so an
-   operator setting `GLUDD_BINARY_SHA256` doesn't reasonably (but wrongly)
-   assume `osqueryd` needs a separate pin value.
+   `KNOWN_SHA256["osquery"]` (identical tarball bytes, `_verify_digest` runs
+   before extraction, `:117-140`) — document this so an operator setting
+   `GLUDD_BINARY_SHA256` doesn't assume a second, different pin is needed.
 3. **Fix the linux/arm64 drop** (`_osquery_download_url:270-271`) — per
    `docs/design/BINARY_BUNDLING.md:207-208`'s already-verified finding,
-   osquery 5.10.2 publishes a linux arm64 tarball; the current `if osq_arch
-   != "x86_64": return None` incorrectly refuses it. Fix in the same PR as
-   (1)-(2) since both touch the identical function.
-4. **`osquery_bootstrap` role auto-detect order** (§3.1) is PATH → bundled →
-   filestore → bootstrap-download-if-allowed, matching `BinaryPathResolver`'s
-   target design in `BINARY_BUNDLING.md §2` — but note (per that doc's
-   central finding) `BinaryPathResolver` itself is NOT yet wired
-   bundle-first; the new `gludd_osquery_bootstrap` module calls
-   `BinaryBootstrapper` methods directly (same as `gludd_osquery.py`
-   already does, `:181-186`), sidestepping that unrelated, separately-tracked
-   gap rather than depending on its fix landing first.
-5. **`make dist`/release packaging**: once (1)-(3) land, `osqueryd` is a
-   `KNOWN_VERSIONS` entry like every other bundled binary and is
-   automatically covered by `BINARY_BUNDLING.md §4`'s "extend
-   `bundle-binaries`/`gludd.spec` datas" fix — no separate packaging work is
-   needed for this design specifically, it rides the existing binary-bundling
-   remediation once that lands.
+   osquery 5.10.2 DOES publish a linux arm64 tarball; the current `if
+   osq_arch != "x86_64": return None` wrongly refuses it. Fix alongside (1)-(2).
+4. **`osquery_bootstrap`'s auto-detect order** (§3.1) is PATH → bundled →
+   `.gludd/binaries/` (§1.6) → filestore → bootstrap-download-if-allowed —
+   calling `BinaryBootstrapper` methods directly (as `gludd_osquery.py`
+   already does, `:181-186`), independent of whether `BinaryPathResolver`'s
+   own bundle-first rewrite (a separate, already-tracked gap in
+   `BINARY_BUNDLING.md §2`) has landed.
+5. **Packaging**: once (1)-(3) land, `osqueryd` rides `BINARY_BUNDLING.md
+   §4`'s existing `bundle-binaries`/`gludd.spec` datas fix automatically — no
+   separate release-packaging work needed here.
 
 ---
 
 ## 7. Security / permission handling
 
-**osquery frequently wants root — this design does not assume it has root,
-and is explicit about what degrades without it.**
+**osquery frequently wants root — this design follows the house's own
+already-written prescription (`docs/privileges/databases_mq_host.md:571-598`
+§15c, §1.6) instead of inventing a parallel privilege model, and closes that
+section's `(NOT YET WIRED IN gludd)` status.**
 
 - **SELECT-only enforcement is the primary blast-radius control**, already
-  shipped (§1.1) and unchanged by anything here: even a compromised/buggy
-  pack or ad-hoc call cannot mutate the host through osquery's own SQL
-  surface (`validate_select_only` rejects every mutating keyword before the
-  binary ever runs). Root only expands *read* visibility for osquery tables —
-  it does not create a write path, because none exists.
-- **Unprivileged degrade, not failure**: most osquery tables silently return
-  fewer/zero rows without root rather than erroring (confirmed pattern used
-  by `_osquery_facet`'s own probe philosophy, §1.3). `osquery_bootstrap`'s
-  `privileged`/`privilege_probe` facts (§3.1) make this VISIBLE rather than
-  letting a decision role assume a clean 0-row `suid_bin` result means "no
-  setuid binaries" when it might mean "couldn't see them." Every decision
-  role's artifact (§3.5, §3.6) must echo `privileged: false` prominently when
-  applicable so a human doesn't over-trust an unprivileged clean bill of
-  health.
-- **No blanket "run gludd as root."** Two supported privilege postures,
-  operator-selected via `osquery_pack_deploy`'s `manage_process`/`config_dir`
-  and a new `osquery_privileged: bool` var (default `false`):
-  1. **Unprivileged (default)**: `osqueryd` runs as the same user as the
-     gludd daemon, `config_dir` falls back to a user-writable path
-     (`~/.local/share/general-ludd/osquery/`), and `osquery_bootstrap`'s
-     privilege probe reports the degrade. Fine for the security pack's
-     network/process-visibility queries (most are readable unprivileged on
-     Linux/macOS); `kernel_modules`/`kernel_extensions`/some `suid_bin`
-     visibility is reduced.
-  2. **Privileged (opt-in)**: operator grants the specific capability below;
-     `osqueryd` runs with elevated access via the **narrowest available
-     mechanism per platform** — Linux: `setcap cap_dac_read_search,
-     cap_sys_ptrace+ep` on the `osqueryd` binary (NOT full root — osquery's
-     own packaging uses this for most of its "needs root" tables); macOS/
-     Windows: document that full admin/root IS required for kernel-extension
-     and some process-internals visibility (no capability-style narrowing
-     exists on those platforms) — the role never silently escalates; it
-     `fail_json`s with a clear message if `osquery_privileged: true` is set
-     but the invoking user cannot actually apply the elevation (no passwordless
-     `sudo`/`setcap` grant configured), rather than falling back to
-     unprivileged and claiming success.
+  shipped (§1.1) and unchanged by anything here — even a compromised/buggy
+  pack or ad-hoc call cannot mutate the host (`validate_select_only` rejects
+  every mutating keyword before the binary ever runs). Root only expands
+  *read* visibility; it never creates a write path, because none exists.
+- **Default posture (recommended): gludd does not run `osqueryd` itself.**
+  Per §15c, `osqueryd` runs as root to populate its tables regardless of who
+  starts it, so gludd should not be the one starting it as a privileged
+  process. `osquery_pack_deploy` defaults `manage_process: false` (§3.3):
+  it writes the pack JSON + flagfile for an operator-managed `osqueryd`
+  (systemd/launchd unit, or an OS package install) to pick up, and
+  `osquery_results_ingest` (§3.4) only needs **read** access to the results/
+  snapshot logs — via the exact mechanism §15c already specifies:
+  `chgrp gludd /var/log/osquery/osqueryd.results.log; chmod 0640 ...` (or
+  membership in whatever group osquery's packaging writes the logs as),
+  never root, never even `sudo`. The two proposed env vars at §15c's table
+  (`:592-598`), `GLUDD_OSQUERY_RESULTS_LOG`/`GLUDD_OSQUERY_SOCKET`, become
+  `gludd_osquery_results.py`'s `logger_path` override source — the module
+  checks that env var before its own path auto-detect (§5), so wiring §15c's
+  grant is a one-line env-var set, no code change.
+- **Privileged (opt-in, discouraged): `manage_process: true`.** Only for
+  hosts where gludd itself must own the `osqueryd` lifecycle (e.g. a
+  disposable CI/build box with no existing osquery install). Requires the
+  capability grant below; refuses (fail-closed, `fail_json`) if the
+  invoking user can't actually start a root-needing process rather than
+  silently degrading to unprivileged and claiming success.
+- **Unprivileged degrade is visible, not silent.** Even in the read-only
+  default posture, some tables return fewer/zero rows without root
+  (`_osquery_facet`'s own probe philosophy, §1.3). `osquery_bootstrap`'s
+  `privileged`/`privilege_probe` facts (§3.1) surface this so
+  `osquery_security_watch`'s artifact (§3.5) can annotate findings as
+  "possibly-incomplete: unprivileged" instead of asserting a clean bill of
+  health it can't vouch for.
 - **Capability gate** (mirrors `security/permissions.py`'s `Capability`
   model, same shape `PIPELINE_INTERACTION_ROLES.md §1.5/§5` uses for
   `pipeline:<provider>`): new resource `"system:osquery"` with
-  `actions=["adhoc_query","deploy_pack","manage_daemon"]` and
-  `constraints={"allow_privileged": bool}`. `osquery_pack_deploy` and
-  `osquery_bootstrap` refuse `manage_process`/privileged elevation unless the
-  calling role's `PermissionSpec` grants `manage_daemon` with
-  `allow_privileged: true` — **fail closed**, same posture as every
-  mutating-verb gate in `PIPELINE_INTERACTION_ROLES.md §5`. Ad-hoc
-  `adhoc_query` needs only the base `"adhoc_query"` action (unprivileged,
-  read-only, SELECT-only — low risk, broadly grantable, e.g. to the default
-  `subagent` spec).
-- **No secrets involved directly** — osquery itself needs no API token/PSK
-  (it's a local binary). The only `no_log: true` fields in this design's
-  modules are the pass-through `psk` params kept for daemon-API calls
-  (process start/stop dispatch, mirrors every other `gludd_*` module's
-  convention) — never a query result or binary path, which are not secrets.
-- **Never let a pack query leak secrets it happens to read.** osquery CAN
-  read environment variables (`process_envs` table) and file contents
-  (`file`/`hash` tables) which may include secret material on a
-  misconfigured host. None of the curated packs (§4) query `process_envs` or
-  read arbitrary file *contents* (only path/hash/mode metadata) specifically
-  to avoid this; a future custom pack that does must route its results
-  through the same `no_log`/redaction discipline as everything else — flag
-  this explicitly in `osquery_pack_deploy`'s role README so an operator
-  adding a custom pack doesn't accidentally log a `.env` file's contents into
-  a plaintext results log.
+  `actions=["adhoc_query","deploy_pack","manage_daemon"]`. `manage_daemon`
+  is the ONLY action gating `manage_process: true` / privileged elevation —
+  fail-closed, same posture as every mutating-verb gate in
+  `PIPELINE_INTERACTION_ROLES.md §5`. `adhoc_query`/`deploy_pack`
+  (config-only) are unprivileged, read-only or write-config-not-execute, and
+  broadly grantable (e.g. to the default `subagent` spec).
+- **No secrets involved directly** — osquery needs no API token. The only
+  `no_log: true` fields in this design's modules are pass-through `psk`
+  params for daemon-API calls, mirroring every other `gludd_*` module.
+- **Never let a pack leak secrets it happens to read.** osquery can read env
+  vars (`process_envs`) and file contents (`file`/`hash`) which may include
+  secrets on a misconfigured host. None of the curated packs (§4) query
+  `process_envs` or read file *contents* (only path/hash/mode metadata); a
+  future custom pack that does must route through the same `no_log`
+  discipline — flagged explicitly in `osquery_pack_deploy`'s README.
 
 ---
 
@@ -667,34 +680,26 @@ has to hand-edit playbook variables.
 `_FakeAnsibleModule` + `importlib`-load-the-real-file pattern — no real
 osquery binary in any test):
 
-- `gludd_osquery_bootstrap`: resolution-order precedence (explicit → bundled
-  → filestore → PATH → download-if-allowed) each mocked independently;
-  download-refused-when-unpinned surfaces the exact `BinaryBootstrapper`
-  fail-closed message; `ensure_daemon=false` skips `osqueryd` resolution
-  entirely; privilege probe correctly reports `privileged: false` when the
-  mocked `kernel_modules` query returns 0 rows and `true` when it returns ≥1.
+- `gludd_osquery_bootstrap`: resolution-order precedence, each tier mocked
+  independently; download-refused-when-unpinned surfaces the exact
+  `BinaryBootstrapper` fail-closed message; `ensure_daemon=false` skips
+  `osqueryd` entirely; privilege probe reports `false`/`true` correctly off a
+  mocked 0-row vs ≥1-row `kernel_modules` result.
 - `gludd_osquery_pack`: content-hash idempotency (`changed: false` on an
   identical re-run); `config_check` failure surfaces osqueryd's stderr and
   never restarts the daemon; `manage_process: false` never calls the daemon
-  dispatch endpoint (assert the mocked `GluddClient.post` was never invoked).
-- `gludd_osquery_results`: differential-log parsing (`action` field
-  preserved per row); snapshot-log flattening (N rows out of one
-  `{"snapshot":[...]}` line, each carrying the parent `unixTime`); checkpoint
-  byte-offset resume (write partial content, checkpoint mid-line, assert the
-  next read starts from the last complete newline, not mid-object); rotation
-  detection (`current_size < checkpoint_offset` resets to 0, logs a warning,
-  does not crash); `max_lines` truncation sets `truncated: true` and a
-  second invocation drains the remainder; missing log files return the
-  fail-soft empty-facts shape rather than erroring.
-- SELECT-only / injection coverage for any NEW query surface this design
-  adds is already fully covered transitively (every role calls
-  `gludd_osquery`'s existing validated path, or emits static SQL baked into
-  the pack JSON — no role constructs a query from unsanitized input) — a
-  regression test asserts every pack-JSON query string in `files/packs/*.json`
+  dispatch endpoint (mocked client asserted uninvoked).
+- `gludd_osquery_results`: differential-log parsing (`action` preserved per
+  row); snapshot-log flattening (N rows out of one `{"snapshot":[...]}`
+  line, each carrying the parent `unixTime`); checkpoint byte-offset resume
+  (resumes from the last complete newline, never mid-object); rotation
+  detection (size shrink resets to 0, warns, never crashes); `max_lines`
+  truncation sets `truncated: true` and a second call drains the remainder;
+  missing log files return the fail-soft empty-facts shape.
+- Regression test: every pack-JSON query string in `files/packs/*.json`
   passes `gludd_osquery.validate_select_only` (parse the JSON, run the
-  existing validator over each `query` value) so a future pack edit can never
-  accidentally add a mutating query into a file that ships as "trusted,
-  pre-validated."
+  existing validator over each `query`) — a future pack edit can never
+  smuggle a mutating query into a file that ships as pre-validated.
 
 **Role/playbook tests** (mirror the existing Ansible-role test precedents —
 `tests/unit/test_gludd_git_module.py`-style `_FakeAnsibleModule` for module
@@ -720,6 +725,24 @@ logic, plus a syntax-check level test for the roles themselves,
 - `make ansible-syntax` and `make molecule-test` (existing targets) run
   against all six new role directories once they exist, same gate every
   other role goes through.
+
+**Molecule scenarios** (the established, already-in-tree pattern to extend —
+`molecule/playbooks/test_gludd_osquery/` §1.6 — never invents a new
+mocking mechanism):
+
+- New module-level scenarios `molecule/playbooks/test_gludd_osquery_bootstrap/`,
+  `test_gludd_osquery_pack/`, `test_gludd_osquery_results/`, each with
+  `default/{prepare,converge,verify}.yml`. `prepare.yml` extends the existing
+  fake-`osqueryi` shell script (`test_gludd_osquery/default/prepare.yml:36-48`)
+  with a fake `osqueryd` that accepts `--config_check`/`--config_path`/
+  `--pack_path`/`--logger_path` and exits 0, plus a pre-seeded
+  `osqueryd.results.log`/`osqueryd.snapshots.log` fixture for the ingest
+  scenario — no real osquery binary in any scenario.
+- New role-level scenarios `molecule/playbooks/role_osquery_pack_deploy/`,
+  `role_osquery_security_watch/`, `role_osquery_host_health_watch/` (pattern:
+  `molecule_self_test/README.md:76`'s `role_molecule_self_test` naming),
+  each converging the role against the fake binaries above and verifying the
+  resulting `ansible_facts`/artifact files.
 
 ---
 
