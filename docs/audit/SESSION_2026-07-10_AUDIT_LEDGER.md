@@ -346,3 +346,128 @@ Contrast (the fix pattern already exists elsewhere in the codebase):
 - `tag_release`/`create_checkpoint_tag`/`create_local_bare_mirror` in `git_automation/repo.py` were reported (by the requesting message) to have no ref validation at all, backstopped only by git's own `check-ref-format`; this specific sub-claim was **not independently re-confirmed** this pass (no search tool to enumerate every ref-taking method) and both `merge_branch`/`gated_merge` above are themselves dead-code paths today, so treat this addendum as carried-forward rather than freshly verified.
 
 **Fix sketch:** Route all ref-taking methods in `git_automation/repo.py` through `worktree/core.py`'s `validate_branch_name` (or an equivalent shared validator) instead of the narrower `_reject_leading_dash`, and add the missing validation to the three untested methods once confirmed.
+
+---
+
+## Sandbox-isolation addendum (2026-07-10 sweep, appended)
+
+Every citation below was re-opened with Read against the current tree and confirmed
+verbatim (line numbers matched exactly; no drift found this pass).
+
+### A-TOOLEXEC-UNSANDBOXED
+**Severity:** HIGH
+**Files:**
+- `src/general_ludd/sandbox_exec/executor.py:13-19` (`SandboxExecutor.execute` — confirmed verbatim: a bare `subprocess.run(shlex.split(command), cwd=workdir, capture_output=True, text=True, timeout=self.timeout)`; only a wall-clock timeout — no rlimits, chroot/tmp confinement, seccomp, network isolation, or priv-drop) — `max_output_bytes` (line 10, constructor param) is stored on `self` but never read anywhere in `execute()`, so it is dead configuration.
+- `src/general_ludd/security/sandboxes/__init__.py:17-21` (module docstring: "Every backend FAILS OPEN: if loading the sandbox raises ... returns a `SandboxHandle` whose `applied` flag is `False`") confirmed as the documented contract; the concrete fail-open mechanics live in the `SandboxHandle.applied` field (line 72, default `True`, flipped by each backend) and the `SandboxBackend` Protocol docstrings (lines 152-154, 164-170) which mandate "if loading the sandbox raises, log loudly and return a handle whose `applied` is `False` rather than propagating."
+- `src/general_ludd/event_loop/loop.py:1696-1701` (`_sandbox_apply_for_todo`'s `except Exception as exc: logger.error("Sandbox apply raised for todo %s — dispatching UNSANDBOXED: %s", ...); return None` — confirmed verbatim, catches ALL apply/verify exceptions)
+- `src/general_ludd/event_loop/loop.py:1717-1785` (`_resolve_permission_spec` — confirmed exact span; `if spec_cfg is None: return None` at lines 1752-1753 is the default-deny-to-unsandboxed path when no per-queue `permission_spec` is configured)
+- `src/general_ludd/security/sandboxes/detect.py:180-209` (confirmed verbatim: macOS branch refuses Seatbelt on `>= 15.4` via `_is_deprecated_host()` at line 187, logging "sandbox-exec present but DEPRECATED on macOS %s (>= 15.4); dispatching UNSANDBOXED" and returning `None`; the sibling branch at lines 201-209 also returns `None` with a warning when `sandbox-exec` isn't present at all)
+- `src/general_ludd/event_loop/loop.py:1623-1627` (confirmed verbatim: the only production call site of `SandboxExecutor.execute()` passes `f"dispatch:{todo_id}:{work_type}"` as `command` — a synthetic label string, not a real shell command — so this call isolates nothing regardless of the executor's own weaknesses above)
+- `src/general_ludd/execution/langgraph_agent.py:192-235` (`_build_langchain_tools`/`_execute` — confirmed verbatim: wraps `mcp_client.call_tool(_srv_id, _name, kwargs)` in an `asyncio.wait_for` timeout and a bare `except Exception` string-return; no sandbox/capability check anywhere in the span — this is the live agent tool-call path and it bypasses both `SandboxExecutor` and the OS-sandbox machinery above entirely)
+- `src/general_ludd/project_runner/runner.py:239` (confirmed verbatim, contrast: `subprocess.Popen(argv, ..., preexec_fn=preexec, ...)` with the inline comment "argv is validated + allow-listed, no shell" plus an `RLIMIT_AS` cap applied via `preexec_fn` when `self._memory_limit_mb` is set — this is the one path in the codebase that actually isolates a child process)
+
+**Failure scenario:** Model-driven tool execution runs with full daemon privileges out of the box. The dedicated `SandboxExecutor` enforces only a timeout (no rlimits/chroot/seccomp/network isolation/priv-drop), and its one production call site doesn't even pass it a real command. The real OS-sandbox layer (`security/sandboxes/*`) is fail-open by design — any apply/verify exception, a missing per-queue `permission_spec`, or a deprecated/absent macOS Seatbelt binary all silently fall through to dispatching the agent UNSANDBOXED. Most importantly, the actually-live agent tool-call path (`langgraph_agent.py` → `mcp_client.call_tool`) never touches either sandboxing mechanism at all. Net effect: a model's tool calls execute as plain, unconfined subprocesses with the daemon's own privileges, with `project_runner/runner.py` being the sole counter-example of what real isolation looks like in this codebase.
+**Fix sketch:** Engage the OS sandbox by default and fail closed (refuse to dispatch, rather than warn-and-proceed) for the MCP/tool-exec path when no backend is available or apply/verify fails; alternatively, route model tool calls through `project_runner`'s `apply_limits` + argv-allowlist pattern (`runner.py:239`) instead of `mcp_client.call_tool`'s direct, unconfined invocation.
+
+**POSITIVE (verified-clean, not a finding):** No shell-string injection surface found — subprocess call sites checked across `execution/engine.py:915` (LLM-authored diff applied via `patch -p1 -d <jail> -i <diff_path>`, list-form argv, diff content only ever reaches `patch` as file content via `-i`, never interpolated into a shell string), `project_runner/runner.py:239`, and the LOW list below: all list-form argv, no `shell=True`/`os.system`/`os.popen`/bare `eval`/`exec` found in any file opened this pass. Bearer-token auth is constant-time: `src/general_ludd/security/auth.py:102-111` (`verify_psk` — `hmac.compare_digest(presented, expected)`, confirmed verbatim, guards against empty presented/expected). Prior session's C22-SSTI fix holds: `src/general_ludd/prompts/registry.py:39` and `:120` both confirmed verbatim using `SandboxedEnvironment(loader=self._loader, autoescape=select_autoescape())` (Jinja2 sandboxed environment, not the bare `Environment`).
+
+### A-SUBPROCESS-NO-TIMEOUT
+**Severity:** LOW
+**Files (confirmed — none of these calls pass a `timeout=`, and none is wrapped in `asyncio.wait_for`):**
+- `src/general_ludd/dogfood/runner.py:127` (`subprocess.run(["ansible-playbook", "--syntax-check", ...], capture_output=True, text=True, cwd=self.config.repo_root)` — no `timeout`)
+- `src/general_ludd/validation/runner.py:161` (`subprocess.run(argv, cwd=self.worktree_path, capture_output=True, text=True, shell=False)` — no `timeout`; comment notes argv is validated/allowlisted but that guards injection, not hang risk)
+- `src/general_ludd/account/ephemeral.py:250` (`subprocess.run(cmd, capture_output=True, text=True, check=False)` — no `timeout`)
+- `src/general_ludd/collections/importer.py:391` (`subprocess.run(argv, cwd=cwd, capture_output=True, text=True, check=False)` — no `timeout`)
+- `src/general_ludd/secrets/manager.py:623` (`asyncio.create_subprocess_exec(*args, stdout=..., stderr=...)` followed by a bare `await proc.communicate()` at line 628 — no `asyncio.wait_for` wrapping, so a hung OpenBao dev-server container start blocks indefinitely)
+- `src/general_ludd/infra/deployment.py:184` (`asyncio.create_subprocess_exec(binary, *args, ...)` followed by `await proc.communicate()` — same pattern, a hung Terraform invocation blocks indefinitely)
+- `src/general_ludd/cli_remediation.py:194` (`subprocess.run([editor, str(cfg_path)], check=True)` — no `timeout`; lower real-world risk since this launches an interactive `$EDITOR` session where a human is expected to be present, but it still matches the audited pattern)
+
+**Failure scenario:** A hung child process (ansible-playbook, a CLI tool, an OpenBao/Terraform binary, or an editor) on any of these paths blocks the calling coroutine/thread indefinitely — no local backstop exists independent of the child process itself ever exiting.
+**Fix sketch:** Add an explicit `timeout=` to each `subprocess.run` call (with a sensible per-call default) and wrap the two `asyncio.create_subprocess_exec` + `communicate()` pairs (`secrets/manager.py:623`, `infra/deployment.py:184`) in `asyncio.wait_for(...)`, killing the process group on timeout.
+
+---
+
+## Late-sweep additions (2026-07-10, appended)
+
+Every citation below was re-opened with Read (no grep/glob tool available this
+pass either) and confirmed against the current tree, with corrections noted
+inline where a claim overstated or under-cited what the code actually does.
+
+Total appended this section: **6** findings — 2 HIGH, 2 MEDIUM, 2 LOW.
+
+### A-VARNS-TOOLRESULT-LEAK
+**Severity:** HIGH
+**Files:**
+- `src/general_ludd/event_loop/loop.py:2304-2308` (Phase-1 dispatch results: `await eff_variable_repo.set_var(namespace="tool_results", key=f"tool_result:{r.name}", value=str(r.output))` — confirmed verbatim, no `project_id` kwarg)
+- `src/general_ludd/event_loop/loop.py:2523-2527` (Phase-2 tool-loop output: `await eff_variable_repo.set_var(namespace="tool_results", key=f"tool_loop_result:{job_id}", value=str(tool_result))` — confirmed verbatim, no `project_id` kwarg)
+- `src/general_ludd/db/repository.py:832-852` (`VariableNamespaceRepository.load_vars_for_project` — confirmed: the `.where((VariableNamespaceModel.project_id == project_id) | (VariableNamespaceModel.project_id.is_(None)))` union is at lines 836-839)
+- `src/general_ludd/event_loop/loop.py:1844` (both write sites and both `project_id_val` read sites live in the same enclosing method, `async def _dispatch_execute_job`; no nested `def`/`async def` boundary separates them — confirmed by reading the full 1900-2530 span)
+- `src/general_ludd/event_loop/loop.py:1907` (`project_id_val` is defined here and remains a valid in-scope local at both `set_var` call sites; it is actively used elsewhere in the same function at line 2069 `"project_id": project_id_val`, line 2168 `project_id=project_id_val` into `invoke_model_for_generation`, and line 2497 `project_id=project_id_val` into `JobSpec(...)` — it is simply never passed into either `set_var` call)
+
+**Failure scenario:** Every Phase-1 tool-dispatch result and every Phase-2 tool-loop output is persisted into the `tool_results` namespace with no `project_id`, so it lands as a `project_id IS NULL` row. `load_vars_for_project` (called at `loop.py:2037` as `shared_vars = await eff_variable_repo.load_vars_for_project(project_id_val)`, and again at `loop.py:869` with an explicit `None`) unions real-project rows with ALL global/NULL rows — so one project's tool-call output (which may contain file contents, command output, secrets echoed by a tool, etc.) is loaded into `shared_vars` for every other project's subsequent dispatch. `project_id_val` is already a valid, populated local at both write sites (per the scope trace above), so this is not a missing-data problem, only a missing-argument one.
+
+**Fix sketch:** Pass `project_id=project_id_val` on both `set_var` calls (`loop.py:2304-2308` and `loop.py:2523-2527`), matching the pattern already used a few lines away for `load_vars_for_project`/`apply_debt_findings` in the same method.
+
+### A-COLLECTION-HANDLER-UNWRAP
+**Severity:** MEDIUM (plausible)
+**Files:**
+- `src/general_ludd/daemon_wiring.py:204-259` (`make_collection_handler` — confirmed: `task_args = dict(args)` at line 222 is embedded directly as `{"name": f"gludd_dispatch:{name}", name: task_args}` at line 232, then `yaml.safe_dump(playbook, f, ...)` at line 247; only the module `name` is FQCN-validated at lines 215-219, `task_args`' values are never validated or wrapped)
+- `src/general_ludd/ansible/runner.py:166-174` (`AnsibleRunnerAdapter.run_playbook(playbook_name, private_data_dir=None, extravars=None, env=None, timeout=None, **runner_kwargs)` — confirmed it DOES accept an `extravars` parameter, but `daemon_wiring.py:254` calls it as `runner_adapter.run_playbook(transient_name, timeout=timeout)` — no `extravars` passed at all)
+- `src/general_ludd/ansible/unsafe.py:44-72` (`wrap_unsafe`/`wrap_extravars` — confirmed real, working helpers that mark values Ansible-unsafe so embedded Jinja is never re-templated)
+- `src/general_ludd/ansible/core_runner.py:287-289` (confirmed: `CoreAnsibleRunner.run_playbook` DOES call `wrap_extravars(extravars)` before executing — i.e. the wrapping protection already exists and fires automatically for any caller that routes values through the `extravars` parameter; `AnsibleRunnerAdapter.run_playbook` itself does not call it directly but passes `extravars` down into `core_runner.py`, confirmed at `runner.py:203-208`)
+
+**Failure scenario:** `make_collection_handler`'s transient playbook embeds caller/model-supplied `task_args` values directly as inline YAML task parameters rather than as Jinja-templated references resolved from `extravars` — so it bypasses the `wrap_extravars`/`wrap_unsafe` protection that already exists and is already wired for any caller using the `extravars` parameter on the exact same `run_playbook` call. A `task_args` value like `{"cmd": "{{ lookup('pipe','id') }}"}` is written as a literal task parameter in the playbook YAML, which Ansible then templates and evaluates — a templating-injection path that the codebase's own `wrap_extravars` mechanism was built to close, just not applied on this call path.
+
+**Fix sketch:** Route `task_args`' values through `extravars` (passing `runner_adapter.run_playbook(transient_name, extravars=task_args, timeout=timeout)` and referencing `"{{ item }}"`-style variables in the task body) so they pick up the existing `wrap_extravars` protection automatically, instead of inlining raw values into the YAML task dict.
+
+### A-VALIDATE-EXTRAVARS-ORPHAN
+**Severity:** LOW (dead code)
+**Files:**
+- `src/general_ludd/execution/engine.py:32-83` (`validate_extra_vars_safe` — confirmed: a complete, working Jinja2-SSTI-pattern guard)
+- Confirmed via a full-tree text search: the only other references to `validate_extra_vars_safe` anywhere in `src/` or `tests/` are the 16 hits inside `tests/unit/test_ansible_ssti_guard.py` (its own dedicated test file). Zero production call sites.
+
+**Failure scenario:** None directly (the function is inert) — but its presence is misleading: a reviewer scanning `execution/engine.py` could reasonably believe extra-vars are SSTI-guarded on some real code path when the actual protection is `wrap_extravars`/`wrap_unsafe` (`ansible/unsafe.py`, wired through `ansible/core_runner.py:287-289`), a completely separate mechanism.
+
+**Fix sketch:** Either delete `validate_extra_vars_safe` (and its test) as dead code, or wire it in as a defense-in-depth pre-check alongside `wrap_extravars` on a real `extravars`-accepting call path, and note in its docstring that `wrap_unsafe` — not this function — is the mechanism actually protecting production traffic today.
+
+### A-HUMANGATE-NO-CHECKPOINTER
+**Severity:** HIGH
+**Files:**
+- `src/general_ludd/execution/human_gate.py:62-73` (`_build_gate_graph` — confirmed: `builder = StateGraph(_GateState)` ... `return builder.compile()` at line 73, no `checkpointer=` argument passed)
+- `src/general_ludd/execution/human_gate.py:67` (`decision = interrupt(message)` inside `gate_node` — confirmed this is the LangGraph `interrupt()` primitive, which requires a checkpointer to actually pause/resume across separate `ainvoke` calls)
+- `src/general_ludd/execution/human_gate.py:128-191` (`await_approval` — confirmed: wraps `await self._graph.ainvoke(...)` in a `try/except Exception as exc: logger.error(...); return None` at lines 186-191)
+- `src/general_ludd/event_loop/loop.py:3149-3163` (`d.decision == "complete" and self._human_gate.should_interrupt(...)` gate, confirmed verbatim — when `_gate_decision` comes back `None`, the code falls through and `new_status` is left at its prior value, i.e. COMPLETE proceeds exactly as if the gate had never fired)
+- `src/general_ludd/config/user_config.py:130-132,212` (`class HumanInTheLoopConfig(BaseModel): enabled: bool = False` at lines 130-131, `confidence_threshold: float = 0.7` at line 132; instantiated as the `UserConfig` default `human_in_the_loop: HumanInTheLoopConfig = HumanInTheLoopConfig()` at line 212 — off by default, confirming this whole path is dormant unless explicitly enabled. Note: the file lives at `src/general_ludd/config/user_config.py`, not a top-level `src/general_ludd/user_config.py`.)
+
+**Failure scenario:** `_build_gate_graph` compiles a graph that calls `interrupt()` but supplies no `checkpointer`, so the interrupt cannot actually persist a paused state across the async boundary the way LangGraph's HITL pattern requires. Whether that surfaces as an immediate exception, a silently-lost pause, or a same-call return depends on the installed LangGraph version's checkpointer-less behavior, but any failure path inside `ainvoke` is swallowed by the bare `except Exception` at `human_gate.py:186-191` and reported to the caller as `None`. `loop.py:3149-3163` treats a `None` gate decision identically to "gate not enabled" — the decision proceeds to COMPLETE without any human ever approving it, silently defeating the human-in-the-loop review this code path exists to provide. Gated off by default (`HumanInTheLoopConfig.enabled=False`), so this is a real bug that only bites once an operator turns HITL on, not a live default-config exposure.
+
+**Fix sketch:** Compile `_build_gate_graph` with a real checkpointer (e.g. an in-memory or DB-backed LangGraph checkpointer scoped per daemon instance), and change `await_approval`/the `loop.py:3149` call site to distinguish "genuinely still pending, do not complete yet" from "gate mechanism failed" — the current `None`-means-proceed collapse must not be the failure-mode default for a safety gate.
+
+### A-DEBT-EVAL-OFF / A-MISCONFIG-NOT-IN-LOOP
+**Severity:** MEDIUM (feature-dead-in-prod)
+**Files:**
+- `src/general_ludd/event_loop/loop.py:446-448` (`self._debt_evaluator = DebtEvaluator(make_debt_evaluate_fn(self._model_gateway) if self._model_gateway else None)` — confirmed: the evaluator IS wired/instantiated)
+- `src/general_ludd/event_loop/loop.py:1988-2029` (`_dispatch_execute_job` — confirmed: `debt_cfg = self.config.get("debt_eval", {})` at line 1995, gated `if isinstance(debt_cfg, dict) and debt_cfg.get("enabled", False):` at line 1996)
+- Confirmed via a full-tree text search for `debt_eval`/`DebtEval`: every hit is in `src/general_ludd/planning/debt_applier.py`, `src/general_ludd/planning/debt_evaluator.py`, and `src/general_ludd/event_loop/loop.py` itself — **zero hits** in `src/general_ludd/daemon.py` or `src/general_ludd/config/user_config.py`. Nothing sets `config["debt_eval"]["enabled"]` to a truthy value anywhere in production code, and `UserConfig`'s Pydantic schema has no `debt_eval` field, so it cannot arrive via a user config file either — the flag is permanently `False`/absent in prod.
+- `src/general_ludd/infra/model_deploy_check.py:95` (`class MisconfigDetector` — confirmed real, working detector)
+- `src/general_ludd/routers/deployments.py:249,298` (`detector = MisconfigDetector()` inside `post_misconfig_check`/`post_suggest_fix` route handlers — confirmed verbatim)
+- **Correction/broadening:** two additional construction sites exist beyond the two originally cited — `src/general_ludd/infra/fix_suggester.py:53` (inside `_build_fix_prompt`) and `src/general_ludd/infra/deploy_precheck.py:70` (inside `precheck()`). Both are still HTTP-router-triggered, not autonomous: `deploy_precheck.precheck()` is called only from `routers/compute.py:178`, and `fix_suggester.FixSuggester` is only instantiated from `routers/deployments.py:323`. Confirmed **zero** `MisconfigDetector(` construction sites in `daemon.py` or `event_loop/loop.py`, so the core claim ("not autonomous, no tick-path construction") holds even though "only in `deployments.py:249,298`" understated the router-side call count.
+- FIM cross-check: confirmed `src/general_ludd/integrity/` (`__init__.py`, `change_log.py`, `fim_excludes.py`, `overlay_guard.py`, `scanner.py`) is strictly a file-integrity/tamper-detection monitor (hash-baseline + watchdog change detection, signed change-record log) — it has no code-editing capability, and no other feature named "FIM" exists anywhere in `src/general_ludd`. "FIM code-editing" as a concept does not exist in this codebase.
+
+**Failure scenario:** The plan-time debt evaluator is fully wired into the dispatch path but gated on a config key (`debt_eval.enabled`) that no production code path, default config, or `UserConfig` schema field can ever set to `True` — it is permanently inert. Separately, `MisconfigDetector` is real, well-built, and reachable only from three HTTP route handlers (`deployments.py`, `compute.py` via `deploy_precheck`, and `fix_suggester`'s prompt-builder) — never from the daemon's autonomous tick loop — so it can only ever fire when a human/caller explicitly hits one of those endpoints, not as an ongoing background safeguard.
+
+**Fix sketch:** Either add a `debt_eval` field to `UserConfig` (with a documented default) so operators can actually turn the feature on, or remove the dead gate and always run it at a fixed cadence. For `MisconfigDetector`, if autonomous misconfig detection is the intent, wire a periodic call into the event loop tick (mirroring how `preflight.py` is invoked at daemon startup) rather than leaving it purely request-driven.
+
+### A-UNAUTH-READ-SURFACE
+**Severity:** LOW (by-design, note for release)
+**Files:**
+- `src/general_ludd/daemon.py:2459-2463` (`_PUBLIC_PATHS = {"/healthz", "/readyz", "/api/status", "/api/todos", "/api/human-todos", "/api/webmcp", "/docs", "/openapi.json", "/redoc"}` — confirmed verbatim)
+- `src/general_ludd/daemon.py:2478-2489` (`_is_public` — confirmed: public status requires an exact match against `_PUBLIC_PATHS` (or a `/docs`/`/render/` prefix) AND a safe method (`GET`/`HEAD`/`OPTIONS`); a mutating verb on any of these paths is NOT public)
+- `src/general_ludd/routers/todos.py:497-567` (`GET /api/status`, handler `api_status` — confirmed real payload: `version`, `uptime_ticks`, `todos_total`, `queue_depths`, `tick_metrics`, `filestore_available`, `filestore_binaries`, `binary_versions`, `quality_gate`, `hardware` (CPU/memory via `HardwareProfile.to_dict()` — no GPU), `config_file_count`)
+- `src/general_ludd/routers/todos.py:412` (`GET /api/todos/{todo_id}`) and `src/general_ludd/routers/human_todos.py:187` (`GET /api/human-todos/{human_todo_id}`) — these path-parameterized routes exist, but **correction:** `_is_public` only does an *exact string* match against `_PUBLIC_PATHS` (no prefix matching for `/api/todos`/`/api/human-todos`, unlike the special-cased `/docs`/`/render/` prefixes) — so `GET /api/todos/{id}` and `GET /api/human-todos/{id}` do **NOT** match `_is_public` and therefore DO require the PSK bearer token. Only the two collection endpoints (`GET /api/todos`, `GET /api/human-todos`) are actually anonymous-reachable, confirmed by `src/general_ludd/routers/human_todos.py:147-171` (`api_list_human_todos` returns the full `_human_todo_to_dict(r)` per row — real task content, not just IDs).
+- **Correction:** `GET /api/status`'s payload does NOT include database dialect/engine info — confirmed by reading `routers/todos.py:497-567` and all of `daemon.py` in full: the literal string `"dialect"` does not appear in either file, and no engine-URL/dialect field is present anywhere in the response. The "db dialect" claim in the original finding is not supported by the code; drop it. "Config paths" is also an overstatement — the endpoint exposes only a numeric `config_file_count` (line ~566), not the actual config directory path(s) or filenames.
+- `src/general_ludd/security/auth.py:102-111` (`verify_psk` — confirmed: `hmac.compare_digest(presented, expected)`, constant-time)
+
+**Failure scenario (corrected):** Anonymous callers can reach `GET /api/status` (version, todo counts, queue depths, quality-gate result, CPU/memory hardware facts, and a config-file *count* — not paths, and no DB dialect), the `GET /api/todos` and `GET /api/human-todos` **collection** endpoints (full todo/human-todo content for every row, but NOT the individual `/{id}` sub-routes, which are correctly gated behind the PSK), and `/openapi.json`/`/docs`/`/redoc` (the full admin route map/schema). No unauthenticated state-change path exists (mutating verbs are excluded from `_is_public` regardless of path), and the bearer-token comparison is constant-time. This is a real anonymous information-disclosure surface (full todo/human-todo content plus the complete route map) but narrower than a naive reading of `_PUBLIC_PATHS` suggests, since the per-item sub-routes are not actually public.
+
+**Fix sketch:** If the collection-level exposure (full todo/human-todo row content to anonymous callers) is intentional for the documented webmcp self-bootstrap flow, keep it but note it explicitly in a release note; if not, move `/api/todos`/`/api/human-todos` off `_PUBLIC_PATHS` and require the PSK like their `/{id}` siblings already do.
