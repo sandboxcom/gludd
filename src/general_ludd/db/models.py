@@ -239,6 +239,12 @@ class TodoModel(Base):
             "next_run_at",
             "scheduled_at",
         ),
+        # E12: TodoRepository.claim_runnable filters QUEUED todos and orders by
+        # (priority DESC, created_at, id) every claim. Only `status` was
+        # indexed, so priority/created_at were sorted without index support on
+        # a table that grows with every todo ever created. This composite
+        # index covers the WHERE + ORDER BY together.
+        Index("ix_todos_status_priority_created_at", "status", "priority", "created_at"),
     )
 
     events: Mapped[list[TodoEventModel]] = relationship(
@@ -340,6 +346,14 @@ class TaskDecisionModel(Base):
     audit_notes: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     policy_flags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        # E11: EventLoop's decision-history tick (loop.py) runs
+        # `ORDER BY created_at DESC LIMIT 50` against this insert-only table on
+        # every tick. Without an index that is a full-table scan per tick that
+        # only grows as decisions accumulate.
+        Index("ix_task_decisions_created_at", "created_at"),
+    )
 
 
 class QueueModel(Base):
