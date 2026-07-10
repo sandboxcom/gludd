@@ -223,6 +223,15 @@ def test_no_allowlist_preserves_behavior_and_warns(monkeypatch, caplog) -> None:
     preserved (broadcast proceeds WITH the PSK) but a warning is logged so the
     operator knows broadcasts are unrestricted."""
     caplog.propagate = True
+    # xdist-order pollution: any test that runs the real daemon lifespan
+    # against SQLite (e.g. `with TestClient(app) as client:`) triggers
+    # alembic/env.py's fileConfig(alembic.ini), which defaults to
+    # disable_existing_loggers=True. alembic.ini's [loggers] only lists
+    # root/sqlalchemy/alembic, so this already-created logger gets
+    # `.disabled = True` for the rest of the xdist worker — and
+    # `Logger.isEnabledFor()` short-circuits on `.disabled` before ever
+    # checking level/propagate, so `propagate = True` alone can't fix it.
+    logging.getLogger(_LOGGER_NAME).disabled = False
     logging.getLogger(_LOGGER_NAME).propagate = True
     monkeypatch.setenv("GLUDD_PSK", "secret123")
     monkeypatch.delenv("GLUDD_WORKER_ALLOWLIST", raising=False)

@@ -6,10 +6,10 @@ Reveal.js deck design and build tasks.
 
 | Document | Description |
 |----------|-------------|
-| [Accessibility Visual QA Skill](a11y-visual-qa-skill.md) | A11y visual QA skill design |
-| [GitHub Pages Link](github-pages-link.md) | GitHub Pages deployment |
-| [Build Task List](build-task-list.md) | Build task list |
-| [Reveal.js Deck Design](revealjs-deck.md) | Reveal.js deck design |
+| [Accessibility Visual QA Skill](DESIGN_a11y_visual_qa_skill.md) | A11y visual QA skill design |
+| [GitHub Pages Link](GITHUB_PAGES_LINK.md) | GitHub Pages deployment |
+| [Build Task List](BUILD_TASK_LIST.md) | Build task list |
+| [Reveal.js Deck Design](DESIGN_revealjs_deck.md) | Reveal.js deck design |
 
 ## Status
 

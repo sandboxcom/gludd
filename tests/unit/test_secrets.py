@@ -243,6 +243,97 @@ class TestOpenBaoSecretsManager:
         assert "s.super-secret-token" not in captured.err
 
 
+class TestSecretsRedactionGap:
+    """secrets/manager.py:_redact / _sanitize_error — widened redaction.
+
+    Regression coverage for the finding that the old ``_redact`` only masked
+    a run of 20+ contiguous base64-charset chars, so shorter or non-base64
+    secrets embedded in exception text reached ``logger.error`` unredacted.
+    """
+
+    def _make_manager(self, **kwargs: object) -> SecretsManager:
+        cfg = OpenBaoConfig(**kwargs)
+        return SecretsManager(config=cfg)
+
+    def test_normal_message_unaffected(self):
+        """Ordinary prose must survive redaction unmangled."""
+        mgr = self._make_manager()
+        exc = RuntimeError("connection refused: timeout after 30s")
+        sanitized = mgr._sanitize_error(exc)
+        assert "connection refused" in sanitized
+        assert "timeout after 30s" in sanitized
+        assert "REDACTED" not in sanitized
+
+    def test_prose_mentioning_secret_words_without_values_unaffected(self):
+        """Bare mentions of 'password'/'secret'/'token' with no adjacent value
+        must not be redacted into mush — only key=value-shaped text is."""
+        mgr = self._make_manager()
+        exc = RuntimeError(
+            "secret configuration mismatch: the password prompt failed and "
+            "the token endpoint returned 500"
+        )
+        sanitized = mgr._sanitize_error(exc)
+        assert "secret configuration mismatch" in sanitized
+        assert "password prompt failed" in sanitized
+        assert "token endpoint returned 500" in sanitized
+        assert "REDACTED" not in sanitized
+
+    def test_long_base64_blob_still_redacted(self):
+        """Regression: the original 20+-char context-free heuristic must still work."""
+        mgr = self._make_manager()
+        blob = "aB3dEfGh1JkLmN0pQrStUvWxYz9876543210"  # 37 chars, no context word
+        exc = RuntimeError(f"unexpected backend response: {blob}")
+        sanitized = mgr._sanitize_error(exc)
+        assert blob not in sanitized
+        assert "REDACTED" in sanitized
+
+    def test_short_contextual_secret_redacted(self):
+        """A shorter (12+ char) blob directly after a key-ish word + separator
+        is redacted even though it's below the old 20-char threshold."""
+        mgr = self._make_manager()
+        exc = RuntimeError("auth failed with token=abcdef123456xyz")
+        sanitized = mgr._sanitize_error(exc)
+        assert "abcdef123456xyz" not in sanitized
+        assert "REDACTED" in sanitized
+
+    def test_short_known_secret_value_redacted_when_it_matches_stored_secret(self):
+        """The manager exact-match redacts any secret VALUE it has itself
+        observed, regardless of length/shape — catching a short, non-base64
+        secret like 'abc12345key' that no regex heuristic would flag."""
+        mgr = self._make_manager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mock_client.secrets.kv.v2.read_secret_version.return_value = {
+            "data": {"data": {"api_key": "abc12345key"}}
+        }
+        stored = mgr.read_secret("myapp/config")
+        assert stored == {"api_key": "abc12345key"}
+
+        exc = RuntimeError("upstream rejected credential abc12345key")
+        sanitized = mgr._sanitize_error(exc)
+        assert "abc12345key" not in sanitized
+        assert "REDACTED" in sanitized
+
+    def test_short_unrelated_value_not_redacted(self):
+        """A short value the manager has NEVER seen, and that isn't
+        key=value-shaped, is left alone (no over-redaction)."""
+        mgr = self._make_manager()
+        exc = RuntimeError("request id abc12345key was not found")
+        sanitized = mgr._sanitize_error(exc)
+        assert "abc12345key" in sanitized
+        assert "REDACTED" not in sanitized
+
+    def test_container_token_redacted_via_known_secret_tracking(self):
+        """H-1 dev container token, once minted, is redacted from later errors."""
+        mgr = self._make_manager()
+        mgr._container_token = "deadbeef12345678"
+        mgr._track_secret_value(mgr._container_token)
+        exc = RuntimeError("dev container auth failed: deadbeef12345678")
+        sanitized = mgr._sanitize_error(exc)
+        assert "deadbeef12345678" not in sanitized
+        assert "REDACTED" in sanitized
+
+
 class TestOpenBaoPlaybooks:
     def test_openbao_bootstrap_playbook_exists(self):
         import os

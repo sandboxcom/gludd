@@ -701,19 +701,20 @@ def build_event_loop_mcp_dispatcher(
       tool_name, args)`` (the same resolution the HTTP dispatch path and
       ``daemon_wiring.make_mcp_handler`` use). The registry-backed server_id
       validation inside ``MCPClient.call_tool`` defends against tool-name
-      hijack. Because ``DynamicDispatcher.dispatch`` invokes handlers
-      *synchronously* (and the EventLoop dispatch site runs INSIDE the active
-      asyncio loop, so ``run_until_complete`` would raise), the async
-      ``call_tool`` coroutine is driven to completion on a short-lived worker
-      thread running its own event loop.
+      hijack. ``make_mcp_handler`` returns an ``async def`` handler and is
+      registered here UNWRAPPED: ``DynamicDispatcher.dispatch`` (async) calls
+      the handler and, when it returns an awaitable, awaits it on the SAME
+      running loop (``inspect.isawaitable`` check) — no thread, no nested
+      ``asyncio.run``. Previously this was bridged through a worker thread
+      that owned its own event loop, which froze the daemon's real loop for
+      the duration of every MCP call; that bridge is gone.
     * **skill_handler** — wired from the live skill registry so the same
       dispatcher also serves the ``skill`` kind the lattice grants; a ``None``
       registry simply leaves that kind unregistered (fail-closed).
     * **role_handler** — wired from the live ``AgentDispatcher`` via
-      :func:`make_role_handler`. Like mcp, the handler is *async* and the
-      ``DynamicDispatcher`` invokes handlers synchronously, so it is driven to
-      completion through the same ``_sync_bridge`` (worker thread owning its
-      own loop) — registering it raw would store an un-awaited coroutine.
+      :func:`make_role_handler`. Like mcp, the handler is async and is
+      registered unwrapped for the same reason: the dispatcher awaits it
+      in-place on the caller's loop.
 
     Args:
         mcp_client: A connected ``MCPClient`` (or None). When None, no ``mcp``
@@ -745,55 +746,17 @@ def build_event_loop_mcp_dispatcher(
     ):
         return None
 
-    # The MCP and role handlers from daemon_wiring are async; the
-    # DynamicDispatcher calls handlers synchronously, so bridge each coroutine
-    # on a worker thread that owns its own event loop. We cannot use
-    # asyncio.run / run_until_complete on the dispatch site's loop because
-    # that loop is already running.
-    async_mcp_handler = make_mcp_handler(mcp_client)
-    sync_mcp_handler = _sync_bridge(async_mcp_handler) if async_mcp_handler is not None else None
-
-    async_role_handler = make_role_handler(agent_dispatcher)
-    sync_role_handler = (
-        _sync_bridge(async_role_handler) if async_role_handler is not None else None
-    )
-
+    # make_mcp_handler / make_role_handler return `async def` handlers.
+    # DynamicDispatcher.dispatch is itself async and awaits any awaitable a
+    # handler returns on its OWN running loop (see dynamic_dispatcher.py's
+    # `if inspect.isawaitable(result): output = await result`), so the
+    # coroutine-returning handlers are registered directly — no bridging.
     return DynamicDispatcher(
         role="event_loop",
-        mcp_handler=sync_mcp_handler,
+        mcp_handler=make_mcp_handler(mcp_client),
         skill_handler=make_skill_handler(skill_registry),
-        role_handler=sync_role_handler,
+        role_handler=make_role_handler(agent_dispatcher),
     )
-
-
-def _sync_bridge(
-    async_handler: Callable[[str, dict[str, Any]], Any],
-) -> Callable[[str, dict[str, Any]], Any]:
-    """Wrap an async ``(name, args) -> awaitable`` handler as a sync handler.
-
-    The ``DynamicDispatcher`` invokes handlers synchronously and stores their
-    return value verbatim, so an un-awaited coroutine would never execute. This
-    drives the coroutine to completion: directly via ``asyncio.run`` when no loop
-    is running on the calling thread, or — when the call site is already inside a
-    running loop (the EventLoop dispatch path) — on a short-lived worker thread
-    that owns its own loop, so the running loop is never re-entered.
-    """
-
-    def _bridged(name: str, args: dict[str, Any]) -> Any:
-        import asyncio as _asyncio
-        from concurrent.futures import ThreadPoolExecutor
-
-        def _run() -> Any:
-            return _asyncio.run(async_handler(name, args))
-
-        try:
-            _asyncio.get_running_loop()
-        except RuntimeError:
-            return _run()
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(_run).result()
-
-    return _bridged
 
 
 # Tracks fire-and-forget self-update audit writes so the GC never reaps a task
@@ -1388,6 +1351,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         )
                         return response.content
                     except Exception:
+                        logger.debug("langgraph model call failed", exc_info=True)
                         return None
 
                 langgraph_reviewer = LangGraphReflexiveReviewer(
@@ -2078,12 +2042,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Daemon is running in degraded mode: %s", app.state._degraded)
     pipeline_controller = getattr(app.state, "_pipeline_controller", None)
     if pipeline_controller is not None:
-        with contextlib.suppress(Exception):
+        try:
             await pipeline_controller.stop()
+        except Exception:
+            logger.warning("pipeline_controller.stop() failed during shutdown", exc_info=True)
     mcp_client_ref = getattr(app.state, "_mcp_client", None)
     if mcp_client_ref is not None:
-        with contextlib.suppress(Exception):
+        try:
             await mcp_client_ref.stop_all()
+        except Exception:
+            logger.warning("mcp_client.stop_all() failed during shutdown", exc_info=True)
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     if _el is not None:
         _el.stop()
@@ -2112,7 +2080,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     _writer_process_ref = getattr(app.state, "_writer_process", None)
     if _writer_process_ref is not None:
         with contextlib.suppress(Exception):
-            _writer_process_ref.stop()
+            # WriterProcess.stop() polls with blocking time.sleep for up to
+            # ~15s waiting on the subprocess to exit; run it off the event
+            # loop so shutdown doesn't freeze the loop for that long.
+            await asyncio.to_thread(_writer_process_ref.stop)
     if engine is not None:
         await engine.dispose()
     _embedding_session_ref = getattr(app.state, "_embedding_session", None)
@@ -2932,7 +2903,10 @@ def create_daemon_app(
         reg = getattr(app.state, "_connector_registry", None)
         if reg is None:
             return {"health": {}, "count": 0, "errors": []}
-        health = reg.health_all()
+        # health_all() probes each connector's health() serially and blocks on
+        # network I/O. Offload to a worker thread so the event loop stays free
+        # (mirrors routers/observe.py's observe_health).
+        health = await asyncio.to_thread(reg.health_all)
         return {
             "health": health,
             "count": len(health),

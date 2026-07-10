@@ -23,6 +23,49 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - CI cooldown (10-min minimum interval between CI checks)
 - Pre-push clean-tree check (refuses push on dirty working tree)
 
+### Fixed (2026-07-10 CI hardening wave)
+
+- CI test failures across shards: root cause was `alembic/env.py`'s `fileConfig`
+  disabling all app loggers (now `disable_existing_loggers=False`), plus
+  per-test `.disabled`/logger-pinned caplog hardening (`worker_broadcast`
+  401/psk, `build_gateway`, `model_registry`, `daemon_auth_redteam` PSK
+  warnings, `spend_limiter` dispatch warning, webhook fire tracking, `rg_search`).
+- Slurm cost-cap unit/integration tests reconciled with cost-before-terminal-check
+  semantics + numeric job ids.
+- GPU-metrics cross-test `pynvml` mock leak: new `gpu_metrics.reset_probe` +
+  autouse reset.
+- TASKS.md tick-guard evidence.
+- Daemon event-loop freeze on MCP/role dispatch: `_sync_bridge` removed —
+  handlers now awaited natively.
+- Blocking `urlopen` on the tick path (`issue_ingestor`) moved to
+  `asyncio.to_thread`.
+- Admin connectors health check + `WriterProcess.stop` offloaded to threads.
+- Silent shutdown exception suppression now logged.
+
+### Changed (2026-07-10)
+
+- CI shard matrix re-split (`unit-1a` → `unit-1a` + `unit-1d`;
+  `tests/unit/test_*_e2e.py` now runs exactly once in the "other" shard).
+- Coverage job made genuinely non-gating (`--fail-under=0`).
+- `pages.yml` actions SHA-pinned + structurally tested.
+- `build.yml` stale comments corrected.
+
+### Added (2026-07-10)
+
+- make targets: `git-diff-full`, `ci-failed-tests`, `pages-enable`, `gh-tag-sha`.
+- GitHub Pages site created (`build_type=workflow`) so the presentation deploys.
+- `docs/AGENTIC_IMPLEMENTATION_SPEC.md` (64-item implementation spec).
+- Endpoint test suites for `routers/security` (58 tests), `routers/remediation`
+  (21), `routers/eval` (14).
+- Regression tests for alembic.ini logging sections.
+- Onboard providers wired to real AWS/GCP/Azure implementations (`gludd onboard`
+  now functional, 88 tests).
+
+### Security (2026-07-10, in progress)
+
+- Adversarial scan-file path jail + secrets redaction widening.
+- SSRF guard consolidation for 7 connectors onto `security/ssrf.py`.
+
 ## [0.1.0-beta.2] — 2026-07-06
 
 Beta 2: GPU/compute provider expansion, typing hardening, and guardrail codification.

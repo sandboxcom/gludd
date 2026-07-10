@@ -1,5 +1,16 @@
 # GitHub Pages Link — gludd reveal.js Deck
 
+> **Superseded design notice (2026-07-09):** the plan below (build to a
+> gitignored `docs/presentation/build/` and publish that) was never
+> implemented. The deck actually shipped is tracked directly at
+> `docs/presentation/deck/index.html` (no gitignored build output), and is
+> deployed by `.github/workflows/pages.yml`, which runs `make deck-build` in
+> CI and uploads `docs/presentation/deck/` as the Pages artifact. The GitHub
+> Pages site itself was created 2026-07-09 with `build_type=workflow`. Sections
+> 2–4 below describe the original (superseded) plan and are kept for history;
+> treat the workflow file and the tracked deck path as the current source of
+> truth, not this document's mechanism description.
+
 Status: PLANNED (not yet live). This document records the canonical URL, the
 recommended publish mechanism, the prerequisites to make it live, and the exact
 README snippet for the orchestrator to paste in after the meta-commit.

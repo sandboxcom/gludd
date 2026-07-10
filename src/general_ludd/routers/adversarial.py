@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from general_ludd.security.adversarial_detector import (
@@ -116,8 +116,20 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
     async def scan_file(body: ScanFileRequest) -> dict[str, object]:
         """Scan a file on disk for adversarial code patterns."""
         detector = _get_detector(app)
-        result = detector.scan_file(body.file_path)
-        return _result_to_response(result)
+        try:
+            result = detector.scan_file(body.file_path)
+        except (PermissionError, ValueError) as exc:
+            # scan_file jails the path (security.sanitize.confine_path_multi);
+            # an out-of-root path is a client error, not a server fault.
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        payload = _result_to_response(result)
+        # ScanFileResponse requires ``parsed`` (absent from the shared
+        # _result_to_response payload, which also serves ScanTextResponse);
+        # without it FastAPI response validation 500s on EVERY successful
+        # scan — latent since the endpoint was added, surfaced by the first
+        # HTTP-level test of this route.
+        payload["parsed"] = True
+        return payload
 
     @app.get("/admin/security/adversarial/report", response_model=None)
     async def get_adversarial_report(

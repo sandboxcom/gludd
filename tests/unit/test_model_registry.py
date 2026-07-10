@@ -212,6 +212,17 @@ class TestModelRegistryUnit:
 def test_download_unpinned_warns(caplog):
     import logging
 
+    # xdist-order pollution: any test that runs the real daemon lifespan
+    # against SQLite (e.g. `with TestClient(app) as client:`) triggers
+    # alembic/env.py's fileConfig(alembic.ini), which defaults to
+    # disable_existing_loggers=True. alembic.ini's [loggers] only lists
+    # root/sqlalchemy/alembic, so this already-created logger gets
+    # `.disabled = True` for the rest of the xdist worker — and
+    # `Logger.isEnabledFor()` short-circuits on `.disabled` before ever
+    # checking level/propagate, so restoring only propagate wouldn't fix it.
+    logging.getLogger("general_ludd.models.model_registry").disabled = False
+    logging.getLogger("general_ludd.models.model_registry").propagate = True
+
     with tempfile.TemporaryDirectory() as tmpdir:
         reg = ModelRegistry(cache_dir=tmpdir)
         with patch("huggingface_hub.snapshot_download") as mock_dl:

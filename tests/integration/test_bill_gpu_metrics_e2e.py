@@ -18,8 +18,31 @@ from unittest import mock
 
 import pytest
 
+import general_ludd.infra.gpu_metrics as gpu_metrics_module
 from general_ludd.infra.gpu_metrics import GPUMetrics, GPUMetricsCollector
 from general_ludd.infra.utilization import UtilizationTracker
+
+
+@pytest.fixture(autouse=True)
+def _reset_gpu_metrics_probe():
+    """Force a clean NVML probe before and after every test in this file.
+
+    Other GPU-metrics test modules (e.g.
+    tests/integration/test_bill6_gpu_metrics_wiring.py) monkeypatch
+    ``sys.modules["pynvml"]`` with a mock and ``importlib.reload`` the
+    ``gpu_metrics`` module to simulate a GPU-present environment, then reload again
+    to restore the real "no GPU" state. If that restoring reload is issued while the
+    mock is still patched into ``sys.modules`` (a bug in the *other* test file), the
+    module-level availability cache is left pointing at a leftover/exhausted mock
+    instead of being reset — and that pollution is invisible to xdist ordering until
+    it hits a test here that assumes a clean environment. Re-probing explicitly
+    before and after each test makes this file deterministic regardless of test
+    order or what any other module leaves behind.
+    """
+    gpu_metrics_module.reset_probe()
+    yield
+    gpu_metrics_module.reset_probe()
+
 
 # ---------------------------------------------------------------------------
 # GPUMetrics dataclass integration

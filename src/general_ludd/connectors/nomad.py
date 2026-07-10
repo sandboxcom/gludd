@@ -29,14 +29,13 @@ shared schema: ts, source, kind, level_or_status, message, value, labels, raw.
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
-import socket
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 from general_ludd.connectors._protocols import HttpResponse
+from general_ludd.security.ssrf import resolved_host_is_blocked
 
 
 class NomadSSRFError(ValueError):
@@ -93,37 +92,22 @@ def _urllib_transport(
 
 
 def _host_is_private(host: str) -> bool:
-    """True if host is an IP literal or resolves to a private/reserved address."""
-    candidates: list[str] = []
-    try:
-        ip = ipaddress.ip_address(host)
-        candidates.append(str(ip))
-    except ValueError:
-        # Hostname: resolve every A/AAAA record; if ANY is private, block.
-        try:
-            infos = socket.getaddrinfo(host, None)
-        except OSError:
-            # Unresolvable -> treat as unsafe (fail closed).
-            return True
-        for info in infos:
-            candidates.append(str(info[4][0]))
-        if not candidates:
-            return True
-    for addr in candidates:
-        try:
-            ip = ipaddress.ip_address(addr)
-        except ValueError:
-            return True
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
-            return True
-    return False
+    """True if host is a blocked literal, or resolves to a private/reserved
+    address.
+
+    Delegates entirely to the canonical
+    :func:`general_ludd.security.ssrf.resolved_host_is_blocked` so this
+    connector's private/loopback/metadata classification (previously a local
+    reimplementation missing the ``not is_global`` catch for TEST-NET /
+    documentation ranges and the cloud-metadata NAME blocklist) can never drift
+    from the single source of truth. Nomad agents are typically referenced by
+    an internal DNS name rather than a literal IP, so this connector already
+    accepted DNS-resolution as part of its threat model before this
+    consolidation; ``resolved_host_is_blocked`` performs that resolution with a
+    bounded timeout and fails CLOSED (unresolvable -> unsafe), matching this
+    function's prior behavior.
+    """
+    return resolved_host_is_blocked(host)
 
 
 class NomadSource:

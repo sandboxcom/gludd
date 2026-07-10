@@ -146,6 +146,53 @@ class TestOnboardObservability:
         assert out.lower().count("phase ") >= 4
 
 
+class TestOnboardProviderFlagsForwarded:
+    """--project/--subscription must reach get_provider.
+
+    Regression: cli.py parsed these flags but _cmd_onboard never read
+    args.project/args.subscription, so they silently no-op'd.
+    _cmd_onboard imports get_provider from the package at call time, so
+    patching the package attribute intercepts the real call.
+    """
+
+    def test_project_and_subscription_forwarded_to_get_provider(
+        self, capsys, tmp_path
+    ):
+        import general_ludd.onboard as onboard_pkg
+
+        seen: dict[str, object] = {}
+        real_get_provider = onboard_pkg.get_provider
+
+        def _spy(name, **kwargs):
+            seen["name"] = name
+            seen.update(kwargs)
+            return real_get_provider(name, **kwargs)
+
+        with patch.object(onboard_pkg, "get_provider", _spy):
+            code = _run(
+                [
+                    "onboard",
+                    "gcp",
+                    "--dry-run",
+                    "--token",
+                    "abc123",
+                    "--role-arn",
+                    "sa@proj-from-flag.iam.gserviceaccount.com",
+                    "--project",
+                    "proj-from-flag",
+                    "--subscription",
+                    "sub-from-flag",
+                    "--config-dir",
+                    str(tmp_path / "config"),
+                ],
+                capsys,
+            )
+        assert code == 0
+        assert seen["name"] == "gcp"
+        assert seen["project_id"] == "proj-from-flag"
+        assert seen["subscription_id"] == "sub-from-flag"
+
+
 class TestOnboardConfigWrite:
     def test_onboard_writes_config_file(self, capsys, tmp_path):
         cfg_dir = tmp_path / "config"

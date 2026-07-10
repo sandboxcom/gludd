@@ -73,6 +73,18 @@ class TestSpendLimiterDispatchGate:
     async def test_over_budget_skips_dispatch(self, caplog: pytest.LogCaptureFixture) -> None:
         """When try_charge() refuses (over budget), the job is NOT dispatched and a warning is logged."""
         caplog.propagate = True
+        # xdist-order pollution: alembic/env.py's fileConfig(alembic.ini) (run by
+        # ANY test that exercises the real daemon lifespan against SQLite, e.g.
+        # `with TestClient(app) as client:`) defaults to disable_existing_loggers
+        # =True, which sets `.disabled = True` on this logger (not listed in
+        # alembic.ini's [loggers]) for the rest of the xdist worker process.
+        # Neither conftest's `_isolate_root_logger` nor caplog's own machinery
+        # restores `.disabled` (only level/propagate/handlers, or the global
+        # `logging.disable()` level, respectively) — so `propagate = True` alone
+        # is powerless; `Logger.isEnabledFor()` short-circuits on `.disabled`
+        # first. See test_worker_broadcast_401.py for the first instance of
+        # this fix.
+        logging.getLogger("general_ludd.event_loop.loop").disabled = False
         logging.getLogger("general_ludd.event_loop.loop").propagate = True
         limiter = MagicMock()
         # Over budget: the atomic check-and-record refuses the charge.

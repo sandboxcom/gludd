@@ -60,7 +60,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		verify-release-artifact git-tag-rm release-cut release-recut release-create \
 		verify-feature-claims audit-coverage gate-audit coverage-json \
 		tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
-		deck deck-serve deck-data deck-honesty \
+		deck deck-serve deck-preview deck-data deck-honesty \
 		sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
 		sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
 		script-count
@@ -768,6 +768,11 @@ repo-status:
 git-diff:
 	@git diff --stat || echo "No diff"
 
+# Full-patch diff (git-diff is stats-only). Optional FILES scope.
+# Usage: make git-diff-full [FILES='path ...']
+git-diff-full:
+	@git diff HEAD $(if $(FILES),-- $(FILES),) || echo "No diff"
+
 repo-diff:
 	@git diff --stat || echo "No diff"
 
@@ -892,6 +897,27 @@ git-log:
 grep:
 	@[ -n "$(Q)" ] || { echo "Usage: make grep Q='pattern' [PATH='dir']"; exit 1; }
 	@grep -rn -- "$(Q)" $(if $(PATH_),$(PATH_),src tests) || echo "No matches"
+
+# Scoped grep that writes results to a file (avoids flooding stdout on broad
+# audits) and takes a directory scope via DIR (distinct name from PATH, which
+# would shadow the shell $PATH and break command resolution if reused here).
+# Usage: make grepf Q='pattern' DIR='src/general_ludd/daemon' OUT=/tmp/x.txt
+OUT ?= /tmp/gludd-grepf-out.txt
+# Directory listing helper for audits: list dirs (default depth 2) under DIR,
+# writing to OUT to avoid flooding stdout.
+lsd:
+	@find $(if $(DIR),$(DIR),src/general_ludd) -maxdepth $(if $(DEPTH),$(DEPTH),2) -type d > "$(OUT)" 2>&1; \
+	echo "wrote $$(wc -l < "$(OUT)" | tr -d ' ') lines to $(OUT)"
+lsf:
+	@find $(if $(DIR),$(DIR),src/general_ludd) -maxdepth $(if $(DEPTH),$(DEPTH),1) -type f -name '*.py' > "$(OUT)" 2>&1; \
+	echo "wrote $$(wc -l < "$(OUT)" | tr -d ' ') lines to $(OUT)"
+lsa:
+	@ls -la $(if $(DIR),$(DIR),src/general_ludd) > "$(OUT)" 2>&1; \
+	echo "wrote $$(wc -l < "$(OUT)" | tr -d ' ') lines to $(OUT)"
+grepf:
+	@[ -n "$(Q)" ] || { echo "Usage: make grepf Q='pattern' [DIR='dir'] [OUT=/tmp/x.txt]"; exit 1; }
+	@grep -rn -- "$(Q)" $(if $(DIR),$(DIR),src) > "$(OUT)" 2>&1 || echo "No matches" > "$(OUT)"; \
+	echo "wrote $$(wc -l < "$(OUT)" | tr -d ' ') lines to $(OUT)"
 
 git-tracked-keys:
 	@echo "=== Tracked files matching private-key / key patterns ==="
@@ -1207,6 +1233,13 @@ ci-status:
 
 pages-status:
 	@gh run list --workflow pages.yml -R sandboxcom/gludd -L 1 --json conclusion,status,databaseId 2>&1 || echo "gh-run-list-failed"
+
+# One-time Pages enablement (build_type=workflow). The pages.yml deploy job
+# cannot create the Pages site itself (GITHUB_TOKEN lacks admin) — this uses
+# the local gh auth, which must have repo admin. Safe to re-run (409 if exists).
+pages-enable:
+	@gh api -X POST repos/sandboxcom/gludd/pages -f build_type=workflow 2>&1 || echo "pages-enable-failed (already enabled, or local gh auth lacks repo admin)"
+	@gh api repos/sandboxcom/gludd/pages --jq '{status: .status, html_url: .html_url, build_type: .build_type}' 2>&1 || echo "pages-get-failed"
 
 # ci-verdict: NON-BLOCKING point-in-time CI check (returns in <1s).
 # Exits 0=GREEN, 1=RED/no-run, 2=PENDING. Per AGENTS.md "CI-Poll Subagents Are
@@ -1587,6 +1620,12 @@ ci-log:
 
 ci-watch:
 	@gh run watch -R sandboxcom/gludd $(RUN) --exit-status 2>&1 || echo "gh-run-watch-failed"
+
+# Just the FAILED/ERROR test ids + summary lines from a run's failed-step logs
+# (ci-faillog tails raw logs; this filters the signal). Usage: make ci-failed-tests RUN=<id>
+ci-failed-tests:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-failed-tests RUN=<run-id>"; exit 1; fi
+	@gh run view -R sandboxcom/gludd $(RUN) --log-failed 2>/dev/null | grep -E 'FAILED tests/|ERROR tests/|= .*(failed|error).* =' | sort -u || echo "no-failed-test-lines-found"
 
 ci-auth:
 	@gh auth status 2>&1 || echo "gh-auth-failed"
@@ -2820,7 +2859,10 @@ tf-clean:
 
 # --- Presentation deck ---
 #   make deck            — build the reveal.js deck (generate deck-data.json + honesty check)
-#   make deck-serve      — start local HTTP server for preview
+#   make deck-serve      — resolve {{TOKEN}}s into a scratch copy (/tmp/gludd-deck-preview)
+#                          and serve THAT — the tracked template is never modified
+#   make deck-preview    — build the same resolved scratch copy without serving
+#                          (non-interactive; useful for CI/verification)
 #   make deck-data       — collect live project data → deck-data.json (no render)
 #   make deck-honesty    — lint the deck HTML for banned marketing tokens
 DECK_DIR := docs/presentation/deck
@@ -2837,9 +2879,18 @@ deck-build: deck
 	@$(UV) run python3 scripts/build_deck.py --build
 	@echo "=== DECK HTML REGENERATED ==="
 
+# Serves a token-RESOLVED copy of the deck (built into /tmp/gludd-deck-preview)
+# so the local preview shows real numbers, same as the published Pages site —
+# without ever writing to the tracked docs/presentation/deck/index.html template.
 deck-serve:
-	@echo "Serving deck at http://localhost:8080/"
+	@echo "Serving deck at http://localhost:8080/ (resolved preview copy; tracked template untouched)"
 	@$(UV) run python3 scripts/build_deck.py --serve
+
+# Non-interactive counterpart to deck-serve: builds the resolved scratch copy
+# in /tmp/gludd-deck-preview without starting the HTTP server. Use this to
+# verify token substitution (e.g. in CI or scripted checks) without blocking.
+deck-preview:
+	@$(UV) run python3 scripts/build_deck.py --preview
 
 # Remove the legacy SVG artifacts from the deck assets dir (now replaced by inline Mermaid).
 # Physically deletes the files and the assets/ dir if it becomes empty.

@@ -24,10 +24,14 @@ class TestSlurmCostCapIntegration:
         adapter = SlurmAdapter()
 
         with patch.object(adapter, "status", return_value=SlurmJobInfo(
-            job_id="job-001", state=SlurmJobState.RUNNING,
+            job_id="1001", state=SlurmJobState.RUNNING,
         )), patch.object(adapter, "elapsed_seconds", return_value=30.0):
-            config = SlurmJobConfig(max_cost_usd=0.01, hourly_rate_usd=2.0)
-            monitor = SlurmJobMonitor(adapter=adapter, job_id="job-001", config=config)
+            # max_cost_usd is set high enough that the ~$0.017 cost sample
+            # (30s @ $2/hr) never breaches the cap — this test only checks
+            # clean start/stop, not cancellation, and uses a real (unmocked)
+            # SlurmAdapter whose cancel() would shell out to `scancel`.
+            config = SlurmJobConfig(max_cost_usd=10.0, hourly_rate_usd=2.0)
+            monitor = SlurmJobMonitor(adapter=adapter, job_id="1001", config=config)
             monitor.start()
             time.sleep(0.3)  # Let the thread start and run at least one poll
             monitor.stop()

@@ -1,8 +1,8 @@
 """Onboarding scaffold for cloud IAM role + API token setup.
 
-This package exposes the ``OnboardProvider`` Protocol and provider-specific
-stub handlers. The stubs raise ``NotImplementedError``; parallel tasks fill
-in the actual IAM-policy authoring and live token-validation calls.
+This package exposes the ``OnboardProvider`` Protocol and wires
+``SUPPORTED_PROVIDERS``/``get_provider()`` to the real, unit-tested
+per-cloud implementations in ``general_ludd.onboard.{aws,gcp,azure}``.
 
 Each provider module exposes three callables with a consistent signature:
 
@@ -21,6 +21,16 @@ Cloud SDKs are LAZY-IMPORTED inside the functions that use them so the
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
+
+# NOTE: these module-level imports are safe at ``gludd`` startup because
+# ``onboard.aws`` / ``onboard.gcp`` / ``onboard.azure`` only import their
+# respective cloud SDKs (boto3 / google-* / azure-*) LAZILY, inside the
+# functions that actually make a network call. Importing the modules
+# themselves never touches boto3/google/azure, so the optional
+# ``[aws]``/``[gcp]``/``[azure]`` extras remain optional at install time.
+from general_ludd.onboard.aws import AWSOnboardProvider as _AWSProviderImpl
+from general_ludd.onboard.azure import AzureOnboardProvider as AzureOnboardProvider
+from general_ludd.onboard.gcp import GCPOnboardProvider as GCPOnboardProvider
 
 
 @runtime_checkable
@@ -41,45 +51,41 @@ class OnboardProvider(Protocol):
     ) -> tuple[bool, dict[str, Any]]: ...
 
 
-class _BaseStub:
-    """Shared base for provider stubs; raises on every live operation."""
+class AWSOnboardProvider:
+    """Real AWS onboarding provider.
 
-    name: str = "stub"
+    Wraps (by composition, NOT inheritance) the real
+    :class:`general_ludd.onboard.aws.AWSOnboardProvider` to adapt its
+    ``validate_token_and_role`` — which returns a bare dict and raises
+    ``ImportError``/other exceptions when boto3 is missing or the call
+    fails — to the non-raising ``(ok, details)`` shape the
+    :class:`OnboardProvider` Protocol (and the CLI scaffold) expect.
 
-    def create_role_instructions(self) -> str:
-        raise NotImplementedError(
-            f"Onboard provider '{self.name}' is not yet implemented. "
-            "IAM role instructions are stubbed until the parallel provider task lands."
-        )
+    Composition (rather than subclassing + overriding
+    ``validate_token_and_role``) is deliberate: the real class's own
+    :meth:`~general_ludd.onboard.aws.AWSOnboardProvider._validate_or_error`
+    helper calls ``self.validate_token_and_role(...)`` internally, so
+    subclassing and overriding that same method name would make
+    ``_validate_or_error`` call straight back into the override —
+    infinite recursion. Composition keeps the two method-resolution
+    orders separate.
+    """
 
-    def token_acquisition_guide(self) -> str:
-        raise NotImplementedError(
-            f"Onboard provider '{self.name}' is not yet implemented. "
-            "Token acquisition guide is stubbed until the parallel provider task lands."
-        )
-
-    def validate_token_and_role(
-        self,
-        token: str,
-        role_arn: str,
-        region: str,
-    ) -> tuple[bool, dict[str, Any]]:
-        raise NotImplementedError(
-            f"Onboard provider '{self.name}' is not yet implemented. "
-            "Token/role validation is stubbed until the parallel provider task lands."
-        )
-
-
-class AWSOnboardProvider(_BaseStub):
     name = "aws"
 
+    def __init__(self) -> None:
+        self._impl = _AWSProviderImpl()
 
-class GCPOnboardProvider(_BaseStub):
-    name = "gcp"
+    def create_role_instructions(self) -> str:
+        return self._impl.create_role_instructions()
 
+    def token_acquisition_guide(self) -> str:
+        return self._impl.token_acquisition_guide()
 
-class AzureOnboardProvider(_BaseStub):
-    name = "azure"
+    def validate_token_and_role(
+        self, token: str, role_arn: str, region: str
+    ) -> tuple[bool, dict[str, Any]]:
+        return self._impl._validate_or_error(token, role_arn, region)
 
 
 SUPPORTED_PROVIDERS: dict[str, type[OnboardProvider]] = {
@@ -89,14 +95,44 @@ SUPPORTED_PROVIDERS: dict[str, type[OnboardProvider]] = {
 }
 
 
-def get_provider(name: str) -> OnboardProvider:
-    """Instantiate a provider handler by canonical name."""
+# Which optional keyword arguments each provider's __init__ accepts. Explicit
+# per-provider mapping (rather than inspect.signature) so the passthrough
+# contract is auditable at a glance and can't silently widen if a provider
+# grows kwargs.
+_PROVIDER_INIT_KWARGS: dict[str, frozenset[str]] = {
+    "aws": frozenset(),
+    "gcp": frozenset({"project_id"}),
+    "azure": frozenset({"subscription_id"}),
+}
+
+
+def get_provider(
+    name: str,
+    *,
+    project_id: str | None = None,
+    subscription_id: str | None = None,
+) -> OnboardProvider:
+    """Instantiate a provider handler by canonical name.
+
+    Optional cloud-specific identifiers are forwarded only to the providers
+    whose constructors accept them (``project_id`` -> gcp,
+    ``subscription_id`` -> azure); other providers silently ignore them.
+    ``None`` values are never forwarded, so each provider's own env-var
+    fallback (``GOOGLE_CLOUD_PROJECT`` / ``AZURE_SUBSCRIPTION_ID``) still
+    applies when the caller has nothing to pass.
+    """
     if name not in SUPPORTED_PROVIDERS:
         raise ValueError(
             f"Unknown onboard provider '{name}'. "
             f"Supported: {', '.join(sorted(SUPPORTED_PROVIDERS))}."
         )
-    return SUPPORTED_PROVIDERS[name]()
+    offered: dict[str, str | None] = {
+        "project_id": project_id,
+        "subscription_id": subscription_id,
+    }
+    accepted = _PROVIDER_INIT_KWARGS[name]
+    kwargs = {k: v for k, v in offered.items() if k in accepted and v is not None}
+    return SUPPORTED_PROVIDERS[name](**kwargs)
 
 
 __all__ = [

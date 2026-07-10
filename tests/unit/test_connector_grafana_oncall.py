@@ -174,6 +174,33 @@ def test_ssrf_rejects_internal_base_url():
         GrafanaOnCallSource({"base_url": "http://169.254.169.254"})
 
 
+@pytest.mark.parametrize("host", ["metadata", "instance-data", "ip6-localhost"])
+def test_ssrf_rejects_metadata_alias_names_without_dns(monkeypatch, host):
+    # These names were NOT in this connector's own bespoke blocklist (it only
+    # knew "localhost" + 4 TLD suffixes). host_is_blocked catches them and
+    # must short-circuit BEFORE any DNS resolution is attempted.
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("getaddrinfo must not be called for a blocked literal name")
+
+    monkeypatch.setattr(_gc.socket, "getaddrinfo", _boom)
+
+    with pytest.raises(ValueError):
+        GrafanaOnCallSource({"base_url": f"http://{host}:8080"})
+
+
+def test_ssrf_rejects_resolved_cgnat_address(monkeypatch):
+    # 100.70.1.1 sits in the 100.64.0.0/10 carrier-grade-NAT range: is_private
+    # is False for it in Python's ipaddress module, so the OLD local flag set
+    # (missing `not is_global`) would NOT have blocked it once resolved.
+    def _fake_getaddrinfo(host, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("100.70.1.1", 443))]
+
+    monkeypatch.setattr(_gc.socket, "getaddrinfo", _fake_getaddrinfo)
+
+    with pytest.raises(ValueError, match="non-public"):
+        GrafanaOnCallSource({"base_url": "https://cgnat-internal.example.com"})
+
+
 def test_ssrf_allow_private_opt_in():
     src = GrafanaOnCallSource(
         {"base_url": "http://oncall.internal.lan:8080", "allow_private": True},

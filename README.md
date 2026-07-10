@@ -3,7 +3,7 @@
 The black swan agentic coding system — an autonomous, Ansible-driven, multi-model AI agent
 that submits coding tasks and produces real, committed, reviewed, and reconciled code changes.
 
-## [Interactive Presentation](https://sandboxcom.github.io/gludd/)
+## [Interactive Presentation](https://sandboxcom.github.io/gludd/) &middot; [local fallback](docs/presentation/deck/index.html)
 
 ## What Is This?
 
@@ -102,20 +102,37 @@ Completed features are documented in CHANGELOG.md. Only in-progress items are tr
 | Account lifecycle | 90% — ephemeral accounts implemented, needs e2e test |
 ## Presentation
 
-**Status: built and deployed.** The interactive reveal.js deck lives at
-[`docs/presentation/deck/index.html`](docs/presentation/deck/index.html) and is
-published via GitHub Pages.
+**Status: built, source tracked, Pages workflow wired.** The interactive reveal.js
+deck lives at [`docs/presentation/deck/index.html`](docs/presentation/deck/index.html).
+The tracked file is a **template**: it carries `{{VERSION}}`/`{{TEST_COUNT}}`/
+`{{ROLE_COUNT}}`/`{{GIT_SHA}}`/`{{GENERATED_AT}}` placeholders, so opening it
+directly in a browser (or on GitHub) shows those literal `{{TOKEN}}` strings
+instead of live numbers. Run `make deck-serve` to see the deck with real,
+current metrics: it resolves the tokens into a throwaway scratch copy and
+serves that, leaving the tracked template byte-for-byte untouched. The
+published Pages URL below is built the same way (via `make deck-build` in CI),
+so it always shows resolved numbers.
 
-**Live URL:** [https://sandboxcom.github.io/gludd/](https://sandboxcom.github.io/gludd/)
+**Live URL (GitHub Pages):** [https://sandboxcom.github.io/gludd/](https://sandboxcom.github.io/gludd/)
+&mdash; deployed by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to
+`master` that touches the deck source. Pages was just enabled for this repo; the
+URL goes live once that workflow completes its next successful run &mdash; check
+the Actions tab for current deploy status rather than assuming this link resolves.
 
-The deck is a 20-slide presentation written for a general (non-technical)
-audience. It covers:
+The deck is a 28-slide presentation that opens with a plain-English introduction
+(with analogies) and then goes deep. It covers:
 
-- What gludd is, in plain English (with analogies)
-- The problem it solves
-- A granular walkthrough of the work cycle (claim → dispatch → review → save)
+- What gludd is, in plain English, and the problem it solves
+- The flagship flow &mdash; todo submitted → AI implements → reviewed → committed
+  &mdash; as 9 stages, each citing the exact function and file that implements it
+  (`routers/todos.py`, `event_loop/loop.py`, `models/gateway.py`,
+  `review/reviewer.py`, `git_automation/repo.py`, and more)
+- A sequence diagram of the adversarial review loop (JSON-fence-tolerant
+  parsing, fail-closed on unparseable output)
+- The database: all 27 tables in `db/models.py`, with an ER-style diagram and
+  reference tables giving the exact line number and purpose of each
 - Security (three-layer model)
-- Current stats with citations (22,548 tests, 604 source files, 1,213 test files, 109 Ansible roles, 36 modules, 13 enforcement plugins, 334 Make targets)
+- Current stats with citations (tests, source files, Ansible roles/modules, DB tables, model providers, enforcement plugins)
 - What gludd can do today, and what it can't do yet (honest gaps)
 - How to try it, roadmap, and honest metrics
 
@@ -127,10 +144,10 @@ the architecture, work cycle, and security layers — no binary image artifacts.
 To preview locally:
 
 ```bash
-# Open the deck in your browser
+# Resolved preview (recommended) — real numbers, tracked template untouched
+make deck-serve
+# Raw template — opens directly, shows literal {{TOKEN}} placeholders
 open docs/presentation/deck/index.html
-# Or serve it
-python3 -m http.server 8000 --directory docs/presentation/deck
 ```
 
 Design: `docs/presentation/DESIGN_revealjs_deck.md` | Build task list: `docs/presentation/BUILD_TASK_LIST.md`

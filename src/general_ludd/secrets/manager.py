@@ -113,6 +113,19 @@ class ImageUpdateCandidate:
 _ALIAS_PATH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_/.:-]*$")
 _ALIAS_MOUNT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]*$")
 _INVALID_PATH_CHARS_RE = re.compile(r"[;|&$`!@#%^*(){}\[\]<>\\'\"]")
+
+# Context-free heuristic: any long run of base64/hex-charset characters is
+# probably a secret wherever it appears (original _redact behaviour).
+_SECRET_BLOB_RE = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
+# Contextual heuristic: a *shorter* run (>=12 chars) immediately after a
+# key-ish word + "=" or ":" is also almost certainly a secret value, even
+# though it is too short to be caught by the length-only pattern above. The
+# explicit separator (not just whitespace) keeps this from firing on ordinary
+# prose like "secret configuration mismatch" or "the password prompt failed".
+_CONTEXTUAL_SECRET_RE = re.compile(
+    r"(?i)(\b(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|pwd|"
+    r"credential)s?\s*[:=]\s*)(['\"]?)([A-Za-z0-9+/=_-]{12,})(['\"]?)"
+)
 _INVALID_MOUNT_CHARS_RE = re.compile(r"[;|&$`!@#%^*(){}\[\]<>\\'\":]")
 
 
@@ -173,14 +186,58 @@ class SecretsManager:
         # spec's ``secret:openbao`` capability and raises
         # SecretPermissionDeniedError when the path is outside the allow-list.
         self._permission_spec = permission_spec
+        # Exact-match redaction aid: every secret VALUE this instance has
+        # actually seen (read/written/minted), so _sanitize_error can strip it
+        # out of exception text verbatim even when it's too short or not
+        # base64/hex-shaped enough for the _redact regex heuristics to catch.
+        self._known_secret_values: set[str] = set()
 
-    @staticmethod
-    def _sanitize_error(exc: BaseException) -> str:
-        return SecretsManager._redact(f"{type(exc).__name__}: {exc}")
+    # Minimum length tracked for exact-match redaction. Short common
+    # substrings (e.g. a 2-3 char status code) would cause false-positive
+    # redaction of unrelated log text if tracked, so only values long enough
+    # to plausibly BE a secret are remembered.
+    _MIN_TRACKED_SECRET_LEN = 6
+    # Best-effort cap so a long-lived manager doesn't grow this set forever.
+    _MAX_TRACKED_SECRETS = 500
+
+    def _track_secret_value(self, value: object) -> None:
+        """Remember ``value`` for exact-match redaction in future log lines."""
+        if isinstance(value, str) and len(value) >= self._MIN_TRACKED_SECRET_LEN:
+            if len(self._known_secret_values) >= self._MAX_TRACKED_SECRETS:
+                self._known_secret_values.pop()
+            self._known_secret_values.add(value)
+
+    def _track_secret_dict(self, data: dict[str, object]) -> None:
+        for v in data.values():
+            self._track_secret_value(v)
+
+    def _sanitize_error(self, exc: BaseException) -> str:
+        return self._redact_message(f"{type(exc).__name__}: {exc}")
+
+    def _redact_message(self, message: str) -> str:
+        """Redact ``message`` using both known-value and pattern-based passes.
+
+        1. Exact-match: any secret value this instance has actually observed
+           (see :meth:`_track_secret_value`) is replaced verbatim, regardless
+           of length or shape — this is what catches short/non-base64 secrets
+           the regex heuristics below would otherwise miss.
+        2. Pattern-based fallback (:func:`_redact`, static) for secrets that
+           never passed through this instance.
+        """
+        for secret in self._known_secret_values:
+            if secret and secret in message:
+                message = message.replace(secret, "***REDACTED***")
+        return self._redact(message)
 
     @staticmethod
     def _redact(message: str) -> str:
-        return re.sub(r"[A-Za-z0-9+/=_-]{20,}", "***REDACTED***", message)
+        """Regex-based redaction backstop (context-free + contextual passes)."""
+
+        def _contextual_sub(m: re.Match[str]) -> str:
+            return f"{m.group(1)}{m.group(2)}***REDACTED***{m.group(4)}"
+
+        message = _CONTEXTUAL_SECRET_RE.sub(_contextual_sub, message)
+        return _SECRET_BLOB_RE.sub("***REDACTED***", message)
 
     def _enforce_permission(self, path: str, action: str) -> None:
         """Raise SecretPermissionDeniedError unless the spec permits ``action`` on ``path``.
@@ -244,7 +301,9 @@ class SecretsManager:
                 path=alias.path, mount_point=alias.mount
             )
             if result and "data" in result and "data" in result["data"]:
-                return str(result["data"]["data"].get("value", ""))
+                resolved = str(result["data"]["data"].get("value", ""))
+                self._track_secret_value(resolved)
+                return resolved
         except Exception as exc:
             if _is_genuine_not_found(exc):
                 # Secret genuinely does not exist — absence is the correct answer.
@@ -268,6 +327,7 @@ class SecretsManager:
     def bootstrap_local(self) -> BootstrapResult:
         token = f"s.local-dev-{uuid.uuid4().hex[:16]}"
         url = "http://localhost:8200"
+        self._track_secret_value(token)
         self._local_bootstrap_result = BootstrapResult(
             url=url,
             token=token,
@@ -289,6 +349,7 @@ class SecretsManager:
                     "external OpenBao URL must use https:// — refusing to send "
                     f"the auth token over plaintext transport: {ext_url!r}"
                 )
+            self._track_secret_value(ext_token)
             self._client = hvac.Client(
                 url=ext_url,
                 token=ext_token,
@@ -333,7 +394,9 @@ class SecretsManager:
         accessor = data.get("secret_id_accessor")
         if accessor:
             self._secret_id_accessors.setdefault(role_name, []).append(str(accessor))
-        return str(data["secret_id"])
+        secret_id = str(data["secret_id"])
+        self._track_secret_value(secret_id)
+        return secret_id
 
     def rotate_approle_secret_id(self, role_name: str) -> str:
         """Mint a fresh secret_id for ``role_name`` and destroy the prior ones.
@@ -405,6 +468,7 @@ class SecretsManager:
         self._enforce_permission(path, action="write")
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
+        self._track_secret_dict(value)
         self._client.secrets.kv.v2.create_or_update_secret(
             path=path,
             secret=value,
@@ -421,7 +485,9 @@ class SecretsManager:
                 path=path, mount_point=self._config.kv_mount
             )
             if result and "data" in result and "data" in result["data"]:
-                return dict(result["data"]["data"])
+                secret_data = dict(result["data"]["data"])
+                self._track_secret_dict(secret_data)
+                return secret_data
         except Exception as exc:
             if _is_genuine_not_found(exc):
                 return None
@@ -490,9 +556,15 @@ class SecretsManager:
         except Exception as exc:
             if _is_genuine_not_found(exc):
                 return None
+            # Contract (test_secrets_manager_4th): the message MUST carry the
+            # original exception's class name and MUST NOT carry its raw body.
+            # The class name is interpolated directly from type(exc) — never
+            # routed through an instance method — so it survives even when
+            # ``self`` is a test double; only the body goes through redaction
+            # (static regex backstop; known-value pass too when self is real).
             raise SecretsUnavailableError(
                 f"secrets backend unavailable scanning image pins for {image_ref!r}: "
-                f"{SecretsManager._sanitize_error(exc)}"
+                f"{type(exc).__name__}: {self._redact_message(str(exc))}"
             ) from exc
         if stored is None:
             return None
@@ -531,6 +603,7 @@ class SecretsManager:
         # surfaced on BootstrapResult so connect() can authenticate to it.
         container_token = uuid.uuid4().hex
         self._container_token = container_token
+        self._track_secret_value(container_token)
         args = [runtime, "run", "-d"]
         if is_podman and is_macos:
             args.extend(["--network", "host"])

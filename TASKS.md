@@ -1014,8 +1014,8 @@ Consolidated disposition of the security finding tranche. **14/15 findings FIXED
 - **D-#5-residual** — bundle self-attestation: filestore checksums cover reads; the bundle/self-attestation signing path remains as follow-up.
 - **D-#14-residual** — sibling paths: budget guard covers the projected-cost path; sibling-cost paths (e.g. concurrent dispatch fan-out) remain as follow-up.
 - **D-AB-5/AB-8-residual** — regression tests for the tool_loop/engine sync fixes are in flight.
-- **D-#49** — spend_limiter rolling budget cap: in flight (SpendLimiter wired into dispatch path; e2e regression pending).
-- **D-#59/#69** — avg_cost real-value routing: in flight (AdaptiveRouter daemon-wired; avg_cost regression pending).
+- [x] **D-#49** — spend_limiter rolling budget cap: SpendLimiter wired into dispatch path; e2e regression landed. | evidence: tests/e2e/test_spend_limiter_dispatch_e2e.py 3 passed — real SpendLimiter hydrated from seeded spend_records via daemon._restore_persisted_spend; over-budget todo skipped and re-dispatchable, under-budget dispatched
+- [x] **D-#59/#69** — avg_cost real-value routing: AdaptiveRouter daemon-wired; regression landed. | evidence: tests/unit/test_avg_cost_routing_regression.py 3 passed — avg_cost computed via SQL AVG(cost_usd), AdaptiveRouter.route() picks cheaper model on quality tie
 
 ## Phase Presentation — reveal.js deck + codified abilities (2026-07-08)
 
@@ -1059,5 +1059,21 @@ Three-layer anti-lying guardrail landing so false "done" claims are structurally
 
 ## Phase slurm-cost-cap-fix — Targeted CI fix (2026-07-09)
 
-- [x] **Fix SlurmJobMonitor._poll** — reorder cost computation before terminal state check; tests updated (CANCELLED→RUNNING in mock side_effect). Pending items (beta.3.2 coverage, Ship v0.1.0-beta.2) not gated on this fix.
+- [x] **Fix SlurmJobMonitor._poll** — reorder cost computation before terminal state check; tests updated (CANCELLED→RUNNING in mock side_effect). Pending items (beta.3.2 coverage, Ship v0.1.0-beta.2) not gated on this fix. | evidence: commit 4b961146; tests/integration/test_bill2_slurm_cost_cap_wiring.py + tests/integration/test_bill_slurm_cost_cap_e2e.py updated; unit-test reconciliation (tests/unit/test_slurm_cost_cap.py) in the 2026-07-09 CI-green wave
+
+## Phase CI-Green-Wave — 2026-07-10
+
+- [x] **CGW-1** — alembic/env.py fileConfig disable_existing_loggers=False (root cause of shard-wide caplog failures: daemon lifespan stamp_head ran fileConfig which set .disabled=True on every general_ludd.* logger in the xdist worker) | evidence: tests/unit combo run 67 passed incl. polluter test_w3_4_readyz.py
+- [x] **CGW-2** — caplog .disabled hardening in 9 test files (worker_broadcast_401/psk, build_gateway, model_registry, daemon_auth_redteam, spend_limiter_dispatch_wiring, webhook_fire_tracking, rg_search) | evidence: tests/security 608 passed 0 failed; per-file test-iso PASS
+- [x] **CGW-3** — slurm cost-cap unit/integration reconciliation (cost sampled before terminal check; numeric job ids) | evidence: tests/unit/test_slurm_cost_cap.py 23 passed; tests/integration/test_slurm_cost_cap.py 7 passed; tests/integration/test_bill2_slurm_cost_cap_wiring.py 9 passed; tests/integration/test_bill_slurm_cost_cap_e2e.py 8 passed
+- [x] **CGW-4** — GPU-metrics pynvml mock-leak fix (gpu_metrics.reset_probe + autouse fixture in test_bill_gpu_metrics_e2e.py) | evidence: 37 passed combined with polluter test_bill6_gpu_metrics_wiring.py, xdist 2w
+- [x] **CGW-5** — daemon _sync_bridge removal; async mcp/role handlers registered directly (event loop no longer frozen per tool call) | evidence: test_daemon_mcp_dispatch.py 18 passed; test_daemon.py 58 passed
+- [x] **CGW-6** — issue_ingestor urlopen → asyncio.to_thread; admin_connectors_health + WriterProcess.stop offloaded; shutdown suppress→logged | evidence: test_data_integrity_bugs.py 12 passed; test_issue_ingestor_adversarial.py 29 passed; test_admin_connectors_health.py 5 passed
+- [x] **CGW-8** — onboard providers wired to real AWS/GCP/Azure implementations (stubs raised NotImplementedError) + --project/--subscription passthrough | evidence: tests/unit/test_onboard_init.py + test_onboard_cli.py + test_onboard_aws.py + test_onboard_gcp.py + test_onboard_azure.py 94 passed
+- [x] **CGW-9** — routers register_all drift fix (eval, remediation) + endpoint tests for security/remediation/eval routers | evidence: tests/unit/test_router_registration.py 7 passed; tests/unit/test_routers_remediation_endpoints.py 21 passed; tests/unit/test_routers_eval_endpoints.py 14 passed; tests/unit/test_routers_security_endpoints.py 58 passed
+- [x] **CGW-10** — GitHub Pages site created (make pages-enable, build_type=workflow) + deck rebuilt 28 slides with code-path/DB-table citations + {{TOKEN}} template restoration | evidence: make deck-honesty clean; deck-verify agent 5/5 checks PASS; 6/6 code-path citations exact
+- [x] **CGW-11** — TASKS.md tick-guard evidence fix | evidence: test_tasks_tick_guard.py 9 passed
+- [x] **CGW-12** — adversarial scan_file path jail (confine_path_multi) + router 400 mapping + scan-file 500-on-success latent bug + secrets redaction widening (known-value exact-match + contextual regex) | evidence: test_adversarial_detector.py 95 passed; test_secrets_manager_4th.py combo 124 passed
+- [x] **CGW-13** — SSRF tranche 6: 7 connectors (nomad, grafana_oncall, kubernetes, cilium_hubble, snmp, podman, docker_engine) consolidated onto security/ssrf.py + new resolved_host_is_blocked + bug_class_registry guard-name fix | evidence: 186 passed across 8 connector suites; test_ssrf_canonical_parity.py 120 passed
+- [x] **CGW-7** — CI shard matrix rework (unit-1a→1a+1d split; dead --ignore-glob replaced with shell-level case-pattern filtering in .github/workflows/build.yml; coverage --fail-under=0; pages.yml SHA-pinning + structural tests) | evidence: tests/security/test_ci_workflow.py 59 passed; per-shard file counts sum 970 = all direct tests/unit files exactly once
 

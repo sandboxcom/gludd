@@ -28,6 +28,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from general_ludd.security.ssrf import _ip_addr_is_blocked, host_is_blocked
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TOKEN_ENV = "GRAFANA_ONCALL_TOKEN"
@@ -227,53 +229,78 @@ def _safe_err(exc: Exception) -> str:
 
 
 def _guard_ssrf(base_url: str, *, allow_private: bool) -> None:
-    """Reject base URLs whose host is private/loopback unless opted in."""
+    """Reject base URLs whose host is private/loopback/metadata unless opted in.
+
+    The literal-host decision (loopback/metadata NAMES, the ``.localhost`` TLD,
+    and literal metadata/private/reserved/non-global IPs) is delegated to the
+    canonical :func:`general_ludd.security.ssrf.host_is_blocked` so it can
+    never drift from the single source of truth — this closes a real gap the
+    connector's own bespoke name blocklist had (it only recognized the bare
+    name ``"localhost"`` and 4 TLD suffixes, not ``"metadata"``,
+    ``"instance-data"``, the ``ip6-*`` loopback aliases, or the Alibaba
+    ``100.100.100.200`` metadata IP).
+
+    On top of that canonical decision this connector keeps ONE extra check
+    local rather than promoting it into the shared module: an internal-TLD
+    suffix blocklist (``.local``/``.internal``/``.lan``/``.intranet``/
+    ``.corp``). That is a policy call specific to Grafana OnCall (a
+    self-hosted instance is commonly reached by exactly such an internal DNS
+    name) rather than a generally-sound rule for every connector/guard in the
+    codebase — some environments legitimately use one of those suffixes for a
+    public-facing service, so it stays an additive, connector-local rule.
+
+    For a hostname that is not an IP literal, this resolves it (fail CLOSED:
+    an unresolvable host is refused, never silently allowed — a DNS failure
+    could mask an internal/rebinding target) and re-checks every resolved
+    address through the canonical numeric classifier
+    :func:`general_ludd.security.ssrf._ip_addr_is_blocked` (adds the
+    ``not is_global`` catch for TEST-NET/documentation ranges the old local
+    flag set was missing).
+    """
     if allow_private:
         return
     host = urlsplit(base_url).hostname
     if not host:
         raise ValueError("base_url has no host")
 
-    candidates: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
-    try:
-        candidates.append(ipaddress.ip_address(host))
-    except ValueError:
-        lowered = host.lower()
-        if lowered in {"localhost"} or lowered.endswith(
-            (".localhost", ".local", ".internal", ".lan", ".intranet", ".corp")
-        ):
-            raise ValueError(
-                f"base_url host {host!r} is an internal name "
-                "(set allow_private=True to override)"
-            ) from None
-        try:
-            infos = socket.getaddrinfo(host, None)
-        except OSError as exc:
-            # Fail closed: an unresolvable host must not be silently allowed
-            # (a DNS failure could mask an internal/rebinding target). Match
-            # the cilium_hubble / nomad connectors' fail-closed posture.
-            raise ValueError(
-                f"base_url host {host!r} could not be resolved "
-                "(set allow_private=True to override)"
-            ) from exc
-        for info in infos:
-            addr = str(info[4][0])
-            try:
-                candidates.append(ipaddress.ip_address(addr.split("%")[0]))
-            except ValueError:
-                continue
+    if host_is_blocked(host):
+        raise ValueError(
+            f"base_url host {host!r} is blocked by SSRF policy "
+            "(set allow_private=True to override)"
+        )
 
-    for ip in candidates:
-        if not isinstance(ip, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
+    lowered = host.lower()
+    if lowered.endswith((".local", ".internal", ".lan", ".intranet", ".corp")):
+        raise ValueError(
+            f"base_url host {host!r} is an internal name "
+            "(set allow_private=True to override)"
+        )
+
+    try:
+        ipaddress.ip_address(host)
+        return  # literal public IP -- host_is_blocked above already vetted it.
+    except ValueError:
+        pass
+
+    # host is a DNS name (not a literal): resolve and re-check every address.
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError as exc:
+        # Fail closed: an unresolvable host must not be silently allowed
+        # (a DNS failure could mask an internal/rebinding target). Match
+        # the cilium_hubble / nomad connectors' fail-closed posture.
+        raise ValueError(
+            f"base_url host {host!r} could not be resolved "
+            "(set allow_private=True to override)"
+        ) from exc
+
+    for info in infos:
+        addr = str(info[4][0]).split("%")[0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
             continue
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
+        if _ip_addr_is_blocked(ip):
             raise ValueError(
                 f"base_url host {host!r} resolves to a non-public address "
                 "(set allow_private=True to override)"

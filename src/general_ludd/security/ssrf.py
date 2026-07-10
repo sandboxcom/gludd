@@ -15,16 +15,27 @@ primitives here so the blocklists can never drift apart again:
     their literal metadata IPs, plus any host that is *already* a blocked IP
     literal. An optional ``scheme_allowlist`` lets a caller fold the scheme
     decision into the same call where that is convenient.
+  * :func:`resolved_host_is_blocked` — an explicit, OPT-IN exception to the
+    hang-safety contract below: a bounded (default 2s) DNS resolution of a
+    non-literal hostname, with every resolved address re-checked through
+    :func:`_ip_addr_is_blocked`. It exists for the small set of connectors
+    that already accepted DNS-resolution risk before this module existed
+    (Nomad, Cilium Hubble) — see its docstring for exactly when to reach for
+    it instead of the no-DNS :func:`host_is_blocked`.
 
-Hang-safety contract: NOTHING here performs blocking I/O — no socket binds, no
-DNS lookups, no network calls, no sleeps. Hostnames that are not IP literals are
-NEVER resolved (that would be blocking DNS and the documented hang risk); they
-are only caught by the explicit name blocklist below.
+Hang-safety contract: NOTHING in this module performs blocking I/O EXCEPT the
+one explicitly-named, opt-in :func:`resolved_host_is_blocked` — no socket
+binds, no DNS lookups, no network calls, no sleeps anywhere else. Hostnames
+that are not IP literals are NEVER resolved by :func:`host_is_blocked` /
+:func:`is_url_blocked` (that would be blocking DNS and the documented hang
+risk); they are only caught by the explicit name blocklist below.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import ipaddress
+import socket
 from collections.abc import Collection
 from urllib.parse import urlsplit
 
@@ -157,3 +168,67 @@ def is_url_blocked(
     if not host:
         return True
     return host_is_blocked(host)
+
+
+def resolved_host_is_blocked(host: str, *, timeout: float = 2.0) -> bool:
+    """DNS-RESOLVING deny check — OPT-IN, bounded, for connectors that already
+    resolve names.
+
+    Unlike :func:`host_is_blocked` (pure literal check, never touches the
+    network), this function:
+
+      1. Applies :func:`host_is_blocked` first (covers a literal IP, a
+         loopback/metadata name, and the ``.localhost`` TLD with no I/O).
+      2. If ``host`` is not an IP literal and was not already denied, resolves
+         it via ``socket.getaddrinfo`` bounded to ``timeout`` seconds (run in a
+         worker thread so a hung resolver cannot block the caller past the
+         deadline) and re-checks EVERY returned address through
+         :func:`_ip_addr_is_blocked`.
+      3. FAILS CLOSED: a resolution timeout, ``OSError`` (e.g. NXDOMAIN), or an
+         empty result set is treated as a deny — an unresolvable host must
+         never be silently waved through (that could mask an internal or
+         DNS-rebinding target).
+
+    When to use this vs. :func:`host_is_blocked`: reach for this ONLY when the
+    connector's operator has already accepted DNS-resolution as part of that
+    connector's threat model (e.g. an internal service, such as a Nomad agent
+    or a Cilium Hubble relay, that is legitimately reached by an internal DNS
+    name rather than a literal IP). Do NOT use this in a shared/general fetch
+    path — the whole point of :func:`host_is_blocked` / :func:`is_url_blocked`
+    is that they can NEVER hang on a slow or hostile resolver; this function
+    can still take up to ``timeout`` seconds per call.
+    """
+    if host_is_blocked(host):
+        return True
+
+    normalized = host.strip().lower().rstrip(".")
+    if normalized.startswith("[") and normalized.endswith("]"):
+        normalized = normalized[1:-1]
+    try:
+        ipaddress.ip_address(normalized)
+        return False  # literal IP: host_is_blocked above already vetted it.
+    except ValueError:
+        pass
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(socket.getaddrinfo, host, None)
+        try:
+            infos = future.result(timeout=timeout)
+        except (OSError, concurrent.futures.TimeoutError):
+            # Fail closed: unresolvable (or too slow to resolve) -> deny. The
+            # background thread may still be blocked on the syscall; letting
+            # it finish in the background (rather than trying to kill it) is
+            # the standard way to bound an unkillable blocking call.
+            return True
+
+    if not infos:
+        return True
+    for info in infos:
+        addr = str(info[4][0]).split("%")[0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return True
+        if _ip_addr_is_blocked(ip):
+            return True
+    return False

@@ -1017,7 +1017,11 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
         )
         sys.exit(2)
 
-    provider = get_provider(provider_name)
+    provider = get_provider(
+        provider_name,
+        project_id=getattr(args, "project", None),
+        subscription_id=getattr(args, "subscription", None),
+    )
     dry_run = bool(getattr(args, "dry_run", False))
     role_arn = getattr(args, "role_arn", None)
     region = getattr(args, "region", None) or "us-east-1"

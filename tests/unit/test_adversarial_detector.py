@@ -360,7 +360,14 @@ class TestFailClosed:
         assert result.lines_scanned == 10001  # trailing \n adds one empty line
 
     def test_scan_file_nonexistent_returns_empty(self):
-        result = _detector().scan_file("/nonexistent/path/adversarial_test.xyz")
+        import os
+        import tempfile
+
+        # Nonexistent, but still inside the default allowed roots (the system
+        # temp dir) — this exercises the "genuinely absent file" path, not the
+        # jail (see TestScanFileJail for out-of-root behaviour).
+        missing = os.path.join(tempfile.gettempdir(), "adversarial_test_nonexistent.xyz")
+        result = _detector().scan_file(missing)
         assert result.findings == []
         assert result.scanned_files == 0
 
@@ -704,3 +711,126 @@ class TestContextExtraction:
                 assert "line3" in f.context
                 return
         pytest.fail("eval_on_input finding not found")
+
+
+# --------------------------------------------------------------------------- #
+# 20. TestScanFileJail — arbitrary-file-read hardening (POST /admin/security/
+#     scan-file passed body.file_path straight into scan_file()'s bare open()
+#     with no containment; this jails it to the process workspace roots).
+# --------------------------------------------------------------------------- #
+
+class TestScanFileJail:
+    """scan_file() must confine file_path to an allowed root (realpath-safe)."""
+
+    def test_in_root_scan_still_works(self, tmp_path):
+        # tmp_path is pytest's own isolated temp root, which may differ from
+        # tempfile.gettempdir() under some test-isolation harnesses — pass it
+        # explicitly via the allowed_root escape hatch rather than relying on
+        # the default roots happening to cover it (see
+        # test_allowed_root_escape_hatch_permits_legitimate_external_scan for
+        # the same pattern).
+        target = tmp_path / "danger.py"
+        target.write_text("eval(request.data)\n")
+        result = _detector().scan_file(str(target), allowed_root=str(tmp_path))
+        assert any(f.pattern_id == "eval_on_input" for f in result.findings)
+        assert result.scanned_files == 1
+
+    def test_relative_traversal_outside_root_rejected(self, tmp_path, monkeypatch):
+        # A traversal that walks up and out of every allowed root (cwd + system
+        # temp dir) must be refused, not silently opened.
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(PermissionError):
+            _detector().scan_file("../../../../../../../../etc/passwd")
+
+    def test_absolute_path_outside_root_rejected(self):
+        with pytest.raises(PermissionError):
+            _detector().scan_file("/etc/hosts")
+
+    def test_symlink_escape_rejected(self, tmp_path):
+        import os
+
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        secret_file = outside / "secret.txt"
+        secret_file.write_text("TOP SECRET eval(request.data)\n")
+
+        jail_root = tmp_path / "jail"
+        jail_root.mkdir()
+        symlink_path = jail_root / "escape_link.py"
+        os.symlink(secret_file, symlink_path)
+
+        # The symlink itself LIVES inside jail_root, but resolves (realpath)
+        # to a file outside it — must still be rejected.
+        with pytest.raises(PermissionError):
+            _detector().scan_file(str(symlink_path), allowed_root=str(jail_root))
+
+    def test_allowed_root_escape_hatch_permits_legitimate_external_scan(self, tmp_path):
+        target = tmp_path / "legit.py"
+        target.write_text("eval(request.data)\n")
+        # tmp_path is already under the system temp dir (a default allowed
+        # root) on most platforms, so exercise the escape hatch explicitly
+        # with an unambiguous non-default root to prove it's additive.
+        result = _detector().scan_file(str(target), allowed_root=str(tmp_path))
+        assert any(f.pattern_id == "eval_on_input" for f in result.findings)
+
+    def test_nonexistent_path_within_root_returns_empty(self, tmp_path):
+        missing = tmp_path / "does_not_exist.py"
+        result = _detector().scan_file(str(missing), allowed_root=str(tmp_path))
+        assert result.findings == []
+        assert result.scanned_files == 0
+
+
+# --------------------------------------------------------------------------- #
+# 21. TestScanFileEndpointJail — HTTP-level proof that the router surfaces the
+#     detector's PermissionError as a 400 client error (not a 500), and that
+#     an in-root scan still round-trips through POST /admin/security/scan-file.
+#     (No other test in the suite exercises this endpoint over HTTP.)
+# --------------------------------------------------------------------------- #
+
+class TestScanFileEndpointJail:
+    """POST /admin/security/scan-file: out-of-root path -> 400, in-root -> 200."""
+
+    def _client(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.routers import adversarial as adversarial_router
+
+        app = FastAPI()
+        adversarial_router.register(app, {})
+        return TestClient(app)
+
+    def test_absolute_out_of_root_path_returns_400(self):
+        client = self._client()
+        resp = client.post(
+            "/admin/security/scan-file", json={"file_path": "/etc/hosts"}
+        )
+        assert resp.status_code == 400, resp.text
+        assert "escapes the allowed roots" in resp.json()["detail"]
+
+    def test_traversal_path_returns_400(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        client = self._client()
+        resp = client.post(
+            "/admin/security/scan-file",
+            json={"file_path": "../../../../../../../../etc/passwd"},
+        )
+        assert resp.status_code == 400, resp.text
+
+    def test_in_root_scan_returns_200_with_findings(self, tmp_path, monkeypatch):
+        # The endpoint has no allowed_root escape hatch (by design — it only
+        # gets the default workspace roots), so chdir into tmp_path to make it
+        # the process-workspace root for the request.
+        monkeypatch.chdir(tmp_path)
+        target = tmp_path / "danger.py"
+        target.write_text("eval(request.data)\n")
+        client = self._client()
+        resp = client.post(
+            "/admin/security/scan-file", json={"file_path": str(target)}
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["blocked"] is True
+        assert any(
+            f["pattern_id"] == "eval_on_input" for f in body["findings"]
+        )

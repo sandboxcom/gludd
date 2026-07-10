@@ -73,6 +73,18 @@ async def test_failed_webhook_is_tracked_then_cleaned_up_and_logged(monkeypatch,
     hs.register_webhook("evt", "http://example.com/hook", retry_count=1)
 
     caplog.propagate = True
+    # xdist-order pollution: alembic/env.py's fileConfig(alembic.ini) (run by
+    # ANY test that exercises the real daemon lifespan against SQLite, e.g.
+    # `with TestClient(app) as client:`) defaults to disable_existing_loggers
+    # =True, which sets `.disabled = True` on this logger (not listed in
+    # alembic.ini's [loggers]) for the rest of the xdist worker process.
+    # Neither conftest's `_isolate_root_logger` nor caplog's own machinery
+    # restores `.disabled` (only level/propagate/handlers, or the global
+    # `logging.disable()` level, respectively) — so `propagate = True` alone
+    # is powerless; `Logger.isEnabledFor()` short-circuits on `.disabled`
+    # first. See test_worker_broadcast_401.py for the first instance of
+    # this fix.
+    logging.getLogger(hooks_mod.logger.name).disabled = False
     logging.getLogger(hooks_mod.logger.name).propagate = True
     with caplog.at_level(logging.WARNING, logger=hooks_mod.logger.name):
         hs.fire("evt", {"k": "v"})

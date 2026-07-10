@@ -34,6 +34,7 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "compute",
     "coordination",
     "estimation",
+    "eval",
     "filestore",
     "human_todos",
     "integrity",
@@ -45,6 +46,7 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "projects",
     "quantization",
     "reload",
+    "remediation",
     "render",
     "security",
     "self_improve",
@@ -57,7 +59,7 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "web_search",
     "worktree",
 )
-EXPECTED_ROUTER_COUNT = 29
+EXPECTED_ROUTER_COUNT = 31
 
 # Pre-existing (method, path) collisions known to exist across routers wired
 # by ``register_all``. The ``test_no_duplicate_route_keys`` test allows these

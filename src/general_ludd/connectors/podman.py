@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.security.ssrf import host_is_blocked
+
 
 # --------------------------------------------------------------------------- #
 # Transport abstraction
@@ -62,30 +64,33 @@ class Transport(Protocol):
 # SSRF guard (literal-host only, no DNS)
 # --------------------------------------------------------------------------- #
 def _is_internal_literal_host(host: str) -> bool:
-    """True if ``host`` is a literal internal/loopback/private address.
+    """True if ``host`` is a literal internal/loopback/private/metadata
+    address, OR is not an IP literal at all.
 
-    No DNS resolution is performed: only the literal string is inspected. A
-    non-IP hostname is treated as blocked because we refuse to resolve names.
+    No DNS resolution is performed, ever. The canonical
+    :func:`general_ludd.security.ssrf.host_is_blocked` closes a real coverage
+    gap this connector previously had — it only recognized
+    ``localhost``/``ip6-localhost``/``ip6-loopback`` by name and had no
+    cloud-metadata NAME/IP blocklist at all, so the Alibaba metadata IP
+    ``100.100.100.200`` (inside the 100.64.0.0/10 carrier-grade-NAT range,
+    which Python's ``ipaddress`` module does not classify as private/reserved)
+    was never reliably blocked.
+
+    On top of that canonical decision this connector keeps its OWN, STRICTER
+    rule local rather than promoting it: Podman's default transport is a Unix
+    socket, so ANY TCP ``base_url`` naming a non-IP hostname is refused
+    outright instead of resolved. The canonical guard intentionally allows an
+    ordinary public hostname through (it is a general-purpose fetch guard),
+    but a bare TCP hostname has no legitimate role talking to a
+    container-engine socket, so this stays a connector-local, additive rule.
     """
-    h = host.strip().lower()
-    if not h:
-        return True
-    if h.startswith("[") and h.endswith("]"):
-        h = h[1:-1]
-    if h in {"localhost", "ip6-localhost", "ip6-loopback"}:
+    if host_is_blocked(host):
         return True
     try:
-        ip = ipaddress.ip_address(h)
+        ipaddress.ip_address(host.strip().lower().rstrip("."))
     except ValueError:
         return True
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return False
 
 
 def _default_transport(

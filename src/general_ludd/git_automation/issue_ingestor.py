@@ -74,6 +74,7 @@ class GitHubIssueIngestor:
         return new_todos
 
     async def _fetch_labeled_issues(self) -> list[dict[str, Any]]:
+        import asyncio
         import json
         from urllib.parse import quote, urlencode
         from urllib.request import Request, urlopen
@@ -90,7 +91,8 @@ class GitHubIssueIngestor:
         url = (
             f"https://api.github.com/repos/{owner}/{repo}/issues?{query}"
         )
-        try:
+
+        def _blocking_fetch() -> list[dict[str, Any]] | None:
             req = Request(url)
             req.add_header("Accept", "application/vnd.github.v3+json")
             req.add_header("User-Agent", "general-ludd-agent")
@@ -99,6 +101,14 @@ class GitHubIssueIngestor:
             if isinstance(data, list):
                 return data
             return []
+
+        try:
+            # urlopen is a blocking network call; this coroutine runs on the
+            # daemon's tick path (loop.py awaits poll_issues), so run it in a
+            # worker thread rather than freezing the event loop for up to the
+            # 30s timeout on every poll.
+            result = await asyncio.to_thread(_blocking_fetch)
+            return result if result is not None else []
         except Exception as exc:
             logger.warning("GitHub issue fetch failed: %s", exc)
             return []

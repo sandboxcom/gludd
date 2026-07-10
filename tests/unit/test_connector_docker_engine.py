@@ -249,6 +249,21 @@ class TestSSRF:
         src = DockerEngineSource({"base_url": "http://93.184.216.34:2375", "transport": t})
         assert src.health()["ok"] is True
 
+    def test_alibaba_metadata_ip_rejected(self) -> None:
+        # 100.100.100.200 sits in the CGNAT 100.64.0.0/10 range, which
+        # Python's ipaddress module does NOT classify as private/reserved --
+        # this was NOT reliably blocked by the old local
+        # _is_internal_literal_host (it relied on is_private/is_reserved).
+        src = DockerEngineSource({"base_url": "http://100.100.100.200:2375"})
+        assert src.health()["ok"] is False
+
+    def test_metadata_google_internal_name_rejected(self) -> None:
+        # Regression pin now that this routes through the canonical
+        # host_is_blocked name check (previously blocked only incidentally
+        # via the "any non-IP host is refused" rule).
+        src = DockerEngineSource({"base_url": "http://metadata.google.internal:2375"})
+        assert src.health()["ok"] is False
+
 
 class TestHealth:
     def test_health_ok(self) -> None:

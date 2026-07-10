@@ -34,7 +34,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from general_ludd.connectors._errors import SSRFError
-from general_ludd.security.ssrf import is_url_blocked
+from general_ludd.security.ssrf import _ip_addr_is_blocked, is_url_blocked
 
 __all__ = ["CiliumHubbleSource"]
 
@@ -57,18 +57,6 @@ _VERDICT_LEVEL = {
     "AUDIT": "info",
     "REDIRECTED": "info",
 }
-
-
-def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Return True for addresses an untrusted target should not reach."""
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
 
 
 class CiliumHubbleSource:
@@ -149,7 +137,16 @@ class CiliumHubbleSource:
         # Connector-specific extra the no-DNS canonical guard cannot provide:
         # for a *named* host, resolve and re-check every address so a DNS name
         # that points (or rebinds) to a private/blocked IP is still refused at
-        # request time. A literal IP was already fully vetted above.
+        # request time. A literal IP was already fully vetted above. This
+        # connector supports an INJECTED resolver (for deterministic tests, and
+        # so a caller can supply its own resolution policy), which the shared
+        # general_ludd.security.ssrf.resolved_host_is_blocked convenience
+        # wrapper does not support (it always resolves via socket.getaddrinfo
+        # itself) -- so the resolve-then-classify loop stays local, but the
+        # per-address classification is delegated to the canonical
+        # _ip_addr_is_blocked so the flag set (previously missing the
+        # ``not is_global`` catch for TEST-NET/documentation ranges) can never
+        # drift from the single source of truth.
         try:
             ipaddress.ip_address(host)
             return url
@@ -169,7 +166,7 @@ class CiliumHubbleSource:
                 raise SSRFError(
                     f"unparseable resolved address {addr!r}"
                 ) from None
-            if _is_blocked_ip(ip):
+            if _ip_addr_is_blocked(ip):
                 raise SSRFError(
                     f"target {host!r} resolves to blocked address {addr} "
                     "(set allow_private to permit in-cluster targets)"

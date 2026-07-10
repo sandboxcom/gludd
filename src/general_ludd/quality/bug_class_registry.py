@@ -228,8 +228,21 @@ def _detect_unvalidated_subprocess_argv(path: str, text: str) -> bool:
 
 
 # Guards that, when present near a URL handed to a client/subprocess, make the
-# SSRF flag a false positive.
-_SSRF_SAFE_GUARDS = ("is_safe_url", "is_safe_host", "validate_url", "is_allowed_url")
+# SSRF flag a false positive. Previously this listed guard names
+# ("is_safe_url", "is_safe_host", "validate_url", "is_allowed_url") that match
+# NO real guard anywhere in the codebase — the actual canonical guards live in
+# general_ludd.security.ssrf (host_is_blocked / is_url_blocked /
+# resolved_host_is_blocked) and its two public wrappers (is_safe_endpoint in
+# connectors/base.py, is_safe_fetch_url in security/auth.py), so this list was
+# a no-op: it could never suppress a true SSRF-guarded file from being
+# (falsely) flagged.
+_SSRF_SAFE_GUARDS = (
+    "is_url_blocked",
+    "host_is_blocked",
+    "is_safe_endpoint",
+    "is_safe_fetch_url",
+    "resolved_host_is_blocked",
+)
 _SSRF_URL_TOKENS = ("base_url", "clone_url", "clone(", "git clone")
 _SSRF_SINK_TOKENS = ("subprocess", "create_subprocess", "httpx", "requests", "client(")
 

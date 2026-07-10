@@ -87,6 +87,40 @@ def test_guard_ssrf_private_resolution_still_rejected(monkeypatch):
         _guard_ssrf("https://internal.example.com", allow_private=False)
 
 
+@pytest.mark.parametrize("host", ["metadata", "instance-data", "ip6-localhost"])
+def test_guard_ssrf_rejects_metadata_alias_names_without_resolution(monkeypatch, host):
+    """Literal metadata/loopback-alias names are refused via host_is_blocked
+    before any DNS resolution -- closes a gap the connector's own 4-suffix
+    name blocklist used to have (it never recognized these names at all).
+    """
+
+    def _boom(*_args, **_kwargs):  # pragma: no cover - must never be called
+        raise AssertionError("getaddrinfo must not be called for a blocked literal name")
+
+    monkeypatch.setattr(socket, "getaddrinfo", _boom)
+
+    with pytest.raises(ValueError):
+        _guard_ssrf(f"https://{host}", allow_private=False)
+
+
+def test_guard_ssrf_resolved_cgnat_address_rejected(monkeypatch):
+    """A hostname resolving into the 100.64.0.0/10 CGNAT range is rejected.
+
+    is_private is False for this range in Python's ipaddress module, so the
+    OLD local flag set (missing `not is_global`) would NOT have caught it;
+    delegating classification to the canonical _ip_addr_is_blocked closes
+    this gap.
+    """
+
+    def _cgnat(*_args, **_kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("100.70.1.1", 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _cgnat)
+
+    with pytest.raises(ValueError, match="non-public"):
+        _guard_ssrf("https://cgnat-internal.example.com", allow_private=False)
+
+
 # --------------------------------------------------------------------------- #
 # proc_sys — symlink-resolving confinement
 # --------------------------------------------------------------------------- #

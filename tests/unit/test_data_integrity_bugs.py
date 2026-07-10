@@ -15,6 +15,8 @@ Four bugs, each with a failing-first regression test:
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
@@ -211,3 +213,88 @@ class TestBug4UrlInjection:
         # Path-traversal slashes / spaces must be percent-encoded, not raw.
         assert "/../" not in parts.path
         assert " " not in parts.path
+
+
+class TestFetchOffloadsBlockingIO:
+    """_fetch_labeled_issues must not block the event loop.
+
+    It is ``async def`` but previously called ``urlopen(..., timeout=30)``
+    directly on the calling coroutine — a blocking network call. It runs on
+    the daemon's tick path (``EventLoop`` awaits ``poll_issues`` each cycle),
+    so a slow/hanging GitHub response would freeze the ENTIRE daemon loop,
+    not just this one poll. The fix wraps the blocking call in
+    ``asyncio.to_thread`` so the loop stays free for other coroutines while
+    the network call is in flight.
+    """
+
+    @pytest.mark.asyncio
+    async def test_slow_urlopen_does_not_starve_a_concurrent_task(self) -> None:
+        ingestor = GitHubIssueIngestor(owner="o", repo="r")
+        ticks: list[float] = []
+
+        def _slow_urlopen(req: Any, timeout: int = 30) -> Any:
+            # Blocking sleep on the calling thread — if this ran inline on
+            # the event loop, no other coroutine could run for 0.3s.
+            time.sleep(0.3)
+
+            class _Resp:
+                def __enter__(self_inner: Any) -> Any:
+                    return self_inner
+
+                def __exit__(self_inner: Any, *a: Any) -> None:
+                    return None
+
+                def read(self_inner: Any) -> bytes:
+                    return b"[]"
+
+            return _Resp()
+
+        async def _ticker() -> None:
+            # A concurrent coroutine that should keep making progress on
+            # ~0.05s ticks throughout the "slow network call" window.
+            for _ in range(6):
+                await asyncio.sleep(0.05)
+                ticks.append(time.monotonic())
+
+        with patch("urllib.request.urlopen", _slow_urlopen):
+            await asyncio.gather(ingestor._fetch_labeled_issues(), _ticker())
+
+        # If the blocking urlopen ran directly on the event loop, the ticker
+        # would be starved for the ~0.3s sleep and accumulate far fewer than
+        # 6 ticks (likely 0-1, all bunched up after the sleep finally
+        # returns). Offloaded to a worker thread, the loop stays free and
+        # the ticker completes its full run right on schedule.
+        assert len(ticks) == 6, f"ticker starved: only {len(ticks)}/6 ticks landed"
+
+    @pytest.mark.asyncio
+    async def test_uses_asyncio_to_thread(self) -> None:
+        """Directly assert the offload mechanism is ``asyncio.to_thread``."""
+        ingestor = GitHubIssueIngestor(owner="o", repo="r")
+        captured: dict[str, Any] = {}
+
+        async def _fake_to_thread(func: Any, *a: Any, **kw: Any) -> Any:
+            captured["called"] = True
+            captured["func"] = func
+            return func(*a, **kw)
+
+        def _fake_urlopen(req: Any, timeout: int = 30) -> Any:
+            class _Resp:
+                def __enter__(self_inner: Any) -> Any:
+                    return self_inner
+
+                def __exit__(self_inner: Any, *a: Any) -> None:
+                    return None
+
+                def read(self_inner: Any) -> bytes:
+                    return b"[]"
+
+            return _Resp()
+
+        with (
+            patch("urllib.request.urlopen", _fake_urlopen),
+            patch("asyncio.to_thread", _fake_to_thread),
+        ):
+            result = await ingestor._fetch_labeled_issues()
+
+        assert captured.get("called") is True
+        assert result == []

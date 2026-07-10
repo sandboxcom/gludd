@@ -222,7 +222,9 @@ class TestLifecycle:
 
     def test_poll_skips_cost_cap_for_terminal_state(self):
         """A terminal job (COMPLETED/FAILED/CANCELLED) with high elapsed time
-        must NOT trigger cost cancellation — the job is already done."""
+        still records its final cost sample (computed before the terminal
+        check each poll), but must NOT trigger cost-cap cancellation — the
+        job is already done on its own."""
         config = SlurmJobConfig(max_cost_usd=1.0, hourly_rate_usd=3.0)
         adapter = MagicMock(spec=SlurmAdapter)
         adapter.status.return_value = SlurmJobInfo("12345", SlurmJobState.COMPLETED)
@@ -234,10 +236,13 @@ class TestLifecycle:
         assert result is False
         adapter.cancel.assert_not_called()
         assert not monitor.cancelled
-        assert monitor.cost_incurred == 0.0
+        # 10000s / 3600 * $3/hr — the final elapsed-based sample, still
+        # recorded even though the job is terminal.
+        assert monitor.cost_incurred == (10000.0 / 3600.0) * 3.0
 
     def test_poll_skips_cost_cap_for_failed_state(self):
-        """A FAILED job must not have its cost mutated or be re-cancelled."""
+        """A FAILED job still records its final cost sample but must not be
+        re-cancelled via the cost cap."""
         config = SlurmJobConfig(max_cost_usd=1.0, hourly_rate_usd=3.0)
         adapter = MagicMock(spec=SlurmAdapter)
         adapter.status.return_value = SlurmJobInfo("12345", SlurmJobState.FAILED, exit_code=1)
@@ -249,7 +254,9 @@ class TestLifecycle:
         assert result is False
         adapter.cancel.assert_not_called()
         assert not monitor.cancelled
-        assert monitor.cost_incurred == 0.0
+        # 100000s / 3600 * $3/hr — the final elapsed-based sample, still
+        # recorded even though the job is terminal.
+        assert monitor.cost_incurred == (100000.0 / 3600.0) * 3.0
 
     def test_start_stop_thread_lifecycle(self):
         config = SlurmJobConfig()

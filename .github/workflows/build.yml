@@ -117,18 +117,27 @@ jobs:
         env:
           GLUDD_PSK: ""
 
-  # Parallel test shards — 4 path-based groups × 2 Python versions = 8 jobs.
-  # Each shard is independent: a failure in shard "unit-1" is reported at the
+  # Parallel test shards — 6 path-based groups × 2 Python versions = 12 jobs.
+  # Each shard is independent: a failure in shard "unit-1a" is reported at the
   # job level within minutes of that shard finishing, without waiting for the
-  # other 7 jobs.  No new dependencies: xdist (already present) is used within
+  # other 11 jobs.  No new dependencies: xdist (already present) is used within
   # each shard; splitting is by pytest path argument, not pytest-split.
   #
-  # Shard layout (adjust as the suite grows; ~629 test files total):
-  #   unit-1      tests/unit/test_[a-e]*.py               ← ~¼ of unit (~135 files)
-  #   unit-2      tests/unit/test_[f-m]*.py               ← ~¼ of unit (~135 files)
-  #   unit-3      tests/unit/test_[n-z]*.py               ← ~¼ of unit + secrets/
+  # Shard layout (adjust as the suite grows; ~1214 test files total per
+  # `make script-count`). Letter ranges are disjoint and cover a-z exactly
+  # once (a | bd | ce | f-m | n-z); test_*_e2e.py files are additionally
+  # filtered OUT of every letter shard's expanded file list at the shell
+  # level (the `exclude` matrix key, applied by the run step) and collected
+  # exactly once, by 'other':
+  #   unit-1a     tests/unit/test_a*.py
+  #   unit-1d     tests/unit/test_[bd]*.py                ← minus e2e (exclude)
+  #   unit-1b     tests/unit/test_[ce]*.py                ← minus connectors/e2e (exclude)
+  #   unit-2      tests/unit/test_[f-m]*.py               ← minus e2e (exclude)
+  #   unit-3      tests/unit/test_[n-z]*.py               ← + secrets/, minus e2e (exclude)
   #   other       tests/integration/ tests/e2e/ tests/live/
-  #               tests/security/ tests/test_*.py         ← 87 non-unit files
+  #               tests/security/ tests/test_*.py         ← non-unit files, plus
+  #               tests/unit/test_connector*.py and tests/unit/test_*_e2e.py
+  #               rerouted here from their letter shards (see `exclude` below)
   #
   # Every shard collects coverage data (.coverage SQLite file) and uploads it
   # as a shard-unique artifact; the downstream `coverage` job combines them
@@ -145,38 +154,66 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-        shard: [unit-1a, unit-1b, unit-2, unit-3, other]
+        shard: [unit-1a, unit-1b, unit-1d, unit-2, unit-3, other]
         include:
           # Map each shard label to the pytest path(s) it owns.
           # Bash glob expansion inside `run:` handles the wildcard patterns.
           #
-          # unit-1 was split (2026-07-08) into unit-1a + unit-1b after CI run
-          # 28923533095 hit the 30m timeout on both 3.11 + 3.12. The a-e range
-          # was ~235 files / ~63k lines and ran ~30m (3× the 10-12m baseline).
-          # Split point chosen so both halves are ~50% by file count and lines:
-          #   unit-1a = test_[a-bd]*.py  → 129 files, 31,334 lines (49.7%)
-          #   unit-1b = test_[ce]*.py    → 106 files, 31,696 lines (50.3%)
-          # The `d` is grouped with a-b (not c-e) to keep c+e smaller and to
-          # avoid splitting the c-prefixed connector suites away from the
-          # connector ignoreglob below.
+          # unit-1 was split (2026-07-08) into unit-1a (test_[a-bd]*.py) +
+          # unit-1b (test_[ce]*.py) after CI run 28923533095 hit the 30m
+          # timeout on both 3.11 + 3.12 (the a-e range was ~235 files / ~63k
+          # lines, ~30m — 3x the 10-12m baseline). unit-1a itself KEPT hitting
+          # the 30m timeout on both pythons in later runs (29055665462,
+          # 29053789829, 29051813598) because the a-bd split point was sized
+          # by file/line count, not measured runtime. It is split again
+          # (2026-07-09) into unit-1a (test_a*.py) + unit-1d (test_[bd]*.py)
+          # so neither new shard carries more than ~60% of the old unit-1a
+          # load. unit-1b (test_[ce]*.py) is unaffected and unchanged.
+          #
+          # Every letter-range shard below ALSO excludes test_*_e2e.py so
+          # e2e-suffixed files are collected exactly once, by the 'other'
+          # shard, regardless of which letter they start with — see the
+          # 'other' entry. Without this, e.g. tests/unit/test_data_flow_e2e.py
+          # (starts with 'd', in unit-1d's range) would run BOTH in its letter
+          # shard AND in 'other'.
+          #
+          # `exclude` is a space-separated list of shell glob patterns filtered
+          # OUT of the shard's expanded file list by the run step below,
+          # BEFORE pytest is invoked. It must be a shell-level filter, NOT
+          # pytest --ignore-glob: bash expands $TESTPATHS into explicit
+          # filenames, and pytest registers explicitly-named files as initial
+          # args, which unconditionally BYPASS pytest_ignore_collect /
+          # --ignore-glob (those hooks only apply while pytest itself walks
+          # directories — see _pytest/main.py). An --ignore-glob here is dead
+          # code that silently double-runs the "ejected" files.
           - shard: unit-1a
-            testpaths: "tests/unit/test_[a-bd]*.py"
+            testpaths: "tests/unit/test_a*.py"
+            exclude: "*/test_*_e2e.py"
+          - shard: unit-1d
+            testpaths: "tests/unit/test_[bd]*.py"
+            # Ejects test_data_flow_e2e.py ('d') to the 'other' shard.
+            exclude: "*/test_*_e2e.py"
           - shard: unit-1b
             testpaths: "tests/unit/test_[ce]*.py"
             # The ~88 test_connector*.py suites (start with 'c', so they land
             # in unit-1b's range) are moved to the fast 'other' shard below to
-            # keep unit-1b slim. Ignore them HERE so they don't also run in
+            # keep unit-1b slim. Exclude them HERE so they don't also run in
             # unit-1b. Also eject mislabeled e2e tests (test_*_e2e.py) that
-            # start with 'e' — they belong in the 'other' shard. This var is
-            # set only on the unit-1b include entry, so it expands empty
-            # (a no-op) on every other shard's shared run: block.
-            ignoreglob: "--ignore-glob=**/test_connector*.py --ignore-glob=**/test_*_e2e.py"
+            # start with 'e' or 'c' (e.g. test_cross_project_borrowing_e2e.py)
+            # — they belong in the 'other' shard.
+            exclude: "*/test_connector*.py */test_*_e2e.py"
           - shard: unit-2
             testpaths: "tests/unit/test_[f-m]*.py"
+            exclude: "*/test_*_e2e.py"
           - shard: unit-3
             testpaths: "tests/unit/test_[n-z]*.py tests/unit/secrets/"
+            # Ejects test_project_isolation_e2e.py ('p') and
+            # test_tui_navigation_e2e.py ('t') to the 'other' shard. The
+            # tests/unit/secrets/ DIRECTORY token passes through the filter
+            # untouched (excludes only match tests/unit/*.py file tokens).
+            exclude: "*/test_*_e2e.py"
           - shard: other
-            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py"
+            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py tests/unit/test_*_e2e.py"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
@@ -196,11 +233,41 @@ jobs:
         # EVERY shard collects coverage data (.coverage SQLite file) so the
         # `coverage` job downstream can merge them into a single canonical
         # coverage.xml.  --cov-report= suppresses per-shard terminal/xml output
-        # (noise across 8 shards); the merged report is produced by the
+        # (noise across 12 shard legs); the merged report is produced by the
         # `coverage` job.  --cov-fail-under=0 disables the pyproject.toml
         # fail_under=70 gate, which only applies to a FULL test run.
         run: |
           TESTPATHS="${{ matrix.testpaths }}"
+          EXCLUDES="${{ matrix.exclude }}"
+          # Expand the shard's glob(s) via word splitting and drop excluded
+          # files at the SHELL level, before pytest ever sees them. This CANNOT
+          # be done with pytest --ignore-glob: since bash hands pytest explicit
+          # filenames, pytest treats them as initial args, which bypass
+          # pytest_ignore_collect/--ignore-glob entirely (those hooks apply
+          # only during pytest's own directory traversal). Directory tokens
+          # (tests/integration/ etc. on the 'other' shard) don't match the
+          # */test_*.py exclude patterns and pass through untouched; pytest
+          # walks them with normal collection semantics. If the shard's glob
+          # matches nothing, the literal pattern passes through and pytest
+          # exits 5 (no tests collected) — handled below.
+          FILES=""
+          for f in $TESTPATHS; do
+            keep=1
+            for pat in $EXCLUDES; do
+              # $pat is INTENTIONALLY unquoted: case matches it as a glob
+              # pattern (e.g. */test_*_e2e.py), not a literal string.
+              case "$f" in
+                $pat) keep=0 ;;
+              esac
+            done
+            if [ "$keep" -eq 1 ]; then
+              FILES="$FILES $f"
+            fi
+          done
+          if [ -z "${FILES// /}" ]; then
+            echo "Shard '${{ matrix.shard }}' selected no files after exclusions — no-op."
+            exit 0
+          fi
           # Route through the adaptive runner (single source of truth for worker
           # sizing) instead of a raw `-n auto`. On CI (CI=true, below) the runner
           # sizes by min(cpu_count, available-RAM/PER_WORKER_GB) and BYPASSES the
@@ -211,11 +278,12 @@ jobs:
           # loop cannot exceed the bounded count and OOM the runner, and an
           # OOM-shaped exit auto-retries at a halved worker count. `-n auto`
           # previously spawned one ~1.2-1.5 GB worker PER CORE. Test SCOPE is
-          # unchanged: TESTPATHS and the coverage flags are forwarded verbatim.
+          # the exclude-filtered $FILES list; the coverage flags are forwarded
+          # verbatim.
           # GLUDD_XDIST=auto (below) is not a positive int so the runner ignores
           # it and the adaptive computation applies. (Off-CI the load cap stays —
           # the #45 local-OOM fix is unchanged.)
-          uv run python scripts/adaptive_test.py $TESTPATHS ${{ matrix.ignoreglob }} \
+          uv run python scripts/adaptive_test.py $FILES \
             --cov=general_ludd --cov-report= \
             --cov-fail-under=0 \
             -v \
@@ -303,7 +371,12 @@ jobs:
           if ls .coverage-shards/.coverage.* >/dev/null 2>&1; then
             uv run coverage combine --keep .coverage-shards/.coverage.*
             uv run coverage xml
-            uv run coverage report --skip-covered
+            # --fail-under=0 overrides the fail_under=70 this invocation would
+            # otherwise inherit from pyproject.toml's [tool.coverage.report]
+            # (mirrors the per-shard --cov-fail-under=0 in test-shard above).
+            # Without it this job's "NON-GATING" claim (see the guard comment
+            # below) is false: a coverage dip alone can turn this step red.
+            uv run coverage report --skip-covered --fail-under=0
           else
             echo "No shard coverage data found — skipping combine (reporting-only, non-gating; shards passed)."
           fi
@@ -318,12 +391,13 @@ jobs:
     needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true  # Non-blocking: 86 sequential scenarios can be slow under runner load. Release does NOT need molecule (not in release.needs). Keep non-blocking so CI verdict reflects gate+test+builds, not molecule flakiness.
+    continue-on-error: true  # Non-blocking: 113 sequential scenarios (make molecule-scenarios) can be slow under runner load. Release does NOT need molecule (not in release.needs). Keep non-blocking so CI verdict reflects gate+test+builds, not molecule flakiness.
     strategy:
       # Don't cancel the remaining shards when one fails — we want all 4
-      # shard results reported every run. Each shard runs ~¼ of the 86
-      # scenarios, so wall time drops from ~30 min to ~15 min and a failure
-      # surfaces at shard granularity within minutes.
+      # shard results reported every run. Each shard runs ~28 of the 113
+      # scenarios (make molecule-scenarios), so wall time drops from ~30 min
+      # to ~15 min (kept at the 15-min timeout below) and a failure surfaces
+      # at shard granularity within minutes.
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]

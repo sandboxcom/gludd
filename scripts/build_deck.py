@@ -17,6 +17,7 @@ import http.server
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +28,12 @@ DECK_FILE = DECK_DIR / "index.html"
 README = ROOT / "README.md"
 GAME_AUDIT = ROOT / ".game-audit-report.json"
 TEST_COUNT_CACHE = ROOT / ".test-count-cache.txt"
+
+# Scratch dir used by `make deck-serve` / `--serve` to preview a token-resolved
+# copy of the deck WITHOUT mutating the tracked template in docs/presentation/deck/.
+# The tracked index.html stays a literal {{TOKEN}} template in git; only this
+# throwaway copy ever gets rewritten with live values.
+PREVIEW_DIR = Path("/tmp/gludd-deck-preview")
 
 BANNED_MARKETING = [
     "production-ready", "blazing", "seamless", "enterprise-grade",
@@ -164,9 +171,36 @@ def honesty_check(html: str) -> list[str]:
     return violations
 
 
-def serve_deck(port: int = 8080) -> None:
-    """Serve the deck directory over HTTP."""
-    os.chdir(str(DECK_DIR))
+def build_preview_copy(preview_dir: Path = PREVIEW_DIR) -> Path:
+    """Build a token-resolved copy of the deck in a scratch dir for local preview.
+
+    Copies the entire tracked deck dir (index.html + assets) to `preview_dir`,
+    then applies {{TOKEN}} substitution to ONLY the copied index.html. The
+    tracked docs/presentation/deck/ is never written to, so `make deck-serve`
+    can show real numbers without dirtying the template that CI's
+    `make deck-build` resolves at publish time.
+
+    Returns the path to the scratch dir (ready to be served as-is).
+    """
+    if preview_dir.exists():
+        shutil.rmtree(preview_dir)
+    shutil.copytree(DECK_DIR, preview_dir)
+
+    data = build_deck_data()
+    preview_index = preview_dir / "index.html"
+    html = preview_index.read_text()
+    html, missing = apply_tokens(html, data)
+    preview_index.write_text(html)
+
+    print(f"Preview copy built: {preview_dir} (tracked template untouched)")
+    if missing:
+        print(f"  WARNING: tokens not found in template: {', '.join(missing)}")
+    return preview_dir
+
+
+def serve_deck(port: int = 8080, serve_dir: Path = DECK_DIR) -> None:
+    """Serve `serve_dir` over HTTP (defaults to the tracked deck dir)."""
+    os.chdir(str(serve_dir))
     handler = http.server.SimpleHTTPRequestHandler
     print(f"Serving deck at http://localhost:{port}/")
     print("Press Ctrl+C to stop.")
@@ -179,13 +213,22 @@ def serve_deck(port: int = 8080) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the gludd reveal.js deck")
-    parser.add_argument("--serve", action="store_true", help="Start local server after build")
+    parser.add_argument("--serve", action="store_true",
+                        help="Build a token-resolved scratch copy (leaving the tracked "
+                             "template untouched) and serve it locally")
     parser.add_argument("--check", action="store_true", help="Run honesty check on deck HTML")
     parser.add_argument("--build", action="store_true",
                         help="Regenerate index.html by applying {{TOKEN}} placeholders from live data")
+    parser.add_argument("--preview", action="store_true",
+                        help="Build the resolved scratch copy used by --serve, without "
+                             "starting the HTTP server (non-interactive; for verification)")
     parser.add_argument("--port", type=int, default=8080, help="Port for --serve")
     parser.add_argument("--data", action="store_true", help="Print deck data JSON to stdout")
     args = parser.parse_args()
+
+    if args.preview:
+        build_preview_copy()
+        return
 
     if args.data:
         data = build_deck_data()
@@ -239,7 +282,8 @@ def main() -> None:
         print(f"  HONESTY:    {len(violations)} violation(s) — banned marketing tokens found")
 
     if args.serve:
-        serve_deck(args.port)
+        preview_dir = build_preview_copy()
+        serve_deck(args.port, serve_dir=preview_dir)
 
 
 if __name__ == "__main__":

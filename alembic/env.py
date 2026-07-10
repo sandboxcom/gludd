@@ -10,7 +10,12 @@ from general_ludd.db.models import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: fileConfig() otherwise sets
+    # .disabled=True on every already-imported general_ludd.* logger.
+    # The daemon lifespan runs migrations in-process (stamp_head), so the
+    # default would silently kill all application logging — and, in tests,
+    # every caplog assertion in the same xdist worker — after first boot.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # D-37: honour DATABASE_URL so `alembic upgrade` on prod does not silently
 # migrate the hardcoded sqlite:///./test.db in alembic.ini.

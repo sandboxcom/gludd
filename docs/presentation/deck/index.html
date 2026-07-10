@@ -10,23 +10,26 @@
 :root {
   --r-heading-text-transform: none;
   --r-heading1-size: 2.4em;
-  --r-heading2-size: 1.7em;
-  --r-heading3-size: 1.3em;
-  --r-main-font-size: 32px;
-  --r-block-margin: 16px;
+  --r-heading2-size: 1.6em;
+  --r-heading3-size: 1.2em;
+  --r-main-font-size: 30px;
+  --r-block-margin: 14px;
   --r-heading-font: 'SF Mono', 'Menlo', 'Monaco', monospace;
   --r-main-font: 'SF Mono', 'Menlo', 'Monaco', monospace;
   --r-code-font: 'SF Mono', 'Menlo', 'Monaco', monospace;
 }
 .reveal { color: #c9d1d9; }
 .reveal h1, .reveal h2, .reveal h3 { color: #58a6ff; text-transform: none; }
+.reveal h2 { border-bottom: 1px solid #30363d; padding-bottom: 0.2em; margin-bottom: 0.5em; }
 .reveal a { color: #79c0ff; }
-.reveal pre code { max-height: 500px; font-size: 0.55em; line-height: 1.3; }
-.reveal table { font-size: 0.6em; margin: 0 auto; }
+.reveal pre code { max-height: 460px; font-size: 0.5em; line-height: 1.3; }
+.reveal table { font-size: 0.55em; margin: 0 auto; }
 .reveal th { color: #58a6ff; border-bottom: 2px solid #58a6ff; }
-.reveal td, .reveal th { padding: 6px 12px; border-bottom: 1px solid #30363d; }
+.reveal td, .reveal th { padding: 6px 12px; border-bottom: 1px solid #30363d; text-align: left; }
 .reveal ul { list-style-type: none; }
 .reveal ul li::before { content: "> "; color: #58a6ff; }
+.reveal section { text-align: left; }
+.reveal section > h1, .reveal section > h2, .reveal section > h3 { text-align: left; }
 .badge-green { background: #238636; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.7em; }
 .badge-red { background: #da3633; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.7em; }
 .badge-yellow { background: #d29922; color: #000; padding: 2px 8px; border-radius: 4px; font-size: 0.7em; }
@@ -38,12 +41,17 @@
 .metric-box .label { font-size: 0.5em; color: #8b949e; }
 .metric-box .cite { font-size: 0.4em; color: #484f58; display: block; margin-top: 4px; }
 .fragment.small { font-size: 0.75em; }
-.diagram-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin: 20px auto; max-width: 90%; }
+.diagram-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin: 16px auto; max-width: 94%; text-align: center; }
 .diagram-wrap img { width: 100%; height: auto; display: block; }
-.honest-note { border-left: 3px solid #d29922; padding-left: 12px; color: #d29922; font-size: 0.6em; margin-top: 12px; }
-.analogy { border-left: 3px solid #58a6ff; padding-left: 12px; color: #79c0ff; font-size: 0.7em; margin-top: 12px; font-style: italic; }
-.step-number { display: inline-block; background: #58a6ff; color: #000; width: 36px; height: 36px; border-radius: 50%; text-align: center; line-height: 36px; font-weight: bold; font-size: 0.7em; margin-right: 12px; }
-.cite { font-size: 0.45em; color: #484f58; }
+.reveal .mermaid svg { max-width: 100%; height: auto; }
+.honest-note { border-left: 3px solid #d29922; padding-left: 12px; color: #d29922; font-size: 0.55em; margin-top: 12px; }
+.analogy { border-left: 3px solid #58a6ff; padding-left: 12px; color: #79c0ff; font-size: 0.62em; margin-top: 10px; font-style: italic; }
+.step-number { display: inline-block; background: #58a6ff; color: #000; width: 34px; height: 34px; border-radius: 50%; text-align: center; line-height: 34px; font-weight: bold; font-size: 0.65em; margin-right: 10px; }
+.cite { font-size: 0.42em; color: #484f58; }
+.path { font-family: 'SF Mono', 'Menlo', 'Monaco', monospace; background: #0d1117; color: #79c0ff; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; white-space: nowrap; }
+.stage-kicker { color: #8b949e; font-size: 0.55em; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 4px; }
+.bullets-tight li { margin-bottom: 6px; font-size: 0.85em; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
 </style>
 </head>
 <body>
@@ -58,10 +66,10 @@
   <h3 style="color:#8b949e;">Autonomous Software Development</h3>
   <p class="tagline" style="margin-top:40px;">
     An AI agent that writes, tests, and ships code<br>
-    &mdash; explained
+    &mdash; explained, with exact code paths
   </p>
   <p style="margin-top:30px; font-size:0.5em; color:#484f58;">
-    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-08T22:56:58Z
+    v{{VERSION}} &middot; commit {{GIT_SHA}} &middot; MIT License &middot; built {{GENERATED_AT}}
   </p>
 </section>
 
@@ -78,6 +86,7 @@
   </div>
   <p class="honest-note">
     Not a chatbot. Not a code-completion tool. A full agent that does the whole job &mdash; start to finish.
+    This deck walks through the exact code paths and database tables behind every step.
   </p>
 </section>
 
@@ -101,181 +110,303 @@
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 4: HOW GLUDD WORKS -->
+<!-- SLIDE 4: ARCHITECTURE AT A GLANCE -->
 <!-- ============================================================ -->
 <section>
-  <h2>How gludd works</h2>
-  <p>The big picture, in plain English:</p>
-  <ol>
-    <li class="fragment"><strong>You submit a task</strong> &mdash; "fix the login bug"</li>
-    <li class="fragment"><strong>gludd picks it up</strong> from a queue</li>
-    <li class="fragment"><strong>An AI writes the code</strong> to solve it</li>
-    <li class="fragment"><strong>Tests run automatically</strong> to check the work</li>
-    <li class="fragment"><strong>Another AI reviews</strong> the result</li>
-    <li class="fragment"><strong>The code lands in your project</strong> &mdash; ready to use</li>
-  </ol>
+  <h2>Architecture at a glance</h2>
+  <p><span class="path">daemon.py</span> boots a FastAPI process and wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>) that ticks forever.</p>
+  <ul class="bullets-tight">
+    <li class="fragment">Every tick opens <strong>one DB session</strong> and runs 16 named phases in a fixed order</li>
+    <li class="fragment">A todo moves through a state machine: BACKLOG &rarr; SCHEDULED/QUEUED &rarr; ACTIVE &rarr; done/reconciled</li>
+    <li class="fragment">Every state change, dispatch, review verdict, and commit is a database row &mdash; nothing lives only in memory</li>
+  </ul>
   <div class="diagram-wrap">
     <div class="mermaid">
 graph TD
-  User["👤 You"] -->|task| Daemon["🤖 gludd"]
-  Daemon -->|write| AI1["🧠 AI writes code"]
-  Daemon -->|check| AI2["🧠 AI reviews"]
-  AI1 --> Gate["⚠️ Quality gate"]
-  AI2 --> Gate
-  Gate -->|save| Git[("📦 Git repo")]
-  Daemon -.->|next task| Daemon
+  User["You"] -->|POST /api/todos| Daemon["daemon.py + EventLoop<br/>event_loop/loop.py"]
+  Daemon -->|dispatch| Model["Model gateway<br/>models/gateway.py"]
+  Daemon -->|execute| Runner["Ansible / worker<br/>ansible/runner.py, worker/app.py"]
+  Model --> Review["Reviewer<br/>review/reviewer.py"]
+  Runner --> Review
+  Review -->|approve| Git[("git_automation/repo.py<br/>commit + push")]
+  Daemon -.->|next tick, ~1s| Daemon
     </div>
   </div>
-  <p class="cite">Source: inline Mermaid diagram &middot; <code>docs/presentation/deck/index.html</code></p>
+  <p class="cite">Source: src/general_ludd/daemon.py, src/general_ludd/event_loop/loop.py</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 5: THE WORK CYCLE -->
+<!-- SLIDE 5: FLAGSHIP FLOW OVERVIEW -->
 <!-- ============================================================ -->
 <section>
-  <h2>The work cycle</h2>
-  <p>gludd runs a continuous loop &mdash; four steps, over and over:</p>
-  <ol>
-    <li class="fragment"><strong>Claim</strong> &mdash; gludd grabs the next task from the queue</li>
-    <li class="fragment"><strong>Dispatch</strong> &mdash; gludd assigns the task to an AI model</li>
-    <li class="fragment"><strong>Review</strong> &mdash; a different AI checks the work</li>
-    <li class="fragment"><strong>Save</strong> &mdash; gludd saves the finished code to your project</li>
-  </ol>
+  <h2>The flagship flow: todo &rarr; AI implements &rarr; review &rarr; commit</h2>
+  <p>Nine stages, each backed by a named function and a database table. The next slides walk each one.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-graph LR
-  Claim["1️⃣ Claim<br/>grab next task"] --> Dispatch["2️⃣ Dispatch<br/>AI writes code"]
-  Dispatch --> Review["3️⃣ Review<br/>AI checks work"]
-  Review --> Save["4️⃣ Save<br/>code to git"]
-  Save -.->|repeat every second| Claim
+flowchart LR
+  n1["1 Submit<br/>routers/todos.py"] --> n2["2 Tick loop<br/>event_loop/loop.py"]
+  n2 --> n3["3 Schedule<br/>event_loop/scheduler.py"]
+  n3 --> n4["4 Claim<br/>db/repository.py"]
+  n4 --> n5["5 Dispatch<br/>loop.py _dispatch_execute_job"]
+  n5 --> n6["6 Model call<br/>models/gateway.py"]
+  n6 --> n7["7 Execute<br/>ansible/runner.py or worker/app.py"]
+  n7 --> n8["8 Review<br/>review/reviewer.py"]
+  n8 --> n9["9 Reconcile + commit<br/>git_automation/repo.py"]
+  n8 -.->|reject: retry| n6
     </div>
   </div>
-  <p class="cite">Source: inline Mermaid diagram &middot; <code>docs/presentation/deck/index.html</code></p>
+  <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on {{GENERATED_AT}}</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 6: STEP 1 - YOU SUBMIT A TODO -->
+<!-- SLIDE 6: STAGE 1 - SUBMIT -->
 <!-- ============================================================ -->
 <section>
-  <h2><span class="step-number">1</span>You submit a task</h2>
-  <p>Everything starts with a <em>todo</em> &mdash; a short description of what you want done.</p>
-  <p><strong>Concrete example:</strong></p>
-  <pre><code class="language-text">You type:    "Write a unit test for the login endpoint"
-
-gludd says:  "Got it. Added to the queue."</code></pre>
-  <p>That's it. No prompt engineering. No code to write. Just describe the goal in plain English.</p>
-  <p class="analogy">
-    It's like writing a sticky note and putting it on the board.
-    gludd picks up sticky notes one at a time and does the work.
-  </p>
-</section>
-
-<!-- ============================================================ -->
-<!-- SLIDE 7: STEP 2 - GLUDD PICKS IT UP -->
-<!-- ============================================================ -->
-<section>
-  <h2><span class="step-number">2</span>gludd picks it up</h2>
-  <p>gludd runs continuously, checking the queue every second.</p>
-  <p>When it sees your task, it:</p>
-  <ul>
-    <li class="fragment">Marks the task as "in progress" (so no one else grabs it)</li>
-    <li class="fragment">Reads the task description</li>
-    <li class="fragment">Figures out what kind of work it is (a bug fix? a new feature? a test?)</li>
-    <li class="fragment">Picks the right AI model for the job</li>
+  <div class="stage-kicker">Flagship flow &middot; stage 1 of 9</div>
+  <h2><span class="step-number">1</span>Submit</h2>
+  <p>Everything starts with a todo &mdash; a short description of what you want done, submitted over HTTP.</p>
+  <ul class="bullets-tight">
+    <li class="fragment"><span class="path">POST /api/todos</span> is handled by <span class="path">api_add_todo</span> &mdash; <span class="path">src/general_ludd/routers/todos.py:170</span></li>
+    <li class="fragment">The router calls <span class="path">TodoRepository.create</span> &mdash; <span class="path">src/general_ludd/db/repository.py</span></li>
+    <li class="fragment">One row lands in the <span class="path">todos</span> table (<span class="path">db/models.py:159</span>), status = <code>BACKLOG</code></li>
+    <li class="fragment">A companion row is appended to <span class="path">todo_events</span> (<span class="path">db/models.py:253</span>) recording the creation</li>
   </ul>
-  <p class="analogy">
-    Like a chef reading the next order on the ticket rail &mdash;
-    they grab it, figure out what dish it is, and start cooking.
-  </p>
-  <p class="honest-note">
-    This is called the "claim" phase. gludd won't let two agents grab the same task.
-  </p>
+  <p class="analogy">Like writing a sticky note and putting it on the board &mdash; except the board is a SQL table with a foreign key.</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 8: STEP 3 - AI WRITES THE CODE -->
+<!-- SLIDE 7: STAGE 2 - TICK LOOP -->
 <!-- ============================================================ -->
 <section>
-  <h2><span class="step-number">3</span>AI writes the code</h2>
-  <p>gludd sends your task to an AI model &mdash; the model writes the actual code.</p>
-  <p><strong>Which AI?</strong> gludd supports <strong>24 model providers</strong>, including:</p>
-  <ul>
-    <li>OpenAI (GPT-4, GPT-4o)</li>
-    <li>Anthropic (Claude)</li>
-    <li>DeepSeek</li>
-    <li>Z.AI (GLM)</li>
-    <li>Google Gemini, Mistral, Cohere, and 17 more</li>
-  </ul>
-  <p>gludd picks the best model for each task type &mdash; or you can choose.</p>
-  <p class="cite">24 providers <span class="badge-green">VERIFIED</span> &middot; Source: <code>src/general_ludd/models/provider_presets.py</code></p>
-  <p class="analogy">
-    Like having a team of specialists &mdash; one writes Python, another reviews security, another handles docs.
-    gludd is the project manager who assigns the right person to each task.
-  </p>
+  <div class="stage-kicker">Flagship flow &middot; stage 2 of 9</div>
+  <h2><span class="step-number">2</span>The tick loop &mdash; 16 phases</h2>
+  <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:88</span>) &mdash; the same 16 phases, in the same order, inside one DB session.</p>
+  <pre><code class="language-text">load_config_snapshot        claim_unreviewed_task_returns
+dispatch_return_review_jobs evaluate_pid_controllers
+refill_task_buckets         run_scheduler
+claim_runnable_todos        evaluate_rules
+dispatch_execute_jobs       reconcile_completed_decisions
+refresh_model_performance   check_compute_utilization
+check_service_credits       self_improve
+poll_issue_sources          emit_tick_metrics</code></pre>
+  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-105 (PHASE_ORDER, 16 entries)</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 9: STEP 4 - TESTS RUN AUTOMATICALLY -->
+<!-- SLIDE 8: STAGE 3 - SCHEDULE PROMOTION -->
 <!-- ============================================================ -->
 <section>
-  <h2><span class="step-number">4</span>Tests run automatically</h2>
-  <p>Once the AI writes code, gludd doesn't just trust it. It <strong>checks the work</strong>.</p>
-  <p>Every change goes through a quality gate:</p>
-  <ul>
-    <li class="fragment"><strong>Lint</strong> &mdash; does the code follow style rules?</li>
-    <li class="fragment"><strong>Type check</strong> &mdash; are the types correct?</li>
-    <li class="fragment"><strong>Tests</strong> &mdash; do all the tests pass? (22,269 tests!)</li>
-    <li class="fragment"><strong>Security scan</strong> &mdash; any secrets or vulnerabilities?</li>
+  <div class="stage-kicker">Flagship flow &middot; stage 3 of 9</div>
+  <h2><span class="step-number">3</span>Schedule promotion</h2>
+  <p>The <code>run_scheduler</code> phase calls <span class="path">TodoScheduler.tick()</span> &mdash; <span class="path">src/general_ludd/event_loop/scheduler.py:88</span>.</p>
+  <ul class="bullets-tight">
+    <li class="fragment">A one-shot todo promotes <code>SCHEDULED</code> &rarr; <code>QUEUED</code> once <code>now &ge; scheduled_at</code></li>
+    <li class="fragment">A cron todo (<code>todos.cron</code>, croniter grammar) stays a <code>SCHEDULED</code> template forever &mdash; each fire spawns a <code>QUEUED</code> child clone and advances <code>next_run_at</code></li>
+    <li class="fragment">The due-todo lookup is index-backed: <span class="path">ix_todos_scheduled_lookup</span> on <code>(status, schedule_paused, next_run_at, scheduled_at)</code> &mdash; <span class="path">db/models.py:235</span></li>
   </ul>
-  <p>If anything fails, the code doesn't land. gludd either fixes it or sends it back.</p>
-  <p class="cite">22,269 tests collected <span class="badge-green">VERIFIED</span> &middot; Source: <code>make test-count</code></p>
-  <p class="analogy">
-    Like a building inspector &mdash; the house doesn't get a certificate of occupancy until it passes every check.
-  </p>
+  <p class="cite">Source: src/general_ludd/event_loop/scheduler.py, src/general_ludd/db/models.py:206-241</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 10: STEP 5 - REVIEW -->
+<!-- SLIDE 9: STAGE 4 - CLAIM -->
 <!-- ============================================================ -->
 <section>
-  <h2><span class="step-number">5</span>Another AI reviews the work</h2>
-  <p>gludd doesn't let the same AI that wrote the code also approve it.</p>
-  <p>A <strong>different</strong> AI model looks at the finished code and asks:</p>
-  <ul>
-    <li class="fragment">Does this actually solve the problem?</li>
-    <li class="fragment">Is the code clean and readable?</li>
-    <li class="fragment">Are there edge cases the writer missed?</li>
-    <li class="fragment">Did the tests actually test the right thing?</li>
+  <div class="stage-kicker">Flagship flow &middot; stage 4 of 9</div>
+  <h2><span class="step-number">4</span>Claim &mdash; version-guarded CAS</h2>
+  <p>gludd won't let two workers grab the same todo. The <code>claim_runnable_todos</code> phase (<span class="path">loop.py:4187</span>) calls a compare-and-swap.</p>
+  <ul class="bullets-tight">
+    <li class="fragment"><span class="path">TodoRepository.claim_runnable</span> &mdash; <span class="path">db/repository.py:424</span> &mdash; UPDATEs <code>QUEUED</code> &rarr; <code>ACTIVE</code> guarded by the <code>todos.version</code> column; losing the race just leaves the row <code>QUEUED</code> for next tick</li>
+    <li class="fragment"><span class="path">acquire_lease</span> &mdash; <span class="path">event_loop/lease.py:15</span> &mdash; takes an exclusive lease on the todo's resource bucket</li>
+    <li class="fragment">The lease is a real row in <span class="path">bucket_leases</span> (<span class="path">db/models.py:451</span>): <code>bucket_key</code>, <code>holder_id</code>, <code>expires_at</code> &mdash; a stale lease just expires</li>
   </ul>
-  <p>The reviewer can <span class="badge-green">approve</span>, <span class="badge-yellow">request changes</span>, or <span class="badge-red">reject</span> the work.</p>
-  <p class="analogy">
-    Like having a senior developer review a junior's pull request &mdash;
-    a second pair of eyes catches mistakes the writer missed.
-  </p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 11: STEP 6 - CODE LANDS IN GIT -->
+<!-- SLIDE 10: STAGE 5 - DISPATCH -->
 <!-- ============================================================ -->
 <section>
-  <h2><span class="step-number">6</span>The code lands in your project</h2>
-  <p>Once the reviewer approves, gludd saves the work:</p>
-  <ul>
-    <li class="fragment">The code is committed to your git repository</li>
-    <li class="fragment">A record of the whole process is saved (what was asked, what was written, what was reviewed)</li>
-    <li class="fragment">You can see exactly what changed and why</li>
+  <div class="stage-kicker">Flagship flow &middot; stage 5 of 9</div>
+  <h2><span class="step-number">5</span>Dispatch &mdash; the spend gate</h2>
+  <p><span class="path">_dispatch_execute_job</span> (<span class="path">event_loop/loop.py:1809</span>) runs from the <code>dispatch_execute_jobs</code> phase &mdash; but it checks the budget before it checks anything else.</p>
+  <ul class="bullets-tight">
+    <li class="fragment"><code>SpendLimiter.try_charge</code> gates the call against a rolling-window budget <em>before</em> a single token is spent</li>
+    <li class="fragment">Every charge attempt &mdash; approved or rejected &mdash; is appended to <span class="path">spend_records</span> (<span class="path">db/models.py:580</span>)</li>
+    <li class="fragment">A rejected charge defers the todo silently: no model call is made, no cost is incurred, and the todo is retried on a later tick</li>
   </ul>
-  <p>Everything is traceable. Nothing happens without a record.</p>
-  <p class="honest-note">
-    This is called the "save" (reconcile) phase. The decision is logged with evidence &mdash; not just "it worked."
-  </p>
-  <p class="analogy">
-    Like a contractor who not only finishes the job but hands you a folder with all the receipts, permits, and photos.
-  </p>
+  <p class="honest-note">The gate runs first. gludd cannot overspend by dispatching, then discovering it should not have.</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 12: SECURITY -->
+<!-- SLIDE 11: STAGE 6 - MODEL CALL -->
+<!-- ============================================================ -->
+<section>
+  <div class="stage-kicker">Flagship flow &middot; stage 6 of 9</div>
+  <h2><span class="step-number">6</span>Model call &mdash; gateway + tool loop</h2>
+  <ul class="bullets-tight">
+    <li class="fragment"><span class="path">invoke_model_for_generation</span> (<span class="path">models/job_invocation.py:41</span>) calls <span class="path">ModelGateway.call_model</span> (<span class="path">models/gateway.py:574</span>) &mdash; a LangChain provider registry with tenacity retries</li>
+    <li class="fragment">Every call is billed and logged to <span class="path">model_call_logs</span> (<span class="path">db/models.py:918</span>) and rolled up into <span class="path">model_performance</span> (<span class="path">db/models.py:961</span>)</li>
+    <li class="fragment">Work needing autonomous tool use hands off to <span class="path">ToolCallLoop.run_with_tools</span> (<span class="path">execution/tool_loop.py:139</span>): model proposes a tool call, gludd executes it, feeds the result back, repeats</li>
+    <li class="fragment">Tool calls route through <span class="path">DynamicDispatcher</span> (<span class="path">dispatch/dynamic_dispatcher.py:198</span>) &mdash; a capability lattice that fails <strong>closed</strong> on any tool it doesn't recognize</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 12: STAGE 7 - EXECUTE -->
+<!-- ============================================================ -->
+<section>
+  <div class="stage-kicker">Flagship flow &middot; stage 7 of 9</div>
+  <h2><span class="step-number">7</span>Execute &mdash; playbook or worker HTTP</h2>
+  <p>Two execution paths converge on the same persistence call.</p>
+  <ul class="bullets-tight">
+    <li class="fragment"><strong>Local:</strong> <span class="path">runner.write_vars</span> (<span class="path">ansible/runner.py:140</span>) + <span class="path">run_playbook</span> (<span class="path">ansible/runner.py:166</span>) hand the job to an Ansible playbook</li>
+    <li class="fragment"><strong>Remote/isolated:</strong> <span class="path">POST /jobs/execute</span> &mdash; <span class="path">worker/app.py:315</span> &mdash; runs the same job over HTTP against a worker process</li>
+    <li class="fragment">Either path's result flows into <span class="path">EventLoop._persist_task_return</span> &mdash; <span class="path">event_loop/loop.py:2981</span></li>
+    <li class="fragment">One row lands in <span class="path">task_returns</span> (<span class="path">db/models.py:279</span>) &mdash; the raw, <em>unreviewed</em> result</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 13: STAGE 8 - REVIEW -->
+<!-- ============================================================ -->
+<section>
+  <div class="stage-kicker">Flagship flow &middot; stage 8 of 9</div>
+  <h2><span class="step-number">8</span>Review &mdash; a second AI, adversarially</h2>
+  <p>gludd doesn't let the same model that wrote the code approve it.</p>
+  <ul class="bullets-tight">
+    <li class="fragment"><span class="path">ReturnReviewer.review_return</span> &mdash; <span class="path">review/reviewer.py:49</span> &mdash; runs an adversarial scan against the <code>task_return</code>, not just "did it run"</li>
+    <li class="fragment">Model output is parsed <strong>JSON-fence tolerant</strong> (strips <code>```json</code> fences) &mdash; an unparseable verdict becomes <code>decision=failed</code>, <strong>never</strong> a silent pass</li>
+    <li class="fragment"><span class="path">apply_decision</span> &mdash; <span class="path">review/decision_applier.py:28</span> &mdash; writes the verdict</li>
+    <li class="fragment">Results land in <span class="path">task_decisions</span> (<span class="path">db/models.py:317</span>, 1:1 with <code>task_returns</code>) and <span class="path">audit_events</span> (<span class="path">db/models.py:371</span>)</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 14: REVIEW LOOP SEQUENCE DIAGRAM -->
+<!-- ============================================================ -->
+<section>
+  <h2>The review loop, in detail</h2>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+sequenceDiagram
+  participant EX as Execute (stage 7)
+  participant EL as EventLoop
+  participant RV as ReturnReviewer
+  participant DA as decision_applier
+  participant DB as DB tables
+  EX->>EL: job result
+  EL->>DB: INSERT task_returns (loop.py:2981)
+  EL->>RV: claim_unreviewed_task_returns phase -> review_return()
+  RV->>RV: adversarial scan + JSON-fence-tolerant parse
+  alt output unparseable
+    RV-->>EL: decision = failed
+  else output parsed
+    RV-->>EL: decision = approve / changes / reject
+  end
+  EL->>DA: apply_decision(decision)
+  DA->>DB: INSERT task_decisions + audit_events
+  EL->>EL: reconcile_completed_decisions (loop.py:3031)
+    </div>
+  </div>
+  <p class="cite">Source: src/general_ludd/review/reviewer.py:49, src/general_ludd/review/decision_applier.py:28</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 15: STAGE 9 - RECONCILE + COMMIT -->
+<!-- ============================================================ -->
+<section>
+  <div class="stage-kicker">Flagship flow &middot; stage 9 of 9</div>
+  <h2><span class="step-number">9</span>Reconcile + commit</h2>
+  <ul class="bullets-tight">
+    <li class="fragment"><span class="path">_phase_reconcile_completed_decisions</span> &mdash; <span class="path">event_loop/loop.py:3031</span> &mdash; reads the latest <code>task_decisions</code> and updates todo status</li>
+    <li class="fragment"><span class="path">_try_commit_completed_work</span> &mdash; <span class="path">event_loop/loop.py:3320</span> &mdash; the git-delivery path: the <strong>only</strong> point where a todo's affected files are actually known (worktree changes don't exist before this)</li>
+    <li class="fragment"><span class="path">GitAutomation</span> &mdash; <span class="path">git_automation/repo.py:221</span> &mdash; commits and pushes to a per-todo branch <code>gludd-&lt;todo_id&gt;</code></li>
+    <li class="fragment">Optional PR delivery via <span class="path">PRDelivery</span> &mdash; <span class="path">git_automation/pr_delivery.py</span> &mdash; used from <span class="path">loop.py:3427</span></li>
+  </ul>
+  <p class="honest-note">Everything is traceable: what was asked, what was written, what was reviewed, what was committed &mdash; each step is a database row, not a log line.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 16: DATABASE OVERVIEW -->
+<!-- ============================================================ -->
+<section>
+  <h2>The database &mdash; 27 tables, zero drift</h2>
+  <p>Every table used above (and 15 more) is defined once, in one file.</p>
+  <ul class="bullets-tight">
+    <li class="fragment">All 27 tables are declared in <span class="path">src/general_ludd/db/models.py</span></li>
+    <li class="fragment">Migrations are a single linear chain: <span class="path">alembic/versions/</span> 001 &rarr; 024, no branches</li>
+    <li class="fragment">ORM &harr; migration parity is enforced by a test, not a promise: <span class="path">tests/unit/test_alembic_orm_parity.py</span></li>
+  </ul>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  todos[("todos<br/>159")] --> todo_events[("todo_events<br/>253")]
+  todos --> task_returns[("task_returns<br/>279")]
+  task_returns --> task_decisions[("task_decisions<br/>317")]
+  task_decisions --> audit_events[("audit_events<br/>371")]
+  todos --> queues[("queues<br/>346")]
+  todos --> bucket_leases[("bucket_leases<br/>451")]
+  todos --> spend_records[("spend_records<br/>580")]
+  todos --> model_call_logs[("model_call_logs<br/>918")]
+  model_call_logs --> model_performance[("model_performance<br/>961")]
+    </div>
+  </div>
+  <p class="cite">Source: src/general_ludd/db/models.py (27 tables) &middot; alembic/versions/001-024 &middot; tests/unit/test_alembic_orm_parity.py</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 17: KEY TABLES 1/3 -->
+<!-- ============================================================ -->
+<section>
+  <h2>Key tables (1 of 3) &mdash; the work-cycle spine</h2>
+  <table>
+    <thead><tr><th>Table</th><th>Line</th><th>What it stores</th></tr></thead>
+    <tbody>
+      <tr><td><code>todos</code></td><td>159</td><td>One row per submitted task; state machine BACKLOG &rarr; ... &rarr; done</td></tr>
+      <tr><td><code>todo_events</code></td><td>253</td><td>Status-transition log per todo (FK <code>todos.todo_id</code>, CASCADE)</td></tr>
+      <tr><td><code>task_returns</code></td><td>279</td><td>Raw result of one dispatched job (stage 7 output, unreviewed)</td></tr>
+      <tr><td><code>task_decisions</code></td><td>317</td><td>Reviewer verdict for one <code>task_return</code> (1:1, FK CASCADE)</td></tr>
+    </tbody>
+  </table>
+  <p class="cite">Source: src/general_ludd/db/models.py</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 18: KEY TABLES 2/3 -->
+<!-- ============================================================ -->
+<section>
+  <h2>Key tables (2 of 3) &mdash; scheduling, safety, cost</h2>
+  <table>
+    <thead><tr><th>Table</th><th>Line</th><th>What it stores</th></tr></thead>
+    <tbody>
+      <tr><td><code>queues</code></td><td>346</td><td>Named queue config: caps, allowed playbooks/models, retry policy</td></tr>
+      <tr><td><code>audit_events</code></td><td>371</td><td>System-wide event log (decisions, leases, spend, more)</td></tr>
+      <tr><td><code>bucket_leases</code></td><td>451</td><td>Exclusive CAS lease per resource bucket (<code>holder_id</code>, <code>expires_at</code>)</td></tr>
+      <tr><td><code>spend_records</code></td><td>580</td><td>One row per spend event for the rolling-window cost limiter</td></tr>
+    </tbody>
+  </table>
+  <p class="cite">Source: src/general_ludd/db/models.py</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19: KEY TABLES 3/3 -->
+<!-- ============================================================ -->
+<section>
+  <h2>Key tables (3 of 3) &mdash; models, memory, compute</h2>
+  <table>
+    <thead><tr><th>Table</th><th>Line</th><th>What it stores</th></tr></thead>
+    <tbody>
+      <tr><td><code>model_call_logs</code></td><td>918</td><td>Per-LLM-call record: tokens, latency, provider</td></tr>
+      <tr><td><code>model_performance</code></td><td>961</td><td>Aggregated per-model / per-task-type performance stats</td></tr>
+      <tr><td><code>human_todos</code></td><td>813</td><td>Todos awaiting human approval or input</td></tr>
+      <tr><td><code>memory_records</code></td><td>687</td><td>Long-term agent memory entries</td></tr>
+      <tr><td><code>slurm_jobs</code></td><td>1041</td><td>HPC/Slurm job tracking for compute-heavy tasks</td></tr>
+    </tbody>
+  </table>
+  <p class="cite">Source: src/general_ludd/db/models.py</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 20: SECURITY -->
 <!-- ============================================================ -->
 <section>
   <h2>Security &mdash; built in, not bolted on</h2>
@@ -288,8 +419,8 @@ gludd says:  "Got it. Added to the queue."</code></pre>
   <div class="diagram-wrap">
     <div class="mermaid">
 graph TD
-  L1["🔒 Layer 1 — Permissions<br/>hard rules in config files"] --> L2["👁️ Layer 2 — Runtime Guards<br/>11 plugins watch every action"]
-  L2 --> L3["📝 Layer 3 — Prompt Rules<br/>AI instructed to follow safe practices"]
+  L1["Layer 1 - Permissions<br/>hard rules in config files"] --> L2["Layer 2 - Runtime Guards<br/>11 plugins watch every action"]
+  L2 --> L3["Layer 3 - Prompt Rules<br/>AI instructed to follow safe practices"]
     </div>
   </div>
   <p><strong>Security findings: 14 of 15 fixed</strong> &mdash; one remains open and tracked.</p>
@@ -297,7 +428,7 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 13: SCALE OF THE SYSTEM -->
+<!-- SLIDE 21: SCALE OF THE SYSTEM -->
 <!-- ============================================================ -->
 <section>
   <h2>The scale of the system</h2>
@@ -309,12 +440,12 @@ graph TD
       <span class="cite"><code>find src -name '*.py'</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">22,269</div>
+      <div class="number">{{TEST_COUNT}}</div>
       <div class="label">tests</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">109</div>
+      <div class="number">{{ROLE_COUNT}}</div>
       <div class="label">Ansible roles</div>
       <span class="cite"><code>make collection-roles</code></span>
     </div>
@@ -326,9 +457,9 @@ graph TD
   </div>
   <div class="metrics-grid" style="margin-top:10px;">
     <div class="metric-box">
-      <div class="number">105</div>
-      <div class="label">test scenarios</div>
-      <span class="cite"><code>make molecule-scenarios</code></span>
+      <div class="number">27</div>
+      <div class="label">DB tables</div>
+      <span class="cite"><code>db/models.py</code></span>
     </div>
     <div class="metric-box">
       <div class="number">24</div>
@@ -349,7 +480,7 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 14: WHAT GLUDD CAN DO TODAY -->
+<!-- SLIDE 22: WHAT GLUDD CAN DO TODAY -->
 <!-- ============================================================ -->
 <section>
   <h2>What gludd can do today</h2>
@@ -357,20 +488,20 @@ graph TD
   <ul>
     <li class="fragment"><strong>Write code</strong> &mdash; new features, bug fixes, refactors</li>
     <li class="fragment"><strong>Write tests</strong> &mdash; unit tests, integration tests, end-to-end tests</li>
-    <li class="fragment"><strong>Review code</strong> &mdash; a separate AI checks every change</li>
+    <li class="fragment"><strong>Review code</strong> &mdash; a separate AI checks every change (stage 8)</li>
     <li class="fragment"><strong>Run quality gates</strong> &mdash; lint, typecheck, tests, security scans</li>
-    <li class="fragment"><strong>Commit to git</strong> &mdash; with full audit trails</li>
+    <li class="fragment"><strong>Commit to git</strong> &mdash; with full audit trails (stage 9)</li>
     <li class="fragment"><strong>Manage sprints</strong> &mdash; backlog grooming, sprint planning, retrospectives</li>
     <li class="fragment"><strong>Security audits</strong> &mdash; threat modeling, secret scanning, supply chain checks</li>
     <li class="fragment"><strong>Build complete apps</strong> &mdash; built 12 games from scratch, autonomously</li>
-    <li class="fragment"><strong>Track costs</strong> &mdash; per-project, per-model cost accounting</li>
+    <li class="fragment"><strong>Track costs</strong> &mdash; per-project, per-model cost accounting (<code>spend_records</code>)</li>
     <li class="fragment"><strong>Self-improve</strong> &mdash; audits its own code and proposes improvements</li>
   </ul>
   <p class="cite">136 features at 100% <span class="badge-green">VERIFIED</span> &middot; Source: <code>make gen-status-table</code></p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 15: WHAT GLUDD CAN'T DO YET -->
+<!-- SLIDE 23: WHAT GLUDD CAN'T DO YET -->
 <!-- ============================================================ -->
 <section>
   <h2>What gludd can't do yet</h2>
@@ -391,7 +522,7 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 16: HOW TO TRY IT -->
+<!-- SLIDE 24: HOW TO TRY IT -->
 <!-- ============================================================ -->
 <section>
   <h2>How to try it</h2>
@@ -412,12 +543,12 @@ make init</code></pre>
       <pre><code class="language-bash">uv run gludd todo add "Write a unit test for the login endpoint"</code></pre>
     </li>
   </ol>
-  <p style="margin-top:16px;">That's it. gludd picks up the task and gets to work.</p>
+  <p style="margin-top:16px;">That's it. gludd picks up the task and runs the nine-stage flow from slide 5.</p>
   <p class="cite">Full guide: <code>README.md</code> &middot; Prerequisites: Python 3.11+, uv, an API key for one model provider</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 17: ROADMAP -->
+<!-- SLIDE 25: ROADMAP -->
 <!-- ============================================================ -->
 <section>
   <h2>What's next</h2>
@@ -439,12 +570,12 @@ make init</code></pre>
   <ul>
     <li>Fleet mode &mdash; multiple agents, shared work queue</li>
     <li>Sandboxed execution &mdash; safe running of untrusted code</li>
-    <li>Production hardening &mdash; full release-ready stability</li>
+    <li>Deeper hardening &mdash; wider failure-mode coverage</li>
   </ul>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 18: HONEST METRICS -->
+<!-- SLIDE 26: HONEST METRICS -->
 <!-- ============================================================ -->
 <section>
   <h2>Honest metrics</h2>
@@ -454,12 +585,12 @@ make init</code></pre>
   </p>
   <div class="metrics-grid">
     <div class="metric-box">
-      <div class="number">v0.1.0-beta.2</div>
+      <div class="number">v{{VERSION}}</div>
       <div class="label">current version</div>
       <span class="cite"><code>pyproject.toml</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">22,269</div>
+      <div class="number">{{TEST_COUNT}}</div>
       <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
@@ -498,19 +629,21 @@ make init</code></pre>
   </div>
   <p class="honest-note" style="margin-top:12px;">
     These are truth, not aspiration. Every citation is a command you can run yourself.
+    Commit <span class="path">{{GIT_SHA}}</span>, generated {{GENERATED_AT}}.
   </p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19: LINKS + RESOURCES -->
+<!-- SLIDE 27: LINKS + RESOURCES -->
 <!-- ============================================================ -->
 <section>
   <h2>Links &amp; resources</h2>
   <ul>
     <li><strong>Source code</strong><br><a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a></li>
-    <li><strong>This presentation</strong><br><a href="https://sandboxcom.github.io/gludd/">sandboxcom.github.io/gludd</a></li>
+    <li><strong>This presentation (live URL)</strong><br><a href="https://sandboxcom.github.io/gludd/">sandboxcom.github.io/gludd</a> &mdash; deployed by <code>.github/workflows/pages.yml</code></li>
+    <li><strong>This presentation (always-works fallback)</strong><br><code>docs/presentation/deck/index.html</code>, open directly or via <code>make deck-serve</code></li>
     <li><strong>Quick start guide</strong><br>See <code>README.md</code> in the repo</li>
-    <li><strong>Architecture deep-dive</strong><br>See the architecture diagram in <code>docs/presentation/deck/index.html</code> (slide 4)</li>
+    <li><strong>Code-path deep-dive</strong><br>Slides 5&ndash;19 of this deck: the 9-stage flow and 27-table schema</li>
     <li><strong>Security audit</strong><br>See <code>docs/audit/</code> in the repo</li>
     <li><strong>Full feature list</strong><br>Run <code>make gen-status-table</code> after cloning</li>
     <li><strong>License</strong><br>MIT &mdash; free to use, modify, and distribute</li>
@@ -518,21 +651,22 @@ make init</code></pre>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 20: THANK YOU / Q&A -->
+<!-- SLIDE 28: THANK YOU / Q&A -->
 <!-- ============================================================ -->
 <section>
   <h1>Thank you</h1>
   <p style="color:#8b949e; margin-top:20px;">Questions?</p>
   <p style="font-size:0.6em; margin-top:40px;">
     gludd &mdash; Autonomous Software Development<br>
-    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-08T22:56:58Z
+    v{{VERSION}} &middot; MIT License &middot; built {{GENERATED_AT}} &middot; commit {{GIT_SHA}}
   </p>
   <p style="font-size:0.5em; margin-top:20px;">
     <a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a><br>
     <a href="https://sandboxcom.github.io/gludd/">sandboxcom.github.io/gludd</a>
   </p>
   <p class="honest-note" style="margin-top:30px;">
-    Every number in this deck comes from a command you can run yourself.<br>
+    Every number in this deck comes from a command you can run yourself.
+    Every code path was spot-checked against the tree it describes.
     Nothing here was hand-authored or fabricated.
   </p>
 </section>

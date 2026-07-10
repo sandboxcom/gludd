@@ -148,6 +148,36 @@ def test_exporter_rejects_non_http_scheme():
         src.query()
 
 
+def test_exporter_ssrf_blocks_resolved_cgnat_address():
+    # 100.70.1.1 sits in the 100.64.0.0/10 CGNAT range: is_private is False
+    # for it in Python's ipaddress module. The OLD local _is_blocked_ip
+    # classifier lacked the `not is_global` flag; the canonical
+    # _ip_addr_is_blocked import closes that gap.
+    src = SnmpSource(
+        {"mode": "exporter", "base_url": "http://snmp-exp:9116"},
+        transport=lambda url, timeout: (200, EXPORTER_METRICS),
+        resolver=lambda host: ["100.70.1.1"],
+    )
+    with pytest.raises(SSRFError):
+        src.query()
+
+
+def test_exporter_ssrf_blocks_metadata_name_without_resolver_call():
+    # "metadata" is a literal blocked NAME via the canonical is_url_blocked
+    # pre-check; it must short-circuit before the injected DI resolver is ever
+    # consulted.
+    def _boom_resolver(host):
+        raise AssertionError("resolver must not be consulted for a blocked name")
+
+    src = SnmpSource(
+        {"mode": "exporter", "base_url": "http://metadata:9116"},
+        transport=lambda url, timeout: (200, EXPORTER_METRICS),
+        resolver=_boom_resolver,
+    )
+    with pytest.raises(SSRFError):
+        src.query()
+
+
 # -- pysnmp-unavailable health ----------------------------------------------
 
 

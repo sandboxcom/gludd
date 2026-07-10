@@ -158,6 +158,20 @@ class TestA3NoAuthDegraded:
         # Attach a handler directly to the daemon logger so the warning is
         # captured regardless of root-logger state.
         daemon_logger = logging.getLogger("general_ludd.daemon")
+        # xdist-order pollution: alembic/env.py's fileConfig(alembic.ini) (run by
+        # ANY test that exercises the real daemon lifespan against SQLite, e.g.
+        # `with TestClient(app) as client:`) defaults to disable_existing_loggers
+        # =True. alembic.ini's [loggers] only lists root/sqlalchemy/alembic, so
+        # this logger — already created at collection time — gets `.disabled =
+        # True` for the rest of the xdist worker process. Neither conftest's
+        # `_isolate_root_logger` (snapshots level/propagate/handlers only, not
+        # `.disabled`) nor pytest's own caplog machinery ever restores it, so a
+        # bare `propagate = True` is powerless — `Logger.isEnabledFor()`
+        # short-circuits on `.disabled` before it ever looks at level/propagate.
+        # Force it back on here so this test passes regardless of what ran
+        # before it on this worker (see test_worker_broadcast_401.py for the
+        # first instance of this fix).
+        daemon_logger.disabled = False
         daemon_logger.propagate = True
         # Python 3.10+ caches Logger.isEnabledFor() results per-logger. A prior
         # TestClient test on the same xdist worker can mutate the ROOT logger's
@@ -191,8 +205,10 @@ class TestA3NoAuthDegraded:
             def emit(self, record: logging.LogRecord) -> None:
                 records.append(record)
 
-        # See note above: attach handler directly + clear stale isEnabledFor cache.
+        # See note above: attach handler directly + clear stale isEnabledFor cache
+        # + force .disabled=False (alembic fileConfig xdist-order pollution).
         daemon_logger = logging.getLogger("general_ludd.daemon")
+        daemon_logger.disabled = False
         daemon_logger.propagate = True
         daemon_logger.setLevel(logging.WARNING)
         capture = _LocalCapture(level=logging.WARNING)

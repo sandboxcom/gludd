@@ -30,6 +30,25 @@ def _try_import_nvml() -> None:
 _try_import_nvml()
 
 
+def reset_probe() -> None:
+    """Re-run the NVML availability probe against the current environment.
+
+    Test-only hook. Several integration tests monkeypatch ``sys.modules["pynvml"]``
+    with a mock and ``importlib.reload`` this module to simulate a GPU-present
+    environment. If such a test's cleanup reload happens to run *before* the mock is
+    unpatched from ``sys.modules``, ``_try_import_nvml`` re-discovers the mock and the
+    module-level ``_NVML_AVAILABLE``/``_nvml`` globals are left pointing at a (possibly
+    exhausted) mock instead of the real "no GPU" state — a leak invisible to the
+    polluting test itself but visible to any later test that assumes a clean
+    environment (see tests/integration/test_bill_gpu_metrics_e2e.py).
+
+    Calling this re-probes from scratch using whatever is genuinely importable right
+    now, which is a no-op in a real clean environment and a full recovery from the
+    leak described above.
+    """
+    _try_import_nvml()
+
+
 @dataclass
 class GPUMetrics:
     gpu_sm_util_pct: float = 0.0

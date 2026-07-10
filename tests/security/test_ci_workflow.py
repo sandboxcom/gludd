@@ -16,6 +16,7 @@ These tests parse the workflow YAML and enforce the post-fix invariants:
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build.yml"
+PAGES_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "pages.yml"
 
 BUILD_JOBS = ["linux", "macos", "windows", "termux"]
 
@@ -37,6 +39,17 @@ def _load_workflow() -> dict[str, Any]:
     assert isinstance(data, dict), "build.yml must be a valid YAML mapping"
     # PyYAML parses the bare word `on` as a YAML boolean True.
     # Normalise the key so the rest of the tests can use "on".
+    if True in data and "on" not in data:
+        data["on"] = data.pop(True)
+    return data
+
+
+def _load_pages_workflow() -> dict[str, Any]:
+    assert PAGES_WORKFLOW_PATH.is_file(), f"pages.yml not found at {PAGES_WORKFLOW_PATH}"
+    with PAGES_WORKFLOW_PATH.open() as f:
+        data = yaml.safe_load(f)
+    assert isinstance(data, dict), "pages.yml must be a valid YAML mapping"
+    # PyYAML parses the bare word `on` as a YAML boolean True (see _load_workflow above).
     if True in data and "on" not in data:
         data["on"] = data.pop(True)
     return data
@@ -572,8 +585,11 @@ class TestGateMatrixStructure:
             f"test-shard python-version must be ['3.11', '3.12']; "
             f"got {matrix.get('python-version')!r}"
         )
-        assert matrix.get("shard") == ["unit-1a", "unit-1b", "unit-2", "unit-3", "other"], (
-            f"test-shard shard dimension must be ['unit-1a', 'unit-1b', 'unit-2', 'unit-3', 'other']; "
+        assert matrix.get("shard") == [
+            "unit-1a", "unit-1b", "unit-1d", "unit-2", "unit-3", "other"
+        ], (
+            "test-shard shard dimension must be "
+            "['unit-1a', 'unit-1b', 'unit-1d', 'unit-2', 'unit-3', 'other']; "
             f"got {matrix.get('shard')!r}"
         )
         assert strategy.get("fail-fast") is False, (
@@ -588,4 +604,211 @@ class TestGateMatrixStructure:
         assert fail_fast is False, (
             "molecule job strategy.fail-fast must be false so all shards "
             "report results every run"
+        )
+
+
+class TestShardCoverageInvariant:
+    """Every tests/unit/test_*.py file must be collected by exactly one
+    test-shard matrix leg — never dropped, never double-collected.
+
+    Two root causes this guards against:
+
+    1. Dropped file: tests/unit/test_cross_project_borrowing_e2e.py matched
+       unit-1b's testpaths glob (test_[ce]*.py) but was excluded by unit-1b,
+       and the 'other' shard's testpaths never re-included
+       tests/unit/test_*_e2e.py — so the file silently ran in NO shard.
+
+    2. Dead exclusion mechanism: the exclusion originally used pytest
+       --ignore-glob, which is a NO-OP for these shards — bash expands
+       $TESTPATHS into explicit filenames, and pytest registers
+       explicitly-named files as initial args, which unconditionally bypass
+       pytest_ignore_collect/--ignore-glob (those hooks only apply while
+       pytest itself walks directories; see _pytest/main.py). So "ejected"
+       files silently ran in BOTH their letter shard and 'other'.
+
+    The real mechanism (modelled here) is a shell-level filter in the run
+    step: each shard's `testpaths` globs are expanded by bash, then each
+    expanded path is matched against the shard's `exclude` patterns with
+    `case "$f" in $pat)` and dropped on match, BEFORE pytest is invoked.
+    This test simulates exactly that: pathlib glob expansion of testpaths
+    tokens + fnmatch filtering with the exclude patterns (shell `case`
+    patterns and fnmatch agree here: in both, `*` also crosses `/`).
+    """
+
+    @staticmethod
+    def _shard_includes(wf: dict[str, Any]) -> list[dict[str, Any]]:
+        ts_job = wf["jobs"]["test-shard"]
+        return ts_job["strategy"]["matrix"]["include"]
+
+    def test_no_ignore_glob_in_test_shard(self) -> None:
+        """pytest --ignore-glob is DEAD CODE in the test-shard job (root cause
+        2 in the class docstring): explicitly-named files bypass it. Any
+        reintroduction gives false confidence that files are excluded while
+        they actually double-run. Exclusion must stay in the shell filter."""
+        wf = _load_workflow()
+        ts_job = wf["jobs"]["test-shard"]
+        # Matrix include entries must not carry --ignore-glob (the old dead
+        # `ignoreglob` key), in any field.
+        for entry in ts_job["strategy"]["matrix"]["include"]:
+            assert "--ignore-glob" not in str(entry), (
+                f"test-shard matrix entry must not use pytest --ignore-glob "
+                f"(dead for explicitly-listed files); got: {entry}"
+            )
+        # Run scripts must not pass --ignore-glob either. Shell comment lines
+        # are stripped first — the run step legitimately EXPLAINS why
+        # --ignore-glob is dead in a comment.
+        for step in ts_job.get("steps", []):
+            if not isinstance(step, dict):
+                continue
+            shell_lines = [
+                ln for ln in str(step.get("run", "")).splitlines()
+                if not ln.strip().startswith("#")
+            ]
+            for ln in shell_lines:
+                assert "--ignore-glob" not in ln, (
+                    "test-shard must not pass pytest --ignore-glob: bash hands "
+                    "pytest explicit filenames, which bypass ignore hooks entirely "
+                    "(they only apply during pytest's own directory traversal). "
+                    "Use the shell-level `exclude` matrix key + run-step case "
+                    f"filter instead. Offending line: {ln!r}"
+                )
+
+    def test_run_step_applies_exclude_filter_before_pytest(self) -> None:
+        """The run step must actually consume the `exclude` matrix key and
+        filter the expanded file list before invoking the test runner — the
+        matrix key alone does nothing. Guards against the filter loop being
+        refactored away while the exclude entries silently stop working."""
+        wf = _load_workflow()
+        ts_job = wf["jobs"]["test-shard"]
+        test_steps = [
+            s for s in ts_job.get("steps", [])
+            if isinstance(s, dict) and str(s.get("name", "")).startswith("Test ")
+        ]
+        assert test_steps, "test-shard must have a 'Test ...' run step"
+        script = test_steps[0].get("run", "")
+        assert "${{ matrix.exclude }}" in script, (
+            "test-shard run step must read the `exclude` matrix key; otherwise "
+            "the per-shard exclude patterns are inert and ejected files double-run"
+        )
+        assert re.search(r'case\s+"\$f"\s+in', script), (
+            "test-shard run step must filter expanded files with a shell "
+            '`case "$f" in <pattern>` loop before invoking pytest'
+        )
+        # The runner must be invoked with the FILTERED list, not raw TESTPATHS.
+        runner_lines = [ln for ln in script.splitlines() if "adaptive_test.py" in ln]
+        assert runner_lines, "test-shard run step must invoke scripts/adaptive_test.py"
+        assert all("$FILES" in ln for ln in runner_lines), (
+            "adaptive_test.py must be invoked with the exclude-filtered $FILES "
+            f"list, not raw $TESTPATHS; got: {runner_lines}"
+        )
+
+    def test_every_unit_test_file_collected_exactly_once(self) -> None:
+        wf = _load_workflow()
+        includes = self._shard_includes(wf)
+        unit_dir = ROOT / "tests" / "unit"
+        unit_files = sorted(p.name for p in unit_dir.glob("test_*.py"))
+        assert unit_files, "tests/unit/ must contain test_*.py files"
+
+        counts: dict[str, int] = {name: 0 for name in unit_files}
+        for entry in includes:
+            testpaths = str(entry.get("testpaths", ""))
+            excludes = str(entry.get("exclude", "")).split()
+            for token in testpaths.split():
+                if not token.startswith("tests/unit/test_"):
+                    continue
+                # Simulate bash glob expansion of the testpaths token.
+                for path in sorted(ROOT.glob(token)):
+                    rel = path.relative_to(ROOT).as_posix()
+                    # Simulate the run step's `case "$f" in $pat)` drop.
+                    if any(fnmatch.fnmatch(rel, pat) for pat in excludes):
+                        continue
+                    counts[path.name] += 1
+
+        never_collected = sorted(n for n, c in counts.items() if c == 0)
+        double_collected = {n: c for n, c in counts.items() if c > 1}
+        assert not never_collected, (
+            "these tests/unit/ files are collected by NO test-shard matrix leg "
+            f"(silently never run in CI): {never_collected}"
+        )
+        assert not double_collected, (
+            "these tests/unit/ files are collected by MORE THAN ONE test-shard "
+            f"matrix leg (would run twice): {double_collected}"
+        )
+
+
+class TestPagesWorkflow:
+    """pages.yml (Deploy Presentation to Pages) structural invariants.
+
+    Root cause of the audit finding: pages.yml used floating action tags
+    (actions/checkout@v4, actions/setup-python@v5, astral-sh/setup-uv@v3,
+    actions/configure-pages@v5, actions/upload-pages-artifact@v3,
+    actions/deploy-pages@v4) while build.yml hash-pins every action per
+    SECURITY.md. These tests enforce hash-pinning here too, plus the
+    trigger and artifact-path invariants that make the deploy job correct.
+    """
+
+    @staticmethod
+    def _all_uses(wf: dict[str, Any]) -> list[str]:
+        uses: list[str] = []
+        for job in wf.get("jobs", {}).values():
+            for step in job.get("steps", []):
+                if isinstance(step, dict) and "uses" in step:
+                    uses.append(str(step["uses"]))
+        return uses
+
+    def test_pages_workflow_is_valid_yaml(self) -> None:
+        """parse without error"""
+        _load_pages_workflow()
+
+    def test_pages_workflow_has_jobs_key(self) -> None:
+        wf = _load_pages_workflow()
+        assert "jobs" in wf, "pages.yml must have a 'jobs' key"
+
+    def test_all_actions_are_hash_pinned(self) -> None:
+        """SECURITY.md requires hash-pinned actions (not floating tags) —
+        same invariant test_all_build_jobs_use_hash_pinned_checkout enforces
+        for build.yml, extended here to every `uses:` step in pages.yml."""
+        wf = _load_pages_workflow()
+        uses_list = self._all_uses(wf)
+        assert uses_list, "pages.yml must have at least one 'uses:' step"
+        for uses in uses_list:
+            assert re.search(r"@[0-9a-f]{40}$", uses), (
+                f"pages.yml action must be hash-pinned (40-char hex SHA), "
+                f"not a floating tag; got: {uses!r}"
+            )
+
+    def test_triggers_on_push_to_master(self) -> None:
+        wf = _load_pages_workflow()
+        push_branches = wf.get("on", {}).get("push", {}).get("branches", [])
+        assert "master" in push_branches, (
+            f"pages workflow must trigger on push to master; got branches={push_branches}"
+        )
+
+    def test_triggers_have_expected_path_filters(self) -> None:
+        wf = _load_pages_workflow()
+        paths = wf.get("on", {}).get("push", {}).get("paths", [])
+        expected = {"docs/presentation/**", "scripts/build_deck.py", "Makefile"}
+        assert expected.issubset(set(paths)), (
+            f"pages workflow push trigger must filter on {expected}; got paths={paths}"
+        )
+
+    def test_has_workflow_dispatch(self) -> None:
+        wf = _load_pages_workflow()
+        assert "workflow_dispatch" in wf.get("on", {}), (
+            "pages workflow must support manual workflow_dispatch trigger"
+        )
+
+    def test_artifact_upload_path_is_deck(self) -> None:
+        wf = _load_pages_workflow()
+        deploy_job = wf["jobs"]["deploy"]
+        steps = deploy_job.get("steps", [])
+        upload_steps = [
+            s for s in steps
+            if isinstance(s, dict) and "upload-pages-artifact" in str(s.get("uses", ""))
+        ]
+        assert upload_steps, "pages workflow must have an upload-pages-artifact step"
+        path = upload_steps[0].get("with", {}).get("path", "")
+        assert path == "docs/presentation/deck", (
+            f"pages workflow upload-pages-artifact path must be "
+            f"docs/presentation/deck; got {path!r}"
         )

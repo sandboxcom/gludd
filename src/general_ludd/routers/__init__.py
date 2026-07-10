@@ -17,6 +17,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     from general_ludd.routers.compute import register as register_compute
     from general_ludd.routers.coordination import register as register_coordination
     from general_ludd.routers.estimation import register as register_estimation
+    from general_ludd.routers.eval import register as register_eval
     from general_ludd.routers.filestore import register as register_filestore
     from general_ludd.routers.human_todos import register as register_human_todos
     from general_ludd.routers.integrity import register as register_integrity
@@ -28,6 +29,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     from general_ludd.routers.projects import register as register_projects
     from general_ludd.routers.quantization import register as register_quantization
     from general_ludd.routers.reload import register as register_reload
+    from general_ludd.routers.remediation import register as register_remediation
     from general_ludd.routers.render import register as register_render
     from general_ludd.routers.security import register as register_security
     from general_ludd.routers.self_improve import register as register_self_improve
@@ -47,6 +49,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     register_compute(app, daemon_state)
     register_coordination(app, daemon_state)
     register_estimation(app, daemon_state)
+    register_eval(app, daemon_state)
     register_filestore(app, daemon_state)
     register_human_todos(app, daemon_state)
     register_integrity(app, daemon_state)
@@ -57,6 +60,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     register_projects(app, daemon_state)
     register_quantization(app, daemon_state)
     register_reload(app, daemon_state)
+    register_remediation(app, daemon_state)
     register_render(app, daemon_state)
     register_signing(app, daemon_state)
     register_skills(app, daemon_state)

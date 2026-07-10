@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import subprocess
 from types import SimpleNamespace
 
 import pytest
 
 from general_ludd.code_intelligence.rg_search import RgMatch, RgResult, RgSearch
+
+_RG_SEARCH_LOGGER = "general_ludd.code_intelligence.rg_search"
 
 # --- argv construction ---------------------------------------------------
 
@@ -255,9 +258,17 @@ def test_search_clean_runs_are_available(monkeypatch, rc):
 
 def test_build_argv_drops_disallowed_flags(caplog):
     """Only allowlisted boolean flags survive; injected flags are dropped."""
-    import logging
-
-    with caplog.at_level(logging.WARNING):
+    # Defensive reset, matching the fix applied to the other caplog-propagation
+    # failures in this shard (see f7638e73): a sibling test running earlier on
+    # the same xdist worker can leave this module's logger (or an ancestor) at
+    # propagate=False / a suppressive level, which silently empties
+    # `caplog.messages` for every test that runs after it without ever
+    # touching this file. Pin both the fixture's own propagate flag and the
+    # target logger explicitly so the assertion below is deterministic
+    # regardless of what any other test in the shard left behind.
+    caplog.propagate = True
+    logging.getLogger(_RG_SEARCH_LOGGER).propagate = True
+    with caplog.at_level(logging.WARNING, logger=_RG_SEARCH_LOGGER):
         argv = RgSearch.build_argv(
             "/bin/rg", "q", ".", flags=["-i", "--passthru", "--pre", "cat"]
         )

@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.security.ssrf import host_is_blocked
+
 
 # --------------------------------------------------------------------------- #
 # Transport abstraction
@@ -66,33 +68,34 @@ class Transport(Protocol):
 # SSRF guard (literal-host only, no DNS)
 # --------------------------------------------------------------------------- #
 def _is_internal_literal_host(host: str) -> bool:
-    """Return True if ``host`` is a *literal* internal/loopback/private address.
+    """Return True if ``host`` is a literal internal/loopback/private/metadata
+    address, OR is not an IP literal at all.
 
-    No DNS resolution is performed: only the literal string is inspected. A bare
-    hostname (non-IP literal) is treated as internal-blocked unless it is an
-    explicit public IP, because we refuse to resolve names (SSRF safety).
+    No DNS resolution is performed, ever. The canonical
+    :func:`general_ludd.security.ssrf.host_is_blocked` closes a real coverage
+    gap this connector previously had — it only recognized
+    ``localhost``/``ip6-localhost``/``ip6-loopback`` by name and had no
+    cloud-metadata NAME/IP blocklist at all, so the Alibaba metadata IP
+    ``100.100.100.200`` (inside the 100.64.0.0/10 carrier-grade-NAT range,
+    which Python's ``ipaddress`` module does not classify as private/reserved)
+    was never reliably blocked.
+
+    On top of that canonical decision this connector keeps its OWN, STRICTER
+    rule local rather than promoting it: the Docker Engine default transport
+    is a Unix socket, so ANY TCP ``base_url`` naming a non-IP hostname is
+    refused outright instead of resolved. The canonical guard intentionally
+    allows an ordinary public hostname through (it is a general-purpose fetch
+    guard), but a bare TCP hostname has no legitimate role talking to a
+    container-engine socket, so this stays a connector-local, additive rule.
     """
-    h = host.strip().lower()
-    if not h:
-        return True
-    # Strip IPv6 brackets if present.
-    if h.startswith("[") and h.endswith("]"):
-        h = h[1:-1]
-    if h in {"localhost", "ip6-localhost", "ip6-loopback"}:
+    if host_is_blocked(host):
         return True
     try:
-        ip = ipaddress.ip_address(h)
+        ipaddress.ip_address(host.strip().lower().rstrip("."))
     except ValueError:
         # Not an IP literal. We do not resolve DNS; refuse non-IP TCP hosts.
         return True
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return False
 
 
 def _default_transport(

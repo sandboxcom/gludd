@@ -41,6 +41,20 @@ class TestBroadcastReload:
     def test_401_yields_success_false_unauthorized(self, caplog):
         broadcaster, workers = _make_broadcaster(401)
         caplog.propagate = True
+        # xdist-order pollution: alembic/env.py's fileConfig(alembic.ini) (run by
+        # ANY test that exercises the real daemon lifespan against SQLite, e.g.
+        # `with TestClient(app) as client:`) defaults to disable_existing_loggers
+        # =True. alembic.ini's [loggers] only lists root/sqlalchemy/alembic, so
+        # this logger — already created at collection time — gets `.disabled =
+        # True` for the rest of the xdist worker process. Neither conftest's
+        # `_isolate_root_logger` (snapshots level/propagate/handlers only, not
+        # `.disabled`) nor pytest's own caplog machinery (`_force_enable_logging`
+        # only clears the global `logging.disable()` level, never a logger's own
+        # `.disabled`) ever restores it, so a bare `propagate = True` is powerless
+        # — `Logger.isEnabledFor()` short-circuits on `.disabled` before it ever
+        # looks at level/propagate. Force it back on here so this test passes
+        # regardless of what ran before it on this worker.
+        logging.getLogger("general_ludd.reload.worker_broadcast").disabled = False
         logging.getLogger("general_ludd.reload.worker_broadcast").propagate = True
         with caplog.at_level(logging.ERROR, logger="general_ludd.reload.worker_broadcast"), patch(
             "general_ludd.reload.worker_broadcast.httpx.post", return_value=_fake_response(401)
@@ -84,6 +98,15 @@ class TestBroadcastModelUpdate:
     def test_401_yields_success_false_unauthorized(self, caplog):
         broadcaster, workers = _make_broadcaster(401)
         caplog.propagate = True
+        # xdist-order pollution: any test that runs the real daemon lifespan
+        # against SQLite (e.g. `with TestClient(app) as client:`) triggers
+        # alembic/env.py's fileConfig(alembic.ini), which defaults to
+        # disable_existing_loggers=True. alembic.ini's [loggers] only lists
+        # root/sqlalchemy/alembic, so this already-created logger gets
+        # `.disabled = True` for the rest of the xdist worker — and
+        # `Logger.isEnabledFor()` short-circuits on `.disabled` before ever
+        # checking level/propagate, so `propagate = True` alone can't fix it.
+        logging.getLogger("general_ludd.reload.worker_broadcast").disabled = False
         logging.getLogger("general_ludd.reload.worker_broadcast").propagate = True
         with caplog.at_level(logging.ERROR, logger="general_ludd.reload.worker_broadcast"), patch(
             "general_ludd.reload.worker_broadcast.httpx.post", return_value=_fake_response(401)

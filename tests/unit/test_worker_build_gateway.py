@@ -131,6 +131,15 @@ class TestBuildGatewayConfigError:
         """E2 fallback: a raising config load is caught -> WARNING logged (with
         traceback) and None returned; the worker never fails to start."""
         caplog.propagate = True
+        # xdist-order pollution: any test that runs the real daemon lifespan
+        # against SQLite (e.g. `with TestClient(app) as client:`) triggers
+        # alembic/env.py's fileConfig(alembic.ini), which defaults to
+        # disable_existing_loggers=True. alembic.ini's [loggers] only lists
+        # root/sqlalchemy/alembic, so this already-created logger gets
+        # `.disabled = True` for the rest of the xdist worker — and
+        # `Logger.isEnabledFor()` short-circuits on `.disabled` before ever
+        # checking level/propagate, so `propagate = True` alone can't fix it.
+        logging.getLogger("general_ludd.worker.app").disabled = False
         logging.getLogger("general_ludd.worker.app").propagate = True
         with (
             patch(

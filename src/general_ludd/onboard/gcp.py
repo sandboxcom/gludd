@@ -276,6 +276,83 @@ class _DiscoveryWrapper:
         return self._build_fn(*args, **kwargs)
 
 
+# ---------------------------------------------------------------------------
+# Provider class — adapts the module-level functions above to the generic
+# ``OnboardProvider`` shape the CLI scaffold expects (mirrors
+# ``general_ludd.onboard.aws.AWSOnboardProvider``).
+# ---------------------------------------------------------------------------
+
+
+class GCPOnboardProvider:
+    """GCP implementation of :class:`general_ludd.onboard.OnboardProvider`.
+
+    The CLI's ``gludd onboard`` scaffold calls every provider with the same
+    generic three surfaces: ``create_role_instructions()``,
+    ``token_acquisition_guide()``, and
+    ``validate_token_and_role(token, role_arn, region)``. GCP's own concepts
+    don't map 1:1 onto AWS's ARN-shaped world, so this adapter documents the
+    mapping it uses:
+
+    * ``project_id`` — resolved at construction time from the ``project_id``
+      kwarg, else ``GOOGLE_CLOUD_PROJECT``/``GCLOUD_PROJECT``, else a
+      ``<PROJECT_ID>`` placeholder (only for the printed instructions —
+      :meth:`validate_token_and_role` requires a real value, same as the
+      module-level function it wraps).
+    * ``token`` (CLI arg) -> the path to the GCP service-account JSON key
+      (``token_path``); empty/``None`` falls back to
+      ``GOOGLE_APPLICATION_CREDENTIALS``, exactly like the module-level
+      :func:`validate_token_and_role`.
+    * ``role_arn`` (CLI arg) -> the service-account email to verify roles
+      against (kept generically named ``role_arn`` for cross-provider
+      consistency; the guidance text tells the user to paste this value).
+    * ``region`` (CLI arg) -> unused; GCP IAM roles are project-scoped, not
+      region-scoped.
+    """
+
+    name = "gcp"
+
+    def __init__(
+        self,
+        *,
+        project_id: str | None = None,
+        service_account_name: str = DEFAULT_SERVICE_ACCOUNT_NAME,
+    ) -> None:
+        self.project_id = (
+            project_id
+            or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or os.environ.get("GCLOUD_PROJECT")
+        )
+        self.service_account_name = service_account_name
+
+    def create_role_instructions(self) -> str:
+        return create_role_instructions(
+            project_id=self.project_id or "<PROJECT_ID>",
+            service_account_name=self.service_account_name,
+        )
+
+    def token_acquisition_guide(self) -> str:
+        return token_acquisition_guide()
+
+    def validate_token_and_role(
+        self, token: str, role_arn: str, region: str
+    ) -> tuple[bool, dict[str, Any]]:
+        """Non-raising adapter over the module-level probe.
+
+        Returns ``(False, {"detail": ...})`` instead of raising when the SDK
+        is missing or required identifiers can't be resolved, so the CLI can
+        report a clean failure rather than an uncaught traceback.
+        """
+        del region  # GCP roles are project-scoped, not region-scoped.
+        try:
+            return validate_token_and_role(
+                token_path=token or None,
+                project_id=self.project_id,
+                service_account_email=role_arn or None,
+            )
+        except Exception as exc:  # RuntimeError (SDK missing), FileNotFoundError, ValueError, ...
+            return False, {"detail": f"{type(exc).__name__}: {exc}"}
+
+
 if __name__ == "__main__":  # pragma: no cover
     # Allow `python -m general_ludd.onboard.gcp` to print the guide.
     cmd = sys.argv[1] if len(sys.argv) > 1 else "roles"

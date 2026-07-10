@@ -167,6 +167,66 @@ def test_non_http_scheme_rejected() -> None:
     assert recs[0]["level_or_status"] == "error"
 
 
+@pytest.mark.parametrize("host", ["metadata.goog", "instance-data", "ip6-localhost"])
+def test_metadata_alias_names_rejected_without_opt_in(host: str) -> None:
+    # Previously missing from this connector's own 4-name blocklist.
+    transport = RecordingTransport({"/log": FakeResponse(200, text="x\n")})
+    src = make_source(
+        api_server=f"https://{host}:6443", transport=transport, allow_private=False
+    )
+    recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
+    assert transport.calls == []
+    assert recs[0]["level_or_status"] == "error"
+
+
+def test_metadata_ip_literal_rejected_even_with_opt_in() -> None:
+    transport = RecordingTransport({"/log": FakeResponse(200, text="x\n")})
+    src = make_source(
+        api_server="https://169.254.169.254:6443", transport=transport, allow_private=True
+    )
+    recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
+    assert transport.calls == []
+    assert recs[0]["level_or_status"] == "error"
+
+
+def test_alibaba_metadata_ip_rejected_even_with_opt_in() -> None:
+    # 100.100.100.200 sits in the CGNAT 100.64.0.0/10 range, which Python's
+    # ipaddress module does not classify as private/reserved -- this coverage
+    # only exists because BLOCKED_METADATA_IPS names it explicitly. Blocked
+    # regardless of allow_private, same as any other named metadata target.
+    transport = RecordingTransport({"/log": FakeResponse(200, text="x\n")})
+    src = make_source(
+        api_server="https://100.100.100.200:6443", transport=transport, allow_private=True
+    )
+    recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
+    assert transport.calls == []
+    assert recs[0]["level_or_status"] == "error"
+
+
+def test_cgnat_address_blocked_without_opt_in_allowed_with_opt_in() -> None:
+    # 100.65.1.1 sits in the 100.64.0.0/10 CGNAT range: is_private is False
+    # for it in Python's ipaddress, so the is_global-based redesign is what
+    # gates it (not the OLD is_private-only check) -- and it is NOT one of the
+    # "always blocked" categories (loopback/link-local/reserved/multicast/
+    # unspecified), so allow_private=True permits it exactly like an RFC-1918
+    # internal-cluster address.
+    blocked_transport = RecordingTransport({"/log": FakeResponse(200, text="x\n")})
+    blocked = make_source(
+        api_server="https://100.65.1.1:6443", transport=blocked_transport, allow_private=False
+    )
+    recs = blocked.query({"mode": "logs", "pod": "p", "container": "c"})
+    assert blocked_transport.calls == []
+    assert recs[0]["level_or_status"] == "error"
+
+    allowed_transport = RecordingTransport({"/log": FakeResponse(200, text="line\n")})
+    allowed = make_source(
+        api_server="https://100.65.1.1:6443", transport=allowed_transport, allow_private=True
+    )
+    recs2 = allowed.query({"mode": "logs", "pod": "p", "container": "c"})
+    assert allowed_transport.calls
+    assert any(r["level_or_status"] != "error" for r in recs2)
+
+
 # --------------------------------------------------------------------------- #
 # Bearer auth
 # --------------------------------------------------------------------------- #

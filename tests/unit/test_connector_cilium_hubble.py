@@ -187,6 +187,34 @@ def test_ssrf_blocks_metadata_and_loopback_names_without_dns(bad_base: str) -> N
         src.query()
 
 
+def test_ssrf_blocks_cgnat_literal_via_url_blocked():
+    # 100.70.1.1 sits in the 100.64.0.0/10 carrier-grade-NAT range: is_private
+    # is False for it in Python's ipaddress module. Regression pin for the
+    # literal is_url_blocked path used by _guard_url (the canonical
+    # _ip_addr_is_blocked flag set catches it via `not is_global`).
+    src = CiliumHubbleSource(
+        {"base_url": "http://100.70.1.1:9965"},
+        transport=make_transport(200, HUBBLE_METRICS),
+    )
+    with pytest.raises(SSRFError):
+        src.query()
+
+
+def test_ssrf_blocks_resolved_cgnat_address():
+    # The injected resolver returns a 100.64.0.0/10 CGNAT address for a
+    # non-literal hostname. The OLD local _is_blocked_ip classifier (missing
+    # the `not is_global` flag) would have let this through since is_private
+    # is False for that range; importing the canonical _ip_addr_is_blocked
+    # closes that gap.
+    src = CiliumHubbleSource(
+        {"base_url": "http://hubble.svc:9965"},
+        transport=make_transport(200, HUBBLE_METRICS),
+        resolver=lambda host: ["100.70.1.1"],
+    )
+    with pytest.raises(SSRFError):
+        src.query()
+
+
 def test_allow_private_permits_in_cluster():
     recorder: list[str] = []
     src = CiliumHubbleSource(

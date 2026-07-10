@@ -275,6 +275,85 @@ def _noop(_x: Callable[..., Any]) -> Any:  # pragma: no cover
     return _x
 
 
+# ---------------------------------------------------------------------------
+# Provider class — adapts the module-level functions above to the generic
+# ``OnboardProvider`` shape the CLI scaffold expects (mirrors
+# ``general_ludd.onboard.aws.AWSOnboardProvider``).
+# ---------------------------------------------------------------------------
+
+
+class AzureOnboardProvider:
+    """Azure implementation of :class:`general_ludd.onboard.OnboardProvider`.
+
+    The CLI's ``gludd onboard`` scaffold calls every provider with the same
+    generic three surfaces: ``create_role_instructions()``,
+    ``token_acquisition_guide()``, and
+    ``validate_token_and_role(token, role_arn, region)``. Azure's own concepts
+    don't map 1:1 onto AWS's ARN-shaped world, so this adapter documents the
+    mapping it uses:
+
+    * ``subscription_id`` — resolved at construction time from the
+      ``subscription_id`` kwarg, else ``AZURE_SUBSCRIPTION_ID``, else a
+      ``<SUBSCRIPTION_ID>`` placeholder (only for the printed instructions —
+      :meth:`validate_token_and_role` requires a real value, same as the
+      module-level function it wraps).
+    * ``token`` (CLI arg) -> unused. Azure auth goes through
+      ``DefaultAzureCredential``, which is environment-variable driven
+      (``AZURE_CLIENT_ID`` / ``AZURE_CLIENT_SECRET`` / ``AZURE_TENANT_ID``),
+      not a single bearer token the CLI can pass positionally.
+    * ``role_arn`` (CLI arg) -> the managed identity's ``principal_id`` to
+      verify role assignments against (kept generically named ``role_arn``
+      for cross-provider consistency).
+    * ``region`` (CLI arg) -> unused; Azure role assignments here are
+      subscription/resource-group scoped, not region-scoped.
+    """
+
+    name = "azure"
+
+    def __init__(
+        self,
+        *,
+        subscription_id: str | None = None,
+        resource_group_name: str = "gludd-rg",
+        location: str = "eastus",
+        identity_name: str = DEFAULT_IDENTITY_NAME,
+    ) -> None:
+        self.subscription_id = subscription_id or os.environ.get("AZURE_SUBSCRIPTION_ID")
+        self.resource_group_name = resource_group_name
+        self.location = location
+        self.identity_name = identity_name
+
+    def create_role_instructions(self) -> str:
+        return create_role_instructions(
+            subscription_id=self.subscription_id or "<SUBSCRIPTION_ID>",
+            resource_group_name=self.resource_group_name,
+            location=self.location,
+            identity_name=self.identity_name,
+        )
+
+    def token_acquisition_guide(self) -> str:
+        return token_acquisition_guide()
+
+    def validate_token_and_role(
+        self, token: str, role_arn: str, region: str
+    ) -> tuple[bool, dict[str, Any]]:
+        """Non-raising adapter over the module-level probe.
+
+        Returns ``(False, {"detail": ...})`` instead of raising when the SDK
+        is missing or required identifiers can't be resolved, so the CLI can
+        report a clean failure rather than an uncaught traceback.
+        """
+        del token, region  # unused: see class docstring.
+        try:
+            return validate_token_and_role(
+                subscription_id=self.subscription_id,
+                resource_group_name=self.resource_group_name,
+                principal_id=role_arn or None,
+            )
+        except Exception as exc:  # RuntimeError (SDK missing), ValueError, ...
+            return False, {"detail": f"{type(exc).__name__}: {exc}"}
+
+
 if __name__ == "__main__":  # pragma: no cover
     cmd = sys.argv[1] if len(sys.argv) > 1 else "roles"
     if cmd == "roles":

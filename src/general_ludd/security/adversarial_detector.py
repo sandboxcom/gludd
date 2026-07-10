@@ -26,6 +26,7 @@ from enum import StrEnum
 from typing import Any
 
 from general_ludd.security.fix_not_disable import ActionIntent
+from general_ludd.security.sanitize import confine_path_multi, workspace_roots
 
 
 class Severity(StrEnum):
@@ -602,15 +603,41 @@ class AdversarialCodeDetector:
         )
         return AdversarialScanResult(findings=all_findings, high_confidence=high_conf)
 
-    def scan_file(self, file_path: str) -> AdversarialScanResult:
-        """Scan an entire file for adversarial patterns."""
+    def scan_file(
+        self, file_path: str, allowed_root: str | None = None
+    ) -> AdversarialScanResult:
+        """Scan a file on disk for adversarial patterns.
+
+        ``file_path`` is jailed with the same realpath+commonpath confinement
+        used by the other admin path-confined endpoints (integrity, models,
+        skills routers) — :func:`general_ludd.security.sanitize.confine_path_multi`
+        — so this is safe to expose to a caller-controlled (PSK-gated) HTTP
+        request without becoming an arbitrary-file-read primitive.
+
+        The default allowlist is :func:`general_ludd.security.sanitize.workspace_roots`
+        (process CWD + system temp dir). ``allowed_root`` is an escape hatch for
+        tests and legitimate internal callers that need to scan a path outside
+        that default (e.g. a project checkout elsewhere on disk); it is added to
+        the default roots rather than replacing them.
+
+        Raises:
+            PermissionError: ``file_path`` does not resolve inside any allowed
+                root (path traversal, absolute-path escape, or symlink escape).
+        """
+        roots = workspace_roots(allowed_root)
+        confined = confine_path_multi(file_path, roots)
+        if confined is None:
+            raise PermissionError(
+                f"scan_file: path {file_path!r} escapes the allowed roots {roots!r}"
+            )
+
         try:
-            with open(file_path, encoding="utf-8") as f:
+            with open(confined, encoding="utf-8") as f:
                 content = f.read()
         except (OSError, UnicodeDecodeError, PermissionError):
             return AdversarialScanResult()
 
-        return self.scan_text(content, file_path=file_path)
+        return self.scan_text(content, file_path=confined)
 
     def get_patterns_by_category(self, category: Category) -> list[AdversarialPattern]:
         """Return all registered patterns for a given category."""

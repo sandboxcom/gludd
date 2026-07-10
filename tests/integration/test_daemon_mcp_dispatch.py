@@ -27,6 +27,8 @@ fix it imports, the role is permitted ("event_loop"), and the call is executed.
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from typing import Any
 
 import pytest
@@ -469,3 +471,101 @@ class TestDaemonCollectionDispatchWired:
         assert len(results) == 1
         assert results[0].ok is True, f"dispatch failed: {results[0].error!r}"
         assert len(adapter.run_calls) == 1
+
+
+class TestAsyncHandlersRunOnCallersLoopNotBridgedThroughAThread:
+    """CRITICAL regression: async mcp/role handlers must not freeze the loop.
+
+    ``build_event_loop_mcp_dispatcher`` used to wrap the async
+    ``make_mcp_handler`` / ``make_role_handler`` results in ``_sync_bridge``,
+    which drove each coroutine to completion via ``ThreadPoolExecutor`` +
+    ``asyncio.run`` on a short-lived worker thread and blocked on
+    ``future.result()`` — freezing the DAEMON'S OWN running event loop for the
+    duration of every MCP tool call / role dispatch. ``DynamicDispatcher.dispatch``
+    is itself async and already awaits any awaitable a handler returns
+    in-place (``if inspect.isawaitable(result): output = await result``), so
+    the raw async handlers are registered directly with no bridge.
+
+    These tests prove the handler body executes ON the calling coroutine's
+    own running loop and thread — not inside a worker thread running a
+    second, separate event loop.
+    """
+
+    @pytest.mark.asyncio
+    async def test_mcp_handler_runs_on_callers_loop_no_worker_thread(self) -> None:
+        from general_ludd.daemon import build_event_loop_mcp_dispatcher
+
+        registry, client = _build_registry_and_client()
+        caller_loop = asyncio.get_running_loop()
+        caller_thread_id = threading.get_ident()
+
+        seen: dict[str, Any] = {}
+        _orig_call_tool = client.call_tool
+
+        async def _spying_call_tool(
+            server_id: str, tool_name: str, arguments: dict[str, Any]
+        ) -> dict[str, Any]:
+            seen["loop"] = asyncio.get_running_loop()
+            seen["thread_id"] = threading.get_ident()
+            return await _orig_call_tool(server_id, tool_name, arguments)
+
+        client.call_tool = _spying_call_tool  # type: ignore[method-assign]
+
+        dispatcher = build_event_loop_mcp_dispatcher(
+            mcp_client=client,
+            mcp_tool_registry=registry,
+            skill_registry=None,
+            agent_dispatcher=None,
+        )
+        call = ToolCall(kind="mcp", name="files/read_file", args={"path": "/x"})
+        result = await dispatcher.dispatch(call)
+
+        assert result.ok is True, f"dispatch failed: {result.error!r}"
+        assert seen["loop"] is caller_loop, (
+            "mcp handler ran on a DIFFERENT event loop than the caller — "
+            "still bridged through a worker thread"
+        )
+        assert seen["thread_id"] == caller_thread_id, (
+            "mcp handler ran on a different THREAD than the caller — "
+            "still bridged through a worker thread"
+        )
+
+    @pytest.mark.asyncio
+    async def test_role_handler_runs_on_callers_loop_no_worker_thread(self) -> None:
+        from general_ludd.daemon import build_event_loop_mcp_dispatcher
+
+        caller_loop = asyncio.get_running_loop()
+        caller_thread_id = threading.get_ident()
+        seen: dict[str, Any] = {}
+
+        class _SpyingAgentDispatcher(_FakeAgentDispatcher):
+            async def dispatch_one(self, task: Any) -> Any:
+                seen["loop"] = asyncio.get_running_loop()
+                seen["thread_id"] = threading.get_ident()
+                return await super().dispatch_one(task)
+
+        agent_dispatcher = _SpyingAgentDispatcher()
+        dispatcher = build_event_loop_mcp_dispatcher(
+            mcp_client=None,
+            mcp_tool_registry=None,
+            skill_registry=None,
+            agent_dispatcher=agent_dispatcher,
+        )
+        call = ToolCall(kind="role", name="researcher", args={"prompt": "hi"})
+        result = await dispatcher.dispatch(call)
+
+        assert result.ok is True, f"dispatch failed: {result.error!r}"
+        assert seen["loop"] is caller_loop, (
+            "role handler ran on a DIFFERENT event loop than the caller — "
+            "still bridged through a worker thread"
+        )
+        assert seen["thread_id"] == caller_thread_id, (
+            "role handler ran on a different THREAD than the caller — "
+            "still bridged through a worker thread"
+        )
+
+    def test_sync_bridge_helper_no_longer_exists(self) -> None:
+        """The worker-thread bridge is fully removed, not just unused."""
+        import general_ludd.daemon as daemon_module
+
+        assert not hasattr(daemon_module, "_sync_bridge")

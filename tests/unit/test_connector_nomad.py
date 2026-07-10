@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 from typing import Any
 
 import pytest
@@ -276,3 +277,104 @@ def test_normalized_keys_across_all_query_types() -> None:
     ):
         for rec in src.query(spec):
             assert required <= set(rec)
+
+
+# -- SSRF: CGNAT / resolved-metadata / fail-closed (resolved_host_is_blocked) --
+def test_ssrf_blocks_cgnat_literal_without_allow_private() -> None:
+    # 100.70.1.1 sits in the 100.64.0.0/10 carrier-grade-NAT range: is_private
+    # is False for it in Python's ipaddress module, so the OLD local
+    # _host_is_private (missing the `not is_global` flag) would NOT have
+    # blocked it. resolved_host_is_blocked (via the canonical _ip_addr_is_blocked
+    # flag set) closes this gap.
+    src = NomadSource({"base_url": "http://100.70.1.1:4646", "transport": FakeTransport({})})
+    with pytest.raises(NomadSSRFError):
+        src.query({"type": "metrics"})
+
+
+def test_ssrf_blocks_hostname_resolving_to_cgnat_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    from general_ludd.security import ssrf as ssrf_mod
+
+    def _fake_getaddrinfo(host, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("100.70.1.1", 0))]
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _fake_getaddrinfo)
+
+    transport = FakeTransport({})
+    src = NomadSource(
+        {"base_url": "http://internal-nomad.example.com:4646", "transport": transport}
+    )
+    with pytest.raises(NomadSSRFError):
+        src.query({"type": "metrics"})
+    assert transport.calls == []
+
+
+def test_ssrf_blocks_unresolvable_hostname_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from general_ludd.security import ssrf as ssrf_mod
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("name or service not known")
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _boom)
+
+    transport = FakeTransport({})
+    src = NomadSource(
+        {"base_url": "http://does-not-resolve.example.com:4646", "transport": transport}
+    )
+    with pytest.raises(NomadSSRFError):
+        src.query({"type": "metrics"})
+    assert transport.calls == []
+
+
+# -- resolved_host_is_blocked (canonical DNS-resolving opt-in helper) --------
+def test_resolved_host_is_blocked_private_resolved_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    from general_ludd.security import ssrf as ssrf_mod
+    from general_ludd.security.ssrf import resolved_host_is_blocked
+
+    def _private(*_args, **_kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 0))]
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _private)
+    assert resolved_host_is_blocked("internal.example.com") is True
+
+
+def test_resolved_host_is_blocked_public_resolved_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    from general_ludd.security import ssrf as ssrf_mod
+    from general_ludd.security.ssrf import resolved_host_is_blocked
+
+    def _public(*_args, **_kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _public)
+    assert resolved_host_is_blocked("public.example.com") is False
+
+
+def test_resolved_host_is_blocked_fails_closed_on_oserror(monkeypatch: pytest.MonkeyPatch) -> None:
+    from general_ludd.security import ssrf as ssrf_mod
+    from general_ludd.security.ssrf import resolved_host_is_blocked
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("nope")
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _boom)
+    assert resolved_host_is_blocked("does-not-resolve.example.com") is True
+
+
+def test_resolved_host_is_blocked_fails_closed_on_empty_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    from general_ludd.security import ssrf as ssrf_mod
+    from general_ludd.security.ssrf import resolved_host_is_blocked
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", lambda *a, **k: [])
+    assert resolved_host_is_blocked("empty-result.example.com") is True
+
+
+def test_resolved_host_is_blocked_literal_short_circuits_without_dns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from general_ludd.security import ssrf as ssrf_mod
+    from general_ludd.security.ssrf import resolved_host_is_blocked
+
+    def _boom(*_args, **_kwargs):  # pragma: no cover - must never be called
+        raise AssertionError("getaddrinfo must not be called for a blocked literal host")
+
+    monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _boom)
+    assert resolved_host_is_blocked("metadata") is True

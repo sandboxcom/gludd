@@ -33,6 +33,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from general_ludd.connectors._errors import SSRFError
+from general_ludd.security.ssrf import _ip_addr_is_blocked, is_url_blocked
 
 __all__ = ["COMMUNITY_REDACTED", "SnmpSource"]
 
@@ -48,17 +49,6 @@ SnmpGetter = Callable[
 
 # transport(url, timeout) -> (status_code, body_text)
 HttpTransport = Callable[[str, float], tuple[int, str]]
-
-
-def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
 
 
 class _PysnmpUnavailable(RuntimeError):
@@ -176,10 +166,29 @@ class SnmpSource:
         if self.allow_private:
             return url
 
+        # Canonical literal-host decision first (loopback/metadata NAMES, the
+        # .localhost TLD, literal metadata/private/reserved/non-global IPs) so
+        # the NAME coverage this connector never had (it only classified
+        # resolved IPs, with no name blocklist at all) can never drift from
+        # general_ludd.security.ssrf.
+        if is_url_blocked(url, scheme_allowlist=("http", "https")):
+            raise SSRFError(
+                f"target {host!r} is blocked by SSRF policy "
+                "(set allow_private to permit it)"
+            )
+
         try:
             literal = ipaddress.ip_address(host)
             addrs = [str(literal)]
         except ValueError:
+            # Non-literal hostname: this connector supports an INJECTED
+            # resolver (deterministic tests / caller-supplied resolution
+            # policy), which the shared resolved_host_is_blocked convenience
+            # wrapper does not support -- so resolution stays local, but the
+            # per-address classification below is delegated to the canonical
+            # _ip_addr_is_blocked (adds the ``not is_global`` catch for
+            # TEST-NET/documentation ranges the old local _is_blocked_ip
+            # lacked).
             try:
                 addrs = self._resolver(host)
             except OSError as exc:
@@ -194,7 +203,7 @@ class SnmpSource:
                 raise SSRFError(
                     f"unparseable resolved address {addr!r}"
                 ) from None
-            if _is_blocked_ip(ip):
+            if _ip_addr_is_blocked(ip):
                 raise SSRFError(
                     f"target {host!r} resolves to blocked address {addr} "
                     "(set allow_private to permit it)"
