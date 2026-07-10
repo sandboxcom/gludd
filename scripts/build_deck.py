@@ -269,7 +269,7 @@ def main() -> None:
 
     # Write deck-data.json for downstream consumers
     data_path = ROOT / "docs" / "presentation" / "deck-data.json"
-    data_path.write_text(json.dumps(data, indent=2))
+    data_path.write_text(json.dumps(data, indent=2) + "\n")
     print(f"Deck data written: {data_path}")
 
     print(f"Deck ready: {deck_path}")
