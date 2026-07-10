@@ -46,6 +46,7 @@ Design constraints honoured here
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections.abc import Callable, Iterable
 from typing import Any, Protocol, runtime_checkable
@@ -336,7 +337,13 @@ class GluddObserve:
 
     @staticmethod
     def _sort_by_ts(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Stable sort by ts ascending; untimed records sort last."""
+        """Stable sort by ts ascending; untimed records sort last.
+
+        Non-finite timestamps (``NaN``/``+-Inf``) sanitize to epoch-min
+        (``0.0``) via ``_coerce_ts`` so a backend returning ``float("nan")``
+        can't poison ordering — NaN comparisons break the total order
+        ``sorted()`` assumes, so it must never reach the sort key raw.
+        """
         return sorted(
             records,
             key=lambda r: (
@@ -347,10 +354,11 @@ class GluddObserve:
 
 
 def _coerce_ts(value: Any) -> float | None:
-    """Best-effort float timestamp, or ``None`` (unparseable/missing)."""
+    """Best-effort float timestamp, or ``None`` (unparseable/missing/non-finite)."""
     if value is None:
         return None
     try:
-        return float(value)
+        f = float(value)
     except (TypeError, ValueError):
         return None
+    return f if math.isfinite(f) else None

@@ -203,6 +203,49 @@ def test_find_sorts_none_ts_last() -> None:
     assert results[-1]["message"] == "no-ts"
 
 
+def test_find_sorts_nan_and_inf_ts_deterministically_without_raising() -> None:
+    # A connector can hand back a raw dict (bypassing normalized_record()'s own
+    # NaN/Inf-to-None coercion) with a non-finite ts. _sort_by_ts must not raise
+    # (NaN comparisons break the total order sorted() assumes) and must place
+    # these deterministically alongside untimed records.
+    reg = SourceRegistry()
+    reg.register(
+        _FakeSource(
+            "s",
+            "logs",
+            [
+                _rec(ts=float("nan"), source="s", message="nan-ts"),
+                _rec(ts=float("inf"), source="s", message="inf-ts"),
+                _rec(ts=float("-inf"), source="s", message="neg-inf-ts"),
+                _rec(ts=5.0, source="s", message="has-ts"),
+                _rec(ts=None, source="s", message="no-ts"),
+            ],
+        )
+    )
+    obs = Observability(reg)
+    results = obs.find({"q": "x"})  # must not raise
+
+    assert results[0]["message"] == "has-ts"
+    tail = {r["message"] for r in results[1:]}
+    assert tail == {"nan-ts", "inf-ts", "neg-inf-ts", "no-ts"}
+
+
+def test_sort_by_ts_direct_nan_inf_stable_and_no_exception() -> None:
+    records = [
+        {"ts": float("nan"), "message": "a"},
+        {"ts": 1.0, "message": "b"},
+        {"ts": float("inf"), "message": "c"},
+        {"ts": None, "message": "d"},
+        {"ts": float("-inf"), "message": "e"},
+    ]
+    out = Observability._sort_by_ts(records)  # must not raise
+    assert out[0]["message"] == "b"
+    assert {r["message"] for r in out[1:]} == {"a", "c", "d", "e"}
+    # Idempotent / stable across repeated calls (no NaN-driven nondeterminism).
+    out2 = Observability._sort_by_ts(records)
+    assert [r["message"] for r in out] == [r["message"] for r in out2]
+
+
 # --------------------------------------------------------------------------- #
 # Observability.associate — correlation
 # --------------------------------------------------------------------------- #

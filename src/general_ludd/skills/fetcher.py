@@ -58,6 +58,37 @@ def _safe_skill_filename(name: str) -> str | None:
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com"
 
+# Shared response-size cap (M-12): every skill fetch site — GitHub API listing,
+# GitHub raw content, and arbitrary raw-URL fetches — must reject an oversized
+# response the same way, instead of each site growing its own ad-hoc check.
+_MAX_SKILL_RESPONSE_BYTES = 1_000_000  # 1 MB
+
+
+def _capped_get(url: str, *, max_bytes: int = _MAX_SKILL_RESPONSE_BYTES, **kwargs: object) -> httpx.Response | None:
+    """GET ``url``, rejecting the response if it (or its declared size) exceeds ``max_bytes``.
+
+    Checks ``Content-Length`` up front (fast path, avoids reading an obviously
+    oversized body) and re-checks the actual body length afterward — a
+    malicious/misconfigured server can omit or lie about ``Content-Length``.
+    Returns ``None`` on transport failure or an oversized response; callers
+    treat ``None`` the same as any other failed fetch.
+    """
+    kwargs.setdefault("timeout", 15.0)
+    try:
+        resp = httpx.get(url, **kwargs)  # type: ignore[arg-type]
+    except httpx.HTTPError:
+        logger.warning("Request failed for %s", url)
+        return None
+    if resp.status_code == 200:
+        clen = resp.headers.get("content-length")
+        if clen and clen.isdigit() and int(clen) > max_bytes:
+            logger.warning("Response too large (%s bytes) from %s", clen, url)
+            return None
+        if len(resp.content) > max_bytes:
+            logger.warning("Response body exceeded %d bytes from %s", max_bytes, url)
+            return None
+    return resp
+
 
 @dataclass
 class GitHubSkillSource:
@@ -106,7 +137,9 @@ class GitHubSkillSource:
 
     def list_skills(self) -> list[CatalogSkillEntry]:
         path = self.subdir.rstrip("/") if self.subdir else ""
-        resp = httpx.get(self._api_url(path), timeout=15.0)
+        resp = _capped_get(self._api_url(path))
+        if resp is None:
+            return []
         if resp.status_code != 200:
             logger.warning("GitHub API returned %d for %s", resp.status_code, path)
             return []
@@ -127,12 +160,16 @@ class GitHubSkillSource:
 
     def download_skill(self, skill_path: str) -> Skill | None:
         skill_md_path = f"{skill_path.rstrip('/')}/SKILL.md"
-        resp = httpx.get(self._raw_url(skill_md_path), timeout=15.0)
-        if resp.status_code != 200:
+        resp = _capped_get(self._raw_url(skill_md_path))
+        if resp is None or resp.status_code != 200:
             skill_md_path = f"{skill_path.rstrip('/')}.md"
-            resp = httpx.get(self._raw_url(skill_md_path), timeout=15.0)
-        if resp.status_code != 200:
-            logger.warning("Failed to fetch skill from %s: %d", skill_md_path, resp.status_code)
+            resp = _capped_get(self._raw_url(skill_md_path))
+        if resp is None or resp.status_code != 200:
+            logger.warning(
+                "Failed to fetch skill from %s: %s",
+                skill_md_path,
+                getattr(resp, "status_code", "request failed"),
+            )
             return None
         return parse_skill_md(resp.text, source_path=skill_md_path)
 
@@ -146,21 +183,8 @@ class RemoteSkillFetcher:
         if not is_safe_fetch_url(url):
             logger.warning("Refusing unsafe skill URL: %s", url)
             return None
-        try:
-            resp = httpx.get(url, timeout=15.0, follow_redirects=False)
-        except httpx.HTTPError:
-            logger.warning("Failed to fetch skill from %s", url)
-            return None
-        if resp.status_code != 200:
-            return None
-        # Cap response size to prevent memory-exhaustion DoS (M-12).
-        _MAX = 1_000_000  # 1 MB
-        _clen = resp.headers.get("content-length")
-        if _clen and _clen.isdigit() and int(_clen) > _MAX:
-            logger.warning("Skill response too large (%s bytes) from %s", _clen, url)
-            return None
-        if len(resp.content) > _MAX:
-            logger.warning("Skill response body exceeded %d bytes from %s", _MAX, url)
+        resp = _capped_get(url, follow_redirects=False)
+        if resp is None or resp.status_code != 200:
             return None
         return parse_skill_md(resp.text, source_path=url)
 

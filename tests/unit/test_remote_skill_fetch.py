@@ -7,9 +7,22 @@ from unittest.mock import MagicMock, patch
 from general_ludd.skills.fetcher import (
     GitHubSkillSource,
     RemoteSkillFetcher,
+    _capped_get,
     fetch_github_skill,
     fetch_raw_url_skill,
 )
+
+
+def _oversized_response(size: int = 2_000_000) -> MagicMock:
+    """A response that both declares (Content-Length) and IS oversized."""
+    body = "x" * size
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {"content-length": str(size)}
+    mock_response.content = body.encode("utf-8")
+    mock_response.text = body
+    mock_response.json.return_value = []
+    return mock_response
 
 
 class TestGitHubSkillSource:
@@ -62,6 +75,21 @@ class TestGitHubSkillSource:
         assert result.name == "diagnose"
         assert "Bug diagnosis" in result.description
 
+    def test_list_skills_rejects_oversized_response(self):
+        # An oversized GitHub API response (declared + actual) must be rejected
+        # rather than buffered fully into resp.json(), same policy as the
+        # RemoteSkillFetcher's pre-existing 1MB cap.
+        src = GitHubSkillSource(owner="mattpocock", repo="skills", branch="main")
+        with patch("httpx.get", return_value=_oversized_response()):
+            entries = src.list_skills()
+        assert entries == []
+
+    def test_download_skill_rejects_oversized_response(self):
+        src = GitHubSkillSource(owner="mattpocock", repo="skills", branch="main")
+        with patch("httpx.get", return_value=_oversized_response()):
+            result = src.download_skill("skills/engineering/diagnose")
+        assert result is None
+
 
 class TestRemoteSkillFetcher:
     def test_fetch_from_github_url(self):
@@ -94,6 +122,12 @@ class TestRemoteSkillFetcher:
             skill = fetcher.fetch("https://example.com/nonexistent.md")
         assert skill is None
 
+    def test_fetch_rejects_oversized_response(self):
+        fetcher = RemoteSkillFetcher()
+        with patch("httpx.get", return_value=_oversized_response()):
+            skill = fetcher.fetch("https://example.com/huge-skill.md")
+        assert skill is None
+
     def test_install_fetched_skill_to_directory(self):
         fetcher = RemoteSkillFetcher()
         skill_content = "---\nname: tdd\ndescription: TDD discipline\n---\nRed-green-refactor.\n"
@@ -107,6 +141,45 @@ class TestRemoteSkillFetcher:
             assert path.exists()
             content = path.read_text()
             assert "tdd" in content
+
+
+class TestCappedGet:
+    """Direct coverage of the shared cap helper used by all three fetch sites."""
+
+    def test_rejects_oversized_response(self):
+        with patch("httpx.get", return_value=_oversized_response()):
+            resp = _capped_get("https://example.com/huge.md")
+        assert resp is None
+
+    def test_rejects_oversized_body_with_no_content_length_header(self):
+        # A server that lies about / omits Content-Length must still be caught
+        # by the post-download length check (defense in depth).
+        body = "y" * 2_000_000
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
+        mock_response.content = body.encode("utf-8")
+        mock_response.text = body
+        with patch("httpx.get", return_value=mock_response):
+            resp = _capped_get("https://example.com/huge-no-header.md")
+        assert resp is None
+
+    def test_normal_size_response_passes_through(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"content-length": "42"}
+        mock_response.content = b"x" * 42
+        mock_response.text = "small body"
+        with patch("httpx.get", return_value=mock_response):
+            resp = _capped_get("https://example.com/small.md")
+        assert resp is mock_response
+
+    def test_transport_failure_returns_none(self):
+        import httpx as httpx_module
+
+        with patch("httpx.get", side_effect=httpx_module.ConnectError("boom")):
+            resp = _capped_get("https://example.com/unreachable.md")
+        assert resp is None
 
 
 class TestFetchGithubSkill:

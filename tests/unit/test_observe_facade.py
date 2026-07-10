@@ -326,6 +326,28 @@ class TestTimeline:
 
         assert [r["message"] for r in tl] == ["inside"]
 
+    def test_timeline_sorts_nan_and_inf_ts_without_raising(self) -> None:
+        # A connector returning a non-finite ts (NaN/Inf) must not poison the
+        # merge-sort — NaN comparisons break the total order sorted() assumes.
+        a = FakeSource(
+            "loki",
+            "logs",
+            [
+                _rec(source="loki", kind="logs", ts=float("nan"), message="nan-ts"),
+                _rec(source="loki", kind="logs", ts=float("inf"), message="inf-ts"),
+                _rec(source="loki", kind="logs", ts=float("-inf"), message="neg-inf-ts"),
+                _rec(source="loki", kind="logs", ts=5.0, message="has-ts"),
+                _rec(source="loki", kind="logs", ts=None, message="no-ts"),
+            ],
+        )
+        obs = GluddObserve({"loki": a})
+
+        tl = obs.timeline(window=("logs",))  # must not raise
+
+        assert tl[0]["message"] == "has-ts"
+        tail = {r["message"] for r in tl[1:]}
+        assert tail == {"nan-ts", "inf-ts", "neg-inf-ts", "no-ts"}
+
 
 # --------------------------------------------------------------------------- #
 # topology

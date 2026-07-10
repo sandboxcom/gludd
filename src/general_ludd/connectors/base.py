@@ -301,11 +301,39 @@ class Observability:
         return self._sort_by_ts(merged)
 
     @staticmethod
+    def _is_missing_ts(ts: object) -> bool:
+        """``True`` for a ``ts`` that is missing *or* non-finite.
+
+        A connector returning ``float("nan")`` (or ``inf``/``-inf``) poisons
+        ordering: NaN comparisons are neither ``<`` nor ``>=`` anything, which
+        breaks the total order ``sorted()`` assumes. Treat non-finite the
+        same as ``None`` (missing) so it sorts last, deterministically,
+        instead of corrupting the comparison.
+        """
+        if ts is None:
+            return True
+        try:
+            f = float(cast(float, ts))
+        except (TypeError, ValueError):
+            return True
+        return not math.isfinite(f)
+
+    @staticmethod
+    def _sort_key_ts(ts: object) -> float:
+        """Sanitize a ``ts`` value into a finite sort key (epoch-min for missing/non-finite)."""
+        if Observability._is_missing_ts(ts):
+            return 0.0
+        return float(cast(float, ts))
+
+    @staticmethod
     def _sort_by_ts(records: list[dict[str, object]]) -> list[dict[str, object]]:
-        """Stable sort by ts ascending; ``None`` timestamps sort last."""
+        """Stable sort by ts ascending; ``None``/non-finite timestamps sort last."""
         return sorted(
             records,
-            key=lambda r: (r.get("ts") is None, r.get("ts") if r.get("ts") is not None else 0.0),
+            key=lambda r: (
+                Observability._is_missing_ts(r.get("ts")),
+                Observability._sort_key_ts(r.get("ts")),
+            ),
         )
 
     # -- correlation ------------------------------------------------------- #
