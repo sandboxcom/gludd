@@ -411,7 +411,16 @@ class TestModelHealthTrackerConcurrency:
             TimeoutKind,
         )
 
-        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=0.01)
+        # cooldown_seconds MUST comfortably exceed the time the 50-thread herd
+        # below takes to drain the lock. The single-flight probe slot auto-expires
+        # once it is older than ONE cooldown window (the leaked-slot reclaim in
+        # is_healthy — see TestProbeSlotAutoExpiry::test_leaked_probe_unblocks_
+        # after_cooldown), so if the herd spans more than one window a later caller
+        # legitimately reclaims the live probe's slot and admits a SECOND probe —
+        # correct for the breaker, but it breaks this test's "exactly one" premise.
+        # A tiny (0.01s) cooldown flaked under CI load (assert 2 == 1); a 2.0s
+        # window keeps the whole herd inside a single cooldown window.
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=2.0)
         for _ in range(2):
             tracker.record_event(
                 TimeoutEvent(
@@ -422,7 +431,7 @@ class TestModelHealthTrackerConcurrency:
                 )
             )
         assert tracker.is_healthy("m", admit_probe=False) is False
-        time.sleep(0.02)  # cooldown elapses
+        time.sleep(2.1)  # cooldown elapses (must exceed cooldown_seconds above)
 
         n = 50
         barrier = threading.Barrier(n)
