@@ -4,6 +4,13 @@ import * as fs from "node:fs"
 
 let watchdogPid: number | null = null
 
+// Env-overridable so pytest-xdist tests redirect it to a per-test tmp file
+// (GLUDD_WATCHDOG_PID_FILE). The literal /tmp fallback is preserved for prod
+// and for structural tests that assert the path string is present. Sharing the
+// hardcoded path across xdist workers flaked CI (unit-2 FileNotFoundError when a
+// sibling worker's fixture _restore() unlinked it mid-read).
+const PID_FILE = process.env.GLUDD_WATCHDOG_PID_FILE || "/tmp/gludd-watchdog.pid"
+
 function _reportAlive(): void {
   try {
     const alive: Record<string, any> = {}
@@ -20,7 +27,7 @@ export default (async ({ $ }) => {
       if (event.type === "session.created") {
         try {
           // Kill any existing watchdog first
-          try { const oldPid = fs.readFileSync("/tmp/gludd-watchdog.pid", "utf8").trim(); process.kill(parseInt(oldPid)) } catch {}
+          try { const oldPid = fs.readFileSync(PID_FILE, "utf8").trim(); process.kill(parseInt(oldPid)) } catch {}
           // Start new watchdog
           const child = spawn("python3", ["scripts/agent_watchdog.py"], {
             cwd: process.cwd(),
@@ -28,7 +35,7 @@ export default (async ({ $ }) => {
             stdio: ["ignore", fs.openSync("/tmp/gludd-watchdog.log", "a"), fs.openSync("/tmp/gludd-watchdog.log", "a")]
           })
           watchdogPid = child.pid
-          fs.writeFileSync("/tmp/gludd-watchdog.pid", String(child.pid))
+          fs.writeFileSync(PID_FILE, String(child.pid))
           child.unref()
         } catch (e) {
           // fail open — watchdog is optional
@@ -42,7 +49,7 @@ export default (async ({ $ }) => {
       }
       if (event.type === "session.deleted") {
         try {
-          const pidFile = "/tmp/gludd-watchdog.pid"
+          const pidFile = PID_FILE
           if (fs.existsSync(pidFile)) {
             const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim())
             process.kill(pid, "SIGTERM")

@@ -487,9 +487,15 @@ class TestWatchdogPidFile:
     PID_FILE = "/tmp/gludd-watchdog.pid"
 
     def test_watchdog_pid_file_written_and_valid(self, hook_plugin_env: HookEnv):
+        # The plugin reads GLUDD_WATCHDOG_PID_FILE (env-redirected per-test to an
+        # isolated tmp file by hook_plugin_env), falling back to the literal
+        # /tmp/gludd-watchdog.pid only in prod. Read back the SAME redirected
+        # path — the shared literal raced across xdist workers (CI 29123726253
+        # unit-2 FileNotFoundError) when a sibling's _restore() unlinked it.
+        pid_file = Path(hook_plugin_env.env["GLUDD_WATCHDOG_PID_FILE"])
         # Defense in depth: neutralize any real watchdog PID recorded on this
         # machine before the plugin's "kill existing watchdog" step runs.
-        Path(self.PID_FILE).write_text("2147483647")
+        pid_file.write_text("2147483647")
         try:
             result = hook_plugin_env.invoke(
                 ".opencode/plugins/watchdog.ts",
@@ -497,7 +503,7 @@ class TestWatchdogPidFile:
                 input={"event": {"type": "session.created"}},
             )
             assert result.returncode == 0, result.stderr
-            content = Path(self.PID_FILE).read_text().strip()
+            content = pid_file.read_text().strip()
             assert content, "PID file must not be empty"
             assert content.isdigit(), f"PID file must contain digits, got {content!r}"
             pid = int(content)
