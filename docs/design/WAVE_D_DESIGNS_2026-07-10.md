@@ -114,7 +114,7 @@ todo_completed/todo_failed/human_todo_created members (grep-verified) — add th
 mirroring HookTriggeredEvent (:164-167); publish sites: loop.py after :3147 (`reconciled += 1`,
 gated on new_status in COMPLETE/FAILED; `self._event_bus` already stored at :410) and
 routers/human_todos.py after :144 (post-commit, before return);
-secrets: `resolve(alias) -> str | None` shared by SecretsManager (:286-317) and EnvSecretsManager
+secrets: `resolve(alias) -> str | None` shared by SecretsManager (:286-317) and EnvSecretsManager <!-- pragma: allowlist secret -->
 (env.py:70-93); EnvSecretsManager is allow-list fail-closed — wiring must call
 `allow_env(webhook_secret_alias)` (env.py:61-63, currently zero callers) so env-only deployments
 resolve; daemon seam: construct after `app.state._secrets_resolver` assignment (daemon.py ~:1081),

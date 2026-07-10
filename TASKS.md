@@ -1082,4 +1082,3 @@ Three-layer anti-lying guardrail landing so false "done" claims are structurally
 - [x] **CGW-17** — batch-3 docs wave: spec + docs link sweep + root CLAUDE.md/SECURITY.md + SESSION.md rewrite + audit staleness banners | evidence: commit a0f86dd1; tests/unit/test_tasks_tick_guard.py 9 passed
 - [x] **CGW-18** — validation worktree symlink confinement (confine_worktree_path threaded through ValidationRunner + reload/self_improve caller) and _dispatch_review_job playbook timeout with claim release on TimeoutError | evidence: tests/unit/test_validation_runner_hardening.py 22 passed; tests/unit/test_reload.py 15 passed; tests/unit/test_event_loop.py 52 passed
 - [x] **CGW-19** — NaN/Inf sort-key guards (connectors/base.py, observe/facade.py) + GitHubSkillSource response-size caps via shared _capped_get | evidence: commit 6a19f747; tests/unit/test_connectors_base.py 40 passed; tests/unit/test_remote_skill_fetch.py 21 passed
-

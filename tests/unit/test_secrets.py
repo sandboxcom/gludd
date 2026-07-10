@@ -281,7 +281,7 @@ class TestSecretsRedactionGap:
     def test_long_base64_blob_still_redacted(self):
         """Regression: the original 20+-char context-free heuristic must still work."""
         mgr = self._make_manager()
-        blob = "aB3dEfGh1JkLmN0pQrStUvWxYz9876543210"  # 37 chars, no context word
+        blob = "aB3dEfGh1JkLmN0pQrStUvWxYz9876543210"  # 37 chars, no context word  # pragma: allowlist secret
         exc = RuntimeError(f"unexpected backend response: {blob}")
         sanitized = mgr._sanitize_error(exc)
         assert blob not in sanitized
@@ -304,7 +304,7 @@ class TestSecretsRedactionGap:
         mock_client = MagicMock()
         mgr._client = mock_client
         mock_client.secrets.kv.v2.read_secret_version.return_value = {
-            "data": {"data": {"api_key": "abc12345key"}}
+            "data": {"data": {"api_key": "abc12345key"}}  # pragma: allowlist secret
         }
         stored = mgr.read_secret("myapp/config")
         assert stored == {"api_key": "abc12345key"}
@@ -326,7 +326,7 @@ class TestSecretsRedactionGap:
     def test_container_token_redacted_via_known_secret_tracking(self):
         """H-1 dev container token, once minted, is redacted from later errors."""
         mgr = self._make_manager()
-        mgr._container_token = "deadbeef12345678"
+        mgr._container_token = "deadbeef12345678"  # pragma: allowlist secret
         mgr._track_secret_value(mgr._container_token)
         exc = RuntimeError("dev container auth failed: deadbeef12345678")
         sanitized = mgr._sanitize_error(exc)
