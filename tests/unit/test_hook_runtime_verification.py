@@ -359,7 +359,7 @@ class TestEnforceStopBlockCounter:
         payload = json.loads(result.stdout)
         assert payload is not None and payload.get("permissionDecision") == "deny", payload
 
-        data = json.loads(Path(self.BLOCK_COUNTER_FILE).read_text())
+        data = json.loads(Path(hook_plugin_env.env["GLUDD_BLOCK_COUNTER_FILE"]).read_text())
         assert isinstance(data, dict)
         assert "consecutiveBlocks" in data
         assert "totalBlocks" in data
@@ -370,7 +370,7 @@ class TestEnforceStopBlockCounter:
         hook_plugin_env.invoke(
             "enforce-stop.ts", "tool.execute.before", input={"tool": "edit"}
         )
-        data = json.loads(Path(self.BLOCK_REASON_FILE).read_text())
+        data = json.loads(Path(hook_plugin_env.env["GLUDD_BLOCK_REASON_FILE"]).read_text())
         assert isinstance(data, dict)
         assert data["reason"] == "main-thread-grinding"
         assert isinstance(data["reason"], str)
@@ -425,14 +425,14 @@ class TestEnforceStopToolCounts:
             "enforce-stop.ts", "tool.execute.before", input={"tool": "read"}
         )
         assert result.returncode == 0, result.stderr
-        data = json.loads(Path(self.STATE_FILE).read_text())
+        data = json.loads(Path(hook_plugin_env.env["GLUDD_STOP_TOOL_COUNTS_FILE"]).read_text())
         assert isinstance(data, dict)
         assert data.get("allowed", 0) >= 1
         assert "last_allowed" in data
 
     def test_tool_counts_positive_total(self, hook_plugin_env: HookEnv):
         hook_plugin_env.invoke("enforce-stop.ts", "tool.execute.before", input={"tool": "read"})
-        data = json.loads(Path(self.STATE_FILE).read_text())
+        data = json.loads(Path(hook_plugin_env.env["GLUDD_STOP_TOOL_COUNTS_FILE"]).read_text())
         numeric_counts = [v for v in data.values() if isinstance(v, (int, float))]
         assert numeric_counts and sum(numeric_counts) > 0
 

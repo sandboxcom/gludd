@@ -208,7 +208,7 @@ class TestHooksActuallyFire:
         now+1h — BUGS.md incident #23's fix), then assert the on-disk value
         was actually clamped.
         """
-        block_counter_path = Path("/tmp/gludd-block-counter.json")
+        block_counter_path = Path(hook_plugin_env.env["GLUDD_BLOCK_COUNTER_FILE"])
         now_ms = time.time() * 1000
         far_future_ms = now_ms + 10 * 3_600_000  # 10 hours out
         block_counter_path.write_text(json.dumps({

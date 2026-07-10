@@ -146,6 +146,9 @@ STATE_FILE_ENV_VARS = [
     "GLUDD_MAIN_MODEL_FILE",
     "GLUDD_STOP_TEXT_COMPLETE_COUNT",
     "GLUDD_FLOOR_TEXT_COMPLETE_COUNT",
+    "GLUDD_BLOCK_COUNTER_FILE",
+    "GLUDD_BLOCK_REASON_FILE",
+    "GLUDD_STOP_TOOL_COUNTS_FILE",
 ]
 
 # Absolute /tmp paths hardcoded in plugin source with NO env-var override.
@@ -153,12 +156,13 @@ STATE_FILE_ENV_VARS = [
 # a hook-liveness test can never leave net contamination in a live session's
 # shared /tmp/gludd-*.json state (see module docstring SAFETY NOTE).
 HARDCODED_TMP_PATHS = [
-    "/tmp/gludd-block-reason.json",          # enforce-stop.ts BLOCK_REASON_FILE
-    "/tmp/gludd-block-counter.json",         # enforce-stop.ts BLOCK_COUNTER_FILE
+    # BLOCK_REASON_FILE / BLOCK_COUNTER_FILE / stop-tool-counts moved to
+    # STATE_FILE_ENV_VARS (env-redirected per-test) — they were read back by
+    # tests and raced under xdist when a sibling worker's _restore() unlinked
+    # the shared /tmp file mid-test (CI run 29110591188 unit-2 FileNotFoundError).
     "/tmp/gludd-blanked-responses.json",     # enforce-stop.ts BLANKED_RESPONSE_FILE
     "/tmp/gludd-force-dispatch.json",        # enforce-stop.ts / enforce-delegate.ts
     "/tmp/gludd-false-done-blocks.json",     # enforce-stop.ts FALSE_DONE_BLOCKS_FILE
-    "/tmp/gludd-stop-tool-counts.json",      # enforce-stop.ts tool.execute.before
     "/tmp/gludd-plugin-alive.json",          # _reportAlive() shared across plugins
     "/tmp/gludd-plugin-heartbeat-enforce-stop.json",
     "/tmp/gludd-plugin-heartbeat-enforce-delegate.json",

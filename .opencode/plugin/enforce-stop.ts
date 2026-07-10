@@ -7,8 +7,8 @@ const STOP_ENFORCE = process.env.GLUDD_STOP_ENFORCE !== "0"
 const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"
 
 const STATE_FILE = process.env.GLUDD_STOP_STATE_FILE || "/tmp/gludd-stop-state.json"
-const BLOCK_REASON_FILE = "/tmp/gludd-block-reason.json"
-const BLOCK_COUNTER_FILE = "/tmp/gludd-block-counter.json"
+const BLOCK_REASON_FILE = process.env.GLUDD_BLOCK_REASON_FILE || "/tmp/gludd-block-reason.json"
+const BLOCK_COUNTER_FILE = process.env.GLUDD_BLOCK_COUNTER_FILE || "/tmp/gludd-block-counter.json"
 const BLANKED_RESPONSE_FILE = "/tmp/gludd-blanked-responses.json"
 const FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
 
@@ -571,7 +571,7 @@ export default (async ({ }) => {
       try {
         // Increment tool counter — proves tool.execute.before fires
         try {
-          const cPath = "/tmp/gludd-stop-tool-counts.json"
+          const cPath = process.env.GLUDD_STOP_TOOL_COUNTS_FILE || "/tmp/gludd-stop-tool-counts.json"
           let data: Record<string, any> = { allowed: 0, blocked: 0, last_fired: null as any, ts: 0 }
           if (fs.existsSync(cPath)) {
             try { const d = JSON.parse(fs.readFileSync(cPath, "utf8")); data = d } catch {}
@@ -607,7 +607,7 @@ export default (async ({ }) => {
         if (input.tool === "question") {
           // Track block
           try {
-            const cPath = "/tmp/gludd-stop-tool-counts.json"
+            const cPath = process.env.GLUDD_STOP_TOOL_COUNTS_FILE || "/tmp/gludd-stop-tool-counts.json"
             let data: Record<string, any> = { allowed: 0, blocked: 0 }
             if (fs.existsSync(cPath)) {
               try { data = JSON.parse(fs.readFileSync(cPath, "utf8")) } catch {}
@@ -662,7 +662,7 @@ export default (async ({ }) => {
             if (!disengaged && (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending)) {
               // Track block
               try {
-                const cPath = "/tmp/gludd-stop-tool-counts.json"
+                const cPath = process.env.GLUDD_STOP_TOOL_COUNTS_FILE || "/tmp/gludd-stop-tool-counts.json"
                 let data: Record<string, any> = { allowed: 0, blocked: 0 }
                 if (fs.existsSync(cPath)) {
                   try { data = JSON.parse(fs.readFileSync(cPath, "utf8")) } catch {}
@@ -705,7 +705,7 @@ export default (async ({ }) => {
           if (!grindingDisengaged) {
             if (streakState.streak > GRINDING_HARD_DENY_THRESHOLD) {
               try {
-                const cPath = "/tmp/gludd-stop-tool-counts.json"
+                const cPath = process.env.GLUDD_STOP_TOOL_COUNTS_FILE || "/tmp/gludd-stop-tool-counts.json"
                 let data: Record<string, any> = { allowed: 0, blocked: 0 }
                 if (fs.existsSync(cPath)) {
                   try { data = JSON.parse(fs.readFileSync(cPath, "utf8")) } catch {}
@@ -743,7 +743,7 @@ export default (async ({ }) => {
       }
       // Tool passed through — increment allowed counter
       try {
-        const cPath = "/tmp/gludd-stop-tool-counts.json"
+        const cPath = process.env.GLUDD_STOP_TOOL_COUNTS_FILE || "/tmp/gludd-stop-tool-counts.json"
         let data: Record<string, any> = { allowed: 0, blocked: 0 }
         if (fs.existsSync(cPath)) {
           try { data = JSON.parse(fs.readFileSync(cPath, "utf8")) } catch {}
