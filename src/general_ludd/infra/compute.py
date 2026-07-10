@@ -80,6 +80,12 @@ class ComputeConfig(BaseModel):
     guided_decoding_backend: str = "outlines"
     enable_structured_outputs: bool = True
     grammar_file: str | None = None
+    # Secure default: TLS certificate verification is ON. This maps INVERTED
+    # to the Terraform vsphere provider's `allow_unverified_ssl` argument
+    # (verify_ssl=True -> allow_unverified_ssl=false). Set to False only to
+    # opt in to unverified TLS against a vSphere endpoint with a self-signed
+    # or otherwise untrusted certificate.
+    vsphere_verify_ssl: bool = True
 
     @field_validator("gpu_count")
     @classmethod

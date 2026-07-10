@@ -646,7 +646,7 @@ class TerraformGenerator:
               user                 = var.vsphere_user
               password             = var.vsphere_password
               vsphere_server       = var.vsphere_server
-              allow_unverified_ssl = true
+              allow_unverified_ssl = {str(not config.vsphere_verify_ssl).lower()}
             }}
 
             module "vllm_server" {{

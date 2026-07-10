@@ -80,6 +80,22 @@ class TestTerraformGeneratorVsphere:
         hcl = gen.generate(self._make_config())
         assert "vsphere" in hcl.lower()
 
+    def test_generate_vsphere_verifies_tls_by_default(self):
+        gen = TerraformGenerator()
+        hcl = gen._generate_vsphere(self._make_config())
+        assert "allow_unverified_ssl = false" in hcl
+
+    def test_generate_vsphere_allows_opt_in_unverified_tls(self):
+        gen = TerraformGenerator()
+        config = ComputeConfig(
+            provider=ComputeProvider.VMWARE,
+            gpu_type=GPUType.A100_80,
+            model_name="test-model",
+            vsphere_verify_ssl=False,
+        )
+        hcl = gen._generate_vsphere(config)
+        assert "allow_unverified_ssl = true" in hcl
+
 
 class TestPyvmomiLazyImport:
     def test_pyvmomi_not_imported_at_module_top_level(self):
