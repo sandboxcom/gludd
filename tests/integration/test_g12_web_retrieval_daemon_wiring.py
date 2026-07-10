@@ -113,7 +113,8 @@ class TestWebRetrieverDirectMocked:
         mock_resp = _mock_http_response(html, status=200, url="http://example.com/page")
 
         retriever = WebRetriever(timeout_seconds=10)
-        with patch.object(urllib.request, "urlopen", return_value=mock_resp):
+        with patch.object(urllib.request, "build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_resp
             result = retriever.fetch_web_page("http://example.com/page")
 
         assert isinstance(result, WebPageResult)
@@ -127,16 +128,17 @@ class TestWebRetrieverDirectMocked:
         mock_resp = _mock_http_response(html, status=200, url="http://example.com/cached")
 
         retriever = WebRetriever(timeout_seconds=10)
-        with patch.object(urllib.request, "urlopen", return_value=mock_resp) as mock_urlopen:
+        with patch.object(urllib.request, "build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_resp
             result1 = retriever.fetch_web_page("http://example.com/cached")
             assert result1.title == "Cached"
-            call_count_after_first = mock_urlopen.call_count
+            call_count_after_first = mock_build_opener.return_value.open.call_count
 
             result2 = retriever.fetch_web_page("http://example.com/cached")
             assert result2.title == "Cached"
             assert result2.content == result1.content
 
-            assert mock_urlopen.call_count == call_count_after_first
+            assert mock_build_opener.return_value.open.call_count == call_count_after_first
 
     def test_web_page_result_dataclass_fields(self) -> None:
         result = WebPageResult(
@@ -177,7 +179,8 @@ class TestWebRetrieverDirectMocked:
 
         with patch.dict(os.environ, {"GLUDD_WEB_FETCH_ALLOWED_DOMAINS": "example.com"}):
             retriever = WebRetriever(timeout_seconds=10)
-            with patch.object(urllib.request, "urlopen", return_value=mock_resp):
+            with patch.object(urllib.request, "build_opener") as mock_build_opener:
+                mock_build_opener.return_value.open.return_value = mock_resp
                 result = retriever.fetch_web_page("http://example.com/allowed-page")
             assert result.status_code == 200
             assert result.title == "Allowed"

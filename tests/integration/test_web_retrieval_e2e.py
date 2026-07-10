@@ -225,7 +225,7 @@ class TestFetchWebPageSuccess:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(return_value=mock_resp))):
             retriever = WebRetriever(timeout_seconds=10)
             result = retriever.fetch_web_page("http://example.com/page")
 
@@ -245,7 +245,7 @@ class TestFetchWebPageSuccess:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(return_value=mock_resp))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://example.com")
 
@@ -265,7 +265,7 @@ class TestFetchWebPageHttpErrors:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", side_effect=error):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=error))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://example.com/missing")
 
@@ -285,7 +285,7 @@ class TestFetchWebPageHttpErrors:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", side_effect=error):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=error))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://example.com/boom")
 
@@ -300,7 +300,7 @@ class TestFetchWebPageHttpErrors:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", side_effect=error):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=error))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://example.com/forbidden")
 
@@ -320,7 +320,7 @@ class TestFetchWebPageConnectionError:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", side_effect=conn_error):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=conn_error))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://down.example.com")
 
@@ -339,7 +339,7 @@ class TestFetchWebPageConnectionError:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", side_effect=timeout_error):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=timeout_error))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://slow.example.com")
 
@@ -374,7 +374,7 @@ class TestFetchWebPageCaching:
             return mock_resp
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", side_effect=_tracking_urlopen):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=_tracking_urlopen))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://example.com/cached")
 
@@ -415,7 +415,7 @@ class TestFetchWebPageCaching:
             return mock_resp
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=FakeCache()), \
-                patch("urllib.request.urlopen", side_effect=_tracking_urlopen):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=_tracking_urlopen))):
             retriever = WebRetriever()
             result1 = retriever.fetch_web_page("http://example.com/hit")
             result2 = retriever.fetch_web_page("http://example.com/hit")
@@ -470,7 +470,7 @@ class TestFetchWebPageDomainAllowlist:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(return_value=mock_resp))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://trusted.com/page")
 
@@ -489,7 +489,7 @@ class TestFetchWebPageDomainAllowlist:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(return_value=mock_resp))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://example.org/about")
 
@@ -505,7 +505,7 @@ class TestFetchWebPageDomainAllowlist:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(return_value=mock_resp))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://any-domain.xyz/data")
 
@@ -544,7 +544,7 @@ class TestFetchWebPageContentSizeCap:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(return_value=mock_resp))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://big.example.com")
 
@@ -564,7 +564,7 @@ class TestFetchWebPageContentSizeCap:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(return_value=mock_resp))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://exact.example.com")
 
@@ -582,7 +582,7 @@ class TestFetchWebPageContentSizeCap:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(return_value=mock_resp))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://over.example.com")
 
@@ -611,7 +611,7 @@ class TestFetchWebPageHeaderExtraction:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(return_value=mock_resp))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://example.com")
 
@@ -635,7 +635,7 @@ class TestFetchWebPageHeaderExtraction:
         fake_cache.get.return_value = None
 
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", side_effect=error):
+                patch("urllib.request.build_opener", return_value=MagicMock(open=MagicMock(side_effect=error))):
             retriever = WebRetriever()
             result = retriever.fetch_web_page("http://example.com/rate-limited")
 
@@ -665,13 +665,15 @@ class TestWebRetrieverTimeoutConfig:
         fake_cache.__enter__.return_value = fake_cache
         fake_cache.get.return_value = None
 
+        mock_opener = MagicMock(open=MagicMock(return_value=mock_resp))
         with patch("general_ludd.retrieval.web.diskcache.Cache", return_value=fake_cache), \
-                patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+                patch("urllib.request.build_opener", return_value=mock_opener) as mock_build_opener:
                 retriever = WebRetriever(timeout_seconds=5)
                 retriever.fetch_web_page("http://example.com")
 
-        mock_urlopen.assert_called_once()
-        _, kwargs = mock_urlopen.call_args
+        mock_build_opener.assert_called_once()
+        mock_opener.open.assert_called_once()
+        _, kwargs = mock_opener.open.call_args
         assert kwargs["timeout"] == 5
 
 

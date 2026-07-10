@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from general_ludd.langchain.prompt_adapter import prompt_registry_to_chat_template
+import jinja2.exceptions
+import pytest
+
+from general_ludd.langchain.prompt_adapter import (
+    PromptRenderError,
+    prompt_registry_to_chat_template,
+)
 from general_ludd.prompts.registry import PromptRegistry
 
 
@@ -69,3 +75,13 @@ class TestPromptRegistryToChatTemplate:
         assert "- a" in messages[0].content
         assert "- b" in messages[0].content
         assert "- c" in messages[0].content
+
+    def test_security_error_from_render_is_wrapped_not_propagated_raw(self):
+        class _HostileRegistry:
+            def render(self, prompt_name: str, **variables: object) -> str:
+                raise jinja2.exceptions.SecurityError("blocked sandboxed access")
+
+        with pytest.raises(PromptRenderError) as exc_info:
+            prompt_registry_to_chat_template(_HostileRegistry(), "shadowed")
+
+        assert isinstance(exc_info.value.__cause__, jinja2.exceptions.SecurityError)

@@ -35,7 +35,8 @@ class TestWebRetrieverFetch:
         mock_response.status = 200
         mock_response.headers = {}
 
-        with patch("urllib.request.urlopen", return_value=mock_response):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_response
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://example.com")
 
@@ -50,7 +51,8 @@ class TestWebRetrieverFetch:
         mock_response.status = 200
         mock_response.headers = {}
 
-        with patch("urllib.request.urlopen", return_value=mock_response):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_response
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://notitle.example.com/untitled")
 
@@ -69,7 +71,8 @@ class TestWebRetrieverFetch:
         mock_response.headers = {}
 
         monkeypatch.setenv("GLUDD_WEB_FETCH_ALLOWED_DOMAINS", "example.com,trusted.org")
-        with patch("urllib.request.urlopen", return_value=mock_response):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_response
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://trusted.org/page")
         assert result.status_code == 200
@@ -81,7 +84,8 @@ class TestWebRetrieverFetch:
         mock_response.headers = {}
 
         assert os.environ.get("GLUDD_WEB_FETCH_ALLOWED_DOMAINS") is None
-        with patch("urllib.request.urlopen", return_value=mock_response):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_response
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://any.example.com/page")
         assert result.status_code == 200
@@ -92,7 +96,8 @@ class TestWebRetrieverFetch:
         mock_response.status = 200
         mock_response.headers = {}
 
-        with patch("urllib.request.urlopen", return_value=mock_response):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_response
             retriever = WebRetriever()
             result1 = retriever.fetch_web_page("https://example.com/cache-test")
             result2 = retriever.fetch_web_page("https://example.com/cache-test")
@@ -101,16 +106,18 @@ class TestWebRetrieverFetch:
 
     def test_http_error_returns_result_with_error_code(self) -> None:
         import urllib.error
-        with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
-            "https://example.com", 404, "Not Found", {}, io.BytesIO(b"")
-        )):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.side_effect = urllib.error.HTTPError(
+                "https://example.com", 404, "Not Found", {}, io.BytesIO(b"")
+            )
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://example.com/missing")
         assert result.status_code == 404
         assert result.content == ""
 
     def test_network_error_returns_negative_status(self) -> None:
-        with patch("urllib.request.urlopen", side_effect=OSError("network unreachable")):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.side_effect = OSError("network unreachable")
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://down.example.com")
         assert result.status_code == -1
@@ -122,7 +129,8 @@ class TestWebRetrieverFetch:
         mock_response.status = 200
         mock_response.headers = {}
 
-        with patch("urllib.request.urlopen", return_value=mock_response):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_response
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://example.com/title-attr")
         assert result.title == "English Title"
@@ -133,7 +141,8 @@ class TestWebRetrieverFetch:
         mock_response.status = 200
         mock_response.headers = {}
 
-        with patch("urllib.request.urlopen", return_value=mock_response):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_response
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://example.com/large")
         assert len(result.content) <= 1 * 1024 * 1024 + 1
@@ -153,7 +162,8 @@ class TestWebRetrieverFetch:
         mock_response.status = 200
         mock_response.headers = {"Content-Type": "text/html", "Server": "nginx"}
 
-        with patch("urllib.request.urlopen", return_value=mock_response):
+        with patch("urllib.request.build_opener") as mock_build_opener:
+            mock_build_opener.return_value.open.return_value = mock_response
             retriever = WebRetriever()
             result = retriever.fetch_web_page("https://example.com/with-headers")
         assert result.headers is not None
@@ -171,7 +181,8 @@ class TestWebRetrieverFetch:
             mock_response = io.BytesIO(b"x" * 1000)
             mock_response.status = 200
             mock_response.headers = {}
-            with patch("urllib.request.urlopen", return_value=mock_response):
+            with patch("urllib.request.build_opener") as mock_build_opener:
+                mock_build_opener.return_value.open.return_value = mock_response
                 retriever = WebRetriever()
                 result = retriever.fetch_web_page("https://example.com/small")
             assert len(result.content) <= 501
