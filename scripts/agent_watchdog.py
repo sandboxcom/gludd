@@ -876,8 +876,7 @@ def _check_gate_background() -> None:
                 f"{elapsed:.0f}s (>1h) - auto-killing"
             )
             try:
-                PATH_PARTS = Path(".gate-status").absolute()
-                PATH_PARTS.write_text("GATE_TIMEOUT\n=== GATE: ABORTED (watchdog timeout) ===\n")
+                _GATE_STATUS.write_text("GATE_TIMEOUT\n=== GATE: ABORTED (watchdog timeout) ===\n")
             except Exception:
                 pass
             try:

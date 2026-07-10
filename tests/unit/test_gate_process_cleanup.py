@@ -106,14 +106,22 @@ def test_watchdog_gate_max_runtime_is_one_hour():
     )
 
 
-def test_watchdog_check_gate_background_kills_stale():
+def test_watchdog_check_gate_background_kills_stale(tmp_path, monkeypatch):
     import importlib
 
     import scripts.agent_watchdog as aw
 
     importlib.reload(aw)
-    pid_file = Path(".gate-background.pid")
-    status_file = Path(".gate-status")
+    # Redirect the watchdog's gate-state globals into this test's own tmp dir.
+    # They default to CWD-relative repo-root files; under pytest-xdist multiple
+    # workers share that CWD, so this test and test_watchdog_detects_stale_gate_status
+    # would clobber each other's .gate-status/.gate-background.pid preconditions
+    # (one needs the pid file present + status absent, the other the inverse) —
+    # a shared-/tmp-style race that flaked CI run 29113728377 (unit-2, py3.12).
+    pid_file = tmp_path / ".gate-background.pid"
+    status_file = tmp_path / ".gate-status"
+    monkeypatch.setattr(aw, "GATE_PID_FILE", pid_file)
+    monkeypatch.setattr(aw, "_GATE_STATUS", status_file)
 
     status_file.unlink(missing_ok=True)
     pid_file.write_text("99999")
@@ -128,19 +136,20 @@ def test_watchdog_check_gate_background_kills_stale():
     with patch.object(os, "kill", side_effect=fake_kill):
         aw._check_gate_background()
 
-    pid_file.unlink(missing_ok=True)
-    status_file.unlink(missing_ok=True)
-
     assert len(calls) >= 1, (
         "_check_gate_background must attempt to kill stale gate process, "
         f"got {len(calls)} calls: {calls}"
     )
 
 
-def test_watchdog_detects_stale_gate_status():
+def test_watchdog_detects_stale_gate_status(tmp_path, monkeypatch):
     import scripts.agent_watchdog as aw
-    status_file = Path(".gate-status")
-    pid_file = Path(".gate-background.pid")
+    # Per-test tmp isolation of the watchdog gate-state globals (see the sibling
+    # test above): shared CWD-relative repo-root files race across xdist workers.
+    status_file = tmp_path / ".gate-status"
+    pid_file = tmp_path / ".gate-background.pid"
+    monkeypatch.setattr(aw, "GATE_PID_FILE", pid_file)
+    monkeypatch.setattr(aw, "_GATE_STATUS", status_file)
 
     pid_file.unlink(missing_ok=True)
     status_file.write_text("=== GATE: PASSED ===")
@@ -149,8 +158,6 @@ def test_watchdog_detects_stale_gate_status():
     logs = []
     with patch.object(aw, "_log", side_effect=lambda msg: logs.append(msg)):
         aw._check_gate_background()
-
-    status_file.unlink(missing_ok=True)
 
     stale_logs = [entry for entry in logs if "STALE" in entry or "stale" in entry.lower()]
     assert len(stale_logs) >= 1, (
