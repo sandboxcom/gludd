@@ -278,6 +278,58 @@ model) and auto-merge, with the file-claim coordinator preventing clobber.
 agents and merges cleanly. This is where gludd should *exceed* the competition, not
 just match it.
 
+**P-10 — Multi-language REPL snippet-testing tool** (`repl_eval` MCP builtin). *Why:*
+the autonomous model must be able to **test a code snippet before applying it** — run a
+candidate function/expression and see the actual output/error, in the language it's
+editing — so edits are validated, not guessed. This is a tool the model calls mid-task,
+NOT an interactive human REPL. *What:* a model-callable builtin (register in
+`mcp/builtins.py` via `register_builtins`, `BuiltinToolHandler` dispatch) with schema
+`{language, code, stdin?, timeout?}` → `{stdout, stderr, exit_code, timed_out}`. It
+spins an **ephemeral, sandboxed** interpreter, runs the snippet, returns the result, and
+cleans up. *Sandbox (critical):* do NOT route through the bare `sandbox_exec/executor.py`
+(no isolation prefixing) or raw `subprocess` — use the hardened `ProjectCommandRunner`
+Popen recipe (`project_runner/runner.py:239-248`: sanitized env, `start_new_session`,
+`preexec_fn` rlimits, `_kill_group`) and prepend the detected sandbox backend's wrapper
+argv (bubblewrap `handle.extra["argv"]` / seatbelt `["sandbox-exec","-f",profile]`); on
+AppArmor/SELinux hosts (host-wide profiles, no per-command wrapper) treat the sandbox as
+advisory and rely on process-hardening + `--unshare`. No network by default; output-size
++ wall-clock caps. *Language/DSL registry:* a `LANGUAGE_REGISTRY` mapping language →
+interpreter argv, each gated by `shutil.which` (reuse the `mcp/transport.py:129`
+`_validate_launch_command` pattern) and gracefully skipped if absent — cover as many as
+feasible: python (`python -`), node/js, typescript (ts-node/deno), ruby (`ruby -e`),
+bash/sh, go (`go run` temp), rust (evcxr/scratch cargo), java (jshell), sql (sqlite3), R,
+lua, php, perl, jq, awk, and more. Native-eval vs temp-file-compile noted per language.
+*Integration:* the model, mid-task, calls `repl_eval` to validate a snippet, sees the
+result, then emits the final edit — a pre-apply validation loop in the tool-loop.
+*Acceptance:* the model can run and get real stdout/stderr/exit_code for a snippet in
+each installed language, sandboxed, before committing an edit; a snippet exceeding the
+time/output cap is terminated cleanly. *Tests:* per-language run + skip-if-absent;
+timeout/output-cap enforced; no-network; sandbox wrapper actually applied.
+
+**P-11 — Code reference/usage graph** (`code_reference_graph` MCP builtin + `gludd code
+refs` CLI + `/admin/code/refs`). *Why:* before editing, the autonomous model must
+understand a code block's **impact** — every symbol it references and everything that
+consumes what it defines — so changes don't silently break callers. *What:* given a code
+block (or file+line range), (1) tree-sitter-parse it to extract every referenced
+identifier (calls, type refs, imports, attribute access); (2) for each reference, resolve
+its **definition** site (file:line) and enumerate all **use** sites across the indexed
+repo (forward references); (3) for each symbol **defined** in the block (functions/
+classes/exports), enumerate all **consumers/callers** across the repo (reverse
+references) — "what components consume the elements defined in this block." Output a
+structured graph: `{defined_here: [{symbol, kind, consumers:[file:line…]}], referenced:
+[{symbol, defined_at:file:line, used_at:[file:line…]}]}`. *Build on existing infra, not
+a fresh walk:* reuse `code_intelligence/extractor.py` (ASTBlockExtractor) for the
+in-block symbols + the P-3 retrieval index for repo-wide resolution — **index-based, not
+the O(n²) pairwise git_intel callgraph**; cross-language via the P-3 multi-grammar
+extension. *Expose:* MCP builtin (`mcp/builtins.py:register_builtins`, path-jailed via
+`_confined_code_path`), CLI `code refs` (`cli.py:709-721` `code` subparser +
+`_cmd_code_refs`), and `@app.get("/admin/code/refs")` (`routers/models.py` ~258, thin
+backend the CLI/TUI call). *Acceptance:* on a code block, gludd returns where every
+referenced symbol is defined + all its uses, and what consumes the block's exports —
+correct on a multi-file repo, incremental (reuses the index), cross-language.
+*Tests:* forward refs resolved to defs+uses; reverse refs (consumers) enumerated;
+index reuse (no full re-walk); a non-Python block resolved.
+
 ## 2.3 Sequencing Wave P vs Wave C/D
 
 - **P-1 (toolchain runner) is the keystone** and unblocks P-2/P-4/P-5 being useful on
