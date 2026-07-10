@@ -330,7 +330,7 @@ class TestSecretsRedactionGap:
         mgr._track_secret_value(mgr._container_token)
         exc = RuntimeError("dev container auth failed: deadbeef12345678")  # pragma: allowlist secret
         sanitized = mgr._sanitize_error(exc)
-        assert "deadbeef12345678" not in sanitized
+        assert "deadbeef12345678" not in sanitized  # pragma: allowlist secret
         assert "REDACTED" in sanitized
 
 
