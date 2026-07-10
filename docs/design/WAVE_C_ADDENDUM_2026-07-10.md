@@ -140,3 +140,79 @@ STS-delegation path it was motivated by. Required additions:
 - `test_model_gateway.py::TestGatewayTimeout` + `test_gateway_base_url_ssrf.py` leak tests (C-GATEWAY)
 - `test_budget_guard.py`/`test_budget_guards.py`/`test_spend_limiter.py` reserve/rollover/dedup (C-BUDGET)
 - `test_event_loop_dispatch_semaphore.py` (C-EVENTLOOP item 13) + C-SPD1 flush + 4 phase-count updates
+
+## Adversarial review corrections — round 2 (2026-07-10)
+
+### C-GATEWAY — timeout switch has no safe default
+**Design being corrected:** C-GATEWAY's `_build_timeout_kwarg` (per-family timeout
+plumbing, motivated by the M1 no-timeout bug).
+**Hole:** as specced, `_build_timeout_kwarg` is a 3-way string match on
+`provider_class_hint` (`ChatOpenAI` / `ChatAnthropic` / `HuggingFaceEndpoint`). But
+`ProviderRegistry.from_profiles()` (`models/provider_registry.py:71-101`) lets any
+`ModelProfile` register an arbitrary `provider_class_hint` — so any other family
+(`ChatGoogleGenerativeAI`, `ChatMistralAI`, `ChatBedrock`, native `ChatVertexAI`, etc.)
+falls through with ZERO timeout applied, reproducing the exact M1 bug the design was
+meant to close.
+**Required design change:** add an explicit fallback branch that attempts a bare-float
+`timeout=` kwarg on the unrecognized family, plus a `logger.warning` on that path so
+silent no-timeout is at least observable; add a test iterating every `provider_class`
+in `PROVIDER_PRESETS` asserting none fall through unhandled. Note `langchain-anthropic`
+and `langchain-huggingface` are NOT project deps (`pyproject.toml:47-52` only lists
+`langchain-openai`) — those two timeout branches need the packages mocked in tests, not
+imported for real.
+
+### C-GATEWAY ↔ C-BUDGET — try/finally scope gap
+**Design being corrected:** C-BUDGET's reserve()/release() wrapping of
+`_invoke_and_bill`.
+**Hole:** the existing try/except in `_invoke_and_bill` (`gateway.py:912-938`) wraps
+ONLY `chat_model.invoke()`. It does NOT wrap provider construction
+(`gateway.py:824-878`, including the SSRF raises at 833-836) nor the empty-200 guard
+raise (`gateway.py:958-961`, which fires AFTER a successful invoke but BEFORE
+`record_spend` at 988-989). C-BUDGET's spec is under-specified on which lines the new
+try/finally spans, so a naive implementation either reserves budget it never releases
+on a construction failure, or fails to release on the empty-200 path.
+**Required design change:** C-BUDGET must widen the guarded region to also cover the
+empty-200 raise (958-961), releasing (not committing — no real cost is known there) on
+that path. `reserve()` must be placed AFTER provider construction (at ~911), never
+before line 824, so construction failures (incl. the SSRF raises) fail closed without
+ever taking a reservation. Sequencing: land C-GATEWAY first (diff confined to 824-878),
+then implement C-BUDGET against a fresh Read of the post-C-GATEWAY file — do not design
+C-BUDGET's line ranges against the pre-C-GATEWAY file.
+
+### C-TOOLLOOP — per-response cap burns iteration budget
+**Design being corrected:** the per-response tool-call cap for code/bug_fix/refactor/
+feature/test work types.
+**Hole:** those work types get only `CODE_MAX_ITERATIONS=5` (`execution/tool_loop.py:30`).
+A legitimate large honest bundle (e.g. 25 file reads) capped to the default per-response
+limit forces the model to re-issue the tail across additional iterations — up to ~40% of
+a 5-iteration budget can be spent just recovering the capped remainder, risking a
+spurious `ToolLoopExhausted` on otherwise-honest work.
+**Required design change:** either add compensating iteration headroom when a
+cap-rejection occurred in a prior round, or an explicit non-goal statement accepting the
+risk — and either way, a test asserting "capped-then-retried consumes iteration budget"
+so the tradeoff is pinned down, not silently rediscovered later.
+
+### C-TOOLLOOP — compaction id-invariant ordering must be explicit
+**Design being corrected:** the cap-rejection message injection relative to
+`_compact_history`'s verbatim-prefix boundary.
+**Hole:** `_compact_history` (`tool_loop.py:340-374`) treats everything from
+`open_round_start` (captured at line 241) onward as verbatim/uncompactable. If the
+cap-rejection messages are appended BEFORE `open_round_start` is captured, they fall
+into the compactable prefix and lose their `tool_call_id` — breaking the id invariant
+compaction depends on.
+**Required design change:** state as a hard requirement (assert or comment at the
+capture site) that cap-rejection messages must be appended AFTER `open_round_start` is
+captured, never before.
+
+### C-TOOLLOOP — jsonschema validation is over-strict vs gludd's own builtin
+**Design being corrected:** the Draft202012Validator gate in front of `call_tool`.
+**Hole:** `WEB_RETRIEVE_TOOL.input_schema` declares `timeout_seconds: integer`
+(`mcp/builtins.py:88-93`), but the handler (`mcp/builtins.py:209-213`) tolerates a
+stringified `"30"` via `int(timeout_seconds)` + try/except. A strict
+Draft202012Validator gate placed in front of `call_tool` would reject the string before
+the handler ever runs, narrowing behavior that gludd's own builtin currently accepts.
+**Required design change:** add a type-coercion pass before validation, or explicitly
+document this as an intentional behavior change (stringified numerics no longer
+accepted) so it isn't discovered as a regression later. Confirmed non-issues, no design
+change needed: `jsonschema>=4.21` IS a hard dep (`pyproject.toml:44`); the empty-dict
+schema skip is safe since `MCPTool.input_schema` defaults to `{}` and is never `None`.
