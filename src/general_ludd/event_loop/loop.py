@@ -189,8 +189,8 @@ def _resolve_prompt_text_static(
         tmpl_path = _Path(str(project_templates_dir)) / prompt_profile
         if tmpl_path.is_file():
             try:
-                from jinja2 import Environment as _Env
                 from jinja2 import FileSystemLoader as _FSL
+                from jinja2.sandbox import SandboxedEnvironment as _Env
                 env = _Env(loader=_FSL(str(project_templates_dir)), autoescape=True)
                 tmpl = env.get_template(prompt_profile)
                 return tmpl.render(**kwargs)

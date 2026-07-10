@@ -33,7 +33,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import FileSystemLoader, select_autoescape
+from jinja2.sandbox import SandboxedEnvironment
 
 from general_ludd.renderers.cache import RendererCache
 from general_ludd.renderers.registry import RendererRegistry
@@ -66,8 +67,12 @@ def _dump_json(value: object) -> str:
 
 # Module-level Jinja2 environment: autoescape ON for all string output. Only
 # the explicit ``| safe`` in sections/raw_html.html.j2 bypasses escaping, and
-# only when the renderer spec opts in via ``allow_raw_html``.
-_env = Environment(
+# only when the renderer spec opts in via ``allow_raw_html``. Sandboxed for
+# defense-in-depth consistency with every other jinja2 environment in this
+# codebase (registry/variable_store/ansible/skills all use
+# SandboxedEnvironment) even though this one only ever loads fixed in-repo
+# ``.j2`` files, not attacker-supplied template text.
+_env = SandboxedEnvironment(
     loader=FileSystemLoader(searchpath=str(_TEMPLATE_DIR)),
     autoescape=select_autoescape(default=True, default_for_string=True),
     trim_blocks=True,
