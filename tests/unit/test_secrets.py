@@ -307,7 +307,7 @@ class TestSecretsRedactionGap:
             "data": {"data": {"api_key": "abc12345key"}}  # pragma: allowlist secret
         }
         stored = mgr.read_secret("myapp/config")
-        assert stored == {"api_key": "abc12345key"}
+        assert stored == {"api_key": "abc12345key"}  # pragma: allowlist secret
 
         exc = RuntimeError("upstream rejected credential abc12345key")
         sanitized = mgr._sanitize_error(exc)
@@ -328,7 +328,7 @@ class TestSecretsRedactionGap:
         mgr = self._make_manager()
         mgr._container_token = "deadbeef12345678"  # pragma: allowlist secret
         mgr._track_secret_value(mgr._container_token)
-        exc = RuntimeError("dev container auth failed: deadbeef12345678")
+        exc = RuntimeError("dev container auth failed: deadbeef12345678")  # pragma: allowlist secret
         sanitized = mgr._sanitize_error(exc)
         assert "deadbeef12345678" not in sanitized
         assert "REDACTED" in sanitized
