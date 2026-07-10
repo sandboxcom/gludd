@@ -55,6 +55,29 @@ for _path in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
 importlib.import_module("general_ludd.routing_roles")
 
 
+def pytest_collection_modifyitems(items: "list[pytest.Item]") -> None:
+    """Serialize every hook-liveness test that shares HARDCODED_TMP_PATHS onto a
+    single xdist worker.
+
+    The ``hook_plugin_env`` fixture (tests/unit/_hook_fixtures.py) drives the
+    real Node plugins, which write un-namespaced, env-override-free
+    ``/tmp/gludd-*.json`` counter files (enforce-stop.ts / enforce-floor).
+    The fixture's only isolation is a per-test snapshot/restore of those exact
+    paths — safe against a live opencode session, but NOT against concurrent
+    xdist workers: under CI's ``-n>1 --dist loadgroup`` two such tests on
+    different workers race, and one test's teardown ``_restore()`` deletes a
+    sibling's freshly-written counter in the window before it is read, yielding
+    ``FileNotFoundError``. Pinning all consumers of the fixture to one
+    ``xdist_group`` restores serialization (same pattern as
+    ``test_port_8000_occupied.py``'s ``xdist_group("port_8000")``). Tests that
+    only use the ``tmp_path``-redirected env-var state files are unaffected and
+    stay fully parallel.
+    """
+    for item in items:
+        if "hook_plugin_env" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.xdist_group(name="hook-hardcoded-tmp"))
+
+
 @pytest.fixture(autouse=True)
 def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """Permit non-public daemon/worker endpoints during tests when no PSK is set.

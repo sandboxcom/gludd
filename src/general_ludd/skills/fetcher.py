@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -64,7 +65,7 @@ GITHUB_RAW_BASE = "https://raw.githubusercontent.com"
 _MAX_SKILL_RESPONSE_BYTES = 1_000_000  # 1 MB
 
 
-def _capped_get(url: str, *, max_bytes: int = _MAX_SKILL_RESPONSE_BYTES, **kwargs: object) -> httpx.Response | None:
+def _capped_get(url: str, *, max_bytes: int = _MAX_SKILL_RESPONSE_BYTES, **kwargs: Any) -> httpx.Response | None:
     """GET ``url``, rejecting the response if it (or its declared size) exceeds ``max_bytes``.
 
     Checks ``Content-Length`` up front (fast path, avoids reading an obviously
@@ -75,7 +76,7 @@ def _capped_get(url: str, *, max_bytes: int = _MAX_SKILL_RESPONSE_BYTES, **kwarg
     """
     kwargs.setdefault("timeout", 15.0)
     try:
-        resp = httpx.get(url, **kwargs)  # type: ignore[arg-type]
+        resp = httpx.get(url, **kwargs)
     except httpx.HTTPError:
         logger.warning("Request failed for %s", url)
         return None

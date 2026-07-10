@@ -36,7 +36,17 @@ RC_FILE="${LOCK_FILE}.rc.$$"
 # Lock acquisition (flock-based, same pattern as run_gate.sh)
 # ---------------------------------------------------------------------------
 _has_gnu_flock() {
-    flock --nonblock /dev/null true 2>/dev/null
+    # Probe against a PRIVATE temp path, never the shared /dev/null: flocking a
+    # global path lets concurrent callers (xdist workers, or the two processes in
+    # the concurrent-refusal test) transiently fail the probe and diverge into the
+    # pid-file fallback branch, which holds no kernel lock — breaking mutual
+    # exclusion. A private path makes the branch selection deterministic.
+    local _probe
+    _probe="$(mktemp 2>/dev/null)" || return 1
+    flock --nonblock "${_probe}" true 2>/dev/null
+    local _rc=$?
+    rm -f "${_probe}" 2>/dev/null || true
+    return "${_rc}"
 }
 
 _acquire_lock() {

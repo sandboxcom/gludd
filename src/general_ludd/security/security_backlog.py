@@ -42,6 +42,7 @@ import inspect
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import ModuleType
 
 STATUS_LANDED = "LANDED-VERIFIED"
 STATUS_OPEN = "OPEN"
@@ -124,7 +125,7 @@ def _default_check() -> tuple[bool, str]:
     return False, "OPEN — not yet implemented"
 
 
-def _read_module_source(module: object) -> str:
+def _read_module_source(module: ModuleType) -> str:
     """Return ``module``'s source text, or ``""`` if it cannot be read.
 
     Isolated as its own function (rather than inlining ``inspect.getsource``
@@ -133,7 +134,7 @@ def _read_module_source(module: object) -> str:
     real source files on disk.
     """
     try:
-        return inspect.getsource(module)  # type: ignore[arg-type]
+        return inspect.getsource(module)
     except (OSError, TypeError):
         return ""
 
