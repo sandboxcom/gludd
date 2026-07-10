@@ -4,7 +4,7 @@ Configuration guide for model profiles, routing, and versioning in General Ludd.
 
 ## Contents
 
-- [Profile Configuration Guide](profiles.md) — Complete guide to configuring model profiles, routing, and versioning
+- [Profile Configuration Guide](../profiles.md) — Complete guide to configuring model profiles, routing, and versioning
 
 ## Quick Reference
 

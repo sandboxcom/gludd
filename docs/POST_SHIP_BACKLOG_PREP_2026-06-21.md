@@ -1,5 +1,7 @@
 # Post-Ship Backlog — Verified Prep (2026-06-21)
 
+> **STALE (2026-07-10):** item #2 below (daemon.py:763 bare `AgentRegistry()`) is FIXED on master — daemon.py now calls `default_registry()` (~line 1795) with an anti-regression comment and tests (tests/unit/test_can_invoke_daemon_activation.py). Re-verify other items against docs/AGENTIC_IMPLEMENTATION_SPEC.md before working them.
+
 Four parallel prep agents verified the post-ship backlog against the CURRENT working
 tree (`test/coverage-recovered`). All findings are paste-ready; **re-pin every line
 number with a Read at apply time** (daemon.py drifts most). Nothing below was applied —

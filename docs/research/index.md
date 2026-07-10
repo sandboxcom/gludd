@@ -6,10 +6,10 @@ Research documents for model routing, enumeration, compaction, and RAG.
 
 | Document | Description |
 |----------|-------------|
-| [Model Routing Recommendation](model-routing-recommendation.md) | Model routing recommendations |
+| [Model Routing Recommendation](MODEL_ROUTING_RECOMMENDATION.md) | Model routing recommendations |
 | [Enumeration Models](enumeration_models.md) | Enumeration models |
-| [Model Routing Prior Art](model-routing-prior-art.md) | Model routing prior art |
-| [RAG Routing Research](rag-routing-research-2026-06-23.md) | RAG routing research 2026-06-23 |
+| [Model Routing Prior Art](model_routing_prior_art.md) | Model routing prior art |
+| [RAG Routing Research](RAG_ROUTING_RESEARCH_2026-06-23.md) | RAG routing research 2026-06-23 |
 | [Compaction Models](compaction_models.md) | Compaction models |
 
 ### Model Weights

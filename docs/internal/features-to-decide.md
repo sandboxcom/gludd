@@ -20,11 +20,13 @@ restore from last snapshot. Branching would let you explore different strategies
 **For:** Long-running autonomous sessions could survive worker restarts. Debugging
 failed ticks by replaying from checkpoint. Exploring alternative strategies via branches.
 
-**Against:** general-ludd-agent's PostgreSQL persistence already provides durable state
-for todos and task returns. The event loop is stateless between ticks (reads fresh
-from DB). Checkpointing adds complexity with no clear win since the DB IS the checkpoint.
+**Against:** general-ludd-agent's durable persistence (SQLite-only at runtime —
+`db/session.py:88-93` raises on any non-SQLite URL; Postgres is a beta.3+
+roadmap item, not implemented) already provides durable state for todos and
+task returns. The event loop is stateless between ticks (reads fresh from DB).
+Checkpointing adds complexity with no clear win since the DB IS the checkpoint.
 
-**Recommendation:** DEFER. The PostgreSQL database already serves as the durable
+**Recommendation:** DEFER. The database already serves as the durable
 checkpoint. The event loop is designed to be stateless between ticks. If we need
 tick-level replay, add an `EventLoopTick` audit table instead of full state snapshots.
 

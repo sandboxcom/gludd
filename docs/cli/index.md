@@ -4,10 +4,9 @@ Command-line interface for the General Ludd agent.
 
 ## Contents
 
-| Document | Description |
-|----------|-------------|
-| [Commands](commands.md) | All CLI commands and subcommands |
-| [Configuration](configuration.md) | Configuration files and environment variables |
+This directory does not yet hold split-out CLI pages; all commands are
+covered in the Quick Reference below. For configuration file details, see
+[docs/CONFIG_REFERENCE.md](../CONFIG_REFERENCE.md).
 
 ## Quick Reference
 
@@ -56,7 +55,7 @@ gludd todo add "New feature"
 | `~/.config/general-ludd/openbao/default.yml` | OpenBao secrets backend |
 | `~/.config/general-ludd/.gludd/config.yml` | Project-local collection config |
 
-See [Configuration](configuration.md) for details.
+See [docs/CONFIG_REFERENCE.md](../CONFIG_REFERENCE.md) for details.
 
 ---
 

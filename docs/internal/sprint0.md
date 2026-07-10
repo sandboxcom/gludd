@@ -1,5 +1,12 @@
 # Agentic Coding App Sprint: Python Harness, Ansible Runners, Multi-Model Coding Agents
 
+> **Historical planning document — superseded on the database question.** This
+> Sprint 0 plan specified PostgreSQL as the primary durable store (line 8 and
+> throughout). The implementation that shipped is **SQLite-only, enforced at
+> runtime**: `src/general_ludd/db/session.py:88-93` raises `ValueError` on any
+> non-SQLite URL. Postgres remains a beta.3+ roadmap item, not implemented. The
+> PostgreSQL references below reflect the original plan, not current behavior.
+
 Document status: living sprint document
 Revision: 8
 Revision date: 2026-05-29

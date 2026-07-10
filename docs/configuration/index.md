@@ -4,9 +4,8 @@ Configuration files and their purposes.
 
 ## Contents
 
-| Document | Description |
-|----------|-------------|
-| [Configuration](configuration.md) | Configuration reference |
+This directory does not yet hold split-out configuration pages. The full
+configuration reference is [docs/CONFIG_REFERENCE.md](../CONFIG_REFERENCE.md).
 
 ## Configuration Files
 
@@ -27,7 +26,7 @@ Projects can override routing and profile selection via:
 <project-repo>/.general-ludd/agent_config.yml
 ```
 
-See [Profile Configuration Guide](../profiles/profiles.md) for details.
+See [Profile Configuration Guide](../profiles.md) for details.
 
 ---
 

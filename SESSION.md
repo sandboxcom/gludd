@@ -5,87 +5,45 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-09 — Session 19 final. HEAD `2d1775f7` pushed + VERIFIED. CI run 29044016416 in_progress. Gate PASSED in CI (3.11+3.12 green). enforce-multitask plugin (30 tests) landed. Pages deploy fix landed. 10 test fixes landed. OpenShell P0-P3 security transfers landed. Beta.2 ready to ship once CI fully green.
+- 2026-07-10 — Session 20. CI went RED on run `29055665462` (master @ `a7ab5d15`) after session-19's HEAD landed — the "beta.2 ready" claim was premature. Root-caused every failure class (alembic `fileConfig` logger-kill, slurm `4b961146` partial fix, GPU pynvml mock leak, unit-1a chronic 30min cancellation, Pages site never created) and landed the fixes as LOCAL commits `2543152b` (batch 1, 65 files, 4878 insertions) + `4113f206` (batch 2, SSRF tranche 5) — PUSH + CI verification still pending (batch 3 docs/spec/root-files commit next, then push). Pre-push verification: 749 tests passed, 0 failures across 7 xdist bundles + `make lint` clean + collect-check OK. GitHub Pages site created (`make pages-enable`, `build_type=workflow`). Deck rebuilt to 28 slides. `docs/AGENTIC_IMPLEMENTATION_SPEC.md` added (64-item dependency-ordered spec, P0:14/P1:38/P2:12). Flagged 2 audit docs as stale relative to current code. beta.2 is NOT ready to ship until CI is re-verified green post-push.
 
 ## Current Work
 
-- **HEAD: `2d1775f7`** on master. CI gate PASSED (3.11 + 3.12 green). Push `2d1775f7` VERIFIED on sandboxcom/master. beta.2 release-cut READY.
-- **CI: PASSED** — 3.11 + 3.12 both green on the gate. beta.2 release-cut ready; final full-green confirmation to be checked at next natural break before `make release-cut`.
-- **beta.2 READY TO SHIP** once CI fully green — version bumped in code, tag NOT cut. `make release-cut TAG='v0.1.0-beta.2' MSG='...'` + `make verify-release-artifact TAG=v0.1.0-beta.2`.
-- **OpenShell P0-P3 security transfers LANDED** — audited + implemented (`d29a2dc2` cites actual commit hashes; `48141896` batch commit of P0-P3 enforcement fixes).
-- **enforce-multitask plugin LANDED** — requires 10+ parallel dispatches per wave preventing main-thread grinding (`95d851fd`, 30 tests). P1 read-grinding exemption closed + P3 DELEGATE-FIRST nag (`60e95635`).
-- **10 test suite fixes LANDED** — gate-lite failures (caplog→mock, env-var isolation, engine expectations `2d1775f7`), detect-secrets false-positive pragmas (`a99b3505`, `893ca9a7`), end-of-file-fixer trailing newlines (`f517d30d`, `21873277`).
-- **Anti-lying guardrail trilogy COMPLETE** — enforce-verified-claims blocks done-words without machine evidence (`71b8edce`), enforce-clean-tree denies dispatch on dirty git tree (`ae9861f3`), verify-state command for consolidated pre-claim verification (`9f55812d`). AGENTS.md section codified covering SWE-bench FAIL_TO_PASS, CoVe independence, Aider dirty commits, Cline shadow git research basis.
-- **Agent-worktree isolation** — per-subagent git worktree targets: agent-worktree/agent-merge/agent-cleanup/agent-worktree-list (`416b6285`). Prevents shared-tree edit races structurally.
-- **Presentation codified + deployed** — build_presentation ansible role (`81bfea53`), SVG architecture event-loop + security-layers Mermaid diagrams (`19dd629b`), revealjs-presentation opencode skill (`0f08af4b`), pages.yml builds before deploy verified (`b4bd6c93`).
-- **beta.3 Phase B COMPLETE**: writer subprocess + durable hibernation + dispatch-lifecycle checkpoints (`6b5fe449`).
-- **Phase E polyglot detection**: ToolchainDetector (`941aa80c`) + self-host project.yml (`ca44fa0a`) + WP-E3 e2e (`aee58fd9`).
-- **Phase D security complete**: 14/15 FIXED, 1 REFUTED (`b54e75ef`). WP-D3 migration drift reconciled (`ff8a8298`).
-- **CI cooldown guardrail**: `make ci-verdict-safe` (`f9f80f21`).
-- **Commit-lock guardrail**: flock+plugin (`953b386e`).
-
-### Session 19 focus: CI fix wave + cast(Any) burn-down completion + beta.3 Phase B (writer+hibernate) + Phase E polyglot detection + security findings + CI/commit guardrails + multitasking audit + anti-lying guardrails + presentation + agent-worktree
-- Landed 13 commits resolving all 13 session-18 CI failures (slurm billing, caplog pollution, tokenizer, MCPToolRegistry, structured_task_spec, TUI cold-start flakiness, gate xdist race).
-- cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`).
-- beta.3 Phase 1 (gunicorn IPC broker) DONE (`84cebb6c`).
-- STABILIZATION_PLAN added (`ef930591`).
-- **Session 19 Wave 14 (HEAD `024a8412` → `e564d844`)**: beta.3 writer subprocess Slice 1-3 landed (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`). unit-1 shard split into unit-1a/unit-1b (`1f283628`). P1/P2 chronic singleton-pollution fixes (`d55b0f6f`). A6 logging isolation fixture (`9a24dcc8`). caplog getMessage migration across 16 sites (`bcceaf85`). os.environ → monkeypatch conversion (`9d987b79`). no-CI-poll-blocking rule codified (`5ecdf2a9`).
-- **Session 19 Wave 15 (HEAD `e564d844` → `ca44fa0a`, +10 commits)**: beta.3 Phase B COMPLETE — durable hibernation + dispatch-lifecycle checkpoints (`6b5fe449`). Phase E polyglot detection — ToolchainDetector + 10 TDD tests (`941aa80c`), project.yml self-host (`ca44fa0a`). 6 security findings fixed: #14 budget projected_cost pre-check (`04ca8afb`), #10 TodoRepository mass-assignment whitelist (`160fa3ab`), P3 ansible process_isolation fail-closed (`3e072bd3`), plus #1/#12/AB-8/P1 SSRF. CI cooldown guardrail `make ci-verdict-safe` (`f9f80f21`). Commit-lock guardrail flock+plugin (`953b386e`). WP-D3 schema parity test (`60a1121c`). TASKS.md beta.3 Phase B tick (`ed958fcf`). Priority Stacking rule codified. beta.2 still blocked on CI green.
-- **Session 19 Wave 16 (HEAD `ca44fa0a` → `b4bd6c93`, +10 commits)**: Presentation rebuilt: build_presentation ansible role (`81bfea53`), SVG architecture event-loop + security-layers Mermaid diagrams (`19dd629b`), revealjs-presentation opencode skill (`0f08af4b`). Phase E WP-E2+WP-E3 polyglot project support landed (`13646da0` adapter + `aee58fd9` e2e). WP-D3 migration drift reconciled (`ff8a8298`). Phase D security complete (14/15 FIXED, 1 REFUTED — `b54e75ef`). enforce-stop responseLooksTerminal regression restored (`ae6e8ca9`). pages.yml builds before deploy verified (`b4bd6c93`). CI RED on 7 lint errors.
-- **Session 19 Wave 17 (HEAD `b4bd6c93` → `9b61065f`, +10 commits)**: Multitasking audit + enforcement hardening (P0-P8). Anti-lying guardrail trilogy landed. Agent-worktree isolation codified. Gate unblocked.
-  - `ae9861f3` — enforce-clean-tree: deny dispatch on dirty git tree
-  - `71b8edce` — enforce-verified-claims: block done-words without machine evidence
-  - `416b6285` — agent-worktree/agent-merge/agent-cleanup targets
-  - `1b69a4df` — lint fixes in plugin test files
-  - `9f55812d` — verify-state command for consolidated pre-claim verification
-  - `e2d211de` — P0: heartbeat verification on enforce-floor/delegate/stop
-  - `3aaddc89` — P4+P6: message-shape loophole closure, zero-dispatch cap at 2
-  - `44e25984` — P2: fail-closed countLiveAgents + P8: FORCE_DELEGATE polarity split (111 tests)
-  - `efd9a557` — P5: remove markdown-table bypass from false-done detection + stop-pattern phrases
-  - `9b61065f` — gate unblock: env-writes violation + stale assertion + plugin-count drift
-
-### Prior session 18 deliverables (already on master):
-- PSK fix landed (reduced CI failures 147 → 13).
-- 13 remaining failures categorized; fix wave completed in session 19.
-- Gunicorn architecture work queued for beta.3 — Phase 1 now DONE in session 19.
-
-### Prior session 17 deliverables (already on master):
-- type-safety sweep (Any removal), 348+ new tests (false-done, heartbeat, audit_roles), 10/10 plugin liveness probes, verify-remote refs/heads pin, release-cut wiring (require-ci-green step 0 + verify-release-artifact poll step 4), dispatch.py MAX_CALLS_PER_REQUEST duplicate fix, baseten detect-secrets false-positive marker. HEAD advanced `4e9d97fc` → `a907382e`.
-
-### Bugs fixed (session 19 fix wave — LANDED):
-- [x] 4 × slurm billing CI failures — RESOLVED (`6da1b5cd` terminal-state check before cost-cap)
-- [x] 3 × connectors_base caplog CI failures — RESOLVED (`54353cec` + `07711c27` root-logger autouse fixture)
-- [x] 2 × PSK caplog CI failures — RESOLVED (`9ce86554` PSK caplog propagate + retrieval tokenizer)
-- [x] 2 × tokenizer CI failures — RESOLVED (`9ce86554` snake_case tokenizer assertions)
-- [x] 1 × MCPToolRegistry import CI failure — RESOLVED (`5ecce329`)
-- [x] 1 × structured_task_spec CI failure — RESOLVED (`5ecce329` list assertion)
-- [x] TUI cold-start flakiness — RESOLVED (`024a8412` poll-until-marker loop)
-- [x] Gate xdist shared-path race — RESOLVED (`2f09f975` RC_FILE/LOG_FILE from BASETEMP)
-- [x] caplog lazy-log assertion — RESOLVED (`8af622f8` LogRecord.getMessage accessor)
-- [x] Lint debug print + duplicate test — RESOLVED (`3c62b381`)
-
-### Bugs fixed earlier (session 17 final wave, already on master):
-- [x] typecheck FAIL 5 — RESOLVED. Gate background shows typecheck PASS (583 files).
-- [x] verify-remote branch/tag collision — RESOLVED. `refs/heads/$$BR` pin at Makefile:1075.
-- [x] enforce-session-start race condition — RESOLVED. Atomic writes + latched primed state.
-- [x] enforce-stop hasLocalWork over-blocking — RESOLVED. Narrowed; 5 `TestHasLocalWorkBypass` tests pin the bypass conditions.
-- [x] enforce-no-wait + enforce-no-suppressions missing heartbeats — RESOLVED. All 10/10 plugins now have liveness probes.
-- [x] dispatch.py duplicate MAX_CALLS_PER_REQUEST — RESOLVED. Duplicate definition removed.
-- [x] baseten.py detect-secrets false positive — RESOLVED. `# pragma: allowlist secret` marker (`a907382e`).
-- [x] release-cut not enforcing CI-green / not verifying artifact — RESOLVED. require-ci-green step 0 + verify-release-artifact poll step 4 wired.
-
-### Pushes this session (19 continued):
-- Pushes in flight for HEAD `e564d844` and ancestors (`024a8412` → `e564d844`, 13 commits). NOT polling CI per no-CI-poll-blocking rule. Remote VERIFIED status to be confirmed at next natural break.
-
-### Bugs still present:
-- **Connector gaps**: no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
-- **Full local test suite OOM** under 8-worker xdist — CI-as-gate used.
-- **5 missing GPU providers** — RESOLVED. All 5 implemented (google, cloudflare, databricks, azure-ai-foundry, ai21); actual count now 24. See Known Gaps #8 + Next Steps #9.
+- **HEAD (local, UNPUSHED): `4113f206`** on master — 2 commits ahead of the last pushed lineage: batch 1 `2543152b` (CI-green wave 2026-07-10: 65 files, 4878 insertions — alembic logger root cause, caplog hardening, slurm, GPU, shard-matrix rework incl. shell-level filtering replacing the dead `--ignore-glob`, pages.yml SHA-pins, daemon `_sync_bridge` removal, onboard wiring, SSRF tranche 6, scan-file jail, deck rebuild, TASKS.md CGW-1..13 ledger, CHANGELOG) + batch 2 `4113f206` (SSRF tranche 5: issue_sources + git clone guard onto canonical `security/ssrf.py`, 200 tests passed). Batch 3 (docs/spec/root files) commit next, then push. SESSION.md's previously-claimed HEAD `2d1775f7` and its "CI PASSED" claim were never re-verified against a fresh run and are now known FALSE (see run `29055665462` below).
+- **CI: RED (last verified run)** — run `29055665462` for master @ `a7ab5d15` failed: shard `unit-3` 11 failures (identical on 3.11 + 3.12, i.e. deterministic, not flaky), shard `other` 2 PSK + 3 GPU-metrics failures, shard `unit-2` 1 caplog failure (3.11 only), shard `unit-1a` CANCELLED on both pythons (chronic — also seen on runs `29053789829` and `29051813598`). Separately, the Pages workflow was failing at the `configure-pages` step because the GitHub Pages **site itself had never been created** (a prerequisite `configure-pages` assumes exists).
+- **Pre-push verification of the fix batches PASSED locally** — 749 tests passed, 0 failures across 7 xdist bundles; `make lint` clean; collect-check OK. This is local evidence only — CI for the pushed SHA is the gate.
+- **beta.2 NOT ready to ship** — the "CI gate PASSED" claim in the prior Last-Updated entry was false; do not release-cut against a red or unconfirmed SHA. Ship path is unchanged in principle (`make release-cut TAG='v0.1.0-beta.2' MSG='...'` + `make verify-release-artifact TAG=v0.1.0-beta.2`) but is now correctly gated behind a **confirmed-green** run for the pushed SHA, which does not exist yet.
+- **Root causes found + fixes COMMITTED LOCALLY (`2543152b` + `4113f206`, push pending)**:
+  - **Alembic logger-kill (the dominant root cause).** `alembic/env.py`'s `fileConfig(config.config_file_name)` was called with its default `disable_existing_loggers=True`, which sets `.disabled = True` on every already-imported `general_ludd.*` logger the moment Alembic's `fileConfig` runs (the daemon runs migrations in-process via `stamp_head`). This silently killed application logging — and, in tests, every `caplog` assertion sharing an xdist worker after first boot. Fix: `fileConfig(config.config_file_name, disable_existing_loggers=False)`. This is the root cause behind the `unit-3` (11), `unit-2` (1), and part of the `other`-shard PSK caplog failures — `worker_broadcast` 401/PSK, `build_gateway`, `model_registry`, `daemon_auth_redteam` PSK warnings, `spend_limiter` dispatch warning, webhook fire tracking, `rg_search` — all reconciled by pinning `caplog.set_level(..., logger=<exact source logger>)` per test plus the `fileConfig` fix.
+  - **Slurm cost-cap semantics (partial-fix cleanup).** Commit `4b961146`'s message over-claimed — it reordered `SlurmJobMonitor._poll()` (cost sampled every poll before the terminal-state check) and updated the two *integration* test files, but never updated the *unit* tests, and did NOT actually touch PSK/rg_search/plugin-count as its message claimed. Fixed: unit tests reconciled to the elapsed-based cost semantics; integration job-id format `"job-001"` → `"1001"` (real Slurm IDs are numeric) plus `max_cost_usd` raised so the unmocked `scancel` path is never hit.
+  - **GPU-metrics pynvml mock leak.** `is_available()` was returning `True` on GPU-less CI runners due to cross-test pollution of a module-level availability memoization. Fix: new `gpu_metrics.reset_probe()` (`src/general_ludd/infra/gpu_metrics.py:33`) plus an autouse fixture resetting it between tests.
+  - **unit-1a chronic 30-minute-timeout cancellation.** Not a fail-fast cascade (matrix already has `fail-fast: false` on all three jobs) — the shard was just overloaded. Fix: re-split the matrix from `[unit-1a, unit-1b, unit-2, unit-3, other]` into `[unit-1a, unit-1b, unit-1d, unit-2, unit-3, other]` (`unit-1a` now only `test_a*.py`; new `unit-1d` takes `test_[bd]*.py`), with shell-level file filtering replacing the dead `--ignore-glob`, and ensured `tests/unit/test_*_e2e.py` runs exactly once (in `other`) rather than being silently dropped.
+  - **Coverage job false-gating.** `uv run coverage report --skip-covered` was inheriting `pyproject.toml`'s `fail_under = 70` despite the job being commented "non-gating." Fixed with `--fail-under=0` (`.github/workflows/build.yml:379`), matching the per-shard `--cov-fail-under=0`.
+  - **Pages site never existed.** Fixed operationally, not in code: ran `make pages-enable` (`build_type=workflow`) to create the GitHub Pages site for `sandboxcom/gludd`. `html_url` will resolve live once the next `pages.yml` run completes a green deploy — not yet confirmed.
+  - Also landed in the batches per `CHANGELOG.md`'s 2026-07-10 entries: daemon event-loop freeze fix (`_sync_bridge` removed from `daemon.py` — handlers now awaited natively), blocking `urlopen` moved to `asyncio.to_thread` in `issue_ingestor`, admin-connectors health check + `WriterProcess.stop` offloaded to threads, silent shutdown-exception suppression now logged, `pages.yml` actions SHA-pinned + structurally tested, onboard providers wired to real AWS/GCP/Azure (`gludd onboard`, 88 tests), new endpoint test suites for `routers/security` (58), `routers/remediation` (21), `routers/eval` (14), adversarial scan-file path jail + secrets-redaction widening, SSRF consolidation tranches 5+6 (issue_sources, git clone guard, connectors).
+- **`docs/AGENTIC_IMPLEMENTATION_SPEC.md` added** (v1.0, 2026-07-09) — the new single dependency-ordered work spec superseding ad-hoc backlog tracking for the push to feature-complete/CI-green: 64 items, **P0:14 / P1:38 / P2:12**, organized as Wave A (CI green, all P0) → Wave B (release, P0) → Waves C/D/E/F (security residuals / product gaps / test-honesty / docs, parallelizable after B1). Section 3.0 lists items already-fixed-don't-reimplement (alembic ORM parity, daemon `AgentRegistry()`, SSRF canonical module adoption, dispatcher fail-closed, SLM compaction slices 1-3, generic project-runner slices 1-2). Section 4 gives the hard wave-ordering + per-wave verification ritual; Section 5 is a verification-command appendix. Currently untracked — lands in batch 3.
+- **Deck rebuilt to 28 slides** — `docs/presentation/deck/index.html` now has 28 `<section>` elements; regenerated via `scripts/build_deck.py` from README STATUS-TABLE + git data tokens.
+- **Known-stale audit docs identified** (not yet corrected in-file — tracked as spec item F4):
+  - `docs/audit/E2E_AUDIT_2026-07-06.md` — the environment-failure findings it documents now all pass on current code; doc is stale and needs an update banner or supersession note.
+  - `docs/audit/ALPHA4_VERIFIED_BACKLOG_2026-06-24.md` — of its tracked items: 6 FIXED, 5 MITIGATED, 1 NON-ISSUE, 3 still open. Needs the same stale-doc annotation the spec (F4) calls for, alongside `POST_SHIP_BACKLOG_PREP_2026-06-21.md`.
+- **Prior session 19 work** — compressed into the `## Session 19 (prior — 2026-07-09, HEAD 2d1775f7)` section below; its "CI PASSED"/"beta.2 ready" claims are the ones this session refuted.
 
 ## Last Commits (this session + recent)
 
 | Hash | Message |
 |------|---------|
+| `4113f206` | fix: SSRF tranche 5 issue_sources and git clone guard consolidated onto canonical security ssrf predicates with metadata and CGNAT blocking |
+| `2543152b` | fix: CI-green wave 2026-07-10 alembic logger root cause caplog hardening slurm gpu shard-matrix rework pages SHA-pins daemon sync-bridge removal onboard wiring SSRF tranche6 scan-file jail deck rebuild and ledger updates |
+| `0e34db68` | test: fix 3 Event loop is closed teardown failures in gate-lite |
+| `a7ab5d15` | chore: pre-commit end-of-file fix for TASKS.md |
+| `6f9b11c1` | TASKS.md: update task ledger |
+| `115e4e1a` | fix: add evidence to 11 checked TASKS.md items missing evidence prefix |
+| `4b961146` | test: fix PSK auth rg_search supervisor and plugin line count CI failures (message over-claims — only slurm reorder + 2 integration files; see Current Work) |
+| `03b478e1` | chore: commit dirty Makefile before push |
+| `0db92ed6` | fix: update test_test_shard_matrix_dimensions expected shards for unit-1a/unit-1b split |
+| `f7638e73` | test: fix 8 caplog propagation failures in CI unit-3 shard, adding propagate=True to log assertions |
+| `cad544b9` | chore: update .secrets.baseline after detect-secrets hook run |
+| `9d56a984` | fix: lint errors in test_parse_verify_state.py (unused import, unused stdout vars) |
 | `2d1775f7` | test: fix gate-lite test failures — caplog→mock, env-var isolation, engine test expectations |
 | `0ce7fb38` | fix(pages): correct GitHub Pages deploy — build presentation before deploy step |
 | `d29a2dc2` | docs(tasks): cite actual commit hash for OpenShell P0-P3 transfers |
@@ -200,41 +158,50 @@
 
 ## Known Gaps
 
-1. **beta.2 NOT shipped** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`). HEAD `2d1775f7`; CI gate PASSED (3.11+3.12 green). Tag NOT yet cut; artifact NOT verified. Do NOT mark complete until `make release-cut TAG=v0.1.0-beta.2 MSG='...'` succeeds AND `make verify-release-artifact TAG=v0.1.0-beta.2` passes.
-2. **CI fully green** — gate PASSED on 3.11 + 3.12. Push `2d1775f7` VERIFIED. Confirm full-green (all jobs) at next natural break before release-cut.
-3. **Restart opencode needed** — to activate the new enforce-multitask plugin + P1/P3 read-grinding fixes in-session (committed; session runs stale plugin code).
-3. **Presentation deployed + pages.yml verified** — RESOLVED. SVG diagrams + build_presentation role + revealjs-presentation skill landed (`b4bd6c93`-`0f08af4b`). pages.yml builds before deploy verified.
-4. **Multitasking audit P0-P8** — RESOLVED. All 8 enforcement hardening items addressed (`e2d211de`-`9b61065f`).
-5. **Anti-lying guardrail trilogy** — RESOLVED. enforce-verified-claims (`71b8edce`) + enforce-clean-tree (`ae9861f3`) + verify-state (`9f55812d`) landed.
-6. **OpenShell security research** — transfers audited, P0/P1/P2 implementation complete. Enforcement plugin heartbeat verification + fail-closed liveness + FORCE_DELEGATE polarity fix.
-7. **Agent-worktree isolation** — RESOLVED. Per-subagent git worktree targets landed (`416b6285`).
-8. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used.
-9. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
-10. **cast(Any) burn-down** — COMPLETE. Tier 4 finished (`1d89ce8e`).
-11. **beta.3 Phase B** — COMPLETE. Phase E WP-E1+WP-E2+WP-E3 — COMPLETE.
-12. **Phase D security** — COMPLETE (14/15 FIXED, 1 REFUTED). WP-D3 migration drift reconciled.
-13. **Phase F docs** — not yet started.
-14. **Plugin liveness** — RESOLVED. All 10/10 plugins have heartbeat probes. opencode restart required to activate probes in-session.
+1. **beta.2 NOT shipped, CI RED (not green)** — version bumped to `0.1.0-beta.2` in pyproject.toml:3, `src/general_ludd/__init__.py`:3, README, CHANGELOG (`e2efa91f`, session 17). Run `29055665462` (master @ `a7ab5d15`) is RED: unit-3 11 failures both pythons, other shard 5 failures (2 PSK + 3 GPU-metrics), unit-2 1 failure (3.11), unit-1a CANCELLED both pythons. Do NOT release-cut until a fresh `make ci-verdict-safe` shows `success` for the exact pushed SHA.
+2. **Wave-A fixes committed LOCALLY, NOT pushed** — batch 1 `2543152b` (65 files, 4878 insertions: alembic `fileConfig` logger-kill fix, caplog hardening, slurm reconciliation, GPU `reset_probe`, shard-matrix rework incl. shell-level filtering replacing the dead `--ignore-glob`, pages.yml SHA-pins, daemon `_sync_bridge` removal, onboard wiring, SSRF tranche 6, scan-file jail, deck rebuild, TASKS.md CGW-1..13 ledger, CHANGELOG) + batch 2 `4113f206` (SSRF tranche 5: issue_sources + git clone guard, 200 tests passed). Pre-push verification: 749 tests passed 0 failures across 7 xdist bundles + lint clean + collect-check OK. Remaining: batch 3 (docs/spec/root files) commit, then `make git-push-sandboxcom` → `make ci-verdict-safe` before any release claim.
+3. **GitHub Pages site created, deploy not yet confirmed green** — `make pages-enable` (`build_type=workflow`) ran; the previously-red `configure-pages` step should now succeed, but no green `pages.yml` run has been observed since. Confirm via `make pages-status` + fetch `https://sandboxcom.github.io/gludd/` (expect 200) after the next push touching `Makefile`/`docs/presentation/**`/`scripts/build_deck.py`.
+4. **Stale audit docs** — `docs/audit/E2E_AUDIT_2026-07-06.md` (environment-failure findings now all pass — doc undated relative to fixes) and `docs/audit/ALPHA4_VERIFIED_BACKLOG_2026-06-24.md` (6 FIXED / 5 MITIGATED / 1 NON-ISSUE / 3 still open — needs an annotation pass, tracked as spec item F4) need staleness banners; not yet corrected in-file.
+5. **Restart opencode needed** — to activate the enforce-multitask plugin + P1/P3 read-grinding fixes committed in session 19 (session runs stale plugin code until restart).
+6. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used; `make gate-lite` is the local approximation.
+7. **Connector gaps** — no Slack, WebSocket, or reconnect logic (feature requests, not blocking).
+8. **Phase F docs** — not yet started (tracked in `docs/AGENTIC_IMPLEMENTATION_SPEC.md` §3.6, items F1-F5).
+9. **SSRF consolidation incomplete** — remaining stragglers after tranches 5+6 still need to route through the canonical `security/ssrf.py` (spec item C1 tracks the full 14-site list; connectors + issue_sources + git clone guard now done).
+10. **Security residual waves C/D/E** — the bulk of `docs/AGENTIC_IMPLEMENTATION_SPEC.md`'s P1/P2 items (38 + 12) are open work, most marked `[RE-VERIFY]` — confirm against current code before implementing (several may already be fixed).
 
 ## Next Steps
 
-1. [~] **Check CI at natural break** — gate PASSED (3.11+3.12); confirm all jobs fully green via `make ci-verdict-safe`.
-2. [ ] **Ship v0.1.0-beta.2** — READY once CI fully green: `make release-cut TAG='v0.1.0-beta.2' MSG='beta.2 release'`. Then `make verify-release-artifact TAG=v0.1.0-beta.2` MUST pass.
-3. [ ] **Restart opencode** to activate the enforce-multitask plugin + P1/P3 read-grinding fixes in-session (committed; session runs stale code).
-4. [ ] **Phase F docs** — not yet started.
+1. [ ] **Land batch 3 + push the wave.** Commit the remaining docs/spec/root files (incl. `docs/AGENTIC_IMPLEMENTATION_SPEC.md`, `CLAUDE.md`, `SECURITY.md`, this SESSION.md update) → `make git-push-sandboxcom` (pushes `2543152b` + `4113f206` + batch 3).
+2. [ ] **Verify CI green** — `make ci-verdict-safe` for the exact pushed SHA. If still red: `make ci-jobs-anon RUN=<id>` → `make ci-failed-tests RUN=<id>` → fix forward; do not stack further waves on red.
+3. [ ] **Confirm Pages deploy green** — `make pages-status`, then fetch `https://sandboxcom.github.io/gludd/` (expect 200) after the push in step 1 triggers `pages.yml`.
+4. [ ] **Ship v0.1.0-beta.2** — ONLY once steps 1-3 are confirmed-green: `make release-cut TAG='v0.1.0-beta.2' MSG='Release v0.1.0-beta.2'` → `make verify-release-artifact TAG=v0.1.0-beta.2` → tick `TASKS.md` with evidence (release URL + `make release-view TAG=...` asset list).
+5. [ ] **beta.3 waves per `docs/AGENTIC_IMPLEMENTATION_SPEC.md`** — after B1 ships: Waves C (security residuals, C1-C26), D (product/hardening gaps), E (test-honesty cleanup), F (docs/presentation truthfulness) in parallel per the spec's Section 4 sequencing rules (disjoint file ownership; `Makefile`/`TASKS.md`/`tests/conftest.py`/`.github/workflows/*`/`pyproject.toml` are single-writer contention points).
+6. [ ] **Annotate stale audit docs** — `E2E_AUDIT_2026-07-06.md` and `ALPHA4_VERIFIED_BACKLOG_2026-06-24.md` (spec item F4).
+7. [ ] **Restart opencode** to activate enforce-multitask plugin + P1/P3 fixes in-session.
 
-## Current Gate Status (2026-07-09)
-## Current Gate Status (2026-07-09)
+## Current Gate Status (2026-07-10)
 <!-- gate:begin -->
-- CI FAIL pending (run 29050059690)
-- PASS
-- PASS 0
-- PASS
-
+- CI RED — run 29055665462 (master @ a7ab5d15): unit-3 FAIL (11, both pythons) | other FAIL (5: 2 PSK + 3 GPU-metrics) | unit-2 FAIL (1, 3.11) | unit-1a CANCELLED (both pythons)
+- Fixes committed LOCALLY (2543152b + 4113f206); pre-push verification 749 passed / 0 failed (7 xdist bundles) + lint clean + collect OK; push + CI re-verification pending
+- Pages workflow: was failing at configure-pages (site didn't exist); site created via make pages-enable; next deploy not yet confirmed green
 <!-- gate:end -->
 
 > Full test suite times out under 8-worker xdist (OOM). CI-as-gate used for commits.
 > Background gate available via `make gate-background`; check via `make gate-status-check`.
+
+## Session 19 (prior — 2026-07-09, HEAD `2d1775f7`)
+
+### Deliverables
+- Landed 13 commits resolving all 13 session-18 CI failures (slurm billing, caplog pollution, tokenizer, MCPToolRegistry, structured_task_spec, TUI cold-start flakiness, gate xdist race) — Wave 14.
+- cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`); beta.3 Phase 1 gunicorn IPC broker DONE (`84cebb6c`); STABILIZATION_PLAN added (`ef930591`).
+- Wave 14: beta.3 writer subprocess Slices 1-3 (`25d2ebaa`/`b440e504`/`2d3ee08f`), unit-1 shard split into unit-1a/unit-1b (`1f283628`), P1/P2 chronic singleton-pollution fixes (`d55b0f6f`), A6 logging isolation fixture (`9a24dcc8`), caplog getMessage migration (`bcceaf85`), os.environ→monkeypatch conversion (`9d987b79`), no-CI-poll-blocking rule (`5ecdf2a9`).
+- Wave 15 (+10 commits): beta.3 Phase B COMPLETE — durable hibernation + dispatch-lifecycle checkpoints (`6b5fe449`); Phase E WP-E1 ToolchainDetector (`941aa80c`) + self-host `project.yml` (`ca44fa0a`); 6 security findings fixed (#14 budget pre-check `04ca8afb`, #10 TodoRepository whitelist `160fa3ab`, P3 ansible fail-closed `3e072bd3`, #1/#12/AB-8/P1 SSRF); CI cooldown guardrail (`f9f80f21`); commit-lock guardrail (`953b386e`); WP-D3 schema parity test (`60a1121c`).
+- Wave 16 (+10 commits): presentation rebuilt (build_presentation ansible role `81bfea53`, SVG Mermaid diagrams `19dd629b`, revealjs-presentation skill `0f08af4b`); Phase E WP-E2+E3 polyglot support (`13646da0`/`aee58fd9`); WP-D3 migration drift reconciled (`ff8a8298`); Phase D security complete 14/15 FIXED + 1 REFUTED (`b54e75ef`); enforce-stop responseLooksTerminal regression restored (`ae6e8ca9`); pages.yml build-before-deploy verified (`b4bd6c93`). CI went RED on 7 lint errors (fixed in Wave 17).
+- Wave 17 (+10 commits): multitasking audit + enforcement hardening P0-P8 (heartbeat verification `e2d211de`, fail-closed countLiveAgents + FORCE_DELEGATE polarity split `44e25984` with 111 tests, message-shape loophole closure `3aaddc89`, false-done markdown-table bypass removal `efd9a557`); anti-lying guardrail trilogy — enforce-verified-claims (`71b8edce`), enforce-clean-tree (`ae9861f3`), verify-state (`9f55812d`); agent-worktree isolation targets (`416b6285`); gate unblock (`9b61065f`).
+- Additional fixes to HEAD `2d1775f7`: OpenShell P0-P3 security transfers (`d29a2dc2`/`48141896`), enforce-multitask plugin requiring 10+ parallel dispatches (`95d851fd`, 30 tests) + P1/P3 read-grinding fixes (`60e95635`), pages deploy fix (`0ce7fb38`), 10 gate-lite/detect-secrets/end-of-file-fixer test fixes (`2d1775f7`, `a99b3505`, `893ca9a7`, `f517d30d`, `21873277`).
+
+### Honest state at session end (revised 2026-07-10)
+- Session 19 closed believing CI was green (3.11+3.12 PASSED) and beta.2 was ready to ship. **This was not re-confirmed against a fresh run before being written down.** Session 20 discovered CI run `29055665462` for this HEAD's lineage was in fact RED across 4 of 6 test shards plus the Pages workflow. Lesson: a gate-status snapshot from one point in time does not stay valid — always re-run `make ci-verdict-safe` immediately before writing a "green"/"ready to ship" claim, per the no-unquantified-status-claims rule.
 
 ## Session 18 (prior — 2026-07-07)
 
@@ -271,7 +238,8 @@
 
 ## Historical State
 
-- **2026-07-09 session 19 Wave 17 (current)**: HEAD `9b61065f` (+10 past `b4bd6c93`). Multitasking audit P0-P8 complete: heartbeat verification on enforce-floor/delegate/stop (P0), fail-closed countLiveAgents + FORCE_DELEGATE polarity split (P2+P8, 111 tests), message-shape loophole closure capping zero-dispatch at 2 (P4+P6), false-done markdown-table bypass removal + stop-pattern phrases (P5). Anti-lying guardrail trilogy: enforce-verified-claims (`71b8edce`), enforce-clean-tree (`ae9861f3`), verify-state (`9f55812d`). Agent-worktree isolation targets (`416b6285`). Gate unblocked: env-writes + stale assertion + plugin-count drift (`9b61065f`). CI pending; commit batcher in flight.
+- **2026-07-10 session 20 (current)**: HEAD (local, UNPUSHED) `4113f206`. Discovered and refuted session 19's "CI PASSED"/"beta.2 ready" claim: run `29055665462` (master @ `a7ab5d15`) was RED (unit-3 11 failures both pythons, other 5, unit-2 1, unit-1a cancelled both pythons) and the Pages workflow was failing at configure-pages (site never created). Root-caused all of it: alembic `fileConfig` `disable_existing_loggers` logger-kill (dominant cause), slurm `4b961146` partial-fix cleanup, GPU pynvml mock leak (`gpu_metrics.reset_probe`), unit-1a/unit-1d shard rebalance with shell-level filtering, coverage `--fail-under=0`. Fixes landed as local commits `2543152b` (batch 1: 65 files, 4878 insertions) + `4113f206` (batch 2: SSRF tranche 5, 200 tests passed); pre-push verification 749 passed / 0 failed across 7 xdist bundles + lint clean + collect OK. Created GitHub Pages site (`make pages-enable`, `build_type=workflow`). Rebuilt deck to 28 slides. Added `docs/AGENTIC_IMPLEMENTATION_SPEC.md` (64 items, P0:14/P1:38/P2:12). Flagged `E2E_AUDIT_2026-07-06.md` and `ALPHA4_VERIFIED_BACKLOG_2026-06-24.md` as stale (6 FIXED/5 MITIGATED/1 NON-ISSUE/3 open). Batch 3 (docs/spec/root files) + push + CI re-verification pending.
+- **2026-07-09 session 19 Wave 17 (prior)**: HEAD `9b61065f` (+10 past `b4bd6c93`). Multitasking audit P0-P8 complete: heartbeat verification on enforce-floor/delegate/stop (P0), fail-closed countLiveAgents + FORCE_DELEGATE polarity split (P2+P8, 111 tests), message-shape loophole closure capping zero-dispatch at 2 (P4+P6), false-done markdown-table bypass removal + stop-pattern phrases (P5). Anti-lying guardrail trilogy: enforce-verified-claims (`71b8edce`), enforce-clean-tree (`ae9861f3`), verify-state (`9f55812d`). Agent-worktree isolation targets (`416b6285`). Gate unblocked: env-writes + stale assertion + plugin-count drift (`9b61065f`). CI pending; commit batcher in flight. **Retroactive correction: the CI-green claim that followed this wave was never re-confirmed and was FALSE — see session 20.**
 - **2026-07-08 session 19 Wave 16 (prior)**: HEAD `b4bd6c93` (+10 past `ca44fa0a`). Presentation rebuilt: build_presentation ansible role, SVG Mermaid diagrams, revealjs-presentation skill, pages.yml verified deploy. Phase E WP-E2+WP-E3 polyglot project support landed. WP-D3 migration drift reconciled. Phase D security complete (14/15 FIXED, 1 REFUTED). responseLooksTerminal regression restored. CI RED on 7 lint errors (fixed in Wave 17).
 - **2026-07-08 session 19 Wave 14 (prior)**: HEAD `e564d844` (pushes in flight, CI pending — NOT polling). 13 commits past prior session-19 HEAD `024a8412`: beta.3 writer subprocess Slice 1-3 (WriterProcess `25d2ebaa`, QueueWriteSession `b440e504`, child entrypoint `2d3ee08f`), unit-1 shard split into unit-1a/unit-1b (`1f283628`), P1/P2 chronic singleton fixes (`d55b0f6f`), A6 logging isolation fixture (`9a24dcc8`), caplog getMessage migration across 16 sites (`bcceaf85`), os.environ→monkeypatch conversion (`9d987b79`), no-CI-poll-blocking rule codified (`5ecdf2a9`). beta.3 Slice 4-5 in flight. beta.2 STILL NOT shipped — blocked on CI green.
 - **2026-07-08 session 19 (prior)**: HEAD `024a8412` (pushed, VERIFIED). 13 commits landed resolving all 13 session-18 CI failures: slurm terminal-state fix (`6da1b5cd`), root-logger fixtures (`54353cec`/`07711c27`), PSK caplog + tokenizer (`9ce86554`), gate xdist race fix (`2f09f975`), lazy-log accessor (`8af622f8`), 6-cluster batch fix (`5ecce329`), TUI poll-until-marker (`024a8412`), lint cleanup (`3c62b381`). cast(Any) burn-down Tier 4 COMPLETE (`1d89ce8e`). STABILIZATION_PLAN added (`ef930591`). beta.3 Phase 1 (gunicorn IPC broker) DONE (`84cebb6c`). CI for current HEAD pending/in-progress — green NOT yet confirmed. beta.2 STILL NOT shipped.

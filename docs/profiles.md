@@ -15,7 +15,7 @@ All examples are derived directly from the live config schema. Referenced files:
 | Agent definitions | `config/agents/default_agents.yml` |
 | Process isolation | `config/ansible/isolation.yml` |
 | Hot-reload | `src/general_ludd/reload/hot_reloader.py` (`HotReloader`) |
-| Python version | `pyproject.toml` (`version = "0.1.0-alpha.202606120000"`) |
+| Python version | `pyproject.toml` (`version = "0.1.0-beta.2"`) |
 
 ---
 
@@ -418,17 +418,16 @@ This project uses two co-existing version schemes:
 
 | Artifact | File | Format | Example |
 |----------|------|--------|---------|
-| Python package | `pyproject.toml` `version` | PEP 440, no leading `v` | `0.1.0-alpha.202606120000` |
+| Python package | `pyproject.toml` `version` | PEP 440, no leading `v` | `0.1.0-beta.2` |
 | Ansible collection | `galaxy.yml` `version:` (if/when added) | Semver | `0.1.0` |
 
 From `pyproject.toml`:
 
 ```toml
-version = "0.1.0-alpha.202606120000"
+version = "0.1.0-beta.2"
 ```
 
-The timestamp suffix (`<YYYYMMDDhhmm>`) makes each alpha release unique and
-sortable. No leading `v`.
+No leading `v`.
 
 ### Recommended convention for profile versioning
 

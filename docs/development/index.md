@@ -4,12 +4,11 @@ Guides for developing, testing, and contributing to General Ludd.
 
 ## Contents
 
-| Document | Description |
-|----------|-------------|
-| [Getting Started](getting-started.md) | Setup, first run, dogfood |
-| [Testing](testing.md) | Unit, integration, E2E, Molecule |
-| [Guardrails](guardrails.md) | Guardrail system, policies, enforcement |
-| [Guardrail Pattern](guardrail-pattern.md) | Pattern for adding new guardrails |
+This directory does not yet hold split-out development pages. Setup,
+testing, and contribution workflow are in the root
+[CONTRIBUTING.md](../../CONTRIBUTING.md); guardrail policy is in
+[AGENTS.md](../../AGENTS.md). The quick start and make-target reference below
+cover day-to-day workflow.
 
 ## Quick Start
 

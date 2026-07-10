@@ -2,6 +2,8 @@
 
 # Alpha.4 Verified Backlog — 2026-06-24
 
+> **RE-TRIAGED (2026-07-10):** of the 17 items marked OPEN below: 7 FIXED (alembic logging sections; SEC-8 status leak; M-3 strict resolve_role; record_success double-count; SEC-4 webhooks; M-4 list_all clamp; SEC-5b resolve enforce_permission), 5 MITIGATED (M-13 CAS lock; M-7 caps; skills fetcher partial; prompt_registry to_thread; alembic URL override; M-10 single-worker clamp), 1 NON-ISSUE (M-5), 3 STILL OPEN (validation/runner.py symlink confinement; event_loop claim-before-cap window; _dispatch_review_job to_thread no timeout). See docs/AGENTIC_IMPLEMENTATION_SPEC.md for the live work items.
+
 Live verification pass against **current master** (`10ee0d8`). Each prior "OPEN"
 finding from the stale docs (`NEW_FINDINGS_2026-06-16.md`,
 `POST_SHIP_BACKLOG_PREP_2026-06-21.md`, completion-integrity audit) was re-checked

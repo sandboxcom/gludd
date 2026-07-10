@@ -4,13 +4,9 @@ System architecture documentation for the General Ludd daemon.
 
 ## Contents
 
-| Document | Description |
-|----------|-------------|
-| [Overview](overview.md) | High-level system architecture |
-| [Daemon](daemon.md) | FastAPI daemon, lifecycle, wiring |
-| [Event Loop](event-loop.md) | Event loop phases, tick cycle |
-| [Worker](worker.md) | Worker process, execution engine |
-| [Ansible Integration](ansible-integration.md) | Ansible runner, collection, modules, roles |
+This directory does not yet hold split-out architecture pages. The full
+system architecture (daemon lifecycle, event loop, worker, Ansible
+integration) is documented in one place: [docs/architecture.md](../architecture.md).
 
 ## Quick Reference
 

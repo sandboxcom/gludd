@@ -4,11 +4,11 @@ Operational guides for running General Ludd in production.
 
 ## Contents
 
-| Document | Description |
-|----------|-------------|
-| [Monitoring](monitoring.md) | Metrics, traces, health checks |
-| [Budget Management](budget-management.md) | Cost tracking, budgets, alerts |
-| [Troubleshooting](troubleshooting.md) | Common issues and solutions |
+This directory does not yet hold split-out operations pages. Monitoring and
+observability sources are covered in [docs/OBSERVABILITY_SOURCES.md](../OBSERVABILITY_SOURCES.md);
+configuration (including budget settings) is in
+[docs/CONFIG_REFERENCE.md](../CONFIG_REFERENCE.md). The quick reference below
+covers day-to-day health/budget checks and troubleshooting entry points.
 
 ## Quick Reference
 

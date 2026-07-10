@@ -14,7 +14,7 @@ do NOT let it drain when the active task goes sequential (gate/commit/edits/wait
   auditors/reviewers/proposers.
 - Use async `Agent` dispatches, **NOT the `Workflow` tool** — Workflows surface a
   permission prompt that BLOCKS the operator and stops work. Forbidden here.
-- Live count: `scripts/agent_liveness.py` (`make liveness-debug`). Floor enforced by
+- Live count: `scripts/agent_liveness.py` (`make floor-status`). Floor enforced by
   `.claude/hooks/agent_floor_stop.sh`, tunable via `/tmp/gludd-floor-override`. Full
   policy: `docs/MULTITASKING_POLICY.md`.
 
@@ -31,8 +31,9 @@ Every Bash command in this repo MUST be `make <target>`. Anything else (`ls`, `g
 
 Note: `make gate`, `make test-unit`, and bare `make test` are BLOCKED by the
 enforce-make.ts plugin when run in the foreground (they block for 30+ minutes
-and prevent subagent dispatch). Use `make gate-background` instead, then check
-with `make gate-bg-check`. For targeted tests, use `make test TESTFILE=...`.
+and prevent subagent dispatch). Use `make gate-async` instead (launches the
+gate detached, writes `.gate-status`), then check with `make gate-status`.
+For targeted tests, use `make test TESTFILE=...`.
 
 File reads/edits use the Read/Edit/Write tools, not shell.
 
@@ -45,7 +46,7 @@ File reads/edits use the Read/Edit/Write tools, not shell.
 
 ## Opencode plugins
 
-All 4 plugins in `.opencode/plugin/` are registered and active in `opencode.json`. They enforce the same policies as the `.claude/hooks/*.sh` layer:
+All 13 plugins in `.opencode/plugin/` are registered and active in `opencode.json`. They enforce the same policies as the `.claude/hooks/*.sh` layer:
 
 - **`enforce-make.ts`** — Bash make-only policy: blocks non-make commands, metacharacters (`|`, `&&`, `;`, `$()`), concurrent gates, `.gate-status` writes, and edits that weaken guardrails across all hook/plugin files.
 - **`enforce-floor.ts`** — agent floor/ceiling bands via `agent_liveness.py`: keeps ≥10 (env: `CLAUDE_AGENT_FLOOR`) live subagents; blocks stops when below the floor.
@@ -55,7 +56,8 @@ All 4 plugins in `.opencode/plugin/` are registered and active in `opencode.json
 ## Key documents
 
 - `AGENTS.md` — full agent policy (TDD, completion, guardrail integrity). Binding here too.
-- `GLM_REMEDIATION_GUIDE_3.md` — CURRENT work plan (2026-06-12 third validation: adjudicates guide-2 checklist, ratchet burn-down, product spine, ship blockers). Supersedes guide-2 status claims.
+- `docs/STABILIZATION_PLAN.md` — CURRENT work plan. Supersedes the GLM_REMEDIATION_GUIDE_* status claims below.
+- `GLM_REMEDIATION_GUIDE_3.md` — round-3 plan (historical; 2026-06-12 validation, adjudicates guide-2 checklist, ratchet burn-down, product spine, ship blockers). Superseded by STABILIZATION_PLAN.md.
 - `GLM_REMEDIATION_GUIDE_2.md` — round-2 plan (historical; its checklist is re-adjudicated in guide 3 Section 1).
 - `GLM_REMEDIATION_GUIDE.md` — round-1 remediation plan (historical; its TASKS.md ticks are re-adjudicated in guide 2 Section 1).
 - `GLM_IMPLEMENTATION_GUIDE.md` — original gap analysis and task specs.

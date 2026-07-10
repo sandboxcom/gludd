@@ -277,10 +277,12 @@ ALPHA4_VERIFIED_BACKLOG_2026-06-24.md, NEW_FINDINGS). Rules:
    - **WP-D2**: CC-1 lease double-dispatch — previously REFUTED (the Q.F1
      guard defends it); re-verify the named test still passes and close the
      doc row; do NOT build the migration unless a failing test proves need.
-   - **WP-D3**: alembic migration drift — migration 001 missing 8 tables +
-     project_id FKs. Fix = make `alembic upgrade head` from empty DB produce
-     a schema identical to `create_all` (add a comparison test). Required
-     before any Postgres work (WP-B4).
+   - **WP-D3 — CLOSED**: alembic migration drift — migration 001 missing 8
+     tables + project_id FKs. Fixed by migration 024 (reconciles `alembic
+     upgrade head` with `create_all`, commit `ff8a8298`). Evidence: parity
+     suites `tests/unit/test_alembic_orm_parity.py` and
+     `tests/unit/test_alembic_create_all_parity.py` pass, 8/8. The old
+     blocker on Postgres work (WP-B4) is gone.
    - **WP-D4**: remaining AB-5/6/8, GA-1/3, XT-3/4, GW-1/2 findings — triage
      per rule 1 above.
 **Acceptance per finding**: doc row updated (CLOSED w/ hash, or fixed w/ new

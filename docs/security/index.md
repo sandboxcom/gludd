@@ -6,7 +6,8 @@ Security-related documentation.
 
 | Document | Description |
 |----------|-------------|
-| [Security Hardening](../audit/security-hardening.md) | Security hardening measures |
+| [Security](../SECURITY.md) | Operator security guide: auth, integrity signing, network exposure, secrets |
+| [Security Hardening](../SECURITY_HARDENING.md) | Security hardening measures |
 
 ---
 

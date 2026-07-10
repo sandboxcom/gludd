@@ -4,10 +4,11 @@ Guardrail system documentation.
 
 ## Contents
 
-| Document | Description |
-|----------|-------------|
-| [Guardrails](../development/guardrails.md) | Guardrail system, policies, enforcement |
-| [Guardrail Pattern](../development/guardrail-pattern.md) | Pattern for adding new guardrails |
+This directory does not yet hold split-out guardrail pages. The full
+guardrail policy (TDD, completion rules, guardrail integrity, enforcement)
+is in the root [AGENTS.md](../../AGENTS.md). The `.opencode/plugin/*.ts`
+plugins and `.claude/hooks/*.sh` implement enforcement; see
+[docs/CLAUDE.md](../CLAUDE.md) for the plugin roster.
 
 ---
 

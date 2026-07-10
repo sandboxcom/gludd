@@ -4,11 +4,9 @@ REST API endpoints and messaging interfaces for the General Ludd daemon.
 
 ## Contents
 
-| Document | Description |
-|----------|-------------|
-| [REST Endpoints](rest-endpoints.md) | All HTTP endpoints with request/response schemas |
-| [Message Queue](message-queue.md) | Inter-agent message queue API |
-| [Model Gateway](model-gateway.md) | Model gateway routing, billing, health |
+This directory does not yet hold split-out API pages; everything is
+documented inline below: [Endpoint Overview](#endpoint-overview),
+[Message Queue](#message-queue), [Model Gateway](#model-gateway).
 
 ## Base URL
 

@@ -6,10 +6,10 @@ End-to-end test harness designs for dogfood and multi-provider testing.
 
 | Document | Description |
 |----------|-------------|
-| [Native Dogfood Harness](native-dogfood-harness.md) | Self-host + greenfield todo website scenarios |
-| [Local Cloud Providers E2E](local-cloud-providers-e2e.md) | Ollama, vLLM, llama.cpp, Slurm, Azure E2E |
-| [Build Plan](build-plan.md) | Ordered, dependency-aware build plan |
-| [Model Discovery Weights Cost Audit](model-discovery-weights-cost.md) | Model discovery, weights, cost audit |
+| [Native Dogfood Harness](DESIGN_native_dogfood_harness.md) | Self-host + greenfield todo website scenarios |
+| [Local Cloud Providers E2E](DESIGN_local_cloud_providers_e2e.md) | Ollama, vLLM, llama.cpp, Slurm, Azure E2E |
+| [Build Plan](BUILD_PLAN.md) | Ordered, dependency-aware build plan |
+| [Model Discovery Weights Cost Audit](AUDIT_model_discovery_weights_cost.md) | Model discovery, weights, cost audit |
 
 ## Quick Reference
 

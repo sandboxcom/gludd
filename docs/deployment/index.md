@@ -4,11 +4,10 @@ Guides for deploying General Ludd in various environments.
 
 ## Contents
 
-| Document | Description |
-|----------|-------------|
-| [Terraform](terraform.md) | Infrastructure as Code with Terraform |
-| [Slurm](slurm.md) | HPC cluster deployment with Slurm |
-| [Release Process](release-process.md) | Release cutting and publishing |
+This directory does not yet hold split-out deployment pages. Terraform and
+Slurm deployment design live in [Model Serving Deployment](../design/MODEL_SERVING_DEPLOYMENT.md)
+and [Terraform Infra Structure](../design/TERRAFORM_INFRA_STRUCTURE.md); release
+process is in the root [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md).
 
 ## Deployment Architectures
 
@@ -51,7 +50,7 @@ Configure model endpoints in `~/.config/general-ludd/model_profiles/`:
 
 - [Model Serving Deployment Design](../design/MODEL_SERVING_DEPLOYMENT.md)
 - [Terraform Infra Structure Design](../design/TERRAFORM_INFRA_STRUCTURE.md)
-- [Architecture: Overview](../architecture/overview.md)
+- [Architecture](../architecture.md)
 
 ---
 
