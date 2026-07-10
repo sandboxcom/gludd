@@ -100,6 +100,39 @@ current file + test/LSP errors) as a new user turn, budget-rechecked per attempt
 partial-success-aware (don't resend applied edits), final exit_code=1 if unresolved. P-4,
 P-5, and test-retry must NOT each build a competing loop.
 
+## C-SEC-1 CORRECTION (adversarial review — the parent design was INCOMPLETE)
+The WAVE_C_DESIGNS §C-SEC-1 fix (subtract denied in intersection + deny-check at
+_enforce_permission/StsIssuer.validate) closes the direct-spec case but NOT the
+STS-delegation path it was motivated by. Required additions:
+- **Hole 1 (critical):** `StsIssuer.issue()` (sts.py:142-165) stores `subject_spec_request`
+  verbatim and `is_subset()` (permissions.py:400-417) never inspects `.denied`, so the
+  minted token's `.denied` is whatever the CALLER supplied — the issuer's carve-out never
+  enters. Two live callers: `POST /admin/sts/issue` (routers/security.py:298-315, parses
+  caller YAML, denied defaults []) and the escalation endpoints (security.py:522/602)
+  which `intersection(augmented, human_spec)` — `agent_spec`/issuer_spec is NEVER an
+  intersection operand, so an agent/issuer-only deny is invisible. **FIX must also:** merge
+  `issuer_spec.denied` (and the human spec's) into the minted spec in `issue()` before
+  storing; add sts.py:issue + is_subset + security.py:522/602 to the fix file list.
+- **Hole 2:** `StsIssuer.validate()` has ZERO prod callers (only tests); `daemon.py:415-441`
+  uses `STSRegistry` which is never assigned (`state._sts_registry` unset) → that scoping
+  path always falls through. Fixing validate() is future-proofing; the LIVE exposure is
+  Hole 1 (minting) + `_enforce_permission` against directly-configured specs.
+- **Hole 3:** empty `denied.actions` is legal + unvalidated → pin the semantics: **empty
+  denied.actions == deny ALL actions** (mirror the "empty openbao_paths allow == deny-all"
+  precedent). validate() won't catch omission, so encode it in the deny-match logic.
+- **Hole 4:** glob "subtraction" in intersection() is NOT generally expressible (literal
+  string-set diff leaves `build/*` unchanged when denying one literal key). So step-1
+  subtraction is BEST-EFFORT/non-authoritative; the runtime fnmatch deny-checks
+  (_enforce_permission / validate) are AUTHORITATIVE. Document this explicitly.
+- **Hole 5 (C-SEC-1b ordering contradiction):** a hard `is_subset` reject on
+  `requested.max_sts_ttl_seconds > issuer` makes the companion clamp-on-store dead AND
+  regresses any sub-3600 issuer to PermissionDeniedError on legitimate requests. **Resolve:
+  drop the is_subset hard-reject; keep ONLY the silent `dataclasses.replace` clamp-on-store**
+  (max_sts_ttl_seconds is a re-delegation CEILING, not a TTL ask).
+- Adjacent (flag, not C-SEC-1): `linux_selinux.py:52` renders denied as `dontaudit`
+  (audit-suppression, NOT enforcement) + `typeattribute unconfined_t` → SELinux deny
+  rendering is inert. Separate triage item.
+
 ## Test drafts ready (full content in task outputs, drop-in)
 - `test_permissions_denied_enforced.py` (C-SEC-1, all 3 gates + TTL clamp)
 - `test_self_modify_guards.py` + `test_hot_reload_code.py` additions (C-RELOAD)

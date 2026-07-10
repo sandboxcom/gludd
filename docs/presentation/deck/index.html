@@ -22,8 +22,9 @@
 .reveal h1, .reveal h2, .reveal h3 { color: #58a6ff; text-transform: none; }
 .reveal h2 { border-bottom: 1px solid #30363d; padding-bottom: 0.2em; margin-bottom: 0.5em; }
 .reveal a { color: #79c0ff; }
+.reveal pre { max-width: 100%; overflow-x: auto; }
 .reveal pre code { max-height: 460px; font-size: 0.5em; line-height: 1.3; }
-.reveal table { font-size: 0.55em; margin: 0 auto; }
+.reveal table { font-size: 0.55em; margin: 0 auto; display: block; overflow-x: auto; max-width: 100%; }
 .reveal th { color: #58a6ff; border-bottom: 2px solid #58a6ff; }
 .reveal td, .reveal th { padding: 6px 12px; border-bottom: 1px solid #30363d; text-align: left; }
 .reveal ul { list-style-type: none; }
@@ -44,14 +45,36 @@
 .diagram-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin: 16px auto; max-width: 94%; text-align: center; }
 .diagram-wrap img { width: 100%; height: auto; display: block; }
 .reveal .mermaid svg { max-width: 100%; height: auto; }
+.reveal .mermaid { max-width: 100%; overflow-x: auto; }
 .honest-note { border-left: 3px solid #d29922; padding-left: 12px; color: #d29922; font-size: 0.55em; margin-top: 12px; }
 .analogy { border-left: 3px solid #58a6ff; padding-left: 12px; color: #79c0ff; font-size: 0.62em; margin-top: 10px; font-style: italic; }
 .step-number { display: inline-block; background: #58a6ff; color: #000; width: 34px; height: 34px; border-radius: 50%; text-align: center; line-height: 34px; font-weight: bold; font-size: 0.65em; margin-right: 10px; }
 .cite { font-size: 0.42em; color: #484f58; }
-.path { font-family: 'SF Mono', 'Menlo', 'Monaco', monospace; background: #0d1117; color: #79c0ff; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; white-space: nowrap; }
+.path { font-family: 'SF Mono', 'Menlo', 'Monaco', monospace; background: #0d1117; color: #79c0ff; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
 .stage-kicker { color: #8b949e; font-size: 0.55em; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 4px; }
 .bullets-tight li { margin-bottom: 6px; font-size: 0.85em; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+/* --- Mobile / narrow-screen: keep every slide on-screen, never scroll the body sideways --- */
+@media (max-width: 640px) {
+  :root {
+    --r-main-font-size: 21px;
+    --r-heading1-size: 1.7em;
+    --r-heading2-size: 1.25em;
+    --r-heading3-size: 1.05em;
+    --r-block-margin: 10px;
+  }
+  .two-col { grid-template-columns: 1fr; gap: 12px; }
+  .metrics-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .metric-box { padding: 10px; }
+  .metric-box .number { font-size: 1.4em; }
+  .diagram-wrap { padding: 8px; max-width: 100%; margin: 10px auto; }
+  .reveal .mermaid { font-size: 12px; }
+  .reveal .mermaid svg { font-size: 12px; }
+  .reveal pre code { font-size: 0.42em; max-height: 320px; }
+  .reveal table { font-size: 0.5em; }
+  .path { font-size: 0.8em; }
+  .bullets-tight li { font-size: 0.8em; }
+}
 </style>
 </head>
 <body>
@@ -159,6 +182,34 @@ flowchart LR
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 5b: TODO STATE MACHINE -->
+<!-- ============================================================ -->
+<section>
+  <h2>The todo state machine</h2>
+  <p>Every todo moves through one explicit lifecycle. Each arrow is a guarded transition (<span class="path">VALID_TRANSITIONS</span>, <span class="path">schemas/todo.py:62</span>) written to <span class="path">todo_events</span>.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+stateDiagram-v2
+  [*] --> BACKLOG
+  BACKLOG --> SCHEDULED: has schedule
+  BACKLOG --> QUEUED: ready now
+  SCHEDULED --> QUEUED: due / cron fire
+  QUEUED --> ACTIVE: claim CAS
+  ACTIVE --> AWAITING_RESULT: dispatched
+  AWAITING_RESULT --> REVIEWING_RETURN: result persisted
+  REVIEWING_RETURN --> COMPLETE: approve
+  REVIEWING_RETURN --> NEEDS_MORE_WORK: changes
+  REVIEWING_RETURN --> FAILED: reject
+  NEEDS_MORE_WORK --> QUEUED: retry
+  ACTIVE --> BUDGET_EXCEEDED: spend gate
+  ACTIVE --> BLOCKED_ON_HUMAN: needs approval
+  COMPLETE --> [*]
+    </div>
+  </div>
+  <p class="cite">Source: src/general_ludd/schemas/todo.py:12-106 (TodoStatus + VALID_TRANSITIONS)</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 6: STAGE 1 - SUBMIT -->
 <!-- ============================================================ -->
 <section>
@@ -168,8 +219,8 @@ flowchart LR
   <ul class="bullets-tight">
     <li class="fragment"><span class="path">POST /api/todos</span> is handled by <span class="path">api_add_todo</span> &mdash; <span class="path">src/general_ludd/routers/todos.py:170</span></li>
     <li class="fragment">The router calls <span class="path">TodoRepository.create</span> &mdash; <span class="path">src/general_ludd/db/repository.py</span></li>
-    <li class="fragment">One row lands in the <span class="path">todos</span> table (<span class="path">db/models.py:159</span>), status = <code>BACKLOG</code></li>
-    <li class="fragment">A companion row is appended to <span class="path">todo_events</span> (<span class="path">db/models.py:253</span>) recording the creation</li>
+    <li class="fragment">One row lands in the <span class="path">todos</span> table (<span class="path">db/models.py:180</span>), status = <code>BACKLOG</code></li>
+    <li class="fragment">No <span class="path">todo_events</span> row yet at this point &mdash; the first event is appended later, when the todo is <em>claimed</em> (see stage 4)</li>
   </ul>
   <p class="analogy">Like writing a sticky note and putting it on the board &mdash; except the board is a SQL table with a foreign key.</p>
 </section>
@@ -179,17 +230,41 @@ flowchart LR
 <!-- ============================================================ -->
 <section>
   <div class="stage-kicker">Flagship flow &middot; stage 2 of 9</div>
-  <h2><span class="step-number">2</span>The tick loop &mdash; 16 phases</h2>
-  <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:88</span>) &mdash; the same 16 phases, in the same order, inside one DB session.</p>
+  <h2><span class="step-number">2</span>The tick loop &mdash; 17 phases</h2>
+  <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:88</span>) &mdash; the same 17 phases, in the same order, inside one DB session.</p>
   <pre><code class="language-text">load_config_snapshot        claim_unreviewed_task_returns
 dispatch_return_review_jobs evaluate_pid_controllers
 refill_task_buckets         run_scheduler
 claim_runnable_todos        evaluate_rules
 dispatch_execute_jobs       reconcile_completed_decisions
 refresh_model_performance   check_compute_utilization
-check_service_credits       self_improve
-poll_issue_sources          emit_tick_metrics</code></pre>
-  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-105 (PHASE_ORDER, 16 entries)</p>
+check_service_credits       remediate_blocked_tasks
+self_improve                poll_issue_sources
+emit_tick_metrics</code></pre>
+  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-106 (PHASE_ORDER, 17 entries)</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 7b: TICK PHASE FLOW -->
+<!-- ============================================================ -->
+<section>
+  <h2>One tick, in order</h2>
+  <p>The load-bearing phases of <span class="path">PHASE_ORDER</span>, in the exact order they run inside a single tick's DB session.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  A["load_config<br/>snapshot"] --> B["claim + dispatch<br/>return review"]
+  B --> C["run_scheduler<br/>promote due todos"]
+  C --> D["claim_runnable<br/>todos (CAS)"]
+  D --> E["evaluate_rules"]
+  E --> F["dispatch_execute<br/>jobs (spend gate)"]
+  F --> G["reconcile_completed<br/>decisions + commit"]
+  G --> H["self_improve"]
+  H --> I["emit_tick_metrics"]
+  I -.->|next tick ~1s| A
+    </div>
+  </div>
+  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-106 (PHASE_ORDER)</p>
 </section>
 
 <!-- ============================================================ -->
@@ -198,13 +273,13 @@ poll_issue_sources          emit_tick_metrics</code></pre>
 <section>
   <div class="stage-kicker">Flagship flow &middot; stage 3 of 9</div>
   <h2><span class="step-number">3</span>Schedule promotion</h2>
-  <p>The <code>run_scheduler</code> phase calls <span class="path">TodoScheduler.tick()</span> &mdash; <span class="path">src/general_ludd/event_loop/scheduler.py:88</span>.</p>
+  <p>The <code>run_scheduler</code> phase calls <span class="path">TodoScheduler.tick()</span> &mdash; <span class="path">src/general_ludd/event_loop/scheduler.py:107</span> (class <span class="path">TodoScheduler</span> at <span class="path">scheduler.py:88</span>).</p>
   <ul class="bullets-tight">
     <li class="fragment">A one-shot todo promotes <code>SCHEDULED</code> &rarr; <code>QUEUED</code> once <code>now &ge; scheduled_at</code></li>
     <li class="fragment">A cron todo (<code>todos.cron</code>, croniter grammar) stays a <code>SCHEDULED</code> template forever &mdash; each fire spawns a <code>QUEUED</code> child clone and advances <code>next_run_at</code></li>
-    <li class="fragment">The due-todo lookup is index-backed: <span class="path">ix_todos_scheduled_lookup</span> on <code>(status, schedule_paused, next_run_at, scheduled_at)</code> &mdash; <span class="path">db/models.py:235</span></li>
+    <li class="fragment">The due-todo lookup is index-backed: <span class="path">ix_todos_scheduled_lookup</span> on <code>(status, schedule_paused, next_run_at, scheduled_at)</code> &mdash; <span class="path">db/models.py:257</span></li>
   </ul>
-  <p class="cite">Source: src/general_ludd/event_loop/scheduler.py, src/general_ludd/db/models.py:206-241</p>
+  <p class="cite">Source: src/general_ludd/event_loop/scheduler.py, src/general_ludd/db/models.py:227-269</p>
 </section>
 
 <!-- ============================================================ -->
@@ -213,11 +288,11 @@ poll_issue_sources          emit_tick_metrics</code></pre>
 <section>
   <div class="stage-kicker">Flagship flow &middot; stage 4 of 9</div>
   <h2><span class="step-number">4</span>Claim &mdash; version-guarded CAS</h2>
-  <p>gludd won't let two workers grab the same todo. The <code>claim_runnable_todos</code> phase (<span class="path">loop.py:4187</span>) calls a compare-and-swap.</p>
+  <p>gludd won't let two workers grab the same todo. The <code>claim_runnable_todos</code> phase (<span class="path">EventLoop._phase_claim_runnable_todos</span>, <span class="path">loop.py:1365</span>) calls a compare-and-swap.</p>
   <ul class="bullets-tight">
-    <li class="fragment"><span class="path">TodoRepository.claim_runnable</span> &mdash; <span class="path">db/repository.py:424</span> &mdash; UPDATEs <code>QUEUED</code> &rarr; <code>ACTIVE</code> guarded by the <code>todos.version</code> column; losing the race just leaves the row <code>QUEUED</code> for next tick</li>
+    <li class="fragment"><span class="path">TodoRepository.claim_runnable</span> &mdash; <span class="path">db/repository.py:424</span> &mdash; UPDATEs <code>QUEUED</code> &rarr; <code>ACTIVE</code> guarded by the <code>todos.version</code> column; losing the race just leaves the row <code>QUEUED</code> for next tick. This same call also appends the todo's <strong>first</strong> <span class="path">todo_events</span> row (<code>actor="claim_runnable"</code>)</li>
     <li class="fragment"><span class="path">acquire_lease</span> &mdash; <span class="path">event_loop/lease.py:15</span> &mdash; takes an exclusive lease on the todo's resource bucket</li>
-    <li class="fragment">The lease is a real row in <span class="path">bucket_leases</span> (<span class="path">db/models.py:451</span>): <code>bucket_key</code>, <code>holder_id</code>, <code>expires_at</code> &mdash; a stale lease just expires</li>
+    <li class="fragment">The lease is a real row in <span class="path">bucket_leases</span> (<span class="path">db/models.py:495</span>): <code>bucket_key</code>, <code>holder_id</code>, <code>expires_at</code> &mdash; a stale lease just expires</li>
   </ul>
 </section>
 
@@ -227,10 +302,10 @@ poll_issue_sources          emit_tick_metrics</code></pre>
 <section>
   <div class="stage-kicker">Flagship flow &middot; stage 5 of 9</div>
   <h2><span class="step-number">5</span>Dispatch &mdash; the spend gate</h2>
-  <p><span class="path">_dispatch_execute_job</span> (<span class="path">event_loop/loop.py:1809</span>) runs from the <code>dispatch_execute_jobs</code> phase &mdash; but it checks the budget before it checks anything else.</p>
+  <p><span class="path">_dispatch_execute_job</span> (<span class="path">event_loop/loop.py:1844</span>) runs from the <code>dispatch_execute_jobs</code> phase &mdash; but it checks the budget before it checks anything else.</p>
   <ul class="bullets-tight">
-    <li class="fragment"><code>SpendLimiter.try_charge</code> gates the call against a rolling-window budget <em>before</em> a single token is spent</li>
-    <li class="fragment">Every charge attempt &mdash; approved or rejected &mdash; is appended to <span class="path">spend_records</span> (<span class="path">db/models.py:580</span>)</li>
+    <li class="fragment"><code>SpendLimiter.try_charge</code> (<span class="path">controllers/spend_limiter.py:278</span>) gates the call against a rolling-window budget <em>before</em> a single token is spent &mdash; this is an <strong>in-memory</strong> check-and-record, not a DB write</li>
+    <li class="fragment">Every accepted charge is later drained by a periodic flush (<span class="path">SpendRepository.add</span>, <span class="path">db/repository.py:1773</span>, wired in <span class="path">daemon.py</span>) into <span class="path">spend_records</span> (<span class="path">db/models.py:633</span>) &mdash; the limiter's in-memory ledger is the source of truth for the live gate, the table is the durable record</li>
     <li class="fragment">A rejected charge defers the todo silently: no model call is made, no cost is incurred, and the todo is retried on a later tick</li>
   </ul>
   <p class="honest-note">The gate runs first. gludd cannot overspend by dispatching, then discovering it should not have.</p>
@@ -243,8 +318,8 @@ poll_issue_sources          emit_tick_metrics</code></pre>
   <div class="stage-kicker">Flagship flow &middot; stage 6 of 9</div>
   <h2><span class="step-number">6</span>Model call &mdash; gateway + tool loop</h2>
   <ul class="bullets-tight">
-    <li class="fragment"><span class="path">invoke_model_for_generation</span> (<span class="path">models/job_invocation.py:41</span>) calls <span class="path">ModelGateway.call_model</span> (<span class="path">models/gateway.py:574</span>) &mdash; a LangChain provider registry with tenacity retries</li>
-    <li class="fragment">Every call is billed and logged to <span class="path">model_call_logs</span> (<span class="path">db/models.py:918</span>) and rolled up into <span class="path">model_performance</span> (<span class="path">db/models.py:961</span>)</li>
+    <li class="fragment"><span class="path">invoke_model_for_generation</span> (<span class="path">models/job_invocation.py:41</span>) calls <span class="path">ModelGateway.call_model</span> (<span class="path">models/gateway.py:642</span>) &mdash; a LangChain provider registry with tenacity retries</li>
+    <li class="fragment">Every call is billed and logged to <span class="path">model_call_logs</span> (<span class="path">db/models.py:962</span>) and rolled up into <span class="path">model_performance</span> (<span class="path">db/models.py:1005</span>)</li>
     <li class="fragment">Work needing autonomous tool use hands off to <span class="path">ToolCallLoop.run_with_tools</span> (<span class="path">execution/tool_loop.py:139</span>): model proposes a tool call, gludd executes it, feeds the result back, repeats</li>
     <li class="fragment">Tool calls route through <span class="path">DynamicDispatcher</span> (<span class="path">dispatch/dynamic_dispatcher.py:198</span>) &mdash; a capability lattice that fails <strong>closed</strong> on any tool it doesn't recognize</li>
   </ul>
@@ -260,9 +335,38 @@ poll_issue_sources          emit_tick_metrics</code></pre>
   <ul class="bullets-tight">
     <li class="fragment"><strong>Local:</strong> <span class="path">runner.write_vars</span> (<span class="path">ansible/runner.py:140</span>) + <span class="path">run_playbook</span> (<span class="path">ansible/runner.py:166</span>) hand the job to an Ansible playbook</li>
     <li class="fragment"><strong>Remote/isolated:</strong> <span class="path">POST /jobs/execute</span> &mdash; <span class="path">worker/app.py:315</span> &mdash; runs the same job over HTTP against a worker process</li>
-    <li class="fragment">Either path's result flows into <span class="path">EventLoop._persist_task_return</span> &mdash; <span class="path">event_loop/loop.py:2981</span></li>
-    <li class="fragment">One row lands in <span class="path">task_returns</span> (<span class="path">db/models.py:279</span>) &mdash; the raw, <em>unreviewed</em> result</li>
+    <li class="fragment">Either path's result flows into <span class="path">EventLoop._persist_task_return</span> &mdash; <span class="path">event_loop/loop.py:3016</span></li>
+    <li class="fragment">One row lands in <span class="path">task_returns</span> (<span class="path">db/models.py:306</span>) &mdash; the raw, <em>unreviewed</em> result</li>
   </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 12b: DISPATCH PIPELINE SEQUENCE -->
+<!-- ============================================================ -->
+<section>
+  <h2>Submit &rarr; execute, and what each step writes</h2>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+sequenceDiagram
+  participant U as You
+  participant API as routers/todos.py
+  participant EL as EventLoop
+  participant GW as models/gateway.py
+  participant RN as runner / worker
+  participant DB as DB tables
+  U->>API: POST /api/todos
+  API->>DB: INSERT todos (BACKLOG)
+  EL->>DB: claim QUEUED -> ACTIVE + todo_events
+  EL->>EL: SpendLimiter.try_charge (gate)
+  EL->>GW: call_model
+  GW-->>EL: generation
+  EL->>DB: INSERT model_call_logs
+  EL->>RN: execute job
+  RN-->>EL: result
+  EL->>DB: INSERT task_returns (unreviewed)
+    </div>
+  </div>
+  <p class="cite">Source: routers/todos.py api_add_todo, event_loop/loop.py (_dispatch_execute_job, _persist_task_return), models/gateway.py call_model</p>
 </section>
 
 <!-- ============================================================ -->
@@ -276,7 +380,7 @@ poll_issue_sources          emit_tick_metrics</code></pre>
     <li class="fragment"><span class="path">ReturnReviewer.review_return</span> &mdash; <span class="path">review/reviewer.py:49</span> &mdash; runs an adversarial scan against the <code>task_return</code>, not just "did it run"</li>
     <li class="fragment">Model output is parsed <strong>JSON-fence tolerant</strong> (strips <code>```json</code> fences) &mdash; an unparseable verdict becomes <code>decision=failed</code>, <strong>never</strong> a silent pass</li>
     <li class="fragment"><span class="path">apply_decision</span> &mdash; <span class="path">review/decision_applier.py:28</span> &mdash; writes the verdict</li>
-    <li class="fragment">Results land in <span class="path">task_decisions</span> (<span class="path">db/models.py:317</span>, 1:1 with <code>task_returns</code>) and <span class="path">audit_events</span> (<span class="path">db/models.py:371</span>)</li>
+    <li class="fragment">Results land in <span class="path">task_decisions</span> (<span class="path">db/models.py:344</span>, 1:1 with <code>task_returns</code>) and <span class="path">audit_events</span> (<span class="path">db/models.py:413</span>)</li>
   </ul>
 </section>
 
@@ -294,7 +398,7 @@ sequenceDiagram
   participant DA as decision_applier
   participant DB as DB tables
   EX->>EL: job result
-  EL->>DB: INSERT task_returns (loop.py:2981)
+  EL->>DB: INSERT task_returns (loop.py:3016)
   EL->>RV: claim_unreviewed_task_returns phase -> review_return()
   RV->>RV: adversarial scan + JSON-fence-tolerant parse
   alt output unparseable
@@ -304,7 +408,7 @@ sequenceDiagram
   end
   EL->>DA: apply_decision(decision)
   DA->>DB: INSERT task_decisions + audit_events
-  EL->>EL: reconcile_completed_decisions (loop.py:3031)
+  EL->>EL: reconcile_completed_decisions (loop.py:3066)
     </div>
   </div>
   <p class="cite">Source: src/general_ludd/review/reviewer.py:49, src/general_ludd/review/decision_applier.py:28</p>
@@ -317,10 +421,10 @@ sequenceDiagram
   <div class="stage-kicker">Flagship flow &middot; stage 9 of 9</div>
   <h2><span class="step-number">9</span>Reconcile + commit</h2>
   <ul class="bullets-tight">
-    <li class="fragment"><span class="path">_phase_reconcile_completed_decisions</span> &mdash; <span class="path">event_loop/loop.py:3031</span> &mdash; reads the latest <code>task_decisions</code> and updates todo status</li>
-    <li class="fragment"><span class="path">_try_commit_completed_work</span> &mdash; <span class="path">event_loop/loop.py:3320</span> &mdash; the git-delivery path: the <strong>only</strong> point where a todo's affected files are actually known (worktree changes don't exist before this)</li>
-    <li class="fragment"><span class="path">GitAutomation</span> &mdash; <span class="path">git_automation/repo.py:221</span> &mdash; commits and pushes to a per-todo branch <code>gludd-&lt;todo_id&gt;</code></li>
-    <li class="fragment">Optional PR delivery via <span class="path">PRDelivery</span> &mdash; <span class="path">git_automation/pr_delivery.py</span> &mdash; used from <span class="path">loop.py:3427</span></li>
+    <li class="fragment"><span class="path">_phase_reconcile_completed_decisions</span> &mdash; <span class="path">event_loop/loop.py:3066</span> &mdash; reads the latest <code>task_decisions</code> and updates todo status</li>
+    <li class="fragment"><span class="path">_try_commit_completed_work</span> &mdash; <span class="path">event_loop/loop.py:3355</span> &mdash; the git-delivery path: the <strong>only</strong> point where a todo's affected files are actually known (worktree changes don't exist before this)</li>
+    <li class="fragment"><span class="path">GitAutomation</span> &mdash; <span class="path">git_automation/repo.py:180</span> &mdash; commits and pushes to a per-todo branch <code>gludd-&lt;todo_id&gt;</code></li>
+    <li class="fragment">Optional PR delivery via <span class="path">PRDelivery</span> &mdash; <span class="path">git_automation/pr_delivery.py</span> &mdash; used from <span class="path">EventLoop._maybe_open_pr</span> (<span class="path">loop.py:3448</span>)</li>
   </ul>
   <p class="honest-note">Everything is traceable: what was asked, what was written, what was reviewed, what was committed &mdash; each step is a database row, not a log line.</p>
 </section>
@@ -339,15 +443,15 @@ sequenceDiagram
   <div class="diagram-wrap">
     <div class="mermaid">
 flowchart TD
-  todos[("todos<br/>159")] --> todo_events[("todo_events<br/>253")]
-  todos --> task_returns[("task_returns<br/>279")]
-  task_returns --> task_decisions[("task_decisions<br/>317")]
-  task_decisions --> audit_events[("audit_events<br/>371")]
-  todos --> queues[("queues<br/>346")]
-  todos --> bucket_leases[("bucket_leases<br/>451")]
-  todos --> spend_records[("spend_records<br/>580")]
-  todos --> model_call_logs[("model_call_logs<br/>918")]
-  model_call_logs --> model_performance[("model_performance<br/>961")]
+  todos[("todos<br/>180")] --> todo_events[("todo_events<br/>280")]
+  todos --> task_returns[("task_returns<br/>306")]
+  task_returns --> task_decisions[("task_decisions<br/>344")]
+  task_decisions --> audit_events[("audit_events<br/>413")]
+  todos --> queues[("queues<br/>388")]
+  todos --> bucket_leases[("bucket_leases<br/>495")]
+  todos --> spend_records[("spend_records<br/>633")]
+  todos --> model_call_logs[("model_call_logs<br/>962")]
+  model_call_logs --> model_performance[("model_performance<br/>1005")]
     </div>
   </div>
   <p class="cite">Source: src/general_ludd/db/models.py (27 tables) &middot; alembic/versions/001-024 &middot; tests/unit/test_alembic_orm_parity.py</p>
@@ -361,10 +465,10 @@ flowchart TD
   <table>
     <thead><tr><th>Table</th><th>Line</th><th>What it stores</th></tr></thead>
     <tbody>
-      <tr><td><code>todos</code></td><td>159</td><td>One row per submitted task; state machine BACKLOG &rarr; ... &rarr; done</td></tr>
-      <tr><td><code>todo_events</code></td><td>253</td><td>Status-transition log per todo (FK <code>todos.todo_id</code>, CASCADE)</td></tr>
-      <tr><td><code>task_returns</code></td><td>279</td><td>Raw result of one dispatched job (stage 7 output, unreviewed)</td></tr>
-      <tr><td><code>task_decisions</code></td><td>317</td><td>Reviewer verdict for one <code>task_return</code> (1:1, FK CASCADE)</td></tr>
+      <tr><td><code>todos</code></td><td>180</td><td>One row per submitted task; state machine BACKLOG &rarr; ... &rarr; done</td></tr>
+      <tr><td><code>todo_events</code></td><td>280</td><td>Status-transition log per todo (FK <code>todos.todo_id</code>, CASCADE)</td></tr>
+      <tr><td><code>task_returns</code></td><td>306</td><td>Raw result of one dispatched job (stage 7 output, unreviewed)</td></tr>
+      <tr><td><code>task_decisions</code></td><td>344</td><td>Reviewer verdict for one <code>task_return</code> (1:1, FK CASCADE)</td></tr>
     </tbody>
   </table>
   <p class="cite">Source: src/general_ludd/db/models.py</p>
@@ -378,10 +482,10 @@ flowchart TD
   <table>
     <thead><tr><th>Table</th><th>Line</th><th>What it stores</th></tr></thead>
     <tbody>
-      <tr><td><code>queues</code></td><td>346</td><td>Named queue config: caps, allowed playbooks/models, retry policy</td></tr>
-      <tr><td><code>audit_events</code></td><td>371</td><td>System-wide event log (decisions, leases, spend, more)</td></tr>
-      <tr><td><code>bucket_leases</code></td><td>451</td><td>Exclusive CAS lease per resource bucket (<code>holder_id</code>, <code>expires_at</code>)</td></tr>
-      <tr><td><code>spend_records</code></td><td>580</td><td>One row per spend event for the rolling-window cost limiter</td></tr>
+      <tr><td><code>queues</code></td><td>388</td><td>Named queue config: caps, allowed playbooks/models, retry policy</td></tr>
+      <tr><td><code>audit_events</code></td><td>413</td><td>System-wide event log (decisions, leases, spend, more)</td></tr>
+      <tr><td><code>bucket_leases</code></td><td>495</td><td>Exclusive CAS lease per resource bucket (<code>holder_id</code>, <code>expires_at</code>)</td></tr>
+      <tr><td><code>spend_records</code></td><td>633</td><td>One row per spend event for the rolling-window cost limiter</td></tr>
     </tbody>
   </table>
   <p class="cite">Source: src/general_ludd/db/models.py</p>
@@ -395,11 +499,11 @@ flowchart TD
   <table>
     <thead><tr><th>Table</th><th>Line</th><th>What it stores</th></tr></thead>
     <tbody>
-      <tr><td><code>model_call_logs</code></td><td>918</td><td>Per-LLM-call record: tokens, latency, provider</td></tr>
-      <tr><td><code>model_performance</code></td><td>961</td><td>Aggregated per-model / per-task-type performance stats</td></tr>
-      <tr><td><code>human_todos</code></td><td>813</td><td>Todos awaiting human approval or input</td></tr>
-      <tr><td><code>memory_records</code></td><td>687</td><td>Long-term agent memory entries</td></tr>
-      <tr><td><code>slurm_jobs</code></td><td>1041</td><td>HPC/Slurm job tracking for compute-heavy tasks</td></tr>
+      <tr><td><code>model_call_logs</code></td><td>962</td><td>Per-LLM-call record: tokens, latency, provider</td></tr>
+      <tr><td><code>model_performance</code></td><td>1005</td><td>Aggregated per-model / per-task-type performance stats</td></tr>
+      <tr><td><code>human_todos</code></td><td>857</td><td>Todos awaiting human approval or input</td></tr>
+      <tr><td><code>memory_records</code></td><td>739</td><td>Long-term agent memory entries</td></tr>
+      <tr><td><code>slurm_jobs</code></td><td>1093</td><td>HPC/Slurm job tracking for compute-heavy tasks</td></tr>
     </tbody>
   </table>
   <p class="cite">Source: src/general_ludd/db/models.py</p>
@@ -483,7 +587,7 @@ graph TD
 <!-- SLIDE 22: WHAT GLUDD CAN DO TODAY -->
 <!-- ============================================================ -->
 <section>
-  <h2>What gludd can do today</h2>
+  <h2>What gludd can do today (1 of 2)</h2>
   <p>Here's what the agent handles, right now:</p>
   <ul>
     <li class="fragment"><strong>Write code</strong> &mdash; new features, bug fixes, refactors</li>
@@ -491,6 +595,15 @@ graph TD
     <li class="fragment"><strong>Review code</strong> &mdash; a separate AI checks every change (stage 8)</li>
     <li class="fragment"><strong>Run quality gates</strong> &mdash; lint, typecheck, tests, security scans</li>
     <li class="fragment"><strong>Commit to git</strong> &mdash; with full audit trails (stage 9)</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 22b: WHAT GLUDD CAN DO TODAY (2 of 2) -->
+<!-- ============================================================ -->
+<section>
+  <h2>What gludd can do today (2 of 2)</h2>
+  <ul>
     <li class="fragment"><strong>Manage sprints</strong> &mdash; backlog grooming, sprint planning, retrospectives</li>
     <li class="fragment"><strong>Security audits</strong> &mdash; threat modeling, secret scanning, supply chain checks</li>
     <li class="fragment"><strong>Build complete apps</strong> &mdash; built 12 games from scratch, autonomously</li>
@@ -506,7 +619,7 @@ graph TD
 <section>
   <h2>What gludd can't do yet</h2>
   <p style="color:#da3633;">Honest gaps &mdash; we won't oversell.</p>
-  <ul>
+  <ul class="bullets-tight">
     <li><span class="badge-red">GAP</span> <strong>No UI</strong> &mdash; gludd is command-line only, no graphical interface</li>
     <li><span class="badge-red">GAP</span> <strong>Single-worker</strong> &mdash; one task at a time, no parallel execution across machines</li>
     <li><span class="badge-red">GAP</span> <strong>SQLite only</strong> &mdash; no PostgreSQL, no horizontal scaling</li>
@@ -543,7 +656,7 @@ make init</code></pre>
       <pre><code class="language-bash">uv run gludd todo add "Write a unit test for the login endpoint"</code></pre>
     </li>
   </ol>
-  <p style="margin-top:16px;">That's it. gludd picks up the task and runs the nine-stage flow from slide 5.</p>
+  <p style="margin-top:16px;">That's it. gludd picks up the task and runs the nine-stage flagship flow shown earlier.</p>
   <p class="cite">Full guide: <code>README.md</code> &middot; Prerequisites: Python 3.11+, uv, an API key for one model provider</p>
 </section>
 
@@ -551,7 +664,7 @@ make init</code></pre>
 <!-- SLIDE 25: ROADMAP -->
 <!-- ============================================================ -->
 <section>
-  <h2>What's next</h2>
+  <h2>What's next (1 of 2)</h2>
   <p><strong>Near term:</strong></p>
   <ul>
     <li>Green CI on GitHub Actions (close the local-vs-CI gap)</li>
@@ -566,7 +679,14 @@ make init</code></pre>
     <li>Multi-worker support &mdash; parallel task execution</li>
     <li>PostgreSQL support &mdash; horizontal scaling</li>
   </ul>
-  <p style="margin-top:16px;"><strong>Long term:</strong></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 25b: ROADMAP (2 of 2) -->
+<!-- ============================================================ -->
+<section>
+  <h2>What's next (2 of 2)</h2>
+  <p><strong>Long term:</strong></p>
   <ul>
     <li>Fleet mode &mdash; multiple agents, shared work queue</li>
     <li>Sandboxed execution &mdash; safe running of untrusted code</li>
@@ -638,16 +758,20 @@ make init</code></pre>
 <!-- ============================================================ -->
 <section>
   <h2>Links &amp; resources</h2>
-  <ul>
-    <li><strong>Source code</strong><br><a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a></li>
-    <li><strong>This presentation (live URL)</strong><br><a href="https://sandboxcom.github.io/gludd/">sandboxcom.github.io/gludd</a> &mdash; deployed by <code>.github/workflows/pages.yml</code></li>
-    <li><strong>This presentation (always-works fallback)</strong><br><code>docs/presentation/deck/index.html</code>, open directly or via <code>make deck-serve</code></li>
-    <li><strong>Quick start guide</strong><br>See <code>README.md</code> in the repo</li>
-    <li><strong>Code-path deep-dive</strong><br>Slides 5&ndash;19 of this deck: the 9-stage flow and 27-table schema</li>
-    <li><strong>Security audit</strong><br>See <code>docs/audit/</code> in the repo</li>
-    <li><strong>Full feature list</strong><br>Run <code>make gen-status-table</code> after cloning</li>
-    <li><strong>License</strong><br>MIT &mdash; free to use, modify, and distribute</li>
-  </ul>
+  <div class="two-col">
+    <ul>
+      <li><strong>Source code</strong><br><a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a></li>
+      <li><strong>This presentation (live URL)</strong><br><a href="https://sandboxcom.github.io/gludd/">sandboxcom.github.io/gludd</a> &mdash; deployed by <code>.github/workflows/pages.yml</code></li>
+      <li><strong>This presentation (always-works fallback)</strong><br><code>docs/presentation/deck/index.html</code>, open directly or via <code>make deck-serve</code></li>
+      <li><strong>Quick start guide</strong><br>See <code>README.md</code> in the repo</li>
+    </ul>
+    <ul>
+      <li><strong>Code-path deep-dive</strong><br>The flagship-flow and schema slides of this deck: the 9-stage flow and 27-table schema</li>
+      <li><strong>Security audit</strong><br>See <code>docs/audit/</code> in the repo</li>
+      <li><strong>Full feature list</strong><br>Run <code>make gen-status-table</code> after cloning</li>
+      <li><strong>License</strong><br>MIT &mdash; free to use, modify, and distribute</li>
+    </ul>
+  </div>
 </section>
 
 <!-- ============================================================ -->
@@ -683,6 +807,11 @@ make init</code></pre>
 Reveal.initialize({
   hash: true,
   center: true,
+  width: 1150,
+  height: 820,
+  margin: 0.045,
+  minScale: 0.2,
+  maxScale: 1.8,
   transition: 'slide',
   transitionSpeed: 'default',
   backgroundTransition: 'fade',
