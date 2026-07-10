@@ -110,11 +110,18 @@ def _isolate_root_logger():
     """Snapshot and restore the ENTIRE logging state around every test.
 
     Prevents caplog pollution: tests that mutate any logger's level,
-    propagate flag, or handler list (without restoring) leak into sibling
-    tests on the same xdist worker. The root-only snapshot was insufficient
-    because named child loggers (``general_ludd.secrets.migration``,
-    ``general_ludd.models.model_registry``, etc.) carry their own state that
-    doesn't reset when root is restored.
+    propagate flag, handler list, or ``disabled`` flag (without restoring)
+    leak into sibling tests on the same xdist worker. The root-only snapshot
+    was insufficient because named child loggers
+    (``general_ludd.secrets.migration``, ``general_ludd.models.model_registry``,
+    etc.) carry their own state that doesn't reset when root is restored.
+
+    Also guards against ``logging.config.fileConfig()`` (default
+    ``disable_existing_loggers=True``, e.g. ``alembic/env.py`` and
+    ``tests/unit/test_alembic_config.py``): it sets ``.disabled = True`` on
+    every already-imported logger for the rest of the process. Snapshotting
+    only (level, propagate, handlers) does not undo that -- ``.disabled``
+    must be captured and restored too.
 
     Implements the durable fix from
     ``docs/audit/CI_GREEN_PLAN_2026-07-01.md`` Appendix A6: snapshot the
@@ -122,32 +129,38 @@ def _isolate_root_logger():
     ``logging.Logger.manager.loggerDict`` (skipping ``PlaceHolder`` entries),
     and the global ``logging.disable`` level at test entry; restore them
     wholesale at exit. Loggers created *during* the test are reset to
-    defaults (``NOTSET`` level, ``propagate=True``, no handlers) so they
-    cannot pollute later tests either.
+    defaults (``NOTSET`` level, ``propagate=True``, no handlers,
+    ``disabled=False``) so they cannot pollute later tests either.
     """
     root = logging.getLogger()
-    snap_root = (root.level, root.propagate, list(root.handlers))
+    snap_root = (root.level, root.propagate, list(root.handlers), root.disabled)
 
     manager = logging.Logger.manager
     logger_dict = manager.loggerDict
-    snap_named: dict[str, tuple[int, bool, list[logging.Handler]]] = {}
+    snap_named: dict[str, tuple[int, bool, list[logging.Handler], bool]] = {}
     for name, logger in logger_dict.items():
         if isinstance(logger, logging.PlaceHolder):
             continue
-        snap_named[name] = (logger.level, logger.propagate, list(logger.handlers))
+        snap_named[name] = (
+            logger.level,
+            logger.propagate,
+            list(logger.handlers),
+            logger.disabled,
+        )
 
     snap_disable = manager.disable if hasattr(manager, "disable") else 0
 
     yield
 
-    root.level, root.propagate, root.handlers[:] = snap_root
+    root.level, root.propagate, root.handlers[:], root.disabled = snap_root
 
-    for name, (level, propagate, handlers) in snap_named.items():
+    for name, (level, propagate, handlers, disabled) in snap_named.items():
         logger = logger_dict.get(name)
         if isinstance(logger, logging.Logger):
             logger.level = level
             logger.propagate = propagate
             logger.handlers[:] = handlers
+            logger.disabled = disabled
 
     if hasattr(manager, "disable"):
         manager.disable = snap_disable
@@ -158,6 +171,7 @@ def _isolate_root_logger():
             new_logger.level = logging.NOTSET
             new_logger.propagate = True
             new_logger.handlers.clear()
+            new_logger.disabled = False
 
 
 @pytest.fixture(autouse=True)

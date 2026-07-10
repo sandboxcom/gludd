@@ -12,7 +12,13 @@ _INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 def test_alembic_ini_fileconfig_parses() -> None:
     assert _INI.exists(), _INI
-    fileConfig(str(_INI))  # must not raise KeyError: 'formatters'
+    # disable_existing_loggers=False: pytest's default (True) would set
+    # .disabled=True on every already-imported general_ludd.* logger for the
+    # rest of the xdist worker process. This test only needs to prove the
+    # ini's [loggers]/[handlers]/[formatters] sections parse without raising
+    # KeyError: 'formatters' -- it does not need (or want) the side effect of
+    # disabling every other logger in the process.
+    fileConfig(str(_INI), disable_existing_loggers=False)
 
 
 def test_alembic_config_has_script_location() -> None:
