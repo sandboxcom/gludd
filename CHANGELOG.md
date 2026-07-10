@@ -97,6 +97,46 @@ All notable changes to this project are documented here. Format follows [Keep a 
   `todos (status, priority, created_at)` composite index for the event-loop
   tick hot paths (`97db7cc1`).
 
+### Fixed (2026-07-10, post-push wave)
+
+- Auto-remediation (#52) is now driven by the event loop: a new tick phase
+  `_phase_remediate_blocked_tasks` (previously remediation ran only from HTTP
+  requests, never autonomously) scans blocked todos on an interval
+  (`remediation_check_interval_ticks`, default 30; `<=0` disables), caps actions
+  per tick, and skips todos already acted on within their retry cooldown via
+  `RemediationActionRepository.exists_recent`. Also fixed `daemon_state` never
+  carrying a populated `remediation_config` so `/admin/remediation/*` and the
+  tick phase now share operator config from `UserConfig.remediation` (`86781754`).
+- `PauseController` persists to the durable store BEFORE mutating in-RAM state
+  (was mutate-then-persist, so a failed write diverged RAM from disk);
+  `is_paused()` is lock-free over rebound `frozenset`s (D7.1) (`86781754`).
+- `FileClaimRegistry` claims carry a 900s TTL and are reaped — a crashed worker's
+  unreleased claim no longer poisons overlapping file paths (#53) (`86781754`).
+- `gludd payment` CLI: vault errors exit cleanly instead of a traceback; unknown
+  last4 renders `"????"` not `"0000"`; empty `--card-number`/`--cvc` rejected;
+  help documents flag PAN exposure (`86781754`).
+- `tests/unit/test_routers_registration.py` `EXPECTED_ROUTES` gained the `eval`
+  and `remediation` rows — the sole `unit-3` CI failure on `0618b39c` (`86781754`).
+
+### Changed (2026-07-10, post-push wave)
+
+- `security/security_backlog.py` rewritten from an all-pass stub into a truthful
+  static gate (`make security-backlog-gate`: 3 LANDED-VERIFIED probes, 21 honest
+  OPEN); 58 vestigial `pytest.skip` guards removed across 11 test files (`86781754`).
+- `docs/CONFIG_REFERENCE.md` default routing profile corrected `zai_coder` →
+  `deepseek_coder`; `docs/AGENTIC_IMPLEMENTATION_SPEC.md` 70 items annotated (`86781754`).
+
+### Added (2026-07-10, post-push wave)
+
+- Hook-liveness harness (`scripts/hook_plugin_harness.mjs` + `_hook_fixtures.py`)
+  invoking `.opencode/plugin/*.ts` hooks via `node --experimental-strip-types`;
+  agent-liveness counting repair (`scripts/agent_liveness.py`: activity-mtime
+  session ranking, per-tasks-dir cache, windowed workflow glob;
+  `force_delegate_pretool.sh` streak reset on floor + 10-min decay);
+  `SpendLimiter` flush-watermark API (SPD-1); `tests/unit/test_tool_loop_guards.py`
+  (5 guard branches); unit suites for renderers/cache, event_loop/benchmark,
+  runtime/release_orchestrator (28 tests) (`86781754`, `43bcde41`).
+
 ## [0.1.0-beta.2] — 2026-07-06
 
 Beta 2: GPU/compute provider expansion, typing hardening, and guardrail codification.
