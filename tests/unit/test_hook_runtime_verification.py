@@ -391,7 +391,10 @@ class TestEnforceStopTextComplete:
     STATE_FILE = "/tmp/gludd-stop-text-complete-count.json"
 
     def test_text_complete_count_increments_across_two_calls(self, hook_plugin_env: HookEnv):
-        invoke_text_complete_and_confirm_increment(hook_plugin_env, "enforce-stop.ts", hook_plugin_env.env["GLUDD_STOP_TEXT_COMPLETE_COUNT"])
+        invoke_text_complete_and_confirm_increment(
+            hook_plugin_env, "enforce-stop.ts",
+            hook_plugin_env.env["GLUDD_STOP_TEXT_COMPLETE_COUNT"],
+        )
 
 
 class TestEnforceFloorTextComplete:
@@ -402,7 +405,10 @@ class TestEnforceFloorTextComplete:
     STATE_FILE = "/tmp/gludd-floor-text-complete-count.json"
 
     def test_floor_text_complete_count_increments_across_two_calls(self, hook_plugin_env: HookEnv):
-        invoke_text_complete_and_confirm_increment(hook_plugin_env, "enforce-floor.ts", hook_plugin_env.env["GLUDD_FLOOR_TEXT_COMPLETE_COUNT"])
+        invoke_text_complete_and_confirm_increment(
+            hook_plugin_env, "enforce-floor.ts",
+            hook_plugin_env.env["GLUDD_FLOOR_TEXT_COMPLETE_COUNT"],
+        )
 
 
 # ── Test 9: enforce-stop.ts writes tool-counts file via tool.execute.before ─
