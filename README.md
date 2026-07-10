@@ -63,9 +63,10 @@ may only shrink). The gate passes only when `make test` exits 0.
 
 **Status as of v0.1.0-beta.2 — 2026-07-06**
 
-Version: `v0.1.0-beta.2` — prereleases are built automatically on every push to master and
-published as GitHub Releases with timestamped artifacts for Linux (x86_64), macOS (arm64),
-and Windows (x86_64).
+Version: `v0.1.0-beta.2` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
+more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
+when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is gated on
+`startsWith(github.ref, 'refs/tags/v')`).
 
 ---
 
@@ -235,7 +236,7 @@ make dogfood     # runs the event loop on the gludd repo itself
     ┌────────┼────────────────────┐
     ▼        ▼                    ▼
   gludd_*  Roles               Model
-  modules  (~34)               Gateway
+  modules  (109)               Gateway
              │                    │
              ▼                    ▼
       ┌─────────────────────────────────┐
@@ -286,25 +287,30 @@ runs a **single gunicorn worker**. `--workers` defaults to 1, and any `--workers
 ### Multi-Model Routing
 
 The model router selects which AI model to use based on role, quality requirement, latency
-budget, or work pattern. The shipped config routes to `zai_coder` (Z.AI GLM) with a fallback
-chain to `deepseek_coder` and `qwen_coder`.
+budget, or work pattern. The shipped config (`config/model_routing.yml`) routes to
+`deepseek_coder` by default, with a fallback chain to `qwen_coder` then `zai_coder`.
 
 Supported providers (alphabetical) — each is configured via its environment variable.
 Keys are resolved from OpenBao or the environment; they are never stored in profile YAML.
 
 | Provider | Env var |
 |---|---|
+| AI21 | `AI21_API_KEY` |
 | Anthropic | `ANTHROPIC_API_KEY` |
+| Azure AI Foundry | `AZURE_AI_API_KEY` |
 | Baseten | `BASETEN_API_KEY` |
+| Cloudflare | `CLOUDFLARE_API_TOKEN` |
 | Cohere | `CO_API_KEY` |
 | CoreWeave | `COREWEAVE_API_KEY` |
+| Databricks | `DATABRICKS_TOKEN` |
 | DeepSeek | `DEEPSEEK_API_KEY` |
 | Fireworks AI | `FIREWORKS_API_KEY` |
+| Google | `GOOGLE_API_KEY` |
 | Groq | `GROQ_API_KEY` |
 | Hugging Face | `HF_TOKEN` |
 | Lambda Labs | `LAMBDALABS_API_KEY` |
-| Modal | `MODAL_API_TOKEN` |
 | Mistral AI | `MISTRAL_API_KEY` |
+| Modal | `MODAL_API_TOKEN` |
 | NVIDIA NIM | `NVIDIA_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
 | OpenRouter | `OPENROUTER_API_KEY` |
@@ -337,7 +343,11 @@ To add support for a new model or compute provider:
 All task execution happens through the `general_ludd.agent` Ansible collection. Install it
 via the collection path (`collections/ansible_collections/general_ludd/agent/`).
 
-### Modules
+### Modules (36 total — 12 core modules shown below)
+
+The collection ships 36 modules total (`make collection-modules`); the table below covers
+the 12 core ones — the full set lives in
+`collections/ansible_collections/general_ludd/agent/plugins/modules/`.
 
 | Module | Purpose |
 |---|---|
@@ -488,14 +498,32 @@ Available profiles:
 ### Model Routing (`config/model_routing.yml`)
 
 ```yaml
-default_profile: zai_coder
+default_profile: deepseek_coder
+weak_model_profile: deepseek_coder
+
 fallback_chain:
-  - deepseek_coder
   - qwen_coder
+  - zai_coder
+
 role_routing:
-  coder: zai_coder
-  planner: zai_coder
-  reviewer: zai_coder
+  coder: deepseek_coder
+  planner: deepseek_coder
+  reviewer: deepseek_coder
+  fast: deepseek_coder
+
+quality_routing:
+  high: deepseek_coder
+  medium: deepseek_coder
+
+latency_routing:
+  fast: deepseek_coder
+
+pattern_routing:
+  return_review: reviewer
+  commit_message: weak
+  gap_analysis: fast
+  code_generation: coder
+  planning: planner
 ```
 
 ### Secrets (OpenBao)
@@ -527,23 +555,17 @@ gludd login github                   # OAuth2 + PKCE flow (requires OAuth app)
 
 ### Supported Services
 
+`gludd login` currently wires 7 services (`SERVICE_PRESETS` in
+`src/general_ludd/auth/browser_login.py`):
+
 | Service     | Command               | Auth method   | Credential env var      |
 |-------------|-----------------------|---------------|--------------------------|
 | Anthropic   | `gludd login anthropic`  | API key       | `ANTHROPIC_API_KEY`       |
-| Baseten     | `gludd login baseten`    | API key       | `BASETEN_API_KEY`         |
-| CoreWeave   | `gludd login coreweave`  | API key       | `COREWEAVE_API_KEY`       |
 | DeepSeek    | `gludd login deepseek`   | API key       | `DEEPSEEK_API_KEY`        |
-| Fireworks AI| `gludd login fireworks`  | API key       | `FIREWORKS_API_KEY`       |
 | GitHub      | `gludd login github`     | OAuth2 + PKCE | `GITHUB_TOKEN`            |
 | Google      | `gludd login gemini`     | OAuth2 + PKCE | `GOOGLE_API_KEY`          |
-| Groq        | `gludd login groq`       | API key       | `GROQ_API_KEY`            |
-| Lambda Labs | `gludd login lambdalabs` | API key       | `LAMBDALABS_API_KEY`      |
-| Modal       | `gludd login modal`      | API key       | `MODAL_API_TOKEN`         |
 | OpenAI      | `gludd login openai`     | API key       | `OPENAI_API_KEY`          |
 | OpenRouter  | `gludd login openrouter` | API key       | `OPENROUTER_API_KEY`      |
-| Replicate   | `gludd login replicate`  | API key       | `REPLICATE_API_TOKEN`     |
-| RunPod      | `gludd login runpod`     | API key       | `RUNPOD_API_KEY`          |
-| Together AI | `gludd login together`   | API key       | `TOGETHER_API_KEY`        |
 | Z.AI        | `gludd login zai`        | API key       | `ZAI_API_KEY`             |
 
 Credentials are stored in `~/.config/gludd/credentials.env` (permissions 600).
@@ -610,6 +632,8 @@ The redirect server binds **only** on loopback (127.0.0.1) — it is never reach
 
 ## Contributing
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
+
 Pull requests are welcome. Please follow these guidelines:
 
 ### PR Requirements
@@ -650,6 +674,8 @@ make test-count     # 0 collection errors
 ```
 
 ## Configuration Reference
+
+See [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for the full reference. Quick index:
 
 | File | Purpose |
 |------|---------|
