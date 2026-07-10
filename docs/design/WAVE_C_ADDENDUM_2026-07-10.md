@@ -216,3 +216,68 @@ document this as an intentional behavior change (stringified numerics no longer
 accepted) so it isn't discovered as a regression later. Confirmed non-issues, no design
 change needed: `jsonschema>=4.21` IS a hard dep (`pyproject.toml:44`); the empty-dict
 schema skip is safe since `MCPTool.input_schema` defaults to `{}` and is never `None`.
+
+### C-ENGINE async-execute migration corrections
+**Design being corrected:** C-ENGINE's migration of the 19 test call sites from
+`execute()` to `execute_async()`/`asyncio.run(...)`, and its shutdown-hook claim.
+
+1. **asyncio.run() migration hazard — 3 of 19 sites are already inside a running loop.**
+   `asyncio.run()` raises `RuntimeError: asyncio.run() cannot be called from a running
+   event loop` when called from within one. Three call sites are already inside a
+   running loop and must instead use plain `await engine.execute_async(job)`:
+   - `tests/integration/test_full_pipeline_e2e.py:144` (inside `async def
+     patched_dispatch`)
+   - `tests/e2e/test_daemon_game_building.py:759` (inside a `@pytest.mark.asyncio`
+     async test)
+   - `tests/e2e/test_daemon_game_building.py:985` (inside a `@pytest.mark.asyncio`
+     async test)
+   The other 16 sites are plain `def test_...` functions and are fine wrapped in
+   `asyncio.run(engine.execute_async(job))`. **Fix:** case-split the 19-site migration
+   list into these 3 (await-only, no asyncio.run) vs. the other 16 (asyncio.run).
+
+2. **`test_pg6_deferred_commit.py` spy defeats the await (false-confidence guard).**
+   `_spy_defer` (`tests/.../test_pg6_deferred_commit.py:195-201`) has no return
+   statement. Item 16 requires `defer_commit` to RETURN the `asyncio.Task` so
+   `execute_async` can `await task`. Under this spy, `task=None`, so `await None`
+   raises `TypeError` — which item 16's `contextlib.suppress` then swallows. The test
+   stays green, but the new await-before-return ordering is never actually exercised.
+   **Fix:** the spy must `return original_defer(...)`'s task (not swallow/discard it),
+   so the await path is genuinely covered.
+
+3. **Items 3 and 16 must land as ONE batch — explicit sequencing requirement.**
+   `tests/unit/test_execution_git_delivery.py::test_commit_message_includes_todo_info`
+   (lines 123-141) calls `execute()` then immediately reads git log expecting the
+   commit to have already landed. Once migrated (item 3) to
+   `asyncio.run(execute_async(...))`, this only passes if item 16's
+   await-commit-before-return change is *already in place* — otherwise
+   `asyncio.run()` cancels the pending background commit task at loop teardown and
+   the git-log read races an unlanded commit. **Requirement: item 16 (await-commit
+   ordering fix) must land in the same commit/batch as item 3's test migration, not
+   as separate follow-on PRs** — landing 3 without 16 first (or in the same batch)
+   reintroduces a flaky/failing test.
+
+4. **`_drain_background_tasks` shutdown wiring is a trivial, precisely-locatable
+   one-liner — NOT a missing capability.** Correction to the design's claim that "the
+   daemon has no shutdown hook": `daemon.py` `_lifespan`'s `finally` block
+   (`daemon.py:2050-2159`) already drains ~12 other components via the same
+   suppress-and-await idiom, immediately adjacent to `engine.dispose()`
+   (`daemon.py:2141-2142`). The `ExecutionEngine` instance (`execution_engine`,
+   constructed at `daemon.py:883`, referenced `daemon.py:1274-1281`) is already in
+   scope at that point in `_lifespan` but is simply not drained there. **Fix is a
+   one-line insertion** immediately alongside the existing drain calls:
+   ```python
+   if execution_engine is not None:
+       with contextlib.suppress(Exception):
+           await execution_engine.shutdown()
+   ```
+   The design doc must be corrected to say "one-line wiring gap next to the existing
+   drain idiom," not "no shutdown hook exists."
+
+**Reconciliation with the cross-cutting fix-loop decision (this doc, lines ~94-101):**
+C-ENGINE items 15/16 and the unified P-4/P-5 in-engine fix-loop both rewrite the same
+`execution/engine.py` region (~486-561). These are NOT independent and must not be
+designed/landed against stale line numbers of each other. **Recommend C-ENGINE lands
+first** (its target, `execute()`, is dead code per the Already-Fixed note above, so its
+diff is lower-risk and unblocks the async-execute migration sooner); the fix-loop
+unification must then be designed against a fresh Read of the post-C-ENGINE
+`engine.py`, the same discipline already required for C-GATEWAY→C-BUDGET above.
