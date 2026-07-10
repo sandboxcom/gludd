@@ -126,19 +126,43 @@ These are product-level items (fold into Wave C/D + Wave P), not just process:
 
 # Part 2 — Coding-Assistant Parity: Wave P (opencode / aider / goose)
 
-**Goal:** by spec completion, a developer can point gludd at *any* repo and get an
-experience at least as capable as aider/opencode/goose. Today gludd is architected as
-an autonomous SDLC *daemon for its own repo* (make-only toolchain, ruff/mypy/pytest
-hardcoded); the parity gaps below are what separate that from a general coding
-assistant. Each item says **verify-first** where gludd may already have a partial
-implementation — an implementer must confirm against source (grep/read) before
-building, and mark FIXED items into the spec's Already-Done list instead of rebuilding.
+**Goal:** by spec completion, gludd is *at least as useful* as aider/opencode/goose on
+*any* repo — matched on **capability** (runs any project's real toolchain, ranked
+retrieval, robust edits, multi-model), delivered through gludd's **autonomous** model,
+and **exceeding** them via native parallel multi-agent execution. Parity is about what
+gludd can *accomplish*, NOT about copying their interactive pair-programmer UX.
+
+## 2.0 Interaction model (ARCHITECTURAL CONSTRAINT — 2026-07-10 user directive)
+
+gludd is an **autonomous agent, not an interactive assistant.** This is a deliberate
+differentiator from aider/opencode/goose (all interactive REPL/chat tools), and it
+governs all of Wave P:
+
+- **Normal use is NON-interactive.** A user submits work (a task/todo against a repo);
+  the agent plans, edits, tests, and lands it autonomously to completion. There is no
+  turn-by-turn chat/REPL, no per-edit accept/reject prompt in the normal path.
+- **The ONLY interactive component is the TUI** (`general_ludd.cli tui` →
+  `tui/runner.py`) — an operator monitoring dashboard. Do NOT build a second
+  interactive surface (no `gludd code` REPL).
+- **Human-in-the-loop = the human-notification facility.** When the agent hits an issue
+  it cannot resolve on its own (a decision/approval/input required before certain
+  processes can continue), it surfaces a **notification/blocker**. The operator resolves
+  it through **`list` + `update` commands** — NOT an interactive session. This facility
+  already exists in pieces (`cli_human_todos.py`, `routers/human_todos.py`, the
+  self-improve approval flow `routers/self_improve.py`) and Wave P's job is to
+  consolidate/improve it into a clean, discoverable `notifications list` +
+  `notifications resolve/approve/reject/answer` command surface, so an operator can see
+  every pending blocker and unblock the autonomous run.
+
+So "as useful as aider/opencode/goose" is achieved by capability parity under this
+autonomous model — the interactive coding surface those tools center on is explicitly
+**out of scope** for gludd.
 
 ## 2.1 What each tool is good at (parity target)
 
 | Capability | aider | opencode | goose | gludd today |
 |---|---|---|---|---|
-| Interactive human-in-the-loop coding session (chat/TUI on any repo) | ✅ chat | ✅ TUI | ✅ CLI+desktop | ⚠️ TUI is daemon-monitoring, not pair-coding |
+| Human-in-the-loop model | ✅ interactive chat | ✅ interactive TUI | ✅ interactive CLI | **autonomous by design** — TUI (monitor) + notification list/update for blockers; interactive REPL intentionally OUT OF SCOPE |
 | Point-at-ANY project (any language/toolchain) | ✅ | ✅ | ✅ | ❌ make-only + hardcoded ruff/mypy/pytest |
 | Repo map / ranked context retrieval | ✅ tree-sitter repo map | via LSP+grep | via extensions | ⚠️ has retrieval (G3) — verify it's a general repo map |
 | Reliable multi-format edit application + repair | ✅ diff/SR/whole + reflection | ✅ patch/edit | ✅ | ⚠️ engine applies edits — verify formats + malformed-edit repair |
@@ -154,8 +178,11 @@ building, and mark FIXED items into the spec's Already-Done list instead of rebu
 
 **gludd already meets or exceeds** the parity bar on: model routing, MCP
 extensibility, autonomous orchestration + scheduler, budget/cost controls, session
-hibernation, guardrails/security. **The gaps are the interactive coding surface and
-general-project support** — that is where Wave P concentrates.
+hibernation, guardrails/security. **The real gaps are capability items**
+(general-project toolchain, ranked retrieval, robust edit-apply/repair, LSP) — NOT an
+interactive surface. The human-interaction surface stays the TUI + the
+notification list/update facility (§2.0), which Wave P consolidates rather than
+replacing with a REPL.
 
 ## 2.2 Wave P work items (priority-ordered)
 
@@ -172,16 +199,30 @@ and the lint/typecheck steps; `projects/manager.py` already resolves repo identi
 repo; a project config can override detection. *(This is the MVP keystone already
 flagged in project memory.)*
 
-**P-2 — Interactive coding session (`gludd code`).** *Why:* aider/opencode/goose are
-fundamentally interactive; gludd's UX is daemon+API+monitoring TUI. *What:* an
-interactive REPL/TUI command that opens a coding session against the cwd repo:
-free-form instructions → plan → edits → run tests → show diff → commit, with
-`/add /drop /run /undo /diff /model /architect` controls. *Where:* extend
-`general_ludd.cli` (there is an existing `tui` — verify-first whether it can host a
-coding mode or a new `code` subcommand is cleaner); reuse the tool-loop + execution
-engine + router; drive the human-in-the-loop review gate that already exists.
-*Acceptance:* a user can `gludd code`, ask for a change, review the diff, accept/reject,
-and have it committed — no daemon required.
+**P-2 — Non-interactive autonomous coding entrypoint + human-notification facility**
+(NOT a REPL — see §2.0). Two parts:
+
+*P-2a — autonomous task entrypoint.* *Why:* a user must be able to point gludd at any
+repo and hand it work that runs to completion autonomously. *What:* a submit-and-go
+command (e.g. `gludd run "<task>" [--repo <path>]`, or the existing `/api/todos` +
+`gludd add`) that creates a task the daemon/engine executes autonomously — plan → edit
+(P-4) → run project tests (P-1) → commit — with NO turn-by-turn interaction. Reuse the
+engine/tool-loop/router; the retrieval (P-3) and toolchain (P-1) feed it. *Acceptance:*
+`gludd run "<task>"` in any repo lands a tested, committed change with no interactive
+prompts; progress is observable via the TUI.
+
+*P-2b — human-notification facility (list + update).* *Why:* the autonomous run must be
+able to pause on a blocker it cannot resolve (ambiguous requirement, missing secret,
+approval-gated self-modification, failing gate needing a human call) and let an operator
+resolve it non-interactively. *What:* consolidate the existing pieces
+(`cli_human_todos.py`, `routers/human_todos.py`, self-improve approvals in
+`routers/self_improve.py`) into a clean command surface: `gludd notifications list`
+(every pending blocker the agent is waiting on, with id/reason/what-it-blocks) and
+`gludd notifications resolve --id <id> --decision approve|reject|answer [--value ...]`.
+No interactive session — a list you read and update commands you issue. *Acceptance:* an
+agent that blocks appears in `notifications list`; issuing `resolve` unblocks the
+autonomous run; nothing requires an attached terminal session.
+*(Design detail in the redirected P-2 agent deliverable.)*
 
 **P-3 — Repo map / ranked context retrieval (verify-first).** *Why:* aider's
 tree-sitter repo map is its key advantage on large/unfamiliar codebases. *What:* a
@@ -209,12 +250,14 @@ surfaces diagnostics after an edit and feeds errors back into the fix loop.
 server). *Acceptance:* after an edit that breaks types, the LSP diagnostic drives an
 auto-fix iteration.
 
-**P-6 — Per-edit commit + undo UX (verify-first).** *Why:* aider commits each change
-with a good message and one-command undo. *Verify-first:* `git_automation` already
-does commits — confirm per-edit granularity + a user-facing `undo`. *What:* commit each
-accepted edit with a generated message tied to the instruction; `gludd code`'s `/undo`
-reverts the last edit-commit. *Acceptance:* every accepted change is its own revertable
-commit with a meaningful message.
+**P-6 — Autonomous per-task commit + a rollback command (verify-first).** *Why:* an
+autonomous run should land each task as its own well-described, revertable commit, and
+an operator must be able to roll a task back non-interactively (no REPL `/undo`). *What:*
+keep the existing per-task auto-commit with a generated message (`engine.py:687-695`);
+add a non-interactive `gludd rollback --task <id>` (or `--commit <sha>`) that reverts a
+landed task's commit. *Acceptance:* every autonomous task is its own revertable commit
+with a meaningful message, and an operator can roll one back with a single command — no
+attached session.
 
 **P-7 — Watch mode.** *Why:* aider `--watch` reacts to `# ai:`-style comments / file
 changes. *What:* a file-watcher that triggers a coding action from an in-code
@@ -249,11 +292,15 @@ just match it.
 ## 2.4 Definition of "at least as useful as opencode/aider/goose"
 
 The release meets the bar when, on an arbitrary external repo, gludd can: (1) run that
-project's real tests/lint (P-1); (2) hold an interactive coding session that plans,
-edits, tests, shows a diff, and commits with undo (P-2/P-4/P-6); (3) select context via
-a repo map (P-3); (4) surface LSP diagnostics into the fix loop (P-5); (5) do all of the
-above across multiple providers/local models (already ✅); and (6) additionally fan work
-across parallel agents (P-9) — a capability none of the three has natively.
+project's real tests/lint (P-1); (2) take a task and **autonomously** plan → edit →
+test → land it as a revertable commit, pausing on blockers surfaced through the
+notification list/update facility (P-2) — no interactive session required; (3) apply
+edits robustly with a repair loop (P-4); (4) select context via a ranked repo map (P-3);
+(5) surface LSP diagnostics into the fix loop (P-5); (6) do all of the above across
+multiple providers/local models (already ✅); and (7) additionally fan work across
+parallel agents (P-9) — a capability none of the three has natively. Usefulness is
+matched on *capability*, delivered autonomously; the interactive UX those tools center
+on is intentionally not replicated.
 
 ---
 
@@ -299,6 +346,7 @@ across parallel agents (P-9) — a capability none of the three has natively.
   through the CLI.
 
 **Wave P re-scoping from these results:** the scheduler backend (P-8 core) is done;
-everything else is new. Highest-leverage new work = **P-2 interactive `gludd code`
-session** + **P-4 edit-repair loop** + **P-3 indexer wiring**, all on top of the
-keystone **P-1 toolchain runner**. P-6 undo/commit rides P-2. P-9 composes them.
+everything else is new. Highest-leverage new work = **P-2 autonomous task entrypoint +
+notification list/update facility** (§2.0 — NOT a REPL) + **P-4 edit-repair loop** +
+**P-3 indexer wiring**, all on top of the keystone **P-1 toolchain runner**. P-6 is
+autonomous per-task commit + a non-interactive `rollback` command. P-9 composes them.
