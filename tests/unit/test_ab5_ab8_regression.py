@@ -183,8 +183,10 @@ class TestAB5ToolLoopToThread:
 
         # If the loop were blocked, the probe could not finish until the model
         # call returned, so its measured elapsed time would be >= delay. On a
-        # properly offloaded loop it finishes near-instantly (< delay).
-        assert probe_elapsed < delay, (
+        # properly offloaded loop it finishes near-instantly -- well under
+        # half of delay, which is more robust to xdist scheduling jitter than
+        # the raw `< delay` bound while still proving the loop wasn't blocked.
+        assert probe_elapsed < delay * 0.5, (
             f"AB-5 REGRESSION: probe coroutine took {probe_elapsed:.3f}s to "
             f"complete while a {delay}s blocking model call was in flight — "
             "the event loop was blocked, not offloaded via asyncio.to_thread."
@@ -251,7 +253,10 @@ class TestAB8EngineToThread:
 
         probe_elapsed = await asyncio.wait_for(_driver(), timeout=10.0)
 
-        assert probe_elapsed < delay, (
+        # Well under half of delay: more robust to xdist scheduling jitter
+        # than the raw `< delay` bound while still proving the loop wasn't
+        # blocked (see matching AB-5 rationale above).
+        assert probe_elapsed < delay * 0.5, (
             f"AB-8 REGRESSION: probe coroutine took {probe_elapsed:.3f}s to "
             f"complete while a {delay}s blocking model call was in flight — "
             "the event loop was blocked, not offloaded via asyncio.to_thread."

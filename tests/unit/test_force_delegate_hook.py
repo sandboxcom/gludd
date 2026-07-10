@@ -42,6 +42,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 HOOK_PATH = REPO_ROOT / ".claude" / "hooks" / "force_delegate_pretool.sh"
 FLOOR_OVERRIDE_FILE = "/tmp/gludd-floor-override"
 
+# The _neutralize_ambient_floor_override fixture below os.remove()s the
+# literal shared path FLOOR_OVERRIDE_FILE ("/tmp/gludd-floor-override") on
+# every test in this module, un-namespaced and without xdist-worker
+# isolation. Under CI's `-n>1 --dist loadgroup`, this module's 10 tests can
+# be split across workers and race with each other (or with the
+# hook_plugin_env-driven tests in tests/conftest.py:58-78, which share the
+# same class of hardcoded-/tmp-path hazard). Pin the whole module to the
+# same xdist group conftest.py uses for that hazard class so it is always
+# serialized onto one worker.
+pytestmark = pytest.mark.xdist_group(name="hook-hardcoded-tmp")
+
 
 @pytest.fixture(autouse=True)
 def _neutralize_ambient_floor_override():

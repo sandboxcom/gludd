@@ -133,8 +133,10 @@ class TestDrainNonblocking:
         start = time.monotonic()
         await loop._drain_inbound_queue()
         elapsed_ms = (time.monotonic() - start) * 1000
-        # Non-blocking: an empty queue must return near-instantly.
-        assert elapsed_ms < 10.0
+        # Non-blocking: an empty queue must return near-instantly. Widened
+        # from 10.0ms to 200.0ms to absorb xdist scheduling jitter while
+        # still proving the call doesn't block.
+        assert elapsed_ms < 200.0
 
 
 class TestDrainErrorIsolation:

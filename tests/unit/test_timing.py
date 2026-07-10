@@ -82,9 +82,13 @@ def test_track_context_records_duration_even_on_error() -> None:
 # --- StallWatchdog ----------------------------------------------------------
 def test_watchdog_flags_after_deadline_once() -> None:
     w = StallWatchdog(capture_stacks=False)
-    w.start("op1", "k", deadline_s=0.01)
+    # Widened from 0.01s: under xdist scheduling jitter a tiny deadline can
+    # already have elapsed by the time the first poll() runs, flipping the
+    # "not yet stalled" assertion below. 1.0s gives ample buffer while the
+    # after-deadline sleep is scaled to match.
+    w.start("op1", "k", deadline_s=1.0)
     assert w.poll() == []  # just started, not past deadline
-    time.sleep(0.03)
+    time.sleep(1.05)
     reports = w.poll()
     assert len(reports) == 1
     assert reports[0].op_id == "op1" and reports[0].key == "k"

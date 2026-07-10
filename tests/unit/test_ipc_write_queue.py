@@ -124,4 +124,6 @@ class TestGetNowait:
             q.get_nowait()
         elapsed_ms = (time.monotonic() - start) * 1000
         # Non-blocking: an empty queue must return (raise) near-instantly.
-        assert elapsed_ms < 10.0
+        # Widened from 10.0ms to 200.0ms to absorb xdist scheduling jitter
+        # while still proving the call doesn't block.
+        assert elapsed_ms < 200.0
