@@ -4,8 +4,8 @@ The keystone capability that lets gludd **work an external project** — run and
 interpret that project's own tests, lints, builds, and security scans — instead
 of only self-hosting on gludd's hardcoded `make test` + ruff/mypy/pytest.
 
-Status: **slice 1 landed** (`src/general_ludd/project_runner/`, commit b410a5d0).
-Slices 1-3 landed.
+Status: **slices 1-3 complete** (`src/general_ludd/project_runner/`, commit b410a5d0).
+D2 `run_project_gate` now wired at `decision_applier.py:57-80`.
 
 ## Why
 
