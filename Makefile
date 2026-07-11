@@ -2051,6 +2051,14 @@ git-reset:
 	fi
 	@git reset $(FILES)
 
+git-restore:
+	@if [ -z "$(FILES)" ]; then \
+		echo "Usage: make git-restore FILES='path/to/file ...' (discards working-tree changes, restoring to HEAD)"; \
+		exit 1; \
+	fi
+	@git checkout -- $(FILES)
+	@echo "Restored to HEAD: $(FILES)"
+
 git-branch:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-branch MSG='branch-name'"; exit 1; fi
 	@git branch "$(MSG)"

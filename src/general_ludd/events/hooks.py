@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -101,6 +102,7 @@ class HookSystem:
     def __init__(self, event_bus: Any | None = None) -> None:
         self._hooks: dict[str, list[HookRegistration]] = {}
         self._next_cb_id = 0
+        self._lock = threading.Lock()
         # Previously accepted but dropped on the floor. Store it so fire() can
         # mirror hook activity onto the event bus (a HookTriggeredEvent per
         # event fired), giving subscribers visibility into hook execution.
@@ -110,22 +112,24 @@ class HookSystem:
         # garbage-collected mid-delivery and its exception swallowed. Tracking +
         # a done-callback keeps it alive and surfaces failures to operators.
         self._pending_webhooks: set[asyncio.Future[None]] = set()
+        self._scheduled_webhooks: set[str] = set()
 
     def register_callback(
         self, event_name: str, callback: Callable[..., Any], priority: int = 100
     ) -> str:
-        hook_id = f"hook-cb-{self._next_cb_id}"
-        self._next_cb_id += 1
-        reg = HookRegistration(
-            hook_id=hook_id,
-            event_name=event_name,
-            hook_type="callback",
-            callback=callback,
-            priority=priority,
-        )
-        self._hooks.setdefault(event_name, []).append(reg)
-        self._hooks[event_name].sort(key=lambda h: h.priority)
-        return hook_id
+        with self._lock:
+            hook_id = f"hook-cb-{self._next_cb_id}"
+            self._next_cb_id += 1
+            reg = HookRegistration(
+                hook_id=hook_id,
+                event_name=event_name,
+                hook_type="callback",
+                callback=callback,
+                priority=priority,
+            )
+            self._hooks.setdefault(event_name, []).append(reg)
+            self._hooks[event_name].sort(key=lambda h: h.priority)
+            return hook_id
 
     def register_webhook(
         self,
@@ -141,28 +145,30 @@ class HookSystem:
         # D-34: clamp at registration — a caller-supplied retry_count must never
         # be stored verbatim so that fire() can't loop 10000x on a slow endpoint.
         clamped_retry = min(max(1, retry_count), 5)
-        hook_id = f"hook-wh-{uuid.uuid4().hex[:8]}"
-        config = WebhookConfig(
-            url=url,
-            headers=headers or {},
-            retry_count=clamped_retry,
-            timeout_seconds=timeout_seconds,
-        )
-        reg = HookRegistration(
-            hook_id=hook_id,
-            event_name=event_name,
-            hook_type="webhook",
-            webhook_config=config,
-            priority=100,
-        )
-        self._hooks.setdefault(event_name, []).append(reg)
-        return hook_id
+        with self._lock:
+            hook_id = f"hook-wh-{uuid.uuid4().hex[:8]}"
+            config = WebhookConfig(
+                url=url,
+                headers=headers or {},
+                retry_count=clamped_retry,
+                timeout_seconds=timeout_seconds,
+            )
+            reg = HookRegistration(
+                hook_id=hook_id,
+                event_name=event_name,
+                hook_type="webhook",
+                webhook_config=config,
+                priority=100,
+            )
+            self._hooks.setdefault(event_name, []).append(reg)
+            return hook_id
 
     def unregister(self, hook_id: str) -> None:
-        for event_name in list(self._hooks.keys()):
-            self._hooks[event_name] = [
-                h for h in self._hooks[event_name] if h.hook_id != hook_id
-            ]
+        with self._lock:
+            for event_name in list(self._hooks.keys()):
+                self._hooks[event_name] = [
+                    h for h in self._hooks[event_name] if h.hook_id != hook_id
+                ]
 
     def fire(self, event_name: str, payload: dict[str, Any]) -> int:
         """Run every hook registered for ``event_name``.
@@ -174,7 +180,7 @@ class HookSystem:
         delivery. If an event bus was supplied, a ``HookTriggeredEvent`` is
         published with the delivery tally.
         """
-        hooks = self._hooks.get(event_name, [])
+        hooks = list(self._hooks.get(event_name, []))
         count = 0
         failed = 0
         for hook in hooks:
@@ -183,7 +189,10 @@ class HookSystem:
                     hook.callback(payload)
                     count += 1
                 elif hook.hook_type == "webhook" and hook.webhook_config is not None:
-                    self._fire_webhook(hook.webhook_config, event_name, payload)
+                    if hook.hook_id in self._scheduled_webhooks:
+                        continue
+                    self._scheduled_webhooks.add(hook.hook_id)
+                    self._fire_webhook(hook.webhook_config, event_name, payload, hook.hook_id)
                     count += 1
             except Exception as exc:
                 failed += 1
@@ -230,7 +239,7 @@ class HookSystem:
                 exc_info=True,
             )
 
-    def _fire_webhook(self, config: WebhookConfig, event_name: str, payload: dict[str, Any]) -> None:
+    def _fire_webhook(self, config: WebhookConfig, event_name: str, payload: dict[str, Any], hook_id: str) -> None:
         # Fix A: strip credential keys before forwarding.  Redaction happens
         # here (on the calling thread) so that the redacted body is captured by
         # the coroutine closure — no race on the original payload dict.
@@ -284,6 +293,7 @@ class HookSystem:
 
             def _on_webhook_done(t: asyncio.Task[None]) -> None:
                 self._pending_webhooks.discard(t)
+                self._scheduled_webhooks.discard(hook_id)
                 try:
                     t.result()
                 except asyncio.CancelledError:
@@ -299,6 +309,7 @@ class HookSystem:
             # via asyncio.run (sync startup path, CLI, or unit tests without
             # an event loop).
             asyncio.run(_do_post_async())
+            self._scheduled_webhooks.discard(hook_id)
 
     def list_hooks(self) -> list[HookRegistration]:
         result = []

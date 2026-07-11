@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import threading
 from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
@@ -18,21 +19,24 @@ class EventBus:
         self._history: list[Event] = []
         self._history_size = history_size
         self._next_id = 0
+        self._lock = threading.Lock()
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
     def subscribe(self, event_type: EventType | str, callback: Callable[..., Any]) -> str:
-        sub_id = f"sub-{self._next_id}"
-        self._next_id += 1
-        key = event_type if isinstance(event_type, str) else event_type.value
-        self._subscribers[key].append((sub_id, callback))
-        return sub_id
+        with self._lock:
+            sub_id = f"sub-{self._next_id}"
+            self._next_id += 1
+            key = event_type if isinstance(event_type, str) else event_type.value
+            self._subscribers[key].append((sub_id, callback))
+            return sub_id
 
     def unsubscribe(self, subscription_id: str) -> None:
-        for key in list(self._subscribers.keys()):
-            self._subscribers[key] = [
-                (sid, cb) for sid, cb in self._subscribers[key]
-                if sid != subscription_id
-            ]
+        with self._lock:
+            for key in list(self._subscribers.keys()):
+                self._subscribers[key] = [
+                    (sid, cb) for sid, cb in self._subscribers[key]
+                    if sid != subscription_id
+                ]
 
     def publish(self, event: Event) -> int:
         """Deliver ``event`` to every matching subscriber.
@@ -46,8 +50,9 @@ class EventBus:
         """
         key = event.type if isinstance(event.type, str) else event.type.value
         event_id = getattr(event, "event_id", None)
-        subscribers = list(self._subscribers.get(key, []))
-        wildcard_subs = list(self._subscribers.get("*", []))
+        with self._lock:
+            subscribers = list(self._subscribers.get(key, []))
+            wildcard_subs = list(self._subscribers.get("*", []))
         all_subs = subscribers + wildcard_subs
         delivered = 0
         failed = 0
@@ -155,4 +160,5 @@ class EventBus:
         return list(self._history)
 
     def clear(self) -> None:
-        self._subscribers.clear()
+        with self._lock:
+            self._subscribers.clear()
