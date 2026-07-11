@@ -29,7 +29,6 @@ silently absent:
 
 from __future__ import annotations
 
-import os
 import pathlib
 
 import pytest
@@ -193,8 +192,8 @@ class TestTaskDecisionBlobLengthCheck:
             assert len(getattr(dm, c)) == MAX_JSON_BLOB_LEN
 
 
-def _run_migrations(db_path: str) -> None:
-    """Run ``alembic upgrade head`` against an SQLite DB at *db_path*.
+def _run_migrations(db_path: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Apply all alembic migrations to a brand-new SQLite file.
 
     Mirrors ``tests/unit/test_alembic_create_all_parity.py::_run_migrations``:
     ``DATABASE_URL`` is popped for the duration so alembic uses the URL set
@@ -208,12 +207,8 @@ def _run_migrations(db_path: str) -> None:
     cfg.set_main_option("script_location", str(root / "alembic"))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
 
-    saved = os.environ.pop("DATABASE_URL", None)
-    try:
-        command.upgrade(cfg, "head")
-    finally:
-        if saved is not None:
-            os.environ["DATABASE_URL"] = saved
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    command.upgrade(cfg, "head")
 
 
 class TestMigrationEnforcesCheckConstraints:
@@ -229,10 +224,10 @@ class TestMigrationEnforcesCheckConstraints:
 
     @pytest.mark.asyncio
     async def test_migrated_db_enforces_audit_events_details_check(
-        self, tmp_path: pathlib.Path
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         db_path = str(tmp_path / "migrated_blob_len_audit.db")
-        _run_migrations(db_path)
+        _run_migrations(db_path, monkeypatch)
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
         try:
@@ -257,10 +252,10 @@ class TestMigrationEnforcesCheckConstraints:
 
     @pytest.mark.asyncio
     async def test_migrated_db_enforces_task_decisions_todo_updates_check(
-        self, tmp_path: pathlib.Path
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         db_path = str(tmp_path / "migrated_blob_len_task_decisions.db")
-        _run_migrations(db_path)
+        _run_migrations(db_path, monkeypatch)
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
         try:

@@ -195,28 +195,32 @@ class TestCallerBaseUrlSSRFGuard:
         )
         return gw, reg
 
-    def test_caller_base_url_metadata_ip_is_rejected(self):
-        """The exact SSRF pivot the guard exists for: caller passes a link-local
-        metadata URL in kwargs. Before the fix this reached the provider ctor
-        un-validated; now it raises the same SSRFRejectionError the alias raises."""
+    def test_caller_base_url_metadata_ip_is_ignored(self):
+        """C6 hardening: caller base_url (even unsafe metadata IP) is DENIED
+        outright rather than raising SSRFRejectionError. The caller's base_url
+        is silently ignored; the profile's api_base_alias wins."""
         gw, reg = self._make_gateway()
         captured: dict = {}
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=_capture_provider(captured)),
-            pytest.raises(SSRFRejectionError, match="base_url"),
         ):
-            gw.call_model(
+            resp = gw.call_model(
                 "gpt4",
                 [{"role": "user", "content": "hi"}],
                 base_url="http://169.254.169.254/latest/meta-data/",
             )
-        # The unsafe base_url never reached the provider constructor.
-        assert captured == {}
+        # Call succeeds normally — the caller's base_url never reaches the provider.
+        assert isinstance(resp, ModelResponse)
+        assert resp.content == "ok"
+        assert "base_url" not in captured, (
+            f"caller base_url leaked to provider: {captured.get('base_url')}"
+        )
 
-    def test_caller_base_url_safe_https_is_validated_and_used(self):
-        """A caller base_url that passes is_safe_fetch_url (https + public host)
-        is accepted and overrides into the provider ctor."""
+    def test_caller_base_url_safe_https_is_ignored(self):
+        """A caller base_url is now DENIED outright (C6 hardening) — it must
+        NEVER override the alias-resolved base_url, even if it passes the
+        SSRF guard."""
         gw, reg = self._make_gateway()
         captured: dict = {}
         with (
@@ -229,7 +233,10 @@ class TestCallerBaseUrlSSRFGuard:
                 base_url="https://api.example.com",
             )
         assert isinstance(resp, ModelResponse)
-        assert captured["base_url"] == "https://api.example.com"
+        # Caller base_url must NOT reach the provider constructor — it is now denied.
+        assert "base_url" not in captured, (
+            f"caller base_url leaked to provider: {captured.get('base_url')}"
+        )
 
     def test_caller_api_key_is_ignored_alias_credential_wins(self):
         """A caller-injected api_key must never override the validated secrets

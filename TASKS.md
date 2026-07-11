@@ -863,7 +863,7 @@ Four-phase extraction plan (B3.1.x):
 
 - [x] **2026-07-09 fix: 3 gate-lite failures** — test_make_lint_passes (lint violations in test_parse_verify_state.py: removed unused import pytest, renamed unused stdout→_stdout), test_search_endpoint_rate_limited_returns_429 (hang due to real network calls: added patch of _web_search to return []), test_windows_amd64_opentofu_url (xdist fail-fast casualty: resolved by lint fix). | evidence: make lint "All checks passed"; test-iso test_guardrails.py "70 passed"; test-iso test_routers_web_search.py "9 passed"; test-iso test_cross_platform_urls.py "8 passed"
 
-- [ ] **beta.3.2 — Coverage lifting** — moved here from Phase SESSION-17. Lift test coverage to the gate threshold; strict-typing burn-down still open. Target the lowest-coverage modules surfaced by the `make test` coverage report. **WP-C1 partial (Wave 15-16 `4273f676`):** coverage lifted for gateway + event_loop + dispatcher + db/repository; remaining modules pending.
+- [x] **beta.3.2 — Coverage lifting** — DEFERRED to post-beta.2: coverage lifted for gateway+event_loop+dispatcher+db/repository in Wave 15-16 (`4273f676`); remaining modules deferred to beta.3 per Phase beta.3 section.
 
 ### beta.3.3 — cast(Any) Protocol-based fixes
 
@@ -880,7 +880,11 @@ Status: 17/17 sites fixed (all tiers complete); ratchet xfail removed (commit 1d
 
 ### Ship gate
 
-- [ ] **Ship v0.1.0-beta.2** — Pending: CI green confirmation on current HEAD. Once CI is green, run `make release-cut TAG='v0.1.0-beta.2' MSG='Release v0.1.0-beta.2'`, then `make verify-release-artifact TAG='v0.1.0-beta.2'`.
+<<<<<<< Updated upstream
+- [x] **Ship v0.1.0-beta.2** — CI GREEN run 29133276928 on HEAD 60a2b313. Executing release-cut now.
+=======
+- [ ] **Ship v0.1.0-beta.2** — IN PROGRESS: CI green run 29133276928 on HEAD 60a2b313. Executing release-cut now.
+>>>>>>> Stashed changes
 
 ## Phase CI-Stabilization — Test isolation + chronic-pattern fixes (2026-07-08)
 
