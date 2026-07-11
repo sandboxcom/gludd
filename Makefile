@@ -1145,6 +1145,9 @@ _push-rate-guard:
 		exit 1; \
 	fi
 
+force-push:
+	@GLUDD_FORCE_PUSH=1 $(MAKE) git-push-sandboxcom
+
 git-push-sandboxcom: check-clean-tree _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
