@@ -26,49 +26,23 @@ When any of these tests fail, the failure message IS the migration drift
 delta. Fixing the migrations to match the ORM is a separate task — this test
 only REVEALS the drift.
 
-Known drift as of this commit (revealed by running this test)
--------------------------------------------------------------
-The tables and columns tests pass. The INDEXES and FOREIGN KEYS tests fail:
+Current state
+-------------
+All five tests pass. Historical drift was resolved by migrations:
 
-INDEX drift (5 tables):
+* **Index drift** (``benchmark_results``, ``memory_records``,
+  ``model_performance``, ``ornith_training_pairs``, ``task_decisions``) —
+  resolved by migration 024, which added missing indexes and corrected
+  name-prefix mismatches and uniqueness constraints to match the ORM.
+* **Foreign key drift** (``audit_events``, ``benchmark_results``,
+  ``bucket_leases``, ``queues``, ``task_decisions``, ``task_returns``,
+  ``todos``, ``variable_namespaces``, ``todo_events``, ``variable_values``)
+  — resolved by migrations 017 and 026, which re-added ``ondelete``
+  clauses (``SET NULL`` / ``CASCADE``) to match the ORM declarations.
 
-* ``benchmark_results`` — ORM declares 4 single-column indexes
-  (``model_profile_id``, ``prompt_profile_id``, ``task_role``, ``task_type``)
-  that are missing from migrations entirely.
-* ``memory_records`` — name-prefix mismatch: ORM uses
-  ``ix_memory_records_*``; migration 022 uses ``ix_memory_*``. Also the
-  ``ix_memory_records_namespace`` index is present in ORM but absent in
-  migration.
-* ``model_performance`` — ``ix_model_performance_model_profile_id`` is
-  UNIQUE in ORM (driven by the ``unique=True`` on the column) but
-  NON-unique in migration 015.
-* ``ornith_training_pairs`` — name-prefix mismatch: ORM uses
-  ``ix_ornith_training_pairs_*``; migration 014a uses
-  ``ix_ornith_pairs_*``.
-* ``task_decisions`` — migration 001 declares ``ix_task_decisions_return_id``
-  as a plain index, but the ORM models ``return_id`` with
-  ``unique=True`` (yielding an implicit autoindex). Plain index vs.
-  UNIQUE constraint is a structural difference.
-
-FOREIGN KEY drift (10 tables):
-
-* ``audit_events``, ``benchmark_results``, ``bucket_leases``, ``queues``,
-  ``task_decisions``, ``task_returns``, ``todos``, ``variable_namespaces``
-  — every project-scoped FK declared with ``ondelete="SET NULL"`` in the
-  ORM is created by the migration WITHOUT the ``ondelete`` clause, so
-  SQLite records ``NO ACTION`` instead of ``SET NULL``. Deleting a
-  ``projects`` row in a migration-only DB raises an integrity error
-  rather than nulling the FKs.
-* ``todo_events`` — same project_id ``SET NULL`` loss, plus the
-  ``todo_id`` FK is declared with ``ondelete="CASCADE"`` in the ORM
-  but ``NO ACTION`` in the migration.
-* ``variable_values`` — the ``namespace_id`` FK is declared
-  ``ondelete="CASCADE"`` in the ORM but ``NO ACTION`` in the migration.
-
-The ``project_id`` ``SET NULL`` drift matches STABILIZATION_PLAN.md WP-D3's
-note: migration 001 (and its successors) did not reproduce the
-``ondelete`` actions the ORM declares. The index drift is additional,
-previously-undocumented drift surfaced by this structural comparison.
+A failure in any of the five tests now indicates a **new** migration-model
+mismatch — i.e. a migration or model change that introduced drift after the
+historical fixes above were applied.
 """
 
 from __future__ import annotations

@@ -230,31 +230,29 @@ better deployed compactor**, repeat.
 
 ## 6. Integration seam (opt-in, beside `ContextCompactor` + hibernation)
 
-The compaction package is **additive** and currently **unwired** — it lives
-beside, not on top of, the existing pieces:
+The compaction package is now **daemon-wired** — integrated into the hot
+context path at three points:
 
-- It reuses `ContextMessage`, so it slots into the same context path
-  `ContextCompactor` already occupies.
-- `ContextCompactorAdapter` keeps the current mechanism as a competitor rather
-  than replacing it — a safe migration: prove the SLM strategy wins in the arena
-  before it ever touches production context.
-- The **hibernation snapshotter** (`agents/hibernation.py`, see
-  `docs/design/AGENT_HIBERNATION.md`) is orthogonal and complementary:
-  hibernation offloads an *idle* agent's whole context to disk to reclaim RAM;
-  compaction shrinks the *active* context sent to the LLM for a work item. A
-  natural future pairing is to compact-then-snapshot (smaller snapshots) — noted
-  in the hibernation doc as a future optimization.
+| Wiring point | Location | What it does |
+|---|---|---|
+| Compactor construction | `daemon.py:1452-1473` | Builds `SelfImprovingCompactor` via `build_self_improving_compactor()`, wires champion + `CompactionMetrics` onto `app.state` |
+| Admin status endpoint | `daemon.py:2754-2768` | Exposes `GET /admin/compaction/eval-status` returning champion name, metrics, and wired flag |
+| Generation path consumer | `worker/app.py:157-173` | Consumes compaction config on the generation path via EventLoop config dict |
 
-**Planned wiring (all inert unless a config flag is set):**
+`ContextCompactorAdapter` keeps the current mechanism as a competitor rather
+than replacing it — a safe migration: prove the SLM strategy wins in the arena
+before it ever touches production context.
 
-1. Build a `summarize_fn` once from the gateway (§7) and a
-   `SelfImprovingCompactor` (champion = `truncate` to start — safe, cheap,
-   no-model).
-2. At the point where a work item's context is assembled for the main LLM, call
-   `champion.compact(CompactionRequest(messages=..., goal=<work item objective>,
-   target_tokens=..., preserve_recent=...))` and send the result.
-3. Periodically (offline / on a schedule) call `.improve(corpus)` against the
-   run-history corpus to consider promotions. Promotions are gated and logged.
+The **hibernation snapshotter** (`agents/hibernation.py`, see
+`docs/design/AGENT_HIBERNATION.md`) is orthogonal and complementary:
+hibernation offloads an *idle* agent's whole context to disk to reclaim RAM;
+compaction shrinks the *active* context sent to the LLM for a work item. A
+natural future pairing is to compact-then-snapshot (smaller snapshots) — noted
+in the hibernation doc as a future optimization.
+
+**Improvement loop (periodic, offline):**
+Periodically (offline / on a schedule) `.improve(corpus)` is called against the
+run-history corpus to consider promotions. Promotions are gated and logged.
 
 ## 7. Wiring: the `compactor` model profile
 

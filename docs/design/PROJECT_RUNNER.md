@@ -5,7 +5,7 @@ interpret that project's own tests, lints, builds, and security scans — instea
 of only self-hosting on gludd's hardcoded `make test` + ruff/mypy/pytest.
 
 Status: **slice 1 landed** (`src/general_ludd/project_runner/`, commit b410a5d0).
-Slices 2–3 (model-tool exposure + quality-gate parameterization) in progress.
+Slices 1-3 landed.
 
 ## Why
 
