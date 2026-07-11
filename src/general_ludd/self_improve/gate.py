@@ -9,6 +9,13 @@ todo is released by ``SelfImproveApprovalManager`` — wired to the
 ``/self-improve/approvals`` routes. Set ``auto_queue=True`` (or
 ``self_improve.auto_queue: true`` in config) to opt back into immediate
 ``QUEUED`` admission where self-modification without review is acceptable.
+
+C13 (self-improve gate bypasses): ``allow_auto_promote`` was removed — it was a
+backdoor that let callers set ``allow_auto_promote=True`` to promote
+APPROVAL_REQUIRED to QUEUED without going through human approval. The gate now
+has a single choke-point: ``auto_queue`` (OFF by default). The
+``SelfImproveApprovalManager`` wired human-approval path is the ONLY way to
+release a held todo.
 """
 
 from __future__ import annotations
@@ -26,10 +33,9 @@ class GateDecision:
 
 
 class SelfImproveGate:
-    def __init__(self, max_open: int = 10, auto_queue: bool = False, allow_auto_promote: bool = False) -> None:
+    def __init__(self, max_open: int = 10, auto_queue: bool = False) -> None:
         self.max_open = max_open
         self.auto_queue = auto_queue
-        self.allow_auto_promote = allow_auto_promote
 
     def evaluate(self, todo: dict[str, Any], open_count: int) -> GateDecision:
         if open_count >= self.max_open:
@@ -39,6 +45,4 @@ class SelfImproveGate:
             if self.auto_queue
             else TodoStatus.APPROVAL_REQUIRED.value
         )
-        if initial == TodoStatus.APPROVAL_REQUIRED.value and self.allow_auto_promote:
-            initial = TodoStatus.QUEUED.value
         return GateDecision(admitted=True, initial_status=initial)
