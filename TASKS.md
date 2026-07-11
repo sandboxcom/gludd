@@ -880,11 +880,7 @@ Status: 17/17 sites fixed (all tiers complete); ratchet xfail removed (commit 1d
 
 ### Ship gate
 
-<<<<<<< Updated upstream
 - [x] **Ship v0.1.0-beta.2** — CI GREEN run 29133276928 on HEAD 60a2b313. Executing release-cut now.
-=======
-- [ ] **Ship v0.1.0-beta.2** — IN PROGRESS: CI green run 29133276928 on HEAD 60a2b313. Executing release-cut now.
->>>>>>> Stashed changes
 
 ## Phase CI-Stabilization — Test isolation + chronic-pattern fixes (2026-07-08)
 
