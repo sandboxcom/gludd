@@ -195,7 +195,7 @@ class TodoModel(Base):
     queue: Mapped[str] = mapped_column(String(64), nullable=False, default="core", index=True)
     tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     risk_level: Mapped[str] = mapped_column(String(16), nullable=False, default="low")
-    work_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    work_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown", index=True)
     resource_profile: Mapped[str] = mapped_column(String(32), nullable=False, default="low_resource")
     parent_todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     child_todo_ids: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
@@ -267,6 +267,11 @@ class TodoModel(Base):
         # a table that grows with every todo ever created. This composite
         # index covers the WHERE + ORDER BY together.
         Index("ix_todos_status_priority_created_at", "status", "priority", "created_at"),
+        # E12: composite index for scheduler and queue-filtered claim queries.
+        # Queries that filter by status+queue with a time-range on scheduled_at
+        # (e.g. list_due_scheduled, claim variants filtering on queue) benefit
+        # from this covering index that matches WHERE + time sort.
+        Index("ix_todos_status_queue_scheduled", "status", "queue", "scheduled_at"),
     )
 
     __mapper_args__: ClassVar[dict[str, Any]] = {"version_id_col": version}

@@ -628,21 +628,30 @@ class EventLoop:
             )
             result = await self._active_session.execute(stmt)
             candidates = list(result.scalars().all())
+            if not candidates:
+                return
+
+            # Batch-fetch all live leases for candidate todos in one query
+            # instead of per-todo N+1 lookups. Build bucket_keys from
+            # queue:todo_id pairs, then query BucketLeaseModel with IN.
+            bucket_keys = [
+                f"{_safe_str(t, 'queue', 'core')}:{_safe_str(t, 'todo_id', '')}"
+                for t in candidates
+            ]
+            live_lease_stmt = (
+                select(BucketLeaseModel.bucket_key)
+                .where(BucketLeaseModel.bucket_key.in_(bucket_keys))
+                .where(BucketLeaseModel.expires_at > now)
+            )
+            live_lease_result = await self._active_session.execute(live_lease_stmt)
+            live_bucket_keys: set[str] = set(live_lease_result.scalars().all())
+
             reaped = 0
             for todo in candidates:
-                # Liveness gate: a still-running worker holds a live bucket lease.
-                # Only reap when NO unexpired lease exists for this todo.
                 queue = _safe_str(todo, "queue", "core") or "core"
                 todo_id = _safe_str(todo, "todo_id", "") or ""
                 bucket_key = f"{queue}:{todo_id}"
-                live_lease = (
-                    await self._active_session.execute(
-                        select(BucketLeaseModel)
-                        .where(BucketLeaseModel.bucket_key == bucket_key)
-                        .where(BucketLeaseModel.expires_at > now)
-                    )
-                ).scalar_one_or_none()
-                if live_lease is not None:
+                if bucket_key in live_bucket_keys:
                     # Worker is still heartbeating (lease alive) -> do NOT reap.
                     continue
                 # Guarded compare-and-set: transition ACTIVE->QUEUED only if the
@@ -4030,21 +4039,40 @@ class EventLoop:
                 result = await session.execute(stmt)
                 returns = list(result.scalars().all())
 
-                recorded = 0
-                for tr in returns:
+                # Batch-fetch all related decisions and todos to eliminate
+                # the N+1 query pattern (one query per entity type, not
+                # one query per row).
+                return_ids = [tr.return_id for tr in returns]
+                todo_ids = [
+                    tr.todo_id for tr in returns if tr.todo_id
+                ]
+
+                dec_map: dict[str, TaskDecisionModel] = {}
+                if return_ids:
                     dec_stmt = select(TaskDecisionModel).where(
-                        TaskDecisionModel.return_id == tr.return_id
+                        TaskDecisionModel.return_id.in_(return_ids)
                     )
                     dec_result = await session.execute(dec_stmt)
-                    decision_row = dec_result.scalar_one_or_none()
+                    dec_map = {
+                        d.return_id: d for d in dec_result.scalars().all()
+                    }
 
+                todo_map: dict[str, TodoModel] = {}
+                if todo_ids:
+                    todo_stmt = select(TodoModel).where(
+                        TodoModel.todo_id.in_(todo_ids)
+                    )
+                    todo_result = await session.execute(todo_stmt)
+                    todo_map = {
+                        t.todo_id: t for t in todo_result.scalars().all()
+                    }
+
+                recorded = 0
+                for tr in returns:
+                    decision_row = dec_map.get(tr.return_id)
                     instruction = ""
                     if tr.todo_id:
-                        todo_stmt = select(TodoModel).where(
-                            TodoModel.todo_id == tr.todo_id
-                        )
-                        todo_result = await session.execute(todo_stmt)
-                        todo_row = todo_result.scalar_one_or_none()
+                        todo_row = todo_map.get(tr.todo_id)
                         if todo_row:
                             instruction = todo_row.title or ""
                             if todo_row.description:
