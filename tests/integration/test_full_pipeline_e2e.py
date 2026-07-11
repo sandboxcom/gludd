@@ -152,8 +152,13 @@ class TestFullPipelineE2E:
                         "exit_code": result.exit_code,
                         "result_summary": result.result_summary,
                     })
-                    if loop._todo_repo is not None:
-                        await loop._todo_repo.update(
+                    job_session = _kwargs.get("_session_override")
+                    todo_repo = (
+                        TodoRepository(job_session) if job_session is not None
+                        else loop._todo_repo
+                    )
+                    if todo_repo is not None:
+                        await todo_repo.update(
                             todo_item.todo_id,
                             {"status": "reviewing_return"},
                             todo_item.version,

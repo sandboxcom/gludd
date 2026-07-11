@@ -408,8 +408,8 @@ class SpendLimiter:
             # Collect (cost_usd, project_id) pairs already present so restored
             # records that duplicate existing in-memory state are skipped
             # (fixes the double-count bug: charge → flush → restore → charge).
-            existing_pairs: set[tuple[float, str | None]] = {
-                (float(c), pid) for _seq, _ts, c, pid in self._records
+            existing_pairs: set[tuple[float, float, str | None]] = {
+                (float(_ts), float(c), pid) for _seq, _ts, c, pid in self._records
             }
             valid = []
             for rec in records:
@@ -448,7 +448,7 @@ class SpendLimiter:
                     ts_f = now
                 if pid is not None and not isinstance(pid, str):
                     pid = None
-                pair = (c_f, pid)
+                pair = (ts_f, c_f, pid)
                 if pair in existing_pairs:
                     continue
                 existing_pairs.add(pair)

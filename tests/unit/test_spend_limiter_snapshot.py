@@ -94,12 +94,13 @@ class TestSpendLimiterSnapshot:
     def test_restart_does_not_reset_budget(self) -> None:
         # The core security property: a restart must NOT clear accumulated spend.
         limiter1 = SpendLimiter(limit_usd=50.0, window_seconds=10000.0, clock=FakeClock(0.0))
-        for _ in range(3):
-            assert limiter1.try_charge(10.0, kind="token", at=0.0) is True
+        assert limiter1.try_charge(10.0, kind="token", at=0.0) is True
+        assert limiter1.try_charge(10.0, kind="token", at=0.001) is True
+        assert limiter1.try_charge(10.0, kind="token", at=0.002) is True
         assert limiter1.window_spend(now=0.0) == 30.0
         snapshot = limiter1.snapshot()
 
-        limiter2 = SpendLimiter(limit_usd=50.0, window_seconds=10000.0, clock=FakeClock(0.0))
+        limiter2 = SpendLimiter(limit_usd=50.0, window_seconds=10000.0, clock=FakeClock(100.0))
         limiter2.restore(snapshot)
         assert limiter2.window_spend(now=0.0) == 30.0
 

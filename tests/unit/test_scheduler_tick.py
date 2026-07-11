@@ -277,9 +277,10 @@ class TestSchedulerTickConcurrentDispatch:
 
         await loop._phase_dispatch_execute_jobs()
 
-        # Only 2 dispatched (PID cap = 2).
-        assert loop._tick_metrics["todos_dispatched"] == 2
-        assert len(dispatched) == 2
+        # PID cap (desired_total_active_buckets=2) now limits claim, not dispatch.
+        # All 5 claimed todos are dispatched here (cap applied at claim phase).
+        assert loop._tick_metrics["todos_dispatched"] == 5
+        assert len(dispatched) == 5
 
 
 class TestSchedulerOrderDriven:

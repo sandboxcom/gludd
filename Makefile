@@ -903,6 +903,9 @@ git-revert-files:
 git-log:
 	@git log --oneline -10 || echo "No git history"
 
+git-log-n:
+	@git log --oneline -$(if $(N),$(N),10) || echo "No git history"
+
 grep:
 	@[ -n "$(Q)" ] || { echo "Usage: make grep Q='pattern' [PATH='dir']"; exit 1; }
 	@grep -rn -- "$(Q)" $(if $(PATH_),$(PATH_),src tests) || echo "No matches"
