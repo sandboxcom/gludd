@@ -510,7 +510,7 @@ class ModelGateway:
                 if not is_safe_fetch_url(base_url):
                     raise SSRFRejectionError(
                         f"SSRF guard: refusing blocked api_base_alias URL "
-                        f"{base_url!r} for profile '{profile_id}'"
+                        f"(redacted) for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
         chat_model = provider_cls(**init_kwargs)
@@ -832,7 +832,7 @@ class ModelGateway:
                 if not is_safe_fetch_url(base_url):
                     raise SSRFRejectionError(
                         f"SSRF guard: refusing blocked api_base_alias URL "
-                        f"{base_url!r} for profile '{profile_id}'"
+                        f"(redacted) for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
         extra_body: dict[str, object] = kwargs.pop("extra_body", {})
@@ -844,34 +844,38 @@ class ModelGateway:
         if extra_body:
             kwargs["extra_body"] = extra_body
 
-        # Defense-in-depth (SSRF): `init_kwargs.update(kwargs)` below would let a
-        # caller-supplied `base_url`/`api_key` in **kwargs silently OVERRIDE the
-        # alias-resolved, SSRF-validated values set above — and a caller-supplied
-        # base_url would reach the provider constructor WITHOUT ever passing
-        # through the is_safe_fetch_url egress guard the alias path enforces. No
-        # current caller forwards these (tools/work_type/extra_body/guided_* are
-        # popped earlier), but pop them here so an untrusted base_url can never
-        # bypass the guard. A caller base_url is re-validated with the SAME guard:
-        # safe → allowed to override; unsafe → the SAME SSRFRejectionError the
-        # alias path raises. A caller api_key is ignored outright — the credential
-        # MUST come from the configured secrets alias, never a caller override.
+        # C6 hardening: caller-supplied base_url / api_key in **kwargs are
+        # STRIPPED and DENIED outright — they must NEVER override the alias-
+        # resolved, SSRF-validated values set above. The caller has no business
+        # supplying endpoint credentials; they MUST flow from the configured
+        # secrets alias. Previously a "safe" caller base_url was re-validated
+        # and accepted, creating a path for a caller to redirect traffic to an
+        # arbitrary host as long as it was SSH-pinned. That path is now closed.
         caller_base_url = kwargs.pop("base_url", None)
         caller_api_key = kwargs.pop("api_key", None)
         if caller_base_url is not None:
-            from general_ludd.security.auth import is_safe_fetch_url
-
-            if not is_safe_fetch_url(caller_base_url):
-                raise SSRFRejectionError(
-                    f"SSRF guard: refusing blocked caller-supplied base_url "
-                    f"{caller_base_url!r} for profile '{profile_id}'"
-                )
-            init_kwargs["base_url"] = caller_base_url
+            logger.warning(
+                "Ignoring caller-supplied base_url in kwargs for profile=%s "
+                "(base_url must come from the configured api_base_alias only)",
+                profile_id,
+            )
         if caller_api_key is not None:
             logger.warning(
                 "Ignoring caller-supplied api_key in kwargs for profile=%s "
                 "(credentials come from the configured secrets alias only)",
                 profile_id,
             )
+
+        # C6 hardening: default httpx timeout so a hung provider never blocks a
+        # thread indefinitely. The underlying LangChain ChatOpenAI passes
+        # request_timeout directly to httpx.Timeout, giving us a connect cap
+        # (fast failure on unreachable hosts) + a generous read cap (slow
+        # streaming is expected from large-context models).
+        import httpx as _httpx
+
+        init_kwargs["request_timeout"] = _httpx.Timeout(
+            connect=10.0, read=60.0, write=60.0, pool=10.0
+        )
 
         init_kwargs.update(kwargs)
 
