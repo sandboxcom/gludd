@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 from datetime import UTC, datetime
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -268,7 +269,9 @@ class TodoModel(Base):
         Index("ix_todos_status_priority_created_at", "status", "priority", "created_at"),
     )
 
-    __mapper_args__ = {"version_id_col": version}
+    from typing import ClassVar
+
+    __mapper_args__: ClassVar[dict[str, Any]] = {"version_id_col": version}
 
     events: Mapped[list[TodoEventModel]] = relationship(
         back_populates="todo",
