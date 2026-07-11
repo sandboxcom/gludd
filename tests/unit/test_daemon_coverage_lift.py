@@ -17,9 +17,12 @@ from general_ludd.secrets.env import EnvSecretsManager
 
 @pytest.fixture(autouse=True)
 def _preserve_daemon_state():
-    snapshot = list(_daemon_state["todos"])
-    yield
-    _daemon_state["todos"] = snapshot
+    if _daemon_state is None:
+        yield
+    else:
+        snapshot = list(_daemon_state["todos"])
+        yield
+        _daemon_state["todos"] = snapshot
 
 
 @pytest.fixture

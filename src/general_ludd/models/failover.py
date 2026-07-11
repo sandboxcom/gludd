@@ -7,6 +7,7 @@ profiles using tenacity backoff. Records failover events for metrics.
 from __future__ import annotations
 
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +31,19 @@ class ModelFailoverChain:
         self._fallbacks = list(fallback_profiles) if fallback_profiles else []
         self._max_retries = max_retries
         self._backoff = backoff_seconds
+        self._events_lock = threading.Lock()
         self._failover_events: list[dict[str, object]] = []
 
     def get_chain(self) -> list[str]:
         return [self._primary, *self._fallbacks]
 
     def record_failover(self, from_profile: str, to_profile: str, error: str) -> None:
-        self._failover_events.append({
-            "from": from_profile,
-            "to": to_profile,
-            "error": error,
-        })
+        with self._events_lock:
+            self._failover_events.append({
+                "from": from_profile,
+                "to": to_profile,
+                "error": error,
+            })
         logger.warning(
             "Model failover: %s → %s (%s)", from_profile, to_profile, error,
         )
