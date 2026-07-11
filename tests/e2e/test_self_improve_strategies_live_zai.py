@@ -384,13 +384,25 @@ class TestSelfImprovementHarnessOffline:
         )
         print("\n[OFFLINE] interval skip: PASS")
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="E9: model_gateway not yet wired into SelfImprovementHarness "
+        "(AGENTIC_IMPLEMENTATION_SPEC.md §E9)",
+    )
     def test_model_driven_analysis_not_yet_wired(self) -> None:
         """SelfImprovementHarness does not yet accept a model_gateway argument.
 
-        When model-driven analysis is wired, remove this skip and update
-        the test to assert real model-generated suggestions.
+        When model-driven analysis is wired, this test will XPASS (strict
+        fail), signaling that the xfail marker should be removed and the
+        test updated to assert real model-generated suggestions.
         """
-        pytest.skip("Feature not yet wired")
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        harness = SelfImprovementHarness()
+        assert hasattr(harness, "model_gateway"), (
+            "SelfImprovementHarness still has no model_gateway — "
+            "gap NOT yet wired; this xfail absorbs the expected failure."
+        )
 
 
 # ===========================================================================

@@ -477,9 +477,18 @@ class TestIsForcePush:
 
 
 class TestGenerateBranchName:
-    def test_generate_branch_name(self):
+    def test_generate_branch_name_format(self):
         result = GitAutomation.generate_branch_name("99", "fix-bug")
         assert result.startswith("agent/TODO-99/fix-bug-")
-        ts_part = result.split("-")[-1]
+        segments = result.split("-")
+        ts_part = segments[-2]
+        uid_part = segments[-1]
         assert len(ts_part) == 14
         assert ts_part.isdigit()
+        assert len(uid_part) == 8
+        assert all(c in "0123456789abcdef" for c in uid_part.lower())
+
+    def test_generate_branch_name_unique(self):
+        a = GitAutomation.generate_branch_name("99", "fix-bug")
+        b = GitAutomation.generate_branch_name("99", "fix-bug")
+        assert a != b

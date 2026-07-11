@@ -44,10 +44,24 @@ def test_site_crud_no_app(tmp_path):
     assert results.get("app_importable") is False
 
 
-@pytest.mark.skipif(
-    load_llm_keys() is None,
-    reason="no .secrets/llm_keys.env -- live zai scenario skipped",
+@pytest.mark.xfail(
+    strict=True,
+    reason="E9: live greenfield dogfood scenario not yet implemented "
+    "(AGENTIC_IMPLEMENTATION_SPEC.md §E9)",
 )
-def test_todo_website_live_scenario(_zai_creds):
-    """TODO: full live greenfield scenario (alpha.3 skeleton only)."""
-    pytest.skip("TODO: implement live scenario (alpha.3 skeleton only)")
+def test_todo_website_live_scenario(tmp_path):
+    """Live greenfield todo-website dogfood scenario (not yet implemented).
+
+    When the live scenario is built, remove this xfail and wire the full
+    model-driven flow: stand up a todo website via z.ai, run CRUD tests
+    against it, and assert the site is functional.
+    """
+    from tests.e2e.dogfood._gateway import build_gateway
+    from tests.e2e.dogfood._secrets import load_llm_keys
+
+    creds = load_llm_keys()
+    if creds is None:
+        pytest.skip("no .secrets/llm_keys.env — credentials required for live scenario")
+    gw, _mode = build_gateway(creds)
+    assert gw is not None, "gateway must be constructed from real credentials"
+    pytest.fail("live scenario not yet implemented — remove this xfail when wiring lands")
