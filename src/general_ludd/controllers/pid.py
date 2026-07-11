@@ -9,6 +9,7 @@ Replacement would increase complexity without benefit.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,8 @@ import psutil
 if TYPE_CHECKING:
     from general_ludd.controllers.load_scrape import LoadSnapshot
     from general_ludd.schemas.queue import Queue
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -130,10 +133,12 @@ class BudgetController:
         default_run_budget_usd: float = 200.0,
         subscription_window_seconds: float = 18000.0,
         subscription_window_target_percent: float = 99.0,
+        unknown_model_cost_per_1k_default: float = 0.01,
     ) -> None:
         self.default_run_budget_usd = default_run_budget_usd
         self.subscription_window_seconds = subscription_window_seconds
         self.subscription_window_target_percent = subscription_window_target_percent
+        self._unknown_model_cost_per_1k_default = unknown_model_cost_per_1k_default
 
     def check_api_budget(
         self, estimated_cost: float, budget_remaining: float
@@ -141,6 +146,15 @@ class BudgetController:
         return estimated_cost <= budget_remaining and estimated_cost <= self.default_run_budget_usd
 
     def estimate_call_cost(self, tokens: int, cost_per_1k: float) -> float:
+        if cost_per_1k <= 0.0:
+            logger.warning(
+                "BudgetController.estimate_call_cost: unknown or unpriced model "
+                "(cost_per_1k=%.6f); falling back to conservative default %.6f "
+                "per 1k tokens. Unknown models must not be treated as free.",
+                cost_per_1k,
+                self._unknown_model_cost_per_1k_default,
+            )
+            cost_per_1k = self._unknown_model_cost_per_1k_default
         return (tokens / 1000.0) * cost_per_1k
 
     def check_local_model_resources(self, snapshot: LoadSnapshot) -> dict[str, bool | str]:

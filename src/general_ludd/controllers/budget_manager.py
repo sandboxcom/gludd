@@ -264,3 +264,5 @@ class BudgetManager:
             self._daily_spend = 0.0
             self._daily_start = time.monotonic()
             self._paused = False
+            self._daily_reservations.clear()
+            self._todo_reservations.clear()
