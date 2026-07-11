@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,23 @@ from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.todo import TodoStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _gate_failure_summary(report: dict[str, object]) -> str:
+    """Render the failing per-check summaries from a run_project_gate report."""
+    checks = report.get("checks")
+    lines: list[str] = []
+    if isinstance(checks, list):
+        for check in checks:
+            if isinstance(check, dict) and not check.get("passed", True):
+                summary = check.get("summary")
+                if isinstance(summary, str) and summary:
+                    lines.append(summary)
+                else:
+                    lines.append(f"{check.get('name', 'check')}: FAIL")
+    if not lines:
+        lines.append("project gate FAILED")
+    return "; ".join(lines)
 
 _DECISION_STATUS_MAP: dict[str, TodoStatus] = {
     "complete": TodoStatus.COMPLETE,
@@ -35,6 +53,61 @@ async def apply_decision(
     if decision.decision == "complete":
         from general_ludd.review.completion_verifier import verify_completion
         decision = await asyncio.to_thread(verify_completion, decision, None, repo_root)
+
+    # D2: gate a still-COMPLETE decision behind the EXTERNAL target project's
+    # own quality gate when that project declares one via ``project.yml``. This
+    # is the sole production caller of run_project_gate — an external project's
+    # lint/typecheck/test failures must block the merge decision. Fail-safe: any
+    # error resolving/running the gate leaves the decision untouched (the gate is
+    # opt-in via project.yml and must never crash the reconcile path).
+    gate_report: dict[str, object] | None = None
+    if decision.decision == "complete" and repo_root is not None:
+        workspace = Path(repo_root)
+        if (workspace / "project.yml").is_file():
+            from general_ludd.quality.project_gate import run_project_gate
+
+            try:
+                gate_report = await asyncio.to_thread(
+                    run_project_gate, str(workspace)
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Project gate errored for return %s (repo_root=%s): %s — "
+                    "leaving decision unchanged (fail-safe)",
+                    decision.return_id,
+                    repo_root,
+                    exc,
+                )
+                gate_report = None
+            else:
+                if isinstance(gate_report, dict) and not gate_report.get("passed"):
+                    summary = _gate_failure_summary(gate_report)
+                    logger.warning(
+                        "Project gate FAILED for return %s — downgrading "
+                        "complete -> needs_more_work: %s",
+                        decision.return_id,
+                        summary,
+                    )
+                    decision = decision.model_copy(update={
+                        "decision": "needs_more_work",
+                        "confidence": 0.0,
+                        "audit_notes": [
+                            *decision.audit_notes,
+                            f"Downgraded by project gate: {summary}",
+                        ],
+                        "child_todos": [
+                            *decision.child_todos,
+                            {
+                                "title": (
+                                    f"Fix project gate failures "
+                                    f"(return {decision.return_id})"
+                                ),
+                                "description": (
+                                    f"Project gate FAILED: {summary}"
+                                ),
+                            },
+                        ],
+                    })
 
     if decision.decision == "ignore_duplicate":
         logger.info("Ignoring duplicate return %s", decision.return_id)
