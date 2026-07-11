@@ -132,6 +132,24 @@ class HumanInTheLoopConfig(BaseModel):
     confidence_threshold: float = 0.7
 
 
+class OrchestrationGuardConfig(BaseModel):
+    """D11: subagent orchestration defect guards.
+
+    Defines the tunables for the four dispatch-time guardrails:
+    - max_nesting_depth: refuse dispatches deeper than this (default 3)
+    - max_redispatch_count: per-task spiral cutoff before blocking (default 5, 0=off)
+    - max_dispatches_per_window: sliding-window rate limiter (default 0=off)
+    - dispatch_rate_window_s: rate-limiter window seconds (default 60)
+    - enforce_capability_escalation: gate child agent caps against parent (default True)
+    """
+
+    max_nesting_depth: int = 3
+    max_redispatch_count: int = 5
+    max_dispatches_per_window: int = 0
+    dispatch_rate_window_s: float = 60.0
+    enforce_capability_escalation: bool = True
+
+
 class IssuesConfig(BaseModel):
     polling_enabled: bool = False
     poll_interval_ticks: int = 300
@@ -187,6 +205,7 @@ class UserConfig(BaseSettings):
     # ``max_actions_per_tick`` findings. Default ON at interval 30 — inert on
     # a healthy project (BlockerDetector finds nothing to act on) and every
     # action is audited via RemediationActionRepository.
+    orchestration: OrchestrationGuardConfig = OrchestrationGuardConfig()
     remediation: RemediationSettings = RemediationSettings()
     # Project-hierarchy phase 3: cross-project knowledge borrowing. Optional and
     # default None → borrowing OFF, router unchanged. Set a block (or

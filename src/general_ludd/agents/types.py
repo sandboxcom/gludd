@@ -48,4 +48,5 @@ class AgentTask:
     parent_task_id: str | None = None
     invoker_name: str = ""
     project_id: str | None = None  # #51: enables pause-gate on dispatch
+    depth: int = 0  # D11: subagent nesting depth for max-depth guard
     tools: list[dict[str, object]] | None = None

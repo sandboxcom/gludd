@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentTask
@@ -18,6 +19,9 @@ from general_ludd.observability.timing import (
     default_tracker,
 )
 from general_ludd.replay.recorder import RunRecorder
+
+if TYPE_CHECKING:
+    from general_ludd.config.user_config import OrchestrationGuardConfig
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +57,7 @@ class AgentDispatcher:
         pause_controller: object | None = None,
         run_recorder: RunRecorder | None = None,
         mcp_tool_registry: object | None = None,
+        orchestration_guard: OrchestrationGuardConfig | None = None,
     ) -> None:
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
@@ -62,14 +67,14 @@ class AgentDispatcher:
         self._lock = asyncio.Lock()
         self._pause_controller = pause_controller
         self._run_recorder = run_recorder
-        # Per-task duration-anomaly + hung-task detection. The tracker learns a
-        # per-agent baseline from completed/failed runs; the (optional) watchdog
-        # registers each in-flight task so the daemon's stall sweeper can flag a
-        # task that hangs past its expected time. Defaults to the process-wide
-        # shared tracker so histories accumulate across call sites.
         self._tracker = tracker or default_tracker()
         self._watchdog = watchdog
         self._mcp_tool_registry = mcp_tool_registry
+        # D11 orchestration guards
+        self._orchestration_guard = orchestration_guard
+        self._rate_limiter_timestamps: list[float] = []
+        self._task_dispatch_counts: dict[str, int] = {}
+        self._spiral_lock = asyncio.Lock()
 
     @property
     def active_count(self) -> int:
@@ -96,6 +101,128 @@ class AgentDispatcher:
         if self._run_recorder is not None:
             with contextlib.suppress(Exception):
                 self._run_recorder.record(run_id, event)
+
+    # ------------------------------------------------------------------
+    # D11 orchestration guards
+    # ------------------------------------------------------------------
+
+    def _check_nesting_depth(self, task: AgentTask) -> AgentTaskResult | None:
+        if self._orchestration_guard is None:
+            return None
+        limit = self._orchestration_guard.max_nesting_depth
+        if limit <= 0:
+            return None
+        if task.depth > limit:
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=(
+                    f"Max nesting depth exceeded: depth {task.depth} > limit {limit}. "
+                    f"Subagents may not spawn deeper than {limit} levels."
+                ),
+            )
+        return None
+
+    def _check_capability_escalation(
+        self, task: AgentTask, invoker: str
+    ) -> AgentTaskResult | None:
+        if self._orchestration_guard is None:
+            return None
+        if not self._orchestration_guard.enforce_capability_escalation:
+            return None
+        parent_cfg = self._registry.get(invoker)
+        if parent_cfg is None:
+            return None
+        child_cfg = self._registry.get(task.agent_name)
+        if child_cfg is None:
+            return None
+
+        parent = parent_cfg.permissions
+        child = child_cfg.permissions
+
+        violations: list[str] = []
+        if child.can_edit and not parent.can_edit:
+            violations.append("can_edit")
+        if child.can_bash and not parent.can_bash:
+            violations.append("can_bash")
+        if child.can_read and not parent.can_read:
+            violations.append("can_read")
+        if child.can_dispatch_subagents and not parent.can_dispatch_subagents:
+            violations.append("can_dispatch_subagents")
+        parent_allows_all = "*" in parent.allowed_subagents
+        for allowed in child.allowed_subagents:
+            if not parent_allows_all and allowed not in parent.allowed_subagents:
+                violations.append(f"allowed_subagent:{allowed}")
+
+        if violations:
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=(
+                    f"Capability escalation denied: child '{task.agent_name}' "
+                    f"has capabilities not held by parent '{invoker}': "
+                    f"{', '.join(violations)}"
+                ),
+            )
+        return None
+
+    async def _check_rate_limiter(
+        self, task: AgentTask
+    ) -> AgentTaskResult | None:
+        if self._orchestration_guard is None:
+            return None
+        max_per_window = self._orchestration_guard.max_dispatches_per_window
+        if max_per_window <= 0:
+            return None
+        window_s = self._orchestration_guard.dispatch_rate_window_s
+        now = time.monotonic()
+        cutoff = now - window_s
+        self._rate_limiter_timestamps.append(now)
+        self._rate_limiter_timestamps[:] = [
+            ts for ts in self._rate_limiter_timestamps if ts > cutoff
+        ]
+        if len(self._rate_limiter_timestamps) > max_per_window:
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=(
+                    f"Dispatch rate limited: {len(self._rate_limiter_timestamps)} "
+                    f"dispatches in {window_s:.0f}s window exceeds limit of "
+                    f"{max_per_window}"
+                ),
+            )
+        return None
+
+    async def _check_spiral(
+        self, task: AgentTask
+    ) -> AgentTaskResult | None:
+        if self._orchestration_guard is None:
+            return None
+        max_redispatch = self._orchestration_guard.max_redispatch_count
+        if max_redispatch <= 0:
+            return None
+        async with self._spiral_lock:
+            count = self._task_dispatch_counts.get(task.task_id, 0) + 1
+            self._task_dispatch_counts[task.task_id] = count
+        if count > max_redispatch:
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=(
+                    f"Spiral detected: task '{task.task_id}' has been "
+                    f"re-dispatched {count} times (limit: {max_redispatch}). "
+                    f"Same-task redispatch loop cutoff."
+                ),
+            )
+        return None
+
+    # ------------------------------------------------------------------
+    # dispatch_one
+    # ------------------------------------------------------------------
 
     async def dispatch_one(self, task: AgentTask) -> AgentTaskResult:
         config = self._registry.get(task.agent_name)
@@ -162,6 +289,25 @@ class AgentDispatcher:
                     f"to dispatch '{task.agent_name}'"
                 ),
             )
+
+        # --- D11 orchestration guards ---
+
+        nesting_result = self._check_nesting_depth(task)
+        if nesting_result is not None:
+            return nesting_result
+
+        if invoker:
+            escalation_result = self._check_capability_escalation(task, invoker)
+            if escalation_result is not None:
+                return escalation_result
+
+        rate_result = await self._check_rate_limiter(task)
+        if rate_result is not None:
+            return rate_result
+
+        spiral_result = await self._check_spiral(task)
+        if spiral_result is not None:
+            return spiral_result
 
         if (
             config.bind_tools_on_dispatch
