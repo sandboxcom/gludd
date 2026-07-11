@@ -530,8 +530,7 @@ class TestEventLoop:
         assert "phases_completed" in result
         assert "tick_duration_ms" in result
         assert isinstance(result["tick_duration_ms"], float)
-        # 17 phases per PHASE_ORDER in loop.py (load_config_snapshot through emit_tick_metrics).
-        assert result["phases_completed"] == 17
+        assert result["phases_completed"] == 18
 
     @pytest.mark.asyncio
     async def test_run_forever_can_be_stopped(self):
