@@ -476,16 +476,15 @@ class TestSelfImprovementWorkflowWiring:
         app = FastAPI()
         register(app, {})
         client = TestClient(app)
-        # Validation fails for a non-existent worktree -> not applied, no reload.
+        # C13: apply without approval_id enqueues APPROVAL_REQUIRED — needs DB.
+        # Standalone app without DB session factory returns 503.
         resp = client.post(
             "/admin/self-improve/apply",
             json={"title": "x", "description": "y", "worktree_path": "/nonexistent-xyz"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 503
         body = resp.json()
-        assert "applied" in body
-        assert "validation_passed" in body
-        assert body["applied"] is False
+        assert "detail" in body
 
 
 class TestSlurmConnectionErrorWiring:

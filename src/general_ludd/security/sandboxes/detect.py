@@ -48,7 +48,7 @@ def _landlock_available() -> bool:
         import importlib
 
         _landlock = importlib.import_module("landlock")  # pylandlock: Linux-only, guarded by try/except
-        return _landlock.Ruleset().abi > 0
+        return bool(_landlock.Ruleset().abi > 0)
     except Exception:
         return False
 

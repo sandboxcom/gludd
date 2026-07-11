@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import shlex
 import shutil
+from typing import cast
 
 from general_ludd.security.sandboxes import (
     Capability,
@@ -164,7 +165,7 @@ class BubblewrapBackend:
             ))
             return findings
         # Structural check: argv must contain --unshare-all and --die-with-parent.
-        argv = handle.extra.get("argv") or []
+        argv = cast(list[str], handle.extra.get("argv")) or []
         if "--unshare-all" not in argv:
             findings.append(Finding(
                 severity="fail",
@@ -195,13 +196,13 @@ class BubblewrapBackend:
         if missing:
             findings.append(Finding(
                 severity="fail",
-                message=f"bubblewrap argv missing --bind for paths: {sorted(missing)}",
+                message=f"bubblewrap argv missing --bind for paths: {sorted(p for p in missing if p is not None)}",
                 capability=None,
             ))
         else:
             findings.append(Finding(
                 severity="ok",
-                message=f"bubblewrap bind mounts present for {sorted(expected)}",
+                message=f"bubblewrap bind mounts present for {sorted(p for p in expected if p is not None)}",
                 capability=None,
             ))
         unhandled = handle.extra.get("unhandled_net_hosts") or []

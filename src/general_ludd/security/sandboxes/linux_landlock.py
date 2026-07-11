@@ -125,7 +125,7 @@ class LandlockBackend:
             abi = rs.abi
         except Exception:
             return False
-        return abi > 0
+        return bool(abi > 0)
 
     @staticmethod
     def _kernel_supports_net(abi: int) -> bool:

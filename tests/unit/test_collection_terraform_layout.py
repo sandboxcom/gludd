@@ -9,7 +9,8 @@ importer checks:
 
 `terraform validate` and `opa check` are invoked via subprocess.run; the tests
 monkeypatch subprocess.run so they pass without those binaries installed. The
-combined-policy test (test 3) skips cleanly when conftest/opa are absent.
+combined-policy tests skip cleanly when conftest/opa are absent. Stale
+fixture-existence guards removed (E9 skip-smell cleanup — fixtures ship).
 """
 
 from __future__ import annotations
@@ -134,8 +135,6 @@ def test_collection_policy_extends_core_deny_set(
 ) -> None:
     if shutil.which("conftest") is None or shutil.which("opa") is None:
         pytest.skip("conftest/opa not installed")
-    if not _S3_FIXTURE.is_file():
-        pytest.skip("s3_public_read_fail fixture not yet created")
 
     monkeypatch.setattr(subprocess, "run", _ok_completed)
     root = _build_collection(
@@ -357,8 +356,6 @@ def test_example_tag_enforcement_policy_fires_on_missing_environment_tag() -> No
     """
     if shutil.which("conftest") is None or shutil.which("opa") is None:
         pytest.skip("conftest/opa not installed")
-    if not _EXAMPLE_TAG_FIXTURE.is_file():
-        pytest.skip("example_tag_enforcement fixture not yet created")
 
     example_policy_dir = _EXAMPLE_POLICY.parent
     proc = subprocess.run(

@@ -36,8 +36,9 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         repo-status repo-diff repo-staged repo-log \
  		feature-start feature-done test-and-commit preflight \
   		agent-worktree agent-merge agent-cleanup agent-worktree-list \
-  		development-start agent-merge-dev \
- 		git-commit-no-verify git-amend-msg \
+  		agent-worktree-dev agent-merge-dev \
+  		development-push development-merge-to-master development-start development-status \
+  		git-commit-no-verify git-amend-msg \
  		_commit-lock-acquire check-clean-tree ship-commit-files \
 		molecule-version molecule-test molecule-test-all \
 		collection-roles collection-modules molecule-scenarios \
@@ -136,6 +137,12 @@ help:
 	@echo "  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)"
 	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
 	@echo "  agent-worktree-list           List active git worktrees"
+	@echo "  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch"
+	@echo "  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development"
+	@echo "  development-push             Push the development branch to remote"
+	@echo "  development-merge-to-master  Merge development into master (release prep; CI-green required)"
+	@echo "  development-start            Create development branch from master if it doesn't exist"
+	@echo "  development-status           Show commits on development not yet on master"
 	@echo "  submodule-init        Initialize all git submodules (recursive)"
 	@echo "  submodule-update      Update submodules to latest remote (--merge)"
 	@echo "  submodule-status      Show status of each submodule"
@@ -254,7 +261,7 @@ lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests
 
 typecheck:
-	@$(UV) run mypy src
+	@$(UV) run mypy src tests
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \
@@ -2139,21 +2146,6 @@ agent-merge:
 	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into master"
 	@echo "Merged $(BRANCH) into master"
 
-# Ensure the development branch exists (create from master if not).
-# Usage: make development-start
-development-start:
-	@git rev-parse --verify development >/dev/null 2>&1 || git branch development master
-	@git checkout development
-	@echo "Now on development branch"
-
-# Merge a subagent's worktree branch into development (not master). Usage:
-#   make agent-merge-dev BRANCH=agent-fix-slurm
-agent-merge-dev:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge-dev BRANCH=agent-<name>"; exit 1; }
-	@git checkout development
-	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into development"
-	@echo "Merged $(BRANCH) into development"
-
 # Remove a worktree and its branch after the work has been merged. Safe to
 # run even if the worktree was already removed manually. Usage:
 #   make agent-cleanup BRANCH=agent-fix-slurm
@@ -2167,6 +2159,63 @@ agent-cleanup:
 # List active worktrees (read-only diagnostic).
 agent-worktree-list:
 	@git worktree list
+
+# --- Development-branch workflow targets ---
+# Feature work merges into `development` (not master). `development` merges into
+# `master` ONLY for releases. These are development-branch variants of the
+# agent-worktree / agent-merge protocol.
+
+# Create an isolated worktree for a subagent, branching from `development`.
+# If `development` doesn't exist locally, create it from `master` first.
+# Usage: make agent-worktree-dev BRANCH=agent-fix-slurm
+agent-worktree-dev:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-worktree-dev BRANCH=agent-<name>"; exit 1; }
+	@git rev-parse --verify development 2>/dev/null || { echo "Creating development branch from master..."; git branch development master; }
+	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
+	mkdir -p /tmp/gludd-worktrees; \
+	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" development 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
+	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
+	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH) (base: development)"
+
+# Merge a subagent's worktree branch back to `development` (--no-ff).
+# Checks out development, merges the feature branch, then returns to the
+# previous branch. Usage: make agent-merge-dev BRANCH=agent-fix-slurm
+agent-merge-dev:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge-dev BRANCH=agent-<name>"; exit 1; }
+	@git checkout development && \
+	git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into development" && \
+	git checkout - && \
+	echo "Merged $(BRANCH) into development"
+
+# Push the development branch to the sandboxcom remote.
+development-push:
+	@git push sandboxcom development
+	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
+	@echo "Development branch pushed and verified"
+
+# Merge development into master for release prep.
+# Requires CI-green on the development tip before allowing the merge.
+development-merge-to-master:
+	@echo "Checking CI green on development tip..."
+	@$(MAKE) require-ci-green SHA=$$(git rev-parse development) || { echo "CI not green on development tip. Aborting."; exit 1; }
+	@echo "CI green confirmed. Merging development into master..."
+	@git checkout master && \
+	git merge --no-ff development -m "merge: development into master for release" && \
+	git checkout - && \
+	echo "Merged development into master"
+
+# Create the development branch from current master if it doesn't exist.
+development-start:
+	@git rev-parse --verify development 2>/dev/null && echo "Development branch already exists" || { echo "Creating development branch from master..."; git branch development master; echo "Development branch created from master"; }
+
+# Show commits on development that aren't on master.
+development-status:
+	@git rev-parse --verify development 2>/dev/null || { echo "Development branch does not exist. Run: make development-start"; exit 1; }
+	@echo "=== Commits on development not yet on master ==="
+	@git log master..development --oneline --decorate 2>/dev/null || echo "(none)"
+	@echo "=== Summary ==="
+	@git rev-list --count master..development 2>/dev/null || echo "0"
+	@echo "unmerged commits on development"
 
 preflight: check-plugin-liveness
 	@echo "========================================"

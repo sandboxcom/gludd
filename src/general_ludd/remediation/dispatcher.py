@@ -111,7 +111,9 @@ class RemediationDispatcher:
         cfg = self._detector.config
         return cfg if isinstance(cfg, RemediationConfig) else RemediationConfig()
 
-    async def remediate(self, blocked: BlockedTask) -> RemediationAction:
+    async def remediate(
+        self, blocked: BlockedTask, *, idempotency_key: str | None = None
+    ) -> RemediationAction:
         """Apply the suggested remediation, persist the audit row, return outcome."""
         try:
             if blocked.suggested_remediation == "dispatch_agent":
@@ -144,7 +146,7 @@ class RemediationDispatcher:
                 reason=str(exc),
             )
 
-        await self._persist(blocked, action)
+        await self._persist(blocked, action, idempotency_key=idempotency_key)
         return action
 
     # ------------------------------------------------------------------
@@ -294,7 +296,11 @@ class RemediationDispatcher:
     # ------------------------------------------------------------------
 
     async def _persist(
-        self, blocked: BlockedTask, action: RemediationAction
+        self,
+        blocked: BlockedTask,
+        action: RemediationAction,
+        *,
+        idempotency_key: str | None = None,
     ) -> None:
         if self._remediation_repo is None:
             return
@@ -308,6 +314,7 @@ class RemediationDispatcher:
                 project_id=blocked.project_id,
                 ok=action.ok,
                 reason=action.reason,
+                idempotency_key=idempotency_key,
             )
         except Exception:
             logger.exception(

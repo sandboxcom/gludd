@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import subprocess
+import uuid
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
@@ -728,7 +729,14 @@ class GitAutomation:
                 message=(merge.stderr or "merge failed").strip(),
             )
         if strategy == "squash":
-            self._run_git("commit", "-m", f"Merge {source} into {target} (squash)", check=False)
+            try:
+                self._run_git("commit", "-m", f"Merge {source} into {target} (squash)", check=True)
+            except subprocess.CalledProcessError as exc:
+                self._run_git("reset", "--hard", pre_sha, check=False)
+                return GatedCommitResult(
+                    success=False,
+                    message=(exc.stderr or "").strip() or "squash commit failed (rolled back)",
+                )
         # The merge is applied (HEAD moved). Gate the merged tree; roll back on fail.
         try:
             gate = subprocess.run(
@@ -834,4 +842,5 @@ class GitAutomation:
     @staticmethod
     def generate_branch_name(todo_id: str, slug: str) -> str:
         ts = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
-        return f"agent/TODO-{todo_id}/{slug}-{ts}"
+        uid = uuid.uuid4().hex[:8]
+        return f"agent/TODO-{todo_id}/{slug}-{ts}-{uid}"

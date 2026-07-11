@@ -632,21 +632,30 @@ class EventLoop:
             )
             result = await self._active_session.execute(stmt)
             candidates = list(result.scalars().all())
+            if not candidates:
+                return
+
+            # Batch-fetch all live leases for candidate todos in one query
+            # instead of per-todo N+1 lookups. Build bucket_keys from
+            # queue:todo_id pairs, then query BucketLeaseModel with IN.
+            bucket_keys = [
+                f"{_safe_str(t, 'queue', 'core')}:{_safe_str(t, 'todo_id', '')}"
+                for t in candidates
+            ]
+            live_lease_stmt = (
+                select(BucketLeaseModel.bucket_key)
+                .where(BucketLeaseModel.bucket_key.in_(bucket_keys))
+                .where(BucketLeaseModel.expires_at > now)
+            )
+            live_lease_result = await self._active_session.execute(live_lease_stmt)
+            live_bucket_keys: set[str] = set(live_lease_result.scalars().all())
+
             reaped = 0
             for todo in candidates:
-                # Liveness gate: a still-running worker holds a live bucket lease.
-                # Only reap when NO unexpired lease exists for this todo.
                 queue = _safe_str(todo, "queue", "core") or "core"
                 todo_id = _safe_str(todo, "todo_id", "") or ""
                 bucket_key = f"{queue}:{todo_id}"
-                live_lease = (
-                    await self._active_session.execute(
-                        select(BucketLeaseModel)
-                        .where(BucketLeaseModel.bucket_key == bucket_key)
-                        .where(BucketLeaseModel.expires_at > now)
-                    )
-                ).scalar_one_or_none()
-                if live_lease is not None:
+                if bucket_key in live_bucket_keys:
                     # Worker is still heartbeating (lease alive) -> do NOT reap.
                     continue
                 # Guarded compare-and-set: transition ACTIVE->QUEUED only if the
@@ -1061,6 +1070,9 @@ class EventLoop:
             plan_artifact=_safe_str(tr, "plan_artifact"),
             project_id=project_id_val,
         )
+        review_cfg = (
+            self.config.get("review", {}) if isinstance(self.config, dict) else {}
+        )
         if self._runner is not None:
             dirs = self._runner.prepare_job_dirs(job.job_id)
             self._runner.write_vars(job.job_id, job_vars={
@@ -1068,9 +1080,6 @@ class EventLoop:
                 "return_id": job.return_id, "queue": job.queue,
                 "work_type": job.work_type,
             }, shared_vars=None)
-            review_cfg = (
-                self.config.get("review", {}) if isinstance(self.config, dict) else {}
-            )
             review_playbook_timeout = float(review_cfg.get("playbook_timeout", 600.0))
             try:
                 await asyncio.wait_for(
@@ -1088,13 +1097,11 @@ class EventLoop:
                 # (db/repository.py) before dispatch. A silent timeout here
                 # would leave it stuck at 'claimed_for_review' forever — no
                 # reaper re-claims that status. Release the claim back to
-                # 'created' so a later tick's claim_unreviewed picks it up
-                # again, mirroring the concurrent-dispatch-batch timeout
-                # handling above (log + recover, never re-raise and abort the
-                # rest of this tick's claimed returns).
+                # 'created' and transition the associated todo to BLOCKED
+                # so it does not silently stall.
                 logger.warning(
                     "Review playbook for return %s (job_id=%s) timed out "
-                    "after %.0fs; releasing claim for re-claim",
+                    "after %.0fs; releasing claim and blocking todo",
                     tr.return_id,
                     job.job_id,
                     review_playbook_timeout,
@@ -1107,14 +1114,49 @@ class EventLoop:
                             tr.updated_at = datetime.now(UTC)
                     with contextlib.suppress(Exception):
                         await self._active_session.flush()
+                if self._todo_repo is not None:
+                    with contextlib.suppress(Exception):
+                        todo = await self._todo_repo.get_by_id(tr.todo_id)
+                        if todo is not None:
+                            await self._todo_repo.transition(
+                                tr.todo_id, TodoStatus.BLOCKED, todo.version
+                            )
             return
         if self._http_client is None:
             return
-        resp = await self._http_client.post(
-            f"{self.worker_base_url}/jobs/return-review",
-            json=job.model_dump(mode="json"),
-        )
-        await self._persist_review_response(tr, resp)
+        review_http_timeout = float(review_cfg.get("http_timeout", 600.0))
+        try:
+            resp = await asyncio.wait_for(
+                self._http_client.post(
+                    f"{self.worker_base_url}/jobs/return-review",
+                    json=job.model_dump(mode="json"),
+                ),
+                timeout=review_http_timeout,
+            )
+            await self._persist_review_response(tr, resp)
+        except TimeoutError:
+            logger.warning(
+                "Review HTTP dispatch for return %s (job_id=%s) timed out "
+                "after %.0fs; releasing claim and blocking todo",
+                tr.return_id,
+                job.job_id,
+                review_http_timeout,
+            )
+            if self._active_session is not None:
+                with contextlib.suppress(Exception):
+                    tr.status = "created"
+                if hasattr(tr, "updated_at"):
+                    with contextlib.suppress(Exception):
+                        tr.updated_at = datetime.now(UTC)
+                with contextlib.suppress(Exception):
+                    await self._active_session.flush()
+            if self._todo_repo is not None:
+                with contextlib.suppress(Exception):
+                    todo = await self._todo_repo.get_by_id(tr.todo_id)
+                    if todo is not None:
+                        await self._todo_repo.transition(
+                            tr.todo_id, TodoStatus.BLOCKED, todo.version
+                        )
 
     def _resolve_repo_root(self, project_id: str | None) -> str | None:
         """Resolve the repository root for a project.
@@ -1413,26 +1455,47 @@ class EventLoop:
                 self._tick_state["claimed_todos"] = []
                 return
         project_id = self._tick_project_id
+
+        # C21: compute the effective claim limit BEFORE the CAS claim so
+        # todos are never marked ACTIVE beyond the system's dispatch capacity.
+        # Floor cap and PID cap are evaluated here instead of releasing
+        # excess ACTIVE todos back to QUEUED after the fact.
+        effective_limit = 10
+        currently_active = 0
+        if self._todo_repo is not None and self._active_session is not None:
+            try:
+                currently_active = await self._todo_repo.count_active()
+            except Exception:
+                currently_active = 0
+
+        if self._floor_controller is not None:
+            floor_max = self._floor_controller.get_max_active()
+            floor_claimable = max(0, floor_max - currently_active)
+            effective_limit = min(effective_limit, floor_claimable)
+
+        pid_outputs = self._tick_state.get("pid_outputs")
+        if pid_outputs is not None and hasattr(pid_outputs, "desired_total_active_buckets"):
+            pid_desired = pid_outputs.desired_total_active_buckets
+            pid_claimable = max(0, pid_desired - currently_active)
+            effective_limit = min(effective_limit, pid_claimable)
+
+        if effective_limit <= 0:
+            logger.debug(
+                "Claim skipped: effective_limit=%d (floor=%s, pid=%s, active=%d)",
+                effective_limit,
+                self._floor_controller.get_max_active() if self._floor_controller else "none",
+                getattr(pid_outputs, "desired_total_active_buckets", "none") if pid_outputs else "none",
+                currently_active,
+            )
+            self._tick_state["claimed_todos"] = []
+            return
+
         if project_id is not None:
-            claimed = await self._todo_repo.claim_runnable(project_id=project_id)
+            claimed = await self._todo_repo.claim_runnable(
+                limit=effective_limit, project_id=project_id
+            )
         else:
-            claimed = await self._todo_repo.claim_runnable()
-        # Floor cap: throttle active claims by floor controller max_active.
-        if self._floor_controller is not None and claimed:
-            max_active = self._floor_controller.get_max_active()
-            if len(claimed) > max_active:
-                excess = list(claimed[max_active:])
-                logger.info(
-                    "Floor cap: claimed %d but max_active=%d; releasing %d "
-                    "excess todos back to QUEUED",
-                    len(claimed), max_active, len(excess),
-                )
-                claimed = list(claimed[:max_active])
-                for _todo in excess:
-                    with contextlib.suppress(Exception):
-                        await self._todo_repo.transition(
-                            _todo.todo_id, TodoStatus.QUEUED, _todo.version
-                        )
+            claimed = await self._todo_repo.claim_runnable(limit=effective_limit)
         self._tick_state["claimed_todos"] = claimed
         # H15 (W2.5): record a bucket lease per claimed todo so a crashed tick's
         # work can be reclaimed once the lease expires.
@@ -1450,10 +1513,6 @@ class EventLoop:
                         project_id=project_id,
                     )
                 except Exception as exc:
-                    # A CLAIMED todo with no lease row can only be recovered by the
-                    # slow _reap_stuck_todos fallback, so the failure must be
-                    # visible. Keep swallowing (per-todo best-effort) so one bad
-                    # lease write does not abort claiming the rest of the batch.
                     logger.warning(
                         "Lease acquisition failed for todo %s (bucket=%s): %s",
                         todo_id,
@@ -1464,10 +1523,6 @@ class EventLoop:
 
     async def _phase_dispatch_execute_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_todos", [])
-        pid_outputs = self._tick_state.get("pid_outputs")
-        cap = None
-        if pid_outputs is not None and hasattr(pid_outputs, "desired_total_active_buckets"):
-            cap = pid_outputs.desired_total_active_buckets
         if self._budget_guard is not None:
             check = self._budget_guard.check_all_limits(
                 estimated_cost=self._estimated_dispatch_cost(len(claimed))
@@ -1476,43 +1531,6 @@ class EventLoop:
                 logger.warning("Budget exceeded, skipping execute dispatch: %s", check["reason"])
                 self._tick_metrics["todos_dispatched"] = 0
                 return
-
-        # Apply PID cap.
-        # Bug fix: todos beyond the cap are already CLAIMED (status=ACTIVE in the
-        # DB + lease acquired).  Dropping them from the dispatch list without
-        # releasing the lease left them stuck as ACTIVE until the 15-min reaper
-        # fired.  Transition the excess todos back to QUEUED immediately so they
-        # are retried on the next tick instead of stalling until lease expiry.
-        if cap is not None and len(claimed) > cap:
-            excess = list(claimed[cap:])
-            logger.info(
-                "PID cap reached: dispatching %d of %d claimed (cap=%d); "
-                "releasing %d over-cap todos back to QUEUED",
-                cap, len(claimed), cap, len(excess),
-            )
-            claimed = list(claimed[:cap])
-            if self._todo_repo is not None:
-                for _todo in excess:
-                    with contextlib.suppress(Exception):
-                        await self._todo_repo.transition(
-                            _todo.todo_id, TodoStatus.QUEUED, _todo.version
-                        )
-                    # F3: also DELETE the lease row acquired for this todo so it
-                    # does not accumulate as an orphan and later trip
-                    # ``reclaim_expired_leases`` to requeue the same todo we
-                    # just released (a double-dispatch vector). Best-effort: a
-                    # failure here only delays cleanup to the lease TTL.
-                    if self._active_session is not None:
-                        _bucket = _safe_str(_todo, "queue", "core") or "core"
-                        _tid = _safe_str(_todo, "todo_id", "") or ""
-                        if _tid:
-                            with contextlib.suppress(Exception):
-                                from general_ludd.event_loop.lease import release_lease
-
-                                await release_lease(
-                                    self._active_session,
-                                    bucket_key=f"{_bucket}:{_tid}",
-                                )
 
         # W(#23): wire Scheduler.plan() to determine concurrency-safe batches.
         # Each batch may run concurrently (asyncio.gather) when a session_factory
@@ -4031,21 +4049,40 @@ class EventLoop:
                 result = await session.execute(stmt)
                 returns = list(result.scalars().all())
 
-                recorded = 0
-                for tr in returns:
+                # Batch-fetch all related decisions and todos to eliminate
+                # the N+1 query pattern (one query per entity type, not
+                # one query per row).
+                return_ids = [tr.return_id for tr in returns]
+                todo_ids = [
+                    tr.todo_id for tr in returns if tr.todo_id
+                ]
+
+                dec_map: dict[str, TaskDecisionModel] = {}
+                if return_ids:
                     dec_stmt = select(TaskDecisionModel).where(
-                        TaskDecisionModel.return_id == tr.return_id
+                        TaskDecisionModel.return_id.in_(return_ids)
                     )
                     dec_result = await session.execute(dec_stmt)
-                    decision_row = dec_result.scalar_one_or_none()
+                    dec_map = {
+                        d.return_id: d for d in dec_result.scalars().all()
+                    }
 
+                todo_map: dict[str, TodoModel] = {}
+                if todo_ids:
+                    todo_stmt = select(TodoModel).where(
+                        TodoModel.todo_id.in_(todo_ids)
+                    )
+                    todo_result = await session.execute(todo_stmt)
+                    todo_map = {
+                        t.todo_id: t for t in todo_result.scalars().all()
+                    }
+
+                recorded = 0
+                for tr in returns:
+                    decision_row = dec_map.get(tr.return_id)
                     instruction = ""
                     if tr.todo_id:
-                        todo_stmt = select(TodoModel).where(
-                            TodoModel.todo_id == tr.todo_id
-                        )
-                        todo_result = await session.execute(todo_stmt)
-                        todo_row = todo_result.scalar_one_or_none()
+                        todo_row = todo_map.get(tr.todo_id)
                         if todo_row:
                             instruction = todo_row.title or ""
                             if todo_row.description:

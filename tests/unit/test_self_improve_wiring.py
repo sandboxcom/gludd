@@ -416,25 +416,38 @@ class TestSelfImproveApplyConfigTier:
     """Config-tier plans route through UpdateApplier + AtomicSafeWriter."""
 
     @pytest.mark.asyncio
-    async def test_non_config_kind_skips_update_applier(self, transport):
-        with patch(
-            "general_ludd.routers.self_improve.UpdateApplier"
-        ) as MockApplier:
+    async def test_non_config_kind_enqueues_for_approval(self, app, transport):
+        """C13: non-config apply is gated — enqueues APPROVAL_REQUIRED, no silent execute."""
+        from general_ludd.routers.self_improve import SELF_IMPROVE_WORK_TYPE
+
+        engine, factory = await _attach_inmemory_db(app)
+        try:
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
                 resp = await client.post(
                     "/admin/self-improve/apply",
                     json={
-                        "title": "x",
-                        "description": "y",
+                        "kind": "code",
+                        "title": "title-x",
+                        "description": "desc-x",
                         "worktree_path": "/nonexistent-xyz",
                     },
                 )
                 assert resp.status_code == 200
-                # No config-tier kind -> legacy workflow path, applier untouched.
-                MockApplier.assert_not_called()
-                assert "applied" in resp.json()
+                data = resp.json()
+                assert "approval_id" in data
+                assert data["status"] == "approval_required"
+
+                async with factory() as session:
+                    from general_ludd.db.repository import TodoRepository
+                    repo = TodoRepository(session)
+                    approved = await repo.get_by_id(data["approval_id"])
+                    assert approved is not None
+                    assert approved.status == "approval_required"
+                    assert getattr(approved, "work_type", "") == SELF_IMPROVE_WORK_TYPE
+        finally:
+            await engine.dispose()
 
 
 class TestSelfImproveStatusEndpoint:
