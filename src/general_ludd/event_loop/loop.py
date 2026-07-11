@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import queue as _stdqueue
+import random
 import time
 from collections import OrderedDict
 from collections.abc import Callable
@@ -3291,9 +3292,11 @@ class EventLoop:
             )
             return False
 
-        # #53: exponential backoff — after the first failure, skip retries on
-        # ticks that don't match the backoff window so a persistent conflict
-        # doesn't burn every single tick.
+        # D10 (#53): exponential backoff with jitter — after the first
+        # failure, add a jittered sleep so competing workers don't retry
+        # in lockstep (both claim, both see conflict, both release, repeat).
+        # The tick-based window still skips most ticks; the jitter breaks
+        # the exact-phase alignment that causes the livelock.
         retry_count = self._push_retry_count.get(tid, 0)
         if retry_count > 0:
             window = 2 ** min(retry_count, 6)  # cap at 64-tick window
@@ -3304,6 +3307,13 @@ class EventLoop:
                     tid, retry_count, tick, window,
                 )
                 return True  # signal failure so ledger skips marking pushed
+            # D10: jittered backoff to break retry-phase alignment
+            jitter_sec = random.uniform(0.1, min(5.0, 0.5 * (2 ** retry_count)))
+            logger.debug(
+                "#53: jittered backoff for %s (retry %d, %.2fs)",
+                tid, retry_count, jitter_sec,
+            )
+            await asyncio.sleep(jitter_sec)
 
         try:
             await self._try_commit_completed_work(todo)
@@ -3408,35 +3418,32 @@ class EventLoop:
             worker_id = _safe_str(todo, "todo_id", "") or str(id(todo))
             claimed = False
             try:
-                # #31: discover the worktree's affected files (uncommitted changes)
-                # and atomically reserve them before touching git. If another live
-                # worker already holds one of these files, DEFER — release our
-                # just-made claim and raise so the F3 retry path re-attempts this
-                # commit on a later tick (after the other worker releases), instead
-                # of two todos committing the same file simultaneously.
+                # D10 (#31 / #53): discover affected files and atomically
+                # claim-or-conflict them in one lock acquisition.  The old
+                # claim()+overlaps()+release() pattern was a three-step
+                # livelock: two workers could simultaneously claim overlapping
+                # sets, each see the other in overlaps(), both release, both
+                # retry in lockstep.  claim_or_conflict sorts files for
+                # total-order determinism and checks conflicts BEFORE
+                # recording the claim, so the first worker to acquire the
+                # lock wins and every other worker gets a clean conflict
+                # signal without ever holding the lock.
                 if registry is not None:
                     affected = await asyncio.to_thread(repo.changed_files)
                     if affected:
-                        registry.claim(worker_id, affected)
-                        claimed = True
-                        conflicts = registry.overlaps(worker_id)
-                        if conflicts:
-                            registry.release(worker_id)
-                            claimed = False
-                            blocking = sorted(
-                                {w for ws in conflicts.values() for w in ws}
-                            )
+                        acquired = registry.claim_or_conflict(worker_id, affected)
+                        if not acquired:
                             logger.info(
                                 "#31: deferring commit for todo %s — files %s "
-                                "overlap active worker(s) %s; will retry next tick",
+                                "contested by another live worker; will retry next tick",
                                 worker_id,
-                                sorted(conflicts),
-                                blocking,
+                                sorted(affected),
                             )
                             raise _FileClaimConflict(
                                 f"file-claim conflict for {worker_id}: "
-                                f"{sorted(conflicts)} held by {blocking}"
+                                f"{sorted(affected)} contested"
                             )
+                        claimed = True
                 # M (LIVE stall fix): commit/push shell out to blocking git.
                 # Even with a per-subprocess timeout, a 60s blocking call inside
                 # the async tick would freeze every other coroutine. Offload to a
