@@ -360,7 +360,7 @@ class FileIntegrityScanner:
 
     def _save_hashes(self, hashes: dict[str, str]) -> None:
         self._store.parent.mkdir(parents=True, exist_ok=True)
-        serialized = json.dumps(hashes, indent=2)
+        serialized = json.dumps(hashes, sort_keys=True, separators=(",", ":"))
         self._store.write_text(serialized)
         try:
             key = _get_integrity_key()
