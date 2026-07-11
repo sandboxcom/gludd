@@ -183,6 +183,19 @@ COMMANDS
 
     help                Show this manual
 
+    test-bg             Background test runner commands
+      launch              Launch a test in the background
+        TESTFILE            Test file path (required)
+        --wait              Block until test completes
+      status              Check status of a background test
+        TESTFILE            Test file path (required)
+      poll-all            Status for all tracked background tests
+      kill                Kill a background test
+        TESTFILE            Test file path (required)
+        --force             Force SIGKILL after SIGTERM
+      results             Get final results for a completed test
+        TESTFILE            Test file path (required)
+
     filestore           Filestore management commands
       list [PATH]         List filestore contents (default: /)
         --daemon-url URL    Daemon URL

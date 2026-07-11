@@ -90,8 +90,7 @@ def _ip_addr_is_blocked(
     )
 
 
-_SINGLE_LABEL_BLOCKED = frozenset({
-})
+_SINGLE_LABEL_BLOCKED: frozenset[str] = frozenset()
 
 
 def _is_single_label_hostname(host: str) -> bool:

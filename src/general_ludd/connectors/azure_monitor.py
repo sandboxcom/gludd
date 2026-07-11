@@ -41,8 +41,7 @@ Transport = Callable[[str, str, Mapping[str, str], object, float], HttpResponse]
 
 # --- literal-host SSRF block (NO DNS) -------------------------------------------------
 
-_EXTRA_BLOCKED_HOST_NAMES = frozenset({
-})
+_EXTRA_BLOCKED_HOST_NAMES: frozenset[str] = frozenset()
 
 
 def _reject_if_internal(base_url: str) -> None:
