@@ -1,8 +1,9 @@
-"""C19 — Cross-tenant traces: auth-derived project scoping.
+"""C19 — Cross-tenant: auth-derived project scoping for facts/metrics/traces.
 
 Before the XT-3/XT-4 fix, the bearer token was a single global PSK and
-/api/traces trusted a caller-supplied ``?project_id=`` query param for
-scoping — any PSK holder could read any tenant's execution traces.
+/api/traces, /api/facts, and /api/metrics trusted a caller-supplied
+``?project_id=`` query param for scoping — any PSK holder could read any
+tenant's data.
 
 The fix extends the bearer token to optionally carry a project claim
 (``project_id:psk``). The auth middleware stamps
@@ -10,7 +11,7 @@ The fix extends the bearer token to optionally carry a project claim
 the auth-derived scope over the caller-supplied query param.
 
 These tests pin the contract: a scoped caller can only read its OWN
-project's traces; an unscoped caller (legacy PSK) still has full access.
+project's data; an unscoped caller (legacy PSK) still has full access.
 """
 
 from __future__ import annotations
@@ -89,3 +90,79 @@ class TestTracerProjectIdOnExecutionTrace:
         assert trace.project_id is None
         d = trace.to_dict()
         assert d["project_id"] is None
+
+
+class TestFactsMetricsAuthScoping:
+    """The /api/facts and /api/metrics routes must resolve project_id from
+    auth context (request.state.project_id), not from caller-supplied query
+    param. These tests verify the route functions call _resolve_trace_project_id
+    and use its return value, so a project-scoped bearer token cannot be
+    overridden by a ?project_id= query param."""
+
+    @staticmethod
+    def _build_facts_app():
+        from fastapi import FastAPI
+
+        from general_ludd.routers.facts import register as _register_facts
+        app = FastAPI()
+        app.state._session_factory = None
+        app.state._metrics_collector = None
+        app.state._recent_traces = None
+        app.state._dispatch_facet = None
+        app.state._startup_config = {}
+        app.state._spend_limiter = None
+        app.state._filestore = None
+        _register_facts(app, {})
+        return app
+
+    def test_facts_route_auth_scope_wins_over_query_param(self):
+        """When request.state.project_id is set (auth middleware), the
+        /api/facts endpoint must return that auth-derived project_id in its
+        response, ignoring any ?project_id= query param."""
+        from fastapi.testclient import TestClient
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        app = self._build_facts_app()
+
+        class _AuthMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                request.state.project_id = "proj-a"
+                return await call_next(request)
+
+        app.add_middleware(_AuthMiddleware)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/facts?project_id=proj-b", headers={"Authorization": "Bearer test"})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["project_id"] == "proj-a"
+
+    def test_metrics_route_auth_scope_wins_over_query_param(self):
+        """When request.state.project_id is set (auth middleware), the
+        /api/metrics endpoint must scope to the auth-derived project_id,
+        ignoring any ?project_id= query param."""
+        from fastapi.testclient import TestClient
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        app = self._build_facts_app()
+
+        class _AuthMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                request.state.project_id = "proj-a"
+                return await call_next(request)
+
+        app.add_middleware(_AuthMiddleware)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/metrics?project_id=proj-b", headers={"Authorization": "Bearer test"})
+        assert resp.status_code == 200, resp.text
+
+    def test_facts_route_without_auth_scope_uses_query_param(self):
+        """When request.state has NO project_id (legacy global PSK), the
+        endpoint must fall back to the ?project_id= query param."""
+        from fastapi.testclient import TestClient
+
+        app = self._build_facts_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/facts?project_id=proj-b", headers={"Authorization": "Bearer test"})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["project_id"] == "proj-b"

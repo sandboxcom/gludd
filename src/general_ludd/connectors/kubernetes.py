@@ -51,7 +51,7 @@ from urllib.parse import quote, urlencode, urlsplit
 import httpx
 
 from general_ludd.connectors._protocols import HttpResponse
-from general_ludd.security.ssrf import BLOCKED_HOST_NAMES, BLOCKED_METADATA_IPS
+from general_ludd.security.ssrf import BLOCKED_HOST_NAMES, BLOCKED_METADATA_IPS, host_is_blocked
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +125,13 @@ def _endpoint_block_reason(url: str, *, allow_private: bool) -> str | None:
     named-metadata targets stay blocked regardless of ``allow_private`` — that
     carve-out only ever means "an internal CLUSTER network", never the
     metadata service or loopback.
+    Host-level allow/deny decisions delegate to
+    :func:`general_ludd.security.ssrf.host_is_blocked` — the canonical
+    literal-host guard — so the blocklists and IP-classification logic can
+    never drift. The ``allow_private`` carve-out is the only connector-specific
+    addition: it permits private/non-globally-routable IPs that
+    ``host_is_blocked`` would otherwise deny, keeping loopback, link-local,
+    and metadata targets blocked regardless.
     """
     try:
         parts = urlsplit(url)
@@ -138,20 +145,21 @@ def _endpoint_block_reason(url: str, *, allow_private: bool) -> str | None:
     if not host:
         return "ssrf: api_server has no host"
 
-    lowered = host.lower()
+    if not host_is_blocked(host):
+        return None  # passes canonical literal-host guard
+
+    # Canonical guard blocked it.  Build a reason and check allow_private.
+    lowered = host.lower().rstrip(".")
     if lowered in BLOCKED_HOST_NAMES or lowered in BLOCKED_METADATA_IPS:
         return f"ssrf: blocked metadata/loopback host {host!r}"
-    if lowered.endswith(".localhost"):
+    if lowered == "localhost" or lowered.endswith(".localhost"):
         return f"ssrf: blocked loopback host {host!r}"
 
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
-        # A DNS name we do not resolve. Treat as non-private (literal policy):
-        # allowed regardless of allow_private.
-        return None
+        return f"ssrf: blocked host {host!r}"
 
-    # Always-blocked categories, even when allow_private is set.
     if ip.is_loopback:
         return f"ssrf: blocked loopback address {host!r}"
     if ip.is_link_local:
@@ -159,18 +167,12 @@ def _endpoint_block_reason(url: str, *, allow_private: bool) -> str | None:
     if ip.is_reserved or ip.is_multicast or ip.is_unspecified:
         return f"ssrf: blocked reserved/multicast address {host!r}"
 
-    # Anything not globally routable (RFC-1918 / unique-local, AND the
-    # TEST-NET/documentation ranges the old is_private-only check missed) is
-    # gated on allow_private -- the "internal cluster network" opt-in.
-    if not ip.is_global:
-        if allow_private:
-            return None
-        return (
-            f"ssrf: blocked private/internal api_server {host!r} "
-            "(set allow_private=True to permit an internal cluster API server)"
-        )
-
-    return None
+    if allow_private:
+        return None
+    return (
+        f"ssrf: blocked private/internal api_server {host!r} "
+        "(set allow_private=True to permit an internal cluster API server)"
+    )
 
 
 # --------------------------------------------------------------------------- #
