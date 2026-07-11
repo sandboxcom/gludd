@@ -900,6 +900,31 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_account_subparser(sub)
     account_parser = sub.choices["account"]
 
+    testbg_parser = sub.add_parser("test-bg", help="Background test runner commands")
+    testbg_parser.set_defaults(func=None)
+    tbg_sub = testbg_parser.add_subparsers(dest="testbg_command")
+
+    tbg_launch = tbg_sub.add_parser("launch", help="Launch a test in the background")
+    tbg_launch.add_argument("testfile", help="Test file path")
+    tbg_launch.add_argument("--wait", action="store_true", help="Block until test completes")
+    tbg_launch.set_defaults(func=_cmd_testbg_launch)
+
+    tbg_status = tbg_sub.add_parser("status", help="Check status of a background test")
+    tbg_status.add_argument("testfile", help="Test file path")
+    tbg_status.set_defaults(func=_cmd_testbg_status)
+
+    tbg_poll = tbg_sub.add_parser("poll-all", help="Status for all tracked background tests")
+    tbg_poll.set_defaults(func=_cmd_testbg_poll_all)
+
+    tbg_kill = tbg_sub.add_parser("kill", help="Kill a background test")
+    tbg_kill.add_argument("testfile", help="Test file path")
+    tbg_kill.add_argument("--force", action="store_true", help="Force SIGKILL after SIGTERM")
+    tbg_kill.set_defaults(func=_cmd_testbg_kill)
+
+    tbg_results = tbg_sub.add_parser("results", help="Get final results for a completed test")
+    tbg_results.add_argument("testfile", help="Test file path")
+    tbg_results.set_defaults(func=_cmd_testbg_results)
+
     subcommand_map = {
         "login": login_parser,
         "models": models_parser,
@@ -929,6 +954,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "payment": payment_parser,
         "account": account_parser,
         "audit-plugins": audit_plugins_parser,
+        "test-bg": testbg_parser,
     }
 
     return parser, subcommand_map
@@ -3773,6 +3799,48 @@ def _cmd_connectors_query(args: argparse.Namespace) -> None:
     print(f"Source '{source}': {count} record(s)")
     for r in records:
         print(f"  {r}")
+
+
+def _cmd_testbg_launch(args: argparse.Namespace) -> None:
+    from general_ludd.runner.background_test_runner import BackgroundTestRunner
+
+    runner = BackgroundTestRunner()
+    result = runner.launch(args.testfile, wait=args.wait)
+    print(json.dumps(result, indent=2))
+    if result.get("phase") == "timeout":
+        sys.exit(1)
+
+
+def _cmd_testbg_status(args: argparse.Namespace) -> None:
+    from general_ludd.runner.background_test_runner import BackgroundTestRunner
+
+    runner = BackgroundTestRunner()
+    result = runner.status(args.testfile)
+    print(json.dumps(result, indent=2))
+
+
+def _cmd_testbg_poll_all(args: argparse.Namespace) -> None:
+    from general_ludd.runner.background_test_runner import BackgroundTestRunner
+
+    runner = BackgroundTestRunner()
+    results = runner.poll_all()
+    print(json.dumps(results, indent=2))
+
+
+def _cmd_testbg_kill(args: argparse.Namespace) -> None:
+    from general_ludd.runner.background_test_runner import BackgroundTestRunner
+
+    runner = BackgroundTestRunner()
+    result = runner.kill(args.testfile, force=args.force)
+    print(json.dumps(result, indent=2))
+
+
+def _cmd_testbg_results(args: argparse.Namespace) -> None:
+    from general_ludd.runner.background_test_runner import BackgroundTestRunner
+
+    runner = BackgroundTestRunner()
+    result = runner.results(args.testfile)
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

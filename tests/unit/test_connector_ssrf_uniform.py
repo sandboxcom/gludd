@@ -55,22 +55,63 @@ _CONNECTOR_URL_CONFIGS = [
     ("general_ludd.connectors.buildkite", "BuildkiteSource", "base_url", {}, [], None, {}),
     ("general_ludd.connectors.travis", "TravisSource", "base_url", {}, [], None, {}),
     ("general_ludd.connectors.argo_workflows", "ArgoWorkflowsSource", "base_url", {}, [], None, {}),
-    ("general_ludd.connectors.rollbar", "RollbarSource", "base_url", {}, [], None, {"transport": _DUMMY_TRANSPORT}),
-    ("general_ludd.connectors.bugsnag", "BugsnagSource", "base_url", {"project_id": "fake"}, [], None, {"transport": _DUMMY_TRANSPORT}),
+    (
+        "general_ludd.connectors.rollbar", "RollbarSource", "base_url", {},
+        [], None, {"transport": _DUMMY_TRANSPORT},
+    ),
+    (
+        "general_ludd.connectors.bugsnag", "BugsnagSource", "base_url",
+        {"project_id": "fake"}, [], None, {"transport": _DUMMY_TRANSPORT},
+    ),
 
     # ── Cat-2: needs transport kwarg ──
-    ("general_ludd.connectors.grafana_loki", "GrafanaLokiSource", "base_url", {}, [], ValueError, {"transport": _DUMMY_TRANSPORT}),
-    ("general_ludd.connectors.signoz", "SigNozSource", "base_url", {}, [], ValueError, {"transport": _DUMMY_TRANSPORT}),
-    ("general_ludd.connectors.splunk", "SplunkSource", "base_url", {"token_env": "FAKE_SPLUNK_TOKEN"}, [], None, {"transport": _DUMMY_TRANSPORT}),
+    (
+        "general_ludd.connectors.grafana_loki", "GrafanaLokiSource",
+        "base_url", {}, [], ValueError, {"transport": _DUMMY_TRANSPORT},
+    ),
+    (
+        "general_ludd.connectors.signoz", "SigNozSource", "base_url", {},
+        [], ValueError, {"transport": _DUMMY_TRANSPORT},
+    ),
+    (
+        "general_ludd.connectors.splunk", "SplunkSource", "base_url",
+        {"token_env": "FAKE_SPLUNK_TOKEN"}, [], None,
+        {"transport": _DUMMY_TRANSPORT},
+    ),
 
     # ── Cat-3: needs extra config fields checked after SSRF (SSRF fires first) ──
-    ("general_ludd.connectors.github_actions", "GitHubActionsSource", "base_url", {"repo": "owner/repo"}, [], ValueError, {}),
-    ("general_ludd.connectors.azure_monitor", "AzureMonitorSource", "base_url", {"token_env": "FAKE_AZURE_TOKEN", "workspace_id": "fake-workspace"}, [], ValueError, {}),
-    ("general_ludd.connectors.azure_resource_graph", "AzureResourceGraphSource", "base_url", {"token_env": "FAKE_AZURE_TOKEN", "subscriptions": ["fake-sub"]}, [], ValueError, {}),
-    ("general_ludd.connectors.sentry", "SentrySource", "base_url", {"token_env": "FAKE_SENTRY_TOKEN", "org": "fake-org", "project": "fake-project"}, [], ValueError, {}),
-    ("general_ludd.connectors.circleci", "CircleCiSource", "base_url", {"project_slug": "gh/owner/repo"}, [], ValueError, {}),
+    (
+        "general_ludd.connectors.github_actions", "GitHubActionsSource",
+        "base_url", {"repo": "owner/repo"}, [], ValueError, {},
+    ),
+    (
+        "general_ludd.connectors.azure_monitor", "AzureMonitorSource",
+        "base_url",
+        {"token_env": "FAKE_AZURE_TOKEN", "workspace_id": "fake-workspace"},
+        [], ValueError, {},
+    ),
+    (
+        "general_ludd.connectors.azure_resource_graph",
+        "AzureResourceGraphSource", "base_url",
+        {"token_env": "FAKE_AZURE_TOKEN", "subscriptions": ["fake-sub"]},
+        [], ValueError, {},
+    ),
+    (
+        "general_ludd.connectors.sentry", "SentrySource", "base_url",
+        {"token_env": "FAKE_SENTRY_TOKEN", "org": "fake-org",
+         "project": "fake-project"},
+        [], ValueError, {},
+    ),
+    (
+        "general_ludd.connectors.circleci", "CircleCiSource",
+        "base_url", {"project_slug": "gh/owner/repo"}, [], ValueError, {},
+    ),
     ("general_ludd.connectors.gitlab_ci", "GitlabCiSource", "base_url", {"project_id": "12345"}, [], ValueError, {}),
-    ("general_ludd.connectors.azure_devops", "AzureDevOpsSource", "base_url", {"org": "fake-org", "project": "fake-project"}, [], ValueError, {}),
+    (
+        "general_ludd.connectors.azure_devops", "AzureDevOpsSource",
+        "base_url",
+        {"org": "fake-org", "project": "fake-project"}, [], ValueError, {},
+    ),
     ("general_ludd.connectors.cloudflare", "CloudflareSource", "base_url", {}, [], ValueError, {}),
     ("general_ludd.connectors.entra_signin", "EntraSignInSource", "base_url", {}, [], ValueError, {}),
     ("general_ludd.connectors.lambda_labs", "LambdaLabsClient", "base_url", {}, [], ValueError, {}),
@@ -81,12 +122,25 @@ _CONNECTOR_URL_CONFIGS = [
     # overrides the default and triggers the guard.
 
     # ── need env var set for eager-token connectors (SSRF fires first) ──
-    ("general_ludd.connectors.elastic_apm", "ElasticApmSource", "base_url", {}, [("ELASTIC_APM_TOKEN", "fake")], None, {}),
+    (
+        "general_ludd.connectors.elastic_apm", "ElasticApmSource", "base_url",
+        {}, [("ELASTIC_APM_TOKEN", "fake")], None, {},
+    ),
     ("general_ludd.connectors.tempo", "TempoSource", "base_url", {}, [("TEMPO_TOKEN", "fake")], None, {}),
     ("general_ludd.connectors.dynatrace", "DynatraceSource", "base_url", {}, [("DYNATRACE_TOKEN", "fake")], None, {}),
-    ("general_ludd.connectors.influxdb", "InfluxDbSource", "base_url", {}, [("INFLUXDB_TOKEN", "fake")], None, {"transport": _DUMMY_TRANSPORT}),
-    ("general_ludd.connectors.graphite", "GraphiteSource", "base_url", {}, [], None, {"transport": _DUMMY_TRANSPORT}),
-    ("general_ludd.connectors.appdynamics", "AppDynamicsSource", "base_url", {}, [("APPDYNAMICS_TOKEN", "fake")], None, {}),
+    (
+        "general_ludd.connectors.influxdb", "InfluxDbSource", "base_url",
+        {}, [("INFLUXDB_TOKEN", "fake")], None,
+        {"transport": _DUMMY_TRANSPORT},
+    ),
+    (
+        "general_ludd.connectors.graphite", "GraphiteSource", "base_url",
+        {}, [], None, {"transport": _DUMMY_TRANSPORT},
+    ),
+    (
+        "general_ludd.connectors.appdynamics", "AppDynamicsSource",
+        "base_url", {}, [("APPDYNAMICS_TOKEN", "fake")], None, {},
+    ),
     ("general_ludd.connectors.honeycomb", "HoneycombSource", "base_url", {}, [], ValueError, {}),
     ("general_ludd.connectors.pagerduty", "PagerDutySource", "base_url", {}, [], ValueError, {}),
     ("general_ludd.connectors.baseten", "BasetenClient", "base_url", {}, [("BASETEN_API_KEY", "fake")], None, {}),
