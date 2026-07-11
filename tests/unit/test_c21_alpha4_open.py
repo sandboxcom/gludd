@@ -19,10 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from general_ludd.schemas.todo import TodoStatus
-from general_ludd.validation.runner import (
-    CommandValidationError,
-    ValidationRunner,
-)
+from general_ludd.validation.runner import CommandValidationError, ValidationRunner
 
 
 # ── Issue 1: ValidationRunner symlink confinement ───────────────────────
@@ -35,30 +32,29 @@ class TestValidationRunnerSymlinkConfinement:
         """A worktree_path that is a valid dir at init but replaced with an
         escape symlink before run_validation() is rejected at subprocess time.
         """
-        with tempfile.TemporaryDirectory() as safe_dir:
-            with tempfile.TemporaryDirectory() as evil_dir:
-                safe_worktree = os.path.join(safe_dir, "worktree")
-                os.makedirs(safe_worktree)
+        with tempfile.TemporaryDirectory() as safe_dir, tempfile.TemporaryDirectory() as evil_dir:
+            safe_worktree = os.path.join(safe_dir, "worktree")
+            os.makedirs(safe_worktree)
 
-                # Create a harmless file so the runner can "pass"
-                runner = ValidationRunner(
-                    todo_id="TODO-001",
-                    worktree_path=safe_worktree,
-                    test_commands=["uv run pytest --version"],
-                    expected_worktree_root=safe_dir,
-                )
+            # Create a harmless file so the runner can "pass"
+            runner = ValidationRunner(
+                todo_id="TODO-001",
+                worktree_path=safe_worktree,
+                test_commands=["uv run pytest --version"],
+                expected_worktree_root=safe_dir,
+            )
 
-                # After init but before run: replace worktree with a symlink
-                # pointing to a directory outside the expected root.
-                os.rmdir(safe_worktree)
-                os.symlink(evil_dir, safe_worktree)
+            # After init but before run: replace worktree with a symlink
+            # pointing to a directory outside the expected root.
+            os.rmdir(safe_worktree)
+            os.symlink(evil_dir, safe_worktree)
 
-                with (
-                    patch("general_ludd.validation.runner.subprocess.run") as mock_run,
-                    pytest.raises(CommandValidationError, match="escapes expected root"),
-                ):
-                    runner.run_validation()
-                mock_run.assert_not_called()
+            with (
+                patch("general_ludd.validation.runner.subprocess.run") as mock_run,
+                pytest.raises(CommandValidationError, match="escapes expected root"),
+            ):
+                runner.run_validation()
+            mock_run.assert_not_called()
 
     def test_non_absolute_rejected(self) -> None:
         with pytest.raises(CommandValidationError, match="must be an absolute path"):
