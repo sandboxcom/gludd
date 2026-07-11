@@ -164,7 +164,7 @@ class TestRestoreDoesNotDoubleCount:
         every restore invocation appended duplicate records, inflating
         window_spend().
         """
-        clock_values: list[float] = [1.0, 2.0, 3.0, 4.0, 5.0]
+        clock_values: list[float] = [1.0, 2.0, 6.0, 4.0, 5.0]
         clock = clock_values.pop
 
         limiter = SpendLimiter(
@@ -197,7 +197,7 @@ class TestRestoreDoesNotDoubleCount:
         """When some restored records are already present and some are new,
         only the new records are added.
         """
-        clock_values: list[float] = [1.0, 2.0, 3.0]
+        clock_values: list[float] = [0.5, 1.0, 3.0, 4.0, 5.0]
         clock = clock_values.pop
 
         limiter = SpendLimiter(
@@ -209,10 +209,10 @@ class TestRestoreDoesNotDoubleCount:
         # record id #2
         limiter.record(cost_usd=0.75, kind="token")
 
-        # Restore the first record (already present) + a new third record.
+        # Restore the first record (already present, exact match) + a new third record.
         limiter.restore([
-            (1.0, 0.50),   # already present → skip
-            (3.0, 1.00),   # new → add
+            (4.0, 0.50),   # already present → skip (exact ts+pid match on record #1)
+            (0.5, 1.00),   # new → add
         ])
 
         records = limiter.snapshot()
