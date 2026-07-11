@@ -104,6 +104,10 @@ class SpendLimiter:
         # restore() advances this past every ingested record so a post-restart
         # flush never re-inserts rows that were already in the DB.
         self._last_flushed_seq: int = 0
+        # Floor for record() timestamps so monotonicity is preserved across
+        # restarts: after restore() seeds this floor from the max restored
+        # timestamp, any new charge via record() uses max(clock(), _min_next_ts).
+        self._min_next_ts: float = 0.0
         # Re-entrant lock guards the check-and-record sequence so concurrent
         # charges in one window cannot collectively race past the cap (#3).
         # Re-entrant because try_charge() calls window_spend()/record() which
@@ -272,6 +276,9 @@ class SpendLimiter:
             )
         ts = at if at is not None else self._clock()
         with self._lock:
+            if at is None:
+                ts = max(ts, self._min_next_ts)
+                self._min_next_ts = ts
             self._seq += 1
             self._records.append((self._seq, ts, cost_usd, project_id))
 
@@ -398,6 +405,12 @@ class SpendLimiter:
             return
         now = self._clock()
         with self._lock:
+            # Collect (cost_usd, project_id) pairs already present so restored
+            # records that duplicate existing in-memory state are skipped
+            # (fixes the double-count bug: charge → flush → restore → charge).
+            existing_pairs: set[tuple[float, str | None]] = {
+                (float(c), pid) for _seq, _ts, c, pid in self._records
+            }
             valid = []
             for rec in records:
                 if len(rec) == 2:
@@ -435,6 +448,10 @@ class SpendLimiter:
                     ts_f = now
                 if pid is not None and not isinstance(pid, str):
                     pid = None
+                pair = (c_f, pid)
+                if pair in existing_pairs:
+                    continue
+                existing_pairs.add(pair)
                 self._seq += 1
                 valid.append((self._seq, ts_f, c_f, pid))
             self._records.extend(valid)
@@ -442,6 +459,11 @@ class SpendLimiter:
                 # seq is assigned in strictly increasing order above, so the
                 # last-appended record carries the highest seq of this batch.
                 self._last_flushed_seq = max(self._last_flushed_seq, valid[-1][0])
+            # Seed the monotonic-timestamp floor from the max restored
+            # timestamp so record() never assigns a timestamp below what was
+            # already persisted — this preserves monotonicity across restarts.
+            all_ts = [r[1] for r in self._records] if self._records else [0.0]
+            self._min_next_ts = max(self._min_next_ts, max(all_ts))
 
     # ------------------------------------------------------------------
     # Flush watermark (SPD-1) — consumed by a separate EventLoop phase that
