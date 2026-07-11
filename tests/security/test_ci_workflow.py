@@ -812,3 +812,33 @@ class TestPagesWorkflow:
             f"pages workflow upload-pages-artifact path must be "
             f"docs/presentation/deck; got {path!r}"
         )
+
+    def test_permissions_are_explicitly_declared(self) -> None:
+        wf = _load_pages_workflow()
+        permissions = wf.get("permissions", {})
+        assert isinstance(permissions, dict), (
+            "pages.yml must declare permissions explicitly as a mapping"
+        )
+        assert "contents" in permissions, (
+            "pages.yml permissions must include 'contents' scope"
+        )
+        assert permissions["contents"] == "read", (
+            f"pages.yml must use least-privilege contents:read; got {permissions['contents']!r}"
+        )
+        assert permissions.get("pages") == "write", (
+            "pages.yml must declare pages:write for deployment"
+        )
+        assert permissions.get("id-token") == "write", (
+            "pages.yml must declare id-token:write for OIDC"
+        )
+
+    def test_no_secrets_inherit(self) -> None:
+        wf = _load_pages_workflow()
+        for job_name, job in wf.get("jobs", {}).items():
+            assert "secrets" not in job or job["secrets"] != "inherit", (  # pragma: allowlist secret
+                f"pages.yml job '{job_name}' must not use secrets:inherit "
+                f"— declare needed secrets explicitly"
+            )
+        assert wf.get("secrets") != "inherit", (
+            "pages.yml top-level must not use secrets:inherit"
+        )

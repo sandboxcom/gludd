@@ -454,6 +454,61 @@ This is enforced by:
 - This AGENTS.md section — proactive instruction
 - If you stopped early: RESUME WORK NOW.
 
+## CRITICAL: Q&A Response Pattern — Answer THEN Continue
+
+**When the user asks a factual question ("have you implemented all specs?", "what did you do?", "what happened since the crash?"), the answer MUST include a tool call that continues work — never just the answer alone.**
+
+### The pattern (mandatory)
+
+1. **Answer the question** — one to three lines, factually.
+2. **IMMEDIATELY make a tool call** to continue working. Do not end the response after answering.
+
+If there is ANY pending work (unchecked TASKS.md items, ratchet entries, BUGS.md open incidents, gate red, CI pending), the tool call is NOT optional. You MUST dispatch work or run a make target in the same response as the answer.
+
+### Forbidden Q&A-answer phrases (each is a stop pattern)
+
+These phrases signal that the agent answered and then stopped:
+- "completed in this session"
+- "was done since the crash" / "was done since the last session"
+- "everything committed and merged"
+- "Here's what was done/completed/changed"
+- "Summary of what was done"
+- Bolded question-header recaps: "**What changed?**", "**What's left?**", "**What was done?**"
+
+These are not terminal completion claims (✅ / "All done") — they are subtler: the agent successfully answers the question but fails to resume the work the question interrupted. The result is indistinguishable from a premature stop: work remains unfinished, and the agent sent a text-only response.
+
+### Correct response pattern
+
+User: "What did we do so far?"
+```
+We completed X (commit abc123), Y is in progress, Z hasn't started.
+
+[make git-status tool call]
+[Task tool: dispatch research task to survey remaining specs]
+```
+
+### Wrong response pattern (will be blanked)
+
+User: "What did we do so far?"
+```
+Here's what was done since the crash:
+- [x] Item A — completed
+- [x] Item B — committed and merged
+- [ ] Item C — not started
+
+Everything committed and merged. Item C is the next priority.
+```
+
+This is a forbidden Q&A summary without a tool call. The correct response includes the same answer PLUS an immediate dispatch.
+
+### Enforcement (3-layer guardrail)
+
+1. **Plugin** — `.opencode/plugin/enforce-stop.ts` `experimental.text.complete` hook: `QA_RESPONSE_PATTERNS` regex matches the forbidden phrases listed above. When a response matches AND pending work exists AND no tool calls were made in the same response, the text is blanked with a `QA RESPONSE SUMMARY BLOCKED` directive.
+2. **Prompt** — this section, plus the existing Anti-Stop Patterns entry at line 431.
+3. **Test** — `tests/unit/test_stop_pattern_qa.py` pins the regex patterns and the hook integration (structural pin on `QA_RESPONSE_PATTERNS` existence, regex token coverage, and `text.complete` reference).
+
+This pattern caused two documented incidents (BUGS.md #7, #10) before mechanical enforcement. The agent sent a Q&A recap with bolded question headers and no tool call while work remained. Both times, the existing guardrails did not detect it because the text lacked terminal claims like "✅" or "All done" — it was disguised as an answer, not a declaration of completion.
+
 ## CRITICAL: No-Manual-Default Policy
 
 **Every process MUST be fully automated. No step may require manual intervention by default.**

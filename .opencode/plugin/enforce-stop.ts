@@ -323,6 +323,25 @@ const COMMAND_MARKER_RE = /## CMD:|## Report|## RAW OUTPUT|RAW OUTPUT|Test resul
 // unbounded vocabulary lists the lean-plugin refactor removed.
 const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to)\b/i
 
+// QA_RESPONSE_PATTERNS — detects Q&A-style "what was done" recaps that answer
+// a user question but then stop without a tool call. These are premature stops
+// in disguise: the agent successfully answers the question but fails to resume
+// work. Distinct from COMPLETION_VERBATIM (extreme terminal claims) and
+// STOP_PATTERN_PHRASES (permission-seeking deferrals).
+//
+// Matched shapes (from BUGS.md #7 and #10 incidents):
+//   - "completed in this session", "was done since the crash"
+//   - "everything committed and merged"
+//   - "Here's what was done/completed/changed"
+//   - Bolded question-style recap headers: "**What changed?**", "**What's done?**"
+//   - "What happened/changed since the crash"
+//   - "Summary of what was done"
+//
+// These are structurally different from subagent final reports (which carry
+// "Files changed:", "Test results", "RAW OUTPUT" markers). A Q&A recap is a
+// conversation directed at the user, not a structured work deliverable.
+const QA_RESPONSE_PATTERNS = /\b(?:completed in this session|was done since the (?:crash|last session)|everything (?:committed|has been committed)(?:\s+and\s+merged)?|here['\u2019]s what (?:was\s+(?:done|completed|finished)|changed)|what (?:changed|was done|happened)\s+since\s+the\s+(?:crash|last session)|summary of what was (?:done|completed))\b|\*\*What\s+(?:changed|was\s+(?:done|completed)|happened|is\s+(?:left|remaining))\?\*\*/i
+
 // ── DISPATCH TRACKING ─────────────────────────────────────────────────────
 
 const DISPATCH_TOOLS = new Set(["task", "agent", "workflow"])
@@ -1009,6 +1028,34 @@ export default (async ({ }) => {
         // Work-in-progress: tool call was just made
         if (turnState.toolCallMade) {
           if (!COMPLETION_VERBATIM.test(text)) return
+        }
+
+        // NEW: Q&A response summary stop-pattern detection. When the agent answers a
+        // user question with a "what was done" recap and no tool call, AND pending
+        // work exists — it's a premature stop in Q&A disguise. Fires BEFORE the
+        // hasLocalWork subagent-report bypass below so Q&A summaries are not
+        // incorrectly classified as legitimate subagent relays.
+        //
+        // Pattern source: BUGS.md #7 and #10 — agent sent text-only summaries with
+        // phrases like "completed in this session", "everything committed and merged",
+        // and bolded question-header recaps ("**What changed?**", "**What's left?**").
+        const isQaSummary = QA_RESPONSE_PATTERNS.test(combinedText)
+        if (isQaSummary && (hasLocalWork || ciVerdictPendingOrRed)) {
+          logFalseDoneBlock(combinedText, "qa-response-summary-stop")
+          recordBlock("qa-response-summary-stop")
+          output.text = [
+            "⛔ QA RESPONSE SUMMARY BLOCKED — answer the question, THEN continue work.",
+            "",
+            `State: ratchet entries=${ratchetCount}, TASKS.md unchecked=${tasksMdUnchecked}`,
+            "",
+            "You answered a question with a summary of completed work but did",
+            "not include a tool call. Pending work still exists. When asked a",
+            "factual question with unfinished tasks, answer briefly AND dispatch",
+            "the next work wave in the same response.",
+            "DISPATCH A TOOL CALL NOW.",
+          ].join("\n")
+          turnState.blocked = true
+          return
         }
 
         // BUG #6 fix: when hasLocalWork, block ALL text (not just terminal-looking).

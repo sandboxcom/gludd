@@ -20,6 +20,16 @@ def _reset_daemon_state():
         daemon_mod._daemon_state = {}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
+    daemon_mod._daemon_state["quality_gate"] = {}
+    daemon_mod._daemon_state.pop("receiver_buffer", None)
+    daemon_mod._daemon_state.pop("human_gate", None)
+    daemon_mod._daemon_state.pop("remediation_config", None)
+    daemon_mod._daemon_state.pop("_degraded", None)
+    daemon_mod._daemon_state.pop("credits", None)
+    daemon_mod._daemon_state.pop("self_improve_last_analysis", None)
+    daemon_mod._daemon_state.pop("self_improve_error_patterns", None)
+    daemon_mod._daemon_state.pop("_last_gpu_metrics", None)
+    daemon_mod._daemon_state.pop("_last_gpu_metrics_at", None)
 
 
 @pytest.fixture

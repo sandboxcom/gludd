@@ -1239,6 +1239,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from general_ludd.controllers.pause_controller import PauseController
         app.state._pause_controller = PauseController()
 
+        from general_ludd.agents.hibernation import (
+            HibernationController,
+            HibernationStore,
+            _load_hibernate_mac_key,
+        )
+        pause_base = app.state._pause_controller._store.base_dir
+        hibernate_mac_key = _load_hibernate_mac_key(str(pause_base))
+        app.state._hibernation_controller = HibernationController(
+            store=HibernationStore(base_dir=str(pause_base), mac_key=hibernate_mac_key),
+        )
+
         from general_ludd.controllers.floor import FloorController
         floor_controller = FloorController()
         app.state._floor_controller = floor_controller
@@ -1963,6 +1974,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             registry=registry,
             executor=dispatcher_executor,
             pause_controller=app.state._pause_controller,
+            hibernation=app.state._hibernation_controller,
             run_recorder=run_recorder,
         )
 

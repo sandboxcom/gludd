@@ -68,6 +68,99 @@ def default_hibernation_dir() -> Path:
     return Path(xdg) / "general-ludd" / "hibernation"
 
 
+def _load_hibernate_mac_key(base_dir: str) -> bytes | None:
+    """Load a durable MAC key from ``<base_dir>/secrets/hibernate_mac.key``.
+
+    Fail-closed pattern (mirrors :meth:`PauseStore._load_or_create_key`):
+      - Keyfile exists + secure -> read it.
+      - Keyfile missing + no prior evidence -> mint a fresh one.
+      - Keyfile missing/corrupt + prior evidence -> fail closed (IntegrityError).
+      - Keyfile insecure (group/world readable) -> fail closed.
+      - OSError + prior evidence -> fail closed.
+      - OSError + no prior evidence -> degrade gracefully (return None).
+    """
+    secrets_dir = Path(base_dir).resolve() / "secrets"
+    key_path = secrets_dir / "hibernate_mac.key"
+    mac_path = Path(base_dir).resolve() / "hibernate_state.json.mac"
+    keyed_marker = Path(base_dir).resolve() / ".hibernate_keyed"
+    has_prior_evidence = keyed_marker.exists() or mac_path.exists()
+
+    try:
+        if key_path.exists():
+            st = os.stat(key_path)
+            mode = st.st_mode & 0o777
+            if mode & 0o077:
+                raise IntegrityError(
+                    f"hibernate MAC keyfile {key_path} is group/world accessible "
+                    f"(mode {oct(mode)}); refusing to use it (fail closed)."
+                )
+            getuid = getattr(os, "getuid", None)
+            if getuid is not None and st.st_uid != getuid():
+                raise IntegrityError(
+                    f"hibernate MAC keyfile {key_path} is owned by uid "
+                    f"{st.st_uid}, not the current user {getuid()}; refusing "
+                    "(fail closed)."
+                )
+            data = key_path.read_bytes()
+            if data:
+                if not keyed_marker.exists():
+                    with contextlib.suppress(OSError):
+                        tmp = keyed_marker.with_name(keyed_marker.name + ".tmp")
+                        tmp.write_text("keyed\n", encoding="utf-8")
+                        with contextlib.suppress(OSError):
+                            os.chmod(tmp, 0o600)
+                        tmp.replace(keyed_marker)
+                return data
+            if has_prior_evidence:
+                raise IntegrityError(
+                    f"hibernate MAC keyfile {key_path} is empty/corrupt "
+                    "but prior signed state exists; refusing to re-mint "
+                    "(fail closed)."
+                )
+            logger.warning(
+                "HibernateStore: empty MAC keyfile at %s; regenerating.",
+                key_path,
+            )
+        elif has_prior_evidence:
+            raise IntegrityError(
+                f"hibernate MAC keyfile {key_path} is missing but a "
+                "prior keyed/signed state exists; refusing to mint a "
+                "replacement key (fail closed)."
+            )
+        secrets_dir.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(OSError):
+            os.chmod(secrets_dir, 0o700)
+        key = secrets.token_bytes(32)
+        tmp = key_path.with_name(key_path.name + ".tmp")
+        tmp.write_bytes(key)
+        with contextlib.suppress(OSError):
+            os.chmod(tmp, 0o600)
+        tmp.replace(key_path)
+        if not keyed_marker.exists():
+            with contextlib.suppress(OSError):
+                marker_tmp = keyed_marker.with_name(keyed_marker.name + ".tmp")
+                marker_tmp.write_text("keyed\n", encoding="utf-8")
+                with contextlib.suppress(OSError):
+                    os.chmod(marker_tmp, 0o600)
+                marker_tmp.replace(keyed_marker)
+        return key
+    except IntegrityError:
+        raise
+    except OSError as exc:
+        if has_prior_evidence:
+            raise IntegrityError(
+                "HibernateStore: could not load the durable MAC key for a "
+                f"previously-keyed store ({exc}); refusing to operate "
+                "without integrity verification (fail closed)."
+            ) from exc
+        logger.warning(
+            "HibernateStore: could not establish a durable MAC key (%s); "
+            "operating in DEGRADED mode without integrity verification.",
+            exc,
+        )
+        return None
+
+
 def messages_from_dicts(
     raw: list[dict[str, object]],
 ) -> list[ContextMessage]:
@@ -205,16 +298,18 @@ class HibernationStore:
     a process restart.  A durable variant would key the MAC from ``secrets/``.
     """
 
-    def __init__(self, base_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        base_dir: str | Path | None = None,
+        mac_key: bytes | None = None,
+    ) -> None:
         self._base = Path(
             base_dir if base_dir is not None else default_hibernation_dir()
         ).resolve()
-        # Owner-only dir: removes the cross-user-tamper precondition, mirroring
-        # the diskcache-CVE mitigation in models/response_cache.py.
         self._base.mkdir(parents=True, exist_ok=True)
         with contextlib.suppress(OSError):
             os.chmod(self._base, 0o700)
-        self._mac_key = secrets.token_bytes(32)
+        self._mac_key = mac_key if mac_key is not None else secrets.token_bytes(32)
 
     @property
     def base_dir(self) -> Path:

@@ -43,6 +43,7 @@ import logging
 import math
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -113,6 +114,7 @@ class SpendLimiter:
         # Re-entrant because try_charge() calls window_spend()/record() which
         # also acquire the lock.
         self._lock = threading.RLock()
+        self._reservations: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -342,6 +344,55 @@ class SpendLimiter:
                 project_id=project_id,
                 **extra,
             )
+            return True
+
+    def reserve(self, estimated_cost_usd: float) -> str | None:
+        if not isinstance(estimated_cost_usd, (int, float)):
+            return None
+        if not math.isfinite(estimated_cost_usd) or estimated_cost_usd <= 0:
+            return None
+        token = str(uuid.uuid4())
+        with self._lock:
+            if self.would_exceed(estimated_cost_usd):
+                return None
+            self._seq += 1
+            ts = self._clock()
+            ts = max(ts, self._min_next_ts)
+            self._min_next_ts = ts
+            self._records.append((self._seq, ts, estimated_cost_usd, None))
+            self._reservations[token] = self._seq
+            return token
+
+    def commit(
+        self,
+        token: str,
+        actual_cost_usd: float,
+        *,
+        kind: str,
+        at: float | None = None,
+        model: str | None = None,
+        project_id: str | None = None,
+        **_extra: Any,
+    ) -> bool:
+        with self._lock:
+            reserved_seq = self._reservations.pop(token, None)
+            if reserved_seq is None:
+                return False
+            for i, (seq, ts, _c, _pid) in enumerate(self._records):
+                if seq == reserved_seq:
+                    self._records[i] = (seq, ts, actual_cost_usd, project_id)
+                    return True
+            return False
+
+    def release(self, token: str) -> bool:
+        with self._lock:
+            reserved_seq = self._reservations.pop(token, None)
+            if reserved_seq is None:
+                return False
+            for i, (seq, _ts, _c, _pid) in enumerate(self._records):
+                if seq == reserved_seq:
+                    self._records.pop(i)
+                    return True
             return True
 
     def snapshot(self) -> list[tuple[float, float, str | None]]:
