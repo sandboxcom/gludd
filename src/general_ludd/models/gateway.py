@@ -382,6 +382,7 @@ class ModelGateway:
         health_tracker: _HealthTrackerProtocol | None = None,
         pause_controller: _PauseControllerProtocol | None = None,
         langsmith_tracer: LangSmithTracer | None = None,
+        max_fallback_depth: int = 3,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -402,6 +403,7 @@ class ModelGateway:
         self._health_tracker = health_tracker
         self._pause_controller = pause_controller
         self._langsmith_tracer = langsmith_tracer
+        self._max_fallback_depth = max_fallback_depth
         # Gateway-wide failover event log (not tied to any single profile's
         # own chain config): every hop walked by _walk_fallbacks is recorded
         # here for audit/debugging, independent of whether a metrics collector
@@ -1432,8 +1434,16 @@ class ModelGateway:
         callers are ever in-flight to it at once; the rest block here until a
         slot frees up.
         """
-        with self._fallback_semaphore(fb_id):
+        sem = self._fallback_semaphore(fb_id)
+        if not sem.acquire(timeout=5.0):
+            raise RuntimeError(
+                f"fallback capacity exhausted for '{fb_id}' "
+                f"(all {sem._value + 1} slots occupied)"
+            )
+        try:
             result = self.call_model(fb_id, messages, **kwargs)
+        finally:
+            sem.release()
         return result
 
     def _record_failover(
@@ -1495,8 +1505,12 @@ class ModelGateway:
         visited: set[str] = {from_profile_id} if from_profile_id else set()
         queue: list[str] = list(fallback_ids)
         prev_id = from_profile_id
+        depth: int = 0
         while queue:
             fb_id = queue.pop(0)
+            depth += 1
+            if depth > self._max_fallback_depth:
+                continue
             if fb_id in visited:
                 continue
             visited.add(fb_id)
@@ -1645,9 +1659,18 @@ class ModelGateway:
             **kwargs,
         }
         if primary_healthy:
-            result = self._try_call_model(profile_id, messages, **_call_kwargs)
-            if result is not None:
-                return result
+            try:
+                return self.call_model(profile_id, messages, **_call_kwargs)
+            except SSRFRejectionError:
+                raise
+            except BudgetExceededError:
+                raise
+            except ModelPausedError:
+                raise
+            except Exception as exc:
+                primary_exc = exc
+        else:
+            primary_exc = None
 
         fallback_ids: list[str] = fallback_profiles or []
         if not fallback_ids:
@@ -1655,27 +1678,41 @@ class ModelGateway:
             if profile is not None:
                 fallback_ids = list(profile.fallback_profiles)
 
+        all_attempts: list[dict[str, str]] = []
+        if primary_exc is not None:
+            all_attempts.append({"profile_id": profile_id, "reason": str(primary_exc)})
+
         # D-04: route fallback walk through _walk_fallbacks (health-gated)
-        result, last_exc, _attempts = self._walk_fallbacks(
-            fallback_ids, messages, from_profile_id=profile_id, **_call_kwargs
+        result, last_exc, fallback_attempts = self._walk_fallbacks(
+            fallback_ids, messages,
+            from_profile_id=profile_id,
+            from_error=primary_exc,
+            **_call_kwargs,
         )
         if result is not None:
             return result
+        all_attempts.extend(fallback_attempts)
 
-        # If primary was tripped AND all fallbacks open/failed → clear error
+        # If primary was tripped AND all fallbacks open/failed -> clear error
         if not primary_healthy:
-            raise CircuitBreakerOpenError(
+            cb_error = CircuitBreakerOpenError(
                 f"All circuits open for fallback chain '{profile_id}'"
             )
+            _enrich_all_down_message(cb_error, all_attempts)
+            raise cb_error
 
         if last_exc is not None:
-            raise CircuitBreakerOpenError(
+            cb_error = CircuitBreakerOpenError(
                 f"All profiles in fallback chain failed for '{profile_id}'"
-            ) from last_exc
+            )
+            _enrich_all_down_message(cb_error, all_attempts)
+            raise cb_error from last_exc
 
-        raise CircuitBreakerOpenError(
+        cb_error = CircuitBreakerOpenError(
             f"All profiles in fallback chain failed for '{profile_id}'"
         )
+        _enrich_all_down_message(cb_error, all_attempts)
+        raise cb_error
 
     def _notify_profile_change(
         self,
