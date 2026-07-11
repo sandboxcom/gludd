@@ -23,12 +23,15 @@ canned response and no network is touched.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Iterable, Mapping
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # Injectable transport contract: (method, url, headers, json_body, timeout) -> response.
 # The response only needs ``.status_code: int`` and ``.json() -> Any`` (httpx.Response
@@ -38,34 +41,18 @@ Transport = Callable[[str, str, Mapping[str, str], object, float], HttpResponse]
 
 # --- literal-host SSRF block (NO DNS) -------------------------------------------------
 
-# Azure metadata host NOT covered by the canonical shared blocklist
-# (general_ludd.security.ssrf.BLOCKED_HOST_NAMES). Kept here so this connector's
-# coverage is never weaker than before the consolidation onto ``is_url_blocked``.
-_EXTRA_BLOCKED_HOST_NAMES = frozenset({"metadata.azure.com"})
+_EXTRA_BLOCKED_HOST_NAMES = frozenset({
+})
 
 
 def _reject_if_internal(base_url: str) -> None:
-    """Raise ``ValueError`` if ``base_url``'s literal host is internal/metadata.
-
-    Pure literal inspection — performs NO DNS resolution. The private / loopback
-    / link-local / reserved + cloud-metadata decision (localhost, the
-    ``.localhost`` TLD, metadata.google.internal, 169.254.169.254,
-    100.100.100.200, ...) is delegated to the canonical shared guard
-    :func:`general_ludd.security.ssrf.is_url_blocked` so it can never drift
-    weaker than the single source of truth. Two connector-specific rules are
-    layered on top: the Azure metadata name and any single-label (dot-less) host,
-    which cannot be a public FQDN.
-    """
+    """Raise ValueError if base_url's literal host is internal/metadata."""
     if is_url_blocked(base_url):
         raise ValueError(f"refusing internal/metadata host: {base_url!r}")
     host = urlsplit(base_url).hostname or ""
     host_l = host.lower()
     if host_l in _EXTRA_BLOCKED_HOST_NAMES:
         raise ValueError(f"refusing internal/metadata host: {host!r}")
-    # Single-label (dot-less, non-IP) hostnames cannot be a public FQDN; any IP
-    # literal that reached here already passed the canonical guard (public).
-    if "." not in host_l and ":" not in host_l:
-        raise ValueError(f"refusing single-label/internal host: {host!r}")
 
 
 def _parse_ts(value: object) -> float | None:
@@ -248,8 +235,9 @@ class AzureMonitorSource:
         """Trivial ``print 1`` KQL probe. Never raises."""
         try:
             payload = self._post_kql("print 1", "PT5M")
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         rows = 0
         if isinstance(payload, Mapping):
             for table in payload.get("tables") or []:

@@ -169,7 +169,7 @@ def test_health_never_raises() -> None:
     src = TravisSource(_config(), transport=boom)
     result = src.health()
     assert result["ok"] is False
-    assert "OSError" in result["detail"]
+    assert result["detail"] == "health check failed"
 
 
 def test_fetch_log() -> None:

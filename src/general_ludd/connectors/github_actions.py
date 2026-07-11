@@ -23,13 +23,18 @@ Security:
 from __future__ import annotations
 
 import json as _json
+import logging
 import os
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
+from urllib.parse import quote
 
 import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # A transport is any callable matching ``http_get(url, headers) -> (status, json)``.
 Transport = Callable[[str, dict[str, str]], tuple[int, object]]
@@ -87,7 +92,7 @@ class GitHubActionsSource:
 
     def __init__(self, config: dict[str, object], *, http_get: Transport | None = None) -> None:
         repo = config.get("repo")
-        if not repo or "/" not in str(repo):
+        if not repo or not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", str(repo)):
             raise ValueError("config['repo'] must be 'owner/name'")
         self.repo: str = str(repo)
         self.base_url: str = _validate_base_url(str(config.get("base_url") or _DEFAULT_BASE_URL))
@@ -109,7 +114,7 @@ class GitHubActionsSource:
         return headers
 
     def _runs_url(self) -> str:
-        return f"{self.base_url}/repos/{self.repo}/actions/runs"
+        return f"{self.base_url}/repos/{quote(self.repo, safe='/')}/actions/runs"
 
     def _normalize(self, run: dict[str, object]) -> dict[str, object]:
         name = run.get("name") or ""
@@ -138,7 +143,8 @@ class GitHubActionsSource:
         try:
             status, _ = self._http_get(self._runs_url(), self._headers())
         except Exception as exc:  # health must never propagate
-            return {"ok": False, "detail": f"transport error: {exc}"}
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         if 200 <= status < 300:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
@@ -176,7 +182,8 @@ class GitHubActionsSource:
 
     def fetch_failed_logs(self, run_id: int | str) -> list[dict[str, object]]:
         """Return the jobs list for a run (stub for failure-log drill-down)."""
-        url = f"{self.base_url}/repos/{self.repo}/actions/runs/{run_id}/jobs"
+        run_id_str = quote(str(run_id), safe="")
+        url = f"{self.base_url}/repos/{quote(self.repo, safe='/')}/actions/runs/{run_id_str}/jobs"
         try:
             status, body = self._http_get(url, self._headers())
         except Exception:  # drill-down is best-effort

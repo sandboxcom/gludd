@@ -24,6 +24,7 @@ Design contract (shared by all gludd APM connectors):
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
@@ -32,6 +33,8 @@ import httpx
 
 from general_ludd.connectors._errors import ConnectorConfigError
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 KIND_METRICS = "metrics"
 KIND_TRACES = "traces"
@@ -135,8 +138,9 @@ class DynatraceSource:
         """Probe reachability + auth; never raises."""
         try:
             status, _ = self._get("/api/v2/metrics", {"pageSize": "1"})
-        except Exception as exc:  # health must never propagate
-            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        except Exception:  # health must never propagate
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         if 200 <= status < 300:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}

@@ -27,6 +27,7 @@ No imports from sibling connectors or any gludd base module.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 import re
 from typing import Protocol, cast
@@ -35,6 +36,8 @@ from urllib.parse import urlsplit
 from general_ludd.connectors._errors import SSRFError
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 
 class _Transport(Protocol):
@@ -243,5 +246,6 @@ class K8sEventsSource:
                 "ok": False,
                 "detail": f"events API returned HTTP {resp.status_code}",
             }
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"probe error: {type(exc).__name__}: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}

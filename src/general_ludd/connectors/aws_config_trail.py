@@ -33,10 +33,13 @@ Design constraints honored here:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol, TypedDict, cast, runtime_checkable
 
 __all__ = ["AwsConfigTrailSource"]
+
+logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------- #
@@ -353,11 +356,13 @@ class AwsConfigTrailSource:
             # Probe the factory without performing any network call.
             try:
                 self._client_factory("config")
-            except Exception as exc:
-                return {"ok": False, "detail": f"client factory error: {exc!r}"}
+            except Exception:
+                logger.warning("client factory health check failed", exc_info=True)
+                return {"ok": False, "detail": "health check failed"}
             return {"ok": True, "detail": f"ready region={self._region or 'default'}"}
-        except Exception as exc:  # pragma: no cover - defensive; never raises
-            return {"ok": False, "detail": f"health error: {exc!r}"}
+        except Exception:  # pragma: no cover - defensive; never raises
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
 
     def query(self, spec: Mapping[str, object]) -> list[NormalizedRecord]:
         if self._client_factory is None:

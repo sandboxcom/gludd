@@ -25,6 +25,7 @@ No shell, no ``shell=True``, no base-class / sibling / package imports.
 from __future__ import annotations
 
 import json as _json
+import logging
 import os
 from collections.abc import Callable
 from urllib.parse import urlsplit
@@ -32,6 +33,8 @@ from urllib.parse import urlsplit
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["NewRelicSource"]
 
@@ -260,6 +263,7 @@ class NewRelicSource:
         """
         try:
             self._run_nrql("SELECT 1")
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         return {"ok": True, "detail": "ok"}

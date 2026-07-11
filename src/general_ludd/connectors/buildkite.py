@@ -22,15 +22,18 @@ Contract (shared by every pipeline connector):
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import Callable, Mapping
 from typing import TypedDict, cast
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
 
 from general_ludd.connectors._errors import ConnectorConfigError
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # A transport is a callable: (method, url, headers, timeout) -> (status, body).
 Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
@@ -119,7 +122,7 @@ class BuildkiteSource:
         return self._transport(method, url, self._headers(), self.timeout)
 
     def _builds_url(self) -> str:
-        return f"{self.base_url}/v2/organizations/{self.org}/pipelines/{self.pipeline}/builds"
+        return f"{self.base_url}/v2/organizations/{quote(self.org, safe='')}/pipelines/{quote(self.pipeline, safe='')}/builds"
 
     @staticmethod
     def _normalize_build(build: Mapping[str, object]) -> dict[str, object]:
@@ -148,8 +151,9 @@ class BuildkiteSource:
         """Probe the builds endpoint. Never raises."""
         try:
             status, _ = self._request("GET", self._builds_url())
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         if 200 <= status < 300:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
@@ -170,7 +174,7 @@ class BuildkiteSource:
 
     def fetch_log(self, job_id: str) -> str:
         """Fetch the raw log content for a single job within this pipeline."""
-        url = f"{self.base_url}/v2/organizations/{self.org}/pipelines/{self.pipeline}/builds/jobs/{job_id}/log"
+        url = f"{self.base_url}/v2/organizations/{quote(self.org, safe='')}/pipelines/{quote(self.pipeline, safe='')}/builds/jobs/{quote(str(job_id), safe='')}/log"
         status, body = self._request("GET", url)
         if not (200 <= status < 300):
             raise ConnectorConfigError(f"buildkite log fetch failed: HTTP {status}")

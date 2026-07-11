@@ -130,14 +130,8 @@ def test_public_api_server_is_allowed() -> None:
 
 
 def test_internal_api_server_rejected_without_opt_in() -> None:
-    transport = RecordingTransport({"/log": FakeResponse(200, text="x\n")})
-    src = make_source(api_server=INTERNAL_API, transport=transport, allow_private=False)
-    recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
-    # Rejected: an error record, and the transport was NEVER called.
-    assert transport.calls == []
-    assert len(recs) == 1
-    assert recs[0]["level_or_status"] == "error"
-    assert "ssrf" in recs[0]["message"].lower() or "blocked" in recs[0]["message"].lower()
+    with pytest.raises(ValueError):
+        make_source(api_server=INTERNAL_API, allow_private=False)
 
 
 def test_internal_api_server_allowed_with_opt_in() -> None:
@@ -149,82 +143,40 @@ def test_internal_api_server_allowed_with_opt_in() -> None:
 
 
 def test_loopback_api_server_rejected_even_with_opt_in() -> None:
-    # allow_private opts into RFC1918 internal hosts, NOT loopback/metadata.
-    transport = RecordingTransport({"/log": FakeResponse(200, text="line\n")})
-    src = make_source(
-        api_server="https://127.0.0.1:6443", transport=transport, allow_private=True
-    )
-    recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
-    assert transport.calls == []
-    assert recs[0]["level_or_status"] == "error"
+    with pytest.raises(ValueError):
+        make_source(api_server="https://127.0.0.1:6443", allow_private=True)
 
 
 def test_non_http_scheme_rejected() -> None:
-    transport = RecordingTransport()
-    src = make_source(api_server="file:///etc/passwd", transport=transport, allow_private=True)
-    recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
-    assert transport.calls == []
-    assert recs[0]["level_or_status"] == "error"
+    with pytest.raises(ValueError):
+        make_source(api_server="file:///etc/passwd", allow_private=True)
 
 
 @pytest.mark.parametrize("host", ["metadata.goog", "instance-data", "ip6-localhost"])
 def test_metadata_alias_names_rejected_without_opt_in(host: str) -> None:
-    # Previously missing from this connector's own 4-name blocklist.
-    transport = RecordingTransport({"/log": FakeResponse(200, text="x\n")})
-    src = make_source(
-        api_server=f"https://{host}:6443", transport=transport, allow_private=False
-    )
-    recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
-    assert transport.calls == []
-    assert recs[0]["level_or_status"] == "error"
+    with pytest.raises(ValueError):
+        make_source(api_server=f"https://{host}:6443", allow_private=False)
 
 
 def test_metadata_ip_literal_rejected_even_with_opt_in() -> None:
-    transport = RecordingTransport({"/log": FakeResponse(200, text="x\n")})
-    src = make_source(
-        api_server="https://169.254.169.254:6443", transport=transport, allow_private=True
-    )
-    recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
-    assert transport.calls == []
-    assert recs[0]["level_or_status"] == "error"
+    with pytest.raises(ValueError):
+        make_source(api_server="https://169.254.169.254:6443", allow_private=True)
 
 
 def test_alibaba_metadata_ip_rejected_even_with_opt_in() -> None:
-    # 100.100.100.200 sits in the CGNAT 100.64.0.0/10 range, which Python's
-    # ipaddress module does not classify as private/reserved -- this coverage
-    # only exists because BLOCKED_METADATA_IPS names it explicitly. Blocked
-    # regardless of allow_private, same as any other named metadata target.
-    transport = RecordingTransport({"/log": FakeResponse(200, text="x\n")})
-    src = make_source(
-        api_server="https://100.100.100.200:6443", transport=transport, allow_private=True
-    )
-    recs = src.query({"mode": "logs", "pod": "p", "container": "c"})
-    assert transport.calls == []
-    assert recs[0]["level_or_status"] == "error"
+    with pytest.raises(ValueError):
+        make_source(api_server="https://100.100.100.200:6443", allow_private=True)
 
 
 def test_cgnat_address_blocked_without_opt_in_allowed_with_opt_in() -> None:
-    # 100.65.1.1 sits in the 100.64.0.0/10 CGNAT range: is_private is False
-    # for it in Python's ipaddress, so the is_global-based redesign is what
-    # gates it (not the OLD is_private-only check) -- and it is NOT one of the
-    # "always blocked" categories (loopback/link-local/reserved/multicast/
-    # unspecified), so allow_private=True permits it exactly like an RFC-1918
-    # internal-cluster address.
-    blocked_transport = RecordingTransport({"/log": FakeResponse(200, text="x\n")})
-    blocked = make_source(
-        api_server="https://100.65.1.1:6443", transport=blocked_transport, allow_private=False
-    )
-    recs = blocked.query({"mode": "logs", "pod": "p", "container": "c"})
-    assert blocked_transport.calls == []
-    assert recs[0]["level_or_status"] == "error"
+    with pytest.raises(ValueError):
+        make_source(api_server="https://100.65.1.1:6443", allow_private=False)
 
     allowed_transport = RecordingTransport({"/log": FakeResponse(200, text="line\n")})
-    allowed = make_source(
-        api_server="https://100.65.1.1:6443", transport=allowed_transport, allow_private=True
-    )
-    recs2 = allowed.query({"mode": "logs", "pod": "p", "container": "c"})
+    allowed = make_source(api_server="https://100.65.1.1:6443", transport=allowed_transport, allow_private=True)
+    recs = allowed.query({"mode": "logs", "pod": "p", "container": "c"})
     assert allowed_transport.calls
-    assert any(r["level_or_status"] != "error" for r in recs2)
+    assert any(r["level_or_status"] != "error" for r in recs)
 
 
 # --------------------------------------------------------------------------- #
@@ -500,11 +452,8 @@ def test_health_never_raises_on_transport_error() -> None:
 
 
 def test_health_not_ok_on_ssrf_blocked() -> None:
-    transport = RecordingTransport({"/livez": FakeResponse(200, text="ok")})
-    src = make_source(api_server=INTERNAL_API, transport=transport, allow_private=False)
-    h = src.health()
-    assert h["ok"] is False
-    assert transport.calls == []
+    with pytest.raises(ValueError):
+        make_source(api_server=INTERNAL_API, allow_private=False)
 
 
 def test_query_never_raises_on_transport_error() -> None:

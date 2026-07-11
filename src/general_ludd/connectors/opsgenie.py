@@ -12,6 +12,7 @@ Security notes:
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -20,6 +21,8 @@ from urllib.parse import urlparse
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.opsgenie.com"
 DEFAULT_TIMEOUT = 15.0
@@ -160,8 +163,9 @@ class OpsgenieSource:
                 params={"limit": 1},
                 timeout=self.timeout,
             )
-        except Exception as exc:  # never raises
-            return {"ok": False, "detail": f"request failed: {exc}"}
+        except Exception:  # never raises
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         status = getattr(resp, "status_code", 0)
         if status >= 400:
             return {"ok": False, "detail": f"http status {status}"}

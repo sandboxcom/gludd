@@ -30,6 +30,7 @@ real path is compared against the real root.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 
@@ -94,6 +95,9 @@ _RFC3164 = re.compile(
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class PathConfinementError(ValueError):
     """Raised when a requested path escapes the configured root."""
 
@@ -148,8 +152,9 @@ class SyslogFileSource:
             if not os.access(self._root, os.R_OK):
                 return {"ok": False, "detail": f"root not readable: {self._root}"}
             return {"ok": True, "detail": f"root ok: {self._root}"}
-        except OSError as exc:  # pragma: no cover - defensive
-            return {"ok": False, "detail": f"health error: {exc}"}
+        except OSError:  # pragma: no cover - defensive
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
 
     def _parse_line(self, line: str) -> dict[str, object]:
         stripped = line.rstrip("\n")
