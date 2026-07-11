@@ -36,6 +36,7 @@ import logging
 import platform
 import subprocess
 from pathlib import Path
+from typing import cast
 
 from general_ludd.security.sandboxes import (
     Capability,
@@ -230,7 +231,7 @@ class SeatbeltBackend:
 
     @staticmethod
     def verify(spec: PermissionSpec, handle: SandboxHandle) -> list[Finding]:
-        path = Path(handle.extra.get("path", str(_profile_path(spec))))
+        path = Path(cast(str, handle.extra.get("path", str(_profile_path(spec)))))
         findings: list[Finding] = []
         if not path.exists():
             findings.append(Finding(
@@ -267,7 +268,7 @@ class SeatbeltBackend:
 
     @staticmethod
     def release(handle: SandboxHandle) -> None:
-        path = Path(handle.extra.get("path", ""))
+        path = Path(cast(str, handle.extra.get("path", "")))
         if path.exists():
             try:
                 path.unlink()

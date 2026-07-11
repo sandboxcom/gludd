@@ -297,13 +297,17 @@ async def _accounting_facet(
     duplicated.
     """
     try:
+        import asyncio as _asyncio
+
         accountant = await _build_accounting_accountant(app)
         if project_id is not None:
-            result = accountant.account_for(project_id)
+            result = await _asyncio.to_thread(accountant.account_for, project_id)
             from dataclasses import asdict
+
             return {"project": asdict(result)}
-        results = accountant.account_all()
+        results = await _asyncio.to_thread(accountant.account_all)
         from dataclasses import asdict
+
         return {"projects": [asdict(r) for r in results]}
     except Exception as exc:
         # Do not leak internal exception detail to the client: log the real

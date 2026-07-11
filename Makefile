@@ -261,7 +261,7 @@ lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests
 
 typecheck:
-	@$(UV) run mypy src
+	@$(UV) run mypy src tests
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \

@@ -21,9 +21,44 @@ to :class:`Accountant` as the ``loc_provider`` callable.
 """
 from __future__ import annotations
 
+import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Sanitization helpers
+# ---------------------------------------------------------------------------
+
+
+def _finite_float(value: object) -> float:
+    """Return ``value`` as a finite float, clamping NaN/Inf/negative to 0.0."""
+    try:
+        f = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        logger.debug("_finite_float: non-numeric value %r, clamped to 0.0", value)
+        return 0.0
+    if not math.isfinite(f) or f < 0.0:
+        logger.debug("_finite_float: non-finite/negative value %r, clamped to 0.0", f)
+        return 0.0
+    return f
+
+
+def _finite_nonneg_int(value: object) -> int:
+    """Return ``value`` as a non-negative int, clamping NaN/Inf/negative to 0."""
+    try:
+        f = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        logger.debug("_finite_nonneg_int: non-numeric value %r, clamped to 0", value)
+        return 0
+    if not math.isfinite(f) or f < 0.0:
+        logger.debug("_finite_nonneg_int: non-finite/negative value %r, clamped to 0", f)
+        return 0
+    return int(f)
+
 
 # ---------------------------------------------------------------------------
 # Result dataclass
@@ -108,13 +143,13 @@ class Accountant:
         # --- usage aggregation ---
         usage_records = self._usage(project_id)
         elapsed_seconds: float = sum(
-            float(getattr(r, "elapsed_seconds", 0)) for r in usage_records
+            _finite_float(getattr(r, "elapsed_seconds", 0)) for r in usage_records
         )
         tokens_used: int = sum(
-            int(getattr(r, "tokens_used", 0)) for r in usage_records
+            _finite_nonneg_int(getattr(r, "tokens_used", 0)) for r in usage_records
         )
         usd_spent: float = sum(
-            float(getattr(r, "usd_spent", 0.0)) for r in usage_records
+            _finite_float(getattr(r, "usd_spent", 0.0)) for r in usage_records
         )
 
         # --- pct_quota (zero-safe) ---
@@ -139,7 +174,7 @@ class Accountant:
         for t in todo_records:
             status = str(getattr(t, "status", "unknown"))
             todo_summary[status] = todo_summary.get(status, 0) + 1
-            pts = int(getattr(t, "points", 0))
+            pts = _finite_nonneg_int(getattr(t, "points", 0))
             points_estimated += pts
             if status == "done":
                 points_done += pts
