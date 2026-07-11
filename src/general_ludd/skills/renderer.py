@@ -13,7 +13,7 @@ from typing import Any
 
 try:
     from jinja2 import StrictUndefined, UndefinedError
-    from jinja2.exceptions import SecurityError
+    from jinja2.exceptions import SecurityError, TemplateError
     from jinja2.sandbox import SandboxedEnvironment
 
     _HAS_JINJA2 = True
@@ -66,6 +66,7 @@ def render_skill(body: str, variables: dict[str, Any] | None = None) -> str:
     # ``{{ cycler.__init__.__globals__['os'].popen(...) }}``) => SSTI -> RCE.
     # The sandbox raises SecurityError on those unsafe attribute/global accesses.
     env = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
+    env.globals.clear()
     try:
         template = env.from_string(body)
         return template.render(**vars_dict)
@@ -75,3 +76,7 @@ def render_skill(body: str, variables: dict[str, Any] | None = None) -> str:
         ) from exc
     except UndefinedError as exc:
         raise SkillRenderError(f"Skill template references undefined variable: {exc}") from exc
+    except TemplateError as exc:
+        raise SkillRenderError(
+            f"Skill template error ({type(exc).__name__}): {exc}"
+        ) from exc

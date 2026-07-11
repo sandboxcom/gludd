@@ -237,3 +237,125 @@ class TestFromUrlLengthGuard:
             json={"repo": "ownernorepo", "path": "skills/x"},
         )
         assert resp.status_code == 422
+
+
+# --- Bug 4 (C22 residual): engine.py _render_skill_body catch-all ---
+
+
+class TestEngineSkillBodyFailsClosed:
+    """C22 CRITICAL residual: engine.py:117 bare ``except Exception`` silently
+    returns the raw, unrendered, untrusted skill body when any non-SkillRenderError
+    escapes the renderer.  The fix narrows it to ``except ImportError`` only so a
+    real rendering failure (SecurityError, TemplateError, UndefinedError — all
+    wrapped as SkillRenderError) propagates and fails the job instead of silently
+    passing the payload through."""
+
+    def test_skill_render_error_propagates(self) -> None:
+        from general_ludd.execution.engine import _render_skill_body
+
+        with (
+            patch(
+                "general_ludd.skills.renderer.render_skill",
+                side_effect=SkillRenderError("simulated SSTI"),
+            ),
+            pytest.raises(SkillRenderError),
+        ):
+            _render_skill_body("{{ malicious }}", {})
+
+    def test_import_error_returns_raw_body(self) -> None:
+        from general_ludd.execution.engine import _render_skill_body
+
+        with patch(
+            "general_ludd.skills.renderer.render_skill",
+            side_effect=ImportError("jinja2 missing"),
+        ):
+            result = _render_skill_body("plain text", {})
+            assert result == "plain text", (
+                "ImportError (jinja2 not installed) must return raw body — "
+                "this is the only exception the engine is allowed to swallow"
+            )
+
+    def test_arbitrary_exception_does_not_return_raw_body(self) -> None:
+        from general_ludd.execution.engine import _render_skill_body
+
+        with (
+            patch(
+                "general_ludd.skills.renderer.render_skill",
+                side_effect=RuntimeError("unexpected failure"),
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            _render_skill_body("payload", {})
+
+
+# --- Ansible trusted-only contract (C22 HIGH residual) ---
+
+
+class TestAnsibleTrustedContract:
+    """C22 HIGH: ``AnsibleTemplater.render()`` and
+    ``CoreAnsibleRunner.render_template()`` expose the full Ansible Templar
+    surface (including ``lookup('pipe','id')``) and are guarded only by a
+    docstring.  The network endpoint correctly uses ``render_sandboxed``; these
+    tests pin that structurally."""
+
+    def test_network_endpoint_uses_render_sandboxed(self) -> None:
+        import ast
+        from pathlib import Path
+
+        ansible_router = (
+            Path(__file__).parents[2]
+            / "src"
+            / "general_ludd"
+            / "routers"
+            / "ansible.py"
+        )
+        source = ansible_router.read_text()
+        tree = ast.parse(source)
+
+        found_render_sandboxed = False
+        found_bare_render = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr == "render_sandboxed":
+                    found_render_sandboxed = True
+                # Check that the object is AnsibleTemplater (not something else)
+                parent = node.func.value
+                if (
+                    isinstance(parent, ast.Name)
+                    and parent.id.lower() in ("templater", "ansibletemplater")
+                    and node.func.attr == "render"
+                    and not node.func.attr.startswith("render_sandboxed")
+                ):
+                    found_bare_render = True
+
+        assert found_render_sandboxed, (
+            "POST /admin/ansible/render MUST call render_sandboxed — "
+            "the template body is attacker-controlled"
+        )
+        assert not found_bare_render, (
+            "routers/ansible.py MUST NOT call AnsibleTemplater.render() — "
+            "use render_sandboxed() for attacker-controlled templates"
+        )
+
+    def test_no_router_imports_render_template(self) -> None:
+        import ast
+        from pathlib import Path
+
+        routers_dir = (
+            Path(__file__).parents[2] / "src" / "general_ludd" / "routers"
+        )
+        for router_file in routers_dir.glob("*.py"):
+            source = router_file.read_text()
+            tree = ast.parse(source)
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module and "render_template" in str(
+                    node.names
+                ):
+                    assert "render_template" not in [
+                        n.name for n in node.names
+                    ], (
+                        f"{router_file.name} imports render_template — "
+                        f"use render_sandboxed instead for untrusted input"
+                    )
