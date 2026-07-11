@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -135,6 +136,7 @@ class ValidationRunner:
         self.worktree_path = _validate_worktree_path(
             worktree_path, expected_root=expected_worktree_root
         )
+        self._expected_worktree_root = expected_worktree_root
         self.test_commands = test_commands
         self.enforce_runner_allowlist = enforce_runner_allowlist
         self.runner_allowlist = runner_allowlist
@@ -144,6 +146,18 @@ class ValidationRunner:
         all_failures: list[str] = []
         total_passed = 0
         total_failed = 0
+
+        workdir = self.worktree_path
+        if self._expected_worktree_root is not None:
+            try:
+                workdir = confine_worktree_path(
+                    self.worktree_path, self._expected_worktree_root
+                )
+            except ValueError as exc:
+                raise CommandValidationError(
+                    f"worktree_path escapes expected root "
+                    f"{self._expected_worktree_root!r}: {exc}"
+                ) from exc
 
         # Validate ALL commands up front so a bad command never causes a
         # partial run (fail-closed): we reject the batch before exec'ing any.
@@ -160,7 +174,7 @@ class ValidationRunner:
             # argv is a validated list (never a shell string); shell=False.
             proc = subprocess.run(
                 argv,
-                cwd=self.worktree_path,
+                cwd=workdir,
                 capture_output=True,
                 text=True,
                 shell=False,
