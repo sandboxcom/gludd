@@ -265,9 +265,11 @@ class BackgroundTestRunner:
     @staticmethod
     def _pid_alive(pid: int) -> bool:
         try:
-            os.kill(pid, 0)
-            return True
-        except OSError:
+            wpid, _status = os.waitpid(pid, os.WNOHANG)
+            return wpid == 0
+        except ChildProcessError:
+            return False
+        except ProcessLookupError:
             return False
 
     def _cleanup_pid(self, testfile: str) -> None:

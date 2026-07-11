@@ -61,7 +61,11 @@ async def run_dogfood() -> int:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from general_ludd.daemon import _daemon_state
+    from general_ludd.daemon import _daemon_state as _global_daemon_state
+    # Per-session dict: the module-level _daemon_state starts as None and is
+    # rebound by create_daemon_app(). For standalone scripts, initialise locally.
+    daemon_state: dict[str, Any] = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
+    _global_daemon_state  # accessible for migration; prefer local daemon_state
     from general_ludd.db.models import Base, TaskDecisionModel, TaskReturnModel
     from general_ludd.db.repository import TodoRepository
     from general_ludd.event_loop.loop import EventLoop
@@ -79,7 +83,7 @@ async def run_dogfood() -> int:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    _daemon_state["todos"] = []
+    daemon_state["todos"] = []
     app = FastAPI()
     app.state._session_factory = factory
     app.state._config_dir = None
@@ -89,7 +93,7 @@ async def run_dogfood() -> int:
     app.state.event_loop = None
     app.state._templates_dir = None
     app.state._playbooks_dir = None
-    reg_todos(app, _daemon_state)
+    reg_todos(app, daemon_state)
     transport = ASGITransport(app=app)
     client = AsyncClient(transport=transport, base_url="http://test")
     _log("daemon infra booted: OK")
