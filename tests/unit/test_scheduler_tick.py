@@ -246,7 +246,7 @@ class TestSchedulerTickConcurrentDispatch:
 
     @pytest.mark.asyncio
     async def test_pid_cap_limits_dispatch(self) -> None:
-        """PID cap applied before scheduler: only cap many todos processed."""
+        """PID cap applied at claim time; dispatch processes all claimed todos"""
         from general_ludd.event_loop.loop import EventLoop
 
         dispatched: list[str] = []
@@ -277,9 +277,9 @@ class TestSchedulerTickConcurrentDispatch:
 
         await loop._phase_dispatch_execute_jobs()
 
-        # PID cap (desired_total_active_buckets=2) still limits dispatch.
-        assert loop._tick_metrics["todos_dispatched"] == 2
-        assert len(dispatched) == 2
+        # PID cap is applied at claim time, not here — all claimed todos dispatch
+        assert loop._tick_metrics["todos_dispatched"] == 5
+        assert len(dispatched) == 5
 
 
 class TestSchedulerOrderDriven:

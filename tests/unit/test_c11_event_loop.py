@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -214,6 +215,63 @@ class TestC11ThreadPoolExecutorBounded:
 
         result = await loop._bounded_to_thread(_fn, name="hello")
         assert result == "HELLO"
+
+
+    @pytest.mark.asyncio
+    async def test_internal_methods_use_bounded_to_thread(self):
+        """EventLoop methods route through _bounded_to_thread, not bare asyncio.to_thread."""
+        loop, _mocks = _make_c11_loop()
+
+        bounded_calls: list[tuple[str, tuple[object, ...]]] = []
+        original_bounded = loop._bounded_to_thread
+        _inside_bounded = False
+
+        async def _tracking_bounded(fn: Any, *args: Any, **kwargs: Any) -> Any:
+            nonlocal _inside_bounded
+            bounded_calls.append((fn.__name__ if hasattr(fn, "__name__") else str(fn), args))
+            _inside_bounded = True
+            try:
+                return await original_bounded(fn, *args, **kwargs)
+            finally:
+                _inside_bounded = False
+
+        loop._bounded_to_thread = _tracking_bounded
+
+        direct_to_thread_calls: list[tuple[str, tuple[object, ...]]] = []
+        import general_ludd.event_loop.loop as loop_module
+
+        original_to_thread = asyncio.to_thread
+
+        async def _tracking_to_thread(fn: Any, *args: Any, **kwargs: Any) -> Any:
+            if not _inside_bounded:
+                direct_to_thread_calls.append(
+                    (fn.__name__ if hasattr(fn, "__name__") else str(fn), args)
+                )
+            return await original_to_thread(fn, *args, **kwargs)
+
+        loop_module.asyncio.to_thread = _tracking_to_thread
+
+        try:
+            from general_ludd.security.sandboxes import detect
+
+            with patch.object(detect, "auto") as mock_auto:
+                mock_backend = MagicMock()
+                mock_backend.apply.return_value = MagicMock(applied=True, token="tok")
+                mock_backend.verify.return_value = []
+                mock_backend.release.return_value = None
+                mock_auto.return_value = mock_backend
+
+                await loop._sandbox_release(MagicMock(token="tok"))
+        finally:
+            loop_module.asyncio.to_thread = original_to_thread
+
+        assert len(bounded_calls) >= 1, (
+            f"_bounded_to_thread should be called by internal methods, got {bounded_calls}"
+        )
+        assert len(direct_to_thread_calls) == 0, (
+            "No bare asyncio.to_thread calls should occur outside _bounded_to_thread. "
+            f"Direct calls: {direct_to_thread_calls}"
+        )
 
 
 class TestC11GatherFanOutBounded:

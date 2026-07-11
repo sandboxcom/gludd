@@ -25,7 +25,7 @@ import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, SupportsFloat, cast
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 def _finite_float(value: object) -> float:
     """Return ``value`` as a finite float, clamping NaN/Inf/negative to 0.0."""
     try:
-        f = float(value)  # type: ignore[arg-type]
+        f = float(cast(SupportsFloat, value))
     except (TypeError, ValueError):
         logger.debug("_finite_float: non-numeric value %r, clamped to 0.0", value)
         return 0.0
@@ -50,7 +50,7 @@ def _finite_float(value: object) -> float:
 def _finite_nonneg_int(value: object) -> int:
     """Return ``value`` as a non-negative int, clamping NaN/Inf/negative to 0."""
     try:
-        f = float(value)  # type: ignore[arg-type]
+        f = float(cast(SupportsFloat, value))
     except (TypeError, ValueError):
         logger.debug("_finite_nonneg_int: non-numeric value %r, clamped to 0", value)
         return 0

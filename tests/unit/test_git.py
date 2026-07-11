@@ -249,9 +249,12 @@ class TestBranchNaming:
         git = GitAutomation()
         name = git.generate_branch_name(todo_id="000001", slug="fix-auth")
         assert name.startswith("agent/TODO-000001/fix-auth-")
-        ts_part = name.split("-")[-1]
+        segments = name.split("-")
+        ts_part = segments[-2]
+        uid_part = segments[-1]
         assert len(ts_part) == 14
         assert ts_part.isdigit()
+        assert len(uid_part) == 8
 
 
 class TestPlaybooks:

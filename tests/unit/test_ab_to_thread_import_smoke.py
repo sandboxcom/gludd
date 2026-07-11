@@ -72,14 +72,15 @@ def test_worker_app_imports_and_to_thread_offloads_present() -> None:
 
 
 def test_event_loop_dispatch_offloads_present() -> None:
-    # _dispatch_execute_job wrapped prepare_job_dirs and write_vars in to_thread.
+    # _dispatch_execute_job offloads prepare_job_dirs and write_vars via
+    # _bounded_to_thread (a semaphore-bounded wrapper around asyncio.to_thread).
     import inspect as _inspect
 
     import general_ludd.event_loop.loop as loop
 
     src = _inspect.getsource(loop)
-    assert "asyncio.to_thread(self._runner.prepare_job_dirs" in src
-    assert "asyncio.to_thread(self._runner.write_vars" in src
+    assert "self._bounded_to_thread(self._runner.prepare_job_dirs" in src
+    assert "self._bounded_to_thread(self._runner.write_vars" in src
 
 
 def test_register_builds_routes_without_error() -> None:

@@ -5,7 +5,6 @@ Verifies: app.state._hibernation_controller is populated; dispatcher receives hi
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -21,31 +20,30 @@ from general_ludd.controllers.pause_controller import PauseController
 
 
 class TestDaemonHibernationWiring:
-    def test_app_state_hibernation_controller_populated(self, tmp_path: Path):
+    def test_app_state_hibernation_controller_populated(
+        self, tmp_path: Path, monkeypatch,
+    ):
         app = FastAPI()
         pause_dir = tmp_path / "pause"
         pause_dir.mkdir()
-        os.environ["GLUDD_PAUSE_DIR"] = str(pause_dir)
-        try:
-            pc = PauseController()
-            app.state._pause_controller = pc
+        monkeypatch.setenv("GLUDD_PAUSE_DIR", str(pause_dir))
+        pc = PauseController()
+        app.state._pause_controller = pc
 
-            from general_ludd.agents.hibernation import _load_hibernate_mac_key
+        from general_ludd.agents.hibernation import _load_hibernate_mac_key
 
-            pause_base = app.state._pause_controller._store.base_dir
-            hibernate_mac_key = _load_hibernate_mac_key(str(pause_base))
-            app.state._hibernation_controller = HibernationController(
-                store=HibernationStore(
-                    base_dir=str(pause_base), mac_key=hibernate_mac_key
-                ),
-            )
+        pause_base = app.state._pause_controller._store.base_dir
+        hibernate_mac_key = _load_hibernate_mac_key(str(pause_base))
+        app.state._hibernation_controller = HibernationController(
+            store=HibernationStore(
+                base_dir=str(pause_base), mac_key=hibernate_mac_key
+            ),
+        )
 
-            assert app.state._hibernation_controller is not None
-            assert isinstance(app.state._hibernation_controller, HibernationController)
-            assert isinstance(app.state._hibernation_controller._store._mac_key, bytes)
-            assert len(app.state._hibernation_controller._store._mac_key) == 32
-        finally:
-            os.environ.pop("GLUDD_PAUSE_DIR", None)
+        assert app.state._hibernation_controller is not None
+        assert isinstance(app.state._hibernation_controller, HibernationController)
+        assert isinstance(app.state._hibernation_controller._store._mac_key, bytes)
+        assert len(app.state._hibernation_controller._store._mac_key) == 32
 
     def test_dispatcher_receives_hibernation_param(self):
         registry = AgentRegistry()

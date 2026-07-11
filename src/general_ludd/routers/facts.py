@@ -422,7 +422,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "PSK-authenticated."
         ),
     )
-    async def api_facts(project_id: str | None = None) -> dict[str, object]:
+    async def api_facts(request: Request, project_id: str | None = None) -> dict[str, object]:
+        scope = _resolve_trace_project_id(request, project_id)
         work: dict[str, object] = {}
         todos: dict[str, object] = {}
         history: dict[str, object] = {}
@@ -434,10 +435,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 todo_repo = TodoRepository(session)
                 tr_repo = TaskReturnRepository(session)
                 msg_repo = AgentMessageRepository(session)
-                todos = await todo_repo.status_summary(project_id=project_id)
-                work = await tr_repo.work_summary(project_id=project_id)
-                history = await tr_repo.history_summary(project_id=project_id)
-                unread = await msg_repo.unread_counts(project_id=project_id)
+                todos = await todo_repo.status_summary(project_id=scope)
+                work = await tr_repo.work_summary(project_id=scope)
+                history = await tr_repo.history_summary(project_id=scope)
+                unread = await msg_repo.unread_counts(project_id=scope)
                 messages = {"unread_by_recipient": unread, "total_unread": sum(unread.values())}
 
         dispatch_facet_fn = getattr(app.state, "_dispatch_facet", None)
@@ -450,35 +451,41 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "models": _models_facet(app),
             "history": history,
             "messages": messages,
-            "metrics": await _metrics_facet(app, project_id=project_id),
-            "traces": _traces_facet(app, project_id=project_id),
+            "metrics": await _metrics_facet(app, project_id=scope),
+            "traces": _traces_facet(app, project_id=scope),
             "codebase": await asyncio.to_thread(
                 _codebase_facet,
                 app,
                 recent_failures=history or None,
-                project_id=project_id,
+                project_id=scope,
             ),
-            "features": await _features_facet(app, project_id=project_id),
+            "features": await _features_facet(app, project_id=scope),
             "dispatch": dispatch,
             "spend": _spend_facet(app),
-            "accounting": await _accounting_facet(app, project_id=project_id),
+            "accounting": await _accounting_facet(app, project_id=scope),
             "schedule": _schedule_facet(app),
             "coordination": _coordination_facet(app),
             "osquery": await asyncio.to_thread(_osquery_facet, app),
-            "project_id": project_id,
+            "project_id": scope,
         }
 
     @app.get("/api/metrics")
     async def api_metrics(
+        request: Request,
         project_id: str | None = None,
         agent_id: str | None = None,
     ) -> dict[str, object]:
         """Focused read-only metrics snapshot (gludd_metrics module).
 
         Optional filters: ``project_id`` (per-project agents/cost) and
-        ``agent_id`` (single agent).
+        ``agent_id`` (single agent). The effective ``project_id`` scope is
+        resolved via ``_resolve_trace_project_id``: when the auth middleware
+        stamps ``request.state.project_id`` from a scoped bearer token it
+        ALWAYS wins over the query param (XT cross-tenant fix). Unscoped
+        callers (legacy global PSK) retain the query-param behaviour.
         """
-        return await _metrics_facet(app, project_id=project_id, agent_id=agent_id)
+        scope = _resolve_trace_project_id(request, project_id)
+        return await _metrics_facet(app, project_id=scope, agent_id=agent_id)
 
     @app.get("/api/traces")
     async def api_traces(

@@ -1083,7 +1083,7 @@ class EventLoop:
             review_playbook_timeout = float(review_cfg.get("playbook_timeout", 600.0))
             try:
                 await asyncio.wait_for(
-                    asyncio.to_thread(
+                    self._bounded_to_thread(
                         self._runner.run_playbook,
                         playbook_name="return_review.yml",
                         private_data_dir=dirs["root"],
@@ -1222,7 +1222,7 @@ class EventLoop:
             result_summary=_safe_str(tr, "result_summary", "") or "",
         )
         try:
-            decision = await asyncio.to_thread(
+            decision = await self._bounded_to_thread(
                 effective_reviewer.review_return,
                 task_return,
                 candidate_todos=[],
@@ -1733,8 +1733,8 @@ class EventLoop:
             target = SandboxTarget(
                 directory=self._resolve_repo_root(getattr(todo, "project_id", None)),
             )
-            handle = await asyncio.to_thread(backend.apply, spec, target)
-            findings = await asyncio.to_thread(backend.verify, spec, handle)
+            handle = await self._bounded_to_thread(backend.apply, spec, target)
+            findings = await self._bounded_to_thread(backend.verify, spec, handle)
             fails = [f for f in findings if f.severity == "fail"]
             if fails or not handle.applied:
                 logger.error(
@@ -1769,7 +1769,7 @@ class EventLoop:
             backend = detect.auto()
             if backend is None or handle is None:
                 return
-            await asyncio.to_thread(backend.release, handle)
+            await self._bounded_to_thread(backend.release, handle)
         except Exception as exc:
             logger.warning(
                 "Sandbox release raised (token=%s): %s",
@@ -2066,7 +2066,7 @@ class EventLoop:
                     or _safe_str(todo, "description")
                     or plan.todo_id
                 )
-                findings = await asyncio.to_thread(
+                findings = await self._bounded_to_thread(
                     self._debt_evaluator.evaluate, plan, goal
                 )
                 repo = (
@@ -2143,7 +2143,7 @@ class EventLoop:
             else:
                 # prepare_job_dirs does blocking os.makedirs; offload so it does
                 # not stall the daemon's single asyncio event loop (AB).
-                dirs = await asyncio.to_thread(self._runner.prepare_job_dirs, job_id)
+                dirs = await self._bounded_to_thread(self._runner.prepare_job_dirs, job_id)
                 pdd = dirs["root"]
             # C1 (W3.x): invoke the model for a generation work type the SAME
             # way the worker HTTP path does, then feed the generated text into
@@ -2214,7 +2214,7 @@ class EventLoop:
                     _sched_hint = ComputeSchedulingHint.for_work_type(
                         _safe_str(todo, "work_type", "code") or "code"
                     )
-                    model_response, model_tool_calls = await asyncio.to_thread(
+                    model_response, model_tool_calls = await self._bounded_to_thread(
                         invoke_model_for_generation,
                         self._model_gateway,
                         job_id=job_id,
@@ -2687,7 +2687,7 @@ class EventLoop:
             _human_input: str | None = await self._resolve_human_input_for_todo(
                 todo.todo_id
             )
-            await asyncio.to_thread(self._runner.write_vars, job_id, job_vars={
+            await self._bounded_to_thread(self._runner.write_vars, job_id, job_vars={
                 "job_id": job_id, "todo_id": todo.todo_id,
                 "queue": _safe_str(todo, "queue", "core"),
                 "work_type": _safe_str(todo, "work_type", "unknown"),
@@ -2706,7 +2706,7 @@ class EventLoop:
             # M9 (W3.3): run_playbook is a blocking I/O call; wrap in
             # asyncio.to_thread so the event loop stays responsive during
             # long playbook executions and CancelledError propagates cleanly.
-            await asyncio.to_thread(
+            await self._bounded_to_thread(
                 self._runner.run_playbook,
                 playbook_name=playbook,
                 private_data_dir=pdd,
@@ -3190,7 +3190,7 @@ class EventLoop:
                     continue
                 _decision_project_id = getattr(d, "project_id", None) or getattr(todo, "project_id", None) or None
                 _repo_root = self._resolve_repo_root(_decision_project_id)
-                _verified = await asyncio.to_thread(
+                _verified = await self._bounded_to_thread(
                     verify_completion, _schema_dec, None, _repo_root
                 )
                 if _verified.decision != "complete":
@@ -3457,7 +3457,7 @@ class EventLoop:
                 # lock wins and every other worker gets a clean conflict
                 # signal without ever holding the lock.
                 if registry is not None:
-                    affected = await asyncio.to_thread(repo.changed_files)
+                    affected = await self._bounded_to_thread(repo.changed_files)
                     if affected:
                         acquired = registry.claim_or_conflict(worker_id, affected)
                         if not acquired:
@@ -3477,7 +3477,7 @@ class EventLoop:
                 # the async tick would freeze every other coroutine. Offload to a
                 # worker thread (mirrors the playbook dispatch's asyncio.to_thread)
                 # so blocking git can never stall the event loop.
-                await asyncio.to_thread(
+                await self._bounded_to_thread(
                     repo.commit, f"[{todo.todo_id}] {todo.title}"
                 )
                 # Record the per-commit LOC delta into the accounting ledger
@@ -3485,7 +3485,7 @@ class EventLoop:
                 # failure must never abort the commit/push flow that follows.
                 if self._loc_ledger is not None:
                     try:
-                        delta = await asyncio.to_thread(repo.lines_changed_in_commit)
+                        delta = await self._bounded_to_thread(repo.lines_changed_in_commit)
                         pid = getattr(todo, "project_id", None) or self._tick_project_id or ""
                         self._loc_ledger.record_loc_changed(pid, delta)
                     except Exception as loc_exc:
@@ -3493,7 +3493,7 @@ class EventLoop:
                             "loc_changed recording failed for %s: %s",
                             todo.todo_id, loc_exc,
                         )
-                await asyncio.to_thread(repo.push, branch=branch_name)
+                await self._bounded_to_thread(repo.push, branch=branch_name)
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
                 await self._maybe_open_pr(todo, worktree, branch_name)
             except Exception as exc:
@@ -3534,7 +3534,7 @@ class EventLoop:
             draft=bool(ga_cfg.get("pr_draft", False)),
             labels=list(ga_cfg.get("pr_labels", [])),
         )
-        result = await asyncio.to_thread(
+        result = await self._bounded_to_thread(
             delivery.push_and_create_pr,
             repo_path=worktree,
             branch_name=branch_name,
@@ -3712,7 +3712,7 @@ class EventLoop:
         if self._total_ticks % interval != 0:
             return
         try:
-            results = await asyncio.to_thread(self._credit_tracker.check_all_balances)
+            results = await self._bounded_to_thread(self._credit_tracker.check_all_balances)
         except Exception as exc:
             logger.warning("Service-credit balance check failed: %s", exc)
             return
@@ -3889,7 +3889,7 @@ class EventLoop:
             # walk; offload it so the self-improve phase does not stall the async
             # event loop. The harness is freshly constructed per tick and the
             # gateway is threading.Lock-guarded, so the worker thread is safe.
-            findings = await asyncio.to_thread(harness.run_gap_analysis, recurring)
+            findings = await self._bounded_to_thread(harness.run_gap_analysis, recurring)
             todos: list[dict[str, Any]] = []
             if findings:
                 todos = harness.generate_fix_todos(findings)
