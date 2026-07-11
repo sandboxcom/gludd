@@ -278,7 +278,7 @@ class TestHealth:
         src = DockerEngineSource({"transport": t})
         result = src.health()
         assert result["ok"] is False
-        assert "500" in result["detail"]
+        assert "unexpected status 500" in result["detail"]
 
     def test_health_never_raises_on_transport_error(self) -> None:
         def boom(*args: Any, **kwargs: Any) -> Response:

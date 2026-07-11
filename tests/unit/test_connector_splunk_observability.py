@@ -311,7 +311,8 @@ def test_query_transport_exception_yields_error_record_not_raise():
     records = src.query({"program": "data('x').publish()"})
     assert len(records) == 1
     assert records[0]["level_or_status"] == "error"
-    assert "connection refused" in records[0]["message"]
+    assert records[0]["message"] == "transport error"
+    assert records[0]["raw"] == {"url": f"{GOOD_URL}/v2/signalflow"}
 
 
 # ---------------------------------------------------------------------------
@@ -343,4 +344,4 @@ def test_health_never_raises_on_transport_exception():
     src = SplunkObservabilitySource({"base_url": GOOD_URL}, http_request=boom)
     h = src.health()
     assert h["ok"] is False
-    assert "dns/socket failure" in h["detail"]
+    assert h["detail"] == "health check failed"

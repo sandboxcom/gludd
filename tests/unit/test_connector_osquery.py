@@ -122,7 +122,7 @@ def test_health_not_ok_on_nonzero_exit() -> None:
     src = OsquerySource(runner=runner)
     health = src.health()
     assert health["ok"] is False
-    assert "boom" in health["detail"]
+    assert health["detail"] == "boom"
 
 
 def test_health_never_raises_on_runner_exception() -> None:
@@ -133,7 +133,7 @@ def test_health_never_raises_on_runner_exception() -> None:
     src = OsquerySource(runner=Boom())
     health = src.health()
     assert health["ok"] is False
-    assert "OSError" in health["detail"]
+    assert health["detail"] == "OSError: exec format error"
 
 
 def test_query_raises_on_nonzero_exit() -> None:

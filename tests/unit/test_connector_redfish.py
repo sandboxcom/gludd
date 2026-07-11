@@ -292,7 +292,7 @@ def test_health_not_ok_on_http_error() -> None:
     )
     h = src.health()
     assert h["ok"] is False
-    assert "500" in h["detail"]
+    assert "service root HTTP 500" in h["detail"]
 
 
 def test_health_never_raises_on_transport_explosion() -> None:

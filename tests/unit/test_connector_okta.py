@@ -268,14 +268,14 @@ def test_health_not_ok_on_4xx(token: str) -> None:
     transport = RecordingTransport([FakeResponse(403, {"error": "forbidden"})])
     h = _src(transport).health()
     assert h["ok"] is False
-    assert "403" in h["detail"]
+    assert h["detail"] == "okta HTTP 403"
 
 
 def test_health_never_raises_on_transport_error(token: str) -> None:
     src = _src(_raising_transport)
     h = src.health()
     assert h["ok"] is False
-    assert "ConnectionError" in h["detail"]
+    assert h["detail"] == "health check failed"
 
 
 def test_query_raises_on_http_error(token: str) -> None:

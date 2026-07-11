@@ -224,7 +224,7 @@ class TestHealth:
         cast(Any, src)._transport = boom
         result = src.health()
         assert result["ok"] is False
-        assert "network down" in result["detail"] or result["detail"]
+        assert result["detail"] == "health check failed"
 
     def test_health_missing_env_key_is_not_ok(
         self, monkeypatch: pytest.MonkeyPatch

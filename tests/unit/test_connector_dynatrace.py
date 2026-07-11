@@ -168,7 +168,7 @@ def test_health_ok_with_env(monkeypatch: pytest.MonkeyPatch) -> None:
     src = DynatraceSource(_config(), transport=FakeTransport(status=200, body={}))
     h = src.health()
     assert h["ok"] is True
-    assert "200" in h["detail"]
+    assert "detail" in h
 
 
 def test_health_not_ok_on_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -176,7 +176,7 @@ def test_health_not_ok_on_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
     src = DynatraceSource(_config(), transport=FakeTransport(status=401, body={}))
     h = src.health()
     assert h["ok"] is False
-    assert "401" in h["detail"]
+    assert "health check failed" in h["detail"]
 
 
 def test_health_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:

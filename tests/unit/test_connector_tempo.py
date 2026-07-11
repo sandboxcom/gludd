@@ -201,9 +201,9 @@ class TestHealth:
         transport = FakeTransport([("/api/search", 502, {})])
         h = _source(transport).health()
         assert h["ok"] is False
-        assert "502" in h["detail"]
+        assert h["detail"] == "http 502"
 
     def test_never_raises(self) -> None:
         h = _source(RaisingTransport()).health()
         assert h["ok"] is False
-        assert "OSError" in h["detail"]
+        assert h["detail"] == "health check failed"

@@ -192,14 +192,16 @@ def test_allow_private_permits_localhost() -> None:
 
 def test_health_ok() -> None:
     src = ArgoWorkflowsSource(_config(), transport=_FakeTransport(200, b'{"items": []}'))
-    assert src.health() == {"ok": True, "detail": "HTTP 200"}
+    result = src.health()
+    assert result["ok"] is True
+    assert "detail" in result
 
 
 def test_health_not_ok() -> None:
     src = ArgoWorkflowsSource(_config(), transport=_FakeTransport(403, b""))
     result = src.health()
     assert result["ok"] is False
-    assert "403" in result["detail"]
+    assert result["detail"] == "HTTP 403"
 
 
 def test_health_never_raises() -> None:

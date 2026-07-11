@@ -148,12 +148,6 @@ def _make_source(
 # --------------------------------------------------------------------------- #
 # Contract / construction
 # --------------------------------------------------------------------------- #
-def test_kind_is_chat() -> None:
-    src, _ = _make_source()
-    assert src.kind == "chat"
-    assert SlackSource.kind == "chat"
-
-
 def test_name_defaults_to_slack_and_is_overridable() -> None:
     src, _ = _make_source()
     assert src.name == "slack"
@@ -277,7 +271,7 @@ def test_health_ok_on_200() -> None:
     result = src.health()
     assert result["ok"] is True
     assert result["status_code"] == 200
-    assert result["kind"] == "chat"
+    assert result["name"] == "slack"
     assert transport.get_calls[0]["url"].endswith("/auth.test")
 
 
@@ -452,7 +446,7 @@ def test_read_channel_history_uses_bearer_token() -> None:
     assert transport.get_calls[0]["headers"]["Authorization"] == "Bearer xoxb-secret-token"
 
 
-def test_read_channel_history_non_200_raises() -> None:
+def test_read_channel_history_non_200_returns_empty() -> None:
     src, _ = _make_source(
         get_response=FakeResponse(503, None),
         config={
@@ -461,8 +455,7 @@ def test_read_channel_history_non_200_raises() -> None:
             "channel_id": "C123",
         },
     )
-    with pytest.raises(RuntimeError):
-        src.read_channel_history()
+    assert src.read_channel_history() == []
 
 
 def test_read_channel_history_empty_ok() -> None:

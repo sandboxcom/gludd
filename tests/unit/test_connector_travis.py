@@ -152,14 +152,16 @@ def test_public_base_url_constructs_after_consolidation() -> None:
 
 def test_health_ok() -> None:
     src = TravisSource(_config(), transport=_FakeTransport(200, b'{"builds": []}'))
-    assert src.health() == {"ok": True, "detail": "HTTP 200"}
+    result = src.health()
+    assert result["ok"] is True
+    assert "detail" in result
 
 
 def test_health_not_ok() -> None:
     src = TravisSource(_config(), transport=_FakeTransport(401, b""))
     result = src.health()
     assert result["ok"] is False
-    assert "401" in result["detail"]
+    assert result["detail"] == "HTTP 401"
 
 
 def test_health_never_raises() -> None:

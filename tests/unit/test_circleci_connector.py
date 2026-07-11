@@ -165,7 +165,7 @@ def test_health_not_ok() -> None:
     src = _make(_FakeTransport(404, {"message": "not found"}))
     h = src.health()
     assert h["ok"] is False
-    assert "404" in h["detail"]
+    assert h["detail"] == "HTTP 404"
 
 
 def test_health_never_raises() -> None:
@@ -175,7 +175,7 @@ def test_health_never_raises() -> None:
     src = cast(Any, _make)(boom)
     h = src.health()
     assert h["ok"] is False
-    assert "transport error" in h["detail"]
+    assert h["detail"] == "health check failed"
 
 
 def test_query_empty_on_non_dict_body() -> None:

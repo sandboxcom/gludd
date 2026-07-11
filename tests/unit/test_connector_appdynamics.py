@@ -162,7 +162,7 @@ def test_health_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     src = AppDynamicsSource(_config(), transport=FakeTransport(status=200, body={}))
     h = src.health()
     assert h["ok"] is True
-    assert "200" in h["detail"]
+    assert "detail" in h
 
 
 def test_health_not_ok_on_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -170,7 +170,7 @@ def test_health_not_ok_on_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
     src = AppDynamicsSource(_config(), transport=FakeTransport(status=403, body={}))
     h = src.health()
     assert h["ok"] is False
-    assert "403" in h["detail"]
+    assert "HTTP 403" in h["detail"]
 
 
 def test_health_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:

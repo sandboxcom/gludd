@@ -204,7 +204,7 @@ def test_health_ok() -> None:
 def test_health_not_ok() -> None:
     h = _src(FakeTransport(503, "down")).health()
     assert h["ok"] is False
-    assert "503" in h["detail"]
+    assert "http status 503" in h["detail"]
 
 
 def test_health_never_raises() -> None:

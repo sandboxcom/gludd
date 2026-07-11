@@ -198,7 +198,7 @@ def test_health_never_raises(
 
     h = src.health()  # must not raise
     assert h["ok"] is False
-    assert "boom" in str(h.get("error", ""))
+    assert h["error"] == "health check failed"
 
 
 @pytest.mark.parametrize(

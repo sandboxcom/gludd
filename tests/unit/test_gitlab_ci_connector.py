@@ -176,7 +176,7 @@ def test_health_not_ok_on_error_status() -> None:
     src = _make(_FakeTransport(403, {"message": "forbidden"}))
     h = src.health()
     assert h["ok"] is False
-    assert "403" in h["detail"]
+    assert h["detail"] == "HTTP 403"
 
 
 def test_health_never_raises_on_transport_error() -> None:
@@ -186,7 +186,7 @@ def test_health_never_raises_on_transport_error() -> None:
     src = GitlabCiSource({"project_id": "1"}, http_get=boom)
     h = src.health()
     assert h["ok"] is False
-    assert "transport error" in h["detail"]
+    assert h["detail"] == "health check failed"
 
 
 def test_query_returns_empty_on_non_list_body() -> None:

@@ -629,7 +629,7 @@ class TestHealth:
         source = _make_source(transport=transport)
         result = source.health()
         assert result["ok"] is False
-        assert "ConnectError" in str(result["detail"])
+        assert result["detail"] == "health check failed"
 
     def test_value_error_caught(self) -> None:
         transport = _mock_transport(
@@ -638,7 +638,7 @@ class TestHealth:
         source = _make_source(transport=transport)
         result = source.health()
         assert result["ok"] is False
-        assert "ValueError" in str(result["detail"])
+        assert result["detail"] == "health check failed"
 
     def test_base_exception_propagates(self) -> None:
         transport = _mock_transport(
