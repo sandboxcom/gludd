@@ -13,6 +13,8 @@ from general_ludd.tui.breadcrumb import pop_breadcrumb, push_breadcrumb
 
 DISPATCH_MODES = ["active", "passive_external", "worktree_monitor"]
 
+_DAEMON_HOST_DEFAULT = "127.0.0.1"
+
 # --- Daemon/gunicorn spawn hardening -----------------------------------------
 #
 # Both spawn sites (this module's _start_daemon and tui/runner.py's
@@ -1277,7 +1279,7 @@ class TUIKeyHandler:
         hw = probe_hardware()
         # Host/port/log-level may come from UI state / config — validate and
         # fail closed before building any argv or spawning a process.
-        host = state.get("daemon_host", "0.0.0.0")
+        host = state.get("daemon_host", _DAEMON_HOST_DEFAULT)
         port = state.get("daemon_port", 8000)
         log_level = state.get("daemon_log_level")
         workers = state.get("daemon_workers", hw.gunicorn_workers)

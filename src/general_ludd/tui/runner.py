@@ -21,6 +21,8 @@ from general_ludd.tui.keybindings import (
     TUIKeyHandler,
     validate_gunicorn_spawn_args,
 )
+
+_DAEMON_HOST_DEFAULT = "127.0.0.1"
 from general_ludd.tui.logger import TUILogger
 
 # The runner spawns the daemon via h._build_daemon_start_cmd(host, port,
@@ -88,7 +90,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
             status_msg = "Daemon already running"
             daemon_running = True
             return
-        _host = getattr(args, "host", "0.0.0.0")
+        _host = getattr(args, "host", _DAEMON_HOST_DEFAULT)
         _port = getattr(args, "port", 8000)
         _workers = getattr(args, "workers", 1)
         _log_level = getattr(args, "log_level", None)
