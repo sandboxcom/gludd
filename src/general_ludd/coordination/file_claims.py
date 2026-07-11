@@ -16,6 +16,13 @@ and not refreshed) are treated as absent by ``overlaps``/``all_claims`` and
 are actively reaped (removed) the next time either is called, or explicitly
 via ``reap_stale``.  Re-claiming (heartbeating) the same worker_id refreshes
 its timestamp even when the file set is unchanged.
+
+D10 (#53 livelock): ``claim_or_conflict`` provides atomic claim-or-detect so
+the commit path never sees transient overlap. Files are sorted before claiming
+(total-order determinism), preventing the livelock where two agents claim
+overlapping sets — each sees the other's claim in ``overlaps``, both release,
+both retry, repeat. Stale claims are reaped before the conflict check so a
+crashed worker's ghost claim never blocks a live worker.
 """
 
 from __future__ import annotations
@@ -122,7 +129,8 @@ class FileClaimRegistry:
         is unchanged (so a live worker's claims never go stale while it keeps
         checking in).
         """
-        file_set = frozenset(files)
+        sorted_files = sorted(files)
+        file_set = frozenset(sorted_files)
         now = self._clock()
         with self._lock:
             # Remove stale index entries for this worker before updating.
@@ -132,6 +140,41 @@ class FileClaimRegistry:
             self._warned_reaped.discard(worker_id)
             for path in file_set:
                 self._file_workers.setdefault(path, set()).add(worker_id)
+
+    def claim_or_conflict(self, worker_id: str, files: Iterable[str]) -> bool:
+        """Atomically sort files, reap stale claims, check for conflicts, and
+        either claim the files (return True) or detect an active overlapping
+        claim (return False).
+
+        The operation is all-or-nothing: if ANY file is contested by another
+        non-stale worker, NONE of the files are claimed and this worker's prior
+        claims are left undisturbed.  This is the atomic replacement for the
+        non-atomic ``claim()`` + ``overlaps()`` pattern that could livelock
+        when two workers simultaneously claimed overlapping sets, each saw the
+        other in ``overlaps()``, both released, and both retried (#53 / D10).
+
+        Files are sorted before claiming for total-order determinism, so that
+        two agents claiming the same set in different orders are treated
+        identically.
+        """
+        sorted_files = sorted(files)
+        file_set = frozenset(sorted_files)
+        now = self._clock()
+        with self._lock:
+            self._reap_stale_locked(now)
+            # Conflict check: all-or-nothing
+            for path in file_set:
+                others = self._file_workers.get(path, set())
+                if others:
+                    return False
+            # No conflicts — claim
+            self._remove_worker_from_index(worker_id)
+            self._worker_files[worker_id] = file_set
+            self._worker_claimed_at[worker_id] = now
+            self._warned_reaped.discard(worker_id)
+            for path in file_set:
+                self._file_workers.setdefault(path, set()).add(worker_id)
+            return True
 
     def release(self, worker_id: str) -> None:
         """Drop all claims for *worker_id*.
