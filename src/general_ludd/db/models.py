@@ -269,8 +269,6 @@ class TodoModel(Base):
         Index("ix_todos_status_priority_created_at", "status", "priority", "created_at"),
     )
 
-    from typing import ClassVar
-
     __mapper_args__: ClassVar[dict[str, Any]] = {"version_id_col": version}
 
     events: Mapped[list[TodoEventModel]] = relationship(
