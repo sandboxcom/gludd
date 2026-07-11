@@ -28,6 +28,22 @@ class ReloadRequest(BaseModel):
     scope: str = "all"
 
 
+class RegisterWorkerRequest(BaseModel):
+    worker_id: str
+    address: str
+
+    @field_validator("address")
+    @classmethod
+    def _validate_address_ssrf(cls, v: str) -> str:
+        """Reject non-safe worker addresses at registration time (SSRF/PSK-leak guard)."""
+        if not is_safe_fetch_url(v):
+            raise ValueError(
+                "address must use https and must not target loopback, link-local, "
+                "RFC-1918, or cloud-metadata addresses"
+            )
+        return v
+
+
 class RegisterHookRequest(BaseModel):
     event_name: str
     url: str
@@ -228,6 +244,22 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         subsys = _get_or_create_subsystems(app)
         subsys["hooks"].unregister(hook_id)
         return {"removed": hook_id}
+
+    @app.post("/admin/workers")
+    async def admin_register_worker(req: RegisterWorkerRequest) -> dict[str, object]:
+        subsys = _get_or_create_subsystems(app)
+        from general_ludd.reload.worker_broadcast import WorkerInfo
+
+        subsys["broadcaster"].register(
+            WorkerInfo(worker_id=req.worker_id, address=req.address)
+        )
+        registered = subsys["broadcaster"].list_workers()
+        was_registered = any(w.worker_id == req.worker_id for w in registered)
+        return {
+            "success": was_registered,
+            "worker_id": req.worker_id,
+            "address": req.address if was_registered else "",
+        }
 
     @app.post("/admin/workers/ping")
     async def admin_workers_ping() -> dict[str, object]:
