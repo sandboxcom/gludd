@@ -23,6 +23,7 @@ Design notes:
 from __future__ import annotations
 
 import enum
+import fnmatch
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
@@ -117,6 +118,47 @@ class PermissionSpec:
             if cap.resource == resource:
                 return cap
         return None
+
+    def is_denied(
+        self, resource: str, action: str, path: str | None = None
+    ) -> bool:
+        """True iff ``action`` on ``resource`` (optionally ``path``) is denied.
+
+        A ``denied`` :class:`Capability` matches — and therefore BLOCKS the
+        request regardless of any positive grant — when ALL of:
+
+        * its ``resource`` equals ``resource``; AND
+        * its ``actions`` list is empty (deny-ALL actions on the resource) OR
+          contains ``action``; AND
+        * it carries no path constraint, OR ``path`` is ``None``, OR one of its
+          ``openbao_paths`` / ``path_prefix`` patterns matches ``path``.
+
+        This is the single deny-matching predicate consulted by every
+        enforcement site (``StsIssuer.validate``, ``is_subset``,
+        ``SecretsManager._enforce_permission``) so a denial can never be
+        inert — it is enforced through the whole delegation chain.
+        """
+        for d in self.denied:
+            if d.resource != resource:
+                continue
+            if d.actions and action not in d.actions:
+                continue
+            if path is not None:
+                patterns = d.constraints.get("openbao_paths")
+                prefix = d.constraints.get("path_prefix")
+                if isinstance(patterns, list) and patterns:
+                    if not any(
+                        fnmatch.fnmatchcase(path, str(p)) for p in patterns
+                    ):
+                        continue
+                elif (
+                    isinstance(prefix, str)
+                    and prefix
+                    and not fnmatch.fnmatchcase(path, prefix)
+                ):
+                    continue
+            return True
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +441,12 @@ class PermissionSpecParser:
     @staticmethod
     def is_subset(requested: PermissionSpec, issuer: PermissionSpec) -> bool:
         for r in requested.capabilities:
+            # A denial on the issuer wins over any positive grant: a subject may
+            # not REQUEST an action its issuer explicitly denies, so a denied
+            # action can never be re-delegated down the chain.
+            for action in r.actions:
+                if issuer.is_denied(r.resource, action):
+                    return False
             issuer_cap = next(
                 (c for c in issuer.capabilities if c.resource == r.resource),
                 None,
@@ -539,11 +587,28 @@ class PermissionSpecParser:
         if family == "net:":
             out: dict[str, object] = {}
             for key in ("allowed_hosts", "allowed_ports"):
+                a_present = bool(a.get(key))
+                b_present = bool(b.get(key))
                 aset = set(cast(list[object], a.get(key, [])) or [])
                 bset = set(cast(list[object], b.get(key, [])) or [])
-                inter = sorted(aset & bset, key=str)
-                if inter:
+                if a_present and b_present:
+                    # Both sides restrict this dimension: the MEET is their set
+                    # intersection. An EMPTY intersection means no shared scope
+                    # on a dimension both restrict -> no connection either side
+                    # permits -> drop the whole capability (never silently widen
+                    # by dropping the key, which would re-open the dimension).
+                    inter = sorted(aset & bset, key=str)
+                    if not inter:
+                        return None
                     out[key] = inter
+                elif a_present:
+                    # Only ``a`` restricts this dimension; ``b`` is unconstrained
+                    # (== all). The MEET is ``a``'s restriction — PRESERVE it so
+                    # the result never widens past ``a``.
+                    out[key] = sorted(aset, key=str)
+                elif b_present:
+                    out[key] = sorted(bset, key=str)
+                # else: neither restricts -> leave unconstrained (absent).
             if not out:
                 return None
             return out
