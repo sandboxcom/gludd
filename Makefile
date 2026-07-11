@@ -63,7 +63,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		deck deck-serve deck-preview deck-data deck-honesty \
 		sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
 		sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
-		script-count test-hooks-live
+		script-count test-hooks-live \
+		ci-view ci-rerun ci-trigger ci-active ci-job-log
 
 help:
 	@echo "Usage: make [target]"
@@ -1629,11 +1630,49 @@ ci-log:
 ci-watch:
 	@gh run watch -R sandboxcom/gludd $(RUN) --exit-status 2>&1 || echo "gh-run-watch-failed"
 
+# Raw log tail for ONE job in a run, matched by a name substring (e.g.
+# "unit-1a"). Needed because ci-log/ci-failed-tests only fetch logs for
+# steps with conclusion=failure — a job that hit timeout-minutes gets
+# conclusion=cancelled and is invisible to --log-failed. This resolves the
+# job's databaseId via --json jobs, then dumps its full log (tailed to the
+# last 400 lines, since -v pytest output across a 30-min hang can be huge) so
+# we can see the LAST thing that printed before the job was cut off.
+# Usage: make ci-job-log RUN=<run-id> JOB=<job-name-substring>
+ci-job-log:
+	@if [ -z "$(RUN)" ] || [ -z "$(JOB)" ]; then echo "Usage: make ci-job-log RUN=<run-id> JOB=<job-name-substring>"; exit 1; fi
+	@JID=$$(gh run view -R sandboxcom/gludd $(RUN) --json jobs --jq ".jobs[] | select(.name | contains(\"$(JOB)\")) | .databaseId" | head -1); \
+	if [ -z "$$JID" ]; then echo "no job matching '$(JOB)' found in run $(RUN)"; exit 1; fi; \
+	echo "--- job id: $$JID ---"; \
+	gh run view -R sandboxcom/gludd --log --job=$$JID 2>&1 | tail -400 || echo "ci-job-log-failed"
+
 # Just the FAILED/ERROR test ids + summary lines from a run's failed-step logs
 # (ci-faillog tails raw logs; this filters the signal). Usage: make ci-failed-tests RUN=<id>
 ci-failed-tests:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-failed-tests RUN=<run-id>"; exit 1; fi
 	@gh run view -R sandboxcom/gludd $(RUN) --log-failed 2>/dev/null | grep -E 'FAILED tests/|ERROR tests/|= .*(failed|error).* =' | sort -u || echo "no-failed-test-lines-found"
+
+# Authenticated job-level breakdown of a run: per-job status/conclusion/timing
+# plus every non-success/non-skipped step, so a CANCELLED run's cause (which
+# job, which step, how long it ran before being cut) is visible without
+# guessing. Usage: make ci-view RUN=<run-id>
+ci-view:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-view RUN=<run-id>"; exit 1; fi
+	@gh run view -R sandboxcom/gludd $(RUN) --json databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs \
+		--jq '{databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs:[.jobs[]|{name,status,conclusion,startedAt,completedAt,steps:[.steps[]|select(.conclusion!="success" and .conclusion!="skipped")|{name,conclusion,number}]}]}' 2>&1 || echo "ci-view-failed"
+
+# Re-run a specific (e.g. cancelled) run's failed/cancelled jobs. Usage: make ci-rerun RUN=<run-id>
+ci-rerun:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-rerun RUN=<run-id>"; exit 1; fi
+	@gh run rerun -R sandboxcom/gludd $(RUN) 2>&1 || echo "ci-rerun-failed"
+
+# Fresh dispatch of the Build and Release workflow on master (workflow_dispatch).
+ci-trigger:
+	@gh workflow run "Build and Release" -R sandboxcom/gludd --ref master 2>&1 || echo "ci-trigger-failed"
+
+# List currently in-progress/queued runs for the Build and Release workflow —
+# so we know whether a new run is already active on a SHA before re-triggering.
+ci-active:
+	@gh run list -R sandboxcom/gludd --workflow "Build and Release" --json databaseId,status,conclusion,headSha,createdAt,event -L 10 2>&1 || echo "ci-active-failed"
 
 ci-auth:
 	@gh auth status 2>&1 || echo "gh-auth-failed"
