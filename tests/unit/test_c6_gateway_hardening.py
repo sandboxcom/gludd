@@ -112,7 +112,10 @@ class TestCallerKwargsCannotOverrideValidatedBaseUrl:
             )
         assert isinstance(resp, object)
         assert resp.content == "ok"
-        assert "api_key" not in captured or captured.get("api_key") != "caller-injected-evil-key"  # pragma: allowlist secret
+        assert (
+            "api_key" not in captured
+            or captured.get("api_key") != "caller-injected-evil-key"
+        )  # pragma: allowlist secret
 
 
 class TestGatewayHasRequestTimeout:

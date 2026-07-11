@@ -8,11 +8,9 @@ gets the index. These tests verify both layers.
 from typing import Any, cast
 from unittest.mock import patch
 
-from sqlalchemy import text
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
-from general_ludd.db.models import Base
-from general_ludd.db.models import TaskDecisionModel
+from general_ludd.db.models import Base, TaskDecisionModel
 
 
 _IX_NAME = "ix_task_decisions_created_at"

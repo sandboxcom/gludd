@@ -12,7 +12,6 @@ from general_ludd.models.gateway import (
     ModelGateway,
     ModelProfile,
     ModelResponse,
-    SSRFRejectionError,
 )
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.router import ModelRouter

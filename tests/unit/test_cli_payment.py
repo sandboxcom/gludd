@@ -370,6 +370,35 @@ class TestPaymentAdd:
         assert code == 0
         assert len(prompts) == 2
 
+    def test_eof_on_cvc_prompt_aborts_exit_1_zero_vault_calls(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        vault = _install_vault(monkeypatch)
+        call_count = 0
+
+        def _card_eof(prompt: str = "") -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _VISA
+            raise EOFError
+
+        monkeypatch.setattr("getpass.getpass", _card_eof)
+        code = _run(
+            [
+                "add",
+                "--expiry-month",
+                "12",
+                "--expiry-year",
+                "30",
+                "--holder-name",
+                "Ada Lovelace",
+            ]
+        )
+        assert code == 1
+        assert vault.calls == []
+        assert "aborted" in capsys.readouterr().err.lower()
+
     def test_explicit_flags_skip_getpass_entirely(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
