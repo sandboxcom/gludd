@@ -105,6 +105,12 @@ PHASE_ORDER = [
     "emit_tick_metrics",
 ]
 
+# E10 (PERF-1): index of the dispatch phase in PHASE_ORDER.  The tick session
+# is committed + closed BEFORE this phase so the dispatch gather (up to ~30 min)
+# does not hold the DB writer lock.  A fresh session is opened for the
+# post-dispatch phases.
+DISPATCH_PHASE_INDEX = PHASE_ORDER.index("dispatch_execute_jobs")
+
 
 # Two-phase generation (keystone): Phase 1 (``invoke_model_for_generation``) is
 # tool-free BY DESIGN (CA-T9) — it asks the model for text and never binds tools.
@@ -695,27 +701,31 @@ class EventLoop:
                     self._task_return_repo = TaskReturnRepository(session)
                     self._audit_repo = AuditEventRepository(session)
                     self._variable_repo = VariableNamespaceRepository(session)
-                    await self._run_phases()
-                    try:
-                        await session.commit()
-                    except Exception as exc:
-                        # Data-loss event: the whole tick's writes are dropped. Log
-                        # loudly + roll back so the failed txn doesn't leak through
-                        # context-exit. Do NOT re-raise: run_forever re-raises and
-                        # would kill the daemon loop. Orphaned ACTIVE todos are
-                        # reclaimed by reclaim_expired_leases / _reap_stuck_todos.
-                        logger.error(
-                            "Failed to commit tick session (writes lost): %s",
-                            exc,
-                            exc_info=True,
-                        )
-                        with contextlib.suppress(Exception):
-                            await session.rollback()
-                    self._active_session = None
-                    self._todo_repo = None
-                    self._task_return_repo = None
-                    self._audit_repo = None
-                    self._variable_repo = None
+                    # E10 (PERF-1): commit + close the tick session BEFORE the
+                    # dispatch gather so the DB writer lock is released during
+                    # the potentially-30-minute dispatch window.
+                    await self._run_phase_range(0, DISPATCH_PHASE_INDEX)
+                    await self._commit_tick_session(session)
+                    self._clear_repos()
+                # Dispatch phase: NO tick session held.  Isolated per-job
+                # sessions are opened inside _dispatch_execute_job_isolated.
+                await self._run_phase_range(
+                    DISPATCH_PHASE_INDEX, DISPATCH_PHASE_INDEX + 1
+                )
+                # Post-dispatch: open a FRESH session for reconcile, review,
+                # and the remaining phases.
+                assert self._session_factory is not None
+                async with self._session_factory() as session:
+                    self._active_session = session
+                    self._todo_repo = TodoRepository(session)
+                    self._task_return_repo = TaskReturnRepository(session)
+                    self._audit_repo = AuditEventRepository(session)
+                    self._variable_repo = VariableNamespaceRepository(session)
+                    await self._run_phase_range(
+                        DISPATCH_PHASE_INDEX + 1, len(PHASE_ORDER)
+                    )
+                    await self._commit_tick_session(session)
+                    self._clear_repos()
             else:
                 if self.session is not None:
                     self._active_session = self.session
@@ -744,7 +754,10 @@ class EventLoop:
         return self._tick_metrics
 
     async def _run_phases(self) -> None:
-        for phase_name in PHASE_ORDER:
+        await self._run_phase_range(0, len(PHASE_ORDER))
+
+    async def _run_phase_range(self, start: int, end: int) -> None:
+        for phase_name in PHASE_ORDER[start:end]:
             phase_fn = getattr(self, f"_phase_{phase_name}")
             try:
                 logger.info("Phase started: %s", phase_name)
@@ -753,6 +766,25 @@ class EventLoop:
                 self._tick_metrics["phases_completed"] += 1
             except Exception as exc:
                 logger.error("Phase %s raised %s: %s", phase_name, type(exc).__name__, exc)
+
+    def _clear_repos(self) -> None:
+        self._active_session = None
+        self._todo_repo = None
+        self._task_return_repo = None
+        self._audit_repo = None
+        self._variable_repo = None
+
+    async def _commit_tick_session(self, session: Any) -> None:
+        try:
+            await session.commit()
+        except Exception as exc:
+            logger.error(
+                "Failed to commit tick session (writes lost): %s",
+                exc,
+                exc_info=True,
+            )
+            with contextlib.suppress(Exception):
+                await session.rollback()
 
     async def run_forever(self, interval: float = 1.0) -> None:
         self._running = True
