@@ -30,7 +30,7 @@ def _import_leaky_env_vars() -> frozenset[str]:
         "conftest", TESTS_DIR / "conftest.py"
     )
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[no-any-expr]
+    spec.loader.exec_module(mod)
     return mod._LEAKY_ENV_VARS
 
 
