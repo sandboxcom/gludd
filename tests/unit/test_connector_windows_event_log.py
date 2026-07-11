@@ -426,4 +426,4 @@ def test_health_never_raises_on_runner_exception() -> None:
     src = WindowsEventLogSource({"backend": "powershell"}, runner=boom)
     h = src.health()
     assert h["ok"] is False
-    assert "runner error" in h["detail"]
+    assert h["detail"] == "health check failed"

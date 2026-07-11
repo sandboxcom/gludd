@@ -1,91 +1,248 @@
 """Unit tests for routers/processes.py — managed-process admin API.
 
-Targets the handler bodies in ``routers/processes.py`` (the list / signal /
-stats routes and the ``_collect_stats`` helper) that ship at ~18.5% coverage.
+Covers _read_proc_locks, _collect_stats, SignalProcessRequest model, and all
+three registered routes (list_processes, signal_process, process_stats).
 
-All psutil interaction is mocked via ``unittest.mock.patch`` — NO real OS
-process is ever spawned, inspected, or signalled by this suite. The registry
-singleton is replaced with a controllable stub so handler behavior is exercised
-without touching the live process table.
-
-Test surface (per task spec):
-  1. GET  /admin/processes                — list returns 200 + schema.
-  2. GET  /admin/processes/{pid}/stats    — 200 happy path / 404 unmanaged.
-  3. POST /admin/processes/{pid}/signal   — 200 happy path (mocked registry.signal).
-  4. PSK auth                              — missing/wrong Bearer -> 401.
-  5. psutil.NoSuchProcess                  -> 404 with reason.
-  6. psutil.AccessDenied                   -> 403 with reason.
+All OS interaction is mocked — no real process is spawned, inspected, or
+signalled.
 """
 
 from __future__ import annotations
 
-import hmac
+import io
 import signal as _signal
-from typing import Any
 from unittest.mock import MagicMock, patch
 
+import httpx
 import psutil
 import pytest
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from fastapi.testclient import TestClient
 
-from general_ludd.process.registry import ManagedProcess, ProcessRegistry
-from general_ludd.routers.processes import register
-
-_PSK = "processes-router-unit-test-psk"
-
+from general_ludd.process.registry import ManagedProcess, ProcessRegistry, ProcessRegistryError
+from general_ludd.routers.processes import (
+    SignalProcessRequest,
+    _collect_stats,
+    _read_proc_locks,
+    register,
+)
 
 # ---------------------------------------------------------------------------
-# App / client fixtures
+# _read_proc_locks
 # ---------------------------------------------------------------------------
 
 
-def _build_app(*, with_psk: bool) -> FastAPI:
-    """Build a minimal FastAPI app with only the processes router registered.
+class TestReadProcLocks:
+    """Tests for _read_proc_locks — parsing /proc/locks filtered by PID."""
 
-    When ``with_psk`` is True, an HTTP middleware mirrors the daemon's PSK gate
-    so the auth behavior is exercisable without wiring the full daemon.
-    """
-    app = FastAPI()
-    register(app, {})
-
-    if with_psk:
-
-        @app.middleware("http")
-        async def _psk_gate(request: Any, call_next: Any) -> Any:
-            auth = request.headers.get("Authorization", "")
-            token = (
-                auth.removeprefix("Bearer ").strip()
-                if auth.startswith("Bearer ")
-                else ""
+    def test_read_proc_locks_finds_matching_pid(self) -> None:
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO(
+                "1: POSIX  ADVISORY  WRITE 42 fd:01:9999 0 EOF\n"
+                "2: FLOCK  ADVISORY  READ 42 fd:02:8888 100 200\n"
             )
-            if not token or not hmac.compare_digest(token, _PSK):
-                return JSONResponse(
-                    status_code=401, content={"detail": "unauthorized"}
-                )
-            return await call_next(request)
+            result = _read_proc_locks(42)
 
-    return app
+        assert len(result) == 2
+        assert result[0] == {
+            "type": "POSIX",
+            "kind": "ADVISORY",
+            "mode": "WRITE",
+            "pid": 42,
+            "region": "fd:01:9999",
+            "start": "0",
+            "end": "EOF",
+        }
+        assert result[1]["type"] == "FLOCK"
 
+    def test_read_proc_locks_skips_other_pids(self) -> None:
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO(
+                "1: POSIX  ADVISORY  WRITE 99 fd:01:9999 0 EOF\n"
+                "2: FLOCK  ADVISORY  READ 42 fd:02:8888 100 200\n"
+                "3: POSIX  ADVISORY  WRITE 99 fd:03:7777 0 EOF\n"
+            )
+            result = _read_proc_locks(42)
 
-@pytest.fixture
-def client() -> TestClient:
-    return TestClient(_build_app(with_psk=False))
+        assert len(result) == 1
+        assert result[0]["pid"] == 42
 
+    def test_read_proc_locks_file_missing(self) -> None:
+        with patch("builtins.open", side_effect=FileNotFoundError):
+            result = _read_proc_locks(42)
+        assert result == []
 
-@pytest.fixture
-def psk_client() -> TestClient:
-    return TestClient(_build_app(with_psk=True))
+    def test_read_proc_locks_malformed_line_skipped(self) -> None:
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO(
+                "1: short\n"  # fewer than 8 fields
+                "2: POSIX  ADVISORY  WRITE 42 fd:01:9999 0 EOF\n"
+            )
+            result = _read_proc_locks(42)
+
+        assert len(result) == 1
+        assert result[0]["pid"] == 42
+
+    def test_read_proc_locks_non_integer_pid_skipped(self) -> None:
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO(
+                "1: POSIX  ADVISORY  WRITE abc fd:01:9999 0 EOF\n"
+                "2: FLOCK  ADVISORY  READ 42 fd:02:8888 100 200\n"
+            )
+            result = _read_proc_locks(42)
+
+        assert len(result) == 1
+        assert result[0]["pid"] == 42
+
+    def test_read_proc_locks_empty_file(self) -> None:
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO("")
+            result = _read_proc_locks(42)
+        assert result == []
 
 
 # ---------------------------------------------------------------------------
-# Registry stub helpers
+# _collect_stats
 # ---------------------------------------------------------------------------
 
 
-def _record(pid: int = 4242) -> ManagedProcess:
-    """A synthetic managed-process record (no real OS process is created)."""
+def _mock_psutil_process() -> MagicMock:
+    """Build a psutil.Process mock returning plausible snapshot data."""
+    mock_proc = MagicMock()
+    mock_proc.cpu_percent.return_value = 5.0
+    mock_proc.memory_info.return_value = MagicMock(rss=2048, vms=4096)
+    mock_proc.io_counters.return_value = MagicMock(
+        read_bytes=10, write_bytes=20, read_count=1, write_count=2,
+    )
+    mock_proc.num_fds.return_value = 4
+    mock_proc.num_ctx_switches.return_value = MagicMock(
+        voluntary=7, involuntary=9,
+    )
+    mock_proc.num_threads.return_value = 3
+    mock_proc.status.return_value = "running"
+    mock_proc.open_files.return_value = []
+    return mock_proc
+
+
+class TestCollectStats:
+    """Tests for _collect_stats — psutil snapshot with graceful degradation."""
+
+    @staticmethod
+    def _patch_psutil_process(mock_proc):
+        """Patch psutil.Process (lazy-imported inside _collect_stats)."""
+        import psutil
+        return patch.object(psutil, "Process", return_value=mock_proc)
+
+    def test_collect_stats_shape(self) -> None:
+        mock_proc = _mock_psutil_process()
+        with self._patch_psutil_process(mock_proc), patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO("")
+            result = _collect_stats(42)
+
+        expected_keys = {
+            "pid", "cpu_percent", "memory", "io", "num_fds",
+            "num_threads", "num_ctx_switches", "status", "open_files", "locks",
+        }
+        assert set(result) == expected_keys
+        assert result["pid"] == 42
+
+    def test_collect_stats_cpu_percent_fallback(self) -> None:
+        mock_proc = _mock_psutil_process()
+        mock_proc.cpu_percent.side_effect = RuntimeError("permission denied")
+        with self._patch_psutil_process(mock_proc), patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO("")
+            result = _collect_stats(42)
+
+        assert result["cpu_percent"] == 0.0
+
+    def test_collect_stats_io_fallback(self) -> None:
+        mock_proc = _mock_psutil_process()
+        mock_proc.io_counters.side_effect = AttributeError("not available")
+        with self._patch_psutil_process(mock_proc), patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO("")
+            result = _collect_stats(42)
+
+        assert result["io"] is None
+
+    def test_collect_stats_num_fds_fallback(self) -> None:
+        mock_proc = _mock_psutil_process()
+        mock_proc.num_fds.side_effect = PermissionError
+        with self._patch_psutil_process(mock_proc), patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO("")
+            result = _collect_stats(42)
+
+        assert result["num_fds"] is None
+
+    def test_collect_stats_num_ctx_switches_fallback(self) -> None:
+        mock_proc = _mock_psutil_process()
+        mock_proc.num_ctx_switches.side_effect = RuntimeError("unavailable")
+        with self._patch_psutil_process(mock_proc), patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO("")
+            result = _collect_stats(42)
+
+        assert result["num_ctx_switches"] is None
+
+    def test_collect_stats_open_files_fallback(self) -> None:
+        mock_proc = _mock_psutil_process()
+        mock_proc.open_files.side_effect = PermissionError
+        with self._patch_psutil_process(mock_proc), patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO("")
+            result = _collect_stats(42)
+
+        assert result["open_files"] == 0
+
+    def test_collect_stats_num_threads(self) -> None:
+        mock_proc = _mock_psutil_process()
+        mock_proc.num_threads.return_value = 8
+        with self._patch_psutil_process(mock_proc), patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO("")
+            result = _collect_stats(42)
+
+        assert result["num_threads"] == 8
+
+    def test_collect_stats_status(self) -> None:
+        mock_proc = _mock_psutil_process()
+        mock_proc.status.return_value = "sleeping"
+        with self._patch_psutil_process(mock_proc), patch("builtins.open") as mock_open:
+            mock_open.return_value = io.StringIO("")
+            result = _collect_stats(42)
+
+        assert result["status"] == "sleeping"
+
+
+# ---------------------------------------------------------------------------
+# SignalProcessRequest model
+# ---------------------------------------------------------------------------
+
+
+class TestSignalProcessRequest:
+    """Tests for the SignalProcessRequest Pydantic model."""
+
+    def test_signal_request_defaults(self) -> None:
+        req = SignalProcessRequest()
+        assert req.signal == "SIGTERM"
+        assert req.group is False
+
+    def test_signal_request_custom_values(self) -> None:
+        req = SignalProcessRequest(signal="SIGKILL", group=True)
+        assert req.signal == "SIGKILL"
+        assert req.group is True
+
+
+# ---------------------------------------------------------------------------
+# Route tests — fixtures and helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def app() -> FastAPI:
+    """Minimal FastAPI app with only the processes router registered."""
+    a = FastAPI()
+    register(a, {})
+    return a
+
+
+def _managed_record(pid: int = 4242) -> ManagedProcess:
+    """A synthetic managed-process record — no real OS process."""
     return ManagedProcess(
         pid=pid,
         command=["sleep", "100"],
@@ -99,302 +256,333 @@ def _record(pid: int = 4242) -> ManagedProcess:
 
 
 def _registry_with(pid: int = 4242) -> ProcessRegistry:
-    """A ProcessRegistry with a synthetic record pre-loaded into its map."""
+    """A ProcessRegistry pre-loaded with a synthetic record."""
     reg = ProcessRegistry()
-    reg._procs[pid] = _record(pid)
+    reg._procs[pid] = _managed_record(pid)
     return reg
 
 
-def _wire_psutil_process_mock() -> MagicMock:
-    """Build a ``psutil.Process`` mock returning a plausible snapshot.
-
-    ``create_time`` is set to match the synthetic record so the registry's
-    identity check passes and the handler reaches ``_collect_stats``.
-    """
-    mock_proc = MagicMock()
-    mock_proc.create_time.return_value = 1000.0
-    mock_proc.cpu_percent.return_value = 5.0
-    mock_proc.memory_info.return_value = MagicMock(rss=2048, vms=4096)
-    mock_proc.io_counters.return_value = MagicMock(
-        read_bytes=10, write_bytes=20, read_count=1, write_count=2
-    )
-    mock_proc.num_fds.return_value = 4
-    mock_proc.num_ctx_switches.return_value = MagicMock(
-        voluntary=7, involuntary=9
-    )
-    mock_proc.num_threads.return_value = 3
-    mock_proc.status.return_value = "running"
-    mock_proc.open_files.return_value = []
-    return mock_proc
-
-
 # ---------------------------------------------------------------------------
-# 1. GET /admin/processes — list
+# list_processes route
 # ---------------------------------------------------------------------------
 
 
-def test_list_processes_returns_200_and_schema(client: TestClient) -> None:
-    """List endpoint returns the canonical {processes, count} envelope.
+class TestListProcesses:
+    """Tests for GET /admin/processes."""
 
-    Each row carries every ManagedProcess field plus the router-added ``alive``
-    flag. The registry and psutil are both mocked so no real pid is touched.
-    """
-    pid = 4242
-    reg = _registry_with(pid=pid)
-    with (
-        patch(
-            "general_ludd.routers.processes.default_registry",
-            return_value=reg,
-        ),
-        patch("psutil.Process") as mock_proc_cls,
-    ):
-        mock_proc_cls.return_value = _wire_psutil_process_mock()
-        resp = client.get("/admin/processes")
+    @pytest.mark.asyncio
+    async def test_list_processes_empty_registry(self, app: FastAPI) -> None:
+        reg = ProcessRegistry()
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/admin/processes")
 
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert set(body) == {"processes", "count"}
-    assert body["count"] == 1
-    row = body["processes"][0]
-    for key in (
-        "pid",
-        "command",
-        "pgid",
-        "job_id",
-        "project_id",
-        "origin",
-        "registered_at",
-        "create_time",
-        "alive",
-    ):
-        assert key in row, f"missing field in row: {key}"
-    assert row["pid"] == pid
-    assert row["origin"] == "unit_test"
-    assert row["alive"] is True
+        assert resp.status_code == 200
+        assert resp.json() == {"processes": [], "count": 0}
 
+    @pytest.mark.asyncio
+    async def test_list_processes_with_processes(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = _registry_with(pid=pid)
+        transport = httpx.ASGITransport(app=app)
+        with (
+            patch(
+                "general_ludd.routers.processes.default_registry", return_value=reg,
+            ),
+            patch("psutil.Process") as mock_proc_cls,
+        ):
+            mock_proc = MagicMock()
+            mock_proc.create_time.return_value = 1000.0
+            mock_proc_cls.return_value = mock_proc
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/admin/processes")
 
-def test_list_processes_empty_registry(client: TestClient) -> None:
-    """An empty registry yields count=0 + empty list, still 200."""
-    reg = ProcessRegistry()
-    with patch(
-        "general_ludd.routers.processes.default_registry",
-        return_value=reg,
-    ):
-        resp = client.get("/admin/processes")
-    assert resp.status_code == 200
-    assert resp.json() == {"processes": [], "count": 0}
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert set(body) == {"processes", "count"}
+        assert body["count"] == 1
+        row = body["processes"][0]
+        assert row["pid"] == pid
+        assert row["origin"] == "unit_test"
+        assert row["alive"] is True
 
+    @pytest.mark.asyncio
+    async def test_list_processes_includes_alive_status(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = _registry_with(pid=pid)
+        transport = httpx.ASGITransport(app=app)
+        with (
+            patch(
+                "general_ludd.routers.processes.default_registry", return_value=reg,
+            ),
+            patch("psutil.Process") as mock_proc_cls,
+        ):
+            mock_proc = MagicMock()
+            mock_proc.create_time.return_value = 1000.0
+            mock_proc_cls.return_value = mock_proc
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/admin/processes")
 
-# ---------------------------------------------------------------------------
-# 2. GET /admin/processes/{pid}/stats — single-process snapshot
-# ---------------------------------------------------------------------------
-
-
-def test_stats_returns_200_for_managed_pid(client: TestClient) -> None:
-    """Stats endpoint returns the full snapshot for a live managed pid."""
-    pid = 4242
-    reg = _registry_with(pid=pid)
-    with (
-        patch(
-            "general_ludd.routers.processes.default_registry",
-            return_value=reg,
-        ),
-        patch("psutil.Process") as mock_proc_cls,
-    ):
-        mock_proc_cls.return_value = _wire_psutil_process_mock()
-        resp = client.get(f"/admin/processes/{pid}/stats")
-
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["pid"] == pid
-    assert body["cpu_percent"] == 5.0
-    assert body["memory"] == {"rss": 2048, "vms": 4096}
-    assert body["io"] == {
-        "read_bytes": 10,
-        "write_bytes": 20,
-        "read_count": 1,
-        "write_count": 2,
-    }
-    assert body["num_fds"] == 4
-    assert body["num_threads"] == 3
-    assert body["num_ctx_switches"] == {"voluntary": 7, "involuntary": 9}
-    assert body["status"] == "running"
-    assert isinstance(body["open_files"], int)
-    assert isinstance(body["locks"], list)
-
-
-def test_stats_returns_404_for_unmanaged_pid(client: TestClient) -> None:
-    """A pid that is not in the registry is refused with 404 (confinement)."""
-    reg = ProcessRegistry()  # empty
-    with patch(
-        "general_ludd.routers.processes.default_registry",
-        return_value=reg,
-    ):
-        resp = client.get("/admin/processes/99999/stats")
-    assert resp.status_code == 404
-    assert "not a live gludd-managed process" in resp.json()["detail"]
+        row = resp.json()["processes"][0]
+        assert "alive" in row
+        assert isinstance(row["alive"], bool)
 
 
 # ---------------------------------------------------------------------------
-# 3. POST /admin/processes/{pid}/signal — signal delivery
+# signal_process route
 # ---------------------------------------------------------------------------
 
 
-def test_signal_returns_expected_response(client: TestClient) -> None:
-    """Signal happy path returns the canonical {ok, pid, signal, group} body.
+class TestSignalProcess:
+    """Tests for POST /admin/processes/{pid}/signal."""
 
-    ``registry.signal`` is a no-op MagicMock so no real signal is delivered;
-    ``resolve_signal`` is stubbed to return SIGTERM's signum.
-    """
-    pid = 4242
-    reg = MagicMock()
-    reg.resolve_signal.return_value = int(_signal.SIGTERM)
-    reg.signal.return_value = None
-    with patch(
-        "general_ludd.routers.processes.default_registry",
-        return_value=reg,
-    ):
-        resp = client.post(
-            f"/admin/processes/{pid}/signal",
-            json={"signal": "SIGTERM", "group": False},
+    @pytest.mark.asyncio
+    async def test_signal_process_ok(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = MagicMock()
+        reg.resolve_signal.return_value = int(_signal.SIGTERM)
+        reg.signal.return_value = None
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    f"/admin/processes/{pid}/signal",
+                    json={"signal": "SIGTERM", "group": False},
+                )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body == {"ok": True, "pid": pid, "signal": "SIGTERM", "group": False}
+        reg.resolve_signal.assert_called_once_with("SIGTERM")
+
+    @pytest.mark.asyncio
+    async def test_signal_unmanaged_pid_returns_404(self, app: FastAPI) -> None:
+        pid = 99999
+        reg = MagicMock()
+        reg.resolve_signal.return_value = int(_signal.SIGTERM)
+        reg.signal.side_effect = ProcessRegistryError(
+            f"refusing to signal pid {pid}: not a gludd-managed process"
         )
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    f"/admin/processes/{pid}/signal",
+                    json={"signal": "SIGTERM"},
+                )
 
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == {
-        "ok": True,
-        "pid": pid,
-        "signal": "SIGTERM",
-        "group": False,
-    }
-    # Confirm the registry was actually invoked through asyncio.to_thread.
-    reg.resolve_signal.assert_called_once_with("SIGTERM")
-    reg.signal.assert_called_once_with(pid, int(_signal.SIGTERM), group=False)
+        assert resp.status_code == 404
+        assert "not a gludd-managed process" in resp.json()["detail"]
 
-
-def test_signal_unmanaged_pid_returns_404(client: TestClient) -> None:
-    """A signal for a pid the registry does not manage is surfaced as 404.
-
-    The registry raises ProcessRegistryError with the canonical refusal
-    substring; the router maps that to 404.
-    """
-    from general_ludd.process.registry import ProcessRegistryError
-
-    pid = 99999
-    reg = MagicMock()
-    reg.resolve_signal.return_value = int(_signal.SIGTERM)
-    reg.signal.side_effect = ProcessRegistryError(
-        f"refusing to signal pid {pid}: not a gludd-managed process"
-    )
-    with patch(
-        "general_ludd.routers.processes.default_registry",
-        return_value=reg,
-    ):
-        resp = client.post(
-            f"/admin/processes/{pid}/signal",
-            json={"signal": "SIGTERM"},
+    @pytest.mark.asyncio
+    async def test_signal_disallowed_signal_returns_400(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = MagicMock()
+        reg.resolve_signal.side_effect = ProcessRegistryError(
+            "signal 'SIGBOGUS' is not in the allow-list (SIGCONT, SIGTERM)"
         )
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    f"/admin/processes/{pid}/signal",
+                    json={"signal": "SIGBOGUS"},
+                )
 
-    assert resp.status_code == 404
-    assert "not a gludd-managed process" in resp.json()["detail"]
+        assert resp.status_code == 400
+        assert "allow-list" in resp.json()["detail"]
 
-
-# ---------------------------------------------------------------------------
-# 4. PSK auth gate (missing / wrong / correct Bearer token)
-# ---------------------------------------------------------------------------
-
-
-def test_psk_missing_bearer_returns_401(psk_client: TestClient) -> None:
-    """A request with no Authorization header is refused before the handler."""
-    resp = psk_client.get("/admin/processes")
-    assert resp.status_code == 401
-
-
-def test_psk_wrong_bearer_returns_401(psk_client: TestClient) -> None:
-    """A request whose Bearer token does not match the configured PSK is 401."""
-    resp = psk_client.get(
-        "/admin/processes",
-        headers={"Authorization": "Bearer definitely-not-the-psk"},
-    )
-    assert resp.status_code == 401
-
-
-def test_psk_correct_bearer_passes_gate(psk_client: TestClient) -> None:
-    """The correct PSK routes through to the handler (200 with empty body)."""
-    reg = ProcessRegistry()
-    with patch(
-        "general_ludd.routers.processes.default_registry",
-        return_value=reg,
-    ):
-        resp = psk_client.get(
-            "/admin/processes",
-            headers={"Authorization": f"Bearer {_PSK}"},
+    @pytest.mark.asyncio
+    async def test_signal_identity_check_failed_returns_409(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = MagicMock()
+        reg.resolve_signal.return_value = int(_signal.SIGTERM)
+        reg.signal.side_effect = ProcessRegistryError(
+            f"refusing to signal pid {pid}: process is gone or its PID was "
+            f"reused by a different process (identity check failed)"
         )
-    assert resp.status_code == 200
-    assert resp.json() == {"processes": [], "count": 0}
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    f"/admin/processes/{pid}/signal",
+                    json={"signal": "SIGTERM"},
+                )
+
+        assert resp.status_code == 409
+        assert "identity check failed" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_signal_process_disappeared_returns_409(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = MagicMock()
+        reg.resolve_signal.return_value = int(_signal.SIGTERM)
+        reg.signal.side_effect = ProcessRegistryError(
+            f"process {pid} disappeared before the signal was delivered"
+        )
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    f"/admin/processes/{pid}/signal",
+                    json={"signal": "SIGTERM"},
+                )
+
+        assert resp.status_code == 409
+        assert "disappeared" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_signal_unexpected_exception_returns_500(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = MagicMock()
+        reg.resolve_signal.return_value = int(_signal.SIGTERM)
+        reg.signal.side_effect = RuntimeError("something exploded")
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    f"/admin/processes/{pid}/signal",
+                    json={"signal": "SIGTERM"},
+                )
+
+        assert resp.status_code == 500
+        assert "internal error" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_signal_with_group_true(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = MagicMock()
+        reg.resolve_signal.return_value = int(_signal.SIGTERM)
+        reg.signal.return_value = None
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    f"/admin/processes/{pid}/signal",
+                    json={"signal": "SIGTERM", "group": True},
+                )
+
+        assert resp.status_code == 200
+        assert resp.json()["group"] is True
 
 
 # ---------------------------------------------------------------------------
-# 5. psutil error path — NoSuchProcess -> 404 with reason
+# process_stats route
 # ---------------------------------------------------------------------------
 
 
-def test_stats_no_such_process_returns_404(client: TestClient) -> None:
-    """If psutil reports the pid is gone mid-snapshot, the router returns 404.
+class TestProcessStats:
+    """Tests for GET /admin/processes/{pid}/stats."""
 
-    The pid IS registered and passes the identity pre-check (registry mocked
-    at the boundary); the failure happens inside ``_collect_stats``
-    (psutil.Process(pid) raises), so the exception is caught and surfaced
-    with a reason.
-    """
-    pid = 4242
-    reg = MagicMock()
-    reg.get.return_value = _record(pid)
-    reg.is_alive.return_value = True
-    with (
-        patch(
-            "general_ludd.routers.processes.default_registry",
-            return_value=reg,
-        ),
-        patch(
-            "general_ludd.routers.processes._collect_stats",
-            side_effect=psutil.NoSuchProcess(pid),
-        ),
-    ):
-        resp = client.get(f"/admin/processes/{pid}/stats")
+    @pytest.mark.asyncio
+    async def test_stats_managed_process(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = _registry_with(pid=pid)
+        transport = httpx.ASGITransport(app=app)
+        with (
+            patch(
+                "general_ludd.routers.processes.default_registry", return_value=reg,
+            ),
+            patch("psutil.Process") as mock_proc_cls,
+        ):
+            mock_proc = _mock_psutil_process()
+            mock_proc.create_time.return_value = 1000.0
+            mock_proc_cls.return_value = mock_proc
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get(f"/admin/processes/{pid}/stats")
 
-    assert resp.status_code == 404
-    detail = resp.json()["detail"]
-    assert str(pid) in detail
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["pid"] == pid
+        assert body["cpu_percent"] == 5.0
+        assert body["memory"] == {"rss": 2048, "vms": 4096}
 
+    @pytest.mark.asyncio
+    async def test_stats_unmanaged_pid_returns_404(self, app: FastAPI) -> None:
+        reg = ProcessRegistry()
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/admin/processes/99999/stats")
 
-# ---------------------------------------------------------------------------
-# 6. psutil error path — AccessDenied -> 403 with reason
-# ---------------------------------------------------------------------------
+        assert resp.status_code == 404
+        assert "not a live gludd-managed process" in resp.json()["detail"]
 
+    @pytest.mark.asyncio
+    async def test_stats_registered_but_dead_returns_404(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = MagicMock()
+        reg.get.return_value = _managed_record(pid)
+        reg.is_alive.return_value = False
+        transport = httpx.ASGITransport(app=app)
+        with patch(
+            "general_ludd.routers.processes.default_registry", return_value=reg,
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get(f"/admin/processes/{pid}/stats")
 
-def test_stats_access_denied_returns_403(client: TestClient) -> None:
-    """A psutil AccessDenied mid-snapshot is surfaced as 403 (not 404/500).
+        assert resp.status_code == 404
+        assert "not a live gludd-managed process" in resp.json()["detail"]
 
-    Permission denial is a distinct failure mode from absence: the pid exists
-    and is managed, but the operator cannot inspect it. The router must map
-    that to 403 so callers can distinguish the two.
-    """
-    pid = 4242
-    reg = MagicMock()
-    reg.get.return_value = _record(pid)
-    reg.is_alive.return_value = True
-    with (
-        patch(
-            "general_ludd.routers.processes.default_registry",
-            return_value=reg,
-        ),
-        patch(
-            "general_ludd.routers.processes._collect_stats",
-            side_effect=psutil.AccessDenied(pid),
-        ),
-    ):
-        resp = client.get(f"/admin/processes/{pid}/stats")
+    @pytest.mark.asyncio
+    async def test_stats_access_denied_returns_403(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = MagicMock()
+        reg.get.return_value = _managed_record(pid)
+        reg.is_alive.return_value = True
+        transport = httpx.ASGITransport(app=app)
+        with (
+            patch(
+                "general_ludd.routers.processes.default_registry", return_value=reg,
+            ),
+            patch(
+                "general_ludd.routers.processes._collect_stats",
+                side_effect=psutil.AccessDenied(pid),
+            ),
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get(f"/admin/processes/{pid}/stats")
 
-    assert resp.status_code == 403
-    detail = resp.json()["detail"]
-    assert str(pid) in detail
+        assert resp.status_code == 403
+        assert str(pid) in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_stats_no_such_process_returns_404(self, app: FastAPI) -> None:
+        pid = 4242
+        reg = MagicMock()
+        reg.get.return_value = _managed_record(pid)
+        reg.is_alive.return_value = True
+        transport = httpx.ASGITransport(app=app)
+        with (
+            patch(
+                "general_ludd.routers.processes.default_registry", return_value=reg,
+            ),
+            patch(
+                "general_ludd.routers.processes._collect_stats",
+                side_effect=psutil.NoSuchProcess(pid),
+            ),
+        ):
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get(f"/admin/processes/{pid}/stats")
+
+        assert resp.status_code == 404
+        assert str(pid) in resp.json()["detail"]

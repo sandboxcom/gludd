@@ -1094,3 +1094,33 @@ Three-layer anti-lying guardrail landing so false "done" claims are structurally
 - [x] **CGW-30** — skip-guard cleanup (58 vestigial not-yet-created pytest.skip guards removed across 11 files for shipped features) | evidence: tests/integration/test_audit_roles.py 128 + tests/integration/test_w8_roles_and_reports.py 107 + tests/integration/test_langgraph_decision_feature.py 36 + tests/integration/test_langchain_daemon_integration.py 26, all 0-skipped
 - [x] **CGW-31** — zero-test module suites (renderers cache, event_loop benchmark, release orchestrator) | evidence: tests/unit/test_renderers_cache.py + tests/unit/test_event_loop_benchmark.py + tests/unit/test_release_orchestrator.py 28 passed
 - [x] **CGW-32** — registration-pin fix (plural tests/unit/test_routers_registration.py EXPECTED_ROUTES gained eval+remediation rows — was unit-3's sole CI failure on 0618b39c) | evidence: 39 passed
+
+## Phase S2 — Spec Waves C-E completion (2026-07-11)
+
+Items completed since Phase S1:
+
+- [x] C9 — self_update deny-list family | evidence: 114 tests 561b6070
+- [x] C10 — execution engine fixes | evidence: 26 tests aa954a96
+- [x] C11 — event loop fixes | evidence: 68 tests 82aa3469
+- [x] C12 — events/hooks fixes | evidence: 81 tests merged
+- [x] C14 — permissions lattice | evidence: 165 tests 7e0d9419
+- [x] C15 — tool-loop guards | evidence: 10+ tests c97bbb33
+- [x] C16 — filestore RCE [ALREADY FIXED] | evidence: 8 existing tests
+- [x] C18 — accounting fixes | evidence: 13 tests 9f61ccac
+- [x] C19 — cross-tenant traces | evidence: 39 tests 1abb72b6
+- [x] C22 — SSTI sweep | evidence: 57 tests 068da6c7
+- [x] C23 — connector security sweep | evidence: 700+ assertions 3584f55e
+- [x] C25 — remediation idempotency | evidence: 4 tests 85e1035c
+- [x] C26(5-7) — async lifecycle fixes | evidence: 16 tests 82049354
+- [x] C27 — MCP argv validation | evidence: 102 tests f37102d2
+- [x] D3 — self-improve external projects | evidence: 15 tests
+- [x] D4 — DAST driver | evidence: 97 tests fbbeec19
+- [x] D9 — remediation tick | evidence: 5 tests ff226636
+- [x] D13 — security_backlog [ALREADY COMPLETE]
+- [x] E1 — coverage lift (sentry/init/processes) | evidence: 186 tests bf9af1eb
+- [x] E4 — noqa guardrail 3-layer | evidence: 48 tests fafbfd79
+- [x] E6 — audit-doc re-triage | evidence: 04a4fbeb
+- [x] Enforcement plugin fix — per-PID scoping
+- [x] D12 — Slack connector: outbound notifications + channel history read, SSRF-guarded | evidence: outbound notifications + channel history read, SSRF-guarded 0cccee7f (merge 728d58a3)
+- [x] D14 — background_test_runner via make target + CLI subcommand | evidence: expose background test runner via make target + CLI subcommand 0a07421d
+- [x] D15 — Pricing sources static→live: CachedSource with TTL cache + static fallback | evidence: CachedSource with TTL cache + static fallback 651dfc33

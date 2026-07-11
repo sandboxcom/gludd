@@ -28,6 +28,7 @@ Tempo HTTP API
 from __future__ import annotations
 
 import json
+import logging
 import os
 import urllib.parse
 from typing import Protocol, cast, runtime_checkable
@@ -36,6 +37,8 @@ import httpx
 
 from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["TempoSource"]
 
@@ -127,14 +130,16 @@ class TempoSource:
         """Probe ``/api/search`` with a bounded window. Never raises."""
         try:
             resp = self._get("/api/search", {"limit": 1})
-        except Exception as exc:
-            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        except Exception:
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         if resp.status >= 400:
             return {"ok": False, "detail": f"http {resp.status}"}
         try:
             resp.json()
-        except Exception as exc:
-            return {"ok": False, "detail": f"invalid json: {exc}"}
+        except Exception:
+            logger.warning("health check failed (invalid json)", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         return {"ok": True, "detail": "reachable"}
 
     def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:

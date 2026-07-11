@@ -55,6 +55,7 @@ BLOCKED_HOST_NAMES = frozenset(
         "instance-data",
         "ip6-localhost",  # IPv6 loopback alias — falls through ip_address() parse
         "ip6-loopback",  # IPv6 loopback alias — falls through ip_address() parse
+        "metadata.azure.com",
     }
 )
 
@@ -89,13 +90,38 @@ def _ip_addr_is_blocked(
     )
 
 
+_SINGLE_LABEL_BLOCKED: frozenset[str] = frozenset()
+
+
+def _is_single_label_hostname(host: str) -> bool:
+    """True iff ``host`` is a single-label (dot-less, non-IP) hostname.
+
+    Single-label hostnames cannot be public FQDNs — they always resolve within
+    the local network or the search domain, so allowing them is an SSRF risk.
+    IP literals (both IPv4 and IPv6) are excluded by the ``:`` or ``.`` in
+    their string form; this function only fires for names like ``vault``,
+    ``grafana``, ``prometheus``.
+    """
+    if "." in host or ":" in host:
+        return False
+    if host in _SINGLE_LABEL_BLOCKED:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    return True
+
+
 def host_is_blocked(host: str) -> bool:
     """LITERAL deny check for a URL host — no DNS, no network.
 
     Returns ``True`` (deny) for an empty host, a loopback/metadata name in
     :data:`BLOCKED_HOST_NAMES`, a literal metadata IP in
-    :data:`BLOCKED_METADATA_IPS`, or any host that is *already* a blocked IP
-    literal (per :func:`_ip_addr_is_blocked`). Non-IP-literal hostnames are NOT
+    :data:`BLOCKED_METADATA_IPS`, any single-label (dot-less, non-IP) hostname,
+    or any host that is *already* a blocked IP literal (per
+    :func:`_ip_addr_is_blocked`). Non-IP-literal multi-label hostnames are NOT
     resolved — they pass the IP checks and are caught only by the explicit name
     blocklist. Pure string work; never blocks.
     """
@@ -133,8 +159,8 @@ def host_is_blocked(host: str) -> bool:
         return True
     if host in BLOCKED_METADATA_IPS:
         return True
-    # If the host is an IP literal, classify it; a non-literal hostname raises
-    # ValueError and falls through (we never resolve it).
+    if _is_single_label_hostname(host):
+        return True
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:

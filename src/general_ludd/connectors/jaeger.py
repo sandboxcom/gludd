@@ -220,9 +220,9 @@ class JaegerSource:
             code = int(getattr(resp, "status_code", 0))
             ok = 200 <= code < 300
             return {"ok": ok, "detail": f"GET /api/services -> {code}"}
-        except Exception as exc:  # never raise
-            logger.warning("jaeger health check failed: %s", exc)
-            return {"ok": False, "detail": f"error: {exc}"}
+        except Exception:  # never raise
+            logger.warning("jaeger health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
 
     # -- query ------------------------------------------------------------ #
     def query(self, spec: JaegerQuerySpec | None = None) -> list[dict[str, object]]:

@@ -9,7 +9,7 @@ gludd ansible role.
 
 Never run a test that takes >30s in the foreground — it blocks ALL subagent
 dispatch. This role launches a test in the background via `make test-bg` and
-polls `make test-bg-status` until a terminal marker (PASS/FAIL/FINISHED)
+polls `make test-bg-runner ACTION=status` until a terminal marker (PASS/FAIL/FINISHED)
 appears or the poll budget is exhausted.
 
 ## Why this role exists

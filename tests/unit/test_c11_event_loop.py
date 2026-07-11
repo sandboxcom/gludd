@@ -41,6 +41,13 @@ def _make_c11_loop(**overrides):
     )
     defaults.update(overrides)
     loop = EventLoop(**defaults)
+    # Bypass the isinstance(session, async_sessionmaker) check in
+    # EventLoop.__init__ which is unreliable with MagicMock(spec=...).
+    # isinstance(MagicMock(spec=async_sessionmaker), async_sessionmaker)
+    # may return False under xdist workers, different Python/mock versions,
+    # or when async_sessionmaker is a generic alias.  Force factory mode.
+    loop._session_factory = factory
+    loop.session = None
     return loop, {
         "session": session,
         "factory": factory,

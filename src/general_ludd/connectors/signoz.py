@@ -32,11 +32,14 @@ Security posture:
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["SigNozSource"]
 
@@ -257,8 +260,9 @@ class SigNozSource:
                 headers=self._auth_headers(),
                 timeout=self._timeout,
             )
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "source": self.name, "error": str(exc)}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "source": self.name, "error": "health check failed"}
         ok = 200 <= status_code < 300
         result: dict[str, object] = {"ok": ok, "source": self.name, "status_code": status_code}
         if isinstance(payload, dict) and "version" in payload:

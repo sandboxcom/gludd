@@ -25,6 +25,7 @@ Design constraints (see the connector contract):
 from __future__ import annotations
 
 import json
+import logging
 import os
 import urllib.parse
 from typing import Protocol, cast, runtime_checkable
@@ -33,6 +34,8 @@ from urllib.parse import urlsplit
 import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["SentrySource", "Transport"]
 
@@ -207,8 +210,9 @@ class SentrySource:
         url = f"{self.base_url}/api/0/"
         try:
             resp = self._get(url)
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         if 200 <= resp.status < 300:
             return {"ok": True, "detail": f"sentry api {resp.status}"}
         return {"ok": False, "detail": f"sentry api returned {resp.status}"}

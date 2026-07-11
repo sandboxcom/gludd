@@ -39,6 +39,7 @@ Record shape (one dict per sample)::
 from __future__ import annotations
 
 import json as _json
+import logging
 import os
 import time
 from collections.abc import Callable
@@ -48,6 +49,8 @@ from urllib.parse import urlsplit
 import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # Injectable transport signature: (url, params, headers, timeout) -> (status, json)
 HttpGet = Callable[..., "tuple[int, object]"]
@@ -281,10 +284,11 @@ class ThanosSource:
                 headers=self._headers(),
                 timeout=self._timeout,
             )
-        except Exception as exc:  # health must never raise
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
             return {
                 "ok": False,
-                "detail": f"transport error: {exc}",
+                "detail": "health check failed",
                 "source": self.name,
             }
 

@@ -21,11 +21,17 @@ from general_ludd.mcp.transport import MCPStdioClient
 
 @pytest.fixture()
 def stdio_config() -> MCPServerConfig:
-    """Minimal config that passes _validate_launch_command for 'python'."""
+    """Minimal config that passes _validate_launch_command for 'python'.
+
+    Uses ``-m json.tool`` (a stdlib module) rather than ``-c`` because ``-c``
+    is now rejected by the python/node argv validation guard (C27).
+    The subprocess output is fully mocked, so the actual module behavior is
+    irrelevant — only the argv shape matters for the stderr=PIPE test.
+    """
     return MCPServerConfig(
         server_id="test-server",
         command=[sys.executable],
-        args=["-c", "import time; time.sleep(0)"],
+        args=["-m", "json.tool"],
         timeout_seconds=5.0,
     )
 

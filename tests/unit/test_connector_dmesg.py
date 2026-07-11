@@ -138,7 +138,7 @@ def test_health_not_ok_on_nonzero_exit() -> None:
     src = DmesgSource(runner=runner)
     health = src.health()
     assert health["ok"] is False
-    assert "Operation not permitted" in health["detail"]
+    assert health["detail"] == "Operation not permitted"
 
 
 def test_health_never_raises() -> None:
@@ -149,7 +149,7 @@ def test_health_never_raises() -> None:
     src = DmesgSource(runner=Boom())
     health = src.health()
     assert health["ok"] is False
-    assert "OSError" in health["detail"]
+    assert "no kmsg" in health["detail"]
 
 
 def test_query_raises_on_nonzero_exit() -> None:

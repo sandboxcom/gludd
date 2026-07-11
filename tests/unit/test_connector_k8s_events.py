@@ -266,7 +266,7 @@ class TestHealth:
         )
         h = src.health()
         assert h["ok"] is False
-        assert "403" in h["detail"]
+        assert h["detail"] == "events API returned HTTP 403"
 
     def test_health_never_raises(self) -> None:
         class _Exploding:
@@ -276,7 +276,7 @@ class TestHealth:
         src = K8sEventsSource(config=_public_config(), transport=_Exploding())
         h = src.health()
         assert h["ok"] is False
-        assert "probe error" in h["detail"]
+        assert h["detail"] == "health check failed"
 
     def test_health_no_transport(self) -> None:
         src = K8sEventsSource(config=_public_config())

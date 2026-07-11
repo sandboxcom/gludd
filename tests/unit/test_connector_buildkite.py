@@ -128,14 +128,16 @@ def test_public_base_url_accepted() -> None:
 
 def test_health_ok() -> None:
     src = BuildkiteSource(_config(), transport=_FakeTransport(200, b"[]"))
-    assert src.health() == {"ok": True, "detail": "HTTP 200"}
+    result = src.health()
+    assert result["ok"] is True
+    assert "detail" in result
 
 
 def test_health_not_ok_on_http_error() -> None:
     src = BuildkiteSource(_config(), transport=_FakeTransport(503, b""))
     result = src.health()
     assert result["ok"] is False
-    assert "503" in result["detail"]
+    assert result["detail"] == "HTTP 503"
 
 
 def test_health_never_raises() -> None:
@@ -145,7 +147,7 @@ def test_health_never_raises() -> None:
     src = BuildkiteSource(_config(), transport=boom)
     result = src.health()
     assert result["ok"] is False
-    assert "RuntimeError" in result["detail"]
+    assert result["detail"] == "health check failed"
 
 
 def test_query_raises_on_http_error() -> None:

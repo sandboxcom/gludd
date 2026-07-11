@@ -183,4 +183,4 @@ def test_health_never_raises() -> None:
     src = BugsnagSource(CONFIG, _MockTransport(exc=ConnectionError("down")), environ={"BUGSNAG_TOKEN": "t"})
     h = src.health()
     assert h["ok"] is False
-    assert "down" in h["detail"]
+    assert h["detail"] == "health check failed"

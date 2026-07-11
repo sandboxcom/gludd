@@ -250,7 +250,7 @@ def test_health_not_ok_on_bad_status(monkeypatch):
     )
     result = src.health()
     assert result["ok"] is False
-    assert "500" in result["detail"]
+    assert result["detail"] == "unexpected status 500"
 
 
 def test_health_missing_token(monkeypatch):

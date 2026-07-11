@@ -292,7 +292,7 @@ def test_health_not_ok_on_http_error() -> None:
     )
     h = src.health()
     assert h["ok"] is False
-    assert "500" in h["detail"]
+    assert "service root HTTP 500" in h["detail"]
 
 
 def test_health_never_raises_on_transport_explosion() -> None:
@@ -317,7 +317,7 @@ def test_health_not_ok_on_blocked_host() -> None:
     )
     h = src.health()
     assert h["ok"] is False
-    assert "host-validation" in h["detail"]
+    assert h["detail"] == "host validation failed"
 
 
 def test_query_does_not_raise_on_single_bad_resource() -> None:
@@ -339,6 +339,7 @@ def test_query_does_not_raise_on_single_bad_resource() -> None:
     )
     recs = src.query({"what": "all"})
     err = [r for r in recs if r["level_or_status"] == "error"]
-    assert err and "slow PSU read" in err[0]["message"]
+    assert err and err[0]["message"] == "query error"
+    assert err[0]["raw"] is None
     # thermal + events still came through
     assert any(r["labels"].get("metric") == "temperature_celsius" for r in recs)

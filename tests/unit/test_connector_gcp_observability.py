@@ -270,7 +270,7 @@ def test_health_never_raises_on_http_error(
     src = make_source(transport, monkeypatch)
     result = src.health()
     assert result["ok"] is False
-    assert "403" in result["detail"]
+    assert result["detail"] == "health check failed"
 
 
 # --------------------------------------------------------------------------- #

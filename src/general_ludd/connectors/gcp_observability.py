@@ -31,12 +31,15 @@ defines no shared base class — it is standalone.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_LOGGING_ENDPOINT = "https://logging.googleapis.com/v2/entries:list"
 DEFAULT_MONITORING_BASE = "https://monitoring.googleapis.com/v3"
@@ -150,8 +153,9 @@ class GcpObservabilitySource:
                 timeout=self._timeout,
             )
             self._check_status(resp)
-        except Exception as exc:  # health must never propagate to the caller
-            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        except Exception:  # health must never propagate to the caller
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         return {"ok": True, "detail": "monitoring reachable"}
 
     # ------------------------------------------------------------------ #

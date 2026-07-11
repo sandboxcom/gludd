@@ -151,17 +151,27 @@ def _remediation_config_from_uc(uc: Any) -> RemediationConfig:
     )
 
 
+class LangGraphModelCallError(Exception):
+    """Raised when the langgraph model call fails.
+
+    Carries the original exception as __cause__ and ``original_error``.
+    """
+
+    def __init__(self, original_error: Exception) -> None:
+        self.original_error = original_error
+        super().__init__(str(original_error))
+        self.__cause__ = original_error
+
+
 # Back-compat default. ``create_daemon_app()`` builds a FRESH per-app dict
-# (see ``app.state.daemon_state``) so state no longer bleeds between FastAPI
-# instances in the same process. This module-level name is rebound to the most
-# recently created app's dict by the factory, preserving legacy callers that
-# import/observe ``_daemon_state`` directly (e.g. scripts/dogfood.py, test
-# fixtures). It must never again be the authoritative store for a running app.
-_daemon_state: dict[str, Any] = {
-    "todos": [],
-    "tick_metrics": {},
-    "quality_gate": {},
-}
+# Per-app daemon state: each app owns a fresh dict so todos / tick_metrics /
+# quality_gate cannot bleed across FastAPI instances in one process. The
+# authoritative store is ``app.state.daemon_state`` (set by the factory).
+# This module-level name exists ONLY as a migration shim for legacy callers
+# (scripts/dogfood.py, test fixtures); it starts as ``None`` and is rebound
+# to the most recently created app's dict by ``create_daemon_app()``.
+# New code MUST NOT access this global — use explicit injection instead.
+_daemon_state: Any = None
 
 
 def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
@@ -1383,7 +1393,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
                 review_cfg = {"use_langgraph": True}
 
-                def _langgraph_call_model(prompt: str) -> str | None:
+                def _langgraph_call_model(prompt: str) -> str:
                     try:
                         response = model_gateway.call_model(
                             "default",
@@ -1391,9 +1401,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                             work_type="review",
                         )
                         return response.content
-                    except Exception:
+                    except Exception as exc:
                         logger.debug("langgraph model call failed", exc_info=True)
-                        return None
+                        raise LangGraphModelCallError(exc) from exc
 
                 langgraph_reviewer = LangGraphReflexiveReviewer(
                     call_model=_langgraph_call_model,

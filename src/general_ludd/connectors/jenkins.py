@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from typing import Protocol, TypedDict
 from urllib.parse import quote, urlencode, urlparse
@@ -31,6 +32,8 @@ from urllib.parse import quote, urlencode, urlparse
 import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # (status_code, parsed_json_body) — the transport contract.
 HttpResponse = tuple[int, object]
@@ -166,8 +169,9 @@ class JenkinsSource:
         """Probe the API. Never raises — returns an ``ok``/``status`` dict."""
         try:
             status, _ = self._http_get(self._builds_url(), self._auth_headers())
-        except Exception as exc:  # health must never propagate
-            return {"ok": False, "status": None, "source": self.name, "error": str(exc)}
+        except Exception:  # health must never propagate
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "status": None, "source": self.name, "error": "health check failed"}
         return {"ok": 200 <= int(status) < 300, "status": int(status), "source": self.name}
 
     def query(self, spec: dict[str, object] | None = None) -> list[Record]:

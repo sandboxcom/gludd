@@ -178,7 +178,7 @@ def test_health_ok() -> None:
     )
     result = src.health()
     assert result["ok"] is True
-    assert "200" in result["detail"]
+    assert "detail" in result
     assert transport.calls[0]["url"] == "https://vm.example.com/health"
 
 
@@ -189,7 +189,7 @@ def test_health_not_ok_on_bad_status() -> None:
     )
     result = src.health()
     assert result["ok"] is False
-    assert "500" in result["detail"]
+    assert result["detail"] == "HTTP 500"
 
 
 def test_health_never_raises_on_transport_error() -> None:

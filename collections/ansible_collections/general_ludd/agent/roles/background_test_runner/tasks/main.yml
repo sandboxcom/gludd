@@ -2,8 +2,8 @@
 # background_test_runner role — launch a long test in the background and poll
 #
 # Ports .opencode/skills/background-test-runner/SKILL.md to a gludd role.
-# The opencode skill wraps `make test-bg` / `make test-bg-status` /
-# `make test-bg-list` / `make test-bg-kill` so a long test never blocks the
+# The opencode skill wraps `make test-bg` / `make test-bg-runner ACTION=status` /
+# `make test-bg-runner ACTION=poll-all` / `make test-bg-runner ACTION=kill` so a long test never blocks the
 # subagent pool. This role codifies the same workflow for a gludd daemon agent:
 #
 #   state=launch  → start the test in background, then poll until terminal
@@ -22,7 +22,7 @@
 
 - name: Probe background test status (state=status)
   ansible.builtin.command:
-    cmd: "make test-bg-status TESTFILE={{ testfile }}"
+    cmd: "make test-bg-runner ACTION=status TESTFILE={{ testfile }}"
   register: _btr_status_raw
   changed_when: false
   failed_when: false
@@ -38,7 +38,7 @@
 
 - name: Kill background test (state=kill)
   ansible.builtin.command:
-    cmd: "make test-bg-kill TESTFILE={{ testfile }}"
+    cmd: "make test-bg-runner ACTION=kill TESTFILE={{ testfile }}"
   register: _btr_kill_raw
   changed_when: false
   failed_when: false
@@ -65,15 +65,15 @@
       for i in $(seq 1 {{ poll_max_iterations }});
       do
         echo "=== poll iteration $i ===";
-        make test-bg-status TESTFILE={{ testfile }} 2>&1;
-        if make test-bg-status TESTFILE={{ testfile }} 2>&1 | grep -qiE '^(PASS|FAIL|FINISHED|ERROR)'; then
+        make test-bg-runner ACTION=status TESTFILE={{ testfile }} 2>&1;
+        if make test-bg-runner ACTION=status TESTFILE={{ testfile }} 2>&1 | grep -qiE '^(PASS|FAIL|FINISHED|ERROR)'; then
           echo "TERMINAL";
           break;
         fi;
         sleep {{ poll_interval_seconds }};
       done;
       echo "=== final status ===";
-      make test-bg-status TESTFILE={{ testfile }} 2>&1
+      make test-bg-runner ACTION=status TESTFILE={{ testfile }} 2>&1
   args:
     executable: /bin/bash
   register: _btr_poll_raw

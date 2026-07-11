@@ -14,6 +14,7 @@ Contract (shared across general_ludd.connectors.*):
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
@@ -21,6 +22,8 @@ from urllib.parse import urlsplit
 from general_ludd.connectors._errors import ConnectorConfigError
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -102,8 +105,9 @@ class BugsnagSource:
                 params={"per_page": 1},
                 timeout=self._timeout,
             )
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"request failed: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         if 200 <= resp.status_code < 300:
             return {"ok": True, "detail": f"HTTP {resp.status_code}"}
         return {"ok": False, "detail": f"HTTP {resp.status_code}"}

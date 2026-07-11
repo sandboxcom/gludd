@@ -41,6 +41,7 @@ forwarded to the transport via ``verify`` kwarg if the transport accepts it),
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 import re
 from datetime import UTC, datetime
@@ -51,6 +52,8 @@ import httpx
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import BLOCKED_HOST_NAMES, BLOCKED_METADATA_IPS
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["KubernetesSource"]
 
@@ -284,6 +287,10 @@ class KubernetesSource:
         transport = config.get("transport")
         self._transport: _Transport = cast(_Transport, transport) if transport is not None else _default_transport
 
+        reason = _endpoint_block_reason(self._api_server, allow_private=self._allow_private)
+        if reason:
+            raise ValueError(reason)
+
     # -- internals --------------------------------------------------------- #
     def _bearer_token(self) -> str | None:
         """Read the ServiceAccount token from ``token_env`` at request time."""
@@ -318,8 +325,9 @@ class KubernetesSource:
             url = f"{self._api_server}{path}"
             try:
                 resp = self._send(url, accept="application/json")
-            except Exception as exc:  # health must never raise
-                return {"ok": False, "detail": f"{path} probe failed: {exc}"}
+            except Exception:
+                logger.warning("kubernetes health check failed", exc_info=True)
+                return {"ok": False, "detail": "health check failed"}
             if 200 <= resp.status_code < 300:
                 return {"ok": True, "detail": f"{path} -> {resp.status_code}"}
         return {
@@ -346,8 +354,9 @@ class KubernetesSource:
             return [self._error(f"unknown mode {mode!r} (expected 'logs' or 'events')")]
         except _ConfigError as exc:
             return [self._error(str(exc))]
-        except Exception as exc:  # query must never raise
-            return [self._error(f"query failed: {exc}")]
+        except Exception:
+            logger.warning("kubernetes query failed", exc_info=True)
+            return [self._error("query failed")]
 
     # -- logs -------------------------------------------------------------- #
     def _query_logs(self, spec: dict[str, object]) -> list[dict[str, object]]:

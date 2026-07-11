@@ -303,13 +303,13 @@ def test_health_not_ok_on_5xx(token: str) -> None:
     transport = RecordingTransport([FakeResponse(503, {})])
     h = _src(transport).health()
     assert h["ok"] is False
-    assert "503" in h["detail"]
+    assert h["detail"] == "cloudflare HTTP 503"
 
 
 def test_health_never_raises(token: str) -> None:
     h = _src(_raising_transport).health()
     assert h["ok"] is False
-    assert "TimeoutError" in h["detail"]
+    assert h["detail"] == "TimeoutError: slow"
 
 
 def test_query_raises_on_http_error(token: str) -> None:

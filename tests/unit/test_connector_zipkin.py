@@ -150,9 +150,9 @@ class TestHealth:
         transport = FakeTransport([("/api/v2/traces", 500, [])])
         h = _source(transport).health()
         assert h["ok"] is False
-        assert "500" in h["detail"]
+        assert h["detail"] == "http 500"
 
     def test_never_raises(self) -> None:
         h = _source(RaisingTransport()).health()
         assert h["ok"] is False
-        assert "TimeoutError" in h["detail"]
+        assert h["detail"] == "TimeoutError: slow"

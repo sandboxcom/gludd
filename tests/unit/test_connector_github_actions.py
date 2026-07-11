@@ -217,7 +217,7 @@ def test_health_not_ok_on_401(monkeypatch):
     src = _make_source(transport=_MockTransport(status=401), monkeypatch=monkeypatch)
     h = src.health()
     assert h["ok"] is False
-    assert "401" in h["detail"]
+    assert h["detail"] == "HTTP 401"
 
 
 def test_health_never_raises(monkeypatch):

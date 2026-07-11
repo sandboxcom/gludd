@@ -14,6 +14,7 @@ touched. The transport never uses a shell.
 from __future__ import annotations
 
 import json as _json
+import logging
 import os
 import urllib.parse
 from collections.abc import Callable
@@ -22,6 +23,8 @@ from datetime import datetime
 import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["GitlabCiSource"]
 
@@ -155,8 +158,9 @@ class GitlabCiSource:
         """Probe the pipelines endpoint. Never raises."""
         try:
             status, _ = self._http_get(self._pipelines_url({}), self._headers())
-        except Exception as exc:  # health must never propagate
-            return {"ok": False, "detail": f"transport error: {exc}"}
+        except Exception:  # health must never propagate
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         if 200 <= status < 300:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}

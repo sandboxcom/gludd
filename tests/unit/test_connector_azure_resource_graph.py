@@ -276,7 +276,7 @@ def test_health_not_ok_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     src = _make_source(monkeypatch, transport)
     result = src.health()
     assert result["ok"] is False
-    assert "503" in result["detail"]
+    assert result["detail"] == "health check failed"
 
 
 def test_health_never_raises_on_missing_token(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -285,4 +285,4 @@ def test_health_never_raises_on_missing_token(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.delenv(TOKEN_ENV, raising=False)
     result = src.health()
     assert result["ok"] is False
-    assert "missing bearer token" in result["detail"]
+    assert result["detail"] == "health check failed"

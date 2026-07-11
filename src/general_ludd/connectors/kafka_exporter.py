@@ -36,6 +36,7 @@ Record shape (one dict per metric sample)::
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from collections.abc import Callable
@@ -44,6 +45,8 @@ from urllib.parse import urlencode, urlsplit
 import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # Injectable transport signature: (url, params, headers, timeout) -> (status, text)
 HttpGet = Callable[..., "tuple[int, str]"]
@@ -327,8 +330,9 @@ class KafkaExporterSource:
             status, payload = self._http_get(
                 url, params=None, headers=self._headers(), timeout=self._timeout
             )
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"transport error: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
 
         ok = 200 <= int(status) < 300 and isinstance(payload, str)
         if ok:

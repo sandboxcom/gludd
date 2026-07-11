@@ -48,12 +48,15 @@ Record shape (one dict per event)::
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 import time
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Injectable runner signature: (argv) -> (returncode, stdout, stderr)
 Runner = Callable[[Sequence[str]], "tuple[int, str, str]"]
@@ -412,8 +415,9 @@ class WindowsEventLogSource:
             since: str | None = None
             if spec.get("since") is not None:
                 since = _validate_since(spec["since"])
-        except ValueError as exc:
-            return [self._error_record(f"invalid query spec: {exc}", {"spec": spec})]
+        except ValueError:
+            logger.warning("invalid query spec", exc_info=True)
+            return [self._error_record("invalid query spec", {"spec": spec})]
 
         if self._backend == "powershell":
             argv = self._powershell_query_argv(channel, level_num, count, provider, since)
@@ -422,8 +426,9 @@ class WindowsEventLogSource:
 
         try:
             rc, stdout, stderr = self._runner(argv)
-        except Exception as exc:  # surfaced as a record, never raised
-            return [self._error_record(f"runner error: {exc}", {"argv": list(argv)})]
+        except Exception:  # surfaced as a record, never raised
+            logger.warning("runner error in query", exc_info=True)
+            return [self._error_record("runner error", {"argv": list(argv)})]
 
         if rc != 0:
             return [
@@ -435,8 +440,9 @@ class WindowsEventLogSource:
 
         try:
             events = self._parse_events(stdout)
-        except (json.JSONDecodeError, ValueError) as exc:
-            return [self._error_record(f"failed to parse collector output: {exc}", {"stdout": stdout})]
+        except (json.JSONDecodeError, ValueError):
+            logger.warning("failed to parse collector output", exc_info=True)
+            return [self._error_record("failed to parse collector output", {"stdout": stdout})]
 
         return [self._event_record(e) for e in events]
 
@@ -444,8 +450,9 @@ class WindowsEventLogSource:
         """Probe channel reachability via a trivial list-log command. Never raises."""
         try:
             channel = _validate_channel(self._default_channel)
-        except ValueError as exc:
-            return {"ok": False, "source": self.name, "detail": f"invalid channel: {exc}"}
+        except ValueError:
+            logger.warning("health check failed (invalid channel)", exc_info=True)
+            return {"ok": False, "source": self.name, "detail": "health check failed"}
 
         if self._backend == "powershell":
             argv = self._powershell_health_argv(channel)
@@ -454,8 +461,9 @@ class WindowsEventLogSource:
 
         try:
             rc, _stdout, stderr = self._runner(argv)
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "source": self.name, "detail": f"runner error: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "source": self.name, "detail": "health check failed"}
 
         ok = rc == 0
         detail = "ok" if ok else (stderr.strip() or f"list-log rc={rc}")

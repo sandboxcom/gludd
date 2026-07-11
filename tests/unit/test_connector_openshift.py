@@ -413,7 +413,7 @@ def test_health_not_ok_on_bad_status(monkeypatch: pytest.MonkeyPatch) -> None:
     src = make_source(transport=transport)
     result = src.health()
     assert result["ok"] is False
-    assert "401" in result["detail"]
+    assert "unexpected status 401" in result["detail"]
 
 
 def test_health_not_ok_without_token(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -27,6 +27,8 @@ tested in isolation.
 from __future__ import annotations
 
 import json
+import logging
+import time
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Literal, TypedDict, cast
@@ -34,6 +36,8 @@ from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import SSRFError
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # Transport contract: (method, url, headers, body) -> (status_code, json_dict)
 HttpRequest = Callable[[str, str, Mapping[str, str], "bytes | None"], "tuple[int, dict[str, object]]"]
@@ -207,6 +211,20 @@ class ElasticsearchSource:
         headers.update(self._auth_header())
         return headers
 
+    # -- error record --------------------------------------------------------
+
+    def _error_record(self, message: str, raw: object = None) -> dict[str, object]:
+        return {
+            "ts": time.time(),
+            "source": self.name,
+            "kind": self.KIND,
+            "level_or_status": "error",
+            "message": message,
+            "value": None,
+            "labels": {},
+            "raw": raw,
+        }
+
     # -- health --------------------------------------------------------------
 
     def health(self) -> dict[str, object]:
@@ -214,8 +232,9 @@ class ElasticsearchSource:
         url = f"{self._base_url}/_cluster/health"
         try:
             status, payload = self._http_request("GET", url, self._headers(), None)
-        except Exception as exc:  # health must never propagate
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}", "source": self.name}
+        except Exception:  # health must never propagate
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "error": "health check failed", "source": self.name}
 
         if status >= 400:
             return {"ok": False, "error": f"http {status}", "status": None, "source": self.name}
@@ -270,11 +289,13 @@ class ElasticsearchSource:
 
         try:
             status, payload = self._http_request("POST", url, self._headers(), encoded)
-        except OSError as exc:
-            raise ConnectionError(f"elasticsearch _search failed: {exc}") from exc
+        except Exception:
+            logger.warning("elasticsearch query failed", exc_info=True)
+            return [self._error_record("query failed")]
 
         if status >= 400:
-            raise ConnectionError(f"elasticsearch _search returned http {status}")
+            logger.warning("elasticsearch _search returned http %d", status)
+            return [self._error_record("query failed")]
 
         time_field = spec.get("time_field") or "@timestamp"
         hits = []

@@ -279,7 +279,7 @@ def test_health_not_ok_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     result = src.health()
 
     assert result["ok"] is False
-    assert "500" in result["detail"]
+    assert result["detail"] == "health check failed"
 
 
 def test_health_not_ok_on_graphql_errors(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -291,7 +291,7 @@ def test_health_not_ok_on_graphql_errors(monkeypatch: pytest.MonkeyPatch) -> Non
     result = src.health()
 
     assert result["ok"] is False
-    assert "bad nrql" in result["detail"]
+    assert result["detail"] == "health check failed"
 
 
 def test_health_not_ok_when_transport_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -305,7 +305,7 @@ def test_health_not_ok_when_transport_raises(monkeypatch: pytest.MonkeyPatch) ->
     result = src.health()  # must not raise
 
     assert result["ok"] is False
-    assert "network down" in result["detail"]
+    assert result["detail"] == "health check failed"
 
 
 def test_health_not_ok_when_api_key_missing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -316,7 +316,7 @@ def test_health_not_ok_when_api_key_missing(monkeypatch: pytest.MonkeyPatch) -> 
     result = src.health()  # must not raise even with missing key
 
     assert result["ok"] is False
-    assert "TEST_NR_KEY" in result["detail"]
+    assert result["detail"] == "health check failed"
 
 
 # --------------------------------------------------------------------------- #

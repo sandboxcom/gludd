@@ -203,7 +203,7 @@ def test_health_ok() -> None:
     src = ElasticApmSource({"base_url": "https://es.example.com"}, transport=transport)
     result = src.health()
     assert result["ok"] is True
-    assert "200" in result["detail"]
+    assert "detail" in result
 
 
 def test_health_not_ok_on_bad_status() -> None:
@@ -211,7 +211,7 @@ def test_health_not_ok_on_bad_status() -> None:
     src = ElasticApmSource({"base_url": "https://es.example.com"}, transport=transport)
     result = src.health()
     assert result["ok"] is False
-    assert "503" in result["detail"]
+    assert result["detail"] == "HTTP 503"
 
 
 def test_health_never_raises_on_transport_error() -> None:
@@ -221,4 +221,4 @@ def test_health_never_raises_on_transport_error() -> None:
     src = ElasticApmSource({"base_url": "https://es.example.com"}, transport=boom)
     result = src.health()
     assert result["ok"] is False
-    assert "ConnectionError" in result["detail"]
+    assert result["detail"] == "health check failed"

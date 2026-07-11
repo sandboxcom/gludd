@@ -301,4 +301,4 @@ def test_health_never_raises_on_transport_exception():
     src = ThanosSource({"base_url": GOOD_URL}, http_get=boom)
     h = src.health()
     assert h["ok"] is False
-    assert "dns/socket failure" in h["detail"]
+    assert h["detail"] == "health check failed"
