@@ -2203,6 +2203,7 @@ class RemediationActionRepository:
         project_id: str | None = None,
         ok: bool = True,
         reason: str = "",
+        idempotency_key: str | None = None,
     ) -> RemediationActionModel:
         row = RemediationActionModel(
             blocked_todo_id=blocked_todo_id,
@@ -2213,6 +2214,7 @@ class RemediationActionRepository:
             project_id=project_id,
             ok=ok,
             reason=reason,
+            idempotency_key=idempotency_key,
         )
         self._session.add(row)
         await self._session.flush()
@@ -2271,6 +2273,39 @@ class RemediationActionRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def exists_recent_by_action(
+        self,
+        blocked_todo_id: str,
+        action_kind: str,
+        since: datetime,
+    ) -> bool:
+        """True if a (target, action) pair was already recorded since ``since``.
+
+        C25: Dedupe on (action, target, window) — both ``blocked_todo_id``
+        AND ``action_kind`` must match.  A prior ``schedule_retry`` on the
+        same target is NOT a duplicate of a new ``dispatch_agent``.
+        """
+        stmt = (
+            select(RemediationActionModel.id)
+            .where(RemediationActionModel.blocked_todo_id == blocked_todo_id)
+            .where(RemediationActionModel.action_kind == action_kind)
+            .where(RemediationActionModel.created_at >= since)
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def find_by_idempotency_key(
+        self, idempotency_key: str
+    ) -> list[RemediationActionModel]:
+        stmt = (
+            select(RemediationActionModel)
+            .where(RemediationActionModel.idempotency_key == idempotency_key)
+            .order_by(RemediationActionModel.created_at.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
 
 class ModelPerformanceRepository:

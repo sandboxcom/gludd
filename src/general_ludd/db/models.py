@@ -947,10 +947,19 @@ class RemediationActionModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, index=True
     )
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(256), nullable=True, unique=True, index=True
+    )
 
     __table_args__ = (
         Index("ix_remediation_actions_project_created", "project_id", "created_at"),
         Index("ix_remediation_actions_blocked_kind", "blocked_todo_id", "action_kind"),
+        Index(
+            "ix_remediation_actions_dedup",
+            "blocked_todo_id",
+            "action_kind",
+            "created_at",
+        ),
     )
 
 
