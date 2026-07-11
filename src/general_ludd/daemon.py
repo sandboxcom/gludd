@@ -1733,6 +1733,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # the /admin/remediation/* HTTP endpoints share one instance.
                 "remediation_check_interval_ticks": _remediation_tick_settings(uc)[0],
                 "remediation_max_actions_per_tick": _remediation_tick_settings(uc)[1],
+                # SPD-1: how often the EventLoop persists in-memory spend
+                # records to the spend_records table (in ticks). 60 ticks ≈
+                # 60 seconds at the default 1 s tick interval.  <=0 disables.
+                "spend_persist_interval_ticks": getattr(uc, "spend_persist_interval_ticks", 60)
+                if uc else 60,
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,

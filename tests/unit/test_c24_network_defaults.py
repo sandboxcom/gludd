@@ -8,7 +8,6 @@ Implements the C24 requirement from AGENTIC_IMPLEMENTATION_SPEC.md:
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
 from general_ludd.tui.keybindings import build_gunicorn_cmd
 
-
 # ---------------------------------------------------------------------------
 # Daemon bind: default must be loopback-only
 # ---------------------------------------------------------------------------

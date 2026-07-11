@@ -99,6 +99,7 @@ PHASE_ORDER = [
     "refresh_model_performance",
     "check_compute_utilization",
     "check_service_credits",
+    "flush_spend_ledger",
     "remediate_blocked_tasks",
     "self_improve",
     "poll_issue_sources",
@@ -3691,6 +3692,59 @@ class EventLoop:
         if low:
             self._tick_metrics["low_credit_services"] = low
             logger.warning("Low service credit balance: %s", ", ".join(low))
+
+    async def _phase_flush_spend_ledger(self) -> None:
+        """SPD-1: periodically persist in-memory spend records to the DB.
+
+        Gated by ``spend_persist_interval_ticks`` (default 60; <=0 disables).
+        Opens a DEDICATED session from the session factory so failures here
+        never affect the shared tick session held across post-dispatch phases.
+        Records their seq watermark, writes through ``SpendRepository.add()``,
+        then calls ``SpendLimiter.mark_flushed()`` to advance the watermark so
+        the next flush is incremental.
+
+        Failure semantics: a persist failure (DB error) is logged at WARNING
+        and never blocks dispatch — the in-memory limiter stays authoritative
+        for the live cap; only the next tick's flush retries.
+        """
+        if self._spend_limiter is None or self._session_factory is None:
+            return
+        interval = int(self.config.get("spend_persist_interval_ticks", 60))
+        if interval <= 0:
+            return
+        if self._total_ticks % interval != 0:
+            return
+        unflushed = self._spend_limiter.unflushed_records()
+        if not unflushed:
+            return
+        try:
+            from general_ludd.db.repository import SpendRepository
+
+            max_seq = unflushed[0][0]
+            async with self._session_factory() as session:
+                repo = SpendRepository(session)
+                for seq, ts, cost_usd, project_id in unflushed:
+                    await repo.add(
+                        ts=float(ts),
+                        cost_usd=float(cost_usd),
+                        kind="token",
+                        project_id=project_id,
+                    )
+                    if seq > max_seq:
+                        max_seq = seq
+                await session.commit()
+            self._spend_limiter.mark_flushed(max_seq)
+            logger.info(
+                "SpendLimiter: flushed %d record(s) to spend_records "
+                "(upto_seq=%d)",
+                len(unflushed),
+                max_seq,
+            )
+        except Exception as exc:
+            logger.warning(
+                "SpendLimiter flush failed (will retry next tick): %s",
+                exc,
+            )
 
     async def _phase_remediate_blocked_tasks(self) -> None:
         """Auto-remediation tick phase (#52): scan for blocked todos and act.
