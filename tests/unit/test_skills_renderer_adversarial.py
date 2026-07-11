@@ -151,6 +151,52 @@ def test_body_rendering_is_sandboxed() -> None:
 
 
 # --------------------------------------------------------------------------
+# C22 SSTI residual — env.globals.clear() defense-in-depth
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "{{ cycler }}",
+        "{{ joiner }}",
+        "{{ namespace }}",
+        "{{ lipsum }}",
+        "{{ range }}",
+    ],
+)
+def test_default_jinja_globals_not_accessible(payload: str) -> None:
+    # C22 defense-in-depth: after SandboxedEnvironment is created all of
+    # Jinja2's default globals (cycler, joiner, namespace, lipsum, range, dict)
+    # MUST be cleared so a template has no access path to built-in callables.
+    # Without this, a future Jinja2 sandbox bypass could reach these as a
+    # starting gadget.  Mirror of templating.py:78.
+    with pytest.raises(SkillRenderError):
+        render_skill(payload, {})
+
+
+# --------------------------------------------------------------------------
+# C22 SSTI residual — TemplateError catch (broader than SecurityError alone)
+# --------------------------------------------------------------------------
+
+def test_template_syntax_error_raises_skill_render_error() -> None:
+    # Jinja2 {% ... %} blocks with invalid syntax raise TemplateSyntaxError,
+    # which is a subclass of TemplateError — NOT SecurityError or UndefinedError.
+    # Without an explicit TemplateError catch the raw exception escapes the
+    # renderer and falls into engine.py's bare except Exception (the C22
+    # residual).  The renderer must catch TemplateError and wrap it as
+    # SkillRenderError so the trust chain stays fail-closed.
+    with pytest.raises(SkillRenderError):
+        render_skill("{% invalid }", {})
+
+
+def test_template_error_does_not_silently_pass_through() -> None:
+    # A {% set %} block that uses an undefined variable in a filter must also
+    # fail closed.  The renderer must never silently return the raw body.
+    with pytest.raises(SkillRenderError):
+        render_skill("{% set x = missing | int %}", {})
+
+
+# --------------------------------------------------------------------------
 # Misc robustness
 # --------------------------------------------------------------------------
 

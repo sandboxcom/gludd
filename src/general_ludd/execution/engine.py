@@ -114,8 +114,11 @@ def _render_skill_body(raw: str, variables: dict[str, object] | None = None) -> 
         return render_skill(raw, variables)
     except SkillRenderError:
         raise
-    except Exception:
-        # Jinja2 not available or no vars needed — return raw body unchanged
+    except ImportError:
+        logger.warning(
+            "jinja2 not available — skill body will be included as raw text "
+            "(no template rendering applied)"
+        )
         return raw
 
 
