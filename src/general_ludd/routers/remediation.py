@@ -22,10 +22,10 @@ from __future__ import annotations
 import json as _json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import TypeVar
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -222,8 +222,24 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
     @app.post("/admin/remediation/remediate", response_model=None)
     async def post_remediate(
         project_id: str | None = Query(default=None),
+        x_idempotency_key: str | None = Header(
+            default=None,
+            alias="X-Idempotency-Key",
+        ),
     ) -> dict[str, object]:
-        """Run the detector once AND apply remediation for each finding."""
+        """Run the detector once AND apply remediation for each finding.
+
+        Idempotency (C25):
+        - ``X-Idempotency-Key`` header: if a row with this key already
+          exists, return the previously-recorded result (``idempotent_replay:
+          true``) without running the detector or dispatcher again.
+        - Per-action dedupe: before dispatching each finding, check the
+          ``remediation_actions`` table for a recent row matching
+          ``(blocked_todo_id, action_kind)`` within the configured
+          ``retry_delay_hours`` cooldown.  A match is skipped with
+          ``skipped_reason: "duplicate"`` so a still-blocked task does not
+          get a fresh dispatch/retry/human-todo on every call.
+        """
         cfg = _get_remediation_config(daemon_state)
 
         async def _run(
@@ -235,6 +251,19 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
             from general_ludd.db.repository import RemediationActionRepository
 
             remediation_repo = RemediationActionRepository(session)
+
+            if x_idempotency_key is not None:
+                existing = await remediation_repo.find_by_idempotency_key(
+                    x_idempotency_key
+                )
+                if existing:
+                    return {
+                        "project_id": project_id,
+                        "scanned": 0,
+                        "actions": [_remediation_row_to_dict(r) for r in existing],
+                        "idempotent_replay": True,
+                    }
+
             det = BlockerDetector(
                 todo_repo=todo_repo,
                 human_todo_repo=human_todo_repo,
@@ -248,10 +277,33 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
                 human_todo_repo=human_todo_repo,
                 remediation_repo=remediation_repo,
             )
+            window = timedelta(hours=cfg.retry_delay_hours)
+            cutoff = datetime.now(UTC) - window
             actions: list[dict[str, object]] = []
             for blocked in findings:
-                a = await dispatcher.remediate(blocked)
+                action_kind: str = (
+                    str(blocked.suggested_remediation) if blocked.suggested_remediation else "no_action"
+                )
+                is_duplicate = await remediation_repo.exists_recent_by_action(
+                    blocked.todo_id, action_kind, cutoff
+                )
+                if is_duplicate:
+                    actions.append(
+                        {
+                            "kind": action_kind,
+                            "blocked_todo_id": blocked.todo_id,
+                            "project_id": blocked.project_id,
+                            "ok": True,
+                            "summary": "Skipped (duplicate — already remediated within window).",
+                            "skipped_reason": "duplicate",
+                        }
+                    )
+                    continue
+                a = await dispatcher.remediate(
+                    blocked, idempotency_key=x_idempotency_key
+                )
                 actions.append(_action_to_dict(a))
+
             return {
                 "project_id": project_id,
                 "scanned": len(findings),
