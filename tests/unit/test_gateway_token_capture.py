@@ -17,6 +17,8 @@ from __future__ import annotations
 from typing import Any, ClassVar
 from unittest.mock import patch
 
+import httpx
+
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.observability import token_cost
 from general_ludd.observability.token_cost import TokenCostTracker
@@ -136,9 +138,11 @@ def test_work_type_not_forwarded_to_provider_ctor() -> None:
         gw = _make_gateway()
         # Must not raise TypeError from a leaked work_type kwarg.
         gw.call_model("p", [{"role": "user", "content": "hi"}], work_type="code")
-    # work_type was popped in _invoke_and_bill; only provider-safe kwargs (none
-    # here) reach the ctor.
+    # work_type was popped in _invoke_and_bill; only provider-safe kwargs
+    # (request_timeout from C6 hardening) reach the ctor.
     assert "work_type" not in _FakeProvider.last_extra
+    request_timeout = _FakeProvider.last_extra.pop("request_timeout", None)
+    assert isinstance(request_timeout, httpx.Timeout)
     assert _FakeProvider.last_extra == {}
 
 

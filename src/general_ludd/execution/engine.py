@@ -298,6 +298,7 @@ class ExecutionEngine:
         self._behavior = behavior
         self._searcher = searcher
         self._background_tasks: set[asyncio.Task[Any]] = set()
+        self._commit_lock: asyncio.Lock = asyncio.Lock()
         os.makedirs(workspace_path, exist_ok=True)
 
     def _projected_cost(self) -> float:
@@ -433,10 +434,18 @@ class ExecutionEngine:
 
         FIX: the done-callback inspects task.exception() and logs at ERROR so
         commit failures are observable rather than silently swallowed.
+
+        Concurrent background commits are serialized via asyncio.Lock so git
+        index operations never race.
         """
+
+        async def _commit_with_lock() -> str | None:
+            async with self._commit_lock:
+                return await _git_commit_async(path, message)
+
         try:
             task: asyncio.Task[str | None] = asyncio.create_task(
-                _git_commit_async(path, message)
+                _commit_with_lock()
             )
             self._background_tasks.add(task)
 
@@ -449,8 +458,23 @@ class ExecutionEngine:
                     )
 
             task.add_done_callback(_on_commit_done)
-        except Exception:
-            pass
+        except RuntimeError:
+            pass  # No running event loop
+
+    async def shutdown(self) -> None:
+        """Cancel and await all pending background tasks.
+
+        Must be called before the engine is discarded so no task
+        silently leaks its exception or outlives the event loop.
+        """
+        if self._background_tasks:
+            for task in list(self._background_tasks):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(
+                *self._background_tasks, return_exceptions=True,
+            )
+            self._background_tasks.clear()
 
     async def execute_async(self, job: JobSpec) -> TaskReturn:
         """Async variant of execute(): defers the git commit step to background."""
@@ -558,7 +582,9 @@ class ExecutionEngine:
             )
             self.defer_commit(self.workspace_path, commit_msg)
 
-        test_exit_code, test_summary = _run_tests(self.workspace_path)
+        test_exit_code, test_summary = await asyncio.to_thread(
+            _run_tests, self.workspace_path
+        )
         evidence_refs: list[str] = list(changed_files[:20])
 
         if self._benchmark_recorder is not None:
@@ -575,9 +601,18 @@ class ExecutionEngine:
                     )
                 )
                 self._background_tasks.add(task)
-                task.add_done_callback(self._background_tasks.discard)
-            except Exception:
-                pass
+
+                def _on_benchmark_done(t: asyncio.Task[Any]) -> None:
+                    self._background_tasks.discard(t)
+                    exc = t.exception() if not t.cancelled() else None
+                    if exc is not None:
+                        logger.error(
+                            "benchmark background task failed: %s", exc
+                        )
+
+                task.add_done_callback(_on_benchmark_done)
+            except RuntimeError:
+                pass  # No running event loop
 
         summary_parts: list[str] = [
             f"Changed {len(changed_files)} file(s): "
@@ -748,9 +783,18 @@ class ExecutionEngine:
                     )
                 )
                 self._background_tasks.add(task)
-                task.add_done_callback(self._background_tasks.discard)
-            except Exception:
-                pass
+
+                def _on_benchmark_done(t: asyncio.Task[Any]) -> None:
+                    self._background_tasks.discard(t)
+                    exc = t.exception() if not t.cancelled() else None
+                    if exc is not None:
+                        logger.error(
+                            "benchmark background task failed: %s", exc
+                        )
+
+                task.add_done_callback(_on_benchmark_done)
+            except RuntimeError:
+                pass  # No running event loop
 
         return result
 

@@ -35,10 +35,10 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
  		feature-start feature-done test-and-commit preflight \
- 		agent-worktree agent-merge agent-cleanup agent-worktree-list \
- 		agent-worktree-dev agent-merge-dev \
- 		development-push development-merge-to-master development-start development-status \
- 		git-commit-no-verify git-amend-msg \
+  		agent-worktree agent-merge agent-cleanup agent-worktree-list \
+  		agent-worktree-dev agent-merge-dev \
+  		development-push development-merge-to-master development-start development-status \
+  		git-commit-no-verify git-amend-msg \
  		_commit-lock-acquire check-clean-tree ship-commit-files \
 		molecule-version molecule-test molecule-test-all \
 		collection-roles collection-modules molecule-scenarios \
@@ -910,6 +910,9 @@ git-revert-files:
 
 git-log:
 	@git log --oneline -10 || echo "No git history"
+
+git-log-n:
+	@git log --oneline -$(if $(N),$(N),10) || echo "No git history"
 
 grep:
 	@[ -n "$(Q)" ] || { echo "Usage: make grep Q='pattern' [PATH='dir']"; exit 1; }
@@ -2058,6 +2061,14 @@ git-reset:
 		exit 1; \
 	fi
 	@git reset $(FILES)
+
+git-restore:
+	@if [ -z "$(FILES)" ]; then \
+		echo "Usage: make git-restore FILES='path/to/file ...' (discards working-tree changes, restoring to HEAD)"; \
+		exit 1; \
+	fi
+	@git checkout -- $(FILES)
+	@echo "Restored to HEAD: $(FILES)"
 
 git-branch:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-branch MSG='branch-name'"; exit 1; fi

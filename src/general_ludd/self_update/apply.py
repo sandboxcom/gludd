@@ -37,11 +37,13 @@ from typing import Any
 
 from general_ludd.security.auth import verify_psk
 from general_ludd.security.capability_lattice import (
+    PROTECTED_PATH_SEGMENTS,
     CapabilityError,
     ProtectedPathError,
     check_self_modification,
     is_protected_path,
 )
+from general_ludd.security.path_canonicalizer import is_denied_path
 from general_ludd.self_update.model import ApplyTier, ChangeKind, SelfUpdatePlan, SelfUpdateRequest
 
 #: Path substrings that are NEVER auto-applicable even WITH an approval token —
@@ -55,14 +57,16 @@ _HARD_DENY_SUBSTRINGS: tuple[str, ...] = (
     "settings.local.json",
 )
 
-#: Bare path SEGMENTS hard-denied regardless of a leading slash.  The
-#: ``/.claude/`` / ``/.opencode/`` substrings above only match when a slash
-#: precedes the directory, so a workspace-RELATIVE target like
-#: ``.opencode/plugin/evil.ts`` (``.opencode`` at position 0) would EVADE them.
-#: Matching them as whole path segments at ANY position closes that drift with
-#: the capability lattice + ``self_update/applier.py``.  Additive only — never
-#: loosens the existing absolute-path coverage.
-_HARD_DENY_SEGMENTS: tuple[str, ...] = (".opencode", ".claude")
+#: Bare path SEGMENTS hard-denied regardless of a leading slash.  DERIVED from
+#: the canonical :data:`capability_lattice.PROTECTED_PATH_SEGMENTS` so the two
+#: deny-lists cannot drift: adding a harness control-surface segment to the
+#: lattice automatically hard-denies it here too.  The ``/.claude/`` /
+#: ``/.opencode/`` substrings above only match when a slash precedes the
+#: directory, so a workspace-RELATIVE target like ``.opencode/plugin/evil.ts``
+#: (``.opencode`` at position 0) would EVADE them; matching the canonical
+#: segments at ANY position closes that drift.  Additive only — never loosens
+#: the existing absolute-path coverage.
+_HARD_DENY_SEGMENTS: tuple[str, ...] = tuple(sorted(PROTECTED_PATH_SEGMENTS))
 
 
 class ApplyOutcome:
@@ -130,16 +134,14 @@ class ApplyResult:
 
 
 def _is_hard_denied(path: str) -> bool:
-    norm = (path or "").replace("\\", "/").lower()
-    # Segment match FIRST so a workspace-RELATIVE ``.claude``/``.opencode``
-    # target (no leading slash) is hard-denied as well as the absolute form.
-    segments = norm.split("/")
-    if any(seg in segments for seg in _HARD_DENY_SEGMENTS):
-        return True
-    _sj = _HARD_DENY_SUBSTRINGS[2]
-    if norm.endswith(chr(47)+_sj) or norm == _sj:
-        return True
-    return any(sub in norm for sub in _HARD_DENY_SUBSTRINGS if sub != _sj)
+    """True if ``path`` matches the canonical deny-list (C9: unified canonicalizer).
+
+    Delegates to :func:`~general_ludd.security.path_canonicalizer.is_denied_path`
+    so the hard-deny check in apply.py and the protected-path check in
+    capability_lattice.py share the same canonical deny set — no cross-module
+    drift.
+    """
+    return is_denied_path(path)
 
 
 def _any_protected(target_files: tuple[str, ...], role: str | None) -> str | None:

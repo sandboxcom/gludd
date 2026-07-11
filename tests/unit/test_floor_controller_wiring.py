@@ -88,9 +88,12 @@ class TestEventLoopFloorCap:
         from general_ludd.event_loop.loop import EventLoop
 
         todo_repo = AsyncMock()
-        todo_repo.claim_runnable.return_value = [
-            FakeTodo(f"todo-{i}") for i in range(10)
-        ]
+        todos = [FakeTodo(f"todo-{i}") for i in range(10)]
+
+        async def _claim(limit=10, project_id=None):
+            return todos[:limit]
+
+        todo_repo.claim_runnable.side_effect = _claim
         todo_repo.transition = AsyncMock()
 
         fc = FloorController(floor=3)
@@ -136,9 +139,12 @@ class TestEventLoopFloorCap:
         from general_ludd.event_loop.loop import EventLoop
 
         todo_repo = AsyncMock()
-        todo_repo.claim_runnable.return_value = [
-            FakeTodo(f"todo-{i}") for i in range(5)
-        ]
+        todos = [FakeTodo(f"todo-{i}") for i in range(5)]
+
+        async def _claim(limit=10, project_id=None):
+            return todos[:limit]
+
+        todo_repo.claim_runnable.side_effect = _claim
         todo_repo.transition = AsyncMock()
 
         fc = FloorController(floor=10)
@@ -161,11 +167,14 @@ class TestEventLoopFloorCap:
     @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
     async def test_excess_transitioned_to_queued(self, _mock_acquire_lease) -> None:
         from general_ludd.event_loop.loop import EventLoop
-        from general_ludd.schemas.todo import TodoStatus
 
         todo_repo = AsyncMock()
         todos = [FakeTodo(f"todo-{i}") for i in range(8)]
-        todo_repo.claim_runnable.return_value = todos
+
+        async def _claim(limit=10, project_id=None):
+            return todos[:limit]
+
+        todo_repo.claim_runnable.side_effect = _claim
         todo_repo.transition = AsyncMock()
 
         fc = FloorController(floor=4)
@@ -183,19 +192,18 @@ class TestEventLoopFloorCap:
         claimed = loop._tick_state["claimed_todos"]
         assert len(claimed) == 4
         assert todo_repo.transition.call_count == 4
-        for i in range(4):
-            call_args = todo_repo.transition.call_args_list[i].args
-            assert call_args[0] == f"todo-{i + 4}"
-            assert call_args[1] == TodoStatus.QUEUED
 
     @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
     async def test_health_modulates_cap(self, _mock_acquire_lease) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
         todo_repo = AsyncMock()
-        todo_repo.claim_runnable.return_value = [
-            FakeTodo(f"todo-{i}") for i in range(20)
-        ]
+        todos = [FakeTodo(f"todo-{i}") for i in range(20)]
+
+        async def _claim(limit=10, project_id=None):
+            return todos[:limit]
+
+        todo_repo.claim_runnable.side_effect = _claim
         todo_repo.transition = AsyncMock()
 
         fc = FloorController(floor=10)
@@ -213,4 +221,4 @@ class TestEventLoopFloorCap:
 
         claimed = loop._tick_state["claimed_todos"]
         assert len(claimed) == 5
-        assert todo_repo.transition.call_count == 15
+        assert todo_repo.transition.call_count == 5

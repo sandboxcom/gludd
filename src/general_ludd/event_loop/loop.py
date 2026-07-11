@@ -412,6 +412,10 @@ class EventLoop:
         self._applied_decisions: OrderedDict[str, None] = OrderedDict()
         self._pushed_work: OrderedDict[str, None] = OrderedDict()
         self._push_retry_count: dict[str, int] = {}
+        max_to_thread = self.config.get("event_loop", {}).get("max_to_thread_concurrency", 32)
+        self._to_thread_semaphore = asyncio.Semaphore(max_to_thread)
+        max_gather = self.config.get("event_loop", {}).get("max_gather_concurrency", 20)
+        self._dispatch_semaphore = asyncio.Semaphore(max_gather)
         self._config_snapshot: dict[str, Any] = {}
         # M14 (W3.14): single project selected per tick, shared across all phases.
         # Reset to None at the end of every tick (see tick() finally block).
@@ -723,19 +727,16 @@ class EventLoop:
                 await self._run_phase_range(
                     DISPATCH_PHASE_INDEX, DISPATCH_PHASE_INDEX + 1
                 )
-                # Post-dispatch: open a FRESH session for reconcile, review,
-                # and the remaining phases.
                 assert self._session_factory is not None
-                async with self._session_factory() as session:
-                    self._active_session = session
-                    self._todo_repo = TodoRepository(session)
-                    self._task_return_repo = TaskReturnRepository(session)
-                    self._audit_repo = AuditEventRepository(session)
-                    self._variable_repo = VariableNamespaceRepository(session)
-                    await self._run_phase_range(
-                        DISPATCH_PHASE_INDEX + 1, len(PHASE_ORDER)
-                    )
-                    await self._commit_tick_session(session)
+                for phase_idx in range(DISPATCH_PHASE_INDEX + 1, len(PHASE_ORDER)):
+                    async with self._session_factory() as session:
+                        self._active_session = session
+                        self._todo_repo = TodoRepository(session)
+                        self._task_return_repo = TaskReturnRepository(session)
+                        self._audit_repo = AuditEventRepository(session)
+                        self._variable_repo = VariableNamespaceRepository(session)
+                        await self._run_phase_range(phase_idx, phase_idx + 1)
+                        await self._commit_tick_session(session)
                     self._clear_repos()
             else:
                 if self.session is not None:
@@ -796,6 +797,10 @@ class EventLoop:
             )
             with contextlib.suppress(Exception):
                 await session.rollback()
+
+    async def _bounded_to_thread(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        async with self._to_thread_semaphore:
+            return await asyncio.to_thread(fn, *args, **kwargs)
 
     async def run_forever(self, interval: float = 1.0) -> None:
         self._running = True
@@ -1604,11 +1609,12 @@ class EventLoop:
             if can_concurrent and len(batch_todos) > 1:
                 # Concurrent: each coroutine opens its own session.
                 logger.info(
-                    "Scheduler batch: %d jobs concurrent (session-per-coroutine)",
-                    len(batch_todos),
+                    "Scheduler batch: %d jobs concurrent (session-per-coroutine, "
+                    "max_concurrent=%d)",
+                    len(batch_todos), self._dispatch_semaphore._value,
                 )
                 tasks = [
-                    asyncio.ensure_future(self._dispatch_execute_job_isolated(t))
+                    asyncio.ensure_future(self._dispatch_with_semaphore(t))
                     for t in batch_todos
                 ]
                 batch_timeout = min(300.0 * len(batch_todos), 1800.0)
@@ -1635,9 +1641,9 @@ class EventLoop:
                     else:
                         dispatch_count += 1
             elif can_concurrent and len(batch_todos) == 1:
-                # Single job: still use isolated session for consistency.
                 try:
-                    await self._dispatch_execute_job_isolated(batch_todos[0])
+                    async with self._dispatch_semaphore:
+                        await self._dispatch_execute_job_isolated(batch_todos[0])
                     dispatch_count += 1
                 except Exception as exc:
                     logger.error("Job dispatch raised: %s", exc)
@@ -1651,6 +1657,10 @@ class EventLoop:
                         logger.error("Sequential job dispatch raised: %s", exc)
 
         return dispatch_count
+
+    async def _dispatch_with_semaphore(self, todo: Any) -> None:
+        async with self._dispatch_semaphore:
+            await self._dispatch_execute_job_isolated(todo)
 
     async def _dispatch_execute_job_isolated(self, todo: Any) -> None:
         """Dispatch a single execute job using its OWN async session.

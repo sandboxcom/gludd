@@ -25,6 +25,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from general_ludd.security.path_canonicalizer import is_denied_path
+
 # ---------------------------------------------------------------------------
 # Capability vocabulary
 # ---------------------------------------------------------------------------
@@ -215,22 +217,21 @@ def is_collections_path(path: str) -> bool:
 def is_protected_path(path: str) -> bool:
     """True if ``path`` is a guardrail/policy/permission file (never swappable).
 
-    Matches on the leaf stem (``foo.py`` -> ``foo``) against
-    :data:`PROTECTED_FILE_STEMS`, on any :data:`PROTECTED_PATH_SEGMENTS`
-    (``.claude`` / ``.opencode``) appearing as a whole path segment regardless of
-    a leading slash — so a workspace-RELATIVE ``.claude/hooks/x.py`` is caught,
-    not just an absolute ``/ws/.claude/hooks/x.py`` — or on any of
-    :data:`PROTECTED_PATH_SUBSTRINGS` appearing in the normalised path.
+    Primary check delegates to the canonical deny-list in
+    :func:`~general_ludd.security.path_canonicalizer.is_denied_path`, which
+    catches both absolute (``/repo/.claude/hooks/x.py``) and workspace-RELATIVE
+    (``.claude/hooks/x.py``) paths with no leading-slash drift.
+
+    Also matches on the leaf stem (``foo.py`` -> ``foo``) against
+    :data:`PROTECTED_FILE_STEMS` — a file named ``guardrails.py`` is protected
+    regardless of which directory it lives in.  This stem check is an ADDITIONAL
+    dimension beyond the canonical path check; both layers must pass for a
+    path to be considered safe.
     Case-insensitive.
     """
-    norm = _normalise(path).lower()
-    # Segment match FIRST so the workspace-RELATIVE ``.claude``/``.opencode``
-    # form (no leading slash) is caught as well as the absolute ``/.claude/``.
-    if PROTECTED_PATH_SEGMENTS.intersection(norm.split("/")):
+    if is_denied_path(path):
         return True
-    for sub in PROTECTED_PATH_SUBSTRINGS:
-        if sub in norm:
-            return True
+    norm = _normalise(path).lower()
     leaf = norm.rsplit("/", 1)[-1]
     stem = re.sub(r"\.py[cod]?$", "", leaf)
     return stem in PROTECTED_FILE_STEMS

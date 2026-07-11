@@ -130,7 +130,9 @@ class ApplyResult:
     evidence: str
 
 
-def _first_protected(target_paths: list[str]) -> str | None:
+def _first_protected(
+    target_paths: list[str], workspace_root: Path | None = None
+) -> str | None:
     """Return the first target path matching the deny-list, else ``None``.
 
     Matching is **two-tier** to prevent over-blocking:
@@ -145,45 +147,40 @@ def _first_protected(target_paths: list[str]) -> str | None:
       leading/trailing ``/`` or a leading ``.`` (e.g. ``/workflows/``,
       ``.github``, ``pyproject.toml``), so substring matching is safe and
       intentional for them.
+
+    C9 fix (F2/F3): when ``workspace_root`` is provided, path resolution is
+    anchored to ``workspace_root`` instead of CWD — closing the TOCTOU window
+    where a cwd-shift could let a directory-traversal path evade the lexical
+    check.  Resolution failure → fail-closed (return the path as protected).
     """
+    from general_ludd.security.path_canonicalizer import is_denied_path
+
     for path in target_paths:
         normalised = os.path.normpath(urllib.parse.unquote(path))
         lowered = normalised.lower()
-        # Also resolve symlinks / .. traversal so `./secrets/../allowed` is caught.
-        # FAIL CLOSED (applier-D): if ``.resolve()`` raises we must NOT silently
-        # fall back to the lexical path — a path that would only hit a protected
-        # marker via a symlink would otherwise slip through. Treat any resolve
-        # failure as protected and return the path immediately.
+
+        # Lexical check via the canonical deny-list — catches substring and
+        # segment-exact markers without needing a filesystem operation.
+        if is_denied_path(lowered):
+            return path
+
+        # Resolve symlinks / .. traversal so `./secrets/../allowed` is caught.
+        # C9 fix: resolve against workspace_root (not CWD) to prevent
+        # cwd-shift evasion and to close the parent-dir TOCTOU window.
+        # FAIL CLOSED (applier-D): if resolution raises we must NOT silently
+        # fall back to the lexical path. Treat any resolve failure as
+        # protected and return the path immediately.
+        resolve_base: Path = workspace_root if workspace_root is not None else Path()
         try:
-            resolved_lowered = Path(path).resolve().as_posix().lower()
+            resolved_lowered = (
+                (resolve_base / path).resolve().as_posix().lower()
+            )
         except Exception:
             return path
 
-        # Pre-compute segments for segment-exact matching (split on both / and \).
-        lowered_segments = set(lowered.replace("\\", "/").split("/"))
-        resolved_segments = set(resolved_lowered.split("/"))
-        basename_lowered = Path(lowered).name
-        # Basename STEM (extension dropped) so a bare-word marker like ``alembic``
-        # also blocks ``alembic.ini``/``alembic.cfg`` — the config file IS the
-        # protected surface — while staying safe against ``alembic_runner.py``
-        # (stem ``alembic_runner`` != ``alembic``).
-        basename_stem_lowered = Path(basename_lowered).stem
+        if is_denied_path(resolved_lowered):
+            return path
 
-        for marker in PROTECTED_PATH_MARKERS:
-            if marker in _SEGMENT_EXACT_MARKERS:
-                # Match only as a whole path segment, exact basename, or the
-                # basename stem (so ``<marker>.<ext>`` config files are caught).
-                if (
-                    marker in lowered_segments
-                    or marker in resolved_segments
-                    or marker in (basename_lowered, basename_stem_lowered)
-                ):
-                    return path
-            else:
-                # Substring match (safe: marker is slash-anchored or has a
-                # leading dot, making false positives structurally impossible).
-                if marker in lowered or marker in resolved_lowered:
-                    return path
     return None
 
 
@@ -302,7 +299,7 @@ class UpdateApplier:
             )
 
         # 3. Protected-path deny-list. Always wins over capability.
-        protected = _first_protected(target_paths)
+        protected = _first_protected(target_paths, self._workspace_root)
         if protected is not None:
             return ApplyResult(
                 status="denied",
@@ -318,6 +315,16 @@ class UpdateApplier:
                 status="proposed",
                 target_paths=target_paths,
                 evidence=change_content,
+            )
+
+        # 4a. Empty-targets guard (C9 F4).  A non-code change with zero
+        #     target paths must never report "applied" — nothing would be
+        #     written.  Code changes exit above, so they are unaffected.
+        if not target_paths:
+            return ApplyResult(
+                status="denied",
+                target_paths=target_paths,
+                evidence="no target paths specified — refusing to apply empty change",
             )
 
         # 5. YAML-shaped kinds: validate then write.

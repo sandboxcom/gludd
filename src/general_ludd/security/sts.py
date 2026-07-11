@@ -35,6 +35,26 @@ from general_ludd.security.permissions import (
 DEFAULT_TTL_SECONDS: int = 3600
 
 
+def _union_denied(
+    subject_denied: list[Capability], issuer_denied: list[Capability]
+) -> list[Capability]:
+    """Union two ``denied`` lists, de-duplicating on (resource, actions).
+
+    Used when minting a delegated token so the issuer's denials propagate into
+    the child spec — a carve-out (deny X) can never be dropped by a hop of
+    delegation.
+    """
+    merged: list[Capability] = []
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    for d in list(subject_denied) + list(issuer_denied):
+        key = (d.resource, tuple(sorted(d.actions)))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(d)
+    return merged
+
+
 @dataclass(frozen=True)
 class STSClaim:
     """The resolved view of a presented STS token.
@@ -151,13 +171,34 @@ class StsIssuer:
             raise PermissionDeniedError(
                 "subject spec requests capabilities not held by issuer"
             )
-        capped_ttl = min(ttl_seconds, issuer_spec.max_sts_ttl_seconds)
+        # C-SEC-1b: TTL is monotonically NON-INCREASING down a delegation chain.
+        # Clamp against BOTH the issuer's ceiling AND the subject spec's own
+        # ceiling (which a prior intersection may already have lowered), so a
+        # token minted from an already-narrowed spec can never outlive it.
+        effective_max = min(
+            issuer_spec.max_sts_ttl_seconds,
+            subject_spec_request.max_sts_ttl_seconds,
+        )
+        capped_ttl = min(ttl_seconds, effective_max)
+        # C-SEC-1: denials propagate through delegation. The child token carries
+        # the UNION of the subject request's denials and the issuer's denials so
+        # a carve-out (deny X) survives the hop and is enforced on the child. The
+        # stored spec's own TTL ceiling is clamped so a further hop cannot raise
+        # it back up.
+        merged_denied = _union_denied(
+            subject_spec_request.denied, issuer_spec.denied
+        )
+        stored_spec = replace(
+            subject_spec_request,
+            denied=merged_denied,
+            max_sts_ttl_seconds=effective_max,
+        )
         now = self._clock()
         token = StsToken(
             token_id=uuid.uuid4().hex,
             issuer_agent_id=issuer_id,
             subject_agent_id=subject_id,
-            spec=subject_spec_request,
+            spec=stored_spec,
             issued_at=now,
             expires_at=now + float(capped_ttl),
         )
@@ -167,6 +208,12 @@ class StsIssuer:
     def validate(self, token: StsToken, required_capability: Capability) -> bool:
         if self._clock() >= token.expires_at:
             return False
+        # C-SEC-1: a denial beats any positive grant. Check EVERY requested
+        # action against the token spec's denied list FIRST — a denied action
+        # fails validation even when a same-resource capability would allow it.
+        for action in required_capability.actions:
+            if token.spec.is_denied(required_capability.resource, action):
+                return False
         cap = token.spec.capability_for(required_capability.resource)
         if cap is None:
             return False

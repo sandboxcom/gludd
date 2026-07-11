@@ -502,6 +502,37 @@ flowchart TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 15b: THE COMPLETE CODE PATH -->
+<!-- ============================================================ -->
+<section>
+  <div class="stage-kicker">Flagship flow &middot; the whole path in one view</div>
+  <h2>The complete code path</h2>
+  <p>Every hop from HTTP submission to a git commit, with the file that implements it.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart TD
+  A["POST /api/todos<br/>routers/todos.py:170"] --> B["todos table<br/>db/models.py:180"]
+  B --> C["EventLoop tick<br/>PHASE_ORDER (event_loop/loop.py)"]
+  C --> D["claim_runnable + bucket_leases<br/>db/repository.py"]
+  D --> E["dispatch_execute_jobs<br/>event_loop/loop.py"]
+  E --> F["two-phase model call<br/>models/job_invocation.py + execution/tool_loop.py"]
+  F --> G["task_returns<br/>_persist_task_return (loop.py:3068)"]
+  G --> H["review -&gt; task_decisions<br/>review/reviewer.py"]
+  H --> I["reconcile + commit<br/>loop.py:3066 -&gt; git_automation/repo.py:180"]
+    </div>
+  </div>
+  <ul class="bullets-tight">
+    <li class="fragment"><span class="path">Submit</span> &mdash; <span class="path">routers/todos.py:170</span> inserts one <code>todos</code> row (<span class="path">db/models.py:180</span>)</li>
+    <li class="fragment"><span class="path">Claim</span> &mdash; version-guarded CAS in <span class="path">db/repository.py</span> (<span class="path">claim_runnable</span>), leased via <code>bucket_leases</code></li>
+    <li class="fragment"><span class="path">Dispatch</span> &mdash; <span class="path">event_loop/loop.py</span> (<span class="path">dispatch_execute_jobs</span>) builds the <code>JobSpec</code> and runs the model</li>
+    <li class="fragment"><span class="path">Two-phase model call</span> &mdash; tool-free generation (<span class="path">models/job_invocation.py</span> via <span class="path">models/gateway.py</span>), then the autonomous tool loop (<span class="path">execution/tool_loop.py</span>)</li>
+    <li class="fragment"><span class="path">Return &amp; review</span> &mdash; worker output lands in <code>task_returns</code> (<span class="path">loop.py:3068</span>); a second model reviews it (<span class="path">review/reviewer.py</span>) and writes <code>task_decisions</code></li>
+    <li class="fragment"><span class="path">Reconcile + commit</span> &mdash; <span class="path">loop.py:3066</span> applies the decision; <span class="path">git_automation/repo.py:180</span> commits + pushes</li>
+  </ul>
+  <p class="cite">Source: code-trace audit against src/general_ludd/ on {{GENERATED_AT}}</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 16: DATABASE OVERVIEW -->
 <!-- ============================================================ -->
 <section>
