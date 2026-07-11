@@ -24,12 +24,15 @@ canned response and no network is touched.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Mapping
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # (method, url, headers, json_body, timeout) -> response with ``.status_code`` + ``.json()``.
 Transport = Callable[[str, str, Mapping[str, str], object, float], HttpResponse]
@@ -221,8 +224,9 @@ class AzureResourceGraphSource:
         """``Resources | limit 1`` probe. Never raises."""
         try:
             payload = self._post_kql("Resources | limit 1")
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         count = len(self._normalize(payload))
         return {"ok": True, "detail": f"Resources | limit 1 returned {count} row(s)"}
 

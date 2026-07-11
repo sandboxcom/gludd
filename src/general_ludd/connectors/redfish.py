@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -37,6 +38,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -179,8 +182,9 @@ class RedfishSource:
         """Never raises. Returns {'ok': bool, 'detail': str}."""
         try:
             self._validate_host()
-        except ValueError as exc:
-            return {"ok": False, "detail": f"host-validation: {exc}"}
+        except ValueError:
+            logger.warning("redfish health check: host validation failed", exc_info=True)
+            return {"ok": False, "detail": "host validation failed"}
         user, pw = self._credentials()
         if not user or not pw:
             return {
@@ -197,8 +201,9 @@ class RedfishSource:
             if 200 <= resp.status < 300:
                 return {"ok": True, "detail": f"service root {resp.status}"}
             return {"ok": False, "detail": f"service root HTTP {resp.status}"}
-        except Exception as exc:  # health never raises
-            return {"ok": False, "detail": f"unreachable: {exc}"}
+        except Exception:  # health never raises
+            logger.warning("redfish health check: transport unreachable", exc_info=True)
+            return {"ok": False, "detail": "transport unreachable"}
 
     # ---- query -------------------------------------------------------------
     def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -228,16 +233,17 @@ class RedfishSource:
     ) -> list[dict[str, Any]]:
         try:
             return fn(arg)
-        except Exception as exc:  # one bad resource never kills the whole query
+        except Exception:  # one bad resource never kills the whole query
+            logger.warning("redfish query error", exc_info=True)
             return [
                 self._record(
                     kind="events",
                     source=f"redfish:{arg}",
                     level_or_status="error",
-                    message=f"query error in {fn.__name__}: {exc}",
+                    message="query error",
                     value=None,
                     labels={"member": arg, "sensor": ""},
-                    raw={"error": str(exc)},
+                    raw=None,
                     ts=_utcnow_iso(),
                 )
             ]

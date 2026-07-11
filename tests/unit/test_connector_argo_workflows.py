@@ -209,7 +209,7 @@ def test_health_never_raises() -> None:
     src = ArgoWorkflowsSource(_config(), transport=boom)
     result = src.health()
     assert result["ok"] is False
-    assert "RuntimeError" in result["detail"]
+    assert result["detail"] == "health check failed"
 
 
 def test_query_raises_on_http_error() -> None:

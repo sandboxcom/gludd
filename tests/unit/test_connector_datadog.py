@@ -381,7 +381,7 @@ def test_query_transport_failure_becomes_error_record() -> None:
     records = src.query({"mode": "logs", "query": "*"})
     assert len(records) == 1
     assert records[0]["level_or_status"] == "error"
-    assert "network is down" in records[0]["message"]
+    assert records[0]["message"] == "transport error"
 
 
 def test_non_2xx_logs_status_becomes_error_record() -> None:

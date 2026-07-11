@@ -23,11 +23,14 @@ Design constraints honored here:
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_ENDPOINT = "https://cloudasset.googleapis.com/v1"
 _ALLOWED_DEFAULT_HOST = "cloudasset.googleapis.com"
@@ -173,8 +176,9 @@ class GcpAssetInventorySource:
                     "detail": f"missing bearer token in env {self._token_env}",
                 }
             return {"ok": True, "detail": f"ready scope={self._scope}"}
-        except Exception as exc:  # pragma: no cover - defensive; never raises
-            return {"ok": False, "detail": f"health error: {exc!r}"}
+        except Exception:  # pragma: no cover - defensive; never raises
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
 
     def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         if self._transport is None:

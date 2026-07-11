@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import base64
 import json as _json
+import logging
 import os
 import time
 from collections.abc import Callable
@@ -50,6 +51,8 @@ from urllib.parse import urlsplit
 import httpx
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # Injectable transport signature: (url, params, headers, timeout) -> (status, json)
 HttpGet = Callable[..., "tuple[int, Any]"]
@@ -245,8 +248,9 @@ class NagiosSource:
             status, payload = self._http_get(
                 url, params=params, headers=self._headers(), timeout=self._timeout
             )
-        except Exception as exc:  # surfaced as a record, never raised
-            return [self._error_record(f"transport error: {exc}", {"url": url})]
+        except Exception as exc:
+            logger.warning("transport error", exc_info=True)
+            return [self._error_record("transport error", {"url": url})]
 
         return self._normalize(which, status, payload)
 
@@ -315,9 +319,10 @@ class NagiosSource:
                 timeout=self._timeout,
             )
         except Exception as exc:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
             return {
                 "ok": False,
-                "detail": f"transport error: {exc}",
+                "detail": "health check failed",
                 "source": self.name,
             }
 

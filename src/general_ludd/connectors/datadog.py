@@ -37,6 +37,7 @@ Record shape (one dict per event or metric point)::
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from collections.abc import Callable
@@ -44,6 +45,8 @@ from typing import cast
 from urllib.parse import urlsplit
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
@@ -208,7 +211,8 @@ class DatadogSource:
                 timeout=self._timeout,
             )
         except Exception as exc:  # surfaced as a record, never raised
-            return [self._error_record(f"transport error: {exc}", {"url": url})]
+            logger.warning("datadog transport error", exc_info=True)
+            return [self._error_record("transport error", {"url": url})]
 
         if not self._is_2xx(status):
             return [
@@ -263,7 +267,8 @@ class DatadogSource:
                 timeout=self._timeout,
             )
         except Exception as exc:  # surfaced as a record, never raised
-            return [self._error_record(f"transport error: {exc}", {"url": url})]
+            logger.warning("datadog transport error", exc_info=True)
+            return [self._error_record("transport error", {"url": url})]
 
         if not self._is_2xx(status):
             return [

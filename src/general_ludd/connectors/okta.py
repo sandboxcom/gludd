@@ -17,6 +17,7 @@ Security posture:
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from typing import Any, Protocol, runtime_checkable
@@ -24,6 +25,8 @@ from urllib.parse import parse_qs, urlparse, urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -216,8 +219,9 @@ class OktaSource:
                 params={"limit": "1"},
                 timeout=self.timeout,
             )
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("health check failed", exc_info=True)
+            return {"ok": False, "detail": "health check failed"}
         status = getattr(resp, "status_code", 0)
         if 200 <= status < 300:
             return {"ok": True, "detail": f"okta reachable (HTTP {status})"}
