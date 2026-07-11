@@ -15,8 +15,6 @@ import logging
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.schemas.job import JobSpec
 

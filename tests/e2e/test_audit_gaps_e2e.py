@@ -49,7 +49,7 @@ class TestDaemonDirectDispatch:
         loop = EventLoop(runner=mock_runner, todo_repo=mock_todo_repo)
         metrics = await loop.tick()
 
-        assert metrics["phases_completed"] == 17
+        assert metrics["phases_completed"] == 18
         assert metrics["todos_dispatched"] == 1
         mock_runner.run_playbook.assert_called_once()
         call_kwargs = mock_runner.run_playbook.call_args
