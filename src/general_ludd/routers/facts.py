@@ -27,9 +27,11 @@ import logging
 import os
 import shutil
 import subprocess
+from typing import Any, cast
 
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from starlette.requests import Request
 
 from general_ludd.db.repository import (
     AgentMessageRepository,
@@ -46,6 +48,22 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TRACE_LIMIT = 20
 _DEFAULT_SPAN_CAP = 25
 _DEFAULT_RANKING_LIMIT = 10
+
+
+def _resolve_trace_project_id(request: Any, query_project_id: str | None) -> str | None:
+    """Derive the effective project_id for trace / metrics queries.
+
+    XT-3/XT-4 cross-tenant fix: when the auth middleware stamps
+    ``request.state.project_id`` from a project-scoped bearer token
+    (``project_id:psk`` format), the auth-derived scope ALWAYS wins —
+    the caller-supplied ``?project_id=`` query param is untrusted and
+    ignored. When ``request.state.project_id`` is absent (legacy global
+    PSK, back-compat), the query param is used as-is.
+    """
+    scope: str | None = cast(str | None, getattr(request.state, "project_id", None))
+    if scope is not None:
+        return scope
+    return query_project_id
 
 
 def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
@@ -460,17 +478,22 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/api/traces")
     async def api_traces(
+        request: Request,
         todo_id: str | None = None,
         limit: int = _DEFAULT_TRACE_LIMIT,
         project_id: str | None = None,
     ) -> dict[str, object]:
         """Focused read-only traces snapshot (gludd_traces module).
 
-        Optional filters: ``todo_id``, ``project_id`` (tenant scope — only that
-        project's traces, excluding legacy None-project traces), and ``limit``
-        (max recent traces). ``project_id`` unset = unscoped/global caller.
+        Optional filters: ``todo_id``, ``limit`` (max recent traces). The
+        effective ``project_id`` scope is resolved via
+        ``_resolve_trace_project_id``: when the auth middleware stamps
+        ``request.state.project_id`` from a scoped bearer token it ALWAYS
+        wins over the query param (XT-3/XT-4 cross-tenant fix). Unscoped
+        callers (legacy global PSK) retain the query-param behaviour.
         """
         bounded = max(1, min(limit, _DEFAULT_TRACE_LIMIT * 5))
+        scope = _resolve_trace_project_id(request, project_id)
         return _traces_facet(
-            app, limit=bounded, todo_id=todo_id, project_id=project_id
+            app, limit=bounded, todo_id=todo_id, project_id=scope
         )

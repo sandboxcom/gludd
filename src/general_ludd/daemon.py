@@ -2523,13 +2523,31 @@ def create_daemon_app(
                 auth = request.headers.get("Authorization", "")
                 # A-1: constant-time comparison via the shared check_bearer_token
                 # helper (hmac.compare_digest) to prevent timing side-channels.
+                #
+                # XT-3/XT-4 cross-tenant fix: the bearer token may carry a
+                # project claim in "project_id:psk" format. Parse it before
+                # the constant-time check, stamping request.state.project_id
+                # so downstream endpoints (traces, metrics) can enforce
+                # tenant scoping without trusting a caller-supplied
+                # ?project_id= query param.  Legacy tokens without a colon
+                # (plain "psk") remain unscoped — back-compat.
                 from general_ludd.security.auth import check_bearer_token
 
-                if not check_bearer_token(auth, _psk):
+                token_part = auth.removeprefix("Bearer ").strip()
+                if ":" in token_part:
+                    claimed_project_id, psk_part = token_part.split(":", 1)
+                else:
+                    claimed_project_id = None
+                    psk_part = token_part
+
+                if not check_bearer_token(f"Bearer {psk_part}", _psk):
                     from fastapi.responses import JSONResponse
 
                     app.state._stats_responses += 1
                     return JSONResponse(status_code=401, content={"error": "unauthorized"})
+
+                if claimed_project_id:
+                    request.state.project_id = claimed_project_id
         # When the daemon failed its lifespan init it runs _degraded: spend /
         # budget / dispatch enforcement infrastructure is inert. Mutating calls
         # to the dispatch + self-update + spend-configure surface must fail

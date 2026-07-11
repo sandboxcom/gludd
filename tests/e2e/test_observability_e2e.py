@@ -413,3 +413,40 @@ class TestObservabilityE2E:
         finally:
             await client.aclose()
             await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_c19_project_scoped_token_cannot_read_other_tenant(self, monkeypatch):
+        """C19 acceptance: a project-scoped bearer token (proj-a:psk) MUST
+        NOT be able to read another project's traces. The auth scope overrides
+        any caller-supplied ?project_id= query param."""
+        engine, _factory, client, app = await _make_app(monkeypatch)
+        try:
+            recorder = AutoBenchmarkRecorder(
+                benchmark_repo=None,
+                trace_buffer=app.state._recent_traces,
+            )
+            await recorder.record_from_trace(
+                _build_trace(todo_id="T-PROJ-A", project_id="proj-a"), success=True
+            )
+            await recorder.record_from_trace(
+                _build_trace(todo_id="T-PROJ-B", project_id="proj-b"), success=True
+            )
+
+            # Project-scoped token: "proj-a:psk". The middleware parses
+            # this and stamps request.state.project_id = "proj-a".
+            scoped_auth = {"Authorization": f"Bearer proj-a:{PSK}"}
+            resp = await client.get(
+                "/api/traces",
+                params={"project_id": "proj-b"},
+                headers=scoped_auth,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            # Auth-derived scope "proj-a" wins — only proj-a traces returned,
+            # even though the caller requested proj-b.
+            assert data["count"] == 1
+            assert data["recent"][0]["todo_id"] == "T-PROJ-A"
+            assert data["recent"][0]["project_id"] == "proj-a"
+        finally:
+            await client.aclose()
+            await engine.dispose()
