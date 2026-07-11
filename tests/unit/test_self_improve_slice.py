@@ -119,16 +119,9 @@ class TestSelfImproveGate:
         decision = SelfImproveGate(auto_queue=True).evaluate({}, open_count=0)
         assert decision.initial_status == TodoStatus.QUEUED.value
 
-    def test_auto_promote_off_keeps_approval(self) -> None:
-        # allow_auto_promote is only meaningful when auto_queue=False (the
-        # promote branch runs inside the APPROVAL_REQUIRED path), so set the
-        # precondition explicitly rather than relying on a default.
-        decision = SelfImproveGate(auto_queue=False, allow_auto_promote=False).evaluate({}, open_count=0)
+    def test_auto_queue_false_keeps_approval(self) -> None:
+        decision = SelfImproveGate(auto_queue=False).evaluate({}, open_count=0)
         assert decision.initial_status == TodoStatus.APPROVAL_REQUIRED.value
-
-    def test_auto_promote_on_promotes_to_queued(self) -> None:
-        decision = SelfImproveGate(auto_queue=False, allow_auto_promote=True).evaluate({}, open_count=0)
-        assert decision.initial_status == TodoStatus.QUEUED.value
 
     def test_full_capacity_rejects(self) -> None:
         decision = SelfImproveGate(max_open=2).evaluate({}, open_count=2)

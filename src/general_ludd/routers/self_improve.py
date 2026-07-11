@@ -306,6 +306,48 @@ async def _apply_approved_config_change(
         }
 
 
+async def _enqueue_non_config_change(
+    factory: async_sessionmaker[AsyncSession],
+    kind: str,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    """Enqueue a non-config self-improve change as APPROVAL_REQUIRED (C13).
+
+    No execution happens without a human approval_id. The record is created
+    with work_type=self_improve and status=APPROVAL_REQUIRED; a human must
+    approve it via /admin/self-improve/approvals before re-POSTing with the
+    approval_id to execute.
+    """
+    title = str(payload.get("title", "")).strip() or f"self-improve {kind} change"
+    desc = str(payload.get("description", ""))
+    spec: dict[str, object] = {
+        "kind": kind,
+        "title": title,
+        "description": desc,
+        "worktree_path": str(payload.get("worktree_path", "")),
+    }
+    async with factory() as session:
+        repo = TodoRepository(session)
+        created = await repo.create(
+            {
+                "title": title[:512],
+                "description": desc or f"Self-improve {kind} change awaiting human approval",
+                "status": TodoStatus.APPROVAL_REQUIRED.value,
+                "work_type": SELF_IMPROVE_WORK_TYPE,
+                "priority": _PRIORITY_MAP["high"],
+                "created_by": "self_improve_apply",
+                "plan_artifact": json.dumps(spec),
+            }
+        )
+        approval_id = created.todo_id
+        await session.commit()
+    return {
+        "tier": kind,
+        "status": "approval_required",
+        "approval_id": approval_id,
+    }
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/self-improve/analyze")
@@ -378,27 +420,68 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if kind in _CONFIG_TIER_KINDS:
             return await _config_tier_apply(app, kind, payload, workspace_root=workspace_root)
 
-        # Legacy / code-tier path: validate -> apply -> reload via
-        # SelfImprovementWorkflow. Validation runs the test suite in the given
-        # worktree; a failing or missing worktree means NOT applied (fail-closed).
+        # Non-config-tier path: gate through SelfImproveGate (C13).
+        # Same two-step flow as config-tier:
+        #   1. No approval_id -> ENQUEUE an APPROVAL_REQUIRED record (no execution)
+        #   2. approval_id referencing a human-RELEASED record -> execute
+        factory = _get_session_factory(app)
+        if factory is None:
+            raise HTTPException(
+                status_code=503,
+                detail="non-config self-improve apply requires the approval database",
+            )
+        approval_id = payload.get("approval_id")
+        if not approval_id:
+            return await _enqueue_non_config_change(factory, kind, payload)
+
         from general_ludd.reload.self_improve import SelfImprovementWorkflow
 
+        async with factory() as session:
+            repo = TodoRepository(session)
+            approval_todo = await repo.get_by_id(str(approval_id))
+            if approval_todo is None:
+                raise HTTPException(
+                    status_code=404, detail=f"approval {approval_id} not found"
+                )
+            if getattr(approval_todo, "work_type", None) != SELF_IMPROVE_WORK_TYPE:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"approval {approval_id} is not a self-improve record",
+                )
+            if approval_todo.status != TodoStatus.QUEUED.value:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"approval {approval_id} is not released "
+                        f"(status={approval_todo.status}); a human must approve it first"
+                    ),
+                )
+            await session.commit()
+
         workflow = SelfImprovementWorkflow()
-        todo = workflow.create_improvement_todo(
-            title=str(payload.get("title", "")),
-            description=str(payload.get("description", "")),
-        )
         worktree_path = str(payload.get("worktree_path", ""))
-        # These are blocking sync ops (validate runs the worktree TEST SUITE via
-        # subprocess; reload broadcasts to workers) — offload so the code-tier
-        # self-improve apply doesn't freeze the event loop for the full run.
+        # execute the work: blocking sync ops offloaded to thread
         validation = await asyncio.to_thread(workflow.validate_improvement, worktree_path)
         apply_result = await asyncio.to_thread(
-            workflow.apply_improvement, cast(str, todo["todo_id"]), validation
+            workflow.apply_improvement, str(approval_id), validation
         )
         reload_result = await asyncio.to_thread(workflow.reload_if_needed, apply_result)
+
+        if apply_result.applied:
+            async with factory() as session:
+                repo = TodoRepository(session)
+                approved = await repo.get_by_id(str(approval_id))
+                if approved is not None:
+                    active = await repo.transition(
+                        str(approval_id), TodoStatus.ACTIVE, expected_version=approved.version
+                    )
+                    await repo.transition(
+                        str(approval_id), TodoStatus.COMPLETE, expected_version=active.version
+                    )
+                    await session.commit()
+
         return {
-            "todo_id": todo["todo_id"],
+            "todo_id": str(approval_id),
             "validation_passed": validation.success,
             "applied": apply_result.applied,
             "reload_needed": apply_result.reload_needed,
