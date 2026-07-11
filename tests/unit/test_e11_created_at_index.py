@@ -12,7 +12,6 @@ from sqlalchemy import create_engine, text
 
 from general_ludd.db.models import Base, TaskDecisionModel
 
-
 _IX_NAME = "ix_task_decisions_created_at"
 
 
