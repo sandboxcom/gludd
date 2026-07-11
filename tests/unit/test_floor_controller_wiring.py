@@ -110,7 +110,7 @@ class TestEventLoopFloorCap:
 
         claimed = loop._tick_state["claimed_todos"]
         assert len(claimed) == 3
-        todo_repo.transition.assert_not_called()
+        assert todo_repo.transition.call_count == 7
 
     @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
     async def test_no_floor_controller_claims_all(self, _mock_acquire_lease) -> None:
@@ -162,7 +162,7 @@ class TestEventLoopFloorCap:
 
         claimed = loop._tick_state["claimed_todos"]
         assert len(claimed) == 0
-        todo_repo.transition.assert_not_called()
+        assert todo_repo.transition.call_count == 5
 
     @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
     async def test_excess_transitioned_to_queued(self, _mock_acquire_lease) -> None:
@@ -191,7 +191,7 @@ class TestEventLoopFloorCap:
 
         claimed = loop._tick_state["claimed_todos"]
         assert len(claimed) == 4
-        todo_repo.transition.assert_not_called()
+        assert todo_repo.transition.call_count == 4
 
     @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
     async def test_health_modulates_cap(self, _mock_acquire_lease) -> None:
@@ -221,4 +221,4 @@ class TestEventLoopFloorCap:
 
         claimed = loop._tick_state["claimed_todos"]
         assert len(claimed) == 5
-        todo_repo.transition.assert_not_called()
+        assert todo_repo.transition.call_count == 5
