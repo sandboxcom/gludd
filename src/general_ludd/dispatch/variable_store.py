@@ -8,6 +8,7 @@ fresh reality in its next prompt.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from jinja2 import Undefined, select_autoescape
@@ -16,6 +17,39 @@ from jinja2.sandbox import SandboxedEnvironment
 from general_ludd.dispatch.dynamic_dispatcher import DispatchResult
 
 logger = logging.getLogger(__name__)
+
+#: C15 defect 4 (key injection): a VariableStore key is flattened into a Jinja2
+#: template context name as ``namespace__key``, so a key carrying a path
+#: separator, NUL byte, or traversal component could smuggle an unintended
+#: template variable name or collide with reserved sentinel keys. Restrict keys
+#: to the safe character class actually used by the flattening convention
+#: (alphanumerics, underscore, dot, dash, colon — the same class MCP tool names
+#: allow). Anything else is rejected fail-closed by ``VariableStore.set``.
+_SAFE_KEY_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+
+#: Reserved dispatch key STEMS that ``apply_results`` writes unconditionally for
+#: the "last result" sentinel. A model-controlled dispatch ``name`` equal to one
+#: of these would clobber the sentinel; ``_safe_dispatch_name`` escapes it.
+_RESERVED_DISPATCH_NAMES: frozenset[str] = frozenset({"last"})
+
+#: Suffix appended to a sanitized dispatch name that collides with a reserved
+#: sentinel stem, so the escaped key can never equal ``last__*``.
+_RESERVED_TOOLNAME_SUFFIX = "_TOOLNAME"
+
+
+def _safe_dispatch_name(name: str) -> str:
+    """Escape a model-controlled dispatch ``name`` for use as a store key.
+
+    Dots and dashes are replaced with sentinels (preserving the existing
+    ``test_apply_results_safe_name_replaces_dots_and_dashes`` contract), and a
+    name that would collide with a reserved sentinel stem (e.g. ``last``) gets a
+    suffix so it can never overwrite the ``dispatch__last__*`` keys.
+    """
+    safe = name.replace(".", "_DOT_").replace("-", "_DASH_")
+    if safe in _RESERVED_DISPATCH_NAMES:
+        safe = f"{safe}{_RESERVED_TOOLNAME_SUFFIX}"
+    return safe
+
 
 
 class VariableStore:
@@ -40,7 +74,20 @@ class VariableStore:
     # ------------------------------------------------------------------
 
     def set(self, namespace: str, key: str, value: Any) -> None:
-        """Set ``namespace.key = value``."""
+        """Set ``namespace.key = value``.
+
+        C15 defect 4: ``key`` is rejected fail-closed unless it matches the safe
+        key character class (``^[A-Za-z0-9_.:-]+$``). This blocks key-injection
+        via path separators (``a/b``, ``a\\b``), NUL bytes, and traversal
+        (``../../etc/passwd``) — none of which can appear in a legitimate
+        flattened ``namespace__key`` template variable name.
+        """
+        if not isinstance(key, str) or not _SAFE_KEY_RE.match(key):
+            raise ValueError(
+                f"invalid VariableStore key {key!r}: must match "
+                r"^[A-Za-z0-9_.:-]+$ (path separators, NUL bytes, and traversal "
+                "components are not allowed)"
+            )
         self._store.setdefault(namespace, {})[key] = value
 
     def get(self, namespace: str, key: str, default: Any = None) -> Any:
@@ -106,7 +153,7 @@ def apply_results(store: VariableStore, results: list[DispatchResult]) -> None:
     Also writes the latest result under the key ``dispatch__last``.
     """
     for result in results:
-        safe_name = result.name.replace(".", "_DOT_").replace("-", "_DASH_")
+        safe_name = _safe_dispatch_name(result.name)
         store.set("dispatch", f"{safe_name}__ok", result.ok)
         store.set("dispatch", f"{safe_name}__output", result.output)
         store.set("dispatch", f"{safe_name}__error", result.error)
