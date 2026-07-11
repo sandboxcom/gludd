@@ -35,7 +35,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
  		feature-start feature-done test-and-commit preflight \
- 		agent-worktree agent-merge agent-cleanup agent-worktree-list \
+  		agent-worktree agent-merge agent-cleanup agent-worktree-list \
+  		development-start agent-merge-dev \
  		git-commit-no-verify git-amend-msg \
  		_commit-lock-acquire check-clean-tree ship-commit-files \
 		molecule-version molecule-test molecule-test-all \
@@ -2137,6 +2138,21 @@ agent-merge:
 	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge BRANCH=agent-<name>"; exit 1; }
 	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into master"
 	@echo "Merged $(BRANCH) into master"
+
+# Ensure the development branch exists (create from master if not).
+# Usage: make development-start
+development-start:
+	@git rev-parse --verify development >/dev/null 2>&1 || git branch development master
+	@git checkout development
+	@echo "Now on development branch"
+
+# Merge a subagent's worktree branch into development (not master). Usage:
+#   make agent-merge-dev BRANCH=agent-fix-slurm
+agent-merge-dev:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge-dev BRANCH=agent-<name>"; exit 1; }
+	@git checkout development
+	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into development"
+	@echo "Merged $(BRANCH) into development"
 
 # Remove a worktree and its branch after the work has been merged. Safe to
 # run even if the worktree was already removed manually. Usage:
