@@ -43,6 +43,18 @@ _REMOTE_FETCH_LAUNCHERS = _NPM_FAMILY_LAUNCHERS | _UVX_FAMILY_LAUNCHERS
 # attempt — refuse early rather than relying on the exec layer to be safe.
 _SHELL_META_RE = re.compile(r"[;&|$`\\<>()\s]")
 
+# Python-family launchers (module/script runtimes, no remote fetch).
+_PYTHON_FAMILY_LAUNCHERS = frozenset({"python", "python3"})
+# Node-family launchers (script runtime, no remote fetch).
+_NODE_FAMILY_LAUNCHERS = frozenset({"node"})
+# All non-remote-fetch launchers that still need argv validation.
+_LOCAL_RUNTIME_LAUNCHERS = _PYTHON_FAMILY_LAUNCHERS | _NODE_FAMILY_LAUNCHERS
+
+# Path-traversal pattern: two or more "../" segments, or an absolute path
+# outside the repo. exec()-land prevents shell expansion, but a path pointing
+# outside the project is an attempted jailbreak — refuse it.
+_PATH_TRAVERSAL_RE = re.compile(r"(?:^|/)\.\.[/\\]")
+
 
 def _strip_suffix(name: str) -> str:
     """Remove a Windows-style .cmd/.exe/.bat/.ps1 suffix from an executable name."""
@@ -106,7 +118,12 @@ def _validate_launch_command(cmd: list[str]) -> None:
        that acts as a package spec must not contain shell metacharacters.  An arg
        that consists ENTIRELY of ``-…`` tokens (no package spec at all) is also
        rejected, since a bare ``npx --some-flag`` with no package name is
-       semantically broken and likely injection.
+       semantically broken and likely injection.  Additionally, npm-family specs
+       must be version-pinned for supply-chain safety.
+    5. For local-runtime launchers (python/python3/node): ``-c``/``-e``/``-p``
+       code-execution flags are rejected, module/script paths are checked for
+       path-traversal and shell metacharacters, and at least one module or script
+       argument is required (C27).
     """
     if not cmd:
         raise MCPTransportError(
@@ -136,6 +153,10 @@ def _validate_launch_command(cmd: list[str]) -> None:
     # Package-spec injection guard for remote-fetch launchers.
     if launcher in _REMOTE_FETCH_LAUNCHERS:
         _validate_package_spec(cmd, launcher)
+
+    # Argv validation for local-runtime launchers (python/python3/node).
+    if launcher in _LOCAL_RUNTIME_LAUNCHERS:
+        _validate_python_node_argv(cmd, launcher)
 
 
 # JS npm-family launchers whose package spec MUST be version-pinned (a mutable
@@ -229,6 +250,83 @@ def _validate_package_spec(cmd: list[str], launcher: str) -> None:
             f"MCP launcher {launcher!r} has no package spec argument (only flags "
             "were found). Provide a package name to fetch/run."
         )
+
+
+# Flags that imply arbitrary code execution from the command line — never
+# passable through an MCP config.
+_PYTHON_CODE_EXEC_FLAGS = frozenset({"-c"})
+_NODE_CODE_EXEC_FLAGS = frozenset({"-e", "-p"})
+
+
+def _validate_python_node_argv(cmd: list[str], launcher: str) -> None:
+    """Validate argv for python/python3/node launchers.
+
+    These launchers do NOT fetch packages from a remote index, but they CAN
+    execute arbitrary code via ``-c``/``-e``/``-p`` flags or run scripts
+    outside the project tree. This function:
+
+    * Rejects ``-c`` (python) — arbitrary code execution.
+    * Rejects ``-e`` / ``-p`` (node) — arbitrary code evaluation.
+    * Rejects path-traversal patterns (``../``) in module/script arguments.
+    * Rejects shell metacharacters in module/script arguments.
+    * Requires at least one module or script argument (bare-flag-only argv is
+      semantically broken and likely injection).
+    """
+    code_exec_flags = (
+        _PYTHON_CODE_EXEC_FLAGS
+        if launcher in _PYTHON_FAMILY_LAUNCHERS
+        else _NODE_CODE_EXEC_FLAGS
+    )
+
+    args_after_launcher = cmd[1:]
+    if not args_after_launcher:
+        raise MCPTransportError(
+            f"MCP launcher {launcher!r} requires a module name or script path "
+            "but none was provided."
+        )
+
+    found_module_or_script = False
+
+    for arg in args_after_launcher:
+        if arg in code_exec_flags:
+            raise MCPTransportError(
+                f"Refusing MCP launcher {launcher!r}: {arg!r} flag is arbitrary "
+                "code execution and is forbidden in MCP configs."
+            )
+
+        if arg.startswith("-"):
+            # Safe flags (e.g. -u, -B, -I for python; --no-warnings for node)
+            # are skipped.
+            continue
+
+        # This is a positional argument — a module name or script path.
+        found_module_or_script = True
+
+        if _PATH_TRAVERSAL_RE.search(arg):
+            raise MCPTransportError(
+                f"MCP launcher {launcher!r}: argument {arg!r} contains path "
+                "traversal (../). Script and module paths must be jailed to "
+                "the project tree."
+            )
+
+        if _SHELL_META_RE.search(arg):
+            raise MCPTransportError(
+                f"MCP launcher {launcher!r}: argument {arg!r} contains shell "
+                "metacharacters. This looks like an injection attempt and is "
+                "refused."
+            )
+
+        # Stop at the first positional arg — everything after is forwarded to
+        # the server binary, not a path to validate.
+        break
+
+    if not found_module_or_script:
+        raise MCPTransportError(
+            f"MCP launcher {launcher!r} has no module or script argument "
+            "(only flags were found). Provide a module name (e.g. -m my_server) "
+            "or script path."
+        )
+
 
 # Cap on how many non-matching (interleaved) JSON-RPC frames we will skip while
 # waiting for our request's response before giving up. Bounds the read loop so a
