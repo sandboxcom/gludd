@@ -415,7 +415,7 @@ class WindowsEventLogSource:
             since: str | None = None
             if spec.get("since") is not None:
                 since = _validate_since(spec["since"])
-        except ValueError as exc:
+        except ValueError:
             logger.warning("invalid query spec", exc_info=True)
             return [self._error_record("invalid query spec", {"spec": spec})]
 
@@ -426,7 +426,7 @@ class WindowsEventLogSource:
 
         try:
             rc, stdout, stderr = self._runner(argv)
-        except Exception as exc:  # surfaced as a record, never raised
+        except Exception:  # surfaced as a record, never raised
             logger.warning("runner error in query", exc_info=True)
             return [self._error_record("runner error", {"argv": list(argv)})]
 
@@ -440,7 +440,7 @@ class WindowsEventLogSource:
 
         try:
             events = self._parse_events(stdout)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, ValueError):
             logger.warning("failed to parse collector output", exc_info=True)
             return [self._error_record("failed to parse collector output", {"stdout": stdout})]
 
@@ -450,7 +450,7 @@ class WindowsEventLogSource:
         """Probe channel reachability via a trivial list-log command. Never raises."""
         try:
             channel = _validate_channel(self._default_channel)
-        except ValueError as exc:
+        except ValueError:
             logger.warning("health check failed (invalid channel)", exc_info=True)
             return {"ok": False, "source": self.name, "detail": "health check failed"}
 
@@ -461,7 +461,7 @@ class WindowsEventLogSource:
 
         try:
             rc, _stdout, stderr = self._runner(argv)
-        except Exception as exc:  # health must never raise
+        except Exception:  # health must never raise
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "source": self.name, "detail": "health check failed"}
 

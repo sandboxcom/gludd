@@ -243,7 +243,7 @@ class SplunkObservabilitySource:
                 json=body,
                 timeout=self._timeout,
             )
-        except Exception as exc:
+        except Exception:
             logger.warning("transport error", exc_info=True)
             return [self._error_record("transport error", {"url": url})]
         return self._normalize_signalflow(status, payload)
@@ -266,7 +266,7 @@ class SplunkObservabilitySource:
                 json=None,
                 timeout=self._timeout,
             )
-        except Exception as exc:
+        except Exception:
             logger.warning("transport error", exc_info=True)
             return [self._error_record("transport error", {"url": url})]
         return self._normalize_timeserieswindow(status, payload)
@@ -382,7 +382,7 @@ class SplunkObservabilitySource:
                 json=None,
                 timeout=self._timeout,
             )
-        except Exception as exc:  # health must never raise
+        except Exception:  # health must never raise
             logger.warning("health check failed", exc_info=True)
             return {
                 "ok": False,

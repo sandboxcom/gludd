@@ -145,7 +145,7 @@ class ElasticApmSource:
                 headers=self._headers(),
                 timeout=self.timeout,
             )
-        except Exception as exc:  # health() must never raise
+        except Exception:  # health() must never raise
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
         ok = 200 <= resp.status_code < 300

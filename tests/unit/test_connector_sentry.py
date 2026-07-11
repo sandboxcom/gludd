@@ -17,12 +17,11 @@ from general_ludd.connectors.sentry import (
     _DEFAULT_LIMIT,
     _DEFAULT_STATS_PERIOD,
     _DEFAULT_TIMEOUT,
-    _SentryResponse,
-    _UrllibTransport,
     SentrySource,
     Transport,
+    _SentryResponse,
+    _UrllibTransport,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -331,9 +330,8 @@ class TestSentrySourceInit:
     def test_base_url_ssrf_blocked_raises(self) -> None:
         with patch(
             "general_ludd.connectors.sentry.is_url_blocked", return_value=True
-        ):
-            with pytest.raises(ValueError, match="SSRF guard"):
-                _make_source(base_url="http://127.0.0.1/api")
+        ), pytest.raises(ValueError, match="SSRF guard"):
+            _make_source(base_url="http://127.0.0.1/api")
 
     def test_default_base_url(self) -> None:
         source = _make_source()
@@ -357,11 +355,11 @@ class TestSentrySourceInit:
         assert source.timeout == 45.0
 
     def test_timeout_invalid_string(self) -> None:
-        with pytest.raises(ValueError, match="timeout.*number"):
+        with pytest.raises(ValueError, match=r"timeout.*number"):
             _make_source(timeout="abc")
 
     def test_timeout_none_raises(self) -> None:
-        with pytest.raises(ValueError, match="timeout.*number"):
+        with pytest.raises(ValueError, match=r"timeout.*number"):
             _make_source(timeout=None)
 
     def test_injected_transport(self) -> None:
@@ -414,9 +412,8 @@ class TestValidateBaseUrl:
     def test_ssrf_blocked_host(self) -> None:
         with patch(
             "general_ludd.connectors.sentry.is_url_blocked", return_value=True
-        ):
-            with pytest.raises(ValueError, match="SSRF guard"):
-                SentrySource._validate_base_url("https://169.254.169.254/")
+        ), pytest.raises(ValueError, match="SSRF guard"):
+            SentrySource._validate_base_url("https://169.254.169.254/")
 
     def test_url_with_port(self) -> None:
         with patch(
@@ -918,7 +915,7 @@ class TestNormalizeIssue:
             "lastSeen": "2024-01-01T00:00:00Z",
         }
         result = source._normalize_issue(issue)
-        assert "Error — myapp.views.home" == result["message"]
+        assert result["message"] == "Error — myapp.views.home"
 
     def test_culprit_and_title_none_fallback(self) -> None:
         source = self._source()
@@ -927,7 +924,7 @@ class TestNormalizeIssue:
             "culprit": "some.module",
         }
         result = source._normalize_issue(issue)
-        assert "Warning — some.module" == result["message"]
+        assert result["message"] == "Warning — some.module"
 
     def test_count_to_value(self) -> None:
         source = self._source()

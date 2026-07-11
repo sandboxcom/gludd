@@ -13,6 +13,7 @@ report, or a health-check timeout never raises — the driver returns a
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
 import logging
@@ -232,10 +233,7 @@ def _parse_riskcode_int(raw: str) -> int:
 
 def _severity_exceeds(findings: list[DastFinding], fail_on: str) -> bool:
     threshold = _SEVERITY_ORDER.get(fail_on.upper(), 3)
-    for f in findings:
-        if _SEVERITY_ORDER.get(f.severity, 0) >= threshold:
-            return True
-    return False
+    return any(_SEVERITY_ORDER.get(f.severity, 0) >= threshold for f in findings)
 
 
 # ── public aliases (tests import these names) ─────────────────────────────────
@@ -335,10 +333,7 @@ def run_dast_scan(
         ) as json_tmp:
             json_path = json_tmp.name
 
-        scanner_cmd = list(raw_command) + [
-            "-t", scanner_target_url,
-            "-J", json_path,
-        ]
+        scanner_cmd = [*list(raw_command), "-t", scanner_target_url, "-J", json_path]
 
         start_s = time.monotonic()
         try:
@@ -372,10 +367,8 @@ def run_dast_scan(
 
         findings = parse_zap_baseline(json_output)
 
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(json_path)
-        except OSError:
-            pass
 
         # —— 8. Severity gate ———————————————————————————
         passed = not _severity_exceeds(findings, config.fail_on)
@@ -437,7 +430,5 @@ def _kill_app(proc: subprocess.Popen[str]) -> None:
             pass
     except (ProcessLookupError, PermissionError, OSError):
         pass
-    try:
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
         os.killpg(os.getpgid(pid), signal.SIGKILL)
-    except (ProcessLookupError, PermissionError, OSError):
-        pass

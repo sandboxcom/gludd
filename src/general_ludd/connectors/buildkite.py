@@ -122,7 +122,10 @@ class BuildkiteSource:
         return self._transport(method, url, self._headers(), self.timeout)
 
     def _builds_url(self) -> str:
-        return f"{self.base_url}/v2/organizations/{quote(self.org, safe='')}/pipelines/{quote(self.pipeline, safe='')}/builds"
+        return (
+            f"{self.base_url}/v2/organizations/{quote(self.org, safe='')}"
+            f"/pipelines/{quote(self.pipeline, safe='')}/builds"
+        )
 
     @staticmethod
     def _normalize_build(build: Mapping[str, object]) -> dict[str, object]:
@@ -174,7 +177,11 @@ class BuildkiteSource:
 
     def fetch_log(self, job_id: str) -> str:
         """Fetch the raw log content for a single job within this pipeline."""
-        url = f"{self.base_url}/v2/organizations/{quote(self.org, safe='')}/pipelines/{quote(self.pipeline, safe='')}/builds/jobs/{quote(str(job_id), safe='')}/log"
+        url = (
+            f"{self.base_url}/v2/organizations/{quote(self.org, safe='')}"
+            f"/pipelines/{quote(self.pipeline, safe='')}"
+            f"/builds/jobs/{quote(str(job_id), safe='')}/log"
+        )
         status, body = self._request("GET", url)
         if not (200 <= status < 300):
             raise ConnectorConfigError(f"buildkite log fetch failed: HTTP {status}")

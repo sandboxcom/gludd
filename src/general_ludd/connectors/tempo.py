@@ -130,14 +130,14 @@ class TempoSource:
         """Probe ``/api/search`` with a bounded window. Never raises."""
         try:
             resp = self._get("/api/search", {"limit": 1})
-        except Exception as exc:
+        except Exception:
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
         if resp.status >= 400:
             return {"ok": False, "detail": f"http {resp.status}"}
         try:
             resp.json()
-        except Exception as exc:
+        except Exception:
             logger.warning("health check failed (invalid json)", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
         return {"ok": True, "detail": "reachable"}

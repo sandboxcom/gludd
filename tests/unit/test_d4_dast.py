@@ -16,11 +16,10 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import dataclass, field
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import ValidationError
 
 from general_ludd.project_runner.profile import ProjectProfile
 
@@ -1300,7 +1299,7 @@ class TestRunDastScan:
             patch(
                 "general_ludd.project_runner.dast._wait_health",
                 return_value=False,
-            ) as mock_wait_health,
+            ),
             patch(
                 "general_ludd.project_runner.dast._kill_app",
             ) as mock_kill_app,

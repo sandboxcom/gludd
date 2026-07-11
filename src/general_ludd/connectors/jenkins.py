@@ -169,7 +169,7 @@ class JenkinsSource:
         """Probe the API. Never raises — returns an ``ok``/``status`` dict."""
         try:
             status, _ = self._http_get(self._builds_url(), self._auth_headers())
-        except Exception as exc:  # health must never propagate
+        except Exception:  # health must never propagate
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "status": None, "source": self.name, "error": "health check failed"}
         return {"ok": 200 <= int(status) < 300, "status": int(status), "source": self.name}

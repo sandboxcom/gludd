@@ -142,7 +142,7 @@ class GitHubActionsSource:
         """Probe the runs endpoint. Never raises."""
         try:
             status, _ = self._http_get(self._runs_url(), self._headers())
-        except Exception as exc:  # health must never propagate
+        except Exception:  # health must never propagate
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
         if 200 <= status < 300:

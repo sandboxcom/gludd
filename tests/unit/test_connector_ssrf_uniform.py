@@ -1,6 +1,6 @@
 """F1 regression: every URL-accepting connector MUST reject hostile base_url at construction.
 
-Parametrized over connector class × hostile URL.  Connectors that validate lazily
+Parametrized over connector class x hostile URL.  Connectors that validate lazily
 or not at all are marked ``xfail`` with reasoning so gaps are visible.
 """
 

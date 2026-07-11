@@ -22,10 +22,10 @@ import logging
 import os
 from typing import Protocol, cast, runtime_checkable
 
-logger = logging.getLogger(__name__)
-
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["HoneycombSource"]
 
@@ -120,7 +120,7 @@ class HoneycombSource:
                 headers=self._headers(),
                 timeout=self._timeout,
             )
-        except Exception as exc:  # health must never raise
+        except Exception:  # health must never raise
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
 
@@ -132,7 +132,7 @@ class HoneycombSource:
         try:
             body = resp.json()
             team = (body.get("team") or {}).get("name") if isinstance(body, dict) else None
-        except Exception as exc:  # never raise from health
+        except Exception:  # never raise from health
             logger.warning("health check failed (bad auth body)", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
         return {"ok": True, "detail": f"authenticated as team {team or '?'}"}

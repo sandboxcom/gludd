@@ -118,18 +118,19 @@ class TestRegisterAll:
         mocks["general_ludd.routers.account"] = broken  # type: ignore[assignment]
         app = MagicMock()
         daemon_state: dict[str, object] = {}
-        with patch.dict(sys.modules, mocks, clear=False):
-            with pytest.raises(ImportError, match="account deps unavailable"):
-                register_all(app, daemon_state)
+        with (
+            patch.dict(sys.modules, mocks, clear=False),
+            pytest.raises(ImportError, match="account deps unavailable"),
+        ):
+            register_all(app, daemon_state)
 
     def test_register_all_register_exception_propagates(self) -> None:
         mocks = self._mock_all_routers()
         mocks["general_ludd.routers.account"].register.side_effect = RuntimeError("register burst")
         app = MagicMock()
         daemon_state: dict[str, object] = {}
-        with patch.dict(sys.modules, mocks, clear=False):
-            with pytest.raises(RuntimeError, match="register burst"):
-                register_all(app, daemon_state)
+        with patch.dict(sys.modules, mocks, clear=False), pytest.raises(RuntimeError, match="register burst"):
+            register_all(app, daemon_state)
 
     def test_register_all_type_checking_not_at_runtime(self) -> None:
         import general_ludd.routers

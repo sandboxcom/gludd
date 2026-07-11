@@ -284,7 +284,7 @@ class ThanosSource:
                 headers=self._headers(),
                 timeout=self._timeout,
             )
-        except Exception as exc:  # health must never raise
+        except Exception:  # health must never raise
             logger.warning("health check failed", exc_info=True)
             return {
                 "ok": False,

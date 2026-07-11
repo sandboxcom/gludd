@@ -232,7 +232,7 @@ class ElasticsearchSource:
         url = f"{self._base_url}/_cluster/health"
         try:
             status, payload = self._http_request("GET", url, self._headers(), None)
-        except Exception as exc:  # health must never propagate
+        except Exception:  # health must never propagate
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "error": "health check failed", "source": self.name}
 

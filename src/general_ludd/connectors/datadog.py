@@ -46,10 +46,10 @@ from urllib.parse import urlsplit
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
 from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # Injectable transport signature:
 #   (method, url, *, params, json, headers, timeout) -> (status, payload)
@@ -210,7 +210,7 @@ class DatadogSource:
                 headers=self._headers(),
                 timeout=self._timeout,
             )
-        except Exception as exc:  # surfaced as a record, never raised
+        except Exception:  # surfaced as a record, never raised
             logger.warning("datadog transport error", exc_info=True)
             return [self._error_record("transport error", {"url": url})]
 
@@ -266,7 +266,7 @@ class DatadogSource:
                 headers=self._headers(),
                 timeout=self._timeout,
             )
-        except Exception as exc:  # surfaced as a record, never raised
+        except Exception:  # surfaced as a record, never raised
             logger.warning("datadog transport error", exc_info=True)
             return [self._error_record("transport error", {"url": url})]
 

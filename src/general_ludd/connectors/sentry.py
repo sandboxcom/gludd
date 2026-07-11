@@ -210,7 +210,7 @@ class SentrySource:
         url = f"{self.base_url}/api/0/"
         try:
             resp = self._get(url)
-        except Exception as exc:  # health must never raise
+        except Exception:  # health must never raise
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
         if 200 <= resp.status < 300:

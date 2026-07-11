@@ -250,8 +250,11 @@ class TestDaemonStateInAppStateNotGlobal:
 
     def test_module_level_default_is_sentinel_not_dict(self) -> None:
         """_daemon_state at module level must not be a pre-initialized dict."""
+        import importlib
+
         import general_ludd.daemon as daemon_mod
 
+        importlib.reload(daemon_mod)
         state = daemon_mod._daemon_state
         # Must not be the old mutable default {"todos": [], ...}
         assert not isinstance(state, dict), (
