@@ -712,6 +712,10 @@ def test_watchdog_false_done_max_out_on_every_cycle(tmp_path, monkeypatch):
     maxout_path = tmp_path / "false-done-maxout.json"
     monkeypatch.setattr(aw, "FALSE_DONE_MAXOUT", str(maxout_path))
 
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] ensure has_pending_work is True\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
     monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
 
     aw.check_and_reset()

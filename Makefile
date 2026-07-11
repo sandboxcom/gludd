@@ -43,7 +43,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		molecule-version molecule-test molecule-test-all \
 		collection-roles collection-modules molecule-scenarios \
 		container-build container-run container-push \
-        build-executable dist dist-clean bundle-binaries bundle-ripgrep \
+        file-executable build-executable dist dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check gate gate-lite smoke install-hooks \
         status-snapshot audit-evidence deps-audit dogfood-features \
@@ -2341,6 +2341,9 @@ check-types-baseline:
 verify-feature-claims:
 	@echo "=== verify-feature-claims: full evidence verification (pytest for test: refs) ==="
 	@$(UV) run ansible-playbook playbooks/verify_feature_claims.yml
+
+file-executable:
+	@if [ -f "$(FILE)" ]; then chmod +x "$(FILE)"; else echo "ERROR: FILE '$(FILE)' not found"; exit 1; fi
 
 dist: build-executable bundle-binaries sbom
 	@echo "Assembling tarball..."
