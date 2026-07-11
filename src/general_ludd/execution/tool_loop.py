@@ -16,8 +16,9 @@ from typing import TYPE_CHECKING, Any, cast
 from general_ludd.compaction.aggressive import compact_dicts
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.mcp.transport import MCPTransportError
+from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
 from general_ludd.schemas.job import JobSpec
-from general_ludd.security.capability_lattice import check_dispatch
+from general_ludd.security.capability_lattice import check_dispatch, role_may_dispatch
 
 if TYPE_CHECKING:
     from general_ludd.compaction.aggressive import CompactionLevel
@@ -30,6 +31,38 @@ PER_TOOL_TIMEOUT_SECONDS = 30
 CODE_MAX_ITERATIONS = 5
 MAX_TOTAL_TOKENS_DEFAULT = 100_000
 PER_ITERATION_TIMEOUT_DEFAULT = 300.0
+
+#: C15 defect 2 — per-response tool-call cap. A single model response may bundle
+#: an unbounded number of tool calls; ``max_iterations`` only bounds ROUNDS, not
+#: the fan-out WITHIN one response. Truncate to the first N calls and answer the
+#: rejected ``tool_call_id`` s so none is orphaned. Pinned equal to the HTTP
+#: dispatch router's ``MAX_CALLS_PER_REQUEST`` (D-16) by a drift-guard test.
+MAX_TOOL_CALLS_PER_RESPONSE = MAX_CALLS_PER_REQUEST
+
+
+def _validate_tool_args(args: dict[str, Any], schema: dict[str, Any]) -> str | None:
+    """Validate ``args`` against a tool's JSON ``input_schema`` (C15 defect 3).
+
+    Returns ``None`` when the args are valid (or when the schema is empty — an
+    empty ``input_schema`` is a no-op for backward compatibility, since
+    ``MCPTool.input_schema`` defaults to ``{}`` and is never ``None``). Returns a
+    compact human-readable error string when validation fails, so the caller can
+    feed it back to the model as a ``role:"tool"`` message instead of dispatching
+    an unvalidated payload to ``call_tool``.
+    """
+    if not schema:
+        return None
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError:  # pragma: no cover - jsonschema is a hard dep
+        return None
+    validator = Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(args), key=lambda e: list(e.path))
+    if not errors:
+        return None
+    first = errors[0]
+    loc = "/".join(str(p) for p in first.path) or "<root>"
+    return f"invalid args at {loc}: {first.message}"
 
 
 class ToolLoopExhausted(RuntimeError):
@@ -168,6 +201,10 @@ class ToolCallLoop:
             }
             for t in tools
         ]
+        # C15 defect 3: name -> input_schema map for per-call arg validation.
+        schema_by_name: dict[str, dict[str, Any]] = {
+            t.name: (t.input_schema or {}) for t in tools
+        }
 
         cumulative_tokens = 0
         for iteration in range(effective_max_iterations):
@@ -238,8 +275,35 @@ class ToolCallLoop:
                     )
 
             if tool_calls:
+                # C15 defect 2 (per-response cap): bound the fan-out WITHIN one
+                # response. Truncate to the first MAX_TOOL_CALLS_PER_RESPONSE and
+                # answer every REJECTED tool_call_id with a "cap exceeded" tool
+                # message so no id is orphaned. open_round_start is captured
+                # AFTER this so the cap-rejection messages (and every other tool
+                # message this round) land in the CURRENT open round, never in the
+                # compactable prefix — preserving the tool_call_id pairing
+                # invariant compaction depends on.
+                accepted = tool_calls[:MAX_TOOL_CALLS_PER_RESPONSE]
+                rejected = tool_calls[MAX_TOOL_CALLS_PER_RESPONSE:]
                 open_round_start = len(messages)
-                for tc in tool_calls:
+                for tc in rejected:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": (
+                            f"Tool call rejected: this response exceeded the "
+                            f"per-response tool-call cap of "
+                            f"{MAX_TOOL_CALLS_PER_RESPONSE}. Do not retry; issue "
+                            f"fewer tool calls per turn."
+                        ),
+                    })
+                if rejected:
+                    logger.warning(
+                        "ToolCallLoop capped tool calls for job %s: %d requested, "
+                        "%d executed, %d rejected",
+                        job.job_id, len(tool_calls), len(accepted), len(rejected),
+                    )
+                for tc in accepted:
                     tc_name = tc.get("function", {}).get("name", "")
                     tc_args = tc.get("function", {}).get("arguments", "{}")
                     if isinstance(tc_args, str):
@@ -253,6 +317,52 @@ class ToolCallLoop:
                                 tc_name, job.job_id, tc_args,
                             )
                             tc_args = {}
+                    if not isinstance(tc_args, dict):
+                        tc_args = {}
+                    # C15 defect 1 (Phase-2 lattice): the entry check_dispatch
+                    # only gates the loop ONCE. Re-check the lattice for EVERY
+                    # tool call so a role that lacks the "mcp" capability can
+                    # never reach call_tool from inside the round loop. role=None
+                    # preserves the pre-existing ungated behaviour.
+                    if self._role is not None and not role_may_dispatch(
+                        self._role, "mcp"
+                    ):
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "content": (
+                                f"Tool call denied: role {self._role!r} lacks the "
+                                f"capability to dispatch MCP tool calls "
+                                f"(capability_denied). Do not retry."
+                            ),
+                        })
+                        logger.warning(
+                            "ToolCallLoop per-call capability denied for role %r "
+                            "on tool %r (job %s)",
+                            self._role, tc_name, job.job_id,
+                        )
+                        continue
+                    # C15 defect 3 (arg schema validation): reject args that do
+                    # not conform to the tool's input_schema BEFORE the auditor
+                    # gate and BEFORE call_tool. An empty schema is a no-op.
+                    schema_err = _validate_tool_args(
+                        tc_args, schema_by_name.get(tc_name, {})
+                    )
+                    if schema_err is not None:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "content": (
+                                f"Tool call rejected: arguments are not valid for "
+                                f"{tc_name!r}: {schema_err}. Fix the arguments and "
+                                f"retry."
+                            ),
+                        })
+                        logger.info(
+                            "ToolCallLoop rejected invalid args for %r (job %s): %s",
+                            tc_name, job.job_id, schema_err,
+                        )
+                        continue
                     if self._auditor is not None:
                         situation = self._auditor.audit(
                             tc_name, tc_args,
