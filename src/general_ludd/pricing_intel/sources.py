@@ -2027,7 +2027,12 @@ class CachedSource:
 
 
 def all_sources() -> list[PricingSource]:
-    """Return one instance of every registered PricingSource."""
+    """Return one instance of every registered PricingSource.
+
+    Live sources are wrapped in CachedSource with their static counterparts
+    as fallbacks, so production code always gets TTL caching + static
+    fallback on network failure.
+    """
     return [
         OpenRouterSource(),
         AnthropicSource(),
@@ -2035,13 +2040,13 @@ def all_sources() -> list[PricingSource]:
         LiteLLMJSONSource("anthropic"),
         LiteLLMJSONSource("openai"),
         LiteLLMJSONSource("fireworks_ai"),
-        RunPodPricingSource(),
+        CachedSource(RunPodPricingSource(), RunPodSource()),
         RunPodSource(),
         LambdaLabsSource(),
         AWSSource(),
-        AWSPricingSource(),
+        CachedSource(AWSPricingSource(), AWSSource()),
         GCPSource(),
-        GCPPricingSource(),
+        CachedSource(GCPPricingSource(), GCPSource()),
         HuggingFaceSource(),
         ZAISource(),
     ]

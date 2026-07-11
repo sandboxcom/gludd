@@ -1121,3 +1121,6 @@ Items completed since Phase S1:
 - [x] E4 — noqa guardrail 3-layer | evidence: 48 tests fafbfd79
 - [x] E6 — audit-doc re-triage | evidence: 04a4fbeb
 - [x] Enforcement plugin fix — per-PID scoping
+- [x] D12 — Slack connector: outbound notifications + channel history read, SSRF-guarded | evidence: outbound notifications + channel history read, SSRF-guarded 0cccee7f (merge 728d58a3)
+- [x] D14 — background_test_runner via make target + CLI subcommand | evidence: expose background test runner via make target + CLI subcommand 0a07421d
+- [x] D15 — Pricing sources static→live: CachedSource with TTL cache + static fallback | evidence: CachedSource with TTL cache + static fallback 651dfc33

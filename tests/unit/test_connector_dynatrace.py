@@ -184,7 +184,7 @@ def test_health_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     src = DynatraceSource(_config(), transport=RaisingTransport())
     h = src.health()
     assert h["ok"] is False
-    assert "ConnectionError" in h["detail"]
+    assert h["detail"] == "health check failed"
 
 
 @pytest.mark.parametrize(

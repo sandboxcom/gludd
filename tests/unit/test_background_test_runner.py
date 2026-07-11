@@ -407,6 +407,87 @@ class TestBackgroundTestRunnerIntegration:
         assert results[0]["testfile"] == testfile
 
 
+class TestSanitizeTestfile:
+    """Tests for path traversal sanitization in _sanitize_testfile."""
+
+    def test_valid_relative_path_passes_through(self) -> None:
+        runner = BackgroundTestRunner()
+        result = runner._sanitize_testfile("tests/unit/test_foo.py")
+        assert result == "tests/unit/test_foo.py"
+
+    def test_simple_filename_accepted(self) -> None:
+        runner = BackgroundTestRunner()
+        result = runner._sanitize_testfile("test_foo.py")
+        assert result == "test_foo.py"
+
+    def test_relative_path_with_single_dots_accepted(self) -> None:
+        runner = BackgroundTestRunner()
+        result = runner._sanitize_testfile("tests/unit/test.foo.bar.py")
+        assert result == "tests/unit/test.foo.bar.py"
+
+    @pytest.mark.parametrize(
+        "bad_path",
+        [
+            "../etc/passwd",
+            "../../etc/passwd",
+            "tests/../etc/passwd",
+            "tests/unit/../../etc/passwd",
+            "..",
+            "./../secret",
+        ],
+    )
+    def test_parent_directory_traversal_rejected(self, bad_path: str) -> None:
+        runner = BackgroundTestRunner()
+        with pytest.raises(ValueError, match="Path traversal"):
+            runner._sanitize_testfile(bad_path)
+
+    @pytest.mark.parametrize(
+        "bad_path",
+        [
+            "/etc/passwd",
+            "/tmp/secret.txt",
+            "//etc/passwd",
+        ],
+    )
+    def test_absolute_path_rejected(self, bad_path: str) -> None:
+        runner = BackgroundTestRunner()
+        with pytest.raises(ValueError, match="Absolute paths"):
+            runner._sanitize_testfile(bad_path)
+
+    @pytest.mark.parametrize(
+        "bad_path",
+        [
+            "test;rm -rf /",
+            "test|cat /etc/passwd",
+            "test&whoami",
+            "test$(whoami)",
+            "test`whoami`",
+            "test\rmalicious",
+            "test' OR 1=1",
+            'test" OR 1=1',
+        ],
+    )
+    def test_shell_metacharacters_rejected(self, bad_path: str) -> None:
+        runner = BackgroundTestRunner()
+        with pytest.raises(ValueError, match="metacharacters"):
+            runner._sanitize_testfile(bad_path)
+
+    def test_launch_rejects_path_traversal(self, tmp_path: Path) -> None:
+        runner = BackgroundTestRunner(status_dir=tmp_path)
+        with pytest.raises(ValueError, match="Path traversal"):
+            runner.launch("../etc/passwd", timeout_min=1)
+
+    def test_launch_rejects_absolute_path(self, tmp_path: Path) -> None:
+        runner = BackgroundTestRunner(status_dir=tmp_path)
+        with pytest.raises(ValueError, match="Absolute paths"):
+            runner.launch("/etc/passwd", timeout_min=1)
+
+    def test_launch_rejects_shell_metacharacters(self, tmp_path: Path) -> None:
+        runner = BackgroundTestRunner(status_dir=tmp_path)
+        with pytest.raises(ValueError, match="metacharacters"):
+            runner.launch("test;echo hacked", timeout_min=1)
+
+
 class TestBackgroundTestRunnerSanitize:
     """Tests for filename sanitization."""
 

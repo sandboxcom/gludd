@@ -30,6 +30,11 @@ from typing import Any
 
 STATUS_DIR = Path(".gate-logs")
 
+_ALLOWED_PATH_RE = re.compile(r"^[a-zA-Z0-9._/-]+$")
+_FORBIDDEN_METACHARS: frozenset[str] = frozenset(
+    {";", "|", "&", "$", "`", "(", ")", "{", "}", "<", ">", "!", "\\", "'", '"', " ", "\t", "\n", "\r"}
+)
+
 
 class BackgroundTestRunner:
     """Launch, poll, and collect results from non-blocking background test runs."""
@@ -41,6 +46,22 @@ class BackgroundTestRunner:
     @staticmethod
     def _sanitize(testfile: str) -> str:
         return re.sub(r"[^a-zA-Z0-9._-]+", "_", testfile).replace(".", "_")
+
+    @staticmethod
+    def _sanitize_testfile(testfile: str) -> str:
+        if testfile.startswith("/"):
+            raise ValueError(f"Absolute paths are not allowed: {testfile!r}")
+
+        if ".." in Path(testfile).parts:
+            raise ValueError(f"Path traversal ('..') is not allowed: {testfile!r}")
+
+        if set(testfile) & _FORBIDDEN_METACHARS:
+            raise ValueError(f"Shell metacharacters are not allowed: {testfile!r}")
+
+        if not _ALLOWED_PATH_RE.match(testfile):
+            raise ValueError(f"Path contains disallowed characters: {testfile!r}")
+
+        return testfile
 
     def _pid_path(self, testfile: str) -> Path:
         return self.status_dir / f".test-{self._sanitize(testfile)}.pid"
@@ -63,6 +84,7 @@ class BackgroundTestRunner:
         Runs `make test-specific TESTFILE=<testfile>` via subprocess.Popen.
         Writes a JSON status file with pid, testfile, start_time, phase.
         """
+        self._sanitize_testfile(testfile)
         sanitized = self._sanitize(testfile)
         timestamp = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
         log_file = self.status_dir / f"test-{sanitized}-{timestamp}.log"

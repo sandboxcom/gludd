@@ -1,7 +1,14 @@
 """Slack connector.
 
-Self-contained connector for outbound notifications and optional channel
-history intake from a Slack workspace over its Web API + webhook URLs.
+Self-contained outbound connector for sending notifications and optionally
+reading channel history from a Slack workspace over its Web API + webhook URLs.
+
+This connector is NOT an observability ``Source`` — it does NOT implement the
+``Source`` Protocol (no ``query(spec)`` method, no ``KIND`` class attribute).
+It is an outbound integration that sends notifications via webhook or
+``chat.postMessage`` and reads messages via ``conversations.history``.
+It should NOT be registered in a ``SourceRegistry`` or loaded via
+``ConnectorRegistry`` (which expects the ``Source`` contract).
 
 Design constraints (intentional, do not "simplify" away):
 
@@ -17,7 +24,8 @@ Design constraints (intentional, do not "simplify" away):
 * Bot token is read from an environment variable named by the config; the token
   value never appears in the config dict and is never logged.
 * ``health()`` never raises; ``send_notification()`` is fail-soft (returns a
-  result dict); ``read_channel_history()`` returns empty list on transport errors.
+  result dict); ``read_channel_history()`` returns empty list on transport OR
+  HTTP errors.
 * No ``shell=True`` / subprocess use anywhere.
 """
 
@@ -36,8 +44,6 @@ from general_ludd.security.ssrf import is_url_blocked
 logger = logging.getLogger(__name__)
 
 __all__ = ["HttpTransport", "SlackSource"]
-
-KIND = "chat"
 
 
 @runtime_checkable
@@ -91,6 +97,11 @@ def _parse_slack_ts(ts: str) -> str | None:
 class SlackSource:
     """Outbound Slack notifications + optional channel history intake.
 
+    This is NOT a ``Source`` — it does not implement ``query(spec)`` or carry
+    a ``KIND`` class attribute.  It sends notifications outbound via webhook or
+    ``chat.postMessage`` and reads channel history via
+    ``conversations.history``.  Do not register it in a ``SourceRegistry``.
+
     Parameters
     ----------
     config:
@@ -106,8 +117,6 @@ class SlackSource:
     env:
         Optional environment mapping (defaults to ``os.environ``).
     """
-
-    kind = KIND
 
     def __init__(
         self,
@@ -162,9 +171,9 @@ class SlackSource:
     def health(self) -> dict[str, object]:
         """Probe ``/auth.test``; never raises.
 
-        Returns a dict ``{"ok": bool, "name": str, "kind": str, ...}``.
+        Returns a dict ``{"ok": bool, "name": str, ...}``.
         """
-        result: dict[str, object] = {"ok": False, "name": self.name, "kind": self.kind}
+        result: dict[str, object] = {"ok": False, "name": self.name}
         try:
             headers = self._auth_headers()
             resp = self._transport.get(
@@ -286,7 +295,8 @@ class SlackSource:
 
         status = getattr(resp, "status_code", None)
         if status != 200:
-            raise RuntimeError(f"slack conversations.history failed with status {status}")
+            logger.warning("slack conversations.history failed with status %s", status)
+            return []
 
         payload = resp.json()
         messages = self._extract_messages(payload)
@@ -306,7 +316,7 @@ class SlackSource:
         return {
             "ts": ts,
             "source": self.name,
-            "kind": self.kind,
+            "kind": "chat",
             "level_or_status": msg.get("subtype"),
             "message": msg.get("text"),
             "value": None,

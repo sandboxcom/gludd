@@ -16,16 +16,16 @@ The matching model-layer declarations are in the same change so fresh
 SQLite DBs created via ``Base.metadata.create_all`` also get these
 indexes without running Alembic.
 
-Revision ID: 027
-Revises: 026
+Revision ID: 028
+Revises: 027
 """
 
 from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "027"
-down_revision: str | None = "026"
+revision: str = "028"
+down_revision: str | None = "027"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

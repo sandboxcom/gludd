@@ -2,8 +2,8 @@
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "bash": {
-      "*": "deny",
-      "make *": "allow"
+      "make *": "allow",
+      "*": "deny"
     },
     "doom_loop": "deny"
   },
