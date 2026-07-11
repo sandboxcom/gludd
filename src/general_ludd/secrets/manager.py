@@ -251,6 +251,17 @@ class SecretsManager:
         spec = self._permission_spec
         if spec is None:
             return
+        # C-SEC-1: an explicit denial beats any positive grant. Check the
+        # spec's ``denied`` carve-outs FIRST so a path like
+        # ``build/prod-signing-key`` stays refused even when a broad
+        # ``build/*`` allow would otherwise match.
+        if spec.is_denied("secret:openbao", action, path=path):
+            raise SecretPermissionDeniedError(
+                path=path,
+                action=action,
+                agent_type=spec.agent_type,
+                allowed_patterns=[],
+            )
         cap = spec.capability_for("secret:openbao")
         if cap is None or action not in cap.actions:
             raise SecretPermissionDeniedError(
