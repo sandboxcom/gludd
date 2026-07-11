@@ -55,6 +55,7 @@ class AgentDispatcher:
         tracker: DurationTracker | None = None,
         watchdog: StallWatchdog | None = None,
         pause_controller: object | None = None,
+        hibernation: object | None = None,
         run_recorder: RunRecorder | None = None,
         mcp_tool_registry: object | None = None,
         orchestration_guard: OrchestrationGuardConfig | None = None,
@@ -66,6 +67,7 @@ class AgentDispatcher:
         self._active_tasks: dict[str, AgentTask] = {}
         self._lock = asyncio.Lock()
         self._pause_controller = pause_controller
+        self._hibernation = hibernation
         self._run_recorder = run_recorder
         self._tracker = tracker or default_tracker()
         self._watchdog = watchdog

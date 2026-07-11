@@ -23,6 +23,8 @@ from general_ludd.schemas.task_return import TaskReturn
 
 logger = logging.getLogger(__name__)
 
+_UNKNOWN_MODEL_COST_PER_1K = 0.01
+
 # Jinja2 SSTI patterns — must never appear in user-supplied variable values
 _JINJA2_EXPR = re.compile(r"\{\{.*?\}\}", re.DOTALL)
 _JINJA2_BLOCK = re.compile(r"\{%[\s\S]*?%\}")
@@ -341,13 +343,13 @@ class ExecutionEngine:
         except (TypeError, ValueError):
             logger.debug(
                 "_projected_cost: profile attribute coercion failed; "
-                "returning 0.0",
+                "using conservative defaults",
                 exc_info=True,
             )
-            return 0.0
+            model = "__default__"
+            proj_in = 1000
+            proj_out = 0
 
-        # Prefer the guard's pricing (PricingCatalog primary) when wired so
-        # catalog refreshes are observed by both SpendLimiter and engine.
         guard_cost = getattr(self._budget_guard, "token_cost_usd", None)
         if callable(guard_cost):
             try:
@@ -363,8 +365,14 @@ class ExecutionEngine:
 
             return float(_static(model, proj_in, proj_out))
         except Exception:
-            logger.debug("_projected_cost: static fallback raised", exc_info=True)
-            return 0.0
+            logger.debug(
+                "_projected_cost: pricing lookup failed; "
+                "using conservative default %.6f per 1k tokens",
+                _UNKNOWN_MODEL_COST_PER_1K,
+                exc_info=True,
+            )
+
+        return (proj_in + proj_out) / 1000.0 * _UNKNOWN_MODEL_COST_PER_1K
 
     def _budget_pre_check(
         self, guard: Any, projected_cost: float | None = None
