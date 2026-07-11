@@ -21,7 +21,6 @@ import pytest
 from general_ludd.schemas.todo import TodoStatus
 from general_ludd.validation.runner import CommandValidationError, ValidationRunner
 
-
 # ── Issue 1: ValidationRunner symlink confinement ───────────────────────
 
 
