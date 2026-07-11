@@ -437,6 +437,13 @@ class SpendLimiter:
                         ts_f,
                     )
                     continue
+                if pid is not None and not isinstance(pid, str):
+                    pid = None
+                # Check original (unclamped) pair first so an exact
+                # duplicate is skipped before clamping changes its identity.
+                orig_pair = (ts_f, c_f, pid)
+                if orig_pair in existing_pairs:
+                    continue
                 # Clamp future timestamps to now so a restored record with a
                 # far-future ts cannot live in the window indefinitely.
                 if ts_f > now:
@@ -446,12 +453,15 @@ class SpendLimiter:
                         now,
                     )
                     ts_f = now
-                if pid is not None and not isinstance(pid, str):
-                    pid = None
-                pair = (ts_f, c_f, pid)
-                if pair in existing_pairs:
+                # After clamping, check the clamped pair — a record with a
+                # future timestamp may become identical to an existing record
+                # that was previously clamped to the same now value.
+                clamped_pair = (ts_f, c_f, pid)
+                if clamped_pair in existing_pairs:
                     continue
-                existing_pairs.add(pair)
+                if orig_pair != clamped_pair:
+                    existing_pairs.add(orig_pair)
+                existing_pairs.add(clamped_pair)
                 self._seq += 1
                 valid.append((self._seq, ts_f, c_f, pid))
             self._records.extend(valid)

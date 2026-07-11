@@ -211,7 +211,7 @@ class TestRestoreDoesNotDoubleCount:
 
         # Restore the first record (already present, exact match) + a new third record.
         limiter.restore([
-            (4.0, 0.50),   # already present → skip (exact ts+pid match on record #1)
+            (5.0, 0.50),   # already present → skip (exact ts match on record #1)
             (0.5, 1.00),   # new → add
         ])
 
