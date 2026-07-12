@@ -410,14 +410,14 @@ class AgentDispatcher:
                             "type": "task_failed",
                             "timestamp": datetime.now(UTC).isoformat(),
                             "agent_name": task.agent_name,
-                            "error": str(exc),
+                            "error": sanitize_error_message(str(exc)),
                             "duration_seconds": duration,
                         })
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
                     status="failed",
-                    output=str(exc),
+                    output=sanitize_error_message(str(exc)),
                     duration_seconds=duration,
                 )
             finally:
@@ -463,7 +463,7 @@ class AgentDispatcher:
                         task_id=task.task_id,
                         agent_name=task.agent_name,
                         status="failed",
-                        output=str(res),
+                        output=sanitize_error_message(str(res)),
                     )
                 )
         return out
