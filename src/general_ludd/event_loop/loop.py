@@ -4685,5 +4685,3 @@ class EventLoop:
         elif decision.decision == "manual_hold":
             todo.transition_to(TodoStatus.MANUAL_HOLD)
         return todo
-
-
