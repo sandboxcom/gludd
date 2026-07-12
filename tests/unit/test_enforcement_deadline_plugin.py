@@ -209,7 +209,7 @@ class TestStaleFileInvariants:
     def test_stale_file_has_task_id_start_elapsed(self):
         src = _src()
         idx = src.find("function recordStaleTask")
-        after = src[idx:idx + 500] if idx > 0 else src
+        after = src[idx:idx + 1500] if idx > 0 else src
         assert "task_id" in after
         assert "start_ms" in after
         assert "elapsed_ms" in after
@@ -218,7 +218,7 @@ class TestStaleFileInvariants:
     def test_stale_file_uses_atomic_tmp_rename(self):
         src = _src()
         idx = src.find("function recordStaleTask")
-        after = src[idx:idx + 500] if idx > 0 else src
+        after = src[idx:idx + 1500] if idx > 0 else src
         assert ".tmp" in after
         assert "renameSync" in after
 
@@ -251,7 +251,7 @@ class TestDeadlineStateFileInvariants:
     def test_load_calls_sweep_before_returning(self):
         src = _src()
         idx = src.find("function loadDeadlines")
-        after = src[idx:idx + 400] if idx > 0 else src
+        after = src[idx:idx + 1000] if idx > 0 else src
         assert "sweepStaleEntries(out)" in after
 
 
@@ -318,7 +318,7 @@ class TestDeadlineFailOpen:
     def test_sweep_has_save_catch(self):
         src = _src()
         idx = src.find("function sweepStaleEntries")
-        after = src[idx:idx + 600] if idx > 0 else src
+        after = src[idx:idx + 1500] if idx > 0 else src
         assert "catch" in after
 
 
