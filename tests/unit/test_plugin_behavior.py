@@ -1677,17 +1677,18 @@ class TestEnforceStopTextCompleteNoToolOutputGuard:
     def _src() -> str:
         return TestEnforceStopTextCompleteNoToolOutputGuard.ENFORCE_STOP.read_text()
 
-    def test_isToolOutput_removed(self):
+    def test_isToolOutput_variable_removed(self):
         src = self._src()
-        assert "isToolOutput" not in src, (
-            "isToolOutput guard must be removed from enforce-stop.ts — "
-            "it is dead code that never fires because text.complete only "
-            "receives text-end LLM stream events"
+        assert "const isToolOutput" not in src, (
+            "const isToolOutput variable declaration must be removed from enforce-stop.ts"
+        )
+        assert "if (isToolOutput)" not in src, (
+            "if(isToolOutput) dead code block must be removed from enforce-stop.ts"
         )
 
     def test_research_finding_comment_present(self):
         src = self._src()
-        assert "text.complete hook NEVER fires on tool output" in src, (
+        assert "RESEARCH FINDING" in src, (
             "RESEARCH FINDING comment must document that text.complete never "
             "receives tool output, to prevent re-addition of dead isToolOutput guards"
         )

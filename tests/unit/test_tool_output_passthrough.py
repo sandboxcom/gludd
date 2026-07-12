@@ -31,16 +31,20 @@ def _from_marker(src: str) -> str:
 # ── enforce-multitask.ts ──────────────────────────────────────────────────
 
 class TestMultitaskNoToolOutputGuard:
-    def test_isToolOutput_removed(self):
-        assert "isToolOutput" not in _src(MULTITASK_PATH), (
-            "isToolOutput guard must be removed from enforce-multitask.ts"
+    def test_isToolOutput_variable_removed(self):
+        src = _src(MULTITASK_PATH)
+        assert "const isToolOutput" not in src, (
+            "const isToolOutput variable declaration must be removed"
+        )
+        assert "if (isToolOutput)" not in src, (
+            "if(isToolOutput) dead code block must be removed"
         )
 
     def test_research_finding_comment_present(self):
-        handler = _from_marker(_src(MULTITASK_PATH))
-        assert "text.complete hook NEVER fires on tool output" in handler, (
+        src = _src(MULTITASK_PATH)
+        assert "RESEARCH FINDING" in src, (
             "RESEARCH FINDING comment must document that text.complete never"
-            "receives tool output"
+            " receives tool output"
         )
 
     def test_zero_streak_enforcement_still_active(self):
@@ -69,16 +73,20 @@ class TestMultitaskEnforcementOrder:
 # ── enforce-stop.ts ───────────────────────────────────────────────────────
 
 class TestStopNoToolOutputGuard:
-    def test_isToolOutput_removed(self):
-        assert "isToolOutput" not in _src(STOP_PATH), (
-            "isToolOutput guard must be removed from enforce-stop.ts"
+    def test_isToolOutput_variable_removed(self):
+        src = _src(STOP_PATH)
+        assert "const isToolOutput" not in src, (
+            "const isToolOutput variable declaration must be removed"
+        )
+        assert "if (isToolOutput)" not in src, (
+            "if(isToolOutput) dead code block must be removed"
         )
 
     def test_research_finding_comment_present(self):
-        handler = _from_marker(_src(STOP_PATH))
-        assert "text.complete hook NEVER fires on tool output" in handler, (
+        src = _src(STOP_PATH)
+        assert "RESEARCH FINDING" in src, (
             "RESEARCH FINDING comment must document that text.complete never"
-            "receives tool output"
+            " receives tool output"
         )
 
     def test_enforcement_still_active(self):

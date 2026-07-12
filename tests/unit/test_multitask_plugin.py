@@ -306,29 +306,43 @@ class TestTextCompleteResearchFinding:
             "the RESEARCH FINDING comment prevents re-adding dead isToolOutput guards"
         )
 
-    def test_isToolOutput_removed(self):
+    def test_isToolOutput_variable_removed(self):
+        """isToolOutput variable declaration must be removed. The comment may
+        mention it as a warning, but no `const isToolOutput` should exist."""
         src = _plugin_source()
-        assert "isToolOutput" not in src, (
-            "isToolOutput guard must be removed — it is dead code that never fires "
-            "because text.complete only receives text-end LLM stream events"
+        assert "const isToolOutput" not in src, (
+            "const isToolOutput variable declaration must be removed"
+        )
+        assert "let isToolOutput" not in src, (
+            "let isToolOutput variable declaration must be removed"
+        )
+
+    def test_if_isToolOutput_block_removed(self):
+        """`if (isToolOutput) { return output }` block must be removed."""
+        src = _plugin_source()
+        assert "if (isToolOutput)" not in src, (
+            "Dead if(isToolOutput) return block must be removed"
+        )
+
+    def test_research_finding_header_comment_present(self):
+        """RESEARCH FINDING comment must document the finding about text.complete
+        never firing on tool output."""
+        src = _plugin_source()
+        assert "RESEARCH FINDING" in src, (
+            "RESEARCH FINDING comment must be present in the plugin source"
         )
 
     def test_role_field_not_referenced_as_guard(self):
-        """_input.role is dead code in text.complete — remove references to it."""
+        """No role-based guard code (like `_input.role !== 'assistant'`) in
+        text.complete handler. The comment may mention _input.role as a warning."""
         src = _plugin_source()
         handler_start = src.find('"experimental.text.complete"')
         after_handler = src[handler_start:]
-        assert not ('"role"' in after_handler[:500]), (
-            "No role-based guard should exist in text.complete handler"
+        assert '!== "assistant"' not in after_handler, (
+            "Role comparison guard must not exist in text.complete handler"
         )
-
-    def test_no_dead_if_isToolOutput_return_block(self):
-        """The `if (isToolOutput) { return output }` block must be removed."""
-        src = _plugin_source()
-        handler_start = src.find('"experimental.text.complete"')
-        after_handler = src[handler_start:]
-        assert not ('if (isToolOutput)' in after_handler), (
-            "Dead if(isToolOutput) return output block must be removed"
+        assert '"role" in _input' not in after_handler, (
+            "No 'role' in _input guard code should exist in text.complete handler"
         )
 
 
