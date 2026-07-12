@@ -20,7 +20,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 | Resource | Cap | Mechanism |
 |---|---|---|
-| Concurrent subagents (Task/agent/workflow) | **5 max** | `CLAUDE_AGENT_FLOOR=5`, `CLAUDE_AGENT_CEILING=8`; `/tmp/gludd-floor-override=5` |
+| Concurrent subagents (Task/agent/workflow) | **7 max** | `CLAUDE_AGENT_FLOOR=7`, `CLAUDE_AGENT_CEILING=10`; `/tmp/gludd-floor-override=7` |
 | Subagent context size | **Minimal** — ask for only what you need | Each prompt must explicitly say "return ≤5 bullet points" or similar |
 | Actual model-calling HTTP processes | **10 max parallel** regardless of subagent count | OpenShift/daemon-level throttle |
 | Research subagents | **Serialized** — at most 1 at a time | Research reads code; multiple researchers collide on the same files |
@@ -28,7 +28,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 ### Behavioral rules (prompt-enforced)
 
-1. **Max 5 subagents per wave.** Never dispatch more than 5 task/agent/workflow calls in a single message.
+1. **Max 7 subagents per wave.** Never dispatch more than 7 task/agent/workflow calls in a single message.
 2. **Terse subagent prompts.** Each subagent prompt must be ≤20 lines. Ask for EXACTLY what you need; specify "return ≤N bullet points" or "return ≤N lines."
    - **Subagent context size:** Minimal — ask for only what you need. Each prompt must explicitly say "return ≤5 bullet points" or similar.
 3. **Subagents MUST read files but return ONLY terse summaries.** Subagents MUST read files to gather context, but return ONLY terse summaries (≤5 bullet points or ≤10 lines). Subagent prompts must specify: "Read files you need, but return a ≤N-line summary. Do NOT dump large file contents into your response."
@@ -53,7 +53,7 @@ This directive OVERRIDES all "10-agent floor" rules below. The old rules remain 
 **2026-07-12 user mandate: at least half of every dispatch wave must be project enhancements, not just bug fixes.** Multiple sessions of fix-only dispatches were observed — the agent was only dispatching repair work and never advancing the project with new features, tests, docs, or tooling.
 
 1. **At least 50% of every dispatch wave must be project enhancements.** New tests, new features, documentation, tooling/scripts, self-test mechanisms, guardrail improvements. In a 5-agent wave, at least 2-3 must be enhancements.
-2. **"Fix-only waves" are forbidden** when any Phase D/E/F items remain in TASKS.md. All 5 subagents doing bug fixes is a policy violation.
+2. **"Fix-only waves" are forbidden** when any Phase D/E/F items remain in TASKS.md. All 7 subagents doing bug fixes is a policy violation.
 3. **The ratio is checked per-wave, not per-session.** Every single dispatch message must include at least 2-3 enhancement subagents. No credit for "we did enhancements earlier."
 4. **Enhancement categories:** new self-tests, new features from TASKS.md, documentation, tooling/scripts, guardrail improvements, new make targets, observability improvements.
 5. **This overrides any conflicting priority language elsewhere.** A "fix top priority" directive means fixes get the FIRST dispatch slot — the remaining 4+ slots must still include 2+ enhancements.
@@ -71,7 +71,7 @@ This directive OVERRIDES all "10-agent floor" rules below. The old rules remain 
 - `enforce-floor.ts`: floor=3, ceiling=5, target=4 (updated 2026-07-11)
 - `enforce-delegate.ts`: floor=3, target=4 (updated 2026-07-11)
 - `enforce-session-start.ts`: floor=3 (updated 2026-07-11)
-- `/tmp/gludd-floor-override`: 3 (runtime override, takes priority over env vars)
+- `/tmp/gludd-floor-override`: 7 (runtime override, takes priority over env vars)
 
 ## Mechanical Contract (READ FIRST — numbered priority)
 
@@ -1989,11 +1989,11 @@ The goal is a **continuous, pipelined** stream of subagent batches — not a saw
 
 Every assistant response containing tool calls MUST satisfy ONE of:
 - **(a) Zero task/agent/workflow dispatches** — pure read/edit/bash, no subagent fan-out. Valid for: serial mutations to hot files (daemon.py, loop.py), git operations, single-file edits during a hot-file conflict. **At most 2 consecutive zero-dispatch responses.** The 3rd zero-dispatch response in a row MUST include a dispatch (task/agent/workflow) OR explicitly justify why dispatch is impossible (quota exhausted, rate-limited, waiting for blocker). A 4th consecutive zero-dispatch response is a hard policy violation regardless of justification. Enforced mechanically by `enforce-multitask.ts` (zero-streak counter: denies at streak ≥ 2 when unchecked work exists) and `enforce-delegate.ts` (MAINTHREAD_THRESHOLD default 4; the 5th consecutive non-dispatch call is hard-denied).
-- **(b) Two or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern (see COST-EFFICIENCY DIRECTIVE: max 5 concurrent subagents). This is the steady-state.
+- **(b) Two or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern (see COST-EFFICIENCY DIRECTIVE: max 7 concurrent subagents). This is the steady-state.
 
 A response with exactly 1 task dispatch is a **policy violation** when ≥2 known work items remain. The agent MUST either batch wider to 2 OR justify why only 1 dispatch is possible.
 
-**NOTE (2026-07-12):** The COST-EFFICIENCY DIRECTIVE above overrides the old "10-agent floor" and "≥5 dispatches per wave" rules. The floor is now 5 agents max. Single dispatches (1) with ≥2 pending items trigger enforcement. Zero dispatches over ≥2 consecutive responses trigger enforcement.
+**NOTE (2026-07-12):** The COST-EFFICIENCY DIRECTIVE above overrides the old "10-agent floor" and "≥5 dispatches per wave" rules. The floor is now 7 agents max. Single dispatches (1) with ≥2 pending items trigger enforcement. Zero dispatches over ≥2 consecutive responses trigger enforcement.
 
 **Never**: make a single-task-dispatch message and wait for the result when ≥2 work items are known. Either fan out wider, or do non-blocking work inline while the wave runs.
 
@@ -2034,12 +2034,14 @@ The generic anti-wait rule above was not specific enough to stop the CI-poll var
 4. **The "wait for CI green before doing X" pattern is FORBIDDEN** for any X that is not `make release-cut`. CI green is a precondition for RELEASE CUT only. For all other work — beta feature work, test improvements, audits, refactors, docs — START IMMEDIATELY. Do not gate non-release work on CI.
 5. **`make ci-wait` is for release-cut only.** It exists in the Makefile because `make release-cut` calls it as one step of the release pipeline. It is NOT a general-purpose "block until green" tool. If you find yourself invoking `make ci-wait` outside of a release-cut flow, stop — you are blocking dispatch for no reason.
 6. **Release-cut is the single legitimate CI-wait path.** `make release-cut` runs `require-ci-green` → push → tag → release-view as a pipeline, and it owns the wait because a release genuinely requires the artifact the CI run produces. Nothing else does.
+7. **NEVER dispatch a "poll gate-status-check every N seconds" subagent.** A subagent that loops on `make gate-status-check` every N seconds holds a subagent slot doing polling work that could be done with a single `make gate-wait-report` call followed by inspection. Dispatch `make gate-wait-report` once, inspect the result, and re-dispatch only if the gate hasn't finished.
 
 **Why this matters:** A 30-minute CI-poll subagent holds one of the 10 floor slots for 30 minutes doing nothing — that slot should be running productive work. And because the orchestrator tends to wait for the poll subagent's result before dispatching the next wave, a single CI-poll subagent collapses the floor to 9 (or fewer) for the entire CI window. The user sees "dispatched 10 agents, only 9 are doing anything" and correctly calls it out as a process malfunction.
 
 **Enforcement:**
 - **Prompt** — this subsection (proactive). The generic anti-wait rule above plus the compulsive-check block on standalone `make ci-verdict` (ANTI-LOOP DIRECTIVE, line 5) cover most cases.
 - **Plugin (future)** — a future `enforce-no-ci-poll.ts` matcher may deny `make ci-wait` dispatches outside of a release-cut context. For now this is procedural — if you dispatch `make ci-wait` or a poll loop as a subagent, you are violating this rule whether or not a plugin catches it.
+- A subagent dispatched with a prompt containing "every N seconds" AND "gate-status-check" is a violation of this section.
 
 ### Machine-Enforced CI Check Cooldown (2026-07-08)
 

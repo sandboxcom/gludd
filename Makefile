@@ -2904,6 +2904,17 @@ gate-wait:
 		fi; \
 	done
 
+# Return immediately with gate status (no polling).
+gate-wait-report:
+	@PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
+	if [ -z "$$PID" ]; then \
+		echo "no gate running"; \
+	elif kill -0 "$$PID" 2>/dev/null; then \
+		$(MAKE) --no-print-directory gate-status-check; \
+	else \
+		echo "no gate running"; \
+	fi
+
 # Probe background gate-lite: running/pass/fail + current phase + last 20 log lines + .gate-lite-status.
 gate-lite-status-check:
 	@PID=$$(cat .gate-lite-background.pid 2>/dev/null || echo ""); \

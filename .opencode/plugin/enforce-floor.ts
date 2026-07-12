@@ -43,8 +43,8 @@ function _tunable(overridePath: string, envVar: string, dflt: string): number {
   } catch { /* no override file -> env/default */ }
   return base
 }
-const FLOOR = _tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "5")
-const CEILING = _tunable("/tmp/gludd-ceiling-override", "CLAUDE_AGENT_CEILING", "8")
+const FLOOR = _tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "7")
+const CEILING = _tunable("/tmp/gludd-ceiling-override", "CLAUDE_AGENT_CEILING", "10")
 const TARGET = Math.min(
   parseInt(process.env.CLAUDE_AGENT_TARGET || "6", 10),
   CEILING,
@@ -482,11 +482,33 @@ export default (async ({ }) => {
 
   return {
     "tool.execute.before": async (input: { tool?: string }, output: unknown) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
       _reportAlive()
       _writeHeartbeat()
       try {
         if (!FLOOR_ENFORCE) return
         const tool = (input?.tool ?? "") as string
+
+        // Disengage check: when the operator has explicitly disengaged
+        // enforcement, skip ALL blocks including read-grind. Must be hoisted
+        // ABOVE the read-grind detection so disengage-enforcement actually works.
+        let disengagedEarly = false
+        try {
+          const disPath = "/tmp/gludd-watchdog-disengage.json"
+          if (fs.existsSync(disPath)) {
+            const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
+            if (d.disengage_until) {
+              const now = Date.now()
+              const effective = Math.min(d.disengage_until, now + 3_600_000)
+              if (effective > now) disengagedEarly = true
+            }
+          }
+        } catch {}
+        if (disengagedEarly) {
+          _streakCount = 0
+          _readStreak = 0
+          return
+        }
 
         // P3: Update the shared cross-plugin streak counter so enforce-stop.ts
         // can detect grinding even when this plugin's in-memory streak is out
