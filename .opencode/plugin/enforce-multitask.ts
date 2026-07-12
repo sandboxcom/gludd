@@ -13,7 +13,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
-export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "3", 10)
+export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "5", 10)
 export const MAX_ZERO_STREAK = 2
 
 export const MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"

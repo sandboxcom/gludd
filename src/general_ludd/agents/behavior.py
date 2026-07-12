@@ -52,6 +52,7 @@ class AgentBehavior(BaseModel):
     research_before_build: bool = True  # dispatch research check before writing new code for data ingestion
     assume_and_proceed: bool = True  # when True, record assumptions instead of blocking on questions
     assumption_log: list[str] = Field(default_factory=list)
+    subagent_context_limit_lines: int = 10  # max lines subagent should return; 0 = no limit
 
     @field_validator("max_retries")
     @classmethod
@@ -345,6 +346,15 @@ class BehaviorRenderer:
             )
             sections.append(
                 "Use record_assumption() to log decisions. Reserve blocking only for truly irreversible choices."
+            )
+            sections.append("")
+
+        if behavior.subagent_context_limit_lines > 0:
+            sections.append("## Subagent Context Limit")
+            sections.append(
+                f"Return ≤{behavior.subagent_context_limit_lines} lines. "
+                "Do NOT dump large file contents into your response. "
+                "Read files you need and summarize."
             )
             sections.append("")
 

@@ -20,7 +20,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 | Resource | Cap | Mechanism |
 |---|---|---|
-| Concurrent subagents (Task/agent/workflow) | **3 max** | `CLAUDE_AGENT_FLOOR=3`, `CLAUDE_AGENT_CEILING=5`; `/tmp/gludd-floor-override=3` |
+| Concurrent subagents (Task/agent/workflow) | **5 max** | `CLAUDE_AGENT_FLOOR=5`, `CLAUDE_AGENT_CEILING=8`; `/tmp/gludd-floor-override=5` |
 | Subagent context size | **Minimal** — ask for only what you need | Each prompt must explicitly say "return ≤5 bullet points" or similar |
 | Actual model-calling HTTP processes | **10 max parallel** regardless of subagent count | OpenShift/daemon-level throttle |
 | Research subagents | **Serialized** — at most 1 at a time | Research reads code; multiple researchers collide on the same files |
@@ -28,19 +28,21 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 ### Behavioral rules (prompt-enforced)
 
-1. **Max 3 subagents per wave.** Never dispatch more than 2 task/agent/workflow calls in a single message. A message with 3+ dispatches is a cost violation.
-2. **Terse subagent prompts.** Each subagent prompt must be ≤20 lines. Ask for EXACTLY what you need; specify "return ≤N bullet points" or "return ≤N lines."
-3. **Research serialized.** Only 1 research/explore subagent at a time. Coding subagents can run in parallel with research.
-4. **Inline work preferred for simple tasks.** If a task fits in one read+edit, do it inline. Only dispatch if the task needs multi-step reasoning or touches multiple files.
-5. **Read-only tools are cheap.** Prefer grep/glob/read over dispatching a subagent for a simple search. Dispatching a subagent to search for a class name burns 100× the tokens of using grep.
-6. **Never dispatch a subagent for a single-file read or a single grep.** Use the read/grep/glob tools directly.
-7. **Deepseek model: prefer direct tool use over subagent nesting.** Deepseek excels at direct reads/edits; subagents add latency and duplicate context.
-8. **WRITE automated checkers, don't WALK the codebase manually.** When you need to find issues (bad patterns, missing types, dead code, missing tests), write a script/make-target/ruff-plugin that does the work mechanically, then rely on its output. A serial grep→read→analyze loop burns tokens; an automated checker is a one-time investment that scales. Applies to: linting, type checking, dead code detection, test coverage gaps, security scanning, dependency auditing. **If a subagent walks the tree with manual reads when an automated checker could exist, that subagent is the bug.**
-9. **Research existing tools BEFORE writing new code.** When a task involves ingesting/outputting large data, parsing formats, or performing a common operation, dispatch a separate research check FIRST: does a library, module, CLI tool, ansible collection, or existing code in this repo already do this? Writing new code for a problem that has a mature OSS solution is a bug. This applies doubly to gludd agents: before writing a module, check if ansible-galaxy, PyPI, or brew has a tool that solves it.
-10. **Subagent prompts MUST state tool availability.** When dispatching a subagent, explicitly list: (a) what tools are available (bash, write, edit, read, glob, grep), (b) what make targets are relevant to the task, (c) what commands/scripts exist for the subagent to use. A subagent saying "bash unavailable" when bash IS available in THIS session is a dispatch bug — the dispatcher didn't inform the subagent of its capabilities. Gludd agents: same rule — render available make targets and capability boundaries into the agent prompt.
-11. **Bash = `make <target>` only.** Subagents MUST know that the bash tool can ONLY run `make <target>` commands — no `cd`, `python`, `pip`, `git`, or any other bare command. If a subagent needs a command that lacks a make target, it must either create the target or request one. This constraint must be in every subagent prompt that includes bash.
-12. **Subagents need grep/glob/read tool context.** When dispatching subagents that use grep, explicitly state: `path` = directory to search in, `include` = file pattern (e.g. `*.py`), `pattern` = regex. Subagent confusion about tool parameter names is a dispatch bug — the dispatcher didn't explain the tools.
-13. **Never re-dispatch completed work.** Before dispatching a subagent, check: has this exact task (file + objective) already been completed or dispatched in this session? Subagents repeating their parent's already-completed work is a cost bug. Gludd must have a deduplication check: hash the task spec, store in a set, reject duplicates.
+1. **Max 5 subagents per wave.** Never dispatch more than 5 task/agent/workflow calls in a single message.
+2. **Terse subagent prompts.** Each subagent prompt must be ≤20 lines. Ask for EXACTLY what you need; specify "return ≤N bullet points" or "return ≤N lines."  
+   - **Subagent context size:** Minimal — ask for only what you need. Each prompt must explicitly say "return ≤5 bullet points" or similar.
+3. **Subagents MUST read files but return ONLY terse summaries.** Subagents MUST read files to gather context, but return ONLY terse summaries (≤5 bullet points or ≤10 lines). Subagent prompts must specify: "Read files you need, but return a ≤N-line summary. Do NOT dump large file contents into your response."
+4. **Research serialized.** Only 1 research/explore subagent at a time. Coding subagents can run in parallel with research.
+5. **Inline work preferred for simple tasks.** If a task fits in one read+edit, do it inline. Only dispatch if the task needs multi-step reasoning or touches multiple files.
+6. **Read-only tools are cheap.** Prefer grep/glob/read over dispatching a subagent for a simple search. Dispatching a subagent to search for a class name burns 100× the tokens of using grep.
+7. **Never dispatch a subagent for a single-file read or a single grep.** Use the read/grep/glob tools directly.
+8. **Deepseek model: prefer direct tool use over subagent nesting.** Deepseek excels at direct reads/edits; subagents add latency and duplicate context.
+9. **WRITE automated checkers, don't WALK the codebase manually.** When you need to find issues (bad patterns, missing types, dead code, missing tests), write a script/make-target/ruff-plugin that does the work mechanically, then rely on its output. A serial grep→read→analyze loop burns tokens; an automated checker is a one-time investment that scales. Applies to: linting, type checking, dead code detection, test coverage gaps, security scanning, dependency auditing. **If a subagent walks the tree with manual reads when an automated checker could exist, that subagent is the bug.**
+10. **Research existing tools BEFORE writing new code.** When a task involves ingesting/outputting large data, parsing formats, or performing a common operation, dispatch a separate research check FIRST: does a library, module, CLI tool, ansible collection, or existing code in this repo already do this? Writing new code for a problem that has a mature OSS solution is a bug. This applies doubly to gludd agents: before writing a module, check if ansible-galaxy, PyPI, or brew has a tool that solves it.
+11. **Subagent prompts MUST state tool availability.** When dispatching a subagent, explicitly list: (a) what tools are available (bash, write, edit, read, glob, grep), (b) what make targets are relevant to the task, (c) what commands/scripts exist for the subagent to use. A subagent saying "bash unavailable" when bash IS available in THIS session is a dispatch bug — the dispatcher didn't inform the subagent of its capabilities. Gludd agents: same rule — render available make targets and capability boundaries into the agent prompt.
+12. **Bash = `make <target>` only.** Subagents MUST know that the bash tool can ONLY run `make <target>` commands — no `cd`, `python`, `pip`, `git`, or any other bare command. If a subagent needs a command that lacks a make target, it must either create the target or request one. This constraint must be in every subagent prompt that includes bash.
+13. **Subagents need grep/glob/read tool context.** When dispatching subagents that use grep, explicitly state: `path` = directory to search in, `include` = file pattern (e.g. `*.py`), `pattern` = regex. Subagent confusion about tool parameter names is a dispatch bug — the dispatcher didn't explain the tools.
+14. **Never re-dispatch completed work.** Before dispatching a subagent, check: has this exact task (file + objective) already been completed or dispatched in this session? Subagents repeating their parent's already-completed work is a cost bug. Gludd must have a deduplication check: hash the task spec, store in a set, reject duplicates.
 
 ### Override precedence
 
@@ -1919,11 +1921,11 @@ The goal is a **continuous, pipelined** stream of subagent batches — not a saw
 
 Every assistant response containing tool calls MUST satisfy ONE of:
 - **(a) Zero task/agent/workflow dispatches** — pure read/edit/bash, no subagent fan-out. Valid for: serial mutations to hot files (daemon.py, loop.py), git operations, single-file edits during a hot-file conflict. **At most 2 consecutive zero-dispatch responses.** The 3rd zero-dispatch response in a row MUST include a dispatch (task/agent/workflow) OR explicitly justify why dispatch is impossible (quota exhausted, rate-limited, waiting for blocker). A 4th consecutive zero-dispatch response is a hard policy violation regardless of justification. Enforced mechanically by `enforce-multitask.ts` (zero-streak counter: denies at streak ≥ 2 when unchecked work exists) and `enforce-delegate.ts` (MAINTHREAD_THRESHOLD default 4; the 5th consecutive non-dispatch call is hard-denied).
-- **(b) Two or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern (see COST-EFFICIENCY DIRECTIVE: max 3 concurrent subagents). This is the steady-state.
+- **(b) Two or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern (see COST-EFFICIENCY DIRECTIVE: max 5 concurrent subagents). This is the steady-state.
 
 A response with exactly 1 task dispatch is a **policy violation** when ≥2 known work items remain. The agent MUST either batch wider to 2 OR justify why only 1 dispatch is possible.
 
-**NOTE (2026-07-11):** The COST-EFFICIENCY DIRECTIVE above overrides the old "10-agent floor" and "≥5 dispatches per wave" rules. The floor is now 3 agents max. Single dispatches (1) with ≥2 pending items trigger enforcement. Zero dispatches over ≥2 consecutive responses trigger enforcement.
+**NOTE (2026-07-12):** The COST-EFFICIENCY DIRECTIVE above overrides the old "10-agent floor" and "≥5 dispatches per wave" rules. The floor is now 5 agents max. Single dispatches (1) with ≥2 pending items trigger enforcement. Zero dispatches over ≥2 consecutive responses trigger enforcement.
 
 **Never**: make a single-task-dispatch message and wait for the result when ≥2 work items are known. Either fan out wider, or do non-blocking work inline while the wave runs.
 

@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "3", 10)
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "5", 10)
 const STOP_ENFORCE = process.env.GLUDD_STOP_ENFORCE !== "0"
 const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"
 

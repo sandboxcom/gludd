@@ -22,8 +22,8 @@ import * as path from "node:path"
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "3", 10)
-const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "5", 10)
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "5", 10)
+const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "6", 10)
 
 const MODEL_UTIL_STATE = process.env.GLUDD_MODEL_UTIL_STATE || "/tmp/gludd-model-util.json"
 const MODEL_UTIL_WINDOW = parseInt(process.env.GLUDD_MODEL_UTIL_WINDOW || "20", 10)

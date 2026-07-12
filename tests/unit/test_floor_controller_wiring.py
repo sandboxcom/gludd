@@ -8,9 +8,9 @@ from general_ludd.controllers.floor import FloorController
 
 
 class TestFloorController:
-    def test_default_floor_is_two(self) -> None:
+    def test_default_floor_is_five(self) -> None:
         fc = FloorController()
-        assert fc.floor == 2
+        assert fc.floor == 5
 
     def test_env_var_overrides_floor(self, monkeypatch) -> None:
         monkeypatch.setenv("FLOOR", "15")

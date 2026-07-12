@@ -16,10 +16,13 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
+
+from general_ludd.ansible.file_tracker import FileChangeTracker
 
 logger = logging.getLogger(__name__)
 
@@ -642,8 +645,12 @@ class CoreAnsibleRunner:
 
         self._collected_events = []
 
+        file_tracker = FileChangeTracker(repo_root=Path.cwd())
+        runner_kwargs["event_handler"] = file_tracker.event_handler
+
         try:
             runner_obj = ansible_runner.run(**runner_kwargs)
+            self._file_tracker = file_tracker
         except Exception as exc:
             return AnsibleResult(
                 status="failed",

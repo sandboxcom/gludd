@@ -16,7 +16,8 @@ from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
 class AgentRegistry:
     def __init__(self) -> None:
         self._agents: dict[str, AgentConfig] = {}
-        self._renderer = BehaviorRenderer()
+        from general_ludd.retrieval.agentic_context import AgenticContextInjector
+        self._renderer = BehaviorRenderer(prompt_enhancer=AgenticContextInjector())
         self._sealed: bool = False
 
     def register(self, config: AgentConfig) -> None:

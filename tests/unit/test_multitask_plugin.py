@@ -1,9 +1,11 @@
 """Behavior pin for the enforce-multitask plugin.
 
-Per AGENTS.md "Message-shape mechanical rule" and user directive (2026-07-09):
-every assistant response MUST contain either zero or >=10 dispatches per wave.
-1-9 dispatches is DENIED. This test extracts exported constants from the
-TypeScript source and validates them against the spec.
+Per AGENTS.md cost-efficiency directive (2026-07-11): floor is 2 agents max.
+Every assistant response MUST contain either zero or >=2 dispatches per wave.
+1 dispatch alone is DENIED when >=2 pending items exist. This test extracts
+exported constants from the TypeScript source and validates them against the
+spec. Also verifies zero-streak enforcement: after N consecutive zero-dispatch
+responses, enforcement fires to FORCE a dispatch (detects ≤0 dispatches).
 """
 from __future__ import annotations
 
@@ -83,13 +85,13 @@ class TestPluginStructure:
 
 
 class TestMinDispatchesDefault:
-    def test_default_is_10(self):
+    def test_default_is_2(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MIN_DISPATCHES")
-        assert default == 10, f"MIN_DISPATCHES default should be 10, got {default}"
+        assert default == 2, f"MIN_DISPATCHES default should be 2, got {default}"
 
     def test_string_value_matches_default(self):
         raw = _extract_export_value(_plugin_source(), "MIN_DISPATCHES")
-        assert "10" in raw
+        assert "2" in raw
 
 
 class TestMaxZeroStreak:
@@ -103,6 +105,95 @@ class TestMaxZeroStreak:
         src = _plugin_source()
         assert "_state.zeroStreak >= MAX_ZERO_STREAK" in src, (
             "MAX_ZERO_STREAK not used in streak limit check"
+        )
+
+    def test_zero_streak_check_also_checks_prev_message_was_zero(self):
+        """The zero-streak check must AND both: prevMessageDispatches === 0 AND
+        zeroStreak >= MAX_ZERO_STREAK. Without the first condition, a dispatch
+        wave followed by a single read/edit would be incorrectly blocked."""
+        src = _plugin_source()
+        assert "_state.prevMessageDispatches === 0" in src, (
+            "Zero-streak check must include prevMessageDispatches === 0 — "
+            "otherwise after a dispatch wave the next read gets denied"
+        )
+
+    def test_zero_streak_check_gates_on_tasks_has_unchecked(self):
+        """Enforcement only fires when TASKS.md has unchecked items. Without this
+        gate, a session with no pending work would be forced to dispatch."""
+        src = _plugin_source()
+        m = re.search(
+            r"prevMessageDispatches\s*===\s*0\s*&&\s*_state\.zeroStreak\s*>=\s*MAX_ZERO_STREAK",
+            src,
+        )
+        assert m, "Zero-streak check block not found"
+        # The next line(s) must call tasksHasUnchecked()
+        after_block = src[m.end():m.end()+200]
+        assert "tasksHasUnchecked" in after_block, (
+            "Zero-streak enforcement must call tasksHasUnchecked() — "
+            "enforcement fires only when unchecked work exists"
+        )
+
+    def test_zero_streak_resets_on_dispatch(self):
+        """The zeroStreak counter must reset to 0 whenever a dispatch occurs.
+        This happens in text.complete: if thisMessageDispatches !== 0, zeroStreak = 0."""
+        src = _plugin_source()
+        assert "_state.zeroStreak = 0" in src, (
+            "zeroStreak must be reset to 0 on dispatch — "
+            "the text.complete hook must zero the counter when thisMessageDispatches > 0"
+        )
+
+    def test_zero_streak_increments_on_zero_dispatch_message(self):
+        """The zeroStreak counter must increment when a message contains zero dispatches."""
+        src = _plugin_source()
+        assert "zeroStreak++" in src, (
+            "zeroStreak must be incremented via ++ in the text.complete hook "
+            "when thisMessageDispatches === 0"
+        )
+
+
+class TestZeroStreakDenyMessage:
+    """The zero-streak deny message must clearly state that ≤0 dispatches was detected."""
+
+    def test_mentions_zero_dispatches_detected(self):
+        raw = _extract_string_value(_plugin_source(), "ZERO_STREAK_DENY_PREFIX")
+        assert "ZERO DISPATCHES DETECTED" in raw or "zero subagent dispatches" in raw.lower(), (
+            "ZERO_STREAK_DENY_PREFIX must mention zero dispatches detection"
+        )
+
+    def test_mentions_not_dispatching(self):
+        raw = _extract_string_value(_plugin_source(), "ZERO_STREAK_DENY_PREFIX")
+        assert "NOT dispatching" in raw, (
+            "Zero-streak deny must state the agent IS NOT dispatching — "
+            "this is the multitasking failure being detected"
+        )
+
+    def test_mentions_dispatch_count_requirement(self):
+        raw = _extract_string_value(_plugin_source(), "ZERO_STREAK_DENY_PREFIX")
+        assert "parallel task" in raw.lower() or "dispatch" in raw.lower(), (
+            "Zero-streak deny must mention the dispatch requirement"
+        )
+
+    def test_mentions_consecutive_count(self):
+        raw = _extract_string_value(_plugin_source(), "ZERO_STREAK_DENY_PREFIX")
+        assert "consecutive" in raw.lower(), (
+            "Zero-streak deny must mention consecutive responses — the pattern matters"
+        )
+
+
+class TestSubMinDenyMessage:
+    """The sub-minimum deny message (1 dispatch when floor is 2) must be correct."""
+
+    def test_mentions_sub_minimum(self):
+        src = _plugin_source()
+        # The deny message for 1 dispatch when MIN is 2
+        assert "SUB-MINIMUM DISPATCH WAVE" in src or "SUB-MINIMUM" in src, (
+            "Deny message must detect sub-minimum dispatch waves"
+        )
+
+    def test_mentions_required_min(self):
+        raw = _extract_string_value(_plugin_source(), "DENY_PREFIX")
+        assert "2" in raw or "batch" in raw.lower(), (
+            "DENY_PREFIX must mention the required minimum dispatch count"
         )
 
 

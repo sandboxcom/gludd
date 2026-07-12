@@ -77,6 +77,14 @@ class AgentDispatcher:
         self._rate_limiter_timestamps: list[float] = []
         self._task_dispatch_counts: dict[str, int] = {}
         self._spiral_lock = asyncio.Lock()
+        model_call_limit = (
+            orchestration_guard.max_concurrent_model_calls
+            if orchestration_guard is not None
+            else 10
+        )
+        self._model_call_semaphore = asyncio.Semaphore(
+            max(model_call_limit, 1)
+        )
 
     @property
     def active_count(self) -> int:
@@ -357,7 +365,8 @@ class AgentDispatcher:
                     else contextlib.nullcontext()
                 )
                 with _watch:
-                    output = await self._executor(task)
+                    async with self._model_call_semaphore:
+                        output = await self._executor(task)
                 duration = time.monotonic() - start
                 # Record the completed duration so the per-agent baseline learns
                 # (and an anomalously-slow run is judged against the prior window).

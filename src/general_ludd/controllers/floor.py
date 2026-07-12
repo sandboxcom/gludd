@@ -33,7 +33,7 @@ class FloorController:
         elif env_floor is not None:
             self._floor = int(env_floor)
         else:
-            self._floor = 2
+            self._floor = 5
         self._health: float = 100.0
         self._floor_history: list[dict[str, object]] = []
 

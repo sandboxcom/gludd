@@ -59,6 +59,7 @@ from general_ludd.infra.utilization import UtilizationTracker
 from general_ludd.ipc import WriteQueue
 from general_ludd.logging.project_log import ProjectLogAdapter
 from general_ludd.mcp.loader import load_mcp_config
+from general_ludd.memory.local import LocalAgentMemory
 from general_ludd.metrics.collector import MetricsCollector
 from general_ludd.models.deployment_health import (
     DeploymentHealthChecker,
@@ -1048,6 +1049,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._codebase_indexer = _codebase_indexer
         logger.info("CodebaseIndexer initialised (cache: %s)", _codebase_indexer.cache_dir)
 
+        from general_ludd.retrieval.searx_client import SearxNGClient
+        app.state._searx_client = SearxNGClient()
+
+        from general_ludd.retrieval.research_index import ResearchIndex
+        app.state._research_index = ResearchIndex()
+
         def _update_ansible_env(
             paths: list[Any], env: dict[str, str]
         ) -> None:
@@ -1638,6 +1645,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory_repo = MemoryRepository(session_factory=session_factory)
         app.state._memory_repo = memory_repo
 
+        local_memory = LocalAgentMemory()
+        app.state._local_memory = local_memory
+        logger.info("LocalAgentMemory initialised (cache: %s)", local_memory.cache_dir)
+
         sandbox_executor = SandboxExecutor(timeout=30)
 
         _cfg_dir = getattr(app.state, "_config_dir", None)
@@ -1945,6 +1956,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         # call does not leak held budget.
                         budget_manager.release_reservation(task.task_id)
                         return "deferred:budget_exhausted"
+                if task.agent_name == "research":
+                    from general_ludd.agents.researcher import ResearcherAgent
+                    searx = getattr(app.state, "_searx_client", None)
+                    agent = ResearcherAgent(searx_client=searx)
+                    report = await agent.research(query=task.prompt)
+                    return report.model_dump_json()
                 try:
                     call_kwargs: dict[str, Any] = {}
                     if getattr(task, "tools", None):
@@ -2834,6 +2851,7 @@ def create_daemon_app(
         facts,
         features,
         filestore,
+        git_history,
         human_todos,
         integrity,
         maintenance,
@@ -2894,6 +2912,7 @@ def create_daemon_app(
     deployments.register(app, daemon_state)
     processes.register(app, daemon_state)
     filestore.register(app, daemon_state)
+    git_history.register(app, daemon_state)
     human_todos.register(app, daemon_state)
     integrity.register(app, daemon_state)
     signing.register(app, daemon_state)

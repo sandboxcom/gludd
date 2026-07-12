@@ -3219,9 +3219,6 @@ check-all-guardrails: check-plugin-heartbeats check-test-env-writes check-clean-
 check-clean-tree-status:
 	@$(UV) run python3 scripts/check_clean_tree.py
 
-search-coverage-agentconfig:
-	@$(PYTHON) /tmp/search_coverage_agentconfig.py
-
 search-coverage-v2:
 	@$(PYTHON) /tmp/search_coverage_v2.py
 

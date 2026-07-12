@@ -148,6 +148,7 @@ class OrchestrationGuardConfig(BaseModel):
     max_dispatches_per_window: int = 0
     dispatch_rate_window_s: float = 60.0
     enforce_capability_escalation: bool = True
+    max_concurrent_model_calls: int = 10
 
 
 class IssuesConfig(BaseModel):

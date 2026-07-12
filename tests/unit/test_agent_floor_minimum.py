@@ -1,15 +1,15 @@
-"""Verify the 3-subagent cap is enforced across all guardrail layers.
+"""Verify the 5-subagent cap is enforced across all guardrail layers.
 
 The agent cap (max concurrent subagents) must be consistent everywhere.
 A drift in any single layer creates a loophole the other layers cannot close.
-This test pins all five layers to the current cap of 3.
+This test pins all five layers to the current cap of 5.
 
 Layers checked:
-  1. .claude/settings.json            -> env.CLAUDE_AGENT_FLOOR == "3"
-  2. .opencode/plugin/enforce-floor.ts    -> FLOOR constant defaults to 3
-  3. .opencode/plugin/enforce-delegate.ts -> FLOOR constant defaults to 3
-  4. .opencode/plugin/enforce-stop.ts     -> FLOOR constant defaults to 3
-  5. AGENTS.md                            -> documents the 3-subagent cap
+  1. .claude/settings.json            -> env.CLAUDE_AGENT_FLOOR == "5"
+  2. .opencode/plugin/enforce-floor.ts    -> FLOOR constant defaults to 5
+  3. .opencode/plugin/enforce-delegate.ts -> FLOOR constant defaults to 5
+  4. .opencode/plugin/enforce-stop.ts     -> FLOOR constant defaults to 5
+  5. AGENTS.md                            -> documents the 5-subagent cap
 """
 
 import json
@@ -24,7 +24,7 @@ ENFORCE_DELEGATE = ROOT / ".opencode" / "plugin" / "enforce-delegate.ts"
 ENFORCE_STOP = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 AGENTS_MD = ROOT / "AGENTS.md"
 
-EXPECTED_FLOOR = 3
+EXPECTED_FLOOR = 5
 
 
 def _floor_declaration(text: str) -> str:
@@ -54,10 +54,10 @@ class TestEnforceFloorPlugin:
     def test_file_exists(self):
         assert ENFORCE_FLOOR.exists(), "enforce-floor.ts must exist"
 
-    def test_floor_default_is_three(self):
+    def test_floor_default_is_five(self):
         line = _floor_declaration(ENFORCE_FLOOR.read_text())
-        assert "3" in line, (
-            f"enforce-floor.ts FLOOR must default to 3; got: {line!r}"
+        assert "5" in line, (
+            f"enforce-floor.ts FLOOR must default to 5; got: {line!r}"
         )
 
 
@@ -65,10 +65,10 @@ class TestEnforceDelegatePlugin:
     def test_file_exists(self):
         assert ENFORCE_DELEGATE.exists(), "enforce-delegate.ts must exist"
 
-    def test_floor_default_is_three(self):
+    def test_floor_default_is_five(self):
         line = _floor_declaration(ENFORCE_DELEGATE.read_text())
-        assert "3" in line, (
-            f"enforce-delegate.ts FLOOR must default to 3; got: {line!r}"
+        assert "5" in line, (
+            f"enforce-delegate.ts FLOOR must default to 5; got: {line!r}"
         )
 
 
@@ -76,10 +76,10 @@ class TestEnforceStopPlugin:
     def test_file_exists(self):
         assert ENFORCE_STOP.exists(), "enforce-stop.ts must exist"
 
-    def test_floor_default_is_three(self):
+    def test_floor_default_is_five(self):
         line = _floor_declaration(ENFORCE_STOP.read_text())
-        assert "3" in line, (
-            f"enforce-stop.ts FLOOR must default to 3; got: {line!r}"
+        assert "5" in line, (
+            f"enforce-stop.ts FLOOR must default to 5; got: {line!r}"
         )
 
 
@@ -87,20 +87,20 @@ class TestAgentsMdCap:
     def test_file_exists(self):
         assert AGENTS_MD.exists(), "AGENTS.md must exist"
 
-    def test_documents_three_subagent_cap(self):
+    def test_documents_five_subagent_cap(self):
         text = AGENTS_MD.read_text()
         patterns = [
-            r"max.*3.*subagent",
-            r"subagent.*cap.*3",
-            r"3.*subagent.*cap",
-            r"CLAUDE_AGENT_FLOOR.{0,40}[=\"]3\b",
-            r"floor.{0,30}[=\"]3\b",
-            r"[=\"]3\b.{0,30}floor",
-            r"Concurrent subagents.*3 max",
-            r"Max 3 subagents",
+            r"max.*5.*subagent",
+            r"subagent.*cap.*5",
+            r"5.*subagent.*cap",
+            r"CLAUDE_AGENT_FLOOR.{0,40}[=\"]5\b",
+            r"floor.{0,30}[=\"]5\b",
+            r"[=\"]5\b.{0,30}floor",
+            r"Concurrent subagents.*5 max",
+            r"Max 5 subagents",
         ]
         matched = [p for p in patterns if re.search(p, text, re.IGNORECASE)]
         assert matched, (
-            "AGENTS.md must document the 3-subagent cap "
-            "(no pattern tying '3' to the cap/subagent limit was found)"
+            "AGENTS.md must document the 5-subagent cap "
+            "(no pattern tying '5' to the cap/subagent limit was found)"
         )

@@ -24,6 +24,8 @@ database:
 agents:
   default_agent: build
   max_concurrent: 4
+orchestration:
+  max_concurrent_model_calls: 10
 process_isolation:
   enabled: false
   container_runtime: podman
