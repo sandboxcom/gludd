@@ -33,11 +33,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase C — Security/Correctness (AGENTIC_IMPLEMENTATION_SPEC §3.3)
 
-- [ ] C.1 — SSRF canonicalization: unify is_url_blocked/resolved_host_is_blocked/resolve_and_pin | priority: high | effort: medium | status: pending
+- [x] C.1 — SSRF canonicalization: unify is_url_blocked/resolved_host_is_blocked/resolve_and_pin | priority: high | effort: medium | status: completed | evidence: resolve_and_pin canonical guard, 188 tests pass, lint clean
 - [ ] C.2 — Adversarial detector daemon-wiring + scan-file 400 fix | priority: high | effort: small | status: pending
 - [ ] C.3 — DB tenant scoping: ThreadPoolExecutor spawns sessions without tenant filter | priority: high | effort: medium | status: pending
 - [ ] C.5 — Integrity store: HMAC canonical-JSON baseline, fail-closed on corrupt store | priority: medium | effort: medium | status: pending
-- [ ] C.6 — Model gateway: strip caller kwargs base_url/api_key, default httpx timeout, redact resolved URL in errors | priority: medium | effort: small | status: pending
+- [x] C.6 — Model gateway: strip caller kwargs base_url/api_key, default httpx timeout, redact resolved URL in errors | priority: medium | effort: small | status: completed | evidence: 17 tests pass (TestC6KwargsStripping, TestC6DefaultHttpxTimeout, TestC6UrlRedaction), _redact_url_in_exception in gateway.py
 - [ ] C.8 — Hot-reload/worker broadcast: snapshot→swap TOCTOU, unauthenticated worker registration leaks PSK, no concurrency guard, symlink bypass | priority: medium | effort: large | status: pending
 - [ ] C.9 — self_update deny-list family: consolidate applier.py + capability_lattice.py + apply.py protected-path lists | priority: medium | effort: medium | status: pending
 - [ ] C.10 — Execution engine: benchmark create_task swallowed, blocking _run_tests on loop, deferred-commit race, _background_tasks never drained | priority: medium | effort: medium | status: pending
@@ -106,15 +106,15 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] E.10 — Tick DB session pinned across dispatch gather: commit/close session BEFORE dispatch gather | priority: high | effort: medium | status: pending
 - [ ] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: pending
 - [ ] E.12 — Event-loop/repository perf batch: N+1 queries, missing composite index, full-table scans, per-lease N+1, no retention for task_returns/task_decisions | priority: low | effort: medium | status: pending
-- [ ] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: pending
+- [x] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: completed | evidence: 10 tests pass (5 existing + 5 new), verified all nag texts guarded by OPENCODE_SUBAGENT
 
 ---
 
 ## Phase F — Docs/Presentation (AGENTIC_IMPLEMENTATION_SPEC §3.6)
 
 - [x] F.1 — Reveal.js deck: add flagship flow with exact code paths, behaviors→DB-tables slide, daemon/MCP/self-improve/guardrails slides | priority: high | effort: medium | status: completed | evidence: 6 new slides, deck grew 28→34, build PASS
-- [ ] F.2 — README presentation links: fix Pages URL after B2 verifies 200 | priority: medium | effort: small | status: pending
-- [ ] F.3 — docs/presentation internal link fixes: 4 broken links (case/name mismatch) | priority: low | effort: small | status: pending
+- [x] F.2 — README presentation links: fix Pages URL after B2 verifies 200 | priority: medium | effort: small | status: completed | evidence: URL already correct (sandboxcom.github.io/gludd), deployment verified live with beta.3 deck
+- [x] F.3 — docs/presentation internal link fixes: 4 broken links (case/name mismatch) | priority: low | effort: small | status: completed | evidence: all 5 links in index.md already correct, fixed in prior session
 - [ ] F.4 — Stale design/status docs: PROJECT_RUNNER.md slices stale, STABILIZATION_PLAN WP-D3 close, SLM_COMPACTION unwired claim | priority: low | effort: small | status: pending
 - [ ] F.5 — Missing standard docs: config reference, MCP tool reference, CONTRIBUTING pointer, CHANGELOG sync | priority: low | effort: medium | status: pending
 

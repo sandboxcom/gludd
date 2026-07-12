@@ -245,6 +245,28 @@ def _attach_correlation_id(
     return response
 
 
+def _redact_url_in_exception(exc: BaseException, url: str) -> None:
+    """Redact a specific resolved URL from an exception's args in-place.
+
+    C.6 hardening: provider error messages (httpx.ConnectError,
+    httpx.HTTPStatusError, etc.) can embed the literal resolved base_url,
+    e.g. "Connection refused to https://actual-proxy.internal/v1/chat".
+    This replaces every occurrence with ``[REDACTED_URL]`` so the internal
+    endpoint is never exposed to the caller via the exception trace.
+    Safe on any exception type; a no-op when ``url`` is empty.
+    """
+    if not url:
+        return
+    try:
+        new_args = tuple(
+            arg.replace(url, "[REDACTED_URL]") if isinstance(arg, str) else arg
+            for arg in exc.args
+        )
+        exc.args = new_args
+    except Exception:
+        pass
+
+
 def _enrich_all_down_message(
     exc: BaseException, attempts: list[dict[str, str]]
 ) -> None:
@@ -838,6 +860,9 @@ class ModelGateway:
                         f"(redacted) for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
+        _resolved_base_url: str | None = cast(
+            str | None, init_kwargs.get("base_url")
+        )
         extra_body: dict[str, object] = kwargs.pop("extra_body", {})
         for key in ("guided_json", "guided_regex", "guided_choice",
                       "guided_grammar", "guided_whitespace_pattern"):
@@ -919,6 +944,7 @@ class ModelGateway:
         try:
             raw_response = chat_model.invoke(lc_messages)
         except Exception as exc:
+            _redact_url_in_exception(exc, _resolved_base_url or "")
             self.record_timeout_on_failure(profile_id, exc)
             # Surface the failure in the metrics facet too (previously ONLY the
             # health tracker recorded primary/fallback failures, so an operator

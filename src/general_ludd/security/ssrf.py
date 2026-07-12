@@ -34,10 +34,29 @@ risk); they are only caught by the explicit name blocklist below.
 from __future__ import annotations
 
 import concurrent.futures
+import dataclasses
 import ipaddress
 import socket
 from collections.abc import Collection
 from urllib.parse import urlsplit
+
+
+class SSRFError(ValueError):
+    """Raised by :func:`resolve_and_pin` when a host is blocked by SSRF policy."""
+
+
+@dataclasses.dataclass(frozen=True)
+class PinnedTarget:
+    """A DNS-resolved, SSRF-vetted endpoint.
+
+    *host*: the original hostname (for Host header / SNI).
+    *ip*: the pinned IP address — connect directly to this.
+    *port*: the port number.
+    """
+
+    host: str
+    ip: str
+    port: int
 
 # --------------------------------------------------------------------------- #
 # Canonical blocklists — the STRICTEST union of every former implementation.
@@ -258,43 +277,45 @@ def is_url_blocked(
     return host_is_blocked(host)
 
 
-def resolved_host_is_blocked(host: str, *, timeout: float = 2.0) -> bool:
-    """DNS-RESOLVING deny check — OPT-IN, bounded, for connectors that already
-    resolve names.
+def resolve_and_pin(
+    host: str,
+    *,
+    port: int = 443,
+    timeout: float = 2.0,
+) -> PinnedTarget:
+    """Resolve a hostname, vet every resolved address via SSRF blocklists,
+    and return a :class:`PinnedTarget`.
 
-    Unlike :func:`host_is_blocked` (pure literal check, never touches the
-    network), this function:
+    The canonical DNS-resolving SSRF guard. Use this when the caller has
+    already accepted DNS-resolution as part of its threat model (e.g. internal
+    services like Nomad or Cilium Hubble) AND needs a pinned IP to defeat DNS
+    rebinding (connect via the returned IP, set the Host header + SNI to the
+    original hostname).
 
-      1. Applies :func:`host_is_blocked` first (covers a literal IP, a
-         loopback/metadata name, and the ``.localhost`` TLD with no I/O).
-      2. If ``host`` is not an IP literal and was not already denied, resolves
-         it via ``socket.getaddrinfo`` bounded to ``timeout`` seconds (run in a
-         worker thread so a hung resolver cannot block the caller past the
-         deadline) and re-checks EVERY returned address through
-         :func:`_ip_addr_is_blocked`.
-      3. FAILS CLOSED: a resolution timeout, ``OSError`` (e.g. NXDOMAIN), or an
-         empty result set is treated as a deny — an unresolvable host must
-         never be silently waved through (that could mask an internal or
-         DNS-rebinding target).
+    Steps (fail-closed throughout):
+      1. :func:`host_is_blocked` quick literal check (no I/O).
+      2. If ``host`` is a literal IP, returns :class:`PinnedTarget` directly
+         (already vetted by step 1).
+      3. DNS resolution via ``socket.getaddrinfo`` in a worker thread, bounded
+         to ``timeout`` seconds.
+      4. Every resolved address re-checked through :func:`_ip_addr_is_blocked`.
 
-    When to use this vs. :func:`host_is_blocked`: reach for this ONLY when the
-    connector's operator has already accepted DNS-resolution as part of that
-    connector's threat model (e.g. an internal service, such as a Nomad agent
-    or a Cilium Hubble relay, that is legitimately reached by an internal DNS
-    name rather than a literal IP). Do NOT use this in a shared/general fetch
-    path — the whole point of :func:`host_is_blocked` / :func:`is_url_blocked`
-    is that they can NEVER hang on a slow or hostile resolver; this function
-    can still take up to ``timeout`` seconds per call.
+    Raises :class:`SSRFError` immediately on any block — timeout, NXDOMAIN,
+    empty result, private/reserved IP, or the literal check.
+
+    The pinned IP is the FIRST resolved public address. The original ``host``
+    is preserved for callers to set the ``Host`` header and TLS SNI.
     """
     if host_is_blocked(host):
-        return True
+        raise SSRFError(f"host {host!r} is blocked by SSRF policy")
 
     normalized = host.strip().lower().rstrip(".")
     if normalized.startswith("[") and normalized.endswith("]"):
         normalized = normalized[1:-1]
+
     try:
-        ipaddress.ip_address(normalized)
-        return False  # literal IP: host_is_blocked above already vetted it.
+        ip = ipaddress.ip_address(normalized)
+        return PinnedTarget(host=host, ip=str(ip), port=port)
     except ValueError:
         pass
 
@@ -303,20 +324,52 @@ def resolved_host_is_blocked(host: str, *, timeout: float = 2.0) -> bool:
         try:
             infos = future.result(timeout=timeout)
         except (OSError, concurrent.futures.TimeoutError):
-            # Fail closed: unresolvable (or too slow to resolve) -> deny. The
-            # background thread may still be blocked on the syscall; letting
-            # it finish in the background (rather than trying to kill it) is
-            # the standard way to bound an unkillable blocking call.
-            return True
+            raise SSRFError(
+                f"host {host!r} could not be resolved (denied for SSRF)"
+            ) from None
 
     if not infos:
-        return True
+        raise SSRFError(
+            f"host {host!r} resolved to no addresses (denied for SSRF)"
+        ) from None
+
+    pinned_ip: str | None = None
     for info in infos:
         addr = str(info[4][0]).split("%")[0]
         try:
             ip = ipaddress.ip_address(addr)
         except ValueError:
-            return True
+            raise SSRFError(
+                f"host {host!r} resolved to unparseable address {addr!r} (denied for SSRF)"
+            ) from None
         if _ip_addr_is_blocked(ip):
-            return True
+            raise SSRFError(
+                f"host {host!r} resolves to blocked address {addr!r} (denied for SSRF)"
+            ) from None
+        if pinned_ip is None:
+            pinned_ip = str(ip)
+
+    if pinned_ip is None:
+        raise SSRFError(
+            f"host {host!r} resolved to no usable addresses (denied for SSRF)"
+        ) from None
+
+    return PinnedTarget(host=host, ip=pinned_ip, port=port)
+
+
+def resolved_host_is_blocked(host: str, *, timeout: float = 2.0) -> bool:
+    """Convenience wrapper around :func:`resolve_and_pin`: ``True`` if blocked.
+
+    Same DNS-resolving, fail-closed behavior — returns a boolean instead of a
+    :class:`PinnedTarget`. For callers that only need the deny decision (Nomad,
+    git_automation) and don't need the pinned IP for connection pinning.
+
+    When to use this vs. :func:`resolve_and_pin`: reach for this when you only
+    need the SSRF-gate decision; use :func:`resolve_and_pin` when you also need
+    the vetted IP to pin the connection and defeat DNS rebinding.
+    """
+    try:
+        resolve_and_pin(host, timeout=timeout)
+    except SSRFError:
+        return True
     return False
