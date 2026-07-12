@@ -326,17 +326,17 @@ class TestHelpWorkflow:
         assert "General Ludd Agent" in out
 
     def test_project_list_help_output(self, capsys):
-        out, _err, _code = _run_cli_output(["project", "list", "--help"], capsys)
+        out, _err, code = _run_cli_output(["project", "list", "--help"], capsys)
         assert code == 0
         assert "List registered projects" in out
 
     def test_human_todo_list_help_output(self, capsys):
-        out, _err, _code = _run_cli_output(["human-todo", "list", "--help"], capsys)
+        out, _err, code = _run_cli_output(["human-todo", "list", "--help"], capsys)
         assert code == 0
         assert "human-todos" in out.lower()
 
     def test_audit_plugins_help_output(self, capsys):
-        out, _err, _code = _run_cli_output(["audit-plugins", "--help"], capsys)
+        out, _err, code = _run_cli_output(["audit-plugins", "--help"], capsys)
         assert code == 0
         assert "plugin" in out.lower()
 

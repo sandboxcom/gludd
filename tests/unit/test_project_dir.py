@@ -160,7 +160,7 @@ class TestProjectOverlayInLoadStartupConfig:
         gludd_dir = tmp_path / ".gludd"
         gludd_dir.mkdir()
         (gludd_dir / "general-ludd.yml").write_text(
-            "agents:\n  timeout: 42\n"
+            "rules:\n  - name: project_rule\npipeline:\n  enabled: true\n"
         )
         # Make GLUDD_PROJECT_DIR point to our tmp .gludd dir.
         monkeypatch.setenv("GLUDD_PROJECT_DIR", str(gludd_dir))
@@ -173,9 +173,11 @@ class TestProjectOverlayInLoadStartupConfig:
 
         assert cfg["project_gludd_dir"] == gludd_dir
         uc = cfg["user_config"]
-        # The overlay sets agents.timeout=42; verify it propagated.
-        agents = getattr(uc, "agents", {}) or {}
-        assert agents.get("timeout") == 42
+        rules = getattr(uc, "rules", []) or []
+        assert rules == [{"name": "project_rule"}]
+        pipeline = getattr(uc, "pipeline", None)
+        assert pipeline is not None
+        assert getattr(pipeline, "enabled", False) is True
 
     def test_project_gludd_dir_in_cfg(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

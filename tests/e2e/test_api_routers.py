@@ -99,18 +99,19 @@ def project_app(monkeypatch: pytest.MonkeyPatch):
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
-    import asyncio
+
     async def _init_db():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         factory = async_sessionmaker(engine, expire_on_commit=False)
         app.state._session_factory = factory
         app.state._db_engine = engine
-    asyncio.get_event_loop().run_until_complete(_init_db())
+
+    asyncio.run(_init_db())
 
     client = TestClient(app)
     yield client
-    asyncio.get_event_loop().run_until_complete(engine.dispose())
+    asyncio.run(engine.dispose())
 
 
 # ---------------------------------------------------------------------------
@@ -278,12 +279,13 @@ class TestTodosCRUD:
                     "priority": "medium",
                     "work_type": "code",
                     "status": "queued",
+                    "project_id": "e2e-project",
                 })
             await session.commit()
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/todos", params={"project_id": "test-project"})
+            resp = await client.get("/api/todos", params={"project_id": "e2e-project"})
             assert resp.status_code == 200
             data = resp.json()
             assert len(data) >= 3
