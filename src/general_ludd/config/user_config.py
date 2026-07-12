@@ -10,6 +10,12 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from general_ludd.config.model_routing import ModelRoutingConfig
 
 
+class NetworkConfig(BaseModel):
+    host: str = "127.0.0.1"
+    port: int = 8000
+    allowed_cidr: list[str] = []
+
+
 class ObservabilityConfig(BaseModel):
     otel_endpoint: str | None = None
     service_name: str = "general-ludd"
@@ -194,6 +200,7 @@ class UserConfig(BaseSettings):
     process_isolation: dict[str, Any] = {}
     budget: dict[str, Any] = {}
     database: dict[str, Any] = {}
+    network: NetworkConfig = NetworkConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
     queues: list[dict[str, Any]] = []
     connectors: list[dict[str, Any]] = []

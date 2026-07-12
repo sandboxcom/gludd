@@ -728,7 +728,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         gw = LangGraphGateway(
             call_model_fn=_call_model_fn,
-            adaptive_router=getattr(app.state, "_adaptive_router", None),
+            adaptive_router=_get_app_adaptive_router(app),
             scoring_engine=getattr(app.state, "_scoring_engine", None),
             max_retries=max_retries,
             quality_threshold=quality_threshold,

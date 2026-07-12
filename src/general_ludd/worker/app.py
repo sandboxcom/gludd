@@ -251,14 +251,10 @@ def create_app(
         dispatcher = build_dispatcher_from_config()
     application.state.dispatcher = dispatcher
 
-    # W5.6 (AUTH blocker): the worker runs arbitrary registered playbooks for any
-    # caller who can reach the port. Enforce the same pre-shared-key the daemon
-    # uses (GLUDD_PSK), via the SHARED security.auth helper so the two surfaces
-    # cannot drift. Fixes: (1) the old `token != _psk` was a timing oracle — the
-    # helper uses hmac.compare_digest; (2) the worker ignored GLUDD_REQUIRE_AUTH
-    # (fail-open) — it now mirrors the daemon's A-3 fail-closed 503 branch and
-    # emits the LOUD no-PSK startup warning. Default (no PSK, no require) stays
-    # OPEN so local/dev callers and existing no-PSK tests keep working.
+    # C20: worker auth fail-closed by default. The worker runs arbitrary
+    # registered playbooks for any caller who can reach the port. Enforce the
+    # same pre-shared-key the daemon uses (GLUDD_PSK), via the SHARED
+    # security.auth helper so the two surfaces cannot drift.
     from general_ludd.security.auth import check_bearer_token, load_auth_posture
 
     _posture = load_auth_posture("worker")
@@ -267,6 +263,17 @@ def create_app(
     application.state._require_auth = _posture.require_auth
     application.state._no_auth = _posture.no_auth
     _public_paths = {"/healthz", "/docs", "/openapi.json", "/redoc"}
+
+    if _psk:
+        logger.info("Worker auth: ON (GLUDD_PSK configured, %s)", _posture.surface)
+    elif _posture.require_auth and _posture.no_auth:
+        logger.warning(
+            "Worker auth: FAIL-CLOSED — no GLUDD_PSK set, all non-public paths "
+            "will return 403. Set GLUDD_PSK to enable auth or "
+            "GLUDD_PSK_DISABLE=1 to disable it."
+        )
+    else:
+        logger.info("Worker auth: OFF (GLUDD_PSK_DISABLE=1, back-compat mode)")
 
     def _worker_is_public(path: str) -> bool:
         # SECURITY: exact-match `/docs` or `/docs/<sub>` only — NOT `startswith("/docs")`,
@@ -278,10 +285,15 @@ def create_app(
         path = request.url.path
         if not _worker_is_public(path):
             if _posture.no_auth and _posture.require_auth:
-                # Fail-closed: auth required but no PSK configured.
                 return JSONResponse(
-                    status_code=503,
-                    content={"error": "auth_required", "reason": "no PSK configured"},
+                    status_code=403,
+                    content={
+                        "error": "auth_required",
+                        "reason": (
+                            "No GLUDD_PSK configured. Set GLUDD_PSK to enable auth "
+                            "or GLUDD_PSK_DISABLE=1 to explicitly disable it."
+                        ),
+                    },
                 )
             if _psk:
                 auth = request.headers.get("Authorization", "")

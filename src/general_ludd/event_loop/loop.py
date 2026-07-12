@@ -591,6 +591,9 @@ class EventLoop:
         self, todo: Any, default_model_profile: str = "default"
     ) -> tuple[str | None, str | None, Any | None]:
         if self._adaptive_router is None:
+            logger.warning(
+                "_adaptive_router not initialized; skipping adaptive prompt routing"
+            )
             return None, None, None
         work_type = _safe_str(todo, "work_type", "feature") or "feature"
         task_type = _work_type_to_task_type(work_type)
@@ -3755,6 +3758,12 @@ class EventLoop:
                             "Failed to record infra cost for teardown of %s: %s",
                             ep.endpoint_id, _exc,
                         )
+                else:
+                    logger.warning(
+                        "_infra_tracker not initialized; cannot record GPU cost "
+                        "for teardown of %s",
+                        ep.endpoint_id,
+                    )
                 if self._deployment_manager is not None:
                     try:
                         await self._deployment_manager.destroy(ep.endpoint_id)
@@ -3764,6 +3773,12 @@ class EventLoop:
                             ep.endpoint_id, exc,
                         )
                         continue
+                else:
+                    logger.warning(
+                        "_deployment_manager not initialized; cannot destroy "
+                        "idle endpoint %s",
+                        ep.endpoint_id,
+                    )
                 self._utilization_tracker.unregister_endpoint(ep.endpoint_id)
                 idle_tracking.pop(ep.endpoint_id, None)
                 torn_down.append(ep.endpoint_id)
@@ -4470,7 +4485,11 @@ class EventLoop:
             )
         # Log current routing decisions.
         router: Any = getattr(self, "_adaptive_router", None)
-        if router is not None and hasattr(router, "current_routing_decisions"):
+        if router is None:
+            logger.warning(
+                "_adaptive_router not initialized; skipping routing decision capture"
+            )
+        elif hasattr(router, "current_routing_decisions"):
             try:
                 decisions = await router.current_routing_decisions()
                 self._tick_metrics["model_routing_decisions"] = len(decisions)

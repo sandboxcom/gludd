@@ -128,7 +128,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] H.5 — H-HUMANGATE-NO-CHECKPOINTER: gate graph compiled without checkpointer breaks interrupt/resume | priority: medium | effort: medium | status: pending
 - [ ] H.6 — H-LANGGRAPH-FACTORY-ROLE-TRAP: make_langgraph_tool_loop has no required role param | priority: medium | effort: small | status: pending
 - [ ] H.7 — H-PROJECT-OVERLAY-DANGEROUS-FIELDS: untrusted project config can override connectors, database.url, budget, issues, self_improve gates | priority: high | effort: medium | status: pending
-- [ ] H.8 — H-MEMORY-CROSS-PROJECT-BLEED: MemoryRecordModel has no project_id, cross-project leak+overwrite | priority: high | effort: medium | status: pending
+- [x] H.8 — H-MEMORY-CROSS-PROJECT-BLEED: MemoryRecordModel has no project_id, cross-project leak+overwrite | priority: high | effort: medium | status: completed | evidence: 32 tests pass, migration 030, commit ac698bec
 - [ ] H.9 — H-MCP-STOPALL-ORPHAN: one failing transport.stop() orphans every remaining MCP subprocess | priority: medium | effort: small | status: pending
 - [ ] H.10 — H-MCP-UVX-UNPINNED: uvx package specs exempt from version-pin requirement | priority: medium | effort: small | status: pending
 - [ ] H.11 — H-DENYLIST-DRIFT: three independent protected-path deny-lists disagree (applier.py, capability_lattice.py, apply.py) | priority: medium | effort: medium | status: pending
@@ -136,14 +136,14 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] H.13 — H-ORNITH-SANDBOX-GAPS: arbitrary file-write via export out_path + unsandboxed coding-agent subprocess | priority: medium | effort: medium | status: pending
 - [ ] H.14 — H-PRIORITY-UPPERBOUND: priority has no upper bound at schema/repository layer | priority: low | effort: small | status: pending
 - [ ] H.15 — H-MCP-STARTUP-ORPHAN: partial multi-server MCP startup failure orphans already-spawned subprocesses | priority: high | effort: medium | status: pending
-- [ ] H.16 — H-SSRF-NUMERIC-IP: decimal/octal/hex IP literal encodings bypass host_is_blocked | priority: medium | effort: medium | status: pending
+- [x] H.16 — H-SSRF-NUMERIC-IP: decimal/octal/hex IP literal encodings bypass host_is_blocked | priority: medium | effort: medium | status: completed | evidence: 28 tests pass, commit ac698bec
 - [ ] H.17 — H-SIGNING-NO-VERIFY: self-update + hot-reload apply content with no cryptographic signature verification | priority: high | effort: medium | status: pending
 - [ ] H.18 — H-SIGNING-NO-PRIVSEP: /admin/signing/* has no privilege tier beyond shared PSK | priority: medium | effort: small | status: pending
 - [ ] H.19 — H-STREAM-PROCESSOR-CMDI: /admin/stream/dispatch processor binary/args shell-injected into generated script | priority: high | effort: small | status: pending
 - [ ] H.20 — H-CONNECTOR-EXC-LEAK: connectors return raw exception text to callers (~11 cited sinks) | priority: medium | effort: medium | status: pending
 - [ ] H.21 — H-WEBHOOK-DELIVERY-REBIND: registered webhooks SSRF-checked only at registration, never re-checked at delivery | priority: medium | effort: medium | status: pending
 - [ ] H.22 — H-GATEWAY-SCOPE-FAILOPEN: project-secrets-resolver failure falls back to shared/base resolver; SSRF errors disclose internal URLs | priority: low | effort: small | status: pending
-- [ ] H.23 — H-GATEWAY-EXC-CREDLEAK: raw provider-exception text flows unredacted into admin-visible facet and on-disk replay records | priority: high | effort: medium | status: pending
+- [x] H.23 — H-GATEWAY-EXC-CREDLEAK: raw provider-exception text flows unredacted into admin-visible facet and on-disk replay records | priority: high | effort: medium | status: completed | evidence: 11 tests pass, commit ac698bec
 
 ---
 
@@ -297,3 +297,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 ### Ship gate
 
 - [x] **Ship v0.1.0-beta.2** — CI GREEN run 29133276928 on HEAD 60a2b313.
+
+### Phase H-D — Hardening + Feature waves (2026-07-12)
+
+- [x] **H-SSRF-NUMERIC-IP (H.16)** — decimal/octal/hex IP literal encodings guard. | evidence: 28 tests pass, commit ac698bec
+- [x] **H-GATEWAY-EXC-CREDLEAK (H.23)** — credential leak sanitizer for provider-exception text. | evidence: 11 tests pass, commit ac698bec
+- [x] **H-MEMORY-CROSS-PROJECT-BLEED (H.8)** — MemoryRecordModel project_id isolation + migration 030. | evidence: 32 tests pass, commit ac698bec
+- [x] **HumanTodo push notifications** — NotificationDispatcher with Slack/stdout/webhook backends. | evidence: commit ac698bec
+- [x] **gludd_make ansible module + MakeRunner CLI+daemon** — module created, molecule test, CLI subcommand + daemon route. | evidence: commit ac698bec

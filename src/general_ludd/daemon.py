@@ -99,6 +99,26 @@ from general_ludd.writer import WriterProcess
 
 logger = ProjectLogAdapter(logging.getLogger(__name__))
 
+_STARTUP_UNSET: object = object()
+"""Sentinel for app.state fields that are None at construction time and populated
+during _lifespan.  Distinct from None so 'intentionally None' is not conflated
+with 'not yet initialized'."""
+
+
+def _get_app_adaptive_router(app: FastAPI) -> Any:
+    """Return ``app.state._adaptive_router``, logging a WARNING if unset.
+
+    The sentinel :data:`_STARTUP_UNSET` distinguishes 'never set' (startup not
+    complete) from 'intentionally None' (the adaptive router is disabled).
+    """
+    val = getattr(app.state, "_adaptive_router", _STARTUP_UNSET)
+    if val is _STARTUP_UNSET:
+        logger.warning(
+            "_adaptive_router accessed before initialization on app.state"
+        )
+        return None
+    return val
+
 
 def _compaction_config_dict(uc: Any) -> dict[str, Any]:
     """Serialize the ``UserConfig.compaction`` block to a plain dict (#56).
@@ -898,6 +918,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         db_config: dict[str, Any] = {}
         uc = startup_config.get("user_config")
         bc = _parse_budget_config(uc)
+        if uc and hasattr(uc, "network"):
+            net = uc.network
+            if net.host in ("0.0.0.0", "::"):
+                logger.warning(
+                    "Network host is set to %r — daemon is binding to all interfaces. "
+                    "Set to 127.0.0.1 for loopback-only. Restrict further with "
+                    "network.allowed_cidr.",
+                    net.host,
+                )
+            app.state._allowed_cidr = list(net.allowed_cidr) if net.allowed_cidr else []
+            app.state._network_host = net.host
+            app.state._network_port = net.port
         if uc and hasattr(uc, "database"):
             db_config = uc.database or {}
         _db_override: str | None = getattr(app.state, "_db_path_override", None)
@@ -2330,7 +2362,13 @@ def _get_or_create_extended_subsystems(
     if session_factory is not None and (
         not hasattr(app.state, "_adaptive_router")
         or app.state._adaptive_router is None
+        or app.state._adaptive_router is _STARTUP_UNSET
     ):
+        if app.state._adaptive_router is _STARTUP_UNSET:
+            logger.warning(
+                "_adaptive_router was still _STARTUP_UNSET during "
+                "_get_or_create_extended_subsystems; constructing now"
+            )
         benchmark_repo = BenchmarkRepository(session_factory=session_factory)
         quantization_map: dict[str, tuple[str, float]] = {}
         tracker = getattr(app.state, "_quantization_tracker", None)
@@ -2443,12 +2481,15 @@ def create_daemon_app(
     app.state._utilization_tracker = None
     app.state._model_registry = None
     app.state._skill_registry = None
-    app.state._adaptive_router = None
+    app.state._adaptive_router = _STARTUP_UNSET
     app.state._deployment_health_router = None
     app.state._execution_engine = None
     app.state._self_update_audit_sink = None
     app.state._compaction_compactor = None
     app.state._compaction_metrics = None
+    app.state._allowed_cidr: list[str] = []
+    app.state._network_host = "127.0.0.1"
+    app.state._network_port = 8000
     app.state._startup_config = load_startup_config(config_dir)
     app.state._project_gludd_dir = app.state._startup_config.get("project_gludd_dir")
     app.state._model_performance_router = None
@@ -2611,6 +2652,27 @@ def create_daemon_app(
         metrics.histogram_observe("gludd_http_request_duration_seconds", elapsed, {"status": status})
         metrics.counter_inc("gludd_http_responses_total", {"status": status})
         return response
+
+    @app.middleware("http")
+    async def cidr_middleware(request: Any, call_next: Any) -> Any:
+        cidrs: list[str] = getattr(app.state, "_allowed_cidr", None) or []
+        if cidrs:
+            client_host = getattr(request.client, "host", None) if request.client else None
+            if client_host is not None:
+                import ipaddress as _ipaddress
+                client_ip = _ipaddress.ip_address(client_host)
+                allowed = any(
+                    client_ip in _ipaddress.ip_network(cidr, strict=False)
+                    for cidr in cidrs
+                )
+                if not allowed:
+                    from fastapi.responses import JSONResponse
+                    logger.warning("CIDR deny: %s not in allowed_cidr=%s", client_host, cidrs)
+                    return JSONResponse(
+                        status_code=403,
+                        content={"error": "forbidden", "reason": "client IP not in allowed_cidr"},
+                    )
+        return await call_next(request)
 
     if log_level == "debug":
         logging.getLogger("httpx").setLevel(logging.DEBUG)
