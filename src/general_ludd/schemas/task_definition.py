@@ -11,6 +11,8 @@ from general_ludd.schemas.todo import (
 
 
 class TaskDefinition(BaseModel):
+    _MAX_PRIORITY: int = 1000
+
     name: str
     description: str = ""
     target_agent: str = "build"
@@ -27,6 +29,15 @@ class TaskDefinition(BaseModel):
     resource_profile: str = "low_resource"
     risk_level: str = "low"
     vars: dict[str, object] = {}
+
+    @field_validator("priority")
+    @classmethod
+    def _priority_range(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("priority must be non-negative")
+        if v > cls._MAX_PRIORITY:
+            raise ValueError(f"priority must not exceed {cls._MAX_PRIORITY}")
+        return v
 
     @field_validator("name", mode="before")
     @classmethod

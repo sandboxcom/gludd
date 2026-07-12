@@ -79,6 +79,8 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.COMPLETE: set(),
 }
 
+_MAX_PRIORITY: int = 1000
+
 
 # Fields that callers are permitted to set via TodoRepository.create().
 # Excludes auto-managed columns (id, version, created_at, updated_at) to
@@ -227,6 +229,8 @@ class TodoRepository:
                 f"supplied by callers: {sorted(bad_fields)}"
             )
         for key, value in todo_data.items():
+            if key == "priority" and isinstance(value, int) and value > _MAX_PRIORITY:
+                todo_data[key] = _MAX_PRIORITY
             if isinstance(value, str) and len(value.encode()) > cls._MAX_TEXT_BYTES:
                 raise ValueError(
                     f"create() rejected: field '{key}' exceeds the "
@@ -253,6 +257,14 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_by_ids(self, todo_ids: list[str], project_id: str | None = None) -> dict[str, TodoModel]:
+        _pid = self._resolve_pid(project_id)
+        stmt = select(TodoModel).where(TodoModel.todo_id.in_(todo_ids))
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
+        result = await self._session.execute(stmt)
+        return {t.todo_id: t for t in result.scalars().all()}
 
     @classmethod
     def _validate_update_fields(cls, updates: dict[str, Any]) -> None:
@@ -1117,35 +1129,8 @@ class PromptProfileRepository:
     async def list_for_task_type(self, task_type: str) -> list[PromptProfileModel]:
         import json as _json
 
-        from sqlalchemy import or_
-
-        # SQLite LIKE prefilter narrows the scan to rows the Python backstop below
-        # could possibly accept, while never dropping one it would (no false
-        # negatives). Accepted shapes:
-        #   - "[]"                       -> empty list, "match all"
-        #   - '...."<task_type>"....'    -> textually contains the quoted token
-        #   - rows whose value is not a well-formed JSON array (does not start
-        #     with '[' or does not end with ']') -> json.loads will raise and the
-        #     backstop treats them as empty ("match all"), so they must survive.
-        # LIKE wildcards in task_type are escaped so e.g. "a%b" matches literally.
-        # The json.loads pass is the correctness backstop against LIKE false
-        # positives (e.g. "foo" appearing inside "foobar").
-        escaped = (
-            task_type.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        )
-        col = PromptProfileModel.task_types
         stmt = (
             select(PromptProfileModel)
-            .where(
-                or_(
-                    col.is_(None),
-                    col.like("[]"),
-                    col.like(f'%"{escaped}"%', escape="\\"),
-                    col.notlike("[%"),
-                    col.notlike("%]"),
-                )
-            )
-            # P12: defensive cap (dead API path).
             .limit(_DEFAULT_LIST_LIMIT)
         )
         result = await self._session.execute(stmt)
@@ -1156,7 +1141,6 @@ class PromptProfileRepository:
                 types = _json.loads(row.task_types or "[]")
             except Exception:
                 types = []
-            # Empty list means "match all task types"
             if not types or task_type in types:
                 out.append(row)
         return out

@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+_MAX_PRIORITY: int = 1000
+
 
 class TodoStatus(enum.StrEnum):
     BACKLOG = "backlog"
@@ -111,6 +113,8 @@ def validate_transition(current: TodoStatus, target: TodoStatus) -> bool:
 
 
 class Todo(BaseModel):
+    _MAX_PRIORITY: int = 1000
+
     todo_id: str = Field(default_factory=lambda: f"TODO-{uuid4().hex[:8].upper()}")
     title: str
     description: str = ""
@@ -181,9 +185,11 @@ class Todo(BaseModel):
 
     @field_validator("priority")
     @classmethod
-    def _priority_non_negative(cls, v: int) -> int:
+    def _priority_range(cls, v: int) -> int:
         if v < 0:
             raise ValueError("priority must be non-negative")
+        if v > cls._MAX_PRIORITY:
+            raise ValueError(f"priority must not exceed {cls._MAX_PRIORITY}")
         return v
 
     @field_validator("version")

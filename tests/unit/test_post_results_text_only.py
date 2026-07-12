@@ -310,3 +310,79 @@ class TestInteractionWithExistingBlocks:
             "The hasLocalWork text-only block must still be present — "
             "new checks add to, not replace, existing guardrails."
         )
+
+
+class TestWaveCompletionDetection:
+    """Wave-completion detection: ≥3 result markers in one turn = lastTurnHadWave."""
+
+    def test_wave_result_threshold_defined(self):
+        src = _src()
+        assert "WAVE_RESULT_THRESHOLD" in src, (
+            "WAVE_RESULT_THRESHOLD must be defined — the threshold (≥3) at "
+            "which a batch of subagent results counts as a 'wave'."
+        )
+
+    def test_wave_threshold_equals_3(self):
+        src = _src()
+        m = re.search(r"WAVE_RESULT_THRESHOLD\s*=\s*(\d+)", src)
+        assert m, "WAVE_RESULT_THRESHOLD not found"
+        val = int(m.group(1))
+        assert val == 3, (
+            f"WAVE_RESULT_THRESHOLD must be 3 (≥3 result markers = a wave), "
+            f"got {val}. The incident was 7 subagent results landing at once."
+        )
+
+    def test_last_turn_had_wave_in_post_results_state(self):
+        src = _src()
+        assert "lastTurnHadWave" in src, (
+            "PostResultsState must include lastTurnHadWave: boolean — "
+            "tracks whether the previous turn had a full wave of results."
+        )
+
+    def test_wave_check_in_post_results_block(self):
+        src = _src()
+        assert re.search(
+            r"postResultsState\.lastTurnHadWave\s*\)",
+            src,
+        ), (
+            "The post-results text-only block must check lastTurnHadWave — "
+            "both single results AND waves should trigger the block."
+        )
+
+    def test_last_result_count_in_state(self):
+        src = _src()
+        assert "lastResultCount" in src, (
+            "PostResultsState must include lastResultCount: number — "
+            "stores how many result markers were found for auditing."
+        )
+
+    def test_result_count_checked_against_wave_threshold(self):
+        src = _src()
+        assert re.search(
+            r"resultCheck\.count\s*>=\s*WAVE_RESULT_THRESHOLD",
+            src,
+        ), (
+            "The post-results state update must compare resultCheck.count against "
+            "WAVE_RESULT_THRESHOLD to set lastTurnHadWave."
+        )
+
+    def test_text_has_result_markers_returns_count(self):
+        src = _src()
+        m = re.search(
+            r"function\s+textHasResultMarkers[\s\S]{0,100}?\{",
+            src,
+        )
+        assert m, "textHasResultMarkers function not found"
+        body = src[m.start():m.end() + 400]
+        assert "count" in body, (
+            "textHasResultMarkers must return { found, count } — "
+            "the count is needed to determine wave completion."
+        )
+
+    def test_wave_block_message_mentions_wave(self):
+        src = _src()
+        if "lastTurnHadWave" in src:
+            assert "wave" in src.lower(), (
+                "The post-results block message must mention 'wave' "
+                "when lastTurnHadWave is checked."
+            )

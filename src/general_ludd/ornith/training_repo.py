@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.models import OrnithTrainingPairModel
+from general_ludd.ornith.sandbox import confine_export_path
 
 #: Mapping from outcome_status to RL reward. ``pending`` pairs are skipped
 #: on export (no signal yet). Values follow the spec: clearly correct
@@ -217,11 +218,8 @@ class OrnithTrainingRepo:
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
 
-        if out_path is None:
-            out_path = (
-                Path(".") / f"ornith-dataset-{int(datetime.now(UTC).timestamp())}.jsonl"
-            )
-        out = Path(out_path)
+        default_name = f"ornith-dataset-{int(datetime.now(UTC).timestamp())}.jsonl"
+        out = confine_export_path(out_path, default_name)
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("w", encoding="utf-8") as fh:
             for row in rows:

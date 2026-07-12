@@ -73,11 +73,14 @@ def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | Non
     return getattr(app.state, "_session_factory", None)
 
 
+_MAX_PRIORITY: int = 1000
+
+
 def _coerce_priority(raw: object) -> int:
     if isinstance(raw, bool):  # bool is an int subclass; treat as unset
         return _PRIORITY_MAP["medium"]
     if isinstance(raw, int):
-        return raw
+        return min(raw, _MAX_PRIORITY)
     return _PRIORITY_MAP.get(str(raw).lower(), _PRIORITY_MAP["medium"])
 
 

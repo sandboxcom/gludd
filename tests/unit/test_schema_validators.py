@@ -86,6 +86,18 @@ class TestTodoValidators:
         with pytest.raises(ValidationError):
             Todo(title="x", priority=-1)
 
+    def test_priority_upper_bound(self):
+        with pytest.raises(ValidationError):
+            Todo(title="x", priority=1001)
+
+    def test_priority_upper_bound_accepts_boundary(self):
+        todo = Todo(title="x", priority=1000)
+        assert todo.priority == 1000
+
+    def test_priority_upper_bound_accepts_within_range(self):
+        todo = Todo(title="x", priority=500)
+        assert todo.priority == 500
+
     def test_version_minimum_one(self):
         with pytest.raises(ValidationError):
             Todo(title="x", version=0)

@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased] — since beta.3 (2026-07-12)
 
+### Documentation
+- **Collection split documentation** — FQCN references updated across all docs to reflect domain-based collection split: security roles moved from `general_ludd.agent.*` to `general_ludd.security.*`. README restructured with 4 collection sub-sections (`agent`, `security`, `business`, `networking`).
+- **SSL Certificate Management System** — comprehensive reference doc covering architecture, Ansible roles (`ssl_cert`, `hsm_operations`), Python module APIs (`certificate.py`, `asn1.py`, `algorithms.py`, `hsm.py`, `compliance.py`, `pin.py`), 6-standard compliance matrix, and security considerations. `docs/SSL_CERT_SYSTEM.md`.
+- **Security Roles reference** — `docs/SECURITY_ROLES.md`: overview of all 6 security roles (`ssl_cert`, `hsm_operations`, `audit_framework`, `sql_injection`, `command_injection`, `prompt_injection`), interoperability matrix, SearX integration for framework updates, tool awareness matrix, and sample audit flow for web app security assessment.
+- **Networking System** — `docs/NETWORKING_SYSTEM.md`: 7-mode networking role (`general_ludd.networking.networking`), ScapyAdapter Python API, Wireshark Lua dissector templates, tool awareness matrix (tshark, nmap, tcpdump, zeek, hping3, etc.), and packet analysis + dissector creation workflow examples.
+- **Business Research System** — `docs/BUSINESS_RESEARCH_SYSTEM.md`: entity research role (`general_ludd.business.entity_research`), 6 research capabilities (discovery, associations, assets, exposure, risks, demographics), SearX continuous monitoring, and entity graph visualization via DOT export.
+
 ### Security Hardening (Phase H)
 - **H.7** — Project overlay deny-list: field-level blocklist prevents untrusted project config from overriding critical fields (connectors, database.url, budget, issues, self_improve gates). 70 tests.
 - **H.15** — MCP startup orphan cleanup: partial multi-server MCP startup failure now cleans up already-spawned subprocesses instead of orphaning them. 10 tests.

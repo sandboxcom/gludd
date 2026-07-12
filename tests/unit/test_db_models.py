@@ -640,7 +640,7 @@ class TestAgentMessageRepositoryUnreadCounts:
 
 
 class TestPromptProfileRepositoryListForTaskType:
-    """P10: SQLite LIKE prefilter + json.loads backstop."""
+    """P10: json.loads membership filter (no LIKE prefilter)."""
 
     @staticmethod
     async def _add(session: AsyncSession, name: str, task_types: str) -> None:
@@ -677,9 +677,6 @@ class TestPromptProfileRepositoryListForTaskType:
     async def test_substring_false_positive_guarded(
         self, async_session: AsyncSession
     ):
-        # "foo" must NOT match a profile that only lists "foobar": the LIKE
-        # prefilter may admit it (textual substring), but the json.loads
-        # backstop performs an exact-element match and drops it.
         await self._add(async_session, "p_foobar", '["foobar"]')
         await self._add(async_session, "p_foo", '["foo"]')
         await async_session.flush()
@@ -688,11 +685,18 @@ class TestPromptProfileRepositoryListForTaskType:
         assert "p_foo" in names
         assert "p_foobar" not in names
 
+    async def test_json_escaped_quotes_in_task_type(
+        self, async_session: AsyncSession
+    ):
+        await self._add(async_session, "p_quoted", '["has\\"quote"]')
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type('has"quote')}
+        assert "p_quoted" in names
+
     async def test_malformed_json_backstop_matches_all(
         self, async_session: AsyncSession
     ):
-        # Malformed JSON -> json.loads raises -> treated as empty ("match all").
-        # The row must survive the LIKE prefilter to reach the backstop.
         await self._add(async_session, "p_bad", "{not json")
         await async_session.flush()
         repo = PromptProfileRepository(async_session)
