@@ -1,15 +1,8 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { spawn } from "node:child_process"
 import * as fs from "node:fs"
 
-let watchdogPid: number | null = null
-
-// Env-overridable so pytest-xdist tests redirect it to a per-test tmp file
-// (GLUDD_WATCHDOG_PID_FILE). The literal /tmp fallback is preserved for prod
-// and for structural tests that assert the path string is present. Sharing the
-// hardcoded path across xdist workers flaked CI (unit-2 FileNotFoundError when a
-// sibling worker's fixture _restore() unlinked it mid-read).
-const PID_FILE = process.env.GLUDD_WATCHDOG_PID_FILE || "/tmp/gludd-watchdog.pid"
+const PID_FILE = process.env.GLUDD_WATCHDOG_PID_FILE || ".gate-logs/watchdog.pid"
+const TASK_PID_FILE = ".gate-logs/task-watchdog.pid"
 
 function _reportAlive(): void {
   try {
@@ -25,35 +18,26 @@ export default (async ({ $ }) => {
     event: async ({ event }: { event: { type: string } }) => {
       _reportAlive()
       if (event.type === "session.created") {
+        try { await $`make watchdog-auto` } catch {}
+        // make watchdog-auto writes PID to /tmp/gludd-watchdog.pid (literal);
+        // sync to PID_FILE when redirected (test-mode isolation)
+        const literalPid = "/tmp/gludd-watchdog.pid"
         try {
-          // Kill any existing watchdog first
-          try { const oldPid = fs.readFileSync(PID_FILE, "utf8").trim(); process.kill(parseInt(oldPid)) } catch {}
-          // Start new watchdog
-          const child = spawn("python3", ["scripts/agent_watchdog.py"], {
-            cwd: process.cwd(),
-            detached: true,
-            stdio: ["ignore", fs.openSync("/tmp/gludd-watchdog.log", "a"), fs.openSync("/tmp/gludd-watchdog.log", "a")]
-          })
-          watchdogPid = child.pid
-          fs.writeFileSync(PID_FILE, String(child.pid))
-          child.unref()
-        } catch (e) {
-          // fail open — watchdog is optional
-        }
+          if (fs.existsSync(literalPid)) {
+            fs.writeFileSync(PID_FILE, fs.readFileSync(literalPid, "utf8").trim())
+          }
+        } catch {}
       }
       if (event.type === "server.connected") {
-        // Ensure watchdog is running on server connect too
-        try {
-          const result = await $`python3 scripts/agent_watchdog.py --once 2>/dev/null || true`
-        } catch {}
+        try { await $`make watchdog-auto` } catch {}
       }
       if (event.type === "session.deleted") {
         try {
-          const pidFile = PID_FILE
-          if (fs.existsSync(pidFile)) {
-            const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim())
-            process.kill(pid, "SIGTERM")
-            fs.unlinkSync(pidFile)
+          for (const pf of [PID_FILE, TASK_PID_FILE]) {
+            if (fs.existsSync(pf)) {
+              try { process.kill(parseInt(fs.readFileSync(pf, "utf8").trim()), "SIGTERM") } catch {}
+              try { fs.unlinkSync(pf) } catch {}
+            }
           }
         } catch {}
       }
