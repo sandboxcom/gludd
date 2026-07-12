@@ -8,6 +8,7 @@ from general_ludd.security.auth import (
 )
 from general_ludd.security.sanitize import (
     is_path_within,
+    sanitize_error_message,
     sanitize_job_id,
     sanitize_path,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "is_path_within",
     "is_safe_fetch_url",
     "require_auth_env",
+    "sanitize_error_message",
     "sanitize_job_id",
     "sanitize_path",
     "verify_psk",

@@ -12,6 +12,7 @@ import tenacity
 from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
+from general_ludd.security.sanitize import sanitize_error_message
 from general_ludd.models.failover import ModelFailoverChain
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
@@ -934,7 +935,7 @@ class ModelGateway:
                         success=False,
                         cost_per_input_token=profile.cost_per_input_token,
                         cost_per_output_token=profile.cost_per_output_token,
-                        error=str(exc),
+                        error=sanitize_error_message(str(exc)),
                     )
                 except Exception:  # pragma: no cover - metrics must never break the call
                     logger.debug(
@@ -1388,7 +1389,7 @@ class ModelGateway:
             # the primary's own exhaustion reason ahead of every fallback hop
             # attempts already recorded, then enrich the exception's message
             # in place (type is preserved) so it names every provider tried.
-            primary_reason = str(_last_exc[0]) if _last_exc[0] is not None else "unknown"
+            primary_reason = sanitize_error_message(str(_last_exc[0])) if _last_exc[0] is not None else "unknown"
             full_attempts = [
                 {"profile_id": profile_id, "reason": primary_reason},
                 *attempts,

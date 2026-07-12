@@ -80,22 +80,32 @@ class LocalAgentMemory:
         self._cache: diskcache.Cache = diskcache.Cache(path)
         self._index_prefix = "idx"
 
-    def _data_key(self, agent_id: str, key: str, namespace: str) -> str:
-        return f"{namespace}:{agent_id}:{key}"
+    @staticmethod
+    def _project_key(project_id: str | None) -> str:
+        return project_id or "__global__"
 
-    def _index_key(self, agent_id: str, namespace: str) -> str:
-        return f"{self._index_prefix}:{namespace}:{agent_id}"
+    def _data_key(self, agent_id: str, key: str, namespace: str, project_id: str | None = None) -> str:
+        pk = self._project_key(project_id)
+        return f"{namespace}:{pk}:{agent_id}:{key}"
+
+    def _index_key(self, agent_id: str, namespace: str, project_id: str | None = None) -> str:
+        pk = self._project_key(project_id)
+        return f"{self._index_prefix}:{namespace}:{pk}:{agent_id}"
+
+    def _index_prefix_key(self, namespace: str, project_id: str | None = None) -> str:
+        pk = self._project_key(project_id)
+        return f"{self._index_prefix}:{namespace}:{pk}"
 
     async def get(
-        self, agent_id: str, key: str, namespace: str = "default"
+        self, agent_id: str, key: str, namespace: str = "default", project_id: str | None = None,
     ) -> MemoryRecord | None:
-        cache_key = self._data_key(agent_id, key, namespace)
+        cache_key = self._data_key(agent_id, key, namespace, project_id)
         data = self._cache.get(cache_key, default=None)
         if data is None:
             return None
         record = MemoryRecord.from_dict(data)
         if self._is_expired(record):
-            await self.delete(agent_id, key, namespace)
+            await self.delete(agent_id, key, namespace, project_id)
             return None
         return record
 
@@ -105,6 +115,7 @@ class LocalAgentMemory:
         key: str,
         value: str,
         namespace: str = "default",
+        project_id: str | None = None,
         ttl_seconds: int | None = None,
     ) -> MemoryRecord:
         now = time.time()
@@ -113,12 +124,13 @@ class LocalAgentMemory:
             key=key,
             value=value,
             namespace=namespace,
+            project_id=project_id,
             ttl_seconds=ttl_seconds,
             created_at=now,
             updated_at=now,
         )
-        cache_key = self._data_key(agent_id, key, namespace)
-        idx_key = self._index_key(agent_id, namespace)
+        cache_key = self._data_key(agent_id, key, namespace, project_id)
+        idx_key = self._index_key(agent_id, namespace, project_id)
         expire = (now + ttl_seconds) if ttl_seconds else None
         self._cache.set(cache_key, record.as_dict(), expire=expire)
         keys = self._cache.get(idx_key, default=set())
@@ -129,10 +141,10 @@ class LocalAgentMemory:
         return record
 
     async def delete(
-        self, agent_id: str, key: str, namespace: str = "default"
+        self, agent_id: str, key: str, namespace: str = "default", project_id: str | None = None,
     ) -> bool:
-        cache_key = self._data_key(agent_id, key, namespace)
-        idx_key = self._index_key(agent_id, namespace)
+        cache_key = self._data_key(agent_id, key, namespace, project_id)
+        idx_key = self._index_key(agent_id, namespace, project_id)
         existed = cache_key in self._cache
         self._cache.delete(cache_key)
         keys = self._cache.get(idx_key, default=set())
@@ -149,15 +161,16 @@ class LocalAgentMemory:
         self,
         agent_id: str,
         namespace: str = "default",
+        project_id: str | None = None,
         limit: int = 100,
     ) -> list[MemoryRecord]:
-        idx_key = self._index_key(agent_id, namespace)
+        idx_key = self._index_key(agent_id, namespace, project_id)
         keys: set[str] = self._cache.get(idx_key, default=set())
         if not isinstance(keys, set):
             keys = set()
         results: list[MemoryRecord] = []
         for key in sorted(keys):
-            record = await self.get(agent_id, key, namespace)
+            record = await self.get(agent_id, key, namespace, project_id)
             if record is not None:
                 results.append(record)
             if len(results) >= limit:
@@ -179,7 +192,7 @@ class LocalAgentMemory:
                 continue
             record = MemoryRecord.from_dict(data)
             if self._is_expired(record):
-                await self.delete(record.agent_id, record.key, record.namespace)
+                await self.delete(record.agent_id, record.key, record.namespace, record.project_id)
                 purged += 1
         return purged
 
