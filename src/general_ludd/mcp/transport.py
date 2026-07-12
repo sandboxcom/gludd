@@ -37,6 +37,14 @@ _UVX_FAMILY_LAUNCHERS = frozenset({"uvx"})
 # All launchers that need package-spec injection validation.
 _REMOTE_FETCH_LAUNCHERS = _NPM_FAMILY_LAUNCHERS | _UVX_FAMILY_LAUNCHERS
 
+# Version-pin spec: package name followed by ==VERSION or @VERSION.
+# Bare names, ranges (>=, <=, ~=), and globs (==1.*, ==2.*) are rejected.
+_UVX_VERSION_PINNED_RE = re.compile(r"^[^<>=!~*]+(?:==[\w.+\-]+|@[\w.+\-]+)$")
+
+
+def _is_uvx_version_pinned_spec(spec: str) -> bool:
+    return bool(_UVX_VERSION_PINNED_RE.match(spec))
+
 # Shell metacharacters that must never appear in a package spec or binary name
 # passed to a remote-fetch launcher. These would be harmless in exec()-land
 # (no shell expansion), but their presence strongly suggests an injection

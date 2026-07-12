@@ -167,6 +167,7 @@ class TerraformGenerator:
             ComputeProvider.DIGITAL_OCEAN: self._generate_generic,
             ComputeProvider.ORACLE: self._generate_generic,
             ComputeProvider.VMWARE: self._generate_vsphere,
+            ComputeProvider.KUBERNETES: self._generate_kubernetes,
         }
         handler = dispatch.get(config.provider, self._generate_generic)
         return handler(config)
@@ -604,7 +605,7 @@ class TerraformGenerator:
             }}
         """)
 
-    def _generate_vsphere(self, config: ComputeConfig) -> str:
+    def _generate_vsphere(self, config: ComputeConfig, **kwargs: str) -> str:
         # Lazy-import pyvmomi so it is NOT a hard top-level dependency; the
         # vSphere provider only needs the SDK for direct vAPI calls (inventory
         # discovery, customization spec validation), which Terraform itself
@@ -627,10 +628,10 @@ class TerraformGenerator:
 
         image = _container_image(config)
         user_data = _user_data_script(config)
-        datacenter = "DC0"
-        cluster = "Cluster0"
-        datastore = "datastore0"
-        network = "VM Network"
+        datacenter = kwargs.get("datacenter", "DC0")
+        cluster = kwargs.get("cluster", "Cluster0")
+        datastore = kwargs.get("datastore", "datastore0")
+        network = kwargs.get("network", "VM Network")
 
         return textwrap.dedent(f"""\
             terraform {{
@@ -678,5 +679,42 @@ class TerraformGenerator:
 
             output "endpoint_url" {{
               value = module.vllm_server.endpoint_url
+            }}
+        """)
+
+    def _generate_kubernetes(self, config: ComputeConfig) -> str:
+        image = _container_image(config)
+        engine = escape_tfvar_value(config.engine.value)
+        model_name = escape_tfvar_value(config.model_name)
+
+        return textwrap.dedent(f"""\
+            terraform {{
+              required_providers {{
+                kubernetes = {{
+                  source  = "hashicorp/kubernetes"
+                  version = "~> 2.30"
+                }}
+              }}
+            }}
+
+            provider "kubernetes" {{}}
+
+            module "inference_server" {{
+              source = "../../infra/terraform/modules/kubernetes-deploy"
+
+              image        = {escape_tfvar_value(image)}
+              model_name   = {model_name}
+              engine       = {engine}
+              gpu_count    = {config.gpu_count}
+              replicas     = 1
+              service_port = 8000
+            }}
+
+            output "instance_ip" {{
+              value = module.inference_server.service_endpoint
+            }}
+
+            output "endpoint_url" {{
+              value = "http://${{module.inference_server.service_endpoint}}/v1"
             }}
         """)

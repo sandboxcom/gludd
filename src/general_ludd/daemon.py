@@ -109,6 +109,24 @@ _STARTUP_UNSET: object = object()
 during _lifespan.  Distinct from None so 'intentionally None' is not conflated
 with 'not yet initialized'."""
 
+_PUBLIC_PATHS_FROZEN = frozenset({
+    "/healthz", "/readyz", "/api/status", "/api/todos", "/api/human-todos",
+    "/api/webmcp",
+    "/docs", "/openapi.json", "/redoc",
+})
+_RECEIVER_PREFIXES_FROZEN = ("/v1/", "/ingest/")
+_SAFE_METHODS_FROZEN = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def is_public_path(method: str, path: str) -> bool:
+    if path.startswith(_RECEIVER_PREFIXES_FROZEN):
+        return True
+    if method.upper() not in _SAFE_METHODS_FROZEN:
+        return False
+    if path in _PUBLIC_PATHS_FROZEN or path == "/docs" or path.startswith("/docs/"):
+        return True
+    return path.startswith("/render/")
+
 
 def _get_app_adaptive_router(app: FastAPI) -> Any:
     """Return ``app.state._adaptive_router``, logging a WARNING if unset.
@@ -1096,6 +1114,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from general_ludd.retrieval.searx_client import SearxNGClient
         app.state._searx_client = SearxNGClient()
 
+        from general_ludd.searx.install import ensure_searx_initialized, ensure_searx_installed
+        from general_ludd.searx.server import SearXServer
+        ensure_searx_installed()
+        ensure_searx_initialized()
+        searx_server = SearXServer()
+        searx_server.ensure_started()
+        app.state._searx_server = searx_server
+        logger.info("SearXNG server started on %s", searx_server.get_instance_url())
+
         from general_ludd.retrieval.research_index import ResearchIndex
         app.state._research_index = ResearchIndex()
 
@@ -1420,6 +1447,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         estimation_tracker = EstimationTracker()
         app.state._adversarial_detector = adversarial_detector
         app.state._estimation_tracker = estimation_tracker
+        daemon_state["_adversarial_detector"] = adversarial_detector
+        daemon_state["_estimation_tracker"] = estimation_tracker
         logger.info(
             "Wired adversarial detector (%d patterns) and estimation tracker",
             len(adversarial_detector.get_all_categories()),
@@ -1765,6 +1794,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state._deployment_manager = deployment_manager
 
+        service_discovery = None
+        if uc is not None and getattr(uc, "service_discovery_enabled", True):
+            from general_ludd.infra.service_catalog import DEFAULT_CATALOG_PATH
+            searx_url = getattr(uc, "service_discovery_searx_url", "http://localhost:8888")
+            catalog_path = getattr(uc, "service_discovery_catalog_path", DEFAULT_CATALOG_PATH)
+            from general_ludd.service_discovery.pipeline import ServiceDiscoveryPipeline
+            service_discovery = ServiceDiscoveryPipeline(
+                searx_url=searx_url,
+                catalog_path=catalog_path,
+            )
+            logger.info("ServiceDiscoveryPipeline wired: searx=%s catalog=%s", searx_url, catalog_path)
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -1853,6 +1894,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state, "_compaction_aggressiveness_controller", None
             ),
             credit_tracker=getattr(app.state, "_credit_tracker", None),
+            service_discovery=service_discovery,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -2276,6 +2318,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 _ornith_proc.kill()
                 with contextlib.suppress(Exception):
                     await _ornith_proc.wait()
+    _searx_srv = getattr(app.state, "_searx_server", None)
+    if _searx_srv is not None:
+        with contextlib.suppress(Exception):
+            _searx_srv.stop()
 
 
 def _build_sts_audit_logger(session_factory: Any) -> Any:

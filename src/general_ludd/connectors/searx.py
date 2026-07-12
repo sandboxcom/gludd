@@ -16,6 +16,7 @@ import contextlib
 import json as _json
 import logging
 from dataclasses import dataclass
+from typing import Protocol
 from urllib.parse import urljoin
 
 import httpx
@@ -29,7 +30,11 @@ _DEFAULT_TIMEOUT = 10.0
 _SEARX_SEARCH_PATH = "/search"
 _SEARX_HEALTH_PATH = "/"
 
-_searx_server: object | None = None
+_searx_server: _HasGetInstanceUrl | None = None
+
+
+class _HasGetInstanceUrl(Protocol):
+    def get_instance_url(self) -> str | None: ...
 
 
 def _get_local_searx_url() -> str | None:
@@ -96,7 +101,7 @@ def _extract_results(raw: object) -> list[SearXResult]:
 class SearXConnector:
     """HTTP client for a SearX metasearch engine instance."""
 
-    def __init__(self, config: dict[str, object], local_server: object | None = None) -> None:
+    def __init__(self, config: dict[str, object], local_server: _HasGetInstanceUrl | None = None) -> None:
         base_url: object = config.get("base_url")
 
         if (not base_url or base_url == "local") and local_server is not None:
@@ -124,7 +129,7 @@ class SearXConnector:
             )
 
         self.base_url = base_url
-        self.timeout = float(config.get("timeout", _DEFAULT_TIMEOUT))
+        self.timeout = float(config.get("timeout", _DEFAULT_TIMEOUT))  # type: ignore[arg-type]
         self.verify_ssl = bool(config.get("verify_ssl", True))
 
         logger.info(
@@ -135,7 +140,7 @@ class SearXConnector:
         )
 
     @classmethod
-    def from_local_server(cls, local_server: object) -> SearXConnector:
+    def from_local_server(cls, local_server: _HasGetInstanceUrl) -> SearXConnector:
         return cls({}, local_server=local_server)
 
     def _client(self) -> httpx.Client:
@@ -145,7 +150,7 @@ class SearXConnector:
             follow_redirects=False,
         )
 
-    def _get(self, path: str, params: dict[str, str] | None = None) -> tuple[int, object]:
+    def _get(self, path: str, params: dict[str, str | int] | None = None) -> tuple[int, object]:
         url = urljoin(self.base_url, path)
         try:
             with self._client() as client:
@@ -190,7 +195,7 @@ class SearXConnector:
             return []
         return _extract_results(body)
 
-    def health(self) -> dict:
+    def health(self) -> dict[str, object]:
         """Probe the SearX instance. Never raises — reports failure in the dict."""
         try:
             status, _body = self._get(_SEARX_HEALTH_PATH)

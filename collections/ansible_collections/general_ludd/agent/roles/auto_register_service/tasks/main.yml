@@ -1,0 +1,132 @@
+---
+# auto_register_service role — register a newly discovered cloud/AI service.
+#
+# Accepts a `service` dict with: name, url, api_docs_url, pricing_url,
+# description, kind.
+#
+# Flow:
+#   1. Validate required service fields.
+#   2. If api_docs_url is present: generate a minimal connector .py from
+#      the Jinja2 template at templates/connector.py.j2.
+#   3. If pricing_url is present: create a pricing source entry stub.
+#   4. Register the connector in the provider registry (extend
+#      _BUILTIN_PROVIDERS or append to a dynamic provider list).
+#   5. Optionally run make healthcheck to verify the new connector imports.
+
+- name: Validate required service fields
+  ansible.builtin.assert:
+    that:
+      - service.name is defined
+      - service.name | length > 0
+    fail_msg: "service.name is required and must not be empty"
+
+- name: Sanitize service name for module path
+  ansible.builtin.set_fact:
+    _svc_module_name: "{{ service.name | regex_replace('[^a-zA-Z0-9_]', '_') | lower }}"
+    _svc_class_name: "{{ service.name | regex_replace('[^a-zA-Z0-9_]', '_') | lower | regex_replace('(^|_)([a-z])', '\\1\\U\\2') }}Source"
+
+- name: Set default service kind
+  ansible.builtin.set_fact:
+    service: "{{ service | combine({'kind': service.get('kind', 'logs')}) }}"
+
+# ── Connector module generation ────────────────────────────────────────────
+
+- name: Generate connector module from template
+  ansible.builtin.template:
+    src: "{{ connector_template_dir }}/connector.py.j2"
+    dest: "{{ connector_output_dir }}/{{ _svc_module_name }}.py"
+    mode: "0644"
+  when: service.api_docs_url is defined and service.api_docs_url | length > 0
+
+- name: Record that connector was generated
+  ansible.builtin.set_fact:
+    _connector_generated: true
+  when: service.api_docs_url is defined and service.api_docs_url | length > 0
+
+# ── Pricing source entry ──────────────────────────────────────────────────
+
+- name: Detect existing pricing sources file
+  ansible.builtin.stat:
+    path: "{{ connector_output_dir }}/_pricing_sources.yml"
+  register: _pricing_file_stat
+
+- name: Create pricing sources file if not present
+  ansible.builtin.copy:
+    content: "# Auto-registered pricing sources\n"
+    dest: "{{ connector_output_dir }}/_pricing_sources.yml"
+    mode: "0644"
+  when:
+    - service.pricing_url is defined
+    - service.pricing_url | length > 0
+    - not _pricing_file_stat.stat.exists | default(false)
+
+- name: Append pricing source entry
+  ansible.builtin.lineinfile:
+    path: "{{ connector_output_dir }}/_pricing_sources.yml"
+    line: "{{ service.name }}: {{ service.pricing_url }}"
+    create: true
+    mode: "0644"
+  when:
+    - service.pricing_url is defined
+    - service.pricing_url | length > 0
+
+# ── Provider registry extension ───────────────────────────────────────────
+
+- name: Check if service already in builtin providers
+  ansible.builtin.shell: grep -q '{{ service.name }}' {{ provider_registry_path }}
+  register: _already_registered
+  failed_when: false
+  changed_when: false
+  when: register_in_registry | bool
+
+- name: Append provider entry to _BUILTIN_PROVIDERS
+  ansible.builtin.blockinfile:
+    path: "{{ provider_registry_path }}"
+    marker: "# {mark} AUTO-REGISTERED: {{ service.name }}"
+    block: |2
+          {
+              "provider": ComputeProvider.{{ service.name | upper | regex_replace('[^A-Z0-9]', '_') }},
+              "display_name": "{{ service.name }}",
+              "terraform_provider": "none (API-only)",
+              "supports_spot": false,
+              "sub_hour_billing": true,
+              "min_gpu": GPUType.T4,
+              "max_gpu": GPUType.A100_80,
+              "pricing": {},
+          },
+    insertafter: '_BUILTIN_PROVIDERS: list\[dict\[str, Any\]\] = \['
+  when:
+    - register_in_registry | bool
+    - _already_registered.rc | default(0) != 0
+
+# ── Healthcheck verification ──────────────────────────────────────────────
+
+- name: Run make healthcheck to verify connector imports
+  ansible.builtin.command: make healthcheck
+  args:
+    chdir: "{{ lookup('env', 'PWD') }}"
+  register: _healthcheck_result
+  changed_when: false
+  failed_when: false
+  when: run_healthcheck | bool
+
+- name: Report healthcheck result
+  ansible.builtin.debug:
+    msg: >-
+      healthcheck
+      {{ 'PASSED' if _healthcheck_result.rc | default(1) == 0 else 'FAILED (rc=' ~ _healthcheck_result.rc | default(1) ~ ')' }}
+      for auto-registered service {{ service.name }}
+  when: run_healthcheck | bool
+
+# ── Artifact output ───────────────────────────────────────────────────────
+
+- name: Emit registration summary
+  ansible.builtin.set_fact:
+    auto_register_result:
+      service: "{{ service.name }}"
+      module: "{{ _svc_module_name }}.py"
+      connector_generated: "{{ _connector_generated | default(false) }}"
+      pricing_registered: "{{ service.pricing_url is defined and service.pricing_url | length > 0 }}"
+      provider_registered: "{{ register_in_registry | bool and _already_registered.rc | default(0) != 0 }}"
+      healthcheck: >-
+        {{ 'PASSED' if _healthcheck_result.rc | default(1) == 0 else 'FAILED' if run_healthcheck | bool else 'SKIPPED' }}

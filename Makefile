@@ -69,10 +69,11 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     ci-view ci-rerun ci-trigger ci-active ci-job-log \
     search-coverage-agentconfig \
     git-index git-search git-stats \
-    searx-up searx-down searx-test \
+    searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
     disk-guard disk-check disk \
      install-bats test-install check-subagent-guards verify-plugin-manifest \
-    check-task-ledger
+    check-task-ledger \
+    test-service-discovery service-discover service-catalog
 
 help:
 	@echo "Usage: make [target]"
@@ -3507,3 +3508,25 @@ searx-test:
 		echo "SearXNG FAIL: HTTP $$code (is it running? try 'make searx-up')"; \
 		exit 1; \
 	fi
+
+searx-start:
+	@$(PYTHON) -m general_ludd.cli searx start
+
+searx-stop:
+	@$(PYTHON) -m general_ludd.cli searx stop
+
+searx-status:
+	@$(PYTHON) -m general_ludd.cli searx status
+
+searx-install:
+	@$(PYTHON) -c "from general_ludd.searx.install import ensure_searx_installed; ensure_searx_installed(); print('OK')"
+
+# --- Service Discovery ---
+test-service-discovery:
+	@$(UV) run python -m pytest tests/unit/test_searx_client.py tests/unit/test_service_catalog.py tests/unit/test_service_discovery_pipeline.py -v
+
+service-discover:
+	@$(UV) run python -m general_ludd.cli.service_commands discover
+
+service-catalog:
+	@$(UV) run python -m general_ludd.cli.service_commands catalog

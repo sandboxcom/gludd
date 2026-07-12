@@ -29,7 +29,6 @@ from general_ludd.controllers.compaction_aggressiveness import (
 )
 from general_ludd.controllers.floor import FloorController
 from general_ludd.controllers.load_scrape import LoadSnapshot
-from general_ludd.db.tenant import set_tenant as _set_tenant, reset_tenant as _reset_tenant
 from general_ludd.controllers.pid import LoadController
 from general_ludd.db.models import TaskDecisionModel
 from general_ludd.db.repository import (
@@ -39,6 +38,8 @@ from general_ludd.db.repository import (
     TodoRepository,
     VariableNamespaceRepository,
 )
+from general_ludd.db.tenant import reset_tenant as _reset_tenant
+from general_ludd.db.tenant import set_tenant as _set_tenant
 from general_ludd.event_loop.lease import reclaim_expired_leases
 from general_ludd.execution.graph_checkpointer import TickCheckpointer
 from general_ludd.execution.human_gate import HumanGate

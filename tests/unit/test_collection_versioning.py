@@ -416,4 +416,3 @@ class TestRunnerCollectionsEnv:
         adapter = AnsibleRunnerAdapter(project_root=proj)
         env = adapter._collections_env
         assert str(coll_root) in env["ANSIBLE_COLLECTIONS_PATH"]
-

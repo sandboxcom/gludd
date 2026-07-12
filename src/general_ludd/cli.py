@@ -196,6 +196,12 @@ COMMANDS
       results             Get final results for a completed test
         TESTFILE            Test file path (required)
 
+    searx               SearXNG meta-search engine commands
+      start               Start the local SearXNG server
+      stop                Stop the local SearXNG server
+      status              Check if SearXNG is running
+      config              Show/generate SearXNG configuration
+
     filestore           Filestore management commands
       list [PATH]         List filestore contents (default: /)
         --daemon-url URL    Daemon URL
@@ -901,6 +907,24 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_ornith_subparser(sub)
     ornith_parser = sub.choices["ornith"]
 
+    # `gludd searx` — SearXNG meta-search engine management.
+    searx_parser = sub.add_parser("searx", help="SearXNG meta-search engine commands")
+    searx_sub = searx_parser.add_subparsers(dest="searx_command")
+    searx_start = searx_sub.add_parser("start", help="Start the local SearXNG server")
+    searx_start.set_defaults(func=_cmd_searx)
+    searx_stop = searx_sub.add_parser("stop", help="Stop the local SearXNG server")
+    searx_stop.set_defaults(func=_cmd_searx)
+    searx_status = searx_sub.add_parser("status", help="Check if SearXNG is running")
+    searx_status.set_defaults(func=_cmd_searx)
+    searx_config = searx_sub.add_parser("config", help="Show/generate SearXNG configuration")
+    searx_config.set_defaults(func=_cmd_searx)
+
+    # `gludd service` — service discovery and catalog browsing.
+    from general_ludd.cli.service_commands import add_service_subparser
+
+    add_service_subparser(sub)
+    sub.choices["service"]
+
     # `gludd deploy-check` — static model-deployment misconfig detector.
     from general_ludd.cli_deploy_check import add_deploy_check_subparser
 
@@ -984,6 +1008,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "account": account_parser,
         "audit-plugins": audit_plugins_parser,
         "collection": collection_parser,
+        "searx": searx_parser,
         "test-bg": testbg_parser,
     }
 
@@ -1175,6 +1200,40 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
         f"role={role_arn}\nConfig written: {config_path}"
     )
     sys.exit(0)
+
+
+def _cmd_searx(args: argparse.Namespace) -> None:
+    from general_ludd.searx.config import SearXConfig
+    from general_ludd.searx.install import ensure_searx_initialized, ensure_searx_installed
+    from general_ludd.searx.server import SearXServer
+
+    cmd = getattr(args, "searx_command", None)
+    if cmd == "start":
+        ensure_searx_installed()
+        ensure_searx_initialized()
+        server = SearXServer()
+        if server.ensure_started():
+            print(f"SearXNG running at {server.get_instance_url()}")
+        else:
+            print("ERROR: SearXNG failed to start", file=sys.stderr)
+            sys.exit(1)
+    elif cmd == "stop":
+        server = SearXServer()
+        server.stop()
+        print("SearXNG stopped")
+    elif cmd == "status":
+        server = SearXServer(external_url=None)
+        if server.is_running():
+            print(f"SearXNG running at {server.get_instance_url()}")
+        else:
+            print("SearXNG not running")
+            sys.exit(1)
+    elif cmd == "config":
+        path = SearXConfig.generate()
+        print(f"Settings written to {path}")
+        import yaml
+        with open(path) as f:
+            print(yaml.safe_dump(yaml.safe_load(f), default_flow_style=False))
 
 
 def main() -> None:

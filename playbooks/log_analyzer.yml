@@ -1,0 +1,7 @@
+---
+- name: Analyse log files for errors and clusters
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: general_ludd.agent.log_analyzer

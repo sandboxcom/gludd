@@ -67,7 +67,9 @@ class TestPluginStructure:
     def test_exports_min_dispatch_constants(self):
         src = _plugin_source()
         assert "MIN_DISPATCHES" in src, "MIN_DISPATCHES export missing"
+        assert "MIN_DISPATCHES_PER_WAVE" in src, "MIN_DISPATCHES_PER_WAVE export missing"
         assert "MAX_ZERO_STREAK" in src, "MAX_ZERO_STREAK export missing"
+        assert "WAVE_HISTORY_SIZE" in src, "WAVE_HISTORY_SIZE export missing"
 
     def test_exports_deny_messages(self):
         src = _plugin_source()
@@ -442,12 +444,12 @@ class TestPerMessageEnforcement:
             "OPENCODE_SUBAGENT guard must be present in tool.execute.before"
         )
 
-    def test_per_message_threshold_is_7(self):
-        """The per-message enforcement must block when dispatch count is <7
-        (i.e., 0-6 dispatches in the current message)."""
+    def test_per_message_threshold_3_to_6(self):
+        """The per-message enforcement must block when 3-6 dispatches were sent
+        (1-2 get a warning instead, 0 is handled by enforce-stop.ts)."""
         src = _plugin_source()
-        assert "_state.thisMessageDispatches < 7" in src, (
-            "Per-message threshold must be <7 dispatches"
+        assert "_state.prevMessageDispatches > 2 && _state.prevMessageDispatches < 7" in src, (
+            "Per-message block must check prevMessageDispatches > 2 && < 7 (3-6 range)"
         )
 
     def test_per_message_time_heuristic_updates_on_every_tool(self):
@@ -462,4 +464,105 @@ class TestPerMessageEnforcement:
         src = _plugin_source()
         assert 'permissionDecision: "deny"' in src, (
             "Per-message check must return permissionDecision: deny"
+        )
+
+
+class TestMinDispatchesPerWave:
+    def test_default_is_3(self):
+        default = _extract_env_default(_plugin_source(), "GLUDD_MIN_DISPATCHES")
+        assert default == 3, f"MIN_DISPATCHES_PER_WAVE default should be 3, got {default}"
+
+    def test_env_var_gludd_min_dispatches(self):
+        src = _plugin_source()
+        assert "GLUDD_MIN_DISPATCHES" in src, (
+            "GLUDD_MIN_DISPATCHES env var must be referenced in source"
+        )
+
+    def test_export_const_present(self):
+        src = _plugin_source()
+        assert "MIN_DISPATCHES_PER_WAVE" in src, (
+            "MIN_DISPATCHES_PER_WAVE export missing"
+        )
+
+
+class TestWaveHistorySize:
+    def test_default_is_10(self):
+        src = _plugin_source()
+        m = re.search(r"WAVE_HISTORY_SIZE\s*=\s*(\d+)", src)
+        assert m, "WAVE_HISTORY_SIZE assignment not found"
+        assert int(m.group(1)) == 10, f"WAVE_HISTORY_SIZE should be 10, got {int(m.group(1))}"
+
+
+class TestWaveHistoryTracking:
+    def test_wave_history_in_state_interface(self):
+        src = _plugin_source()
+        assert "waveHistory: number[]" in src, (
+            "MultitaskState interface must include waveHistory field"
+        )
+
+    def test_wave_history_in_readstate_default(self):
+        src = _plugin_source()
+        assert "waveHistory: Array.isArray(raw.waveHistory)" in src, (
+            "readState() must extract waveHistory from raw state"
+        )
+
+    def test_wave_history_push_in_text_complete(self):
+        src = _plugin_source()
+        assert "_state.waveHistory.push(_state.prevMessageDispatches)" in src, (
+            "text.complete must push prevMessageDispatches to waveHistory"
+        )
+
+    def test_wave_history_size_cap(self):
+        src = _plugin_source()
+        assert "waveHistory.length > WAVE_HISTORY_SIZE" in src, (
+            "waveHistory must be capped at WAVE_HISTORY_SIZE"
+        )
+
+
+class TestOneTwoDispatchWarning:
+    def test_warning_for_exactly_1_dispatch(self):
+        src = _plugin_source()
+        assert "_state.prevMessageDispatches === 1" in src, (
+            "Warning must check for exactly 1 dispatch"
+        )
+
+    def test_warning_for_exactly_2_dispatch(self):
+        src = _plugin_source()
+        assert "_state.prevMessageDispatches === 2" in src, (
+            "Warning must check for exactly 2 dispatches"
+        )
+
+    def test_warning_checks_pending_work(self):
+        src = _plugin_source()
+        idx = src.find("prevMessageDispatches === 2")
+        assert idx > 0, "1-2 check location not found"
+        after = src[idx:idx + 300]
+        assert "hasPendingWork()" in after, (
+            "1-2 warning must gate on hasPendingWork()"
+        )
+
+    def test_warning_checks_in_flight_below_floor(self):
+        src = _plugin_source()
+        idx = src.find("prevMessageDispatches === 2")
+        assert idx > 0, "1-2 check location not found"
+        after = src[idx:idx + 300]
+        assert "MIN_DISPATCHES_PER_WAVE" in after, (
+            "1-2 warning must compare estimatedInFlight to MIN_DISPATCHES_PER_WAVE"
+        )
+
+    def test_warning_message_text(self):
+        src = _plugin_source()
+        assert "MULTITASK WARNING: only" in src, (
+            "Warning message must contain MULTITASK WARNING text"
+        )
+        assert "floor requires" in src, (
+            "Warning message must mention floor requirement"
+        )
+
+    def test_warning_is_not_a_block(self):
+        """The 1-2 warning is an injection, not a replacement block.
+        It should be a separate check, not inside the zero-streak or <7 blocks."""
+        src = _plugin_source()
+        assert "MULTITASK WARNING" in src, (
+            "MULTITASK WARNING message must exist for 1-2 dispatch waves"
         )

@@ -34,8 +34,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 ## Phase C — Security/Correctness (AGENTIC_IMPLEMENTATION_SPEC §3.3)
 
 - [x] C.1 — SSRF canonicalization: unify is_url_blocked/resolved_host_is_blocked/resolve_and_pin | priority: high | effort: medium | status: completed | evidence: resolve_and_pin canonical guard, 188 tests pass, lint clean
-- [ ] C.2 — Adversarial detector daemon-wiring + scan-file 400 fix | priority: high | effort: small | status: pending
-- [ ] C.3 — DB tenant scoping: ThreadPoolExecutor spawns sessions without tenant filter | priority: high | effort: medium | status: pending
+- [x] C.2 — Adversarial detector daemon-wiring + scan-file 400 fix | priority: high | effort: small | status: completed | evidence: 95 tests pass (test_adversarial_detector) + 17 pass (TestAdversarialEndpoints) + 11 pass (test_backlog_auditor), lint clean. detector added to daemon_state dict, scan_file symlink escape fixed (exclusive allowed_root confinement), backlog_auditor _real_file_reader path-confined.
+- [x] C.3 — DB tenant scoping: ThreadPoolExecutor spawns sessions without tenant filter | priority: high | effort: medium | status: completed | evidence: Wave 34
 - [ ] C.5 — Integrity store: HMAC canonical-JSON baseline, fail-closed on corrupt store | priority: medium | effort: medium | status: pending
 - [x] C.6 — Model gateway: strip caller kwargs base_url/api_key, default httpx timeout, redact resolved URL in errors | priority: medium | effort: small | status: completed | evidence: 17 tests pass (TestC6KwargsStripping, TestC6DefaultHttpxTimeout, TestC6UrlRedaction), _redact_url_in_exception in gateway.py
 - [ ] C.8 — Hot-reload/worker broadcast: snapshot→swap TOCTOU, unauthenticated worker registration leaks PSK, no concurrency guard, symlink bypass | priority: medium | effort: large | status: pending
@@ -59,7 +59,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] C.26 — Async/process-lifecycle residuals: production aiosqlite closed-loop guard, silent suppress on pipeline/MCP shutdown, Ornith PIPE drain, zombie reaping (3 sites), _langgraph_call_model silent None, _daemon_state global | priority: medium | effort: medium | status: pending
 - [x] C.27 — MCP-1: extend argv validation to python/node launchers (currently only npm-family/uvx) | priority: low | effort: small | status: completed | evidence: fc776d8f
 - [x] C.28 — Failover follow-ups: surface per-attempt exception context, bounded semaphore wait, transitive-cascade documentation, lock record_failover | priority: high | effort: medium | status: completed | evidence: 66 tests pass (51 adversarial + 15 concurrency), collection OK, lint clean. failover.py: added attempt counter, exception_type, timestamp to events; BoundedSemaphore(50, timeout 5s) prevents unbounded concurrent recording; mutex guards both read+write; transitive-cascade docstring. gateway.py: _record_failover passes exception_type from last_exc.
-- [ ] C.29 — LangGraph budget bypass: tool_auditor never invoked, no budget_guard, no adversarial_detector, no max_total_tokens cap | priority: high | effort: medium | status: pending
+- [x] C.29 — LangGraph budget bypass: tool_auditor never invoked, no budget_guard, no adversarial_detector, no max_total_tokens cap | priority: high | effort: medium | status: completed | evidence: Wave 34
 - [ ] C.30 — TodoModel.version wire-vs-remove: dead column vs CAS guard redundancy, pick one + concurrency test | priority: low | effort: small | status: pending
 
 ---
@@ -70,7 +70,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] D.2 — Wire run_project_gate into review/reconcile path for external projects | priority: high | effort: medium | status: completed | evidence: 24 tests pass, run_project_gate wired into review/reconcile path
 - [ ] D.3 — Generalize self-improve APPLY path to external projects (split SelfApply vs ExternalApply) | priority: high | effort: large | status: pending
 - [ ] D.4 — DAST driver + findings parser (ZAP-baseline wrapper + Finding model) | priority: medium | effort: medium | status: pending
-- [ ] D.5 — Compute discovery + auto-select (k8s dispatch, vSphere params, auto-select via get_cheapest_for_gpu) | priority: low | effort: large | status: pending
+- [x] D.5 — Compute discovery + auto-select (Slice 1 k8s dispatch ✅ + Slice 2 vSphere params ✅; Slice 3 auto-select ✅) | priority: low | effort: large | status: completed | evidence: Wave 34
 - [ ] D.6 — Wire OrchestrationPlanner (#54) or delete module + tests with rationale | priority: low | effort: small | status: pending
 - [ ] D.7.1 — Pause/resume: persist-before-mutate + lock-free is_paused + router ordering | priority: high | effort: medium | status: pending
 - [ ] D.7.2 — Pause/resume: construct + wire HibernationController with durable MAC key | priority: high | effort: medium | status: pending
@@ -105,7 +105,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] E.8 — Router HTTP layer thin: 9 routers touched only by generic registration smoke test, write endpoint-level tests | priority: medium | effort: large | status: completed | evidence: 202 endpoint-level tests across 9 routers
 - [ ] E.9 — Skip-smell cleanup: hook-liveness CI-skip sites, 74 stale pytest.skip stubs, 4 failover xfails, dogfood_todo_site stub | priority: medium | effort: large | status: pending
 - [ ] E.10 — Tick DB session pinned across dispatch gather: commit/close session BEFORE dispatch gather | priority: high | effort: medium | status: pending
-- [ ] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: pending
+- [x] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: completed | evidence: Wave 34
 - [ ] E.12 — Event-loop/repository perf batch: N+1 queries, missing composite index, full-table scans, per-lease N+1, no retention for task_returns/task_decisions | priority: low | effort: medium | status: pending
 - [x] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: completed | evidence: 10 tests pass (5 existing + 5 new), verified all nag texts guarded by OPENCODE_SUBAGENT
 
@@ -144,7 +144,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] H.9 — H-MCP-STOPALL-ORPHAN: one failing transport.stop() orphans every remaining MCP subprocess | priority: medium | effort: small | status: pending
 - [ ] H.10 — H-MCP-UVX-UNPINNED: uvx package specs exempt from version-pin requirement | priority: medium | effort: small | status: pending
 - [ ] H.11 — H-DENYLIST-DRIFT: three independent protected-path deny-lists disagree (applier.py, capability_lattice.py, apply.py) | priority: medium | effort: medium | status: pending
-- [ ] H.12 — H-TENANT-CLAIM-FALLBACK: unscoped cross-tenant claim_runnable fallback when no project selected | priority: medium | effort: small | status: pending
+- [x] H.12 — H-TENANT-CLAIM-FALLBACK: unscoped cross-tenant claim_runnable fallback when no project selected | priority: medium | effort: small | status: completed | evidence: Wave 34
 - [ ] H.13 — H-ORNITH-SANDBOX-GAPS: arbitrary file-write via export out_path + unsandboxed coding-agent subprocess | priority: medium | effort: medium | status: pending
 - [ ] H.14 — H-PRIORITY-UPPERBOUND: priority has no upper bound at schema/repository layer | priority: low | effort: small | status: pending
 - [x] H.15 — H-MCP-STARTUP-ORPHAN: partial multi-server MCP startup failure orphans already-spawned subprocesses | priority: high | effort: medium | status: completed | evidence: 10 tests pass, startup orphan cleanup on partial MCP failure
@@ -164,7 +164,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S.1 — POST-SHIP #3: registry seal + daemon default_registry swap (security-critical, partial cherry-pick) | priority: high | effort: small | status: completed | evidence: 13 tests pass, registry sealed + default_registry swapped atomically
 - [ ] S.2 — POST-SHIP #3: events/hooks.py no is_safe_fetch_url / follow_redirects=False (partial cherry-pick) | priority: high | effort: small | status: pending
 - [ ] S.3 — POST-SHIP #3: gateway.py call_model_with_fallback no health gate before _try_call_model + budget not threaded | priority: medium | effort: medium | status: pending
-- [ ] S.4 — POST-SHIP #3: daemon.py _is_public startswith("/docs") → /docs_evil bypass | priority: medium | effort: small | status: pending
+- [x] S.4 — POST-SHIP #3: daemon.py _is_public startswith("/docs") → /docs_evil bypass | priority: medium | effort: small | status: completed | evidence: Wave 34
 - [ ] S.5 — POST-SHIP #4: db/repository.py details=NULL on NOT NULL col (D1/CA-DB1) | priority: medium | effort: small | status: pending
 - [ ] S.6 — POST-SHIP #4: db/repository.py task_type .contains substring false-positives (D2/CA-DB2) | priority: medium | effort: small | status: pending
 - [x] S.7 — POST-SHIP #4: agents/dispatcher.py get_semaphore check-and-set not atomic (D3/CA-Dispatcher) | priority: medium | effort: small | status: completed | evidence: async with self._lock at dispatcher.py:104 protects check-and-set; 9 tests pass (test_dispatcher_semaphore.py), lint clean
@@ -319,3 +319,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] **H-MEMORY-CROSS-PROJECT-BLEED (H.8)** — MemoryRecordModel project_id isolation + migration 030. | evidence: 32 tests pass, commit ac698bec
 - [x] **HumanTodo push notifications** — NotificationDispatcher with Slack/stdout/webhook backends. | evidence: commit ac698bec
 - [x] **gludd_make ansible module + MakeRunner CLI+daemon** — module created, molecule test, CLI subcommand + daemon route. | evidence: commit ac698bec
+
+### Phase Wave 34 — SearX managed server + service discovery + log_analyzer (2026-07-12)
+
+- [x] **SearX managed server** — Ansible role for deploying SearX as a managed server. | evidence: Wave 34
+- [x] **Service discovery pipeline** — automated service discovery pipeline with 65 tests. | evidence: Wave 34
+- [x] **log_analyzer role** — Ansible role for log analysis. | evidence: Wave 34
+- [x] **game SearX e2e tests** — end-to-end tests for SearX game integration. | evidence: Wave 34
+- [x] **enforce-multitask min-dispatch** — fix for enforce-multitask.ts min-dispatch threshold. | evidence: Wave 34

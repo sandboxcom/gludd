@@ -1,0 +1,72 @@
+---
+# search_term.yml — query SearXNG for a single term and collect results.
+#
+# Input: _sd_term (string, the search query)
+# Accumulates into: _sd_services, _sd_errors (set_fact lists on caller)
+
+- name: "Query SearXNG for term"
+  ansible.builtin.uri:
+    url: "{{ searx_url }}/search"
+    method: GET
+    body_format: form-urlencoded
+    body:
+      q: "{{ _sd_term }}"
+      format: json
+      categories: "science,it,general"
+      language: en
+    timeout: "{{ discovery_timeout }}"
+    headers:
+      Accept: "application/json"
+    status_code: [200]
+    return_content: true
+  register: _sd_response
+  ignore_errors: true
+
+- name: "Record error on failed query"
+  ansible.builtin.set_fact:
+    _sd_errors: >-
+      {{ _sd_errors | default([]) + [
+        {
+          'term': _sd_term,
+          'error': _sd_response.msg | default('unknown error'),
+          'status': _sd_response.status | default(-1)
+        }
+      ] }}
+  when: _sd_response is failed or (_sd_response.json is not defined)
+
+- name: "Parse results into service records"
+  vars:
+    _sd_raw_results: >-
+      {{ (_sd_response.json.results | default([]))
+         if (_sd_response is not failed and _sd_response.json is defined)
+         else [] }}
+  ansible.builtin.set_fact:
+    _sd_new_services: >-
+      {%- set out = [] -%}
+      {%- for r in _sd_raw_results -%}
+        {%- if r.url | default('') | trim | length > 0 -%}
+          {%- set svc = {
+            'name': r.title | default(r.url | urlsplit('hostname')),
+            'url': r.url,
+            'description': r.content | default(''),
+            'source_engine': r.engine | default('searx'),
+            'status': 'unknown',
+            'discovered_at': ansible_date_time.iso8601,
+            'last_seen': ansible_date_time.iso8601
+          } -%}
+          {%- set _ = out.append(svc) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: "Accumulate new services"
+  ansible.builtin.set_fact:
+    _sd_services: >-
+      {{ _sd_services | default([]) + _sd_new_services | default([]) }}
+  when: _sd_response is not failed and _sd_response.json is defined
+
+- name: "Report term result"
+  ansible.builtin.debug:
+    msg: >-
+      term "{{ _sd_term }}": {{ _sd_new_services | default([]) | length }}
+      results from {{ _sd_raw_results | default([]) | length }} raw hits

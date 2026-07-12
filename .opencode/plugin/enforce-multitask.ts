@@ -14,7 +14,9 @@ import * as path from "node:path"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "7", 10)
+export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES || "3", 10)
 export const MAX_ZERO_STREAK = 2
+export const WAVE_HISTORY_SIZE = 10
 const MAX_DISENGAGE_MS = 3_600_000
 
 export const MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
@@ -33,6 +35,7 @@ interface MultitaskState {
   estimatedInFlight: number
   lastTs: number
   lastToolCallTs: number
+  waveHistory: number[]
 }
 
 function readState(): MultitaskState {
@@ -46,10 +49,11 @@ function readState(): MultitaskState {
         estimatedInFlight: typeof raw.estimatedInFlight === "number" ? raw.estimatedInFlight : 0,
         lastTs: typeof raw.lastTs === "number" ? raw.lastTs : 0,
         lastToolCallTs: typeof raw.lastToolCallTs === "number" ? raw.lastToolCallTs : 0,
+        waveHistory: Array.isArray(raw.waveHistory) ? raw.waveHistory : [],
       }
     }
   } catch { /* corrupt → fresh */ }
-  return { thisMessageDispatches: 0, prevMessageDispatches: 0, zeroStreak: 0, estimatedInFlight: 0, lastTs: 0, lastToolCallTs: 0 }
+  return { thisMessageDispatches: 0, prevMessageDispatches: 0, zeroStreak: 0, estimatedInFlight: 0, lastTs: 0, lastToolCallTs: 0, waveHistory: [] }
 }
 
 function writeState(s: MultitaskState): void {
@@ -235,6 +239,11 @@ export default (async ({ }) => {
         _state.thisMessageDispatches = 0
         writeState(_state)
 
+        _state.waveHistory.push(_state.prevMessageDispatches)
+        if (_state.waveHistory.length > WAVE_HISTORY_SIZE) {
+          _state.waveHistory = _state.waveHistory.slice(-WAVE_HISTORY_SIZE)
+        }
+
         // BLOCKING: when zeroStreak exceeds max, REPLACE the agent text.
         // The agent is refusing to dispatch — silence their output.
         // But allow through if the operator has disengaged enforcement.
@@ -251,11 +260,11 @@ export default (async ({ }) => {
           }
         } catch {}
 
-        if (!disengagedText && _state.thisMessageDispatches < 7 && hasPendingWork()) {
+        if (!disengagedText && _state.prevMessageDispatches > 2 && _state.prevMessageDispatches < 7 && hasPendingWork()) {
           return {
             text: [
               "⛔ MESSAGE BLOCKED: must dispatch ≥7 subagents when work remains.",
-              "Instead got " + String(_state.thisMessageDispatches) + " dispatch(es).",
+              "Instead got " + String(_state.prevMessageDispatches) + " dispatch(es).",
               "Resend with more task/agent/workflow dispatches.",
               "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
               "Run 'make disengage-enforcement' to bypass.",
@@ -271,6 +280,15 @@ export default (async ({ }) => {
               "All other output blocked. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
               "Run 'make disengage-enforcement' to bypass.",
             ].join(" "),
+          }
+        }
+
+        if (!disengagedText && (_state.prevMessageDispatches === 1 || _state.prevMessageDispatches === 2) && hasPendingWork() && _state.estimatedInFlight < MIN_DISPATCHES_PER_WAVE) {
+          return {
+            text: [
+              "MULTITASK WARNING: only " + String(_state.prevMessageDispatches) + " dispatch(es), floor requires \u2265" + String(MIN_DISPATCHES_PER_WAVE),
+              output.text,
+            ].join("\n"),
           }
         }
 

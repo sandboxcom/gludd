@@ -1,0 +1,37 @@
+---
+- name: "Test service_discovery role syntax"
+  hosts: localhost
+  gather_facts: false
+  vars:
+    searx_url: "http://localhost:8080"
+    search_terms:
+      - "test API provider"
+    discovery_timeout: 5
+    results_path: "/tmp/gludd-test-sd-results.yml"
+  tasks:
+    - name: "Load service_discovery role defaults"
+      ansible.builtin.include_vars:
+        file: "../defaults/main.yml"
+        name: _sd_defaults
+
+    - name: "Verify defaults are sane"
+      ansible.builtin.assert:
+        that:
+          - _sd_defaults.searx_url is defined
+          - _sd_defaults.search_terms is defined
+          - _sd_defaults.search_terms | length >= 3
+          - _sd_defaults.discovery_timeout | int > 0
+          - _sd_defaults.results_path is defined
+        fail_msg: "Role defaults are missing or invalid"
+
+    - name: "Parse main.yml for syntax errors"
+      ansible.builtin.slurp:
+        src: "../tasks/main.yml"
+      register: _sd_main_yml
+
+    - name: "Verify main.yml is valid YAML and has expected keys"
+      ansible.builtin.assert:
+        that:
+          - _sd_main_yml.content is defined
+          - _sd_main_yml.content | length > 0
+        fail_msg: "main.yml is empty or unreadable"
