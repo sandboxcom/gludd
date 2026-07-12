@@ -42,7 +42,7 @@ def test_signed_content_accepted():
 
 def test_unsigned_content_rejected():
     """Empty signature -> False (fail-closed)."""
-    priv, pub = _generate_keypair()
+    _priv, pub = _generate_keypair()
     content = "key: value\n"
     assert verify_signature(content, "", _hex(pub)) is False
 
@@ -58,7 +58,7 @@ def test_tampered_content_rejected():
 
 def test_wrong_key_rejected():
     """Signature produced by key A, verified with key B -> False."""
-    priv_a, pub_a = _generate_keypair()
+    priv_a, _pub_a = _generate_keypair()
     _priv_b, pub_b = _generate_keypair()
     content = "key: value\n"
     sig = _sign(priv_a, content)
