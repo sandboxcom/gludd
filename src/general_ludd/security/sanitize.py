@@ -7,13 +7,13 @@ import re
 from urllib.parse import urlparse
 
 _CREDENTIAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"https?://[^@\s]+:[^@\s]+@", re.IGNORECASE), "https://[REDACTED_CREDS_IN_URL]@"),
+    (re.compile(r"sk-[A-Za-z0-9_-]{20,}", re.IGNORECASE), "[REDACTED_OPENAI_KEY]"),
+    (re.compile(r"x-api-key\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_X_API_KEY]"),
     (re.compile(r"(?:api[_-]?key|apikey|api_key)\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_API_KEY]"),
     (re.compile(r"(?:Authorization|auth)\s*[:=]\s*Bearer\s+\S+", re.IGNORECASE), "[REDACTED_BEARER_TOKEN]"),
     (re.compile(r"(?:Authorization|auth)\s*[:=]\s*Basic\s+\S+", re.IGNORECASE), "[REDACTED_BASIC_AUTH]"),
     (re.compile(r"(?:token|secret|password|passwd|pwd)\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_CREDENTIAL]"),
-    (re.compile(r"https?://[^@\s]+:[^@\s]+@", re.IGNORECASE), "https://[REDACTED_CREDS_IN_URL]@"),
-    (re.compile(r"sk-[A-Za-z0-9]{20,}", re.IGNORECASE), "[REDACTED_OPENAI_KEY]"),
-    (re.compile(r"x-api-key\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_X_API_KEY]"),
 ]
 
 

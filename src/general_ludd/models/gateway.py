@@ -12,7 +12,6 @@ import tenacity
 from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
-from general_ludd.security.sanitize import sanitize_error_message
 from general_ludd.models.failover import ModelFailoverChain
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
@@ -25,6 +24,7 @@ from general_ludd.models.timeout_detector import (
 )
 from general_ludd.observability.langsmith_tracer import LangSmithTracer
 from general_ludd.observability.token_cost import default_token_tracker
+from general_ludd.security.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 

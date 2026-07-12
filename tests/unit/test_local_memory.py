@@ -243,6 +243,46 @@ class TestLocalMemoryEpisodicCompatibility:
         assert patterns.get("overall_success_rate_pct", 0) > 0
 
 
+class TestLocalMemoryCrossProjectIsolation:
+    async def test_project_a_memory_not_visible_to_project_b(self, local_memory):
+        await local_memory.set("agent-1", "secret", "project-a-secret", project_id="proj-A")
+        await local_memory.set("agent-1", "secret", "project-b-secret", project_id="proj-B")
+
+        ra = await local_memory.get("agent-1", "secret", project_id="proj-A")
+        rb = await local_memory.get("agent-1", "secret", project_id="proj-B")
+        assert ra is not None and ra.value == "project-a-secret"
+        assert rb is not None and rb.value == "project-b-secret"
+
+    async def test_project_b_cannot_read_project_a_memory(self, local_memory):
+        await local_memory.set("agent-1", "sensitive", "belongs-to-A", project_id="proj-A")
+
+        rb = await local_memory.get("agent-1", "sensitive", project_id="proj-B")
+        assert rb is None
+
+    async def test_list_by_namespace_scoped_to_project(self, local_memory):
+        await local_memory.set("agent-1", "k1", "v1", project_id="proj-A")
+        await local_memory.set("agent-1", "k2", "v2", project_id="proj-A")
+        await local_memory.set("agent-1", "k3", "v3", project_id="proj-B")
+
+        ra = await local_memory.list_by_namespace("agent-1", project_id="proj-A")
+        rb = await local_memory.list_by_namespace("agent-1", project_id="proj-B")
+        assert len(ra) == 2
+        assert len(rb) == 1
+        a_keys = {r.key for r in ra}
+        assert a_keys == {"k1", "k2"}
+        assert rb[0].key == "k3"
+
+    async def test_delete_scoped_to_project(self, local_memory):
+        await local_memory.set("agent-1", "k1", "v1", project_id="proj-A")
+        await local_memory.set("agent-1", "k1", "v2", project_id="proj-B")
+
+        await local_memory.delete("agent-1", "k1", project_id="proj-A")
+        ra = await local_memory.get("agent-1", "k1", project_id="proj-A")
+        rb = await local_memory.get("agent-1", "k1", project_id="proj-B")
+        assert ra is None
+        assert rb is not None and rb.value == "v2"
+
+
 class TestLocalMemoryDaemonWiring:
     async def test_attribute_on_app_state(self, local_memory):
         assert hasattr(local_memory, "_cache")

@@ -1,6 +1,5 @@
 """H-GATEWAY-EXC-CREDLEAK: credential redaction in exception messages."""
 
-import pytest
 
 from general_ludd.security.sanitize import sanitize_error_message
 
