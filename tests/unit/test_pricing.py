@@ -66,14 +66,27 @@ class TestTokenCostUsd:
         assert cost_unknown == pytest.approx(cost_known)
 
     def test_known_model_uses_its_own_rate(self) -> None:
-        # Pick any model that has a different rate than __default__
         models_not_default = [k for k in PRICING if k != "__default__"]
-        if not models_not_default:
-            pytest.skip("No non-default model in PRICING")
+        assert models_not_default, (
+            "PRICING dict must contain at least one non-default model entry"
+        )
         model = models_not_default[0]
         inp_rate, out_rate = PRICING[model]
         cost = token_cost_usd(model, 1000, 1000)
         assert cost == pytest.approx(inp_rate + out_rate)
+
+    def test_non_default_rate_differs_from_default(self) -> None:
+        models_not_default = [k for k in PRICING if k != "__default__"]
+        assert models_not_default, (
+            "PRICING dict must contain at least one non-default model entry"
+        )
+        default_inp, default_out = PRICING["__default__"]
+        model = models_not_default[0]
+        model_inp, model_out = PRICING[model]
+        assert (model_inp != default_inp or model_out != default_out), (
+            f"Non-default model {model} has same rate as __default__ — "
+            "differential pricing must be verifiable"
+        )
 
     def test_large_token_count(self) -> None:
         # Should not overflow or raise

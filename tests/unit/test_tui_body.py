@@ -7,8 +7,6 @@ import collections
 import contextlib
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 _TermSize = collections.namedtuple("terminal_size", ["columns", "lines"])
 
 
@@ -234,7 +232,7 @@ class TestCmdTUIBody:
                          return_value=MagicMock())])
 
     def test_escape_from_subview_returns_to_main(self) -> None:
-        pytest.skip("Escape sequence requires complex select.select mock")
+        _run_tui([b"v", b"\x1b", b"q"])
 
     def test_start_daemon_starts_process(self) -> None:
         _run_tui([b"S", b"q"], [
