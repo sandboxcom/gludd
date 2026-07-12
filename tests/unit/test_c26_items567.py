@@ -42,7 +42,8 @@ class TestBackgroundRunnerReapsZombies:
         assert exit_code == 42
 
         try:
-            alive_via_kill = os.kill(pid, 0) is None
+            os.kill(pid, 0)
+            alive_via_kill = True
         except OSError:
             # already reaped — the race is real but irrelevant here
             return

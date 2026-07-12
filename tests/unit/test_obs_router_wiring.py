@@ -62,7 +62,7 @@ def test_observe_query_request_rejects_extra_url_field() -> None:
 
     # pydantic v2: model_extra is ignored by default (model_config extra='ignore')
     if hasattr(req, "model_extra"):
-        req_with_url = ObserveQueryRequest(source="test", spec={}, url="http://evil.com")
+        req_with_url = ObserveQueryRequest(source="test", spec={}, **{"url": "http://evil.com"})
         assert not hasattr(req_with_url, "url")
         assert req_with_url.model_extra is None or "url" not in (req_with_url.model_extra or {})
 

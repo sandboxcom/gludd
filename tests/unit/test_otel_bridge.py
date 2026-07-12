@@ -80,8 +80,7 @@ class TestOTelBridgeNoOTel:
         bridge._available = False
         bridge._tracer = None
         trace = _make_trace()
-        result = bridge.export_trace(trace)
-        assert result is None
+        bridge.export_trace(trace)
 
     def test_shutdown_noop_when_unavailable(self):
         from general_ludd.observability.otel_bridge import OTelBridge

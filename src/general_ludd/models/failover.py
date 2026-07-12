@@ -110,8 +110,8 @@ class ModelFailoverChain:
         if not acquired:
             logger.warning(
                 "Failover event dropped (semaphore saturated, %d/%d): %s -> %s",
-                self._semaphore._value,  # type: ignore[attr-defined]
-                self._semaphore._initial_value,  # type: ignore[attr-defined]
+                getattr(self._semaphore, "_value", 0),
+                getattr(self._semaphore, "_initial_value", 0),
                 from_profile,
                 to_profile,
             )

@@ -25,4 +25,4 @@ class TestWorktreeMonitorDaemonConstruction:
 
     def test_construct_rejects_config_dir_kwarg(self):
         with pytest.raises(TypeError):
-            WorktreeMonitor(config_dir="/some/path")
+            WorktreeMonitor(**{"config_dir": "/some/path"})

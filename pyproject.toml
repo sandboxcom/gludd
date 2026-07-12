@@ -137,7 +137,11 @@ module = ["scripts", "scripts.*"]
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "hcl2", "botocore.*", "multitasking_backlog_check", "gen_status_table", "classify_agent_error", "ext"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.fixtures", "tests.fixtures.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

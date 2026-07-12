@@ -61,9 +61,9 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.2 — 2026-07-10**
+**Status as of v0.1.0-beta.3 — 2026-07-12**
 
-Version: `v0.1.0-beta.2` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
+Version: `v0.1.0-beta.3` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
 when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is gated on
 `startsWith(github.ref, 'refs/tags/v')`).
@@ -81,6 +81,21 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
 | D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 0% | **PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
+
+### Ansible Collections & Modules
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| Multi-version ansible collections (versioned `@v1.0` directories) | ✓ 100% | Implemented: versioned collection directories with `@v` namespace support |
+| Module hot-reload rollback system (sys.modules snapshot/restore) | ✓ 100% | Implemented: snapshot/restore on module load failure for atomic rollback |
+| Collection CLI subcommands | ✓ 100% | Implemented: `gludd collection {list,versions,validate}` subcommands |
+| MCP tool reference documentation | ✓ 100% | Implemented: docs covering all MCP protocol tools and usage |
+
+### Testing
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| E2e test suite expansion (150 new e2e tests across 5 modules) | ✓ 100% | Implemented: expanded coverage across ansible, daemon, db, gateway, and worker modules |
 
 ### Orchestration / Agents
 

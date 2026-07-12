@@ -88,8 +88,13 @@ class TestCloneConfinement:
         import shutil
 
         calls: list[tuple[object, ...]] = []
+
+        def _fake_copytree(*a: object, **k: object) -> Path:
+            calls.append(a)
+            return Path(str(a[1]))
+
         monkeypatch.setattr(
-            shutil, "copytree", lambda *a, **k: calls.append(a) or Path(a[1])
+            shutil, "copytree", _fake_copytree
         )
         work_root = tmp_path / "clones"
         cloner = RoleCloner(collection_root=collection_root, work_root=work_root)
@@ -110,8 +115,13 @@ class TestCloneConfinement:
         import shutil
 
         calls: list[tuple[object, ...]] = []
+
+        def _fake_copytree2(*a: object, **k: object) -> Path:
+            calls.append(a)
+            return Path(str(a[1]))
+
         monkeypatch.setattr(
-            shutil, "copytree", lambda *a, **k: calls.append(a) or Path(a[1])
+            shutil, "copytree", _fake_copytree2
         )
         work_root = tmp_path / "clones"
         cloner = RoleCloner(collection_root=collection_root, work_root=work_root)

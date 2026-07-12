@@ -32,6 +32,11 @@ from general_ludd.security.capability_lattice import (
     ProtectedPathError,
     check_self_modification,
 )
+from general_ludd.self_update.module_snapshot import (
+    ModuleSnapshot,
+    restore_modules,
+    snapshot_modules,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -267,15 +272,19 @@ class HotReloader:
             )
 
         # Swap resolved bytes over live path + reload.
+        mod_snapshot: ModuleSnapshot | None = None
         try:
             # Write via a temp + os.replace for an atomic same-dir swap.
             tmp_path = live_path.with_suffix(live_path.suffix + ".candidate.tmp")
             tmp_path.write_bytes(resolved_bytes)
             os.replace(tmp_path, live_path)
             self._invalidate_source_cache(live_path)
+            mod_snapshot = snapshot_modules([module_name])
             importlib.reload(module)
         except Exception as exc:
             rb = self._restore_module_bytes(module, live_path, original_bytes)
+            if mod_snapshot is not None and mod_snapshot.modules:
+                restore_modules(mod_snapshot)
             details["rollback_verified"] = rb
             return self._code_reload_failure(
                 scope,

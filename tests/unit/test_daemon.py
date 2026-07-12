@@ -539,7 +539,7 @@ class TestExtendedSubsystemsWiring:
             model_profile_id="test-prof",
             provider="openai",
             model_name="gpt-4o-mini",
-            api_key_env="OPENAI_API_KEY",
+            credential_alias="OPENAI_API_KEY",
         )
 
         app = FastAPI()

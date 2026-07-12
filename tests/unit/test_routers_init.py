@@ -93,8 +93,7 @@ class TestRegisterAll:
         app = MagicMock()
         daemon_state: dict[str, object] = {}
         with patch.dict(sys.modules, mocks, clear=False):
-            result = register_all(app, daemon_state)
-        assert result is None
+            register_all(app, daemon_state)
 
     def test_register_all_empty_daemon_state(self) -> None:
         mocks = self._mock_all_routers()

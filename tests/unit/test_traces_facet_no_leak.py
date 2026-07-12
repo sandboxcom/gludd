@@ -190,7 +190,7 @@ class TestEmbeddingsTracesCorpusScoping:
     def _search(self, buffer: RecentTracesBuffer, project_id: str | None):
         app = _fake_app(buffer)
         req = embeddings.EmbeddingSearchRequest(
-            text="generate", top_k=20, project_id=project_id
+            text="generate", corpus="traces", top_k=20, project_id=project_id, include_embeddings=False
         )
         return embeddings._search_traces(app, req)
 
