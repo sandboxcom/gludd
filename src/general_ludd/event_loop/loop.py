@@ -4601,6 +4601,7 @@ class EventLoop:
                 },
                 takeaway=str(takeaway)[:500] if takeaway else "",
                 error_message=str(error_msg)[:500] if error_msg else "",
+                project_id=getattr(todo, "project_id", None),
             )
             self._tick_metrics.setdefault("episodes_recorded", 0)
             self._tick_metrics["episodes_recorded"] += 1

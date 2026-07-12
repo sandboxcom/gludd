@@ -300,6 +300,11 @@ test-unit:
 		$(UV) run python -m pytest tests/unit/ $(_XD) -v; \
 	fi
 
+# --- Notification system ---
+notify-test:
+	@echo "=== Testing notification dispatcher ==="
+	$(UV) run python -c "from general_ludd.notifications import NotificationDispatcher; d = NotificationDispatcher({'enabled': True, 'backends': {'stdout': {}}, 'min_priority': 'high'}); print(d.test())"
+
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
 	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS)
