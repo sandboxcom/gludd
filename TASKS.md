@@ -96,7 +96,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [x] E.1 — Coverage lifting: ~60-80 files below 85%, flip pyproject.toml fail_under 70→85 | priority: high | effort: large | status: completed | evidence: 7f166439
 - [x] E.2 — e2e audit closure: ~40 src modules with zero e2e coverage, add top-5 riskiest | priority: medium | effort: large | status: completed | evidence: 150 new e2e tests (50 auth + 19 sts + 39 adversarial_detector + 28 dispatcher + 14 ipc), all passing. Files: test_e2e_security_auth.py, test_e2e_security_sts.py, test_e2e_adversarial_detector.py, test_e2e_dispatcher.py, test_e2e_ipc.py
-- [ ] E.3 — Lint/type config gaps: mypy excludes security/sandboxes, tests/ never type-checked, no .pre-commit-config.yaml | priority: medium | effort: medium | status: pending
+- [x] E.3 — Lint/type config gaps: mypy excludes security/sandboxes, tests/ never type-checked, no .pre-commit-config.yaml | priority: medium | effort: medium | status: completed | evidence: 7492bf50; .pre-commit-config.yaml added (detect-secrets + ruff + mypy + trailing-whitespace); mypy now covers tests/ via [[tool.mypy]] overrides; lint fixes across 20+ src files; git-log config hook end
 - [ ] E.4 — noqa guardrail 3-layer fix: edit-time hook + behavior-pin test + AGENTS.md rule | priority: medium | effort: medium | status: pending
 - [ ] E.5 — Plugin leanness: refactor enforce-*.ts toward shared helpers, ratchet threshold down | priority: low | effort: medium | status: pending
 - [ ] E.6 — Audit-doc re-triage: re-triage BACKLOG_FINDINGS + NEW_FINDINGS_TRIAGE against current master | priority: medium | effort: medium | status: pending
