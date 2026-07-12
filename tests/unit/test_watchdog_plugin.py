@@ -426,8 +426,8 @@ class TestImports:
     def test_no_unused_imports(self):
         src = _src()
         import_lines = [
-            l for l in src.split("\n")
-            if l.strip().startswith("import ")
+            line for line in src.split("\n")
+            if line.strip().startswith("import ")
         ]
         assert len(import_lines) == 2, (
             f"expected 2 imports (Plugin + node:fs), found {len(import_lines)}"
