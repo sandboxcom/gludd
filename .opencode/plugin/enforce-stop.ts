@@ -65,6 +65,18 @@ function isStreakReadTool(toolName: string): boolean {
   return toolName === "read" || toolName === "grep" || toolName === "glob"
 }
 
+const WATCHDOG_CONTINUE_FILE = "/tmp/gludd-continue.txt"
+
+function readWatchdogContinue(): string | null {
+  try {
+    if (fs.existsSync(WATCHDOG_CONTINUE_FILE)) {
+      const content = fs.readFileSync(WATCHDOG_CONTINUE_FILE, "utf8").trim()
+      if (content.length > 0) return content
+    }
+  } catch {}
+  return null
+}
+
 // Update the shared streak for a tool call. Dedupes if the other plugin
 // already counted this exact call (within DEDUP_WINDOW_MS). Returns the
 // updated state so the caller can check thresholds.

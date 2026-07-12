@@ -19,9 +19,9 @@ export default (async ({ $ }) => {
       _reportAlive()
       if (event.type === "session.created") {
         try { await $`make watchdog-auto` } catch {}
-        // make watchdog-auto writes PID to /tmp/gludd-watchdog.pid (literal);
+        // make watchdog-auto writes PID to .gate-logs/watchdog.pid (literal);
         // sync to PID_FILE when redirected (test-mode isolation)
-        const literalPid = "/tmp/gludd-watchdog.pid"
+        const literalPid = ".gate-logs/watchdog.pid"
         try {
           if (fs.existsSync(literalPid)) {
             fs.writeFileSync(PID_FILE, fs.readFileSync(literalPid, "utf8").trim())

@@ -55,7 +55,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
-        watchdog-start watchdog-status watchdog-stop watchdog-log \
+        watchdog-read watchdog-start watchdog-status watchdog-stop watchdog-log \
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
         check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
@@ -2952,48 +2952,57 @@ write-gate-safe-hook:
 # --- Agent watchdog daemon (10s poll, resets streak counter) ---
 watchdog-start:
 	@echo "Starting agent watchdog (10s poll)..."
-	@nohup $(UV) run python3 scripts/agent_watchdog.py > /tmp/gludd-watchdog.log 2>&1 & echo $$! > /tmp/gludd-watchdog.pid; echo "watchdog PID=$$(cat /tmp/gludd-watchdog.pid)"
+	@nohup $(UV) run python3 scripts/agent_watchdog.py > .gate-logs/watchdog.log 2>&1 & echo $$! > .gate-logs/watchdog.pid; echo "watchdog PID=$$(cat .gate-logs/watchdog.pid)"
 
 watchdog-status:
 	@echo "=== Watchdog status ==="
-	@if [ -f /tmp/gludd-watchdog.pid ]; then \
-		echo "PID: $$(cat /tmp/gludd-watchdog.pid)"; \
-		ps -p $$(cat /tmp/gludd-watchdog.pid) > /dev/null 2>&1 && echo "Status: running" || echo "Status: stopped"; \
+	@if [ -f .gate-logs/watchdog.pid ]; then \
+		echo "PID: $$(cat .gate-logs/watchdog.pid)"; \
+		ps -p $$(cat .gate-logs/watchdog.pid) > /dev/null 2>&1 && echo "Status: running" || echo "Status: stopped"; \
 	else \
 		echo "No PID file — watchdog not started"; \
 	fi
 	@echo "--- Last 15 log lines ---"
-	@tail -15 /tmp/gludd-watchdog.log 2>/dev/null || echo "No log yet"
+	@tail -15 .gate-logs/watchdog.log 2>/dev/null || echo "No log yet"
 
 watchdog-stop:
-	@if [ -f /tmp/gludd-watchdog.pid ]; then \
-		kill $$(cat /tmp/gludd-watchdog.pid) 2>/dev/null || true; \
-		rm -f /tmp/gludd-watchdog.pid; \
+	@if [ -f .gate-logs/watchdog.pid ]; then \
+		kill $$(cat .gate-logs/watchdog.pid) 2>/dev/null || true; \
+		rm -f .gate-logs/watchdog.pid; \
 		echo "Watchdog stopped"; \
 	else \
 		echo "No watchdog running"; \
 	fi
 	@pkill -f 'agent_watchdog' 2>/dev/null || true
 
+watchdog-read:
+	@if [ -f /tmp/gludd-continue.txt ]; then \
+		echo "=== WATCHDOG CONTINUE DIRECTIVES ==="; \
+		cat /tmp/gludd-continue.txt; \
+		echo "=== END WATCHDOG DIRECTIVES ==="; \
+	else \
+		echo "No watchdog directives (file absent)"; \
+	fi
+
 watchdog-auto:
 	@echo "Starting auto-watchdog (persists across sessions)..."
-	@if [ -f /tmp/gludd-watchdog.pid ] && kill -0 $$(cat /tmp/gludd-watchdog.pid) 2>/dev/null; then \
-		echo "Agent watchdog already running PID=$$(cat /tmp/gludd-watchdog.pid)"; \
+	@if [ -f .gate-logs/watchdog.pid ] && kill -0 $$(cat .gate-logs/watchdog.pid) 2>/dev/null; then \
+		echo "Agent watchdog already running PID=$$(cat .gate-logs/watchdog.pid)"; \
 	else \
-		nohup $(UV) run python3 scripts/agent_watchdog.py > /tmp/gludd-watchdog.log 2>&1 & \
-		echo $$! > /tmp/gludd-watchdog.pid; \
+		nohup $(UV) run python3 scripts/agent_watchdog.py > .gate-logs/watchdog.log 2>&1 & \
+		echo $$! > .gate-logs/watchdog.pid; \
 		echo "Agent watchdog started PID=$$!"; \
 	fi
-	@if [ -f /tmp/gludd-task-watchdog.pid ] && kill -0 $$(cat /tmp/gludd-task-watchdog.pid) 2>/dev/null; then \
-		echo "Task watchdog already running PID=$$(cat /tmp/gludd-task-watchdog.pid)"; \
+	@if [ -f .gate-logs/task-watchdog.pid ] && kill -0 $$(cat .gate-logs/task-watchdog.pid) 2>/dev/null; then \
+		echo "Task watchdog already running PID=$$(cat .gate-logs/task-watchdog.pid)"; \
 	else \
-		nohup $(UV) run python3 scripts/task_watchdog.py > /tmp/gludd-task-watchdog.log 2>&1 & \
-		echo $$! > /tmp/gludd-task-watchdog.pid; \
+		nohup $(UV) run python3 scripts/task_watchdog.py > .gate-logs/task-watchdog.log 2>&1 & \
+		echo $$! > .gate-logs/task-watchdog.pid; \
 		echo "Task watchdog started PID=$$!"; \
 	fi
 
 watchdog-log:
-	@tail -50 /tmp/gludd-watchdog.log 2>/dev/null || echo "No log yet"
+	@tail -50 .gate-logs/watchdog.log 2>/dev/null || echo "No log yet"
 
 # --- Task watchdog daemon (5s poll, kills hung tasks > GLUDD_TASK_TIMEOUT_MS) ---
 # Reads /tmp/gludd-task-deadlines.json (written by enforce-deadline.ts plugin).
@@ -3001,13 +3010,13 @@ watchdog-log:
 # records kills in /tmp/gludd-task-killed.json. Prevents indefinite task blocking.
 task-watchdog-start:
 	@echo "Starting task watchdog (5s poll, kills tasks > $$(( ${GLUDD_TASK_TIMEOUT} * 1000 ))ms)..."
-	@nohup $(UV) run python3 scripts/task_watchdog.py > /tmp/gludd-task-watchdog.log 2>&1 & echo $$! > /tmp/gludd-task-watchdog.pid; echo "task watchdog PID=$$(cat /tmp/gludd-task-watchdog.pid)"
+	@nohup $(UV) run python3 scripts/task_watchdog.py > .gate-logs/task-watchdog.log 2>&1 & echo $$! > .gate-logs/task-watchdog.pid; echo "task watchdog PID=$$(cat .gate-logs/task-watchdog.pid)"
 
 task-watchdog-status:
 	@echo "=== Task watchdog status ==="
-	@if [ -f /tmp/gludd-task-watchdog.pid ]; then \
-		echo "PID: $$(cat /tmp/gludd-task-watchdog.pid)"; \
-		ps -p $$(cat /tmp/gludd-task-watchdog.pid) > /dev/null 2>&1 && echo "Status: running" || echo "Status: stopped"; \
+	@if [ -f .gate-logs/task-watchdog.pid ]; then \
+		echo "PID: $$(cat .gate-logs/task-watchdog.pid)"; \
+		ps -p $$(cat .gate-logs/task-watchdog.pid) > /dev/null 2>&1 && echo "Status: running" || echo "Status: stopped"; \
 	else \
 		echo "No PID file — task watchdog not started"; \
 	fi
@@ -3019,16 +3028,16 @@ task-watchdog-status:
 	fi
 
 task-watchdog-stop:
-	@if [ -f /tmp/gludd-task-watchdog.pid ]; then \
-		kill $$(cat /tmp/gludd-task-watchdog.pid) 2>/dev/null || true; \
-		rm -f /tmp/gludd-task-watchdog.pid; \
+	@if [ -f .gate-logs/task-watchdog.pid ]; then \
+		kill $$(cat .gate-logs/task-watchdog.pid) 2>/dev/null || true; \
+		rm -f .gate-logs/task-watchdog.pid; \
 		echo "Task watchdog stopped"; \
 	else \
 		echo "No task watchdog running"; \
 	fi
 
 task-watchdog-log:
-	@tail -50 /tmp/gludd-task-watchdog.log 2>/dev/null || echo "No log yet"
+	@tail -50 .gate-logs/task-watchdog.log 2>/dev/null || echo "No log yet"
 
 # --- Plugin version check — detects stale plugin code after .ts file edits ---
 check-plugin-versions:
