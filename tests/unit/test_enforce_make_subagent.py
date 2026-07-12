@@ -37,7 +37,6 @@ def test_no_blanket_subagent_return_before_bash_check():
     """The bash make-only check must NOT be behind an early OPENCODE_SUBAGENT guard."""
     source = _read_source()
     tool_before = _find_function_body(source, '"tool.execute.before"')
-    bash_block = _find_function_body(tool_before, 'if (input.tool === "bash")')
 
     before_bash = tool_before[: tool_before.index('if (input.tool === "bash")')]
 
@@ -53,12 +52,20 @@ def test_no_blanket_subagent_return_before_bash_check():
         "Bash make-only enforcement must run for subagents."
     )
 
-    opencode_env_checks = [
-        m for m in re.finditer(r'OPENCODE_SUBAGENT\s*===?\s*["\']1["\']', before_bash)
+    # The `const isSubagent = process.env.OPENCODE_SUBAGENT === "1"` on line 355
+    # is a variable *declaration*, not a guard. We only flag guard-like patterns:
+    # `if (isSubagent) return` or `if (process.env.OPENCODE_SUBAGENT ...) return`.
+    guard_returns = [
+        m for m in re.finditer(
+            r'if\s*\(\s*(?:isSubagent|process\.env\.OPENCODE_SUBAGENT)',
+            before_bash,
+        )
+        if "return" in before_bash[m.start() : m.start() + 150]
     ]
-    assert len(opencode_env_checks) == 0, (
-        "OPENCODE_SUBAGENT guard found BEFORE the bash check block. "
-        "The bash make-only + metacharacter checks must apply to subagents too."
+    assert len(guard_returns) == 0, (
+        "OPENCODE_SUBAGENT / isSubagent GUARD (early return) found BEFORE "
+        "the bash check block. The bash make-only + metacharacter checks "
+        "must apply to subagents too."
     )
 
 
@@ -70,7 +77,6 @@ def test_bash_checks_not_behind_subagent_guard():
     """The make-only, metacharacters, and invalid-pattern checks must fire for subagents."""
     source = _read_source()
     tool_before = _find_function_body(source, '"tool.execute.before"')
-    bash_block = _find_function_body(tool_before, 'if (input.tool === "bash")')
     after_bash = tool_before[tool_before.index('if (input.tool === "bash")'):]
 
     subagent_guard_pos = after_bash.find("if (isSubagent) return")

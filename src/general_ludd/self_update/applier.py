@@ -12,6 +12,9 @@ Safety contract (fail-closed throughout):
 * A capability the checker does not allow -> ``denied``.
 * Any target path matching the built-in PROTECTED_PATH deny-list -> ``denied``,
   regardless of capability. This list always wins.
+* **H.17 signature verification.** If ``verify_signature`` is supplied, the
+  caller MUST provide a ``content_signature`` and a ``public_key``; the applier
+  verifies the Ed25519 signature BEFORE any write. Missing/invalid → ``denied``.
 * ``config`` / ``yaml`` / ``role`` kinds: the change must parse as YAML
   (``yaml.safe_load``); only then is it written via the injected ``SafeWriter``
   -> ``applied``. A parse error or a writer error -> ``denied``.
@@ -25,9 +28,10 @@ from __future__ import annotations
 
 import os
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol, runtime_checkable
+from typing import Literal, Protocol, cast, runtime_checkable
 
 import yaml
 
@@ -264,8 +268,46 @@ class UpdateApplier:
         self._capability_checker = capability_checker
         self._workspace_root = workspace_root
 
-    def apply(self, plan: UpdatePlan, change_content: str) -> ApplyResult:
+    def apply(
+        self,
+        plan: UpdatePlan,
+        change_content: str,
+        *,
+        content_signature: str = "",
+        public_key: str = "",
+        verify_signature: object | None = None,
+    ) -> ApplyResult:
         target_paths = list(plan.target_paths)
+
+        # 0. H.17 cryptographic signature verification (runs BEFORE any gate).
+        #    A missing signature / key / verifier when the verifier is supplied
+        #    → fail closed immediately. No content is ever written without
+        #    a valid Ed25519 detached signature over the exact payload.
+        if verify_signature is not None:
+            if not content_signature or not public_key:
+                return ApplyResult(
+                    status="denied",
+                    target_paths=target_paths,
+                    evidence="signature verification configured but no "
+                    "content_signature or public_key provided — refusing to apply",
+                )
+            try:
+                ok = bool(
+                    verify_signature(change_content, content_signature, public_key)  # type: ignore[operator]
+                )
+            except Exception as exc:
+                return ApplyResult(
+                    status="denied",
+                    target_paths=target_paths,
+                    evidence=f"signature verification raised: {exc}",
+                )
+            if not ok:
+                return ApplyResult(
+                    status="denied",
+                    target_paths=target_paths,
+                    evidence="signature verification failed — content may be "
+                    "tampered, unsigned, or signed with a different key",
+                )
 
         # 1. Capability gate. Fail closed on anything not explicitly allowed
         #    (including a checker that itself raises).
