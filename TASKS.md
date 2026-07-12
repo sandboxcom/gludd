@@ -22,9 +22,9 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase A — CI Green + Release (STABILIZATION_PLAN §WP-A)
 
-- [ ] A.1 — Reconcile in-flight fix wave: verify which CI fixes landed on HEAD | priority: high | effort: small | status: pending
+- [x] A.1 — Reconcile in-flight fix wave: verify which CI fixes landed on HEAD | priority: high | effort: small | status: completed | evidence: HEAD 58e07399 on development, 10 unpushed commits (58e07399→722ca36c), CI NO RUN for HEAD, A.2 caplog/logging/lint fixes on HEAD, A.3 push pending, A.4-A.6 still pending
 - [x] A.2 — Fix remaining CI failure clusters (slurm billing, connectors_base caplog, PSK caplog, tokenizer, MCPToolRegistry, structured_task_spec) | priority: high | effort: medium | status: completed | evidence: caplog .message→.getMessage() fixes in 2 files, all clusters resolved
-- [ ] A.3 — Push, wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: in_progress
+- [ ] A.3 — Push 10 unpushed commits (58e07399→722ca36c), wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: pending
 - [ ] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: pending
 - [ ] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: pending
 - [ ] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: pending
@@ -66,7 +66,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase D — Feature Completeness (AGENTIC_IMPLEMENTATION_SPEC §3.4)
 
-- [ ] D.1 — Wire real onboard providers (AWS/GCP/Azure implementations replace _BaseStub) | priority: high | effort: medium | status: pending
+- [x] D.1 — Wire real onboard providers (AWS/GCP/Azure implementations replace _BaseStub) | priority: high | effort: medium | status: completed | evidence: _BaseStub already removed; real impls in aws.py (boto3), gcp.py (googleapiclient), azure.py (azure-mgmt-*) wired via get_provider() + CLI; 94 tests pass (35 init + 20 aws + 15 gcp + 14 azure + 10 cli)
 - [ ] D.2 — Wire run_project_gate into review/reconcile path for external projects | priority: high | effort: medium | status: pending
 - [ ] D.3 — Generalize self-improve APPLY path to external projects (split SelfApply vs ExternalApply) | priority: high | effort: large | status: pending
 - [ ] D.4 — DAST driver + findings parser (ZAP-baseline wrapper + Finding model) | priority: medium | effort: medium | status: pending
