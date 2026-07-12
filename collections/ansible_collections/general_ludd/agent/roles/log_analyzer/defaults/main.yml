@@ -16,6 +16,13 @@ log_source_dirs: >
     ansible_user_dir | default('/home/gludd') ~ '/.gludd/logs',
   ] | join(',') }}
 
+# Per-run variables — set by caller (e.g. integration test) as extravars.
+# Mapped onto the internal vars above via the role's defaults.
+log_analyzer_glob: "{{ log_source_dirs.split(',') | first | trim }}/*.log"
+log_analyzer_output_dir: "{{ artifact_dir }}"
+log_analyzer_error_rate_threshold: 0.1
+log_analyzer_min_cluster_size: 2
+
 # Individual log file globs per source type
 daemon_log_glob: "*.log"
 agent_log_glob: "agent-*.log"

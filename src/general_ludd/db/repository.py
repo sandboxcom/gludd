@@ -763,7 +763,7 @@ class AuditEventRepository:
         entity_type: str,
         entity_id: str,
         project_id: str | None = None,
-        details: str | None = None,
+        details: str = "{}",
     ) -> AuditEventModel:
         if project_id is None:
             raise ValueError(
@@ -802,7 +802,7 @@ class AuditEventRepository:
             entity_type=entity_type,
             entity_id=entity_id,
             project_id=project_id,
-            details=_json.dumps(details) if details is not None else None,
+            details=_json.dumps(details) if details is not None else "{}",
         )
 
     async def list_by_entity(self, entity_type: str, entity_id: str, limit: int = 50) -> list[AuditEventModel]:

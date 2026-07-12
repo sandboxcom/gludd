@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 _BUNDLED_COLLECTIONS_ROOT_DEFAULT = (
-    Path(__file__).resolve().parent.parent.parent.parent.parent / "collections"
+    Path(__file__).resolve().parent.parent.parent.parent / "collections"
 )
 
 

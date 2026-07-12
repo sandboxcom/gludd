@@ -458,9 +458,13 @@ class TestRefillState:
 
     def test_grace_still_resets_streak_on_block(self):
         src = _src()
-        idx = src.find("if (_resultProcessingGrace > 0)")
-        assert idx > 0
-        after = src[idx:idx + 200]
+        # Find the SECOND occurrence — the original grace block, not the
+        # post-result read limit block (which also checks _resultProcessingGrace).
+        first = src.find("if (_resultProcessingGrace > 0)")
+        assert first > 0
+        second = src.find("if (_resultProcessingGrace > 0)", first + 1)
+        assert second > 0
+        after = src[second:second + 200]
         assert "_streakCount = 0" in after, (
             "grace block must still reset streak to prevent double-punishment"
         )
@@ -540,8 +544,8 @@ class TestSessionIdleHook:
         src = _src()
         idx = src.find('"session.idle"')
         after = src[idx:]
-        assert "_thisMessageDispatchCount = 0" in after[:600]
-        assert "_thisMessageTotalCalls = 0" in after[:600]
+        assert "_thisMessageDispatchCount = 0" in after[:800]
+        assert "_thisMessageTotalCalls = 0" in after[:800]
 
     def test_session_idle_resets_read_streak(self):
         src = _src()
@@ -722,6 +726,95 @@ class TestPluginHookRegistration:
     def test_returns_experimental_text_complete(self):
         src = _src()
         assert '"experimental.text.complete"' in src
+
+
+# ---------------------------------------------------------------------------
+# Startup stale-state cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestPostResultReadLimit:
+    """Post-result read enforcement (2026-07-12 — close "reads are free" gap)."""
+
+    def test_post_result_read_limit_constant_exists(self):
+        src = _src()
+        assert "POST_RESULT_READ_LIMIT" in src
+
+    def test_post_result_read_limit_value_is_3(self):
+        src = _src()
+        assert "POST_RESULT_READ_LIMIT = 3" in src
+
+    def test_consecutive_reads_counter_exists(self):
+        src = _src()
+        assert "_consecutiveReadsAfterResults" in src
+
+    def test_post_result_read_deny_message_exists(self):
+        src = _src()
+        assert "POST-RESULT READ LIMIT EXCEEDED" in src
+
+    def test_deny_message_mentions_dispatch_gap(self):
+        src = _src()
+        idx = src.find("POST-RESULT READ LIMIT EXCEEDED")
+        assert idx > 0
+        after = src[idx:idx + 500]
+        assert "dispatch-gap" in after.lower()
+
+    def test_deny_message_requires_dispatch(self):
+        src = _src()
+        idx = src.find("POST-RESULT READ LIMIT EXCEEDED")
+        assert idx > 0
+        after = src[idx:idx + 600]
+        assert "Dispatch task/agent" in after
+
+    def test_counter_resets_on_dispatch(self):
+        src = _src()
+        dispatch_idx = src.find("if (isDispatchTool(tool))")
+        assert dispatch_idx > 0
+        after = src[dispatch_idx:dispatch_idx + 500]
+        assert "_consecutiveReadsAfterResults = 0" in after, (
+            "_consecutiveReadsAfterResults must reset inside dispatch branch"
+        )
+
+    def test_counter_resets_on_result_detection(self):
+        src = _src()
+        idx = src.find("_resultProcessingGrace = RESULT_GRACE_CALLS")
+        assert idx > 0
+        after = src[idx:idx + 200]
+        assert "_consecutiveReadsAfterResults = 0" in after, (
+            "_consecutiveReadsAfterResults must reset when results detected"
+        )
+
+    def test_counter_resets_in_session_idle(self):
+        src = _src()
+        idx = src.find('"session.idle"')
+        assert idx > 0
+        after = src[idx:idx + 800]
+        assert "_consecutiveReadsAfterResults = 0" in after, (
+            "_consecutiveReadsAfterResults must reset in session.idle"
+        )
+
+    def test_block_gated_on_result_grace_active(self):
+        src = _src()
+        idx = src.find("_resultProcessingGrace > 0")
+        assert idx > 0
+        after = src[idx:idx + 100]
+        assert "_consecutiveReadsAfterResults++" in after, (
+            "read counter increment must be gated on _resultProcessingGrace > 0"
+        )
+
+    def test_block_uses_post_result_read_limit_threshold(self):
+        src = _src()
+        idx = src.find("_consecutiveReadsAfterResults > POST_RESULT_READ_LIMIT")
+        assert idx > 0, "deny must check against POST_RESULT_READ_LIMIT, not a magic number"
+
+    def test_block_is_hard_deny_not_advisory(self):
+        src = _src()
+        idx = src.find("POST-RESULT READ LIMIT EXCEEDED")
+        assert idx > 0
+        before = src[idx - 400:idx]
+        assert 'permissionDecision: "deny"' in before, (
+            "post-result read limit must be a hard deny (permissionDecision), not advisory console.warn"
+        )
 
 
 # ---------------------------------------------------------------------------

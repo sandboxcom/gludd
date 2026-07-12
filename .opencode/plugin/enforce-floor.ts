@@ -343,6 +343,12 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
 
 const MAX_STREAK = 2
 
+// Post-result enforcement (2026-07-12 — close "reads are free" gap).
+// After subagent results arrive, the agent gets at most POST_RESULT_READ_LIMIT
+// reads before reads themselves are denied.  This forces the dispatch wave
+// rather than letting the agent read files for 5+ turns while the pool drains.
+const POST_RESULT_READ_LIMIT = 3
+
 // ── Session-start window enforcement (2026-07-12) ────────────────────────
 // Reads the session start timestamp from enforce-session-start.ts's shared
 // state file.  During the first 90s after session start, all thresholds are
@@ -386,6 +392,7 @@ let _dispatchCount = 0
 let _dispatchPeak = 0
 let _resultProcessingGrace = 0
 let _needsRefill = false
+let _consecutiveReadsAfterResults = 0
 
 // Gap 1: ANTI-LOOP — compulsive-check targets that must be dispatched via Task tool
 const COMPULSIVE_CHECK_RE = /^make\s+(git-log|ci-verdict|git-diff)(\s|\/|$)/
@@ -567,6 +574,7 @@ export default (async ({ }) => {
             _dispatchPeak = _dispatchCount
           }
           _needsRefill = false
+          _consecutiveReadsAfterResults = 0
           return
         }
 
@@ -616,6 +624,28 @@ export default (async ({ }) => {
               )
             }
           }
+          // Post-result read limit: after subagent results arrive, at most
+          // POST_RESULT_READ_LIMIT reads are allowed before reads themselves
+          // are denied.  Results set _resultProcessingGrace which gates this.
+          if (_resultProcessingGrace > 0) {
+            _consecutiveReadsAfterResults++
+            if (_consecutiveReadsAfterResults > POST_RESULT_READ_LIMIT) {
+              return {
+                permissionDecision: "deny" as const,
+                message: [
+                  "⛔  POST-RESULT READ LIMIT EXCEEDED — READ BLOCKED",
+                  "",
+                  `${_consecutiveReadsAfterResults} consecutive reads after subagent results arrived.`,
+                  `Maximum ${POST_RESULT_READ_LIMIT} reads allowed in the post-result phase.`,
+                  "File inspection between result waves is the dispatch-gap anti-pattern.",
+                  "",
+                  "REQUIRED: Dispatch task/agent subagents on pending work NOW.",
+                  "Reads are a bridge to dispatch, not a replacement for it.",
+                ].join("\n"),
+              }
+            }
+          }
+
           // Hard-deny: 10+ reads AND >60s since last dispatch — clear grinding.
           // An agent doing 10+ serial reads over 1+ minute without dispatching
           // is grinding inline instead of delegating. Both conditions must hold
@@ -850,6 +880,7 @@ export default (async ({ }) => {
       // flag decay so a new turn doesn't inherit a stale pass.
       _resultProcessingGrace = 0
       _readStreak = 0
+      _consecutiveReadsAfterResults = 0
       _updateRefillState()
       // Gap 2: message-shape tracking — reset per-message counters on idle
       _thisMessageDispatchCount = 0
@@ -893,6 +924,7 @@ export default (async ({ }) => {
           _dispatchCount = Math.max(0, _dispatchCount - 2)
           _resultProcessingGrace = RESULT_GRACE_CALLS
           _streakCount = 0
+          _consecutiveReadsAfterResults = 0
         }
 
         _updateRefillState()
