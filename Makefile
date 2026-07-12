@@ -49,6 +49,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
+         secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
@@ -161,8 +162,14 @@ help:
 	@echo "  submodule-pin REPO=.. TAG=..  Pin a submodule to a tag/commit"
 	@echo ""
 	@echo "  --- Secrets + Security ---"
-	@echo "  scan-secrets          Run detect-secrets scan against baseline"
-	@echo "  scan-secrets-baseline Create/update detect-secrets baseline"
+	@echo "  secrets-scan          Scan for secrets against baseline (read-only)"
+	@echo "  secrets-scrub         Interactive secret audit + scrub"
+	@echo "  secrets-baseline      Rebuild .secrets.baseline"
+	@echo "  scan-secrets          Alias for secrets-scan"
+	@echo "  scan-secrets-baseline Alias for secrets-baseline"
+	@echo "  security-audit        Comprehensive: secrets + sast + pip-audit + backlog gate"
+	@echo "  clean-artifacts       Clean build artifacts, caches, temp files (replaces direct rm)"
+	@echo "  health-check          Verify imports and basic system health"
 	@echo "  clean-untracked       Remove reinvention-of-wheel files"
 	@echo "  clean-hooks           Remove legacy hook scripts"
 	@echo "  clean-plugins         No-op (false-done merged into enforce-stop.ts)"
@@ -2044,6 +2051,48 @@ ci-version-sim:
 
 scan-secrets:
 	@$(UV) run detect-secrets scan --baseline .secrets.baseline $(ARGS)
+
+# ── Secrets management targets ──
+# secrets-scan: scan for secrets without modifying files (checks against baseline)
+secrets-scan:
+	@$(UV) run detect-secrets scan --baseline .secrets.baseline $(ARGS)
+
+# secrets-scrub: find and scrub secrets from the codebase (interactive audit)
+secrets-scrub:
+	@[ -f .secrets.baseline ] || { echo "ERROR: .secrets.baseline missing. Run 'make secrets-baseline' first."; exit 1; }
+	@$(UV) run detect-secrets audit .secrets.baseline
+
+# secrets-baseline: rebuild the .secrets.baseline
+secrets-baseline:
+	@echo "[secrets-baseline] scanning tracked files with detect-secrets (typically 30-90s on this repo)..."
+	@$(UV) run detect-secrets scan --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' --force-use-of-scan-output > .secrets.baseline.tmp
+	@$(PYTHON) -c "import json; d=json.load(open('.secrets.baseline.tmp')); print('[secrets-baseline] OK: valid JSON, %d files carry flagged (baselined) secrets' % len(d.get('results', {})))"
+	@mv -f .secrets.baseline.tmp .secrets.baseline
+	@echo "[secrets-baseline] wrote .secrets.baseline ($$(wc -c < .secrets.baseline | tr -d ' ') bytes)"
+
+# security-audit: comprehensive security check (secrets + sast + pip-audit + backlog gate)
+security-audit:
+	@echo "=== SECURITY AUDIT: secrets scan ==="
+	@$(MAKE) --no-print-directory secrets-scan ARGS='--all-files'
+	@echo "=== SECURITY AUDIT: sast (bandit) ==="
+	@$(MAKE) --no-print-directory sast
+	@echo "=== SECURITY AUDIT: pip-audit (gating) ==="
+	@$(MAKE) --no-print-directory pip-audit-gate
+	@echo "=== SECURITY AUDIT: security backlog gate ==="
+	@$(MAKE) --no-print-directory security-backlog-gate
+	@echo "=== SECURITY AUDIT: PASSED ==="
+
+# clean-artifacts: clean build artifacts, caches, temp files (replaces direct rm commands)
+clean-artifacts:
+	@$(MAKE) --no-print-directory clean
+	@$(MAKE) --no-print-directory clean-tmp
+	@$(MAKE) --no-print-directory dist-clean
+	@$(MAKE) --no-print-directory clean-worktree-venvs
+	@echo "clean-artifacts done"
+
+# health-check: verify imports and basic system health (replaces direct python/uv commands)
+health-check:
+	@$(MAKE) --no-print-directory healthcheck
 
 scan-secrets-fresh:
 	@echo "=== Fresh secrets scan (NO baseline, NO key exclusion) — W5.3 ==="
