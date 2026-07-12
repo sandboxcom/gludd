@@ -8,8 +8,6 @@ TDD: write the test first.
 """
 from __future__ import annotations
 
-import pytest
-
 
 class TestReloadModelsHonesty:
     def test_models_reloaded_false_when_no_routing_file(self, tmp_path):
