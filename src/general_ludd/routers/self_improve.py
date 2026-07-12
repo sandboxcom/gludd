@@ -87,13 +87,13 @@ async def _persist_gated_self_improve_todos(
     """Persist harness-generated todos behind the self-improve human-approval gate.
 
     Mirrors ``EventLoop._persist_self_improve_todos``: each admitted todo is
-    stamped ``work_type="self_improve"`` and (with the gate's default
-    ``auto_queue=False``) parked in ``APPROVAL_REQUIRED`` instead of landing at
-    the default ``BACKLOG`` and flowing straight into normal promotion. That
-    makes them visible to ``/admin/self-improve/approvals`` and blocks silent
-    execution of self-authored work (task #22). Nothing is auto-executed.
+    stamped ``work_type="self_improve"`` and parked in ``APPROVAL_REQUIRED``
+    instead of landing at the default ``BACKLOG`` and flowing straight into
+    normal promotion. That makes them visible to ``/admin/self-improve/approvals``
+    and blocks silent execution of self-authored work (task #22, C13). Nothing
+    is auto-executed. auto_queue was removed (C13 bypass).
     """
-    gate = SelfImproveGate()  # defaults: max_open=10, auto_queue=False
+    gate = SelfImproveGate()  # max_open=10, always APPROVAL_REQUIRED
     existing = await repo.list_by_work_type(SELF_IMPROVE_WORK_TYPE)
     open_count = sum(
         1 for t in existing if getattr(t, "status", None) not in _TERMINAL_STATUSES
@@ -495,13 +495,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return {"status": "never_run", "findings_count": 0}
         return {"status": "completed", **cast(dict[str, object], last)}
 
-    # ------------------------------------------------------------------
     # Human approval gate for self-authored self-improve todos.
     #
-    # SelfImproveGate.auto_queue defaults to False, so admitted self-improve
-    # todos are parked in APPROVAL_REQUIRED instead of executing without review
+    # All admitted self-improve todos are parked in APPROVAL_REQUIRED
     # (self-modification approval bypass otherwise). These routes are the WIRED
-    # release path: without them held todos would strand forever.
+    # release path: without them held todos would strand forever. auto_queue
+    # was removed (C13 bypass).
     # ------------------------------------------------------------------
 
     def _todo_view(todo: object) -> dict[str, object]:

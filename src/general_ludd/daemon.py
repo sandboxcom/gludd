@@ -2516,25 +2516,18 @@ def create_daemon_app(
     from general_ludd.hardware.probe import probe_hardware
     app.state._hardware = probe_hardware()
 
-    _psk = os.environ.get("GLUDD_PSK", "")
-    # P1 fix: FAIL-CLOSED by default when no PSK is set.
-    # Non-public paths are DENIED (503) unless the operator explicitly opts out
-    # via GLUDD_ALLOW_NO_AUTH=1 (development/test only).
-    # GLUDD_REQUIRE_AUTH is kept for backward compat: when set it forces
-    # fail-closed even if GLUDD_ALLOW_NO_AUTH=1 is also set.
-    _allow_no_auth = os.environ.get("GLUDD_ALLOW_NO_AUTH", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
-    _require_auth_env = os.environ.get("GLUDD_REQUIRE_AUTH", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
-    # GLUDD_REQUIRE_AUTH overrides GLUDD_ALLOW_NO_AUTH — fail-closed wins.
-    if _require_auth_env:
-        _allow_no_auth = False
-    _no_auth = not _psk
-    # When no PSK: require_auth is True (fail-closed) unless the operator has
-    # explicitly opted out with GLUDD_ALLOW_NO_AUTH=1.
-    _require_auth = _no_auth and not _allow_no_auth
+    # C20: use the SHARED load_auth_posture helper so the daemon and worker
+    # cannot drift. GLUDD_PSK_DISABLE and GLUDD_ALLOW_NO_AUTH are both accepted
+    # as opt-out; GLUDD_REQUIRE_AUTH forces fail-closed.
+    from general_ludd.security.auth import load_auth_posture
+
+    _posture = load_auth_posture("daemon")
+    _psk = _posture.psk
+    _no_auth = _posture.no_auth
+    _require_auth = _posture.require_auth
+    # Back-compat: derive _allow_no_auth from posture (no PSK + not requiring
+    # auth means the operator opted out via GLUDD_PSK_DISABLE or GLUDD_ALLOW_NO_AUTH).
+    _allow_no_auth = _no_auth and not _require_auth
     app.state._psk = _psk
     app.state._no_auth = _no_auth
     app.state._require_auth = _require_auth
@@ -2546,13 +2539,14 @@ def create_daemon_app(
         logger.warning(
             "SECURITY: GLUDD_PSK is not set — the daemon will REFUSE all "
             "non-public paths (503, fail-closed). Set GLUDD_PSK to enable auth. "
-            "For development only, set GLUDD_ALLOW_NO_AUTH=1 to allow unauthenticated "
-            "access (leaves the entire /admin surface open to any caller)."
+            "For development only, set GLUDD_PSK_DISABLE=1 (or "
+            "GLUDD_ALLOW_NO_AUTH=1) to allow unauthenticated access (leaves "
+            "the entire /admin surface open to any caller)."
         )
     elif _no_auth and _allow_no_auth:
         # Explicit dev opt-out: LOUD warning that auth is intentionally disabled.
         logger.warning(
-            "SECURITY: GLUDD_PSK is not set and GLUDD_ALLOW_NO_AUTH=1 — the "
+            "SECURITY: GLUDD_PSK is not set and auth is disabled — the "
             "daemon is running with admin auth DISABLED (no_auth mode). The "
             "entire /admin surface is open to any caller that can reach the port. "
             "Set GLUDD_PSK to enable auth."

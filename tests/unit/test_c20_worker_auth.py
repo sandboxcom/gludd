@@ -35,8 +35,8 @@ class TestC20WorkerAuth:
     """C20: Worker fail-closed auth — default deny without PSK."""
 
     def test_worker_fails_closed_without_psk(self):
-        """No PSK configured, GLUDD_PSK_DISABLE cleared → all /jobs/* return 403."""
-        with patch.dict("os.environ", {"GLUDD_PSK_DISABLE": ""}):
+        """No PSK configured, both opt-out vars cleared → all /jobs/* return 403."""
+        with patch.dict("os.environ", {"GLUDD_PSK_DISABLE": "", "GLUDD_ALLOW_NO_AUTH": ""}):
             app = create_app(gateway=None)
             client = TestClient(app)
 
@@ -73,7 +73,7 @@ class TestC20WorkerAuth:
 
     def test_worker_healthz_always_public(self):
         """/healthz is always accessible, even when PSK is not configured."""
-        with patch.dict("os.environ", {"GLUDD_PSK_DISABLE": ""}):
+        with patch.dict("os.environ", {"GLUDD_PSK_DISABLE": "", "GLUDD_ALLOW_NO_AUTH": ""}):
             app = create_app(gateway=None)
             client = TestClient(app)
             resp = client.get("/healthz")

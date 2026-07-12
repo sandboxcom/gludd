@@ -156,11 +156,11 @@ disable_error_code = ["type-arg"]
 module = ["tests", "tests.*"]
 disallow_untyped_defs = false
 disallow_untyped_calls = false
-check_untyped_defs = false
+check_untyped_defs = true
 disallow_incomplete_defs = false
 warn_return_any = false
 warn_unused_ignores = false
-disable_error_code = ["attr-defined", "arg-type", "no-any-return", "return", "type-arg", "misc", "union-attr", "assignment", "method-assign", "var-annotated", "index", "operator", "call-overload", "truthy-function", "unused-ignore", "untyped-decorator", "type-var", "name-defined", "call-arg", "return-value", "no-redef", "comparison-overlap", "redundant-cast", "import-not-found", "func-returns-value", "list-item", "typeddict-unknown-key", "typeddict-item", "name-match"]
+disable_error_code = ["arg-type", "attr-defined", "type-arg", "index", "operator", "union-attr", "assignment", "comparison-overlap", "var-annotated", "misc", "name-defined", "has-type", "type-var", "call-overload", "return-value", "list-item", "untyped-decorator", "redundant-cast", "truthy-function", "no-redef", "name-match", "unused-ignore", "typeddict-unknown-key", "typeddict-item", "dict-item"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

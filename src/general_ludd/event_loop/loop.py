@@ -4430,14 +4430,10 @@ class EventLoop:
     ) -> int:
         if self._todo_repo is None or self._active_session is None:
             return 0
-        # Admission gate (W3.7): cap how many self-improve todos may be open at
-        # once and decide each admitted todo's initial status. auto_queue
-        # defaults to False so self-authored code/test work is parked in
-        # APPROVAL_REQUIRED for a human review gate rather than silently
-        # executing (a self-modification approval bypass otherwise). Held todos
-        # are released via `gludd self-improve approve/reject` or the daemon
-        # /self-improve/approvals routes. Set self_improve.auto_queue: true in
-        # config to opt back into immediate QUEUED admission.
+        # Admission gate (W3.7 / C13): cap how many self-improve todos may be
+        # open at once. All admitted todos land in APPROVAL_REQUIRED — the
+        # SelfImproveApprovalManager wired human-approval path is the ONLY way
+        # to release a held todo. auto_queue was removed (C13 bypass).
         from general_ludd.self_improve.gate import SelfImproveGate
 
         si_cfg = self.config.get("self_improve", {}) if isinstance(self.config, dict) else {}
@@ -4445,7 +4441,6 @@ class EventLoop:
             si_cfg = {}
         gate = SelfImproveGate(
             max_open=si_cfg.get("max_open", 10),
-            auto_queue=si_cfg.get("auto_queue", False),
         )
         terminal = {
             TodoStatus.COMPLETE.value,

@@ -53,12 +53,12 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     # MANUAL_HOLD allows an operator to pause a pending schedule without
     # cancelling it. CANCELLED retires the schedule permanently.
     TodoStatus.SCHEDULED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
-    # APPROVAL_REQUIRED is the human-gate holding state for self-improve todos
-    # (see self_improve/gate.py: auto_queue defaults to False). A human releases
-    # a held todo to QUEUED (approve) or retires it to CANCELLED (reject) via
-    # SelfImproveApprovalManager; MANUAL_HOLD lets an operator park it further.
-    # Without this entry TodoRepository.transition() would reject the release and
-    # self-improve todos would strand in APPROVAL_REQUIRED forever.
+    # APPROVAL_REQUIRED is the human-gate holding state for self-improve todos.
+    # A human releases a held todo to QUEUED (approve) or retires it to
+    # CANCELLED (reject) via SelfImproveApprovalManager; MANUAL_HOLD lets an
+    # operator park it further. Without this entry TodoRepository.transition()
+    # would reject the release and self-improve todos would strand in
+    # APPROVAL_REQUIRED forever.
     TodoStatus.APPROVAL_REQUIRED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.BLOCKED_ON_HUMAN},
     TodoStatus.ACTIVE: {

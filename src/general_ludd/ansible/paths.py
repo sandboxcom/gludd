@@ -12,12 +12,28 @@ ansible-collections behavior given an ``ANSIBLE_COLLECTIONS_PATH`` env var
 ordered project-first. The functions in this module produce that ordered
 list (and the corresponding ``ansible.cfg`` line / env dict) so the daemon,
 the CLI diagnostic, and tests share one source of truth.
+
+Versioned collections
+---------------------
+
+Each tier may carry versioned variants of a collection stored in directories
+following the pattern ``ansible_collections/<ns>@<version>/<coll>/``, e.g.::
+
+    .gludd/collections/ansible_collections/general_ludd@0.1.0/agent/
+    .gludd/collections/ansible_collections/general_ludd@beta.2/agent/
+    .gludd/collections/ansible_collections/general_ludd@latest/agent/
+    .gludd/collections/ansible_collections/general_ludd/agent/          (bare)
+
+Precedence when resolving a version: exact match > ``@latest`` > bare
+(unversioned) > highest semver among remaining candidates.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+import re
+import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _BUNDLED_COLLECTIONS_ROOT_DEFAULT = (
@@ -172,10 +188,211 @@ def find_resource(
     return None
 
 
+_VERSION_DIR_RE = re.compile(r"^(.+)@(.+)$")
+
+
+@dataclass(frozen=True)
+class CollectionVersionInfo:
+    """Metadata for one versioned collection directory.
+
+    Attributes:
+        namespace:     collection namespace (e.g. ``general_ludd``).
+        collection:    collection name (e.g. ``agent``).
+        version:       version string (``0.1.0``, ``beta.2``, ``latest``).
+        path:          absolute path to the collection root
+                       (``.../ansible_collections/<ns>@<v>/<coll>/``).
+        is_latest:     True when the version tag is ``latest``.
+        is_semver:     True when the version string is a valid semver
+                       (``MAJOR.MINOR.PATCH`` with optional pre-release).
+    """
+
+    namespace: str
+    collection: str
+    version: str
+    path: Path
+    is_latest: bool = field(init=False, default=False)
+    is_semver: bool = field(init=False, default=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "is_latest", self.version == "latest")
+        object.__setattr__(
+            self, "is_semver", bool(re.fullmatch(r"\d+\.\d+\.\d+[a-zA-Z0-9.\-]*", self.version))
+        )
+
+
+def scan_collection_versions(
+    base: Path,
+    namespace: str | None = None,
+    collection: str | None = None,
+) -> list[CollectionVersionInfo]:
+    """Find versioned collection dirs under *base*/ansible_collections/.
+
+    Matches directories whose name follows ``<ns>@<version>`` and contain
+    at least one subdirectory (the collection name).  When *namespace*
+    and/or *collection* are given, only matching entries are returned.
+
+    Returns a list ordered by precedence: exact semver matches sort
+    higher than tagged versions, then ``@latest`` is last among versioned
+    entries.
+    """
+    ac_dir = base / "ansible_collections"
+    if not ac_dir.is_dir():
+        return []
+
+    results: list[CollectionVersionInfo] = []
+    for entry in sorted(ac_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        m = _VERSION_DIR_RE.match(entry.name)
+        if not m:
+            continue
+        ns_name, version = m.group(1), m.group(2)
+        if namespace is not None and ns_name != namespace:
+            continue
+        for coll_dir in sorted(entry.iterdir()):
+            if not coll_dir.is_dir():
+                continue
+            coll_name = coll_dir.name
+            if collection is not None and coll_name != collection:
+                continue
+            results.append(
+                CollectionVersionInfo(
+                    namespace=ns_name,
+                    collection=coll_name,
+                    version=version,
+                    path=coll_dir,
+                )
+            )
+    return results
+
+
+def _semver_key(version: str) -> tuple[int | str, ...]:
+    """Sort key: semver versions sort descending, tagged sort after."""
+    parts = version.split(".")
+    if len(parts) >= 3 and parts[0].isdigit():
+        try:
+            return (0, -(int(parts[0])), -(int(parts[1])), -(int(parts[2])))
+        except (ValueError, IndexError):
+            pass
+    return (1, version)
+
+
+def list_collection_versions(
+    base: Path,
+    namespace: str,
+    collection: str | None = None,
+) -> list[str]:
+    """List distinct version strings for a collection at *base*.
+
+    Returns versions sorted by precedence: semver (highest first),
+    then tagged versions alphabetically, then ``latest`` last.
+    """
+    infos = scan_collection_versions(base, namespace=namespace, collection=collection)
+    versions = sorted({i.version for i in infos}, key=_semver_key)
+    return versions
+
+
+def resolve_collection_version(
+    base: Path,
+    namespace: str,
+    collection: str,
+    requested_version: str | None = None,
+) -> Path | None:
+    """Resolve the best matching versioned collection directory.
+
+    Precedence:
+        1. Exact match on *requested_version* (if given).
+        2. ``@latest`` tagged directory.
+        3. Bare (unversioned) directory
+           ``ansible_collections/<ns>/<coll>/``.
+        4. Highest semver among remaining versioned directories.
+
+    Returns the collection-root path (the directory containing
+    ``roles/``, ``plugins/`` etc.) or *None* if no matching collection
+    exists at *base*.
+    """
+    infos = scan_collection_versions(
+        base, namespace=namespace, collection=collection
+    )
+
+    if requested_version is not None:
+        for info in infos:
+            if info.version == requested_version:
+                return info.path
+        return None
+
+    for info in infos:
+        if info.is_latest:
+            return info.path
+
+    bare = base / "ansible_collections" / namespace / collection
+    if bare.is_dir():
+        return bare
+
+    semvers = [i for i in infos if i.is_semver]
+    if semvers:
+        semvers.sort(key=lambda i: _semver_key(i.version))
+        return semvers[0].path
+
+    if infos:
+        return infos[0].path
+
+    return None
+
+
+def activate_collection_version(
+    base: Path,
+    namespace: str,
+    collection: str,
+    version: str | None = None,
+    temp_dir: Path | None = None,
+) -> tuple[Path, Path | None]:
+    """Create a symlink-based activation so ansible resolves the right version.
+
+    Creates (or reuses) a temporary directory containing::
+
+        <temp_dir>/ansible_collections/<namespace>/<collection>
+            → symlink to the resolved version's collection root.
+
+    Returns ``(activation_root, cleanup_dir)`` where *activation_root* is
+    the path to prepend to ``ANSIBLE_COLLECTIONS_PATH`` and *cleanup_dir*
+    is the caller-owned temp directory (or *None* if *temp_dir* was
+    supplied externally).
+
+    When *version* is *None* the normal precedence rules apply
+    (``@latest`` > bare > highest semver).
+    """
+    resolved = resolve_collection_version(
+        base, namespace=namespace, collection=collection,
+        requested_version=version,
+    )
+    if resolved is None:
+        raise FileNotFoundError(
+            f"No collection found for {namespace}.{collection}"
+            + (f" @{version}" if version else "")
+            + f" under {base}"
+        )
+
+    if temp_dir is None:
+        temp_dir = Path(tempfile.mkdtemp(prefix="gludd-collections-"))
+    ns_dir = temp_dir / "ansible_collections" / namespace
+    ns_dir.mkdir(parents=True, exist_ok=True)
+    link = ns_dir / collection
+    if link.exists() or link.is_symlink():
+        link.unlink()
+    link.symlink_to(resolved, target_is_directory=True)
+    return (temp_dir, None if temp_dir != Path(tempfile.gettempdir()) else temp_dir)
+
+
 __all__ = [
+    "CollectionVersionInfo",
     "CollectionsPathEntry",
+    "activate_collection_version",
     "find_resource",
+    "list_collection_versions",
+    "resolve_collection_version",
     "resolve_collections_paths",
+    "scan_collection_versions",
     "to_ansible_cfg",
     "to_ansible_env",
 ]

@@ -66,20 +66,27 @@ def load_auth_posture(
     # the operator explicitly opts into no-auth via GLUDD_PSK_DISABLE=1.
     # Without this the worker served unauthenticated by default (fail-open)
     # whenever no PSK + no GLUDD_REQUIRE_AUTH.
-    _auth_disabled = source.get("GLUDD_PSK_DISABLE", "").strip().lower() in {
+    _auth_disabled_psk_disable = source.get("GLUDD_PSK_DISABLE", "").strip().lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
+    _auth_disabled_allow_no_auth = source.get("GLUDD_ALLOW_NO_AUTH", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    _auth_disabled = _auth_disabled_psk_disable or _auth_disabled_allow_no_auth
     require_auth = require_auth_env(source) or (no_auth and not _auth_disabled)
     if no_auth and require_auth:
         import logging
 
         logging.getLogger("general_ludd.security.auth").warning(
-            "No GLUDD_PSK configured for the %s surface: failing CLOSED (403) on "
-            "all non-public paths. Set GLUDD_PSK to enable auth, or GLUDD_PSK_DISABLE=1 "
-            "to explicitly disable it.",
+            "No GLUDD_PSK configured for the %s surface: failing CLOSED on "
+            "all non-public paths. Set GLUDD_PSK to enable auth, or "
+            "GLUDD_PSK_DISABLE=1 / GLUDD_ALLOW_NO_AUTH=1 to explicitly disable it.",
             surface,
         )
     return AuthPosture(

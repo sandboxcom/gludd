@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-**Generated:** 2026-07-12 12:28 UTC | **Version:** `v0.1.0-beta.2-114-gae4bbc4a-dirty` | **Tools:** 37
+**Generated:** 2026-07-12 12:38 UTC | **Version:** `v0.1.0-beta.2-115-g25641bd1-dirty` | **Tools:** 37
 
 Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automatically surfaced as an MCP tool with a JSON-schema input contract. This reference is regenerated via `make gen-mcp-tool-ref` (which calls `gen-mcp-tools` then this generator).
 

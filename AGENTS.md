@@ -147,9 +147,14 @@ Violating this contract wastes turns, confuses the user, and triggers progressiv
 
 0. **START WATCHDOG.** Run `make watchdog-auto` to ensure the background watchdog daemon is running. It polls at 10s intervals to detect and unjam agent stops. If the watchdog is already running, this is a no-op.
 1. **LOCATE work.** In ONE tool-call message, read `TASKS.md`, `BUGS.md`, `config/ratchet.yml`, `SESSION.md`, and run `make git-status` + `make git-log`. These 6 calls go in ONE message — never serial.
-2. **FAN OUT.** Immediately dispatch a ≥10-wide subagent wave in ONE message on disjoint work units. Do NOT write any prose between session start and the first dispatch wave. No introductions, no status reports, no "here's what I'll do" — just tool calls.
+2. **FAN OUT.** The VERY NEXT tool-call message after step 1 MUST include at least 2 task/agent/workflow dispatches. No reads, no edits, no bash — just dispatches. The window between "read backlog" and "first dispatch wave" must be exactly 1 turn (the dispatch itself). Any intervening tool calls (reads, writes, bash, edits, greps) are a **protocol violation** — the plugin choke window is up to 4 calls, but the policy window is ZERO.
 
 The ONLY valid exceptions to step 2: (a) the user's first message is a direct factual question with a one-word/one-line answer; (b) the user explicitly says "don't multitask yet." In both cases, answer briefly and then dispatch.
+
+### Time-to-dispatch constraint (HARD)
+
+- **≤5 minutes wall-clock from session start to the first dispatch wave.** The agent took 5+ minutes and multiple inline operations before dispatching subagents in a documented incident (2026-07-12). That pattern is now forbidden. If the backlog reads finish and 5 minutes have elapsed from session start with no dispatch wave, the session is in violation regardless of what tool calls were made.
+- **Step 1 → step 2 is ONE turn, not N turns.** After the parallel 6-call backlog read completes, the response message containing the result ingestion MUST also contain the dispatch wave. There is no "process results first, then dispatch" turn — the process-and-dispatch turn is the SAME turn.
 
 A Q&A-style first response ("Sure! Let me look into that.") with no tool calls is a **policy violation** whenever a task backlog exists. Prose-first session starts are forbidden.
 

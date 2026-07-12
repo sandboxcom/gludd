@@ -101,27 +101,14 @@ class TestPlaybookKey:
 
 class TestSelfImproveGate:
     def test_default_parks_for_approval(self) -> None:
-        # Security: auto_queue must default to False so self-authored
-        # code/test todos land in APPROVAL_REQUIRED behind a human review gate
-        # rather than QUEUED (immediate execution). Auto-queueing self-authored
-        # work with no human review is a self-modification approval bypass.
-        # The release path (SelfImproveApprovalManager, wired to the
-        # `gludd self-improve approve/reject` CLI + daemon
-        # /self-improve/approvals routes) promotes APPROVAL_REQUIRED -> QUEUED,
-        # so nothing strands.
+        # C13: auto_queue was removed. All self-authored code/test todos ALWAYS
+        # land in APPROVAL_REQUIRED behind a human review gate rather than
+        # QUEUED (immediate execution). The release path (SelfImproveApprovalManager)
+        # promotes APPROVAL_REQUIRED -> QUEUED via the daemon
+        # /self-improve/approvals routes, so nothing strands.
         decision = SelfImproveGate().evaluate({}, open_count=0)
         assert decision.initial_status == TodoStatus.APPROVAL_REQUIRED.value
         assert decision.admitted is True
-
-    def test_auto_queue(self) -> None:
-        # Config opt-in: self_improve.auto_queue: true still yields QUEUED for
-        # deployments where self-modification without review is acceptable.
-        decision = SelfImproveGate(auto_queue=True).evaluate({}, open_count=0)
-        assert decision.initial_status == TodoStatus.QUEUED.value
-
-    def test_auto_queue_false_keeps_approval(self) -> None:
-        decision = SelfImproveGate(auto_queue=False).evaluate({}, open_count=0)
-        assert decision.initial_status == TodoStatus.APPROVAL_REQUIRED.value
 
     def test_full_capacity_rejects(self) -> None:
         decision = SelfImproveGate(max_open=2).evaluate({}, open_count=2)

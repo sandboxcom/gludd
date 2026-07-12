@@ -67,6 +67,7 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 - **enhancement-ratio clean target** — `make check-enhancement-ratio` clean target.
 - **Deck rebuild** — presentation deck rebuilt with updated statistics.
 
+- **E.2 e2e audit closure** — 150 new e2e tests (50 auth + 19 sts + 39 adversarial_detector + 28 dispatcher + 14 ipc) across 5 new files: `test_e2e_security_auth.py` (386 lines), `test_e2e_security_sts.py` (403 lines), `test_e2e_adversarial_detector.py` (577 lines), `test_e2e_dispatcher.py` (877 lines), `test_e2e_ipc.py` (377 lines). All files verified with proper structure.
 - **Dirty tree (2026-07-12):** `Makefile`, `docs/presentation/deck-data.json`, `scripts/validate_task_ledger.py` modified; `tests/unit/test_enforcement_deletion_gate_plugin.py` + `tests/unit/test_enforcement_floor_plugin.py` added; `tests/unit/test_task_ledger_validation.py` modified. Not yet committed.
 - **CI status:** all commits pushed to sandboxcom/development; CI pending.
 
@@ -208,3 +209,10 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 - **2026-06-29**: Recovery wave landed 11+ commits.
 - **2026-06-28**: Orchestrator collapsed — nothing-dropped guardrail strengthened.
 - **2026-06-24**: Ratchet cleared 93→0. Gate green (284+ tests).
+
+### Wave 32 — Security/doc closure (2026-07-12)
+
+- **C.20 Worker fail-open auth fixed** — 105 tests pass. Worker fail-closed: requests without valid PSK rejected with 403.
+- **C.28 Failover follow-ups** — 66 tests pass (51 adversarial + 15 concurrency). attempt counter, exception_type, timestamp added to failover events; BoundedSemaphore(50, timeout 5s) guards concurrent recording; mutex guards read+write; transitive-cascade documented.
+- **F.4 Stale design docs updated** — PROJECT_RUNNER.md roadmap cleaned, STABILIZATION_PLAN WP-D3 already CLOSED, SLM_COMPACTION daemon-wired.
+- **F.5 Missing standard docs created** — MCP_TOOL_REFERENCE.md (682 lines, 37 tools), `make gen-mcp-tool-ref` target, CHANGELOG verified synced to 0.1.0-beta.3.

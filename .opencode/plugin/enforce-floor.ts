@@ -342,7 +342,32 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
 // session.  A new dispatch resets _needsRefill to false.
 
 const MAX_STREAK = 2
-let _streakCount = 0
+
+// ── Session-start window enforcement (2026-07-12) ────────────────────────
+// Reads the session start timestamp from enforce-session-start.ts's shared
+// state file.  During the first 90s after session start, all thresholds are
+// tightened to force dispatch within the first few turns.
+const SESSION_START_WINDOW_MS = 90_000
+const SESSION_START_TIME_BLOCK_MS = 60_000
+const SESSION_START_READ_WARN = 3
+const SESSION_START_READ_DENY = 6
+const SESSION_START_STREAK_MAX = 1
+function _getSessionStartTs(): number {
+  try {
+    const stateFile = process.env.GLUDD_SESSION_STATE || "/tmp/gludd-session-start.json"
+    if (fs.existsSync(stateFile)) {
+      const raw = JSON.parse(fs.readFileSync(stateFile, "utf8"))
+      if (typeof raw.started_at === "number" && raw.started_at > 0) return raw.started_at
+    }
+  } catch {}
+  return 0
+}
+function _isInSessionStartWindow(): boolean {
+  const sst = _getSessionStartTs()
+  if (sst === 0) return false
+  return (Date.now() - sst) < SESSION_START_WINDOW_MS
+}
+let _sessionDispatchCount = 0
 
 // Read-grinding detection (2026-07-09 — multitasking audit P1 fix).
 // The old isReadTool() early-return exempted read/grep/glob from ALL streak
@@ -537,6 +562,7 @@ export default (async ({ }) => {
           _dispatchCount++
           _thisMessageDispatchCount++
           _thisMessageTotalCalls++
+          _sessionDispatchCount++
           if (_dispatchCount > _dispatchPeak) {
             _dispatchPeak = _dispatchCount
           }
@@ -544,9 +570,52 @@ export default (async ({ }) => {
           return
         }
 
+        // Session-start window: if >60s elapsed since session start with
+        // 0 dispatches, block ALL non-dispatch tool calls.  The agent had
+        // time to read task files and should be dispatching by now.
+        if (_isInSessionStartWindow() && _sessionDispatchCount === 0) {
+          const sst = _getSessionStartTs()
+          if ((Date.now() - sst) > SESSION_START_TIME_BLOCK_MS && openWorkExists()) {
+            return {
+              permissionDecision: "deny" as const,
+              message: [
+                "⛔  SESSION-START DISPATCH STALL — TOOL CALL BLOCKED",
+                "",
+                `${Math.round((Date.now() - sst) / 1000)}s elapsed since session start with ZERO dispatches.`,
+                "The agent read task files but has not dispatched any subagents.",
+                "All non-dispatch tool calls are blocked until a dispatch wave starts.",
+                "",
+                "REQUIRED: Dispatch task/agent subagents on pending work NOW.",
+                "No more reads, edits, or status probes.  DISPATCH FIRST.",
+              ].join("\n"),
+            }
+          }
+        }
+
         if (isReadTool(tool)) {
           _thisMessageTotalCalls++
           _readStreak++
+          // Session-start window: tighter read-grind thresholds.
+          // After 3 reads → warn; after 6 reads → deny.
+          if (_isInSessionStartWindow()) {
+            if (_readStreak > SESSION_START_READ_DENY) {
+              return {
+                permissionDecision: "deny" as const,
+                message: [
+                  "SESSION-START READ-GRINDING — READ BLOCKED",
+                  "",
+                  `${_readStreak} consecutive reads with 0 dispatches in session-start window.`,
+                  "DISPATCH subagents NOW — reading more files before dispatching",
+                  "is the session-start grind anti-pattern.",
+                ].join("\n"),
+              }
+            }
+            if (_readStreak > SESSION_START_READ_WARN) {
+              console.warn(
+                `SESSION-START READ NUDGE: ${_readStreak} reads, 0 dispatches. DISPATCH NOW.`
+              )
+            }
+          }
           // Hard-deny: 10+ reads AND >60s since last dispatch — clear grinding.
           // An agent doing 10+ serial reads over 1+ minute without dispatching
           // is grinding inline instead of delegating. Both conditions must hold
@@ -689,7 +758,8 @@ export default (async ({ }) => {
         }
 
         _streakCount++
-        if (_streakCount <= MAX_STREAK) return
+        const effectiveMax = _isInSessionStartWindow() ? SESSION_START_STREAK_MAX : MAX_STREAK
+        if (_streakCount <= effectiveMax) return
         if (!openWorkExists({ isCommitTool: commitToolMode })) {
           _streakCount = 0
           return
@@ -706,7 +776,7 @@ export default (async ({ }) => {
           "█                                                                               █",
           "█  ⛔  AGENT-FLOOR BREACH — NON-DISPATCH CALL BLOCKED  ⛔                      █",
           "█                                                                               █",
-          `█  ${_streakCount} consecutive non-dispatch calls (MAX allowed: ${MAX_STREAK}).                      █`,
+          `█  ${_streakCount} consecutive non-dispatch calls (MAX allowed: ${effectiveMax}).                      █`,
           `█  FLOOR = ${FLOOR} subagents.  TARGET = ${TARGET}.  Current pool: BELOW FLOOR.                  █`,
           "█                                                                               █",
           "█  THE ONLY ALLOWED TOOL CALLS RIGHT NOW:                                       █",
@@ -797,6 +867,28 @@ export default (async ({ }) => {
         }
 
         _updateRefillState()
+
+        // Session-start window nudge: if >60s elapsed with 0 dispatches,
+        // inject a hard directive into the agent's response text.
+        if (_isInSessionStartWindow() && _sessionDispatchCount === 0) {
+          const sst = _getSessionStartTs()
+          if ((Date.now() - sst) > SESSION_START_TIME_BLOCK_MS) {
+            return {
+              text: [
+                "⛔⛔⛔ DISPATCH NOW — SESSION-START WINDOW ⛔⛔⛔",
+                "",
+                `${Math.round((Date.now() - sst) / 1000)}s since session start with ZERO dispatches.`,
+                "The session-start window requires dispatching subagents within",
+                "the first ~60s.  Read task files — now DISPATCH.",
+                "",
+                "DO NOT respond with prose, planning, or analysis.",
+                "Your next message MUST contain parallel Task/agent dispatches.",
+                "",
+                output.text,
+              ].join("\n"),
+            }
+          }
+        }
 
         // BUG #19 fix: when _needsRefill is set, inject a refill directive
         // instead of a hard block. This tells the agent to dispatch more

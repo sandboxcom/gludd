@@ -120,6 +120,7 @@ class TestWorkerAuth:
         env = dict(os.environ)
         env.pop("GLUDD_PSK", None)
         env.pop("GLUDD_PSK_DISABLE", None)
+        env.pop("GLUDD_ALLOW_NO_AUTH", None)
         with patch.dict("os.environ", env, clear=True):
             app = create_app(gateway=None)
             client = TestClient(app)
@@ -135,6 +136,7 @@ class TestWorkerAuth:
 
         env = dict(os.environ)
         env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_ALLOW_NO_AUTH", None)
         env["GLUDD_PSK_DISABLE"] = "1"
         with patch.dict("os.environ", env, clear=True):
             app = create_app(gateway=None)

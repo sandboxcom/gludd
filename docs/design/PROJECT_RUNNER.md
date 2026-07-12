@@ -57,13 +57,15 @@ print(result.summary())                # "test: PASS (exit 0, 12.3s)"
 # result.passed / exit_code / stdout_tail / stderr_tail / timed_out / duration_s / findings
 ```
 
-## Roadmap
+## Completed (slices 1-3 landed, commit b410a5d0)
 
+- **Slice 1** — `ProjectProfile`, `ProjectCommandRunner`, `load_project_profile`, safety model.
 - **Slice 2** — `ExecutionEngine.run_project_check(check)` + register `run_project_check`
-  as a model-callable tool so the agent can run a project check mid-task.
+  as a model-callable tool.
 - **Slice 3** — parameterize `quality/preflight.py` + `gate.py` on a target
-  `ProjectProfile` (default = gludd's own self-profile, so self-hosting is unchanged),
-  reusing the already config-driven `QualityGateConfig`.
-- **Later** — richer parsers (pytest/ruff/semgrep summary → structured `findings`),
-  SAST/DAST presets, and service touchpoints (Postgres/Redis query, MQTT pub/sub —
-  currently gaps).
+  `ProjectProfile` (default = gludd's own self-profile, so self-hosting is unchanged).
+
+## Future
+
+- Richer parsers (pytest/ruff/semgrep summary → structured `findings`).
+- SAST/DAST presets and service touchpoints (Postgres/Redis query, MQTT pub/sub).

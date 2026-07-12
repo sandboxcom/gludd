@@ -1474,7 +1474,12 @@ class ModelGateway:
         return result
 
     def _record_failover(
-        self, from_profile_id: str, to_profile_id: str, error: str
+        self,
+        from_profile_id: str,
+        to_profile_id: str,
+        error: str,
+        *,
+        exception_type: str | None = None,
     ) -> None:
         """Best-effort observability hook fired on every fallback hop walked.
 
@@ -1486,7 +1491,10 @@ class ModelGateway:
         See docs/audit/FAILOVER_GAPS.md (failover-metrics-facets).
         """
         try:
-            self._failover_log.record_failover(from_profile_id, to_profile_id, error)
+            self._failover_log.record_failover(
+                from_profile_id, to_profile_id, error,
+                exception_type=exception_type,
+            )
         except Exception:  # pragma: no cover - defensive; must never break the call
             logger.debug("failover_log.record_failover failed", exc_info=True)
         collector = self._metrics_collector
@@ -1546,7 +1554,10 @@ class ModelGateway:
                 continue
             if prev_id is not None:
                 self._record_failover(
-                    prev_id, fb_id, sanitize_error_message(str(last_exc)) if last_exc is not None else ""
+                    prev_id,
+                    fb_id,
+                    sanitize_error_message(str(last_exc)) if last_exc is not None else "",
+                    exception_type=type(last_exc).__qualname__ if last_exc is not None else None,
                 )
             try:
                 result = self._call_fallback(fb_id, messages, **kwargs)

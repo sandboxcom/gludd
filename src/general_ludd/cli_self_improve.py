@@ -1,11 +1,10 @@
 """CLI subcommand: ``gludd self-improve``.
 
-The human approval gate for self-authored self-improve todos. Because
-``SelfImproveGate.auto_queue`` defaults to ``False``, admitted self-improve
-todos are parked in ``APPROVAL_REQUIRED`` rather than executing without review.
-These commands are the operator-facing release path — they call the daemon's
-``/admin/self-improve/approvals`` routes (which persist through the
-``SelfImproveApprovalManager`` + ``TodoRepository``):
+The human approval gate for self-authored self-improve todos. Admitted
+self-improve todos are always parked in ``APPROVAL_REQUIRED`` (auto_queue was
+removed as a C13 bypass). These commands are the operator-facing release path —
+they call the daemon's ``/admin/self-improve/approvals`` routes (which persist
+through the ``SelfImproveApprovalManager`` + ``TodoRepository``):
 
 * ``gludd self-improve pending``           — list todos awaiting review
 * ``gludd self-improve approve <todo_id>``  — release APPROVAL_REQUIRED -> QUEUED

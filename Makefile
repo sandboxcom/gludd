@@ -26,7 +26,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
-         test-games game-audit gen-mcp-tools mcp-docs-check \
+         test-games game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
@@ -654,8 +654,12 @@ game-audit:
 gen-mcp-tools:
 	@$(UV) run python scripts/gen_mcp_tools.py
 
+gen-mcp-tool-ref: gen-mcp-tools
+	@$(UV) run python scripts/gen_mcp_tool_reference_md.py
+
 mcp-docs-check:
 	@$(UV) run python scripts/mcp_docs_check.py
+	@$(UV) run python scripts/gen_mcp_tool_reference_md.py --check
 
 test-tui-daemon:
 	@$(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s

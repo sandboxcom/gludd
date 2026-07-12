@@ -39,6 +39,13 @@ def test_require_auth_env_forces_closed_even_with_opt_out():
     assert posture.require_auth is True
 
 
+def test_allow_no_auth_alias_also_opt_out():
+    """GLUDD_ALLOW_NO_AUTH=1 should also opt out (deprecated daemon alias)."""
+    posture = load_auth_posture("worker", env={"GLUDD_ALLOW_NO_AUTH": "1"})
+    assert posture.require_auth is False
+    assert posture.no_auth is True
+
+
 def test_psk_disable_falsey_values_still_require():
     for val in ("0", "false", "no", "off", ""):
         posture = load_auth_posture("worker", env={"GLUDD_PSK_DISABLE": val})
