@@ -1,0 +1,188 @@
+fips_140_3:
+  category: FIPS_140_3
+  version: "140-3"
+  description: >
+    Federal Information Processing Standard 140-3, aligned with ISO/IEC 19790:2012
+    and ISO/IEC 24759:2017. Specifies security requirements for cryptographic
+    modules protecting sensitive information in computer and telecommunication systems.
+  security_levels:
+    - level: 1
+      description: Basic security requirements. Production-grade components.
+    - level: 2
+      description: Adds tamper-evidence requirements and role-based authentication.
+    - level: 3
+      description: Adds tamper-resistance, identity-based authentication, and
+        physical or logical separation of CSPs.
+    - level: 4
+      description: Envelope of protection around the module; detects and responds
+        to all unauthorized attempts at physical access.
+  requirement_areas:
+    - id: "1"
+      name: Cryptographic Module Specification
+      description: >
+        The cryptographic module shall be specified at a level of detail
+        sufficient for validation and independent testing.
+      severity: high
+      requirements:
+        - Document cryptographic boundary, hardware, software, firmware components
+        - Define all security functions performed by the module
+        - Identify the approved security functions and modes of operation
+        - Specify the operational environment
+        - Define module ports and interfaces
+        - Define module security policy
+        - Level 2: Document explicit entry/exit points for cryptographic boundary
+        - Level 3: Prove cryptographic boundary integrity via physical security mechanisms
+        - Level 4: Verify all hardware/software components are protected against tampering
+
+    - id: "2"
+      name: Cryptographic Module Ports and Interfaces
+      description: >
+        The module logical interfaces shall be separated into distinct
+        categories to control information flow.
+      severity: high
+      requirements:
+        - Define data input, data output, control input, status output interfaces
+        - Separate logical interfaces physically or logically
+        - Disconnect or disable ports not in use
+        - Level 2: Categorize all physical ports per their logical interface type
+        - Level 3: Provide physical/logical separation for each interface category
+        - Level 4: Each interface shall be physically protected against tampering
+
+    - id: "3"
+      name: Roles, Services, and Authentication
+      description: >
+        The module shall support authorized roles, map services to roles,
+        and authenticate operators to their roles.
+      severity: high
+      requirements:
+        - Define Crypto Officer, User, and Maintenance roles
+        - Map each service to an authorized role
+        - Authenticate an operator to a specific role
+        - Level 2: Require role-based authentication with minimum effort to guess
+        - Level 3: Require identity-based authentication with 1-in-1,000,000
+          false acceptance rate; MFA required
+        - Level 4: Require identity-based authentication with 1-in-1,000,000
+          false acceptance rate; MFA using at least two independent factors
+
+    - id: "4"
+      name: Finite State Model
+      description: >
+        The module shall use a Finite State Model to describe its
+        operational and error states, and state transitions.
+      severity: medium
+      requirements:
+        - Define all operational states (e.g., self-test, initialization, user, error)
+        - Define all state transitions and associated data flows
+        - Document error states and recovery transitions
+        - Level 2: Verify state transitions under all operational conditions
+        - Level 3: Guarantee module enters a secure error state on failure
+        - Level 4: Provide independent verification of state integrity
+
+    - id: "5"
+      name: Physical Security
+      description: >
+        The module shall employ physical security mechanisms to protect
+        against unauthorized physical access.
+      severity: high
+      requirements:
+        - Provide tamper-evident seals or coatings (Level 2+)
+        - Provide tamper-resistant enclosures (Level 3+)
+        - Zeroize CSPs on physical tamper detection (Level 3+)
+        - Level 2: Tamper-evident seals or pick-resistant locks
+        - Level 3: Hard opaque tamper-resistant enclosure
+        - Level 4: Complete envelope of protection; active tamper detection
+          circuitry; immediate zeroization on tamper detection
+
+    - id: "6"
+      name: Operational Environment
+      description: >
+        The operational environment shall be documented and constrained
+        per the module type (software, firmware, hardware, hybrid).
+      severity: high
+      requirements:
+        - Define the operating system and all loaded software for software modules
+        - Constrain the operating environment to a single operator at a time (Level 1)
+        - Separately authorize all software loaded into the operational environment
+        - Level 2: OS must be evaluated at CC EAL2 or equivalent; discretionary
+          access controls enforced
+        - Level 3: OS must be evaluated at CC EAL3 or equivalent; mandatory access
+          controls enforced; trusted path for authentication
+        - Level 4: OS must be evaluated at CC EAL4 or equivalent; support for
+          trusted recovery; hardware-based root of trust
+
+    - id: "7"
+      name: Cryptographic Key Management
+      description: >
+        The module shall implement key management policies covering the
+        entire key lifecycle.
+      severity: high
+      requirements:
+        - Generate keys using approved RNG meeting SP 800-90A
+        - Establish keys using approved methods (RSA, ECDH, DH)
+        - Input and output keys in encrypted form or via trusted path
+        - Zeroize all CSPs upon demand or when module is decommissioned
+        - Level 2: Key entry/output using split knowledge procedures
+        - Level 3: CSPs output only in encrypted form; manual key entry
+          with split knowledge (m of n)
+        - Level 4: All key establishment and management requires MFA
+
+    - id: "8"
+      name: Electromagnetic Interference / Electromagnetic Compatibility
+      description: >
+        The module shall not cause, nor be susceptible to, harmful
+        electromagnetic interference.
+      severity: low
+      requirements:
+        - Meet FCC Part 15 Class A (commercial) or Class B (residential) limits
+        - Level 1: Meet applicable FCC or equivalent EMI/EMC requirements
+        - Level 2-4: Same as Level 1; no additional EMI/EMC requirements
+          beyond what is specified for the operational environment
+
+    - id: "9"
+      name: Self-Tests
+      description: >
+        The module shall perform self-tests to verify correct operation
+        and integrity.
+      severity: high
+      requirements:
+        - Perform power-up self-tests: cryptographic algorithm known-answer tests
+        - Perform power-up self-tests: software/firmware integrity test
+        - Perform power-up self-tests: critical functions test
+        - Enter error state and output error indicator on self-test failure
+        - Perform conditional self-tests: pair-wise consistency test on key generation
+        - Perform conditional self-tests: manual key entry test
+        - Perform conditional self-tests: RNG continuous self-test
+        - Level 2: Firmware load test verifying integrity before loading
+        - Level 3: All self-tests required at Level 1-2 plus logical integrity
+          verification at runtime
+        - Level 4: Runtime integrity monitoring; periodic self-tests during operation
+
+    - id: "10"
+      name: Design Assurance
+      description: >
+        The module shall employ design and development practices that
+        provide assurance of correct implementation.
+      severity: medium
+      requirements:
+        - Level 1: Configuration management system; functional specification;
+          high-level design documentation
+        - Level 2: Detailed design documentation; correspondence between
+          design and functional specification; source code to design mapping
+        - Level 3: Formal model; security policy model; testing by independent
+          laboratory
+        - Level 4: Formal proof of security policy model; covert channel analysis;
+          modular design verified against security policy
+
+    - id: "11"
+      name: Mitigation of Other Attacks
+      description: >
+        The module shall mitigate against other attacks for which
+        test requirements and vendor evidence exist.
+      severity: medium
+      requirements:
+        - Level 1: No requirement unless module claims mitigation
+        - If claimed, document the specific attack and mitigation mechanism
+        - Level 2-4: Verify vendor-claimed mitigations against side-channel
+          attacks (power analysis, timing analysis, electromagnetic emanations)
+        - Provide test requirements and evidence for each claimed mitigation
+        - Document residual risk for attacks not mitigated

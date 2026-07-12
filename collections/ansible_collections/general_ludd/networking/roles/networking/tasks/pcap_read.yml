@@ -1,0 +1,102 @@
+---
+# pcap_read — read and summarize packet captures via gludd_scapy
+#
+# Reads pcap from networking__pcap_path using ScapyAdapter.read_pcap,
+# structures output, and writes packet summaries as JSON artifact.
+# Handles missing pcap files and unavailable tshark/scapy gracefully.
+
+- name: Validate pcap_read prerequisites
+  ansible.builtin.assert:
+    that:
+      - networking__pcap_path | default('') | length > 0
+    fail_msg: "networking__pcap_path is required for pcap_read mode"
+
+- block:
+    - name: Check pcap file existence
+      ansible.builtin.stat:
+        path: "{{ networking__pcap_path }}"
+      register: _pr_pcap_stat
+
+    - name: Read pcap via gludd_scapy
+      general_ludd.agent.gludd_scapy:
+        action: read_pcap
+        pcap_path: "{{ networking__pcap_path }}"
+        output_format: "{{ networking__output_format | default('json') }}"
+      register: _pr_read_result
+      no_log: "{{ networking__psk | length > 0 }}"
+      when:
+        - _pr_pcap_stat.stat.exists | default(false)
+        - not ansible_check_mode
+
+    - name: Count packets from read result
+      ansible.builtin.set_fact:
+        _pr_packet_count: >-
+          {{ _pr_read_result.packets | default([]) | length }}
+
+    - name: Summarize packet protocols found
+      ansible.builtin.set_fact:
+        _pr_protocol_summary: >-
+          {%- set protos = {} -%}
+          {%- for pkt in _pr_read_result.packets | default([]) -%}
+          {%-   set layer = pkt.highest_layer | default('other') -%}
+          {%-   set _ = protos.update({layer: protos.get(layer, 0) + 1}) -%}
+          {%- endfor -%}
+          {{ protos }}
+
+    - name: Debug pcap read summary
+      ansible.builtin.debug:
+        var: '_pr_read_result.packets[:10]'
+        verbosity: 1
+      when: _pr_read_result.packets | default([]) | length > 0
+
+    - name: Debug protocol summary
+      ansible.builtin.debug:
+        msg: >-
+          PCAP read: path={{ networking__pcap_path }}
+          packets={{ _pr_packet_count }}
+          protocols={{ _pr_protocol_summary | to_nice_json }}
+
+  rescue:
+    - name: Handle pcap read failure
+      ansible.builtin.debug:
+        msg: >-
+          PCAP read failed for {{ networking__pcap_path }}.
+          Reason: {{ _pr_read_result.msg | default('pcap not found or scapy/tshark unavailable') }}
+      failed_when: false
+
+    - name: Set empty result on failure
+      ansible.builtin.set_fact:
+        _pr_read_result:
+          packets: []
+          error: "{{ _pr_read_result.msg | default('pcap not found or scapy/tshark unavailable') }}"
+        _pr_packet_count: 0
+        _pr_protocol_summary: {}
+      when: _pr_read_result is not defined or _pr_read_result.packets is not defined
+
+  always:
+    - name: Set timestamp
+      ansible.builtin.set_fact:
+        _pr_timestamp: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601) }}"
+
+    - name: Write pcap read artifact JSON
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'networking',
+            'mode': 'pcap_read',
+            'pcap_path': networking__pcap_path,
+            'timestamp': _pr_timestamp,
+            'packet_count': _pr_packet_count,
+            'protocol_summary': _pr_protocol_summary,
+            'sample_packets': (_pr_read_result.packets | default([]))[:20],
+            'error': _pr_read_result.error | default(none),
+          } | to_nice_json }}
+        dest: "{{ networking__artifact_dir }}/pcap_read.json"
+        mode: "0644"
+
+    - name: Report pcap read completion
+      ansible.builtin.debug:
+        msg: >-
+          PCAP read complete: path={{ networking__pcap_path }}
+          packets={{ _pr_packet_count }}
+          artifact={{ networking__artifact_dir }}/pcap_read.json

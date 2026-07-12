@@ -9,7 +9,7 @@ This document shows how to configure and run the `log_analyzer` role for daily a
 - hosts: localhost
   gather_facts: true
   roles:
-    - role: general_ludd.agent.log_analyzer
+    - role: general_ludd.operations.log_analyzer
       vars:
         enable_model_call: true
         model_profile_error_cluster: "sonnet"
@@ -62,7 +62,7 @@ Set `log_analyzer_cot_enabled: false` to skip CoT logging.
 - hosts: localhost
   gather_facts: true
   roles:
-    - role: general_ludd.agent.log_analyzer
+    - role: general_ludd.operations.log_analyzer
       vars:
         enable_model_call: true
         daemon_url: "https://gludd.internal:8000"

@@ -1,0 +1,161 @@
+---
+# risks.yml — Risk analysis
+# Multi-category risk scoring: financial, security, personnel, market, legal.
+# Uses risk templates from vars/risk_templates.yml.
+
+- name: Initialize risk analysis
+  ansible.builtin.set_fact:
+    entity_risks:
+      entity_name: "{{ entity_name }}"
+      overall_score: null
+      overall_rating: "unknown"
+      categories: {}
+      signals: []
+      gathered_at: "{{ ansible_date_time.iso8601 }}"
+
+# ── Financial risk signals ──
+- name: SearX search for financial news
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} financial results revenue profit loss debt"
+    categories: "news,general"
+    page: 1
+  register: searx_financial_risk
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Security risk signals ──
+- name: SearX search for security incidents
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} security breach hack ransomware vulnerability"
+    categories: "news"
+    page: 1
+  register: searx_security_risk
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Personnel risk signals ──
+- name: SearX search for personnel changes
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} layoffs CEO departure executive turnover"
+    categories: "news"
+    page: 1
+  register: searx_personnel_risk
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Market risk signals ──
+- name: SearX search for market developments
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} market share competition regulation disruption"
+    categories: "news"
+    page: 1
+  register: searx_market_risk
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Legal risk signals ──
+- name: SearX search for legal issues
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} lawsuit litigation regulatory action fine"
+    categories: "news"
+    page: 1
+  register: searx_legal_risk
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Glassdoor employee satisfaction ──
+- name: SearX search for Glassdoor reviews
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} Glassdoor reviews employee satisfaction rating"
+    categories: "general"
+    page: 1
+  register: searx_glassdoor_risk
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Compile risk categories ──
+- name: Build risk category assessments
+  ansible.builtin.set_fact:
+    entity_risks: "{{ entity_risks | combine({
+      'categories': {
+        'financial': {
+          'score': null,
+          'rating': 'unknown',
+          'signals_count': (searx_financial_risk.json.number_of_results | default(0)) if (searx_financial_risk is success) else 0,
+          'template': risk_categories.financial,
+        },
+        'security': {
+          'score': null,
+          'rating': 'unknown',
+          'signals_count': (searx_security_risk.json.number_of_results | default(0)) if (searx_security_risk is success) else 0,
+          'template': risk_categories.security,
+          'breaches': entity_exposure.breach_history | default([]) | length,
+        },
+        'personnel': {
+          'score': null,
+          'rating': 'unknown',
+          'signals_count': (searx_personnel_risk.json.number_of_results | default(0)) if (searx_personnel_risk is success) else 0,
+          'template': risk_categories.personnel,
+        },
+        'market': {
+          'score': null,
+          'rating': 'unknown',
+          'signals_count': (searx_market_risk.json.number_of_results | default(0)) if (searx_market_risk is success) else 0,
+          'template': risk_categories.market,
+        },
+        'legal': {
+          'score': null,
+          'rating': 'unknown',
+          'signals_count': (searx_legal_risk.json.number_of_results | default(0)) if (searx_legal_risk is success) else 0,
+          'template': risk_categories.legal,
+        },
+      },
+    }) }}"
+
+- name: Write risk analysis artifact
+  ansible.builtin.copy:
+    content: "{{ entity_risks | to_nice_json }}"
+    dest: "{{ entity_research_artifact_dir }}/entity_risks.json"
+    mode: "0644"

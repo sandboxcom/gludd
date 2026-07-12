@@ -1,0 +1,203 @@
+---
+# attack_simulate.yml — document SQL injection attack vectors and tools
+#
+# REPORT-ONLY: NEVER executes real attacks. Documents attack patterns,
+# tool capabilities, and manual testing methodology. Uses the data in
+# attack_vectors.yml, database_specifics.yml, and bypass_techniques.yml
+# to generate educational output.
+
+- name: Attack simulation — educational report only
+  ansible.builtin.debug:
+    msg: >-
+      Attack simulation is REPORT-ONLY. No real attacks are executed.
+      Generating educational content with {{ attack_vectors | length }} vector
+      categories, {{ database_specifics | length }} DBMS profiles, and
+      {{ bypass_techniques | length }} bypass technique groups.
+
+- name: Build tool awareness catalog
+  ansible.builtin.set_fact:
+    tool_awareness:
+      - name: "sqlmap"
+        category: "Automated SQLi detection/exploitation"
+        url: "https://sqlmap.org"
+        detects: "UNION, error-based, blind boolean, blind time, stacked queries, out-of-band"
+        features:
+          - "Automatic detection of injectable parameters"
+          - "Database fingerprinting (200+ DBMS versions)"
+          - "Data enumeration (tables, columns, rows)"
+          - "File system access (read/write)"
+          - "OS shell access (via xp_cmdshell, UTL_FILE, etc.)"
+          - "WAF/IPS bypass with tamper scripts"
+          - "Session handling (cookies, CSRF tokens, HTTP auth)"
+        tamper_scripts: "between, bluecoat, chardoubleencode, commalesslimit, equaltorlike, space2comment, space2plus, randomcase, unmagicquotes"
+        detection_log_patterns:
+          - "sqlmap/1.* — User-Agent header"
+          - "AND 1=1 / AND 1=2 — boolean detection pairs"
+          - "SLEEP(5) — time-based detection"
+          - "UNION ALL SELECT NULL,NULL,NULL — column count enumeration"
+
+      - name: "jSQL Injection"
+        category: "GUI-based SQLi tool"
+        url: "https://github.com/ron190/jsql-injection"
+        detects: "UNION, error-based, blind, time-based"
+        features:
+          - "Java-based GUI for manual and automated testing"
+          - "Database fingerprinting"
+          - "Data retrieval with graphical table browser"
+          - "File read/write operations"
+          - "Web shell upload"
+          - "Multiple database support (30+ DBs)"
+
+      - name: "NoSQLMap"
+        category: "NoSQL injection detection"
+        url: "https://github.com/codingo/NoSQLMap"
+        detects: "MongoDB $where, $gt, $ne; CouchDB; Redis; Cassandra injection"
+        features:
+          - "Automated MongoDB injection detection"
+          - "NoSQL database enumeration"
+          - "Brute-force password cracking for NoSQL"
+          - "Blind NoSQL injection support"
+        detection_log_patterns:
+          - '{"$gt": ""} — parameter as JSON object'
+          - '{"$ne": null} — not-equal bypass'
+          - '{"$regex": ".*"} — regex-based injection'
+
+      - name: "Burp Suite"
+        category: "Web vulnerability scanner (SQLi module)"
+        url: "https://portswigger.net/burp"
+        detects: "UNION, error-based, blind, time-based, out-of-band"
+        features:
+          - "Active scanning with SQLi payload sets"
+          - "Collaborator-based out-of-band detection"
+          - "Manual testing with Repeater"
+          - "Extensible with SQLi-focused extensions (SQLiPy, CO2)"
+          - "Batch scanning with Burp Intruder"
+        extensions:
+          - "SQLiPy — sqlmap integration for Burp"
+          - "CO2 — SQLMapper plugin"
+          - "Backslash Powered Scanner — differential testing"
+
+      - name: "Bandit"
+        category: "Python static analysis — SQL injection rule"
+        url: "https://bandit.readthedocs.io"
+        detects: "B608: hardcoded_sql_expressions, B610-B612: SQL injection via django/sqlalchemy"
+        rules:
+          - "B608 — Hardcoded SQL expressions in string formatting"
+          - "B610 — Django extra() used with user-controlled input"
+          - "B611 — Django RawSQL() used"
+          - "B612 — logging.config.listen() on untrusted network"
+        command: "bandit -r src/ -ll -f json"
+
+      - name: "Semgrep"
+        category: "Multi-language SAST with SQLi rules"
+        url: "https://semgrep.dev"
+        detects: "Python, Go, Java, JavaScript, TypeScript, Ruby, PHP, C# SQLi patterns"
+        rulesets:
+          - "p/sql-injection — production-grade SQLi rules"
+          - "p/sqlalchemy — SQLAlchemy-specific rules"
+          - "p/django — Django-specific rules"
+          - "p/java — Java SQLi (JDBC, Hibernate)"
+        command: "semgrep --config p/sql-injection src/"
+
+      - name: "Gitleaks"
+        category: "Secret detection — database credentials"
+        url: "https://github.com/gitleaks/gitleaks"
+        detects: "Database connection strings, JDBC URLs, hardcoded DB credentials in code"
+        patterns:
+          - "postgres://user:pass@host/db"
+          - "mysql://user:pass@host/db"
+          - "JDBC_CONNECTION_STRING"
+          - "mongodb://user:pass@host/db"
+          - "redis://user:pass@host"
+        command: "gitleaks detect --source . --report-format json"
+
+  vars:
+    _sql_tool_awareness:
+      what: "Generated tool catalog for attack_simulate phase"
+      output: "{{ artifact_dir }}/sql_injection_tools.json"
+
+- name: Write tool awareness artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'phase': 'attack_simulate',
+        'note': 'REPORT-ONLY — no attacks executed',
+        'categories': {
+          'attack_vectors': attack_vectors,
+          'database_specifics': database_specifics,
+          'bypass_techniques': bypass_techniques
+        },
+        'tools': tool_awareness
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/sql_injection_tools.json"
+    mode: "0644"
+
+- name: Write attack simulation markdown report
+  ansible.builtin.copy:
+    content: |
+      # SQL Injection Attack Simulation Report
+
+      > **REPORT-ONLY — no real attacks were executed against any target.**
+
+      ## Attack Vectors
+
+      {% for category, vectors in attack_vectors.items() %}
+      ### {{ category | replace('_', ' ') | title }}
+
+      {% for v in vectors %}
+      - **{{ v.name }}** ({{ v.severity | upper }})
+        {{ v.description }}
+        Example: `{{ v.example }}`
+      {% endfor %}
+      {% endfor %}
+
+      ## Database-Specific Quirks
+
+      {% for db, specifics in database_specifics.items() %}
+      ### {{ db | upper }} ({{ specifics.version }})
+
+      {% if db != 'common_evasion' %}
+      **Unique attacks:**
+      {% for a in specifics.attacks_unique %}
+      - {{ a }}
+      {% endfor %}
+      **Detection queries:**
+      {% for q in specifics.detection_queries %}
+      - `{{ q }}`
+      {% endfor %}
+      {% endif %}
+      {% endfor %}
+
+      ## Bypass Techniques
+
+      {% for category, techniques in bypass_techniques.items() %}
+      ### {{ category | replace('_', ' ') | title }}
+
+      {% for t in techniques %}
+      - **{{ t.technique }}**: {{ t.description }}
+        Detection difficulty: {{ t.detection_difficulty }}
+      {% endfor %}
+      {% endfor %}
+
+      ## Tools
+
+      {% for tool in tool_awareness %}
+      ### {{ tool.name }}
+      - **Category:** {{ tool.category }}
+      - **Detects:** {{ tool.detects }}
+      - **Features:** {{ tool.features | join(', ') }}
+      {% endfor %}
+
+      ---
+      *Generated by general_ludd.security.sql_injection — educational content, no live attacks.*
+    dest: "{{ artifact_dir }}/sql_injection_attack_simulation.md"
+    mode: "0644"
+
+- name: Report attack simulation completion
+  ansible.builtin.debug:
+    msg: >-
+      Attack simulation complete: generated tool catalog with
+      {{ tool_awareness | length }} tools,
+      {{ attack_vectors | length }} vector categories,
+      {{ database_specifics | length }} DBMS profiles,
+      {{ bypass_techniques | length }} bypass technique groups

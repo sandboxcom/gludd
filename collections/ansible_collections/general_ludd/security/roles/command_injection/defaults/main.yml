@@ -1,0 +1,52 @@
+---
+# command_injection role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-command-injection"
+
+# Target path to audit (codebase root)
+target_path: "."
+
+# SAFE-BY-DEFAULT: do NOT run shell scans unless explicitly enabled
+enable_scan: false
+
+# Destructive ops guard — report-only
+enable_git_push: false
+
+audit_patterns:
+  - pattern: "os\\.system\\("
+    severity: critical
+    description: "Direct shell execution via os.system()"
+  - pattern: "shell\\s*=\\s*True"
+    severity: high
+    description: "subprocess with shell=True"
+  - pattern: "os\\.popen\\("
+    severity: critical
+    description: "Pipe to shell via os.popen()"
+  - pattern: "commands\\.getoutput\\("
+    severity: high
+    description: "Shell command output via commands module"
+  - pattern: "\\beval\\("
+    severity: critical
+    description: "Dynamic code execution via eval()"
+  - pattern: "\\bexec\\("
+    severity: critical
+    description: "Dynamic code execution via exec()"
+
+remediation_tools:
+  - name: "Bandit"
+    type: "SAST"
+    description: "Python security linter — detects subprocess shell=True, exec, eval"
+  - name: "Semgrep"
+    type: "SAST"
+    description: "Multi-language static analysis with command injection rules"
+  - name: "ShellCheck"
+    type: "Linter"
+    description: "Shell script static analysis"
+  - name: "strace/dtrace"
+    type: "Runtime"
+    description: "System call tracing — observe actual execve calls at runtime"

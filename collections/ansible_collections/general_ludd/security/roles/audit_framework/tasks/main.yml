@@ -1,0 +1,56 @@
+---
+# audit_framework role — audit framework lifecycle: lookup, update, execute, parse, remediate, recommend
+#
+# Dispatch via audit_framework__mode:
+#   lookup          — query framework data
+#   searx_update    — check SearX for framework updates
+#   audit_execute   — run audit against target system
+#   audit_parse     — parse audit specification documents
+#   remediate       — generate remediation plan from audit results
+#   tool_recommend  — recommend audit tools for target type
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ audit_framework__artifact_dir | default('/tmp/audit_framework') }}"
+    state: directory
+    mode: "0755"
+
+- name: Set default artifact dir fact
+  ansible.builtin.set_fact:
+    audit_framework__artifact_dir: "{{ audit_framework__artifact_dir | default('/tmp/audit_framework') }}"
+
+# ── Mode dispatch ──────────────────────────────────────────────────────────────
+
+- name: Framework lookup mode
+  ansible.builtin.include_tasks: framework_lookup.yml
+  when: audit_framework__mode | default('') == 'lookup'
+
+- name: SearX update mode
+  ansible.builtin.include_tasks: searx_update.yml
+  when: audit_framework__mode | default('') == 'searx_update'
+
+- name: Audit execute mode
+  ansible.builtin.include_tasks: audit_execute.yml
+  when: audit_framework__mode | default('') == 'audit_execute'
+
+- name: Audit parse mode
+  ansible.builtin.include_tasks: audit_parse.yml
+  when: audit_framework__mode | default('') == 'audit_parse'
+
+- name: Remediate mode
+  ansible.builtin.include_tasks: remediate.yml
+  when: audit_framework__mode | default('') == 'remediate'
+
+- name: Tool recommend mode
+  ansible.builtin.include_tasks: tool_recommend.yml
+  when: audit_framework__mode | default('') == 'tool_recommend'
+
+- name: Print available modes (no mode selected)
+  ansible.builtin.debug:
+    msg: >
+      No valid audit_framework__mode selected. Available modes:
+      lookup, searx_update, audit_execute, audit_parse, remediate, tool_recommend.
+      Set audit_framework__mode to one of these values.
+  when: audit_framework__mode | default('') not in ['lookup', 'searx_update', 'audit_execute', 'audit_parse', 'remediate', 'tool_recommend']

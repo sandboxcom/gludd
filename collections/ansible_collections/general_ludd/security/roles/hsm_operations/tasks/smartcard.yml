@@ -1,0 +1,240 @@
+---
+# smartcard.yml — smartcard operations via PC/SC and PKCS#11
+
+- name: Install pcsc-tools for smartcard detection
+  ansible.builtin.package:
+    name: "{{ hsm_operations__pcsc_package | default('pcsc-tools') }}"
+    state: present
+  when:
+    - hsm_operations__mode in ['card_detect', 'card_atr', 'card_pin', 'card_read_cert', 'card_import_cert', 'card_apdu']
+    - not ansible_check_mode
+
+# ── Detect connected smartcards ──
+- name: List PC/SC readers
+  ansible.builtin.command:
+    cmd: pcsc_scan -n
+  register: _hsm_pcsc_readers
+  changed_when: false
+  failed_when: false
+
+- name: Parse connected readers
+  ansible.builtin.set_fact:
+    _hsm_card_readers: >-
+      {{ _hsm_pcsc_readers.stdout | default('')
+         | regex_findall('(\d+): (.+)') }}
+
+# ── Parse ATR (Answer To Reset) ──
+- name: Get card ATR via opensc-tool
+  ansible.builtin.command:
+    cmd: >-
+      opensc-tool --reader "{{ hsm_operations__smartcard_reader | default('') }}"
+      --atr
+  register: _hsm_card_atr
+  changed_when: false
+  failed_when: false
+  when: hsm_operations__mode == 'card_atr'
+
+- name: Parse ATR hex value
+  ansible.builtin.set_fact:
+    _hsm_atr_hex: >-
+      {{ _hsm_card_atr.stdout | default('')
+         | regex_search('ATR:\s*([0-9A-Fa-f:]+)') | default('') | replace(':', '') }}
+    _hsm_card_type: "{{ _hsm_card_atr.stdout | default('')[:500] }}"
+  when: hsm_operations__mode == 'card_atr'
+
+- name: Build ATR lookup table
+  ansible.builtin.set_fact:
+    _hsm_atr_lookup:
+      "3B:FA:18:00:00:81:31:FE:45:00:31:C1": "YubiKey 5 (CCID)"
+      "3B:FA:13:00:00:81:31:FE:45:00:31:C1": "YubiKey 5 NFC (CCID)"
+      "3B:8A:00:01:00:01:00:01": "Gemalto IDPrime .NET"
+      "3B:7D:94:00:00:80:31:80:65:B0:83:01": "OpenPGP Card v2"
+      "3B:DA:18:FF:81:B1:FE:75:1F:03:00:31": "OpenPGP Card v3"
+      "3B:F8:13:00:00:81:31:FE:15:00:31": "Nitrokey Start"
+      "3B:D6:18:00:81:B1:FE:7D:1F:03:80": "CAC/PIV Card"
+
+- name: Identify card from ATR
+  ansible.builtin.set_fact:
+    _hsm_card_identified: >-
+      {{ _hsm_atr_lookup[_hsm_atr_hex] | default('Unknown card type') }}
+  when:
+    - hsm_operations__mode == 'card_atr'
+    - _hsm_atr_hex | default('') | length > 0
+
+# ── PIN management ──
+- name: Verify card PIN
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type user
+      --test
+  register: _hsm_card_pin_verify
+  changed_when: false
+  no_log: true
+  when:
+    - hsm_operations__mode == 'card_pin'
+    - hsm_operations__card_pin_op | default('verify') == 'verify'
+    - not ansible_check_mode
+
+- name: Change card PIN
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type user
+      --change-pin
+  register: _hsm_card_pin_change
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'card_pin'
+    - hsm_operations__card_pin_op | default('verify') == 'change'
+    - not ansible_check_mode
+
+- name: Unblock card PIN (SO PIN required)
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type so
+      --init-pin
+  register: _hsm_card_pin_unblock
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'card_pin'
+    - hsm_operations__card_pin_op | default('verify') == 'unblock'
+    - not ansible_check_mode
+
+- name: Set PIN retry count and lockout status
+  ansible.builtin.set_fact:
+    _hsm_pin_retries_remaining: >-
+      {{ hsm_operations__pin_retry_max - (_hsm_pin_attempts | default(0) | int) }}
+    _hsm_pin_locked: >-
+      {{ (_hsm_pin_attempts | default(0) | int) >= (hsm_operations__pin_retry_max | int) }}
+  when: hsm_operations__mode == 'card_pin'
+
+# ── Read certificate from card ──
+- name: Read certificate from smartcard
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --read-object --type cert
+      --label "{{ hsm_operations__key_label | default('Certificate') }}"
+      --output-file "{{ hsm_operations__artifact_dir }}/card_cert.der"
+  register: _hsm_card_read_cert
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'card_read_cert'
+    - not ansible_check_mode
+
+- name: Convert DER cert to PEM
+  ansible.builtin.shell:
+    cmd: >-
+      openssl x509 -inform DER
+      -in "{{ hsm_operations__artifact_dir }}/card_cert.der"
+      -out "{{ hsm_operations__artifact_dir }}/card_cert.pem"
+  changed_when: false
+  failed_when: false
+  when:
+    - hsm_operations__mode == 'card_read_cert'
+    - _hsm_card_read_cert.rc == 0
+
+# ── Import certificate to card ──
+- name: Import certificate to smartcard
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --write-object "{{ hsm_operations__cert_to_import }}"
+      --type cert
+      --label "{{ hsm_operations__key_label }}"
+      --id "{{ hsm_operations__key_id | default('%') }}"
+  register: _hsm_card_import_cert
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'card_import_cert'
+    - hsm_operations__cert_to_import | default('') | length > 0
+    - not ansible_check_mode
+
+# ── APDU command dispatch ──
+- name: Send APDU command to card
+  ansible.builtin.command:
+    cmd: >-
+      opensc-tool --reader "{{ hsm_operations__smartcard_reader }}"
+      --send-apdu "{{ hsm_operations__apdu_command }}"
+  register: _hsm_card_apdu
+  changed_when: false
+  failed_when: false
+  when:
+    - hsm_operations__mode == 'card_apdu'
+    - hsm_operations__apdu_command | default('') | length > 0
+
+# APDU command reference (informational in artifact)
+- name: Set APDU command reference
+  ansible.builtin.set_fact:
+    _hsm_apdu_reference:
+      SELECT: "00 A4 04 00 [AID] — Select application by AID"
+      READ_BINARY: "00 B0 [P1:offset_msb] [P2:offset_lsb] [Le] — Read binary data"
+      VERIFY: "00 20 00 [P2:key_ref] [Lc] [PIN_data] — Verify PIN (never logged)"
+      GET_DATA: "00 CA [tag_msb] [tag_lsb] [Le] — Get data object by tag"
+      GET_RESPONSE: "00 C0 00 00 [Le] — Get response from card"
+
+# ── AI-assisted smartcard diagnostics ──
+- name: Request smartcard diagnostic analysis from model
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ hsm_operations__daemon_url }}"
+    psk: "{{ hsm_operations__psk }}"
+    prompt: >-
+      You are a smartcard/PKI diagnostic expert. Analyze this smartcard operation
+      result. Mode: {{ hsm_operations__mode }}.
+      Reader: {{ hsm_operations__smartcard_reader | default('(auto)') }}.
+
+      {% if hsm_operations__mode == 'card_atr' %}
+      ATR: {{ _hsm_atr_hex | default('(not obtained)') }}
+      Card type: {{ _hsm_card_identified | default('(not identified)') }}
+      Raw: {{ _hsm_card_type | default('(no output)')[:1000] }}
+      {% elif hsm_operations__mode == 'card_pin' %}
+      PIN operation: {{ hsm_operations__card_pin_op | default('verify') }}
+      Retries remaining: {{ _hsm_pin_retries_remaining | default('unknown') }}
+      Locked: {{ _hsm_pin_locked | default(false) }}
+      {% elif hsm_operations__mode == 'card_apdu' %}
+      APDU sent: {{ hsm_operations__apdu_command | default('') }}
+      Response: {{ _hsm_card_apdu.stdout | default('(no response)')[:500] }}
+      {% endif %}
+
+      Diagnose any issues and provide corrective steps in 3 bullet points or fewer.
+    model_profile: "{{ hsm_operations__model_profile | default('') }}"
+  register: _hsm_card_diag_result
+  no_log: "{{ hsm_operations__psk | length > 0 }}"
+  when:
+    - hsm_operations__enable_model_call | bool
+    - not ansible_check_mode
+
+# ── Write smartcard artifact ──
+- name: Write smartcard operations artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'hsm_operations',
+        'phase': 'smartcard',
+        'mode': hsm_operations__mode,
+        'status': 'completed',
+        'readers': _hsm_card_readers | default([]),
+        'atr_hex': _hsm_atr_hex | default(''),
+        'card_identified': _hsm_card_identified | default(''),
+        'pins_remaining': _hsm_pin_retries_remaining | default(-1) | int,
+        'pin_locked': _hsm_pin_locked | default(false),
+        'apdu_response': (_hsm_card_apdu.stdout | default(''))[:500],
+        'apdu_reference': _hsm_apdu_reference | default({}),
+        'diagnostics': _hsm_card_diag_result.answer | default('')
+      } | to_nice_json }}
+    dest: "{{ hsm_operations__artifact_dir }}/hsm_smartcard.json"
+    mode: "0640"
+  no_log: true

@@ -1,0 +1,181 @@
+---
+# key_ops.yml — HSM key management operations
+
+- name: Validate required key parameters
+  ansible.builtin.assert:
+    that:
+      - hsm_operations__pkcs11_module | length > 0
+      - hsm_operations__key_label | length > 0
+    fail_msg: >
+      hsm_operations__pkcs11_module and hsm_operations__key_label are required
+      for key operations.
+  when: hsm_operations__mode | default('') in ['gen_key', 'import_key', 'export_pubkey', 'delete_key']
+
+# ── Generate key on HSM ──
+- name: Generate RSA key on HSM
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --keypairgen
+      --key-type "RSA:{{ hsm_operations__key_size }}"
+      --label "{{ hsm_operations__key_label }}"
+      --id "{{ hsm_operations__key_id | default('%') }}"
+  register: _hsm_gen_rsa
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'gen_key'
+    - hsm_operations__key_type == 'RSA'
+    - not ansible_check_mode
+
+- name: Generate ECDSA key on HSM
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --keypairgen
+      --key-type "EC:{{ hsm_operations__ec_curve }}"
+      --label "{{ hsm_operations__key_label }}"
+      --id "{{ hsm_operations__key_id | default('%') }}"
+  register: _hsm_gen_ec
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'gen_key'
+    - hsm_operations__key_type == 'ECDSA'
+    - not ansible_check_mode
+
+- name: Generate Ed25519 key on HSM
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --keypairgen
+      --key-type "EC:edwards25519"
+      --label "{{ hsm_operations__key_label }}"
+      --id "{{ hsm_operations__key_id | default('%') }}"
+  register: _hsm_gen_ed25519
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'gen_key'
+    - hsm_operations__key_type == 'Ed25519'
+    - not ansible_check_mode
+
+- name: Set gen_key result
+  ansible.builtin.set_fact:
+    _hsm_gen_result: >-
+      {{ _hsm_gen_rsa | default(_hsm_gen_ec) | default(_hsm_gen_ed25519) }}
+  when: hsm_operations__mode == 'gen_key'
+
+# ── Import existing key to HSM ──
+- name: Import private key to HSM
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --write-object "{{ hsm_operations__key_import_path }}"
+      --type privkey
+      --label "{{ hsm_operations__key_label }}"
+      --id "{{ hsm_operations__key_id | default('%') }}"
+  register: _hsm_import_key
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'import_key'
+    - hsm_operations__key_import_path | default('') | length > 0
+    - not ansible_check_mode
+
+# ── Export public key from HSM ──
+- name: Export public key from HSM
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --read-object --type pubkey
+      --label "{{ hsm_operations__key_label }}"
+      --output-file "{{ hsm_operations__artifact_dir }}/{{ hsm_operations__key_label }}.pub"
+  register: _hsm_export_pubkey
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'export_pubkey'
+    - not ansible_check_mode
+
+- name: Convert exported public key to PEM
+  ansible.builtin.shell:
+    cmd: >-
+      openssl pkey -pubin
+      -in "{{ hsm_operations__artifact_dir }}/{{ hsm_operations__key_label }}.pub"
+      -out "{{ hsm_operations__artifact_dir }}/{{ hsm_operations__key_label }}.pem"
+  register: _hsm_pubkey_pem
+  changed_when: false
+  failed_when: false
+  when:
+    - hsm_operations__mode == 'export_pubkey'
+    - _hsm_export_pubkey is defined
+    - _hsm_export_pubkey.rc == 0
+
+# ── List keys on token ──
+- name: List objects on HSM token
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --list-objects
+  register: _hsm_list_keys
+  changed_when: false
+  no_log: true
+  when:
+    - hsm_operations__mode == 'list_keys'
+    - not ansible_check_mode
+
+- name: Parse key listing
+  ansible.builtin.set_fact:
+    _hsm_key_list: >-
+      {{ _hsm_list_keys.stdout | default('')
+         | regex_findall('label:\s*(.+?)\s*\n\s*ID:\s*([0-9a-fA-F]+)') }}
+  when: hsm_operations__mode == 'list_keys'
+
+# ── Delete key from HSM ──
+- name: Delete key from HSM
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --delete-object --type privkey
+      --label "{{ hsm_operations__key_label }}"
+      --id "{{ hsm_operations__key_id | default('%') }}"
+  register: _hsm_delete_key
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'delete_key'
+    - not ansible_check_mode
+
+# ── Write key ops artifact ──
+- name: Write key operations artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'hsm_operations',
+        'phase': 'key_ops',
+        'mode': hsm_operations__mode,
+        'status': 'completed',
+        'key_label': hsm_operations__key_label,
+        'key_type': hsm_operations__key_type,
+        'key_size': hsm_operations__key_size | default(0) | int,
+        'ec_curve': hsm_operations__ec_curve | default(''),
+        'key_list': _hsm_key_list | default([])
+      } | to_nice_json }}
+    dest: "{{ hsm_operations__artifact_dir }}/hsm_key_ops.json"
+    mode: "0640"
+  no_log: true

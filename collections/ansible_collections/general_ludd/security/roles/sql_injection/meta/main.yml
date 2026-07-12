@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: sql_injection
+  author: Agentic Harness Agent
+  description: >
+    SQL injection attack understanding, code audit, log audit, and remediation.
+    Covers classic SQLi vectors (UNION, error-based, blind boolean, blind time,
+    stacked queries, out-of-band), second-order injection, and stored XSS->SQLi
+    chains. Performs real pattern matching via grep on source code and logs.
+    Generates parameterized query examples, ORM-safe alternatives, input
+    validation rules, and WAF rules. Tool-aware (sqlmap, jSQL, NoSQLMap,
+    Burp Suite, Bandit, Semgrep, Gitleaks). NEVER mutates source files;
+    remediation output is advisory only.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

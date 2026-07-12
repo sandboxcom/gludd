@@ -1,0 +1,444 @@
+---
+bgp:
+  as_numbers:
+    description: >
+      Autonomous System Number — unique identifier for a network or
+      group of networks presenting a common routing policy. Originally
+      16-bit (0-65535); expanded to 32-bit (ASN4, RFC 6793).
+    formats:
+      - "ASPLAIN: plain decimal (e.g., 15169 for Google)"
+      - "ASDOT+: high.low for 32-bit (e.g., 1.2 = 65538)"
+    ranges:
+      16_bit:
+        private: "64512-65534"
+        reserved: "0, 23456 (AS_TRANS), 65535"
+        public: "1-64511"
+      32_bit:
+        private: "4200000000-4294967294"
+        public: "65536-4199999999"
+  peering:
+    types:
+      - name: Transit
+        description: >
+          Customer pays provider for full internet routes. Provider
+          announces customer's prefixes to all peers. Can be full routes
+          (~950K prefixes) or default route only.
+      - name: Peering
+        description: >
+          Mutual exchange of routes between networks, usually settlement-
+          free. Each peer announces only its own and its customers'
+          prefixes. Can be public (at IXP) or private (PNI).
+      - name: IXP
+        description: >
+          Internet Exchange Point. Shared switching fabric where
+          multiple networks peer. Reduced latency and cost vs.
+          transit. Examples: AMS-IX, DE-CIX, LINX, Equinix IX.
+      - name: Private
+        description: >
+          Private Network Interconnect — direct cross-connect between
+          two networks at a colocation facility. Dedicated fiber or
+          wavelength. Higher capacity and lower latency than public peering.
+  attributes:
+    - name: AS_PATH
+      description: >
+        Sequence of ASNs the route has traversed. Used for loop
+        detection (own ASN in path → reject) and shortest-path
+        selection. Prepend (artificially lengthening) used for
+        inbound traffic engineering.
+      well_known: mandatory
+    - name: NEXT_HOP
+      description: >
+        IP address of the next router to forward packets to. Changed
+        at each AS boundary. Typically the peering router's IP.
+      well_known: mandatory
+    - name: LOCAL_PREF
+      description: >
+        Highest wins. Set within an AS to prefer a specific exit
+        point for outbound traffic. Not propagated outside the AS.
+      well_known: well-known discretionary
+    - name: MED
+      description: >
+        Multi-Exit Discriminator. Lowest wins (opposite of LOCAL_PREF).
+        Hint to a neighbor AS about which ingress link to use. Only
+        compared between prefixes from the same neighboring AS.
+      well_known: optional non-transitive
+    - name: COMMUNITY
+      description: >
+        32-bit tag for routing policy (ASN:value). Examples:
+        no-export (0xFFFFFF01), no-advertise (0xFFFFFF02),
+        local-AS (0xFFFFFF03). Extended communities for RT/RD
+        in L3VPN and route coloring.
+      well_known: optional transitive
+  route_reflectors:
+    description: >
+      BGP peers within an AS normally require a full mesh of iBGP
+      sessions. Route Reflectors (RRs) relax this: clients peer
+      only with the RR; RR reflects routes between clients and
+      non-clients. Uses ORIGINATOR_ID and CLUSTER_LIST for loop
+      prevention. Typical ISP topology: two redundant RRs, all
+      PE routers as clients.
+  communities:
+    well_known:
+      - "NO_EXPORT (0xFFFFFF01) — do not advertise outside confederation"
+      - "NO_ADVERTISE (0xFFFFFF02) — do not advertise to any peer"
+      - "NO_EXPORT_SUBCONFED (0xFFFFFF03) — do not advertise outside local AS"
+      - "BLACKHOLE (65535:666) — trigger RTBH for DDoS mitigation"
+      - "GRACEFUL_SHUTDOWN (65535:0) — lower LOCAL_PREF to gracefully drain traffic"
+  rpki:
+    description: >
+      Resource Public Key Infrastructure. Cryptographically verifies
+      the association between an ASN and the prefixes it is authorized
+      to originate. ROAs (Route Origin Authorizations) signed by the
+      prefix holder. RPKI Relying Party (validator) downloads ROAs;
+      routers use RTR protocol (RFC 8210) to fetch validated cache.
+      ROV (Route Origin Validation) states: Valid, Invalid (reject),
+      NotFound. ASPA (AS Provider Authorization, draft) verifies
+      path validity.
+    components:
+      - "CA hierarchy (AFRINIC/APNIC/ARIN/LACNIC/RIPE → LIR → end-entity)"
+      - "ROA — signed object: prefix, maxLength, origin ASN"
+      - "Validator — fetches ROAs via rsync/RRDP, produces VRPs"
+      - "Router — RTR client, applies VRP to routing decisions"
+      - "Manifest — listing of objects in a publication point"
+      - "CRL — Certificate Revocation List for RPKI certs"
+  looking_glasses:
+    - name: "AT&T"
+      url: "lg.att.net"
+      location: US
+    - name: "Cogent"
+      url: "lg.cogentco.com"
+      location: US
+    - name: "Lumen/CenturyLink"
+      url: "lg.centurylink.com"
+      location: US
+    - name: "Hurricane Electric"
+      url: "lg.he.net"
+      location: Global (multiple)
+    - name: "NTT"
+      url: "lg.ntt.net"
+      location: Global
+    - name: "Telia"
+      url: "lg.telia.net"
+      location: EU
+    - name: "DE-CIX"
+      url: "lg.de-cix.net"
+      location: Frankfurt
+    - name: "AMS-IX"
+      url: "lg.ams-ix.net"
+      location: Amsterdam
+    - name: "LINX"
+      url: "lg.linx.net"
+      location: London
+    - name: "Equinix"
+      url: "lg.equinix.com"
+      location: Global
+
+certificate_infrastructure:
+  root_cas:
+    description: >
+      Root Certificate Authorities are self-signed certificates at the
+      apex of trust chains. Managed by CA/Browser Forum Baseline
+      Requirements. Roots are distributed in OS/browser trust stores.
+      Private keys stored in HSMs (FIPS 140-2/3 Level 3). Typically
+      offline; issue intermediate CAs for day-to-day operations.
+    major_cas:
+      - "DigiCert (acquired Symantec/Verisign roots)"
+      - "GlobalSign"
+      - "Sectigo (formerly Comodo)"
+      - "Let's Encrypt / ISRG Root X1/X2"
+      - "Amazon Trust Services"
+      - "Google Trust Services"
+      - "Microsoft Identity Verification Root"
+      - "IdenTrust (DST Root CA X3, cross-signed Let's Encrypt)"
+      - "Certum (Asseco)"
+      - "Trustwave"
+      - "GoDaddy"
+  intermediates:
+    description: >
+      Intermediate CAs bridge root CA trust to end-entity certificates.
+      Chain validation: each intermediate must be signed by the next
+      cert in the chain, terminating at a trusted root. AIA (Authority
+      Information Access) extension points to issuer cert URL for chain
+      building. Cross-signing: a root issues an intermediate for another
+      root's hierarchy, enabling backward compatibility.
+    chain_validation: >
+      End-entity → Intermediate(s) → Root (trust anchor). Client
+      must have all intermediates up to but not including the root.
+      TLS servers SHOULD send full chain (RFC 5246, 8446). Missing
+      intermediates cause "unable to get local issuer certificate"
+      errors. Path validation per RFC 5280 §6: verify signatures,
+      validity periods, name constraints, policy constraints,
+      basic constraints (CA:TRUE), key usage, extended key usage.
+  ct_logs:
+    description: >
+      Certificate Transparency (RFC 6962) — public, append-only logs
+      of issued certificates. CAs submit pre-certificates; logs return
+      Signed Certificate Timestamps (SCTs). Monitors watch logs for
+      mis-issuance. Browsers require SCTs for EV certificates; Chrome
+      requires them for all certificates since 2018. Google maintains
+      popular logs: Argon, Xenon, Nimbus, Pilot, Rocketeer.
+  revocation:
+    crl:
+      description: >
+        Certificate Revocation List — periodically published list
+        of revoked certificate serial numbers. Signed by issuing CA.
+        Large CRLs for public CAs (hundreds of MB). CRL Distribution
+        Points (CDP) extension in cert points to CRL URL.
+    ocsp:
+      description: >
+        Online Certificate Status Protocol (RFC 6960). Client sends
+        cert serial to OCSP responder; responder returns "good,"
+        "revoked," or "unknown." Real-time but privacy concern
+        (CA sees every query). OCSP Must-Staple (TLS feature
+        extension, RFC 7633) requires OCSP response in TLS handshake.
+    ocsp_stapling:
+      description: >
+        TLS server periodically fetches OCSP response and staples
+        (attaches) it to the TLS handshake. Client validates the
+        stapled response without contacting OCSP responder directly.
+        Solves OCSP privacy problem. Multiple OCSP responses per
+        stapled response for intermediate certs.
+  transparency:
+    mapping: SCTs
+    description: >
+      Signed Certificate Timestamps — cryptographic proof that a
+      certificate was logged to CT. Embedded in certificate (pre-
+      cert SCT), TLS extension (signed_certificate_timestamp), or
+      OCSP stapling. At least 2 SCTs from different logs required
+      for Chrome CT enforcement.
+
+dns_infrastructure:
+  root_zone:
+    description: >
+      The top of the DNS hierarchy. 13 root server identities
+      (a.root-servers.net through m.root-servers.net), instantiated
+      as hundreds of anycast instances worldwide. Root zone file
+      managed by IANA; distributed by Verisign (root zone maintainer).
+  tld_operators:
+    types:
+      gtld:
+        description: >
+          Generic Top-Level Domains. Include legacy TLDs (.com/.net/
+          .org), sponsored TLDs (.edu/.gov/.mil), new gTLDs from 2012
+          round (.app/.dev/.cloud/.xyz, ~1200+ delegated). ICANN-
+          accredited registries operate each TLD.
+        examples:
+          - ".com/.net — Verisign"
+          - ".org — Public Interest Registry"
+          - ".info/.mobi — Afilias (now Identity Digital)"
+          - ".xyz — XYZ.COM LLC"
+          - ".app/.dev/.page — Google Registry"
+      cctld:
+        description: >
+          Country Code Top-Level Domains. Two-letter ISO 3166-1 codes.
+          Operated by national registries or delegated entities.
+        examples:
+          - ".uk — Nominet (UK)"
+          - ".de — DENIC (Germany)"
+          - ".jp — JPRS (Japan)"
+          - ".br — NIC.br (Brazil)"
+          - ".au — auDA (Australia)"
+          - ".cn — CNNIC (China)"
+          - ".io — ICB plc (British Indian Ocean Territory)"
+  anycast:
+    description: >
+      Anycast: the same IP address is advertised from multiple
+      locations worldwide. BGP routes traffic to the nearest
+      (topologically) instance. Used by all root servers, major
+      recursive resolvers (8.8.8.8, 1.1.1.1, 9.9.9.9), and CDN
+      edges. Anycast improves latency, provides DDoS resilience,
+      and enables geographic load distribution.
+    providers:
+      - 'Google Public DNS — 8.8.8.8, 8.8.4.4 (also 2001:4860:4860::8888 for IPv6)'
+      - 'Cloudflare — 1.1.1.1, 1.0.0.1 (also 2606:4700:4700::1111)'
+      - 'Quad9 — 9.9.9.9, 149.112.112.112 (also 2620:fe::fe)'
+      - 'OpenDNS — 208.67.222.222, 208.67.220.220'
+      - 'Comcast DNS — 75.75.75.75, 75.75.76.76'
+      - 'Level3 (Lumen) — 4.2.2.1 - 4.2.2.6'
+  dnssec_chain:
+    steps:
+      - Root zone is signed (KSK rollover managed by IANA/Verisign)
+      - Root DS record for each TLD appears in root zone
+      - TLD zone signs its zones; DS record in root delegates trust
+      - Domain owner signs zone; DS record at TLD delegates trust
+      - Validating resolver follows DS → DNSKEY → RRSIG chain from root
+      - DLV (DNSSEC Lookaside Validation, RFC 5074) deprecated in favor of root trust anchor
+
+ixps:
+  - name: DE-CIX Frankfurt
+    location: Frankfurt, Germany
+    peak_traffic: "15+ Tbps"
+    members: 1100+
+  - name: AMS-IX
+    location: Amsterdam, Netherlands
+    peak_traffic: "11+ Tbps"
+    members: 900+
+  - name: LINX
+    location: London, UK
+    peak_traffic: "7+ Tbps"
+    members: 950+
+  - name: Equinix IX
+    location: Global (45+ markets)
+    peak_traffic: "25+ Tbps aggregate"
+    members: 3500+ (across all locations)
+  - name: IX.br (PTT.br)
+    location: Brazil (30+ locations)
+    peak_traffic: "15+ Tbps"
+    members: 2500+
+  - name: JPNAP
+    location: Tokyo/Osaka, Japan
+    peak_traffic: "6+ Tbps"
+    members: 400+
+  - name: HKIX
+    location: Hong Kong
+    peak_traffic: "3+ Tbps"
+    members: 300+
+  - name: SIX
+    location: Seattle, US
+    peak_traffic: "2+ Tbps"
+    members: 350+
+  - name: NL-ix
+    location: Europe (30+ locations)
+    peak_traffic: "5+ Tbps"
+    members: 500+
+  - name: France-IX
+    location: Paris/Marseille, France
+    peak_traffic: "2+ Tbps"
+    members: 400+
+
+cdns:
+  - provider: Cloudflare
+    description: Global edge network. Anycast CDN, DDoS mitigation (Magic Transit), WAF, Argo Smart Routing. 330+ cities.
+    features: [Anycast, WAF, Workers (edge compute), R2 (object storage), DDoS protection, Durable Objects, KV store, Pages, Stream, Images]
+  - provider: Akamai
+    description: Largest CDN by server count. 4000+ PoPs, 135+ countries. Specialized in media delivery, security, edge compute.
+    features: [Media delivery, Ion (performance), Kona (security), EdgeWorkers, Image & Video Manager, Adaptive Media Delivery, mPulse (RUM)]
+  - provider: Fastly
+    description: Edge cloud platform. Instant purge, VCL-based configuration, Varnish cache. Wasm Compute@Edge.
+    features: [Instant purge, VCL, Compute@Edge (Wasm), Image Optimizer, TLS 1.3, HTTP/3, real-time logging, DDoS mitigation]
+  - provider: Amazon CloudFront
+    description: AWS CDN. 600+ PoPs. Deep S3/Lambda integration. Origin Shield for cache hierarchy.
+    features: [S3 origin, Lambda@Edge, CloudFront Functions, Origin Shield, Field-Level Encryption, real-time logs, KeyValueStore, continuous deployment]
+  - provider: Azure CDN / Front Door
+    description: Microsoft CDN. Front Door for global HTTP/S load balancing + CDN. Anycast.
+    features: [Azure Front Door (layer 7 LB + CDN), Verizon/Akamai backend, WAF, custom domain TLS, rules engine, Private Link origins]
+  - provider: Google Cloud CDN
+    description: Google's global edge. Deep integration with Google Cloud Load Balancing. Anycast IP.
+    features: [Global anycast LB, QUIC/HTTP/3, signed URLs/cookies, Cloud Armor (WAF/DDoS), hybrid origin, cache modes]
+  - provider: Edgio (Limelight)
+    description: Private edge network. Tier 1 ISP peering. Specialized in video and large-file delivery.
+    features: [Large file/video delivery, Web Application Firewall, edge compute, API acceleration, origin shield]
+
+tier_isps:
+  tier1:
+    description: >
+      Networks that peer settlement-free with ALL other Tier 1
+      networks in the default-free zone (DFZ). Have global backbone.
+      Do not buy transit from anyone.
+    characteristics: [Settlement-free peering with all other Tier 1 networks, Global backbone infrastructure, No transit purchases, Full BGP table (~950K routes)]
+    examples:
+      - "Cogent Communications (AS174)"
+      - "Lumen/CenturyLink/Level3 (AS3356)"
+      - "NTT Communications (AS2914)"
+      - "GTT (AS3257)"
+      - "Telia Carrier (AS1299)"
+      - "Zayo (AS6461)"
+      - "Liberty Global/LGI (AS6830)"
+      - "Vodafone Carrier (AS1273)"
+      - "Tata Communications (AS6453)"
+      - "Sprint/T-Mobile (AS1239)"
+      - "Telecom Italia/Sparkle (AS6762)"
+      - "Hurricane Electric (AS6939)"
+  tier2:
+    description: >
+      Regional networks that peer with some networks and buy transit
+      from others. Form the majority of the internet backbone.
+      May have extensive regional fiber but limited global reach.
+    characteristics: [Mix of peering and transit, Regional or national footprint, May peer at public IXPs]
+    examples:
+      - "Comcast (AS7922)"
+      - "Verizon (AS701)"
+      - "AT&T (AS7018)"
+      - "Orange (AS5511)"
+      - "Deutsche Telekom (AS3320)"
+      - "British Telecom (AS5400)"
+      - "Singtel (AS7473)"
+      - "Telstra (AS1221)"
+  tier3:
+    description: >
+      Last-mile / access networks and enterprises. Buy transit from
+      Tier 1/2 providers. Connect individual homes, businesses, and
+      content providers. Typically one or two upstreams.
+    characteristics: [Buy all transit, Consumer/business access, Single-homed or dual-homed, May peer regionally at IXPs]
+    examples:
+      - "Regional ISPs (municipal, rural broadband)"
+      - "Enterprise networks (single ASN, corporate)"
+      - "Hosting providers (OVH, Hetzner, DigitalOcean — buy transit)"
+      - "Access ISPs (local cable/DSL/fiber providers)"
+
+asn_lookup:
+  methods:
+    - name: WHOIS
+      description: >
+        Legacy whois protocol (port 43). Query whois.arin.net,
+        whois.ripe.net, etc. Returns ASN, organization, country,
+        registration dates, abuse contacts. Plain text output.
+        Slow; no structured API. Rate-limited on some servers.
+      endpoints:
+        - "whois.arin.net (ARIN region)"
+        - "whois.ripe.net (RIPE region)"
+        - "whois.apnic.net (APNIC region)"
+        - "whois.lacnic.net (LACNIC region)"
+        - "whois.afrinic.net (AFRINIC region)"
+      fields_returned: ["ASNumber", "ASName", "OrgName", "OrgId", "Country", "RegDate", "Updated", "NetRange", "CIDR", "AbuseContact"]
+    - name: RDAP
+      description: >
+        Registration Data Access Protocol (RFC 7480-7485). RESTful
+        JSON replacement for WHOIS. Authenticated access (OAuth/API
+        key optional). Bootstrap via IANA registries. Standardized
+        JSON output. Handles internationalized registration data.
+      endpoints:
+        - "https://rdap.arin.net/registry/autnum/{ASN}"
+        - "https://rdap.db.ripe.net/autnum/{ASN}"
+        - "https://rdap.apnic.net/autnum/{ASN}"
+        - "https://rdap.lacnic.net/rdap/autnum/{ASN}"
+        - "https://rdap.afrinic.net/rdap/autnum/{ASN}"
+      fields_returned: ["handle", "startAutnum", "endAutnum", "name", "type", "country", "entities (roles/contacts)", "events (registration/last_changed)", "remarks", "links"]
+    - name: PeeringDB
+      description: >
+        Community-maintained database of network interconnection
+        data. Self-reported by network operators. Includes ASN,
+        peering policy, IXP presence, traffic levels, contact info.
+        REST API with API key. Widely used for peering decisions.
+      endpoints:
+        - "https://www.peeringdb.com/api/net?asn={ASN}"
+        - "https://www.peeringdb.com/api/net/{id}"
+        - "https://www.peeringdb.com/api/ix?name={name}"
+      fields_returned: ["name", "aka", "asn", "irr_as_set", "website", "looking_glass_url", "route_server_url", "info_prefixes4", "info_prefixes6", "info_traffic", "info_ratio", "info_scope", "policy_general", "policy_url", "ix_count", "fac_count", "net_count"]
+
+rirs:
+  ARIN:
+    region: "North America (US, Canada, Caribbean, North Atlantic)"
+    founded: 1997
+    url: "https://www.arin.net"
+    policy_manual: "ARIN Number Resource Policy Manual (NRPM)"
+  RIPE_NCC:
+    region: "Europe, Middle East, Central Asia"
+    founded: 1992
+    url: "https://www.ripe.net"
+    policy_manual: "RIPE Document ripe-733 (Address Policy)"
+  APNIC:
+    region: "Asia-Pacific"
+    founded: 1993
+    url: "https://www.apnic.net"
+    policy_manual: "APNIC Internet Number Resource Policies"
+  LACNIC:
+    region: "Latin America and Caribbean"
+    founded: 2002
+    url: "https://www.lacnic.net"
+    policy_manual: "LACNIC Policy Manual"
+  AFRINIC:
+    region: "Africa and Indian Ocean"
+    founded: 2005
+    url: "https://www.afrinic.net"
+    policy_manual: "AFRINIC Consolidated Policy Manual (CPM)"

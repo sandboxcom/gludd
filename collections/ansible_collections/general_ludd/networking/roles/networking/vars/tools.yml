@@ -1,0 +1,293 @@
+---
+tools:
+  - name: tshark
+    category: capture
+    description: >
+      Command-line Wireshark. Captures and displays/analyzes network
+      traffic. Supports read/write filters, protocol dissection,
+      statistical output, and multiple output formats.
+    common_commands:
+      - command: tshark -i eth0 -a duration:30 -w capture.pcap
+        use_case: Capture all traffic on eth0 for 30 seconds
+        example: 'tshark -i en0 -a duration:60 -w /tmp/traffic.pcap'
+      - command: tshark -r capture.pcap -Y "http.request.method == GET"
+        use_case: Display all HTTP GET requests from a pcap
+        example: tshark -r capture.pcap -Y "http.request" -T fields -e http.host -e http.request.uri
+      - command: tshark -r capture.pcap -T fields -e ip.src -e ip.dst -e frame.protocols | sort | uniq -c | sort -rn | head -20
+        use_case: Top 20 source-destination pairs by packet count
+        example: tshark -r capture.pcap -q -z conv,tcp
+      - command: tshark -r capture.pcap -q -z io,stat,1,COUNT(tcp)COUNT(udp)COUNT(icmp)
+        use_case: Per-second protocol statistics over capture duration
+        example: tshark -r capture.pcap -q -z io,stat,5
+    output_format: Text, CSV, JSON, PDML, PSML, Ek (Elasticsearch)
+    dependencies:
+      - wireshark (provides tshark binary)
+      - libpcap
+
+  - name: tcpdump
+    category: capture
+    description: >
+      Classic packet capture tool using libpcap. Ubiquitous on Unix
+      systems. BPF (Berkeley Packet Filter) syntax for capture
+      filters. Lightweight; ideal for ring-buffer long-term capture.
+    common_commands:
+      - command: tcpdump -i eth0 -w capture.pcap -c 1000
+        use_case: Capture 1000 packets to file on eth0
+        example: tcpdump -i eth0 -w /tmp/capture.pcap -C 100 -W 10
+      - command: tcpdump -r capture.pcap -nn 'tcp port 443'
+        use_case: Read and display only TCP/443 traffic with numeric output
+        example: tcpdump -r capture.pcap -nn -A 'tcp port 80'
+      - command: tcpdump -i eth0 -G 3600 -w /var/log/tcpdump_%Y%m%d_%H%M.pcap
+        use_case: Rotate capture files every hour
+        example: tcpdump -i eth0 -G 300 -w hourly_%s.pcap -z gzip
+    output_format: PCAP, PCAPNG, Text (hex+ASCII)
+    dependencies:
+      - libpcap
+      - tcpdump
+
+  - name: zeek
+    category: analysis
+    description: >
+      Network security monitor (formerly Bro). Passive traffic analysis
+      generating comprehensive connection logs (conn.log, dns.log,
+      http.log, ssl.log, etc.). Extensible via policy scripts. Outputs
+      to tab-separated, JSON, or PostgreSQL.
+    common_commands:
+      - command: zeek -r capture.pcap local
+        use_case: Analyze a pcap with default policy scripts
+        example: 'zeek -r capture.pcap -C local "Site::local_nets += { 10.0.0.0/8 }"'
+      - command: zeek -i eth0 local
+        use_case: Live analysis on interface w/ default scripts
+        example: zeek -i eth0 frameworks/files/extract-all-files
+      - command: zeek-cut id.orig_h id.resp_h proto service < conn.log | sort | uniq -c
+        use_case: Summarize connections by protocol and service
+        example: zeek-cut -d ts uid id.orig_h id.resp_h proto service duration < conn.log
+    output_format: TSV (default), JSON, PostgreSQL
+    dependencies:
+      - zeek (binary + scripts)
+      - libpcap / af_packet
+
+  - name: nmap
+    category: scanning
+    description: >
+      Network discovery and security scanner. Port scanning (SYN,
+      connect, ACK, UDP, etc.), OS/service/version detection,
+      NSE (Nmap Scripting Engine) with 600+ scripts. Supports IPv6.
+    common_commands:
+      - command: nmap -sS -p- -T4 192.168.1.0/24
+        use_case: SYN scan all ports on a /24 subnet at aggressive timing
+        example: nmap -sS -p 1-65535 -T4 --min-rate 10000 10.0.0.0/24
+      - command: nmap -sV -sC -O -p 22,80,443 target.example.com
+        use_case: Version detection, default scripts, OS fingerprint on common ports
+        example: nmap -sV --script=http-title,ssl-cert -p 443 example.com
+      - command: nmap -sU --top-ports 100 -T4 -oA scan_results 192.168.1.1
+        use_case: Top 100 UDP port scan with all output formats
+        example: nmap -sU -p 53,67-68,123,161,500,1900,5353 10.0.0.1
+    output_format: Text, XML, Grepable, All-in-one (-oA)
+    dependencies:
+      - nmap
+      - libpcap
+
+  - name: hping3
+    category: traffic_gen
+    description: >
+      Packet crafter and traffic generator. Can craft TCP, UDP, ICMP,
+      and raw IP packets. Used for firewall testing, path MTU discovery,
+      advanced traceroute, and DoS testing.
+    common_commands:
+      - command: hping3 -S -p 80 --flood --rand-source target.example.com
+        use_case: SYN flood test with random source IPs on port 80
+        example: hping3 -S -p 443 -c 1000 -i u1000 target.example.com
+      - command: hping3 --traceroute -V -1 target.example.com
+        use_case: ICMP traceroute with verbose output
+        example: hping3 --traceroute -S -p 80 target.example.com
+      - command: hping3 -S -p 80 -s 5152 --setack 100 target.example.com
+        use_case: Craft a TCP SYN with specific seq/ack for testing
+        example: hping3 -a 10.0.0.1 -S -p 80 target.example.com
+    output_format: Text
+    dependencies:
+      - hping3
+      - libpcap
+
+  - name: tc
+    category: traffic_gen
+    description: >
+      Linux Traffic Control. Kernel-level traffic shaping, scheduling,
+      policing, and dropping. qdisc (queuing discipline) hierarchy:
+      root qdisc → classes → qdisc. Supports HTB, HFSC, fq_codel,
+      CAKE, netem (delay, loss, jitter, reordering).
+    common_commands:
+      - command: tc qdisc add dev eth0 root netem delay 100ms 20ms loss 2% corrupt 1%
+        use_case: Add 100ms ±20ms latency, 2% packet loss, 1% corruption
+        example: tc qdisc add dev eth0 root netem delay 200ms 50ms distribution normal
+      - command: 'tc qdisc add dev eth0 root handle 1: htb default 30 && tc class add dev eth0 parent 1: classid 1:1 htb rate 100mbit ceil 100mbit'
+        use_case: Shape eth0 traffic to 100 Mbps via HTB
+        example: 'tc qdisc add dev eth0 root handle 1: htb default 10'
+      - command: tc qdisc change dev eth0 root netem rate 1gbit delay 5ms
+        use_case: Simulate a 1 Gbps link with 5ms base latency
+        example: tc qdisc replace dev eth0 root netem delay 50ms rate 1gbit
+    output_format: Text (tc -s qdisc show)
+    dependencies:
+      - iproute2
+
+  - name: iperf3
+    category: diagnostic
+    description: >
+      TCP, UDP, and SCTP throughput measurement tool. Client-server
+      model. Measures achievable bandwidth, jitter, and datagram loss.
+      Supports parallel streams, bidirectional tests, and JSON output.
+    common_commands:
+      - command: iperf3 -s
+        use_case: Start iperf3 server on default port 5201
+        example: iperf3 -s -p 8080
+      - command: iperf3 -c server.example.com -P 10 -t 30
+        use_case: 10 parallel TCP streams, 30-second test
+        example: iperf3 -c 10.0.0.1 -P 4 -t 60 -J --logfile /tmp/iperf.json
+      - command: iperf3 -c server.example.com -u -b 100M -t 30
+        use_case: UDP test at 100 Mbps, 30 seconds (measures jitter/loss)
+        example: iperf3 -c server -u -b 1G -l 1472 -t 60
+    output_format: Text, JSON (-J)
+    dependencies:
+      - iperf3
+
+  - name: dig
+    category: diagnostic
+    description: >
+      DNS lookup utility from BIND. Flexible query tool supporting
+      all record types, DNSSEC validation, EDNS, and multiple output
+      formats. Used for DNS debugging and zone verification.
+    common_commands:
+      - command: dig +short example.com A
+        use_case: Quick A record lookup with no extra output
+        example: dig +short example.com MX
+      - command: dig +dnssec +multi example.com SOA
+        use_case: SOA query with DNSSEC validation in multiline format
+        example: dig +dnssec +trace example.com A
+      - command: dig @8.8.8.8 -x 93.184.216.34
+        use_case: Reverse DNS lookup via Google Public DNS
+        example: dig @1.1.1.1 +short -x 1.1.1.1
+    output_format: Text, JSON (+json)
+    dependencies:
+      - bind-utils / dnsutils
+
+  - name: nslookup
+    category: diagnostic
+    description: >
+      Interactive and non-interactive DNS query tool. Simpler than dig.
+      Built into Windows and Unix. Useful for quick forward/reverse
+      lookups when dig is unavailable.
+    common_commands:
+      - command: nslookup example.com
+        use_case: Basic A record lookup using system resolver
+        example: nslookup -type=MX example.com
+      - command: nslookup example.com 8.8.8.8
+        use_case: Query a specific DNS server
+        example: nslookup -type=TXT example.com 1.1.1.1
+      - command: nslookup 93.184.216.34
+        use_case: Reverse PTR lookup
+        example: nslookup -type=PTR 34.216.184.93.in-addr.arpa
+    output_format: Text
+    dependencies:
+      - bind-utils / dnsutils (or built-in on Windows)
+
+  - name: traceroute
+    category: diagnostic
+    description: >
+      Maps the network path to a destination. Sends probes with
+      increasing TTL; each intermediate router responds with ICMP
+      Time Exceeded. Reports IP, hostname, and RTT per hop.
+    common_commands:
+      - command: traceroute -n -q 1 example.com
+        use_case: Single-probe-per-hop, numeric-only output
+        example: traceroute -n -m 30 example.com
+      - command: traceroute -T -p 443 example.com
+        use_case: TCP traceroute on port 443 (bypasses ICMP filtering)
+        example: traceroute -T -p 80 --mtu example.com
+      - command: traceroute -I example.com
+        use_case: ICMP echo traceroute (default on most systems)
+        example: traceroute -I -w 2 -q 3 example.com
+    output_format: Text
+    dependencies:
+      - traceroute / inetutils
+
+  - name: mtr
+    category: diagnostic
+    description: >
+      My Traceroute (Matt's Traceroute) — combines traceroute and
+      continuous ping. Shows per-hop loss, latency (avg/best/worst/
+      stdev) updated in real-time. Identifies where along the path
+      packet loss occurs.
+    common_commands:
+      - command: mtr -r -c 10 example.com
+        use_case: 10-cycle report mode (non-interactive)
+        example: mtr -r -c 100 -i 0.2 example.com
+      - command: mtr -n --tcp -P 443 example.com
+        use_case: TCP-based (port 443), numeric-only output
+        example: mtr -n -i 1 -c 60 --report-wide example.com
+    output_format: Text (interactive curses or report -r), JSON (-j), XML (-x)
+    dependencies:
+      - mtr
+
+  - name: curl
+    category: web
+    description: >
+      URL transfer tool supporting HTTP, HTTPS, FTP, SFTP, SCP, TFTP,
+      LDAP, MQTT, SMTP, and more. Built-in TLS, proxies, authentication,
+      cookies. Ideal for API testing, download, and protocol debugging.
+    common_commands:
+      - command: curl -svo /dev/null https://example.com
+        use_case: Detailed SSL/TLS handshake info with silent body
+        example: 'curl -svo /dev/null --tlsv1.3 https://example.com'
+      - command: 'curl -H "Content-Type: application/json" -d ''{"key":"val"}'' https://api.example.com/endpoint'
+        use_case: POST JSON payload to an API endpoint
+        example: 'curl -X POST -d @payload.json https://api.example.com'
+      - command: curl -o /dev/null -s -w "TCP:%{time_connect} TLS:%{time_appconnect} Total:%{time_total}\n" https://example.com
+        use_case: Print timing breakdown for TCP, TLS, and total
+        example: 'curl -w "@curl-format.txt" -o /dev/null -s https://example.com'
+    output_format: Text (stdout), HTTP headers (stderr -v)
+    dependencies:
+      - curl
+
+  - name: wget
+    category: web
+    description: >
+      Non-interactive downloader for HTTP, HTTPS, and FTP. Recursive
+      download, mirroring, timestamping. Robust resume (-c) and retry.
+      Often preferred for bulk downloads and mirroring over curl.
+    common_commands:
+      - command: wget -r -np -nH --cut-dirs=2 -R index.html* https://example.com/data/
+        use_case: Recursive mirror of /data/, stripping host dirs
+        example: 'wget -m -k -p -np https://example.com/docs/'
+      - command: wget --limit-rate=1m --user-agent="Mozilla/5.0" -c https://example.com/file.iso
+        use_case: Resume download with rate limit and custom UA
+        example: 'wget -c -t 10 --waitretry=30 https://example.com/large.iso'
+      - command: 'wget --post-data="param=value" --header="Content-Type: application/x-www-form-urlencoded" https://example.com/api'
+        use_case: POST form-encoded data to endpoint
+        example: 'wget --method=PUT --body-file=data.json https://example.com'
+    output_format: Downloaded files, progress to stderr
+    dependencies:
+      - wget
+
+  - name: openssl_s_client
+    category: crypto
+    description: >
+      OpenSSL s_client — TLS/SSL client for debugging and testing.
+      Can connect to any TLS server, display certificates, negotiate
+      cipher suites, and test TLS configurations. Built into openssl.
+    common_commands:
+      - command: openssl s_client -connect example.com:443 -servername example.com
+        use_case: Connect with SNI, show full certificate chain
+        example: 'openssl s_client -connect example.com:443 -servername example.com -showcerts'
+      - command: openssl s_client -connect example.com:443 -tls1_3
+        use_case: Force TLS 1.3 connection to test compatibility
+        example: 'openssl s_client -connect example.com:443 -no_tls1_2'
+      - command: echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -dates -subject -issuer
+        use_case: Extract cert expiry, subject, and issuer in one pipeline
+        example: 'echo "Q" | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -fingerprint -sha256'
+      - command: openssl s_client -connect example.com:443 -servername example.com -cipher ECDHE-RSA-AES128-GCM-SHA256
+        use_case: Test specific cipher suite negotiation
+        example: 'openssl s_client -connect example.com:443 -cipher 'ECDHE+AESGCM''
+    output_format: Text (certificate PEM, handshake, session info)
+    dependencies:
+      - openssl
+

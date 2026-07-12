@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: networking
+  author: Agentic Harness Agent
+  description: >
+    Comprehensive networking knowledge role covering OSI model, TCP/IP stack,
+    wireless standards (Wi-Fi, Bluetooth, AREDN, LoRa, Zigbee, Z-Wave, Thread,
+    Matter, cellular), internet infrastructure (BGP, DNS, CDNs, IXPs, RIRs,
+    certificate infrastructure), packet analysis, traffic analysis, network
+    scanning, dissector creation, and diagnostic tool recommendations.
+    Read-only by default; crafted packets and network scans are mutating modes
+    requiring explicit mode override. Designed as a sub-role callable from
+    networking and diagnostic playbooks via include_role.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,101 @@
+---
+# remediate.yml — generate remediation suggestions for each finding
+#
+# REPORT-ONLY. Builds _ci_remediation_suggestions fact listing safe
+# alternatives for each finding pattern. References external SAST/runtime
+# tools. Never mutates the repo — advisory output only.
+
+- name: Initialize remediation suggestions
+  ansible.builtin.set_fact:
+    _ci_remediation_suggestions: []
+
+- name: Generate remediation for os.system findings
+  ansible.builtin.set_fact:
+    _ci_remediation_suggestions: >-
+      {{ _ci_remediation_suggestions + [
+        {
+          'pattern': 'os.system()',
+          'finding_count': _ci_audit_findings | selectattr('pattern', 'equalto', 'os.system()') | list | length,
+          'suggestion': 'Replace os.system(cmd) with subprocess.run(cmd.split(), shell=False). Never pass a single string to os.system — it invokes /bin/sh.',
+          'before': 'os.system(f"curl {user_url}")',
+          'after': 'subprocess.run(["curl", user_url], check=True)',
+          'reference': 'https://docs.python.org/3/library/subprocess.html#subprocess-replacements'
+        }
+      ] }}
+  when: _ci_audit_findings | selectattr('pattern', 'equalto', 'os.system()') | list | length > 0
+
+- name: Generate remediation for shell=True findings
+  ansible.builtin.set_fact:
+    _ci_remediation_suggestions: >-
+      {{ _ci_remediation_suggestions + [
+        {
+          'pattern': 'subprocess shell=True',
+          'finding_count': _ci_audit_findings | selectattr('pattern', 'equalto', 'subprocess shell=True') | list | length,
+          'suggestion': 'Pass args as a list and use shell=False (the default). shell=True invokes /bin/sh and enables metacharacter injection.',
+          'before': 'subprocess.run("grep " + pattern + " " + file, shell=True)',
+          'after': 'subprocess.run(["grep", pattern, file], check=True)',
+          'reference': 'https://docs.python.org/3/library/subprocess.html#security-considerations'
+        }
+      ] }}
+  when: _ci_audit_findings | selectattr('pattern', 'equalto', 'subprocess shell=True') | list | length > 0
+
+- name: Generate remediation for os.popen findings
+  ansible.builtin.set_fact:
+    _ci_remediation_suggestions: >-
+      {{ _ci_remediation_suggestions + [
+        {
+          'pattern': 'os.popen()',
+          'finding_count': _ci_audit_findings | selectattr('pattern', 'equalto', 'os.popen()') | list | length,
+          'suggestion': 'Replace os.popen(cmd) with subprocess.run(args, capture_output=True, text=True). os.popen always invokes a shell.',
+          'before': 'output = os.popen(f"cat {filename}").read()',
+          'after': 'output = subprocess.run(["cat", filename], capture_output=True, text=True, check=True).stdout',
+          'reference': 'https://docs.python.org/3/library/subprocess.html#replacing-os-popen'
+        }
+      ] }}
+  when: _ci_audit_findings | selectattr('pattern', 'equalto', 'os.popen()') | list | length > 0
+
+- name: Generate remediation for commands.getoutput findings
+  ansible.builtin.set_fact:
+    _ci_remediation_suggestions: >-
+      {{ _ci_remediation_suggestions + [
+        {
+          'pattern': 'commands.getoutput()',
+          'finding_count': _ci_audit_findings | selectattr('pattern', 'equalto', 'commands.getoutput()') | list | length,
+          'suggestion': 'commands.getoutput() is removed in Python 3. Replace with subprocess.getoutput() or (preferably) subprocess.run() with args as list.',
+          'before': 'commands.getoutput(user_cmd)',
+          'after': 'subprocess.run(user_cmd, shell=False, capture_output=True) — or use shlex.split(user_cmd) to tokenize',
+          'reference': 'https://docs.python.org/3/library/subprocess.html#subprocess.getoutput'
+        }
+      ] }}
+  when: _ci_audit_findings | selectattr('pattern', 'equalto', 'commands.getoutput()') | list | length > 0
+
+- name: Generate remediation for eval/exec findings
+  ansible.builtin.set_fact:
+    _ci_remediation_suggestions: >-
+      {{ _ci_remediation_suggestions + [
+        {
+          'pattern': 'eval() / exec()',
+          'finding_count': (_ci_audit_findings | selectattr('pattern', 'equalto', 'eval()') | list | length) +
+                           (_ci_audit_findings | selectattr('pattern', 'equalto', 'exec()') | list | length),
+          'suggestion': 'eval() and exec() execute arbitrary code. Replace with ast.literal_eval() for data structures, or a dedicated parser for domain-specific expressions. Never eval() user input.',
+          'before': 'result = eval(user_expression)',
+          'after': 'import ast; result = ast.literal_eval(user_expression)  # safe for literals only',
+          'reference': 'https://docs.python.org/3/library/ast.html#ast.literal_eval'
+        }
+      ] }}
+  when: (_ci_audit_findings | selectattr('pattern', 'equalto', 'eval()') | list | length) +
+        (_ci_audit_findings | selectattr('pattern', 'equalto', 'exec()') | list | length) > 0
+
+- name: Generate input sanitization guidance
+  ansible.builtin.set_fact:
+    _ci_remediation_suggestions: >-
+      {{ _ci_remediation_suggestions + [
+        {
+          'pattern': 'input sanitization',
+          'finding_count': 'all',
+          'suggestion': 'Apply allowlist validation: only permit known-safe characters (alphanumeric + limited punctuation). shlex.quote() escapes shell metacharacters when shell=True is unavoidable. Never use blocklist filtering — attackers bypass blocklists.',
+          'before': 'os.system("grep " + user_input + " /var/log/app.log")',
+          'after': 'import shlex; user_input = shlex.quote(user_input);  # THEN safe for shell context — but prefer subprocess.run with args list',
+          'reference': 'https://docs.python.org/3/library/shlex.html#shlex.quote'
+        }
+      ] }}

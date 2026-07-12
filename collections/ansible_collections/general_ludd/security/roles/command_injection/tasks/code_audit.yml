@@ -1,0 +1,223 @@
+---
+# code_audit.yml — scan target_path for command injection patterns
+#
+# REPORT-ONLY. Uses find + grep to scan codebase. Findings are accumulated
+# into the _ci_audit_findings fact as a list of dicts with file, line,
+# pattern, severity. Each scan task is gated behind enable_scan: true and
+# failed_when: false so a missing grep or empty result is not an error.
+
+- name: Find source files to scan
+  ansible.builtin.find:
+    paths: "{{ target_path }}"
+    patterns: "*.py,*.sh,*.js,*.ts,*.go,*.rb,*.java,*.php,*.c,*.cpp,*.h"
+    recurse: true
+    excludes: ".git,.venv,venv,__pycache__,node_modules,.tox"
+    file_type: file
+  register: _ci_files
+  when: enable_scan | bool
+
+- name: Build file list for grep scans
+  ansible.builtin.set_fact:
+    _ci_file_list: "{{ _ci_files.files | map(attribute='path') | join(' ') }}"
+  when:
+    - enable_scan | bool
+    - _ci_files is defined
+    - _ci_files.files | length > 0
+
+- name: Initialize audit findings list
+  ansible.builtin.set_fact:
+    _ci_audit_findings: []
+    _ci_finding_count: 0
+
+# ── Audit pattern scans ────────────────────────────────────────────────────────
+
+- name: "Audit: os.system( calls"
+  ansible.builtin.shell:
+    cmd: >-
+      grep -n --color=never 'os\.system('
+      {{ _ci_file_list }}
+      || true
+  register: _ci_os_system
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_scan | bool
+    - _ci_file_list | default('') | length > 0
+
+- name: Record os.system findings
+  ansible.builtin.set_fact:
+    _ci_audit_findings: >-
+      {{ _ci_audit_findings + _ci_os_system.stdout_lines | default([]) |
+         map('regex_replace', '^([^:]+):(\d+):(.*)$',
+             '{"file":"\1","line":"\2","pattern":"os.system()",
+               "severity":"critical","context":"\3"}') |
+         map('from_json') | list }}
+  when:
+    - enable_scan | bool
+    - _ci_os_system.stdout_lines | default([]) | length > 0
+
+- name: "Audit: subprocess shell=True calls"
+  ansible.builtin.shell:
+    cmd: >-
+      grep -n --color=never 'shell\s*=\s*True'
+      {{ _ci_file_list }}
+      || true
+  register: _ci_shell_true
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_scan | bool
+    - _ci_file_list | default('') | length > 0
+
+- name: Record shell=True findings
+  ansible.builtin.set_fact:
+    _ci_audit_findings: >-
+      {{ _ci_audit_findings + _ci_shell_true.stdout_lines | default([]) |
+         map('regex_replace', '^([^:]+):(\d+):(.*)$',
+             '{"file":"\1","line":"\2","pattern":"subprocess shell=True",
+               "severity":"high","context":"\3"}') |
+         map('from_json') | list }}
+  when:
+    - enable_scan | bool
+    - _ci_shell_true.stdout_lines | default([]) | length > 0
+
+- name: "Audit: os.popen( calls"
+  ansible.builtin.shell:
+    cmd: >-
+      grep -n --color=never 'os\.popen('
+      {{ _ci_file_list }}
+      || true
+  register: _ci_os_popen
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_scan | bool
+    - _ci_file_list | default('') | length > 0
+
+- name: Record os.popen findings
+  ansible.builtin.set_fact:
+    _ci_audit_findings: >-
+      {{ _ci_audit_findings + _ci_os_popen.stdout_lines | default([]) |
+         map('regex_replace', '^([^:]+):(\d+):(.*)$',
+             '{"file":"\1","line":"\2","pattern":"os.popen()",
+               "severity":"critical","context":"\3"}') |
+         map('from_json') | list }}
+  when:
+    - enable_scan | bool
+    - _ci_os_popen.stdout_lines | default([]) | length > 0
+
+- name: "Audit: commands.getoutput( calls"
+  ansible.builtin.shell:
+    cmd: >-
+      grep -n --color=never 'commands\.getoutput('
+      {{ _ci_file_list }}
+      || true
+  register: _ci_commands
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_scan | bool
+    - _ci_file_list | default('') | length > 0
+
+- name: Record commands.getoutput findings
+  ansible.builtin.set_fact:
+    _ci_audit_findings: >-
+      {{ _ci_audit_findings + _ci_commands.stdout_lines | default([]) |
+         map('regex_replace', '^([^:]+):(\d+):(.*)$',
+             '{"file":"\1","line":"\2","pattern":"commands.getoutput()",
+               "severity":"high","context":"\3"}') |
+         map('from_json') | list }}
+  when:
+    - enable_scan | bool
+    - _ci_commands.stdout_lines | default([]) | length > 0
+
+- name: "Audit: eval( calls"
+  ansible.builtin.shell:
+    cmd: >-
+      grep -n --color=never '\beval('
+      {{ _ci_file_list }}
+      || true
+  register: _ci_eval
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_scan | bool
+    - _ci_file_list | default('') | length > 0
+
+- name: Record eval findings
+  ansible.builtin.set_fact:
+    _ci_audit_findings: >-
+      {{ _ci_audit_findings + _ci_eval.stdout_lines | default([]) |
+         map('regex_replace', '^([^:]+):(\d+):(.*)$',
+             '{"file":"\1","line":"\2","pattern":"eval()",
+               "severity":"critical","context":"\3"}') |
+         map('from_json') | list }}
+  when:
+    - enable_scan | bool
+    - _ci_eval.stdout_lines | default([]) | length > 0
+
+- name: "Audit: exec( calls"
+  ansible.builtin.shell:
+    cmd: >-
+      grep -n --color=never '\bexec('
+      {{ _ci_file_list }}
+      || true
+  register: _ci_exec
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_scan | bool
+    - _ci_file_list | default('') | length > 0
+
+- name: Record exec findings
+  ansible.builtin.set_fact:
+    _ci_audit_findings: >-
+      {{ _ci_audit_findings + _ci_exec.stdout_lines | default([]) |
+         map('regex_replace', '^([^:]+):(\d+):(.*)$',
+             '{"file":"\1","line":"\2","pattern":"exec()",
+               "severity":"critical","context":"\3"}') |
+         map('from_json') | list }}
+  when:
+    - enable_scan | bool
+    - _ci_exec.stdout_lines | default([]) | length > 0
+
+- name: "Audit: string concatenation in command construction"
+  ansible.builtin.shell:
+    cmd: >-
+      grep -n -E --color=never
+      '(f"[^"]*(\brm\b|\bmv\b|\bcp\b|\bcurl\b|\bwget\b|\becho\b|\bpip\b|\byum\b|\bapt\b)\b)"'
+      {{ _ci_file_list }}
+      || true
+  register: _ci_string_concat
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_scan | bool
+    - _ci_file_list | default('') | length > 0
+
+- name: Record string concatenation findings
+  ansible.builtin.set_fact:
+    _ci_audit_findings: >-
+      {{ _ci_audit_findings + _ci_string_concat.stdout_lines | default([]) |
+         map('regex_replace', '^([^:]+):(\d+):(.*)$',
+             '{"file":"\1","line":"\2","pattern":"string concat command",
+               "severity":"medium","context":"\3"}') |
+         map('from_json') | list }}
+  when:
+    - enable_scan | bool
+    - _ci_string_concat.stdout_lines | default([]) | length > 0
+
+# ── Summarize ──────────────────────────────────────────────────────────────────
+
+- name: Compute finding count
+  ansible.builtin.set_fact:
+    _ci_finding_count: "{{ _ci_audit_findings | length }}"
+
+- name: Group findings by severity
+  ansible.builtin.set_fact:
+    _ci_findings_critical: >-
+      {{ _ci_audit_findings | selectattr('severity', 'equalto', 'critical') | list | length }}
+    _ci_findings_high: >-
+      {{ _ci_audit_findings | selectattr('severity', 'equalto', 'high') | list | length }}
+    _ci_findings_medium: >-
+      {{ _ci_audit_findings | selectattr('severity', 'equalto', 'medium') | list | length }}

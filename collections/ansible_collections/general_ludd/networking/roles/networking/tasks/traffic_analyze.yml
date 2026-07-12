@@ -1,0 +1,115 @@
+---
+# traffic_analyze — analyze pcap traffic via gludd_scapy analyze_pcap
+#
+# Parses TrafficReport fields: total_packets, protocols, top_talkers,
+# top_ports, flows, duration. Writes structured analysis to artifact JSON.
+
+- name: Validate traffic_analyze prerequisites
+  ansible.builtin.assert:
+    that:
+      - networking__pcap_path | default('') | length > 0
+    fail_msg: "networking__pcap_path is required for traffic_analyze mode"
+
+- block:
+    - name: Check pcap file existence
+      ansible.builtin.stat:
+        path: "{{ networking__pcap_path }}"
+      register: _ta_pcap_stat
+
+    - name: Analyze pcap traffic via gludd_scapy
+      general_ludd.agent.gludd_scapy:
+        action: analyze_pcap
+        pcap_path: "{{ networking__pcap_path }}"
+        output_format: "{{ networking__output_format | default('json') }}"
+      register: _ta_report
+      no_log: "{{ networking__psk | length > 0 }}"
+      when:
+        - _ta_pcap_stat.stat.exists | default(false)
+        - not ansible_check_mode
+
+    - name: Extract traffic report fields
+      ansible.builtin.set_fact:
+        _ta_total_packets: "{{ _ta_report.total_packets | default(0) }}"
+        _ta_protocols: "{{ _ta_report.protocols | default({}) }}"
+        _ta_top_talkers: "{{ _ta_report.top_talkers | default([]) }}"
+        _ta_top_ports: "{{ _ta_report.top_ports | default([]) }}"
+        _ta_flows: "{{ _ta_report.flows | default([]) }}"
+        _ta_duration: "{{ _ta_report.duration | default(0) }}"
+
+    - name: Compute protocol hierarchy for display
+      ansible.builtin.set_fact:
+        _ta_proto_table: >-
+          {%- set rows = [] -%}
+          {%- for proto, count in _ta_protocols.items() -%}
+          {%-   set pct = (count / (_ta_total_packets | int | max(1)) * 100) | round(1) -%}
+          {%-   set _ = rows.append(proto ~ ': ' ~ count ~ ' (' ~ pct ~ '%)') -%}
+          {%- endfor -%}
+          {{ rows }}
+
+    - name: Extract top talker summary
+      ansible.builtin.set_fact:
+        _ta_talker_summary: >-
+          {%- set summary = [] -%}
+          {%- for talker in _ta_top_talkers[:5] -%}
+          {%-   set _ = summary.append(talker.ip | default(talker.address | default('unknown')) ~ ' (' ~ (talker.packet_count | default(0)) ~ ' pkts)') -%}
+          {%- endfor -%}
+          {{ summary }}
+
+    - name: Debug protocol hierarchy
+      ansible.builtin.debug:
+        msg: >-
+          Traffic analysis: pcap={{ networking__pcap_path }}
+          total_packets={{ _ta_total_packets }}
+          duration={{ _ta_duration }}s
+          protocols={{ _ta_proto_table }}
+          top_talkers={{ _ta_talker_summary }}
+
+  rescue:
+    - name: Handle traffic analysis failure
+      ansible.builtin.debug:
+        msg: >-
+          Traffic analysis failed for {{ networking__pcap_path }}.
+          Reason: {{ _ta_report.msg | default('pcap missing or scapy unavailable') }}
+      failed_when: false
+
+    - name: Set empty report on failure
+      ansible.builtin.set_fact:
+        _ta_total_packets: 0
+        _ta_protocols: {}
+        _ta_top_talkers: []
+        _ta_top_ports: []
+        _ta_flows: []
+        _ta_duration: 0
+      when: _ta_total_packets is not defined
+
+  always:
+    - name: Set timestamp
+      ansible.builtin.set_fact:
+        _ta_timestamp: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601) }}"
+
+    - name: Write traffic analysis artifact JSON
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'networking',
+            'mode': 'traffic_analyze',
+            'timestamp': _ta_timestamp,
+            'pcap_path': networking__pcap_path,
+            'total_packets': _ta_total_packets,
+            'duration_sec': _ta_duration,
+            'protocols': _ta_protocols,
+            'top_talkers': _ta_top_talkers[:20],
+            'top_ports': _ta_top_ports[:20],
+            'flow_count': _ta_flows | length,
+            'flows': _ta_flows[:50],
+            'error': _ta_report.msg | default(none),
+          } | to_nice_json }}
+        dest: "{{ networking__artifact_dir }}/traffic_analyze.json"
+        mode: "0644"
+
+    - name: Report traffic analysis completion
+      ansible.builtin.debug:
+        msg: >-
+          Traffic analysis complete: pcap={{ networking__pcap_path }}
+          packets={{ _ta_total_packets }}  duration={{ _ta_duration }}s
+          artifact={{ networking__artifact_dir }}/traffic_analyze.json

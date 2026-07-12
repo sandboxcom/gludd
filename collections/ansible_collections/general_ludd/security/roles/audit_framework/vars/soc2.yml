@@ -1,0 +1,579 @@
+soc2:
+  category: SOC2
+  version: "2017"
+  description: >
+    AICPA System and Organization Controls (SOC) 2 Trust Services Criteria.
+    Defines criteria for evaluating controls relevant to security, availability,
+    processing integrity, confidentiality, and privacy of a system.
+  trust_services_criteria:
+    - service: Security
+      id: SEC
+      description: >
+        Information and systems are protected against unauthorized access,
+        unauthorized disclosure of information, and damage to systems that
+        could compromise the availability, integrity, confidentiality, and
+        privacy of information or systems and affect the entity's ability to
+        meet its objectives.
+      severity: high
+      criteria:
+        - id: CC1.1
+          name: Entity Demonstrates Commitment to Integrity and Ethical Values
+          description: >
+            The board of directors and management articulate and demonstrate
+            a commitment to integrity and ethical values.
+          severity: high
+          category: Control Environment
+          requirements:
+            - Define and communicate standards of conduct
+            - Evaluate adherence to standards of conduct
+            - Address deviations from standards in a timely manner
+        - id: CC1.2
+          name: Board Independence and Oversight
+          description: >
+            The board of directors demonstrates independence from management
+            and exercises oversight of the development and performance of
+            internal control.
+          severity: high
+          category: Control Environment
+          requirements:
+            - Establish board oversight responsibilities
+            - Maintain appropriate board composition and expertise
+            - Hold regular board meetings with documented minutes
+        - id: CC1.3
+          name: Management Establishes Structure, Authority, and Responsibility
+          description: >
+            Management establishes structures, reporting lines, and
+            appropriate authorities and responsibilities in the pursuit
+            of objectives.
+          severity: medium
+          category: Control Environment
+          requirements:
+            - Define organizational structure and reporting lines
+            - Assign authority and responsibility for security controls
+            - Establish clear lines of accountability
+        - id: CC1.4
+          name: Demonstrates Commitment to Competence
+          description: >
+            The entity demonstrates a commitment to attract, develop,
+            and retain competent individuals in alignment with objectives.
+          severity: medium
+          category: Control Environment
+          requirements:
+            - Define competency requirements for each role
+            - Provide training to develop necessary skills
+            - Evaluate performance and address deficiencies
+        - id: CC1.5
+          name: Enforces Accountability
+          description: >
+            The entity holds individuals accountable for their internal
+            control responsibilities in pursuit of objectives.
+          severity: medium
+          category: Control Environment
+          requirements:
+            - Establish performance measures aligned with control objectives
+            - Implement incentive structures that support control objectives
+            - Enforce consequences for control failures
+
+        - id: CC2.1
+          name: Uses Relevant Information
+          description: >
+            The entity obtains or generates and uses relevant, quality
+            information to support the functioning of internal control.
+          severity: medium
+          category: Information and Communication
+          requirements:
+            - Identify information requirements for control objectives
+            - Obtain or generate relevant data for control decisions
+            - Maintain data quality for control purposes
+        - id: CC2.2
+          name: Communicates Internally
+          description: >
+            The entity internally communicates information, including
+            objectives and responsibilities for internal control.
+          severity: medium
+          category: Information and Communication
+          requirements:
+            - Communicate control objectives and responsibilities
+            - Provide channels for reporting control failures
+            - Communication mechanisms adapt to organizational changes
+        - id: CC2.3
+          name: Communicates Externally
+          description: >
+            The entity communicates to external parties regarding matters
+            affecting the functioning of internal control.
+          severity: low
+          category: Information and Communication
+          requirements:
+            - Communicate with external parties on control matters
+            - Enable inbound communications from external parties
+            - Report control findings to regulators as required
+
+        - id: CC3.1
+          name: Specifies Objectives
+          description: >
+            The entity specifies objectives with sufficient clarity to
+            enable identification and assessment of risks relating to objectives.
+          severity: medium
+          category: Risk Assessment
+          requirements:
+            - Document operational and compliance objectives
+            - Include internal control considerations in objective setting
+            - Align objectives with the entity's risk appetite
+        - id: CC3.2
+          name: Identifies and Analyzes Risks
+          description: >
+            The entity identifies risks to the achievement of its
+            objectives across the entity and analyzes risks as a basis
+            for determining how the risks should be managed.
+          severity: high
+          category: Risk Assessment
+          requirements:
+            - Identify risks at the entity, system, and transaction levels
+            - Analyze risks for severity, likelihood, and impact
+            - Consider fraud risks in risk assessment
+            - Consider environmental and regulatory change impacts
+        - id: CC3.3
+          name: Assesses Fraud Risk
+          description: >
+            The entity considers the potential for fraud in assessing
+            risks to the achievement of objectives.
+          severity: medium
+          category: Risk Assessment
+          requirements:
+            - Identify types of fraud (financial, data, asset misappropriation)
+            - Assess incentives and pressures for fraud
+            - Assess opportunities for unauthorized data acquisition, use, disposal
+        - id: CC3.4
+          name: Identifies and Analyzes Significant Change
+          description: >
+            The entity identifies and assesses changes that could
+            significantly affect the system of internal control.
+          severity: medium
+          category: Risk Assessment
+          requirements:
+            - Assess impact of changes in the regulatory/operational environment
+            - Assess impact of new business models or technologies
+            - Assess impact of organizational changes
+
+        - id: CC4.1
+          name: Selects and Develops Control Activities
+          description: >
+            The entity selects and develops control activities that
+            contribute to the mitigation of risks to the achievement
+            of objectives to acceptable levels.
+          severity: high
+          category: Control Activities
+          requirements:
+            - Select control activities based on risk assessment
+            - Design controls considering entity-specific IT and processes
+            - Implement segregation of duties where appropriate
+        - id: CC4.2
+          name: Selects and Develops Technology Controls
+          description: >
+            The entity selects and develops general control activities
+            over technology to support achievement of objectives.
+          severity: high
+          category: Control Activities
+          requirements:
+            - Implement logical access controls
+            - Implement change management controls
+            - Implement system operations controls
+            - Manage technology acquisition, development, and maintenance
+        - id: CC4.3
+          name: Deploys Through Policies and Procedures
+          description: >
+            The entity deploys control activities through policies that
+            establish what is expected and procedures that put policies
+            into action.
+          severity: medium
+          category: Control Activities
+          requirements:
+            - Document policies for each control objective
+            - Implement procedures that operationalize policies
+            - Assign responsible individuals for each procedure
+
+        - id: CC5.1
+          name: Uses Relevant Information for Monitoring
+          description: >
+            The entity selects, develops, and performs ongoing and/or
+            separate evaluations to ascertain whether components of
+            internal control are present and functioning.
+          severity: high
+          category: Monitoring
+          requirements:
+            - Establish ongoing monitoring mechanisms
+            - Perform periodic separate evaluations
+            - Define monitoring frequency based on risk assessment
+        - id: CC5.2
+          name: Evaluates and Communicates Deficiencies
+          description: >
+            The entity evaluates and communicates internal control
+            deficiencies in a timely manner to parties responsible
+            for corrective action.
+          severity: high
+          category: Monitoring
+          requirements:
+            - Define what constitutes a control deficiency
+            - Triage deficiencies by severity
+            - Report deficiencies to management and board as appropriate
+            - Track remediation to completion
+
+        - id: CC6.1
+          name: Logical and Physical Access Controls
+          description: >
+            The entity implements logical and physical access controls
+            to protect information assets from unauthorized access.
+          severity: high
+          category: Logical and Physical Access
+          requirements:
+            - Create and maintain an inventory of information assets
+            - Restrict access to information assets to authorized users
+            - Implement automated mechanisms for access enforcement
+            - Control internal and external access points
+        - id: CC6.2
+          name: Identity and Credential Management
+          description: >
+            Access permissions are managed, incorporating the principles
+            of least privilege and segregation of duties.
+          severity: high
+          category: Logical and Physical Access
+          requirements:
+            - Provision access based on job function and authorization
+            - Modify access on role or employment change
+            - Remove access on termination
+            - Review access at least quarterly
+        - id: CC6.3
+          name: Authentication and Authorization
+          description: >
+            The entity authenticates and authorizes users before allowing
+            access to information assets.
+          severity: high
+          category: Logical and Physical Access
+          requirements:
+            - Implement strong authentication (MFA for sensitive access)
+            - Enforce password complexity and rotation policies
+            - Implement session timeout and lockout controls
+        - id: CC6.4
+          name: Physical Security
+          description: >
+            Physical access to facilities, equipment, and environmental
+            controls is restricted and monitored.
+          severity: high
+          category: Logical and Physical Access
+          requirements:
+            - Control physical access to data centers and critical facilities
+            - Monitor physical access (badge logs, CCTV)
+            - Implement environmental controls (HVAC, fire suppression)
+
+        - id: CC7.1
+          name: System Change Management
+          description: >
+            The entity authorizes, designs, develops, configures, documents,
+            tests, approves, and implements changes to infrastructure,
+            data, software, and procedures to meet its objectives.
+          severity: high
+          category: System Operations
+          requirements:
+            - Implement formal change management process
+            - Segregate development, testing, and production environments
+            - Test changes before deployment
+            - Maintain rollback capability for changes
+        - id: CC7.2
+          name: Detection and Monitoring
+          description: >
+            The entity detects and monitors events that affect system
+            security and operational continuity.
+          severity: high
+          category: System Operations
+          requirements:
+            - Implement intrusion detection systems
+            - Deploy file integrity monitoring
+            - Centralize and analyze security logs
+            - Monitor system capacity and performance
+        - id: CC7.3
+          name: Incident Response
+          description: >
+            The entity responds to security incidents and restores
+            normal operations in a timely manner.
+          severity: high
+          category: System Operations
+          requirements:
+            - Establish incident response plan and team
+            - Classify and prioritize incidents
+            - Contain, eradicate, and recover from incidents
+            - Conduct post-incident reviews
+        - id: CC7.4
+          name: Backup and Recovery
+          description: >
+            The entity maintains, monitors, and evaluates backup and
+            recovery processes.
+          severity: high
+          category: System Operations
+          requirements:
+            - Perform regular backups of all critical data
+            - Store backups in geographically separate locations
+            - Test restore procedures periodically
+            - Encrypt backup data in transit and at rest
+        - id: CC7.5
+          name: Vulnerability Management
+          description: >
+            The entity identifies and remediates vulnerabilities in a
+            timely manner.
+          severity: high
+          category: System Operations
+          requirements:
+            - Perform vulnerability scanning monthly at minimum
+            - Prioritize vulnerabilities based on CVSS score
+            - Remediate critical vulnerabilities within 30 days
+            - Conduct penetration testing annually
+
+        - id: CC8.1
+          name: Risk Mitigation Controls
+          description: >
+            The entity implements controls to mitigate risks related to
+            the use of subservice organizations and third-party vendors.
+          severity: medium
+          category: Risk Mitigation
+          requirements:
+            - Identify and inventory all subservice organizations
+            - Assess vendor security posture before engagement
+            - Include security requirements in vendor contracts
+            - Monitor vendor compliance with security obligations
+
+        - id: CC9.1
+          name: Complementary Subservice Organization Controls
+          description: >
+            The entity identifies and evaluates the relevance and
+            effectiveness of complementary subservice organization controls.
+          severity: medium
+          category: Subservice Organizations
+          requirements:
+            - Identify controls performed at subservice organizations
+            - Evaluate complementary user entity controls
+            - Assess the interaction of CUECs with entity controls
+
+    - service: Availability
+      id: AVAIL
+      description: >
+        Information and systems are available for operation and use to
+        meet the entity's objectives.
+      severity: high
+      criteria:
+        - id: A1.1
+          name: Availability Management
+          description: >
+            The entity maintains, monitors, and evaluates current
+            availability commitments and system capacity.
+          severity: high
+          requirements:
+            - Define availability targets (SLA/SLO) for each system
+            - Monitor system availability against targets
+            - Maintain sufficient capacity to meet availability commitments
+            - Implement redundancy and failover mechanisms
+        - id: A1.2
+          name: Environmental Protection
+          description: >
+            Environmental protections, software, data backup processes,
+            and recovery infrastructure are designed, developed, and
+            maintained to meet availability commitments.
+          severity: high
+          requirements:
+            - Implement environmental controls (power, cooling, fire suppression)
+            - Implement redundant network connectivity
+            - Maintain backup power (UPS, generators)
+        - id: A1.3
+          name: Recovery Plan
+          description: >
+            Recovery plan procedures support system recovery to meet
+            availability commitments.
+          severity: high
+          requirements:
+            - Document and maintain disaster recovery plan
+            - Test disaster recovery plan at least annually
+            - Define RPO and RTO for all critical systems
+            - Conduct tabletop exercises for DR scenarios
+
+    - service: Processing Integrity
+      id: PI
+      description: >
+        System processing is complete, valid, accurate, timely, and
+        authorized to meet the entity's objectives.
+      severity: high
+      criteria:
+        - id: PI1.1
+          name: Process Integrity
+          description: >
+            The entity obtains or generates, uses, and communicates
+            relevant, quality information regarding processing objectives.
+          severity: high
+          requirements:
+            - Define processing input, throughput, output requirements
+            - Validate all data inputs for completeness and accuracy
+            - Monitor processing for errors and anomalies
+            - Implement automated and manual processing controls
+        - id: PI1.2
+          name: Quality Assurance
+          description: >
+            The entity implements policies and procedures to ensure
+            complete, accurate, timely, and authorized processing.
+          severity: high
+          requirements:
+            - Define quality assurance checks for processing
+            - Segregate duties between input, processing, and output functions
+            - Implement automated reconciliation controls
+            - Review and approve processing outputs
+        - id: PI1.3
+          name: Error Handling
+          description: >
+            Errors detected during processing are corrected, and
+            affected parties are notified.
+          severity: medium
+          requirements:
+            - Implement error detection mechanisms
+            - Define error correction procedures
+            - Notify affected parties of processing errors
+            - Maintain error logs for trend analysis
+        - id: PI1.4
+          name: Data Integrity
+          description: >
+            The entity protects processing data from unauthorized
+            alteration or destruction.
+          severity: high
+          requirements:
+            - Implement integrity checks on processing data
+            - Restrict modification of processing configurations
+            - Log all changes to processing logic or data
+        - id: PI1.5
+          name: Timeliness
+          description: >
+            Processing is performed within the time frame specified
+            by service commitments.
+          severity: medium
+          requirements:
+            - Define processing time SLAs
+            - Monitor processing completion times
+            - Alert on processing delays
+            - Implement batch monitoring and alerting
+
+    - service: Confidentiality
+      id: CONF
+      description: >
+        Information designated as confidential is protected to meet
+        the entity's objectives.
+      severity: high
+      criteria:
+        - id: C1.1
+          name: Confidential Information Identification
+          description: >
+            The entity identifies and maintains confidential information
+            to meet the entity's objectives related to confidentiality.
+          severity: high
+          requirements:
+            - Define and classify confidential information
+            - Maintain an inventory of confidential data assets
+            - Identify parties authorized to access confidential information
+            - Document confidentiality commitments to users and partners
+        - id: C1.2
+          name: Confidentiality Protection
+          description: >
+            The entity protects confidential information from unauthorized
+            collection, use, disclosure, and disposal.
+          severity: high
+          requirements:
+            - Encrypt confidential information at rest and in transit
+            - Implement access controls to restrict access to authorized parties
+            - Implement data loss prevention controls
+            - Securely dispose of confidential information
+            - Monitor for unauthorized access or disclosure of confidential data
+
+    - service: Privacy
+      id: PRIV
+      description: >
+        Personal information is collected, used, retained, disclosed,
+        and disposed to meet the entity's objectives.
+      severity: high
+      criteria:
+        - id: P1.1
+          name: Privacy Notice
+          description: >
+            The entity provides notice to data subjects about its
+            privacy practices.
+          severity: high
+          requirements:
+            - Publish a clear, accessible privacy notice
+            - Describe what personal information is collected
+            - Describe how personal information is used, disclosed, and retained
+            - Communicate privacy commitment changes to data subjects
+        - id: P2.1
+          name: Choice and Consent
+          description: >
+            The entity communicates choices available to data subjects
+            regarding collection, use, and disclosure of personal information.
+          severity: high
+          requirements:
+            - Implement consent mechanisms for PI collection
+            - Allow data subjects to opt out of secondary uses
+            - Document and honor data subject preferences
+        - id: P3.1
+          name: Collection Limitation
+          description: >
+            The entity collects personal information only for the
+            purposes identified in the privacy notice.
+          severity: high
+          requirements:
+            - Limit PI collection to stated purposes
+            - Collect PI by fair and lawful means
+            - Document legal basis for each category of PI collected
+        - id: P4.1
+          name: Use, Retention, and Disposal
+          description: >
+            The entity limits the use, retention, and disposal of
+            personal information to the purposes identified.
+          severity: high
+          requirements:
+            - Restrict PI use to stated purposes
+            - Define and enforce PI retention periods
+            - Securely dispose of PI at end of retention period
+        - id: P5.1
+          name: Access and Data Subject Rights
+          description: >
+            The entity provides data subjects with access to their
+            personal information and the ability to correct, amend,
+            or delete it.
+          severity: high
+          requirements:
+            - Provide mechanism for data subjects to access their PI
+            - Implement correction and deletion request processes
+            - Verify identity of data subject before processing requests
+            - Respond to requests within defined timeframes
+        - id: P6.1
+          name: Disclosure to Third Parties
+          description: >
+            The entity discloses personal information to third parties
+            only for the purposes identified and with consent.
+          severity: high
+          requirements:
+            - Disclose PI to third parties only for stated purposes
+            - Require third parties to protect PI per commitments
+            - Notify data subjects of third-party disclosures
+        - id: P7.1
+          name: Security for Privacy
+          description: >
+            The entity protects personal information against unauthorized
+            access (both physical and logical).
+          severity: high
+          requirements:
+            - Implement security measures to protect PI (see CC6.1-CC6.4)
+            - Conduct privacy impact assessments for new PI processing
+            - Respond to privacy incidents per incident response procedures
+        - id: P8.1
+          name: Quality and Monitoring
+          description: >
+            The entity maintains the quality of personal information
+            and monitors compliance with privacy commitments.
+          severity: medium
+          requirements:
+            - Maintain the accuracy and completeness of PI
+            - Monitor compliance with privacy commitments
+            - Review privacy practices at least annually
+            - Report privacy compliance to board/management

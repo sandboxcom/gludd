@@ -1,0 +1,190 @@
+---
+# searx_monitor.yml — SearX continuous monitoring
+# Registers entity as monitored topic, schedules recurring news searches,
+# detects significant changes, and alerts on threshold-crossing risks.
+
+- name: Initialize monitoring state
+  ansible.builtin.set_fact:
+    entity_monitoring:
+      entity_name: "{{ entity_name }}"
+      monitored_since: "{{ ansible_date_time.iso8601 }}"
+      check_interval_hours: "{{ entity_research_searx_check_interval_hours }}"
+      alert_on_risk_threshold: "{{ entity_research_searx_alert_on_risk_threshold }}"
+      alert_topics: "{{ entity_research_searx_alert_topics }}"
+      last_check: null
+      check_results: []
+      alerts: []
+      registered: false
+
+# ── Register entity for monitoring ──
+- name: Create monitoring state file
+  ansible.builtin.file:
+    path: "{{ entity_research_artifact_dir }}/monitoring"
+    state: directory
+    mode: "0755"
+
+- name: Register monitoring topic
+  ansible.builtin.copy:
+    content: "{{ entity_monitoring | to_nice_json }}"
+    dest: "{{ entity_research_artifact_dir }}/monitoring/{{ entity_name | regex_replace('[^a-zA-Z0-9]', '_') }}_state.json"
+    mode: "0644"
+    force: false
+
+- name: Mark entity as monitored
+  ansible.builtin.set_fact:
+    entity_monitoring: "{{ entity_monitoring | combine({'registered': true}) }}"
+
+# ── Initial SearX news scan ──
+- name: SearX news search for monitoring
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }}"
+    categories: "news"
+    page: 1
+  register: searx_monitor_scan
+  when:
+    - entity_research_use_searx | bool
+    - entity_research_searx_monitor | bool
+  ignore_errors: true
+
+# ── Topic-specific alert scans ──
+- name: SearX alert scan for acquisitions
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} acquisition merger"
+    categories: "news"
+    page: 1
+  register: searx_acquisition_scan
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: SearX alert scan for breaches
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} data breach hack cyberattack"
+    categories: "news"
+    page: 1
+  register: searx_breach_scan
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: SearX alert scan for funding
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} funding round investment"
+    categories: "news"
+    page: 1
+  register: searx_funding_scan
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: SearX alert scan for layoffs
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} layoffs restructuring"
+    categories: "news"
+    page: 1
+  register: searx_layoff_scan
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: SearX alert scan for leadership changes
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} CEO CFO leadership change"
+    categories: "news"
+    page: 1
+  register: searx_leadership_scan
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: SearX alert scan for lawsuits
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} lawsuit litigation regulatory"
+    categories: "news"
+    page: 1
+  register: searx_lawsuit_scan
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: SearX alert scan for bankruptcy
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} bankruptcy chapter 11 insolvency"
+    categories: "news"
+    page: 1
+  register: searx_bankruptcy_scan
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Compile alerts ──
+- name: Compile monitoring alerts
+  ansible.builtin.set_fact:
+    entity_monitoring: "{{ entity_monitoring | combine({
+      'last_check': ansible_date_time.iso8601,
+      'check_results': [
+        {'topic': 'general_news', 'scan_name': 'searx_monitor_scan', 'results': (searx_monitor_scan.json.number_of_results | default(0)) if (searx_monitor_scan is success) else 0},
+        {'topic': 'acquisition', 'scan_name': 'searx_acquisition_scan', 'results': (searx_acquisition_scan.json.number_of_results | default(0)) if (searx_acquisition_scan is success) else 0},
+        {'topic': 'breach', 'scan_name': 'searx_breach_scan', 'results': (searx_breach_scan.json.number_of_results | default(0)) if (searx_breach_scan is success) else 0},
+        {'topic': 'funding', 'scan_name': 'searx_funding_scan', 'results': (searx_funding_scan.json.number_of_results | default(0)) if (searx_funding_scan is success) else 0},
+        {'topic': 'layoff', 'scan_name': 'searx_layoff_scan', 'results': (searx_layoff_scan.json.number_of_results | default(0)) if (searx_layoff_scan is success) else 0},
+        {'topic': 'leadership', 'scan_name': 'searx_leadership_scan', 'results': (searx_leadership_scan.json.number_of_results | default(0)) if (searx_leadership_scan is success) else 0},
+        {'topic': 'lawsuit', 'scan_name': 'searx_lawsuit_scan', 'results': (searx_lawsuit_scan.json.number_of_results | default(0)) if (searx_lawsuit_scan is success) else 0},
+        {'topic': 'bankruptcy', 'scan_name': 'searx_bankruptcy_scan', 'results': (searx_bankruptcy_scan.json.number_of_results | default(0)) if (searx_bankruptcy_scan is success) else 0},
+      ],
+    }) }}"
+
+- name: Write monitoring state
+  ansible.builtin.copy:
+    content: "{{ entity_monitoring | to_nice_json }}"
+    dest: "{{ entity_research_artifact_dir }}/monitoring/{{ entity_name | regex_replace('[^a-zA-Z0-9]', '_') }}_state.json"
+    mode: "0644"

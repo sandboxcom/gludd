@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: hsm_operations
+  author: Agentic Harness Agent
+  description: >
+    HSM and smartcard operations for the SSL certificate management suite.
+    Detects available HSMs (SoftHSM, YubiHSM, AWS CloudHSM, Azure Dedicated HSM,
+    nCipher, Utimaco, Thales), manages keys (generate, import, export public,
+    list, delete), performs signing operations (CSR signing, arbitrary data
+    signing, signature verification, self-signed cert creation), and handles
+    smartcard operations (detection, ATR parsing, PIN management, cert
+    read/import, APDU commands). Uses gludd_model_call for AI-assisted HSM
+    diagnostics and Python modules for deterministic PKCS11/PCSC operations.
+    PINs and secret material are no_log enforced throughout.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

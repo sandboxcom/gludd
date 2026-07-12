@@ -1,0 +1,57 @@
+---
+# ssl_cert role — entry point
+# Includes sub-tasks by category.  Callers set the relevant `ssl_cert_*`
+# defaults and then invoke the role; each category is gated by an enable
+# boolean so callers pay only for the tasks they need.
+
+- name: Create output directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ ssl_cert_output_dir }}"
+    - "{{ ssl_cert_artifact_dir }}"
+  when: ssl_cert_generate | bool or ssl_cert_sign | bool
+
+# ── Certificate minting ──
+- name: Certificate minting
+  ansible.builtin.include_tasks: mint.yml
+  when: ssl_cert_generate | bool
+  tags: [mint, generate]
+
+# ── Certificate analysis ──
+- name: Certificate analysis
+  ansible.builtin.include_tasks: analyze.yml
+  tags: [analyze, audit]
+
+# ── Algorithm evaluation ──
+- name: Algorithm security evaluation
+  ansible.builtin.include_tasks: algorithms.yml
+  tags: [algorithms, audit]
+
+# ── Compliance profile check ──
+- name: Compliance profile evaluation
+  ansible.builtin.include_tasks: compliance.yml
+  tags: [compliance, audit]
+
+# ── CA jurisdiction lookup ──
+- name: CA jurisdiction research
+  ansible.builtin.include_tasks: ca_jurisdictions.yml
+  when: ssl_cert_ca_jurisdiction_lookup | bool
+  tags: [ca_jurisdictions, research]
+
+# ── CA business & legal research ──
+- name: CA chain research (business & legal)
+  ansible.builtin.include_tasks: chain_research.yml
+  tags: [chain_research, research]
+
+# ── HSM & smartcard ──
+- name: HSM and smartcard operations
+  ansible.builtin.include_tasks: hsm.yml
+  tags: [hsm, smartcard]
+
+# ── ASN.1 & OID ──
+- name: ASN.1 and OID operations
+  ansible.builtin.include_tasks: asn1.yml
+  tags: [asn1, oid]

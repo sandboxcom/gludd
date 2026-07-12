@@ -1,0 +1,1107 @@
+iso_27001:
+  category: ISO27001
+  version: "2022"
+  description: >
+    ISO/IEC 27001:2022 Information security, cybersecurity and privacy
+    protection — Information security management systems — Requirements.
+    Annex A contains 93 controls organized across 4 themes.
+  themes:
+    - id: A.5
+      name: Organizational Controls
+      description: >
+        Controls addressing the organization's governance, policies,
+        and management of information security. 37 controls.
+      severity: high
+      controls:
+        - id: "A.5.1"
+          name: Policies for Information Security
+          description: >
+            A set of policies for information security shall be defined,
+            approved by management, published, and communicated to
+            relevant personnel and interested parties.
+          severity: high
+          requirements:
+            - Define an information security policy set
+            - Obtain management approval
+            - Communicate to all personnel and relevant interested parties
+            - Review policies at planned intervals or if significant changes occur
+        - id: "A.5.2"
+          name: Information Security Roles and Responsibilities
+          description: >
+            Information security roles and responsibilities shall be
+            defined and allocated according to the organization's needs.
+          severity: high
+          requirements:
+            - Define all information security roles
+            - Allocate responsibilities for each role
+            - Document role descriptions including security duties
+            - Assign a management-level owner for ISMS
+        - id: "A.5.3"
+          name: Segregation of Duties
+          description: >
+            Conflicting duties and conflicting areas of responsibility
+            shall be segregated.
+          severity: medium
+          requirements:
+            - Identify conflicting duties
+            - Implement controls to reduce risk from conflicting duties
+            - Review segregation of duties periodically
+        - id: "A.5.4"
+          name: Management Responsibilities
+          description: >
+            Management shall require all personnel to apply information
+            security in accordance with the established ISMS.
+          severity: medium
+          requirements:
+            - Management must demonstrate commitment to the ISMS
+            - Management must ensure personnel comply with policies
+            - Management must provide necessary resources
+        - id: "A.5.5"
+          name: Contact with Authorities
+          description: >
+            The organization shall establish and maintain contact with
+            relevant authorities.
+          severity: medium
+          requirements:
+            - Identify relevant regulatory and law enforcement authorities
+            - Establish communication protocols with authorities
+            - Document points of contact for each authority
+        - id: "A.5.6"
+          name: Contact with Special Interest Groups
+          description: >
+            The organization shall establish and maintain contact with
+            special interest groups or other specialist security forums.
+          severity: low
+          requirements:
+            - Identify relevant security groups and forums
+            - Participate in or monitor security threat intelligence sources
+            - Maintain membership in professional security associations
+        - id: "A.5.7"
+          name: Threat Intelligence
+          description: >
+            Information relating to information security threats shall be
+            collected and analyzed to produce threat intelligence.
+          severity: high
+          requirements:
+            - Establish threat intelligence collection processes
+            - Analyze threat data for relevance and impact
+            - Produce actionable threat intelligence
+            - Integrate threat intelligence into risk management
+        - id: "A.5.8"
+          name: Information Security in Project Management
+          description: >
+            Information security shall be integrated into project management.
+          severity: medium
+          requirements:
+            - Include security requirements in project planning
+            - Conduct security risk assessments for projects
+            - Review security at project gate stages
+        - id: "A.5.9"
+          name: Inventory of Information and Other Associated Assets
+          description: >
+            An inventory of information and other associated assets,
+            including owners, shall be developed and maintained.
+          severity: high
+          requirements:
+            - Identify all information assets
+            - Assign ownership for each asset
+            - Maintain an up-to-date asset inventory
+            - Classify assets per sensitivity and criticality
+        - id: "A.5.10"
+          name: Acceptable Use of Information and Other Associated Assets
+          description: >
+            Rules for the acceptable use of information and other
+            associated assets shall be identified, documented, and implemented.
+          severity: medium
+          requirements:
+            - Define acceptable use policies for all information assets
+            - Communicate acceptable use rules to all users
+            - Enforce compliance with acceptable use policies
+        - id: "A.5.11"
+          name: Return of Assets
+          description: >
+            All personnel and other interested parties shall return all
+            the organization's assets in their possession upon change
+            or termination of their employment, contract, or agreement.
+          severity: medium
+          requirements:
+            - Establish asset return procedures
+            - Verify all assets returned upon termination
+            - Document exceptions and mitigations
+        - id: "A.5.12"
+          name: Classification of Information
+          description: >
+            Information shall be classified according to the information
+            security needs of the organization based on confidentiality,
+            integrity, availability, and relevant interested party requirements.
+          severity: high
+          requirements:
+            - Define information classification schema
+            - Classify all information per the schema
+            - Label information per classification
+            - Handle classified information per handling procedures
+        - id: "A.5.13"
+          name: Labelling of Information
+          description: >
+            An appropriate set of procedures for information labelling
+            shall be defined and implemented in accordance with the
+            information classification scheme.
+          severity: medium
+          requirements:
+            - Define labelling procedures per classification level
+            - Label physical and electronic information
+            - Label metadata and outputs
+        - id: "A.5.14"
+          name: Information Transfer
+          description: >
+            Information transfer rules, procedures, and agreements
+            shall be in place for all types of transfer within and
+            outside the organization.
+          severity: high
+          requirements:
+            - Define approved transfer mechanisms and channels
+            - Define rules for each transfer type
+            - Protect information during transfer (encryption, integrity)
+            - Maintain transfer logs for sensitive information
+        - id: "A.5.15"
+          name: Access Control
+          description: >
+            Rules to control physical and logical access to information
+            and other associated assets shall be established and
+            implemented based on business and information security requirements.
+          severity: high
+          requirements:
+            - Define access control policy based on business requirements
+            - Implement access control rules (need-to-know, least privilege)
+            - Audit access controls periodically
+        - id: "A.5.16"
+          name: Identity Management
+          description: >
+            The full lifecycle of identities shall be managed.
+          severity: high
+          requirements:
+            - Manage identity creation, modification, and deletion
+            - Ensure unique user IDs for accountability
+            - Review identities and access rights periodically
+            - Remove or disable identities on termination
+        - id: "A.5.17"
+          name: Authentication Information
+          description: >
+            Allocation and management of authentication information
+            shall be controlled by a management process.
+          severity: high
+          requirements:
+            - Enforce password complexity and length requirements
+            - Require initial password change upon first login
+            - Implement MFA where risk warrants
+            - Prohibit sharing of authentication credentials
+        - id: "A.5.18"
+          name: Access Rights
+          description: >
+            Access rights to information and other associated assets
+            shall be provisioned, reviewed, modified, and removed in
+            accordance with the organization's topic-specific access policy.
+          severity: high
+          requirements:
+            - Provision access based on authorization
+            - Review access rights at planned intervals
+            - Modify access on role changes
+            - Remove access on termination
+        - id: "A.5.19"
+          name: Information Security in Supplier Relationships
+          description: >
+            Processes and procedures shall be defined and implemented
+            to manage the information security risks associated with
+            the use of supplier products or services.
+          severity: high
+          requirements:
+            - Assess supplier security before engagement
+            - Include security requirements in contracts
+            - Monitor supplier security performance
+            - Manage supplier access to organizational assets
+        - id: "A.5.20"
+          name: Addressing Information Security Within Supplier Agreements
+          description: >
+            Relevant information security requirements shall be
+            established and agreed with each supplier.
+          severity: high
+          requirements:
+            - Define security requirements for each supplier type
+            - Include security clauses in supplier agreements
+            - Require incident notification from suppliers
+            - Require subcontractor compliance
+        - id: "A.5.21"
+          name: Managing Information Security in the ICT Supply Chain
+          description: >
+            Requirements for addressing information security risks
+            associated with ICT products and services supply chain
+            shall be defined and implemented.
+          severity: medium
+          requirements:
+            - Assess supply chain security risks
+            - Require security assurances from ICT suppliers
+            - Verify integrity of supplied ICT products and services
+        - id: "A.5.22"
+          name: Monitoring, Review, and Change Management of Supplier Services
+          description: >
+            The organization shall regularly monitor, review,
+            evaluate, and manage change in supplier information
+            security practices and service delivery.
+          severity: medium
+          requirements:
+            - Monitor supplier security performance metrics
+            - Review supplier compliance at planned intervals
+            - Assess and approve changes to supplier services
+        - id: "A.5.23"
+          name: Information Security for Use of Cloud Services
+          description: >
+            Processes for acquisition, use, management, and exit
+            from cloud services shall be established.
+          severity: high
+          requirements:
+            - Define cloud service security requirements before acquisition
+            - Manage access to cloud services per access control policy
+            - Define cloud exit strategy including data retrieval
+            - Assess cloud provider security certifications
+        - id: "A.5.24"
+          name: Information Security Incident Management Planning and Preparation
+          description: >
+            The organization shall plan and prepare for managing
+            information security incidents.
+          severity: high
+          requirements:
+            - Define incident management roles and responsibilities
+            - Establish incident response procedures
+            - Train incident response team
+            - Test incident response capabilities
+        - id: "A.5.25"
+          name: Assessment and Decision on Information Security Events
+          description: >
+            The organization shall assess information security events
+            and decide if they are to be classified as information
+            security incidents.
+          severity: high
+          requirements:
+            - Define criteria for classifying events as incidents
+            - Establish event assessment triage process
+            - Escalate events meeting incident criteria
+        - id: "A.5.26"
+          name: Response to Information Security Incidents
+          description: >
+            Information security incidents shall be responded to in
+            accordance with the documented procedures.
+          severity: high
+          requirements:
+            - Follow documented incident response procedures
+            - Contain the incident impact
+            - Preserve evidence for investigation
+            - Escalate per incident severity classification
+        - id: "A.5.27"
+          name: Learning from Information Security Incidents
+          description: >
+            Knowledge gained from information security incidents
+            shall be used to strengthen and improve the information
+            security controls.
+          severity: medium
+          requirements:
+            - Conduct post-incident reviews
+            - Document lessons learned
+            - Update controls based on findings
+            - Share knowledge across the organization
+        - id: "A.5.28"
+          name: Collection of Evidence
+          description: >
+            The organization shall establish and implement procedures
+            for the identification, collection, acquisition, and
+            preservation of evidence related to information security events.
+          severity: high
+          requirements:
+            - Define evidence collection procedures
+            - Maintain chain of custody for evidence
+            - Ensure evidence admissibility standards
+            - Train personnel on evidence handling
+        - id: "A.5.29"
+          name: Information Security During Disruption
+          description: >
+            The organization shall plan how to maintain information
+            security at an appropriate level during disruption.
+          severity: high
+          requirements:
+            - Identify critical business processes and dependencies
+            - Define continuity requirements for each process
+            - Implement continuity controls
+            - Test continuity plans at planned intervals
+        - id: "A.5.30"
+          name: ICT Readiness for Business Continuity
+          description: >
+            ICT readiness shall be planned, implemented, maintained,
+            and tested based on business continuity objectives and
+            ICT continuity requirements.
+          severity: high
+          requirements:
+            - Assess ICT continuity requirements per BIA
+            - Implement redundant and resilient ICT architecture
+            - Test ICT failover and recovery capabilities
+            - Maintain backup and restore capabilities
+        - id: "A.5.31"
+          name: Legal, Statutory, Regulatory, and Contractual Requirements
+          description: >
+            Legal, statutory, regulatory, and contractual requirements
+            relevant to information security shall be identified,
+            documented, and kept up to date.
+          severity: high
+          requirements:
+            - Identify all applicable legal and regulatory requirements
+            - Document compliance obligations for each requirement
+            - Monitor regulatory changes affecting information security
+            - Maintain a compliance register
+        - id: "A.5.32"
+          name: Intellectual Property Rights
+          description: >
+            The organization shall implement appropriate procedures
+            to protect intellectual property rights.
+          severity: medium
+          requirements:
+            - Define IP protection procedures
+            - Ensure compliance with IP licensing terms
+            - Protect trade secrets and proprietary information
+        - id: "A.5.33"
+          name: Protection of Records
+          description: >
+            Records shall be protected from loss, destruction,
+            falsification, unauthorized access, and unauthorized release.
+          severity: high
+          requirements:
+            - Classify records per record retention policy
+            - Define retention periods for each record type
+            - Protect records during their lifecycle
+            - Securely dispose of records after retention period
+        - id: "A.5.34"
+          name: Privacy and Protection of PII
+          description: >
+            The organization shall identify and meet the requirements
+            regarding the preservation of privacy and protection of PII.
+          severity: high
+          requirements:
+            - Identify applicable privacy laws and regulations
+            - Implement privacy controls (GDPR, CCPA, etc.)
+            - Conduct privacy impact assessments
+            - Appoint a data protection officer if required
+        - id: "A.5.35"
+          name: Independent Review of Information Security
+          description: >
+            The organization's approach to managing information security
+            and its implementation shall be reviewed independently
+            at planned intervals or when significant changes occur.
+          severity: high
+          requirements:
+            - Conduct independent security reviews annually
+            - Define scope and criteria for reviews
+            - Address review findings with corrective actions
+            - Document management review decisions
+        - id: "A.5.36"
+          name: Compliance with Policies, Rules, and Standards
+          description: >
+            Compliance with the organization's information security
+            policy, topic-specific policies, rules, and standards
+            shall be regularly reviewed.
+          severity: high
+          requirements:
+            - Define compliance monitoring procedures
+            - Conduct regular compliance reviews
+            - Report compliance status to management
+            - Address non-compliance with corrective actions
+        - id: "A.5.37"
+          name: Documented Operating Procedures
+          description: >
+            Operating procedures for information processing facilities
+            shall be documented and made available to personnel who need them.
+          severity: medium
+          requirements:
+            - Document all operational procedures
+            - Control changes to documented procedures
+            - Make procedures available to relevant personnel
+            - Review and update procedures periodically
+
+    - id: A.6
+      name: People Controls
+      description: >
+        Controls addressing personnel and human aspects of information
+        security. 8 controls covering screening, awareness, discipline, and
+        confidentiality agreements.
+      severity: high
+      controls:
+        - id: "A.6.1"
+          name: Screening
+          description: >
+            Background verification checks on all candidates to become
+            personnel shall be carried out prior to employment and on an
+            ongoing basis taking into account applicable laws, regulations
+            and ethics.
+          severity: medium
+          requirements:
+            - Conduct background checks before employment
+            - Verify candidate credentials and references
+            - Implement ongoing personnel screening per risk
+            - Comply with applicable privacy laws during screening
+        - id: "A.6.2"
+          name: Terms and Conditions of Employment
+          description: >
+            The employment contract agreements shall state the personnel's
+            and the organization's responsibilities for information security.
+          severity: high
+          requirements:
+            - Include security responsibilities in employment contracts
+            - Require personnel to comply with security policies
+            - Include confidentiality obligations
+            - Survive termination (post-employment confidentiality)
+        - id: "A.6.3"
+          name: Information Security Awareness, Education, and Training
+          description: >
+            Personnel of the organization and relevant interested
+            parties shall receive appropriate information security
+            awareness, education, and training.
+          severity: high
+          requirements:
+            - Deliver security awareness training at hire and annually
+            - Provide role-specific security training
+            - Maintain training records
+            - Evaluate training effectiveness periodically
+        - id: "A.6.4"
+          name: Disciplinary Process
+          description: >
+            A disciplinary process shall be formalized and communicated
+            to take actions against personnel and other relevant interested
+            parties who have committed an information security policy violation.
+          severity: medium
+          requirements:
+            - Define disciplinary actions for security violations
+            - Communicate disciplinary process to all personnel
+            - Apply disciplinary process consistently
+        - id: "A.6.5"
+          name: Responsibilities After Termination or Change of Employment
+          description: >
+            Information security responsibilities and duties that
+            remain valid after termination or change of employment
+            shall be defined, enforced, and communicated to the
+            relevant personnel and other interested parties.
+          severity: medium
+          requirements:
+            - Define post-employment security obligations
+            - Communicate post-employment obligations at termination
+            - Revoke all access upon termination
+            - Recover all organizational assets
+        - id: "A.6.6"
+          name: Confidentiality or Non-Disclosure Agreements
+          description: >
+            Confidentiality or non-disclosure agreements reflecting
+            the organization's needs for the protection of information
+            shall be identified, documented, and signed by personnel
+            and other relevant interested parties.
+          severity: high
+          requirements:
+            - Identify parties requiring NDAs
+            - Document NDA terms covering organizational information
+            - Ensure NDA signing before access granted
+            - Review NDAs at planned intervals
+        - id: "A.6.7"
+          name: Remote Working
+          description: >
+            Security measures shall be implemented when personnel
+            work remotely to protect information accessed, processed,
+            or stored outside the organization's premises.
+          severity: high
+          requirements:
+            - Define remote working policy and approved access methods
+            - Require VPN with MFA for remote access
+            - Prohibit use of public Wi-Fi without VPN
+            - Secure home network environments per policy
+            - Apply endpoint protection to remote devices
+        - id: "A.6.8"
+          name: Information Security Event Reporting
+          description: >
+            The organization shall provide a mechanism for personnel
+            to report observed or suspected information security events
+            through appropriate channels in a timely manner.
+          severity: high
+          requirements:
+            - Implement incident reporting channels
+            - Encourage reporting without fear of reprisal
+            - Provide reporting guidance (what to report, how, to whom)
+            - Acknowledge and respond to all reported events
+
+    - id: A.7
+      name: Physical Controls
+      description: >
+        Controls addressing physical security of facilities, equipment,
+        and supporting infrastructure. 14 controls.
+      severity: high
+      controls:
+        - id: "A.7.1"
+          name: Physical Security Perimeters
+          description: >
+            Security perimeters shall be defined and used to protect
+            areas that contain information and other associated assets.
+          severity: high
+          requirements:
+            - Define physical security perimeters
+            - Implement barriers (walls, card-controlled gates, etc.)
+            - Monitor perimeter entry points
+            - Review perimeter integrity periodically
+        - id: "A.7.2"
+          name: Physical Entry Controls
+          description: >
+            Secure areas shall be protected by appropriate entry
+            controls and access points.
+          severity: high
+          requirements:
+            - Implement access control at all entry points
+            - Require authentication for entry
+            - Maintain visitor logs and escort visitors
+            - Review physical access rights periodically
+        - id: "A.7.3"
+          name: Securing Offices, Rooms, and Facilities
+          description: >
+            Physical security for offices, rooms, and facilities
+            shall be designed and implemented.
+          severity: medium
+          requirements:
+            - Lock unoccupied rooms containing sensitive assets
+            - Restrict access to sensitive areas to authorized personnel
+            - Implement clean desk policies
+            - Secure windows, especially at ground level
+        - id: "A.7.4"
+          name: Physical Security Monitoring
+          description: >
+            Premises shall be continuously monitored for unauthorized
+            physical access.
+          severity: high
+          requirements:
+            - Deploy CCTV/surveillance covering all entry points
+            - Implement intrusion detection (motion, door contact sensors)
+            - Retain monitoring records per retention policy
+            - Test monitoring systems periodically
+        - id: "A.7.5"
+          name: Protecting Against Physical and Environmental Threats
+          description: >
+            Protection against physical and environmental threats,
+            such as natural disasters and other intentional or
+            unintentional physical threats, shall be designed and implemented.
+          severity: high
+          requirements:
+            - Assess site-specific physical and environmental threats
+            - Install fire detection and suppression systems
+            - Implement environmental monitoring (temperature, humidity, water)
+            - Maintain backup power (UPS, generator)
+        - id: "A.7.6"
+          name: Working in Secure Areas
+          description: >
+            Security measures for working in secure areas shall be
+            designed and implemented.
+          severity: medium
+          requirements:
+            - Restrict unsupervised work in secure areas
+            - Prohibit recording devices in secure areas
+            - Enforce lock-up procedures for secure areas
+        - id: "A.7.7"
+          name: Clear Desk and Clear Screen
+          description: >
+            Clear desk rules for papers and removable storage media
+            and clear screen rules for information processing facilities
+            shall be defined and enforced.
+          severity: medium
+          requirements:
+            - Define clear desk / clear screen policy
+            - Lock workstations when unattended
+            - Secure sensitive documents and media when not in use
+            - Dispose of sensitive documents via shredding
+        - id: "A.7.8"
+          name: Equipment Siting and Protection
+          description: >
+            Equipment shall be sited securely and protected.
+          severity: medium
+          requirements:
+            - Site equipment to minimize environmental risks
+            - Separate development, test, and production equipment
+            - Protect supporting utilities (power, cooling, cabling)
+            - Protect equipment from unauthorized access
+        - id: "A.7.9"
+          name: Security of Assets Off-Premises
+          description: >
+            Off-site assets shall be protected.
+          severity: medium
+          requirements:
+            - Define controls for off-premises assets
+            - Encrypt data on portable devices
+            - Implement remote wipe capability
+            - Track and audit off-premises asset use
+        - id: "A.7.10"
+          name: Storage Media
+          description: >
+            Storage media shall be managed through their lifecycle of
+            acquisition, use, transportation, and disposal in accordance
+            with the organization's classification scheme and handling
+            procedures.
+          severity: high
+          requirements:
+            - Control receipt and removal of storage media
+            - Label media per classification
+            - Encrypt media containing sensitive information
+            - Securely dispose of media when no longer needed
+        - id: "A.7.11"
+          name: Supporting Utilities
+          description: >
+            Information processing facilities shall be protected from
+            power failures and other disruptions caused by failures
+            of supporting utilities.
+          severity: high
+          requirements:
+            - Install UPS with sufficient runtime
+            - Install backup power generators
+            - Test backup power systems periodically
+            - Monitor power quality and availability
+        - id: "A.7.12"
+          name: Cabling Security
+          description: >
+            Cables carrying power, data, or supporting information
+            services shall be protected from interception, interference,
+            or damage.
+          severity: medium
+          requirements:
+            - Route cables through protected conduits
+            - Segregate power and data cabling
+            - Label and document all cabling
+            - Protect exposed cable endpoints
+        - id: "A.7.13"
+          name: Equipment Maintenance
+          description: >
+            Equipment shall be maintained correctly to ensure
+            availability, integrity, and confidentiality of information.
+          severity: medium
+          requirements:
+            - Maintain equipment per manufacturer specifications
+            - Authorize maintenance personnel before access
+            - Log all maintenance activities
+            - Sanitize equipment before off-site maintenance
+        - id: "A.7.14"
+          name: Secure Disposal or Re-Use of Equipment
+          description: >
+            Items of equipment containing storage media shall be
+            verified to ensure any sensitive data and licensed
+            software has been removed or securely overwritten
+            prior to disposal or re-use.
+          severity: high
+          requirements:
+            - Sanitize all storage media before disposal or re-use
+            - Destroy media containing highly sensitive data
+            - Verify sanitization was successful
+            - Maintain disposal records
+
+    - id: A.8
+      name: Technological Controls
+      description: >
+        Controls addressing technology and automation. 34 controls
+        covering endpoint, network, application, and data security.
+      severity: high
+      controls:
+        - id: "A.8.1"
+          name: User Endpoint Devices
+          description: >
+            Information stored on, processed by, or accessible via
+            user endpoint devices shall be protected.
+          severity: high
+          requirements:
+            - Implement endpoint protection (anti-malware, EDR)
+            - Enforce endpoint configuration hardening
+            - Encrypt endpoint storage (full disk encryption)
+            - Manage endpoints via centralized MDM
+        - id: "A.8.2"
+          name: Privileged Access Rights
+          description: >
+            The allocation and use of privileged access rights shall
+            be restricted and managed.
+          severity: high
+          requirements:
+            - Restrict privileged access to minimum necessary
+            - Maintain inventory of privileged accounts
+            - Require MFA for privileged access
+            - Log and audit all privileged access
+            - Review privileged access rights regularly
+        - id: "A.8.3"
+          name: Information Access Restriction
+          description: >
+            Access to information shall be restricted in accordance
+            with the topic-specific policy on access control.
+          severity: high
+          requirements:
+            - Implement mandatory access controls where required
+            - Restrict information by classification level
+            - Implement discretionary access controls
+            - Audit access control configuration regularly
+        - id: "A.8.4"
+          name: Access to Source Code
+          description: >
+            Read and write access to source code, development tools,
+            and software libraries shall be appropriately managed.
+          severity: high
+          requirements:
+            - Restrict source code access to authorized developers
+            - Store source code in version-controlled repositories
+            - Implement code review before integration
+            - Segregate development and production environments
+        - id: "A.8.5"
+          name: Secure Authentication
+          description: >
+            Secure authentication technologies and procedures shall
+            be implemented based on information access restrictions
+            and the topic-specific policy on access control.
+          severity: high
+          requirements:
+            - Implement strong authentication mechanisms
+            - Use MFA for remote and privileged access
+            - Enforce authentication session limits
+            - Protect authentication secrets in transit and at rest
+        - id: "A.8.6"
+          name: Capacity Management
+          description: >
+            The use of resources shall be monitored, tuned, and
+            projections made of future capacity requirements.
+          severity: medium
+          requirements:
+            - Monitor storage, processing, and network utilization
+            - Forecast capacity requirements
+            - Implement capacity thresholds and alerts
+            - Plan for capacity expansion
+        - id: "A.8.7"
+          name: Protection Against Malware
+          description: >
+            Protection against malware shall be implemented and
+            supported by appropriate user awareness.
+          severity: high
+          requirements:
+            - Deploy anti-malware on all endpoints and servers
+            - Enable real-time protection and automatic updates
+            - Scan email attachments and downloads
+            - Block known malicious domains and IPs
+            - Provide user awareness training on malware
+        - id: "A.8.8"
+          name: Management of Technical Vulnerabilities
+          description: >
+            Information about technical vulnerabilities of information
+            systems in use shall be obtained, the organization's
+            exposure to such vulnerabilities evaluated, and
+            appropriate measures taken.
+          severity: high
+          requirements:
+            - Establish vulnerability management process
+            - Perform vulnerability scanning at regular intervals
+            - Prioritize remediation based on risk
+            - Apply security patches within defined SLAs
+            - Verify remediation effectiveness
+        - id: "A.8.9"
+          name: Configuration Management
+          description: >
+            Configurations, including security configurations, of
+            hardware, software, services, and networks shall be
+            established, documented, implemented, monitored, and reviewed.
+          severity: high
+          requirements:
+            - Define secure baseline configurations
+            - Use configuration management tools
+            - Monitor for configuration drift
+            - Review and update baselines periodically
+        - id: "A.8.10"
+          name: Information Deletion
+          description: >
+            Information stored in information systems, devices, or in
+            any other storage media shall be deleted when no longer required.
+          severity: high
+          requirements:
+            - Define deletion procedures per information classification
+            - Validate deletion completion
+            - Prevent recovery of deleted sensitive data
+            - Maintain deletion records per legal requirements
+        - id: "A.8.11"
+          name: Data Masking
+          description: >
+            Data masking shall be used in accordance with the
+            organization's topic-specific policy on access control
+            and other related topic-specific policies and business
+            requirements.
+          severity: medium
+          requirements:
+            - Implement masking for PII and sensitive data in non-production
+            - Define masking rules per data classification
+            - Verify masked data cannot be re-identified
+            - Apply masking to test data and analytics datasets
+        - id: "A.8.12"
+          name: Data Leakage Prevention
+          description: >
+            Data leakage prevention measures shall be applied to
+            systems, networks, and any other devices that process,
+            store, or transmit sensitive information.
+          severity: high
+          requirements:
+            - Implement DLP solutions for email, web, and endpoint
+            - Monitor for unauthorized data exfiltration
+            - Block or alert on policy violations
+            - Apply DLP to removable media and cloud uploads
+        - id: "A.8.13"
+          name: Information Backup
+          description: >
+            Backup copies of information, software, and systems
+            shall be maintained and regularly tested in accordance
+            with the topic-specific policy on backup.
+          severity: high
+          requirements:
+            - Define backup frequency per RPO
+            - Store backups in separate locations
+            - Encrypt backup data
+            - Test backup restoration periodically
+            - Protect backups from unauthorized access
+        - id: "A.8.14"
+          name: Redundancy of Information Processing Facilities
+          description: >
+            Information processing facilities shall be implemented
+            with redundancy sufficient to meet availability requirements.
+          severity: high
+          requirements:
+            - Identify single points of failure
+            - Implement redundant components (N+1 at minimum)
+            - Test failover capabilities periodically
+            - Design for geographic redundancy where required
+        - id: "A.8.15"
+          name: Logging
+          description: >
+            Logs that record activities, exceptions, faults, and
+            other relevant events shall be produced, stored,
+            protected, and analyzed.
+          severity: high
+          requirements:
+            - Define events to be logged
+            - Implement centralized logging
+            - Protect logs from unauthorized access and tampering
+            - Retain logs per policy
+            - Analyze logs for security events
+        - id: "A.8.16"
+          name: Monitoring Activities
+          description: >
+            Networks, systems, and applications shall be monitored
+            for anomalous behavior and evaluated for potential
+            information security incidents.
+          severity: high
+          requirements:
+            - Implement continuous security monitoring
+            - Define anomaly detection thresholds
+            - Alert on security-relevant anomalies
+            - Investigate and respond to alerts
+            - Tune monitoring to reduce false positives
+        - id: "A.8.17"
+          name: Clock Synchronization
+          description: >
+            The clocks of information processing systems used by the
+            organization shall be synchronized to an approved time source.
+          severity: medium
+          requirements:
+            - Synchronize all system clocks to authorized NTP sources
+            - Use authenticated NTP where available
+            - Monitor clock synchronization status
+            - Ensure log timestamps are accurate across systems
+        - id: "A.8.18"
+          name: Use of Privileged Utility Programs
+          description: >
+            The use of utility programs that might be capable of
+            overriding system and application controls shall be
+            restricted and tightly controlled.
+          severity: high
+          requirements:
+            - Limit privileged utility access to authorized personnel
+            - Require justification for use of privileged utilities
+            - Log all use of privileged utilities
+            - Segregate privileged utilities from standard applications
+        - id: "A.8.19"
+          name: Installation of Software on Operational Systems
+          description: >
+            Procedures and measures shall be implemented to securely
+            manage software installation on operational systems.
+          severity: high
+          requirements:
+            - Restrict software installation to authorized administrators
+            - Maintain an approved software list
+            - Test software before production deployment
+            - Verify software integrity (signatures, checksums)
+        - id: "A.8.20"
+          name: Networks Security
+          description: >
+            Networks and network devices shall be secured, managed,
+            and controlled.
+          severity: high
+          requirements:
+            - Implement network segmentation (VLANs, DMZ)
+            - Deploy firewalls at network boundaries
+            - Implement network access control (NAC)
+            - Monitor network traffic for anomalies
+            - Secure network device configurations
+            - Disable unnecessary network services and protocols
+        - id: "A.8.21"
+          name: Security of Network Services
+          description: >
+            Security mechanisms, service levels, and service
+            requirements of network services shall be identified,
+            implemented, and monitored.
+          severity: high
+          requirements:
+            - Define security requirements for all network services
+            - Require encryption for network services
+            - Monitor network service availability and performance
+            - Review network service security annually
+        - id: "A.8.22"
+          name: Segregation of Networks
+          description: >
+            Groups of information services, users, and information
+            systems shall be segregated on the organization's networks.
+          severity: high
+          requirements:
+            - Segregate production from non-production networks
+            - Segregate internal from external-facing systems
+            - Implement guest network isolation
+            - Control traffic flow between network segments
+        - id: "A.8.23"
+          name: Web Filtering
+          description: >
+            Access to external websites shall be managed to reduce
+            exposure to malicious content.
+          severity: medium
+          requirements:
+            - Implement web content filtering
+            - Block access to known malicious websites
+            - Enforce acceptable use for web browsing
+            - Log and monitor web access
+        - id: "A.8.24"
+          name: Use of Cryptography
+          description: >
+            Rules for the effective use of cryptography, including
+            cryptographic key management, shall be defined and implemented.
+          severity: high
+          requirements:
+            - Define cryptographic policy and approved algorithms
+            - Use encryption for data at rest and in transit
+            - Implement cryptographic key lifecycle management
+            - Use approved random number generators
+        - id: "A.8.25"
+          name: Secure Development Lifecycle
+          description: >
+            Rules for the secure development of software and systems
+            shall be established and applied.
+          severity: high
+          requirements:
+            - Implement secure coding standards
+            - Conduct security code reviews
+            - Perform security testing (SAST, DAST) during development
+            - Include security requirements in RFPs and contracts
+            - Secure development, test, and build environments
+        - id: "A.8.26"
+          name: Application Security Requirements
+          description: >
+            Information security requirements shall be identified,
+            specified, and approved when developing or acquiring applications.
+          severity: high
+          requirements:
+            - Define security requirements for all applications
+            - Validate security requirements at design review
+            - Review application security at each release
+            - Include input validation, output encoding, authentication
+        - id: "A.8.27"
+          name: Secure System Architecture and Engineering Principles
+          description: >
+            Principles for engineering secure systems shall be
+            established, documented, maintained, and applied to any
+            information system development activities.
+          severity: high
+          requirements:
+            - Apply security architecture principles (defense in depth)
+            - Implement fail-secure design patterns
+            - Design for least privilege and need-to-know
+            - Review architecture against security requirements
+        - id: "A.8.28"
+          name: Secure Coding
+          description: >
+            Secure coding principles shall be applied to software
+            development.
+          severity: high
+          requirements:
+            - Adopt secure coding standards (OWASP, CERT)
+            - Validate all input data
+            - Implement proper error handling without information leakage
+            - Avoid known vulnerable patterns (injection, buffer overflow)
+        - id: "A.8.29"
+          name: Security Testing in Development and Acceptance
+          description: >
+            Security testing processes shall be defined and
+            implemented in the development lifecycle.
+          severity: high
+          requirements:
+            - Perform SAST and DAST during development
+            - Conduct penetration testing before release
+            - Test security controls in staging environment
+            - Remediate findings before production deployment
+        - id: "A.8.30"
+          name: Outsourced Development
+          description: >
+            The organization shall direct, monitor, and review the
+            activities related to outsourced system development.
+          severity: medium
+          requirements:
+            - Require secure development practices from suppliers
+            - Conduct security review of outsourced deliverables
+            - Include acceptance testing for security requirements
+            - Contractually require security obligations
+        - id: "A.8.31"
+          name: Separation of Development, Test, and Production Environments
+          description: >
+            Development, testing, and production environments shall
+            be separated and secured.
+          severity: high
+          requirements:
+            - Separate development, test, staging, and production
+            - Restrict production access to operations personnel
+            - Use separate credentials for each environment
+            - Do not use production data in non-production environments
+              unless masked or anonymized
+        - id: "A.8.32"
+          name: Change Management
+          description: >
+            Changes to information processing facilities and
+            information systems shall be subject to change
+            management procedures.
+          severity: high
+          requirements:
+            - Implement formal change management process
+            - Assess security impact of proposed changes
+            - Obtain authorization before implementing changes
+            - Test changes before production deployment
+            - Maintain rollback capability
+            - Log all changes for audit
+        - id: "A.8.33"
+          name: Test Information
+          description: >
+            Test information shall be appropriately selected,
+            protected, and managed.
+          severity: medium
+          requirements:
+            - Use synthetic or anonymized data for testing
+            - Protect test data from unauthorized access
+            - Do not use production PII in test environments
+            - Securely delete test data after testing
+        - id: "A.8.34"
+          name: Protection of Information Systems During Audit Testing
+          description: >
+            Audit tests and other assurance activities shall be
+            planned and agreed between the tester and the appropriate
+            management to minimize disruption to business processes.
+          severity: medium
+          requirements:
+            - Plan audit activities with system owners
+            - Limit audit access to read-only where possible
+            - Monitor audit activity for impact on production
+            - Coordinate penetration testing to avoid business disruption

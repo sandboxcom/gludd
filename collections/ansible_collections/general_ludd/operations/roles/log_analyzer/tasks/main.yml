@@ -1,0 +1,587 @@
+---
+# log_analyzer role — comprehensive log analysis across all gludd log sources
+#
+# Gathers logs from daemon, agents, event traces, CI/gate output, OpenShift
+# containers, systemd/journald, and SearX. Runs model-driven analysis tasks:
+# error clustering, anomaly detection, agent behavior analysis, performance
+# regression, and root cause suggestion. Produces JSON + markdown reports and
+# a chain-of-thought log. REPORT-ONLY: never mutates the repo.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Initialize chain-of-thought log with header
+  ansible.builtin.copy:
+    content: |
+      === log_analyzer chain-of-thought log ===
+      started: {{ ansible_date_time.iso8601 }}
+      analysis_window_hours: {{ analysis_window_hours }}
+      log_source_dirs: {{ log_source_dirs }}
+      ===
+
+    dest: "{{ log_analyzer_cot_log }}"
+    mode: "0644"
+  when: log_analyzer_cot_enabled | bool
+
+# ── Log Ingestion — gather logs from all configured sources ────────────────────
+
+- name: Parse log source directories into list
+  ansible.builtin.set_fact:
+    _source_dirs: >-
+      {{ log_source_dirs.split(',') | map('trim') | reject('equalto', '') | list }}
+
+- name: Gather daemon log files from source directories
+  ansible.builtin.find:
+    paths: "{{ _source_dirs }}"
+    patterns:
+      - "{{ daemon_log_glob }}"
+    file_type: file
+    recurse: true
+    age: "-{{ analysis_window_hours }}h"
+  register: _found_daemon_logs
+  no_log: true
+
+- name: Gather agent log files from source directories
+  ansible.builtin.find:
+    paths: "{{ _source_dirs }}"
+    patterns:
+      - "{{ agent_log_glob }}"
+      - "{{ subagent_trace_glob }}"
+    file_type: file
+    recurse: true
+    age: "-{{ analysis_window_hours }}h"
+  register: _found_agent_logs
+  no_log: true
+
+- name: Run log analysis via Python CLI
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ role_path }}/files/analyze_logs.py"
+      - --log-dir
+      - "{{ log_analyzer_glob | dirname | default(log_source_dirs.split(',') | first | trim) }}"
+      - --glob
+      - "{{ log_analyzer_glob | basename | default('*.log') }}"
+      - --output-dir
+      - "{{ log_analyzer_output_dir | default(artifact_dir) }}"
+      - --error-threshold
+      - "{{ log_analyzer_error_rate_threshold | default(0.1) }}"
+      - --min-cluster-size
+      - "{{ log_analyzer_min_cluster_size | default(2) }}"
+  changed_when: false
+  register: _log_analyzer_result
+  failed_when: false
+
+- name: Gather CI/gate log files
+  ansible.builtin.find:
+    paths: "{{ _source_dirs }}"
+    patterns:
+      - "{{ gate_log_dir }}/{{ gate_log_glob }}"
+    file_type: file
+    recurse: true
+    age: "-{{ analysis_window_hours }}h"
+  register: _found_gate_logs
+  no_log: true
+
+- name: Gather OpenShift container logs
+  ansible.builtin.find:
+    paths: "{{ openshift_log_dir }}"
+    patterns:
+      - "{{ openshift_log_glob }}"
+    file_type: file
+    recurse: true
+    age: "-{{ analysis_window_hours }}h"
+  register: _found_openshift_logs
+  when: openshift_log_dir | length > 0
+  no_log: true
+
+- name: Gather SearX query logs
+  ansible.builtin.find:
+    paths: "{{ searx_log_path }}"
+    patterns:
+      - "*.log"
+    file_type: file
+    recurse: true
+    age: "-{{ analysis_window_hours }}h"
+  register: _found_searx_logs
+  when: searx_log_enabled | bool
+  no_log: true
+
+- name: Collect systemd journal entries for gludd service
+  ansible.builtin.command: >-
+    journalctl -u {{ systemd_service_name }} --since "{{ analysis_window_hours }} hours ago" --no-pager -q
+  register: _systemd_journal_out
+  changed_when: false
+  failed_when: false
+  when: systemd_service_name | length > 0
+
+- name: Merge all found log files into unified list
+  ansible.builtin.set_fact:
+    _all_log_files: >-
+      {{
+        (_found_daemon_logs.files | default([]))
+        + (_found_agent_logs.files | default([]))
+        + (_found_gate_logs.files | default([]))
+        + (_found_openshift_logs.files | default([]))
+        + (_found_searx_logs.files | default([]))
+      }}
+
+- name: Compute total log byte size
+  ansible.builtin.set_fact:
+    _total_log_bytes: >-
+      {{ _all_log_files | map(attribute='size') | sum(start=0) }}
+    _total_log_count: "{{ _all_log_files | length }}"
+
+# ── Slurp log content (capped to avoid context-window blowout) ─────────────────
+
+- name: Slurp log file contents
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  register: _slurped_logs
+  loop: "{{ _all_log_files }}"
+  when: _all_log_files | length > 0
+  no_log: true
+
+- name: Decode and truncate log content per file
+  ansible.builtin.set_fact:
+    _log_chunks: >-
+      {{
+        _log_chunks | default([]) + [{
+          'path': item.item.path,
+          'basename': item.item.path | basename,
+          'size': item.item.size | int,
+          'mtime': item.item.mtime | int,
+          'content': item.content | b64decode,
+          'preview': (item.content | b64decode)[:1000]
+        }]
+      }}
+  loop: "{{ _slurped_logs.results | default([]) }}"
+  when:
+    - _slurped_logs.results is defined
+    - item.content is defined
+  no_log: true
+
+- name: Count log sources by type
+  ansible.builtin.set_fact:
+    _daemon_log_count: "{{ _found_daemon_logs.files | default([]) | length }}"
+    _agent_log_count: "{{ _found_agent_logs.files | default([]) | length }}"
+    _gate_log_count: "{{ _found_gate_logs.files | default([]) | length }}"
+    _openshift_log_count: "{{ _found_openshift_logs.files | default([]) | length }}"
+    _searx_log_count: "{{ _found_searx_logs.files | default([]) | length }}"
+
+# ── Build unified log corpus for model analysis ────────────────────────────────
+
+- name: Build log corpus summary (preview for model context)
+  ansible.builtin.set_fact:
+    _log_corpus_summary: |
+      === LOG ANALYSIS CORPUS ===
+      Analysis window: {{ analysis_window_hours }}h
+      Total log files: {{ _total_log_count }}
+      Total bytes: {{ _total_log_bytes }}
+      Sources: daemon={{ _daemon_log_count }}, agent={{ _agent_log_count }}, gate={{ _gate_log_count }}, openshift={{ _openshift_log_count }}, searx={{ _searx_log_count }}
+
+      === FILE INVENTORY ===
+      {% for chunk in _log_chunks | default([]) %}
+      - {{ chunk.basename }} ({{ chunk.size }} bytes, mtime={{ chunk.mtime }})
+      {% endfor %}
+
+      === LOG CONTENT SAMPLES ===
+      {% for chunk in _log_chunks | default([]) %}
+      --- {{ chunk.basename }} (first {{ max_log_lines_per_chunk }} lines) ---
+      {{ chunk.preview }}
+      {% endfor %}
+      {% if _systemd_journal_out.stdout is defined and _systemd_journal_out.stdout | length > 0 %}
+      === SYSTEMD JOURNAL ({{ systemd_service_name }}) ===
+      {{ _systemd_journal_out.stdout[:5000] }}
+      {% endif %}
+
+- name: Build log corpus full content
+  ansible.builtin.set_fact:
+    _log_corpus_full: |
+      {% for chunk in _log_chunks | default([]) %}
+      --- {{ chunk.basename }} ---
+      {{ chunk.content }}
+      {% endfor %}
+      {% if _systemd_journal_out.stdout is defined and _systemd_journal_out.stdout | length > 0 %}
+      --- systemd:{{ systemd_service_name }} ---
+      {{ _systemd_journal_out.stdout }}
+      {% endif %}
+
+# ── Model-driven analysis tasks ────────────────────────────────────────────────
+
+- name: Analysis 1 — Error clustering
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are a log analysis engine. Analyze the following gludd log corpus and
+      cluster all errors by similarity. Return a JSON array of error clusters.
+      Each cluster object must have these keys: cluster_id (hash fingerprint),
+      error_pattern (regex-like pattern), severity (critical/high/medium/low),
+      count (number of occurrences), sample_message (first occurrence text),
+      source_files (list of files containing this error), first_seen (ISO8601),
+      last_seen (ISO8601), suspected_root_cause (one-line hypothesis).
+      Group by message fingerprint — ignore timestamps, PIDs, and UUIDs when
+      computing cluster similarity.
+
+      {{ _log_corpus_summary[:8000] }}
+    model_profile: "{{ model_profile_error_cluster | default('') }}"
+    max_tokens: "{{ analysis_max_tokens }}"
+  register: _error_cluster_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+    - _log_chunks | default([]) | length > 0
+
+- name: Log CoT — error clustering
+  ansible.builtin.lineinfile:
+    path: "{{ log_analyzer_cot_log }}"
+    line: |
+      === TASK: error_clustering @ {{ ansible_date_time.iso8601 }} ===
+      MODEL: {{ model_profile_error_cluster | default('default') }}
+      PROMPT: {{ _log_corpus_summary[:2000] | replace('\n', '\\n') }}
+      RESPONSE: {{ _error_cluster_result.text | default('(error/no response)') | replace('\n', '\\n') }}
+      ===
+    create: true
+    mode: "0644"
+  when:
+    - log_analyzer_cot_enabled | bool
+    - enable_model_call | bool
+    - not ansible_check_mode
+
+- name: Analysis 2 — Anomaly detection
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are an anomaly detection engine. Analyze this gludd log corpus and
+      identify unusual patterns:
+      1. Error rate spikes (current rate > {{ error_rate_spike_factor }}× baseline)
+      2. Slow ticks (tick duration > {{ slow_tick_threshold_seconds }}s)
+      3. Unexpected log volume changes
+      4. Missing expected log lines (e.g., no heartbeats for >5 min)
+      5. Repeated restarts or crash loops
+      Return a JSON array of anomalies. Each anomaly object must have: anomaly_id,
+      type (error_spike/slow_tick/volume_change/missing_heartbeat/restart_loop),
+      severity, description, evidence (log excerpt), timestamp.
+      If no anomalies found, return [].
+
+      {{ _log_corpus_summary[:8000] }}
+    model_profile: "{{ model_profile_anomaly | default('') }}"
+    max_tokens: "{{ analysis_max_tokens }}"
+  register: _anomaly_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+    - _log_chunks | default([]) | length > 0
+
+- name: Log CoT — anomaly detection
+  ansible.builtin.lineinfile:
+    path: "{{ log_analyzer_cot_log }}"
+    line: |
+      === TASK: anomaly_detection @ {{ ansible_date_time.iso8601 }} ===
+      MODEL: {{ model_profile_anomaly | default('default') }}
+      PROMPT: {{ _log_corpus_summary[:2000] | replace('\n', '\\n') }}
+      RESPONSE: {{ _anomaly_result.text | default('(error/no response)') | replace('\n', '\\n') }}
+      ===
+    create: true
+    mode: "0644"
+  when:
+    - log_analyzer_cot_enabled | bool
+    - enable_model_call | bool
+    - not ansible_check_mode
+
+- name: Analysis 3 — Agent behavior analysis
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are an agent behavior analyst. Analyze this gludd log corpus for
+      agent behavioral issues:
+      1. Premature stop patterns — agent stopped while tasks remained pending
+      2. Dispatch gaps — periods where no subagents were dispatched for
+         > {{ dispatch_gap_threshold_minutes }} minutes despite pending work
+      3. Idle periods — main thread idle for > {{ idle_period_threshold_minutes }} min
+      4. Enforcement plugin violations — floor/delegate/multitask blocks firing
+      5. Subagent completion without codification — results returned but not committed
+      Return a JSON array of behavioral findings. Each finding object must have:
+      finding_id, type, severity, timestamp, description, evidence (log excerpt),
+      suggested_fix.
+
+      {{ _log_corpus_summary[:8000] }}
+    model_profile: "{{ model_profile_behavior | default('') }}"
+    max_tokens: "{{ analysis_max_tokens }}"
+  register: _behavior_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+    - _log_chunks | default([]) | length > 0
+
+- name: Log CoT — agent behavior analysis
+  ansible.builtin.lineinfile:
+    path: "{{ log_analyzer_cot_log }}"
+    line: |
+      === TASK: agent_behavior @ {{ ansible_date_time.iso8601 }} ===
+      MODEL: {{ model_profile_behavior | default('default') }}
+      PROMPT: {{ _log_corpus_summary[:2000] | replace('\n', '\\n') }}
+      RESPONSE: {{ _behavior_result.text | default('(error/no response)') | replace('\n', '\\n') }}
+      ===
+    create: true
+    mode: "0644"
+  when:
+    - log_analyzer_cot_enabled | bool
+    - enable_model_call | bool
+    - not ansible_check_mode
+
+- name: Analysis 4 — Performance regression
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are a performance engineer. Analyze this gludd log corpus for
+      performance regressions:
+      1. Gate duration increase (compare tick-phase durations)
+      2. Test suite slowdown (compare pytest durations across runs)
+      3. Model call latency increase (compare model_call response times)
+      4. Startup/bootstrap time increase
+      5. Memory/OOM indicators in logs
+      Return a JSON array of regressions. Each object must have: regression_id,
+      metric, current_value, baseline_value, percent_change, severity, evidence
+      (log excerpt), timestamp.
+
+      {{ _log_corpus_summary[:8000] }}
+    model_profile: "{{ model_profile_perf_regression | default('') }}"
+    max_tokens: "{{ analysis_max_tokens }}"
+  register: _perf_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+    - _log_chunks | default([]) | length > 0
+
+- name: Log CoT — performance regression
+  ansible.builtin.lineinfile:
+    path: "{{ log_analyzer_cot_log }}"
+    line: |
+      === TASK: perf_regression @ {{ ansible_date_time.iso8601 }} ===
+      MODEL: {{ model_profile_perf_regression | default('default') }}
+      PROMPT: {{ _log_corpus_summary[:2000] | replace('\n', '\\n') }}
+      RESPONSE: {{ _perf_result.text | default('(error/no response)') | replace('\n', '\\n') }}
+      ===
+    create: true
+    mode: "0644"
+  when:
+    - log_analyzer_cot_enabled | bool
+    - enable_model_call | bool
+    - not ansible_check_mode
+
+- name: Analysis 5 — Root cause suggestion
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are a root cause analyst. Given the error clusters, anomalies, and
+      behavioral findings from a gludd log analysis, suggest root causes for
+      each error cluster.
+
+      ERROR CLUSTERS: {{ _error_cluster_result.text | default('(no clusters)')[:3000] }}
+      ANOMALIES: {{ _anomaly_result.text | default('(no anomalies)')[:2000] }}
+      BEHAVIORAL FINDINGS: {{ _behavior_result.text | default('(no findings)')[:2000] }}
+
+      For each error cluster, return a root_cause object with: cluster_id,
+      likely_cause (specific, actionable), confidence (0.0-1.0), fix_suggestion
+      (concrete steps), related_clusters (list of cluster_ids that may share
+      the same cause).
+
+      {{ _log_corpus_summary[:4000] }}
+    model_profile: "{{ model_profile_root_cause | default('') }}"
+    max_tokens: "{{ analysis_max_tokens }}"
+  register: _root_cause_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+    - _log_chunks | default([]) | length > 0
+    - _error_cluster_result.text | default('') | length > 0
+
+- name: Log CoT — root cause
+  ansible.builtin.lineinfile:
+    path: "{{ log_analyzer_cot_log }}"
+    line: |
+      === TASK: root_cause @ {{ ansible_date_time.iso8601 }} ===
+      MODEL: {{ model_profile_root_cause | default('default') }}
+      PROMPT: clusters={{ _error_cluster_result.text | default('none')[:500] }}
+      RESPONSE: {{ _root_cause_result.text | default('(error/no response)') | replace('\n', '\\n') }}
+      ===
+    create: true
+    mode: "0644"
+  when:
+    - log_analyzer_cot_enabled | bool
+    - enable_model_call | bool
+    - not ansible_check_mode
+
+# ── Aggregate analysis results ─────────────────────────────────────────────────
+
+- name: Parse model response text (error clusters)
+  ansible.builtin.set_fact:
+    _parsed_error_clusters: >-
+      {{ _error_cluster_result.text | default('[]') }}
+  when: enable_model_call | bool and not ansible_check_mode
+
+- name: Parse model response text (anomalies)
+  ansible.builtin.set_fact:
+    _parsed_anomalies: >-
+      {{ _anomaly_result.text | default('[]') }}
+  when: enable_model_call | bool and not ansible_check_mode
+
+- name: Parse model response text (behavioral findings)
+  ansible.builtin.set_fact:
+    _parsed_behaviors: >-
+      {{ _behavior_result.text | default('[]') }}
+  when: enable_model_call | bool and not ansible_check_mode
+
+- name: Parse model response text (performance regressions)
+  ansible.builtin.set_fact:
+    _parsed_regressions: >-
+      {{ _perf_result.text | default('[]') }}
+  when: enable_model_call | bool and not ansible_check_mode
+
+- name: Parse model response text (root causes)
+  ansible.builtin.set_fact:
+    _parsed_root_causes: >-
+      {{ _root_cause_result.text | default('[]') }}
+  when: enable_model_call | bool and not ansible_check_mode
+
+- name: Set model-disabled fallback facts
+  ansible.builtin.set_fact:
+    _parsed_error_clusters: "[]"
+    _parsed_anomalies: "[]"
+    _parsed_behaviors: "[]"
+    _parsed_regressions: "[]"
+    _parsed_root_causes: "[]"
+  when: not (enable_model_call | bool) or ansible_check_mode
+
+# ── Write artifacts ────────────────────────────────────────────────────────────
+
+- name: Write JSON log analysis report
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'log_analyzer',
+        'status': 'completed',
+        'generated_at': ansible_date_time.iso8601,
+        'analysis_window_hours': analysis_window_hours,
+        'sources': {
+          'daemon': _daemon_log_count,
+          'agent': _agent_log_count,
+          'gate': _gate_log_count,
+          'openshift': _openshift_log_count,
+          'searx': _searx_log_count,
+          'systemd': (systemd_service_name | length > 0)
+        },
+        'log_files': _log_chunks | default([]) | map(attribute='basename') | list,
+        'total_log_bytes': _total_log_bytes,
+        'model_call_used': enable_model_call | bool and not ansible_check_mode,
+        'findings': {
+          'error_clusters': _parsed_error_clusters,
+          'anomalies': _parsed_anomalies,
+          'behavioral_findings': _parsed_behaviors,
+          'performance_regressions': _parsed_regressions,
+          'root_causes': _parsed_root_causes
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/log_analysis_report.json"
+    mode: "0644"
+
+- name: Write markdown log analysis report
+  ansible.builtin.copy:
+    content: |
+      # Log Analysis Report
+
+      **Generated:** {{ ansible_date_time.iso8601 }}
+      **Analysis window:** {{ analysis_window_hours }}h
+      **Total log files:** {{ _total_log_count }} ({{ _total_log_bytes }} bytes)
+      **Model analysis:** {% if enable_model_call | bool and not ansible_check_mode %}enabled{% else %}disabled (set `enable_model_call: true`){% endif %}
+
+      ## Sources
+
+      | Source | Files |
+      |---|---:|
+      | Daemon logs | {{ _daemon_log_count }} |
+      | Agent logs/traces | {{ _agent_log_count }} |
+      | CI/gate output | {{ _gate_log_count }} |
+      | OpenShift containers | {{ _openshift_log_count }} |
+      | SearX queries | {{ _searx_log_count }} |
+      | Systemd journal | {% if systemd_service_name | length > 0 %}enabled{% else %}disabled{% endif %} |
+
+      ## Log Files
+
+      {% for chunk in _log_chunks | default([]) %}
+      - `{{ chunk.path }}` ({{ chunk.size }} bytes, mtime={{ chunk.mtime }})
+      {% endfor %}
+
+      ## Error Clusters
+
+      {% if enable_model_call | bool and not ansible_check_mode %}
+      {{ _parsed_error_clusters | to_nice_json }}
+      {% else %}
+      *Model analysis disabled. Set `enable_model_call: true` to generate error clusters.*
+      {% endif %}
+
+      ## Anomalies
+
+      {% if enable_model_call | bool and not ansible_check_mode %}
+      {{ _parsed_anomalies | to_nice_json }}
+      {% else %}
+      *Model analysis disabled.*
+      {% endif %}
+
+      ## Agent Behavioral Findings
+
+      {% if enable_model_call | bool and not ansible_check_mode %}
+      {{ _parsed_behaviors | to_nice_json }}
+      {% else %}
+      *Model analysis disabled.*
+      {% endif %}
+
+      ## Performance Regressions
+
+      {% if enable_model_call | bool and not ansible_check_mode %}
+      {{ _parsed_regressions | to_nice_json }}
+      {% else %}
+      *Model analysis disabled.*
+      {% endif %}
+
+      ## Root Cause Suggestions
+
+      {% if enable_model_call | bool and not ansible_check_mode %}
+      {{ _parsed_root_causes | to_nice_json }}
+      {% else %}
+      *Model analysis disabled.*
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.operations.log_analyzer — report-only, no repo mutations.*
+    dest: "{{ artifact_dir }}/log_analysis_report.md"
+    mode: "0644"
+
+- name: Write full raw log corpus to artifact directory
+  ansible.builtin.copy:
+    content: "{{ _log_corpus_full }}"
+    dest: "{{ artifact_dir }}/raw_log_corpus.txt"
+    mode: "0644"
+  when: _log_chunks | default([]) | length > 0
+
+- name: Report log analysis completion
+  ansible.builtin.debug:
+    msg: >-
+      Log analysis complete: files={{ _total_log_count }}
+      bytes={{ _total_log_bytes }}
+      model_call={{ enable_model_call | bool and not ansible_check_mode }}
+      artifacts={{ artifact_dir }}

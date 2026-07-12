@@ -1,0 +1,419 @@
+nist_800_53:
+  category: NIST_800_53
+  version: "Rev5"
+  description: >
+    NIST SP 800-53 Rev 5: Security and Privacy Controls for Information
+    Systems and Organizations. Catalog of 20 control families with over
+    1,000 controls and enhancements for federal systems.
+  control_families:
+    - id: AC
+      name: Access Control
+      severity: high
+      controls:
+        - AC-1: Policy and Procedures
+        - AC-2: Account Management
+        - AC-3: Access Enforcement
+        - AC-4: Information Flow Enforcement
+        - AC-5: Separation of Duties
+        - AC-6: Least Privilege
+        - AC-7: Unsuccessful Logon Attempts
+        - AC-8: System Use Notification
+        - AC-11: Device Lock
+        - AC-12: Session Termination
+        - AC-14: Permitted Actions Without I&A
+        - AC-17: Remote Access
+        - AC-18: Wireless Access
+        - AC-19: Access Control for Mobile Devices
+        - AC-20: Use of External Systems
+        - AC-21: Information Sharing
+        - AC-22: Publicly Accessible Content
+      requirements:
+        - Manage account lifecycle: creation, modification, disabling, removal
+        - Enforce least privilege access controls
+        - Implement session lock after inactivity
+        - Restrict remote access to managed access points
+
+    - id: AT
+      name: Awareness and Training
+      severity: medium
+      controls:
+        - AT-1: Policy and Procedures
+        - AT-2: Literacy Training and Awareness
+        - AT-3: Role-Based Training
+        - AT-4: Training Records
+      requirements:
+        - Security awareness training at hire and annually
+        - Role-based training for privileged users
+        - Maintain training records
+
+    - id: AU
+      name: Audit and Accountability
+      severity: high
+      controls:
+        - AU-1: Policy and Procedures
+        - AU-2: Event Logging
+        - AU-3: Content of Audit Records
+        - AU-4: Audit Log Storage Capacity
+        - AU-5: Response to Audit Logging Process Failures
+        - AU-6: Audit Record Review, Analysis, and Reporting
+        - AU-7: Audit Record Reduction and Report Generation
+        - AU-8: Time Stamps
+        - AU-9: Protection of Audit Information
+        - AU-10: Non-Repudiation
+        - AU-11: Audit Record Retention
+        - AU-12: Audit Record Generation
+      requirements:
+        - Create and retain audit records for all security-relevant events
+        - Protect audit information from unauthorized access and modification
+        - Synchronize system clocks to authoritative time sources
+        - Generate audit records for defined auditable events
+
+    - id: CA
+      name: Assessment, Authorization, and Monitoring
+      severity: high
+      controls:
+        - CA-1: Policy and Procedures
+        - CA-2: Control Assessments
+        - CA-3: Information Exchange
+        - CA-5: Plan of Action and Milestones
+        - CA-6: Authorization
+        - CA-7: Continuous Monitoring
+        - CA-8: Penetration Testing
+        - CA-9: Internal System Connections
+      requirements:
+        - Conduct periodic security control assessments
+        - Maintain POA&M for all identified weaknesses
+        - Obtain authorization before system operation
+        - Continuously monitor security controls
+
+    - id: CM
+      name: Configuration Management
+      severity: high
+      controls:
+        - CM-1: Policy and Procedures
+        - CM-2: Baseline Configuration
+        - CM-3: Configuration Change Control
+        - CM-4: Impact Analyses
+        - CM-5: Access Restrictions for Change
+        - CM-6: Configuration Settings
+        - CM-7: Least Functionality
+        - CM-8: System Component Inventory
+        - CM-9: Configuration Management Plan
+        - CM-10: Software Usage Restrictions
+        - CM-11: User-Installed Software
+      requirements:
+        - Establish baseline configurations for all systems
+        - Control and document configuration changes
+        - Maintain inventory of all system components
+        - Implement least functionality (disable unnecessary services)
+
+    - id: CP
+      name: Contingency Planning
+      severity: high
+      controls:
+        - CP-1: Policy and Procedures
+        - CP-2: Contingency Plan
+        - CP-3: Contingency Training
+        - CP-4: Contingency Plan Testing
+        - CP-6: Alternate Storage Site
+        - CP-7: Alternate Processing Site
+        - CP-8: Telecommunications Services
+        - CP-9: System Backup
+        - CP-10: System Recovery and Reconstitution
+      requirements:
+        - Develop and maintain a contingency plan
+        - Test contingency plan at least annually
+        - Maintain backup copies of system-level and user-level information
+        - Establish alternate storage and processing sites as needed
+
+    - id: IA
+      name: Identification and Authentication
+      severity: high
+      controls:
+        - IA-1: Policy and Procedures
+        - IA-2: I&A (Organizational Users)
+        - IA-3: Device Identification and Authentication
+        - IA-4: Identifier Management
+        - IA-5: Authenticator Management
+        - IA-6: Authentication Feedback
+        - IA-7: Cryptographic Module Authentication
+        - IA-8: I&A (Non-Organizational Users)
+        - IA-9: Service Identification and Authentication
+        - IA-10: Adaptive Authentication
+        - IA-11: Re-Authentication
+        - IA-12: Identity Proofing
+      requirements:
+        - Uniquely identify all users, processes, and devices
+        - Authenticate users before granting access
+        - Implement MFA for network and privileged access
+        - Manage authenticator lifecycle (issuance, changes, revocation)
+
+    - id: IR
+      name: Incident Response
+      severity: high
+      controls:
+        - IR-1: Policy and Procedures
+        - IR-2: Incident Response Training
+        - IR-3: Incident Response Testing
+        - IR-4: Incident Handling
+        - IR-5: Incident Monitoring
+        - IR-6: Incident Reporting
+        - IR-7: Incident Response Assistance
+        - IR-8: Incident Response Plan
+        - IR-9: Information Spillage Response
+      requirements:
+        - Establish an incident response capability and plan
+        - Train incident response team and test the plan
+        - Track, document, and report incidents
+        - Respond to incidents per documented procedures
+
+    - id: MA
+      name: Maintenance
+      severity: medium
+      controls:
+        - MA-1: Policy and Procedures
+        - MA-2: Controlled Maintenance
+        - MA-3: Maintenance Tools
+        - MA-4: Nonlocal Maintenance
+        - MA-5: Maintenance Personnel
+        - MA-6: Timely Maintenance
+      requirements:
+        - Schedule, perform, and document all maintenance
+        - Control maintenance tools brought into facilities
+        - Use MFA for all nonlocal maintenance
+
+    - id: MP
+      name: Media Protection
+      severity: high
+      controls:
+        - MP-1: Policy and Procedures
+        - MP-2: Media Access
+        - MP-3: Media Marking
+        - MP-4: Media Storage
+        - MP-5: Media Transport
+        - MP-6: Media Sanitization
+        - MP-7: Media Use
+        - MP-8: Media Downgrading
+      requirements:
+        - Restrict access to digital and non-digital media containing sensitive data
+        - Sanitize media before disposal or reuse per NIST SP 800-88
+        - Encrypt media containing sensitive data during transport
+
+    - id: PE
+      name: Physical and Environmental Protection
+      severity: high
+      controls:
+        - PE-1: Policy and Procedures
+        - PE-2: Physical Access Authorizations
+        - PE-3: Physical Access Control
+        - PE-4: Access Control for Transmission
+        - PE-5: Access Control for Output Devices
+        - PE-6: Monitoring Physical Access
+        - PE-8: Visitor Access Records
+        - PE-9: Power Equipment and Cabling
+        - PE-10: Emergency Shutoff
+        - PE-11: Emergency Power
+        - PE-12: Emergency Lighting
+        - PE-13: Fire Protection
+        - PE-14: Environmental Controls
+        - PE-15: Water Damage Protection
+        - PE-16: Delivery and Removal
+        - PE-17: Alternate Work Site
+        - PE-18: Location of System Components
+        - PE-19: Information Leakage
+      requirements:
+        - Control physical access to facilities and systems
+        - Monitor physical access via surveillance and access logs
+        - Protect against environmental hazards (fire, water, power loss)
+        - Manage visitor access and maintain visitor logs
+
+    - id: PL
+      name: Planning
+      severity: medium
+      controls:
+        - PL-1: Policy and Procedures
+        - PL-2: System Security and Privacy Plans
+        - PL-3: System Security Plan Update
+        - PL-4: Rules of Behavior
+        - PL-8: Security and Privacy Architectures
+        - PL-9: Central Management
+        - PL-10: Baseline Selection
+      requirements:
+        - Develop system security plans (SSPs) that document control implementation
+        - Define rules of behavior and obtain signed acknowledgment
+        - Review and update security plans at defined intervals
+
+    - id: PM
+      name: Program Management
+      severity: medium
+      controls:
+        - PM-1: Information Security Program Plan
+        - PM-2: Information Security Program Leadership Role
+        - PM-3: Information Security and Privacy Resources
+        - PM-4: POA&M Process
+        - PM-5: System Inventory
+        - PM-6: Measures of Performance
+        - PM-7: Enterprise Architecture
+        - PM-8: Critical Infrastructure Plan
+        - PM-9: Risk Management Strategy
+        - PM-10: Authorization Process
+        - PM-11: Mission/Business Process Definition
+      requirements:
+        - Establish an organization-wide information security program
+        - Assign a senior official as the program lead
+        - Maintain a system inventory across the enterprise
+        - Define risk management strategy and authorization process
+
+    - id: PS
+      name: Personnel Security
+      severity: medium
+      controls:
+        - PS-1: Policy and Procedures
+        - PS-2: Position Risk Designation
+        - PS-3: Personnel Screening
+        - PS-4: Personnel Termination
+        - PS-5: Personnel Transfer
+        - PS-6: Access Agreements
+        - PS-7: External Personnel Security
+        - PS-8: Personnel Sanctions
+        - PS-9: Position Descriptions
+      requirements:
+        - Screen personnel before granting access to systems
+        - Revoke access upon termination within defined timeframes
+        - Require signed access agreements acknowledging security responsibilities
+
+    - id: PT
+      name: PII Processing and Transparency
+      severity: high
+      controls:
+        - PT-1: Policy and Procedures
+        - PT-2: Authority to Process PII
+        - PT-3: PII Processing Purposes
+        - PT-4: Consent
+        - PT-5: Privacy Notice
+        - PT-6: System of Records Notice
+        - PT-7: Specific Categories of PII
+        - PT-8: Computer Matching Requirements
+      requirements:
+        - Identify and document the authority to process PII
+        - Provide privacy notices at collection points
+        - Process PII only for authorized purposes
+        - Obtain consent for PII processing where required
+
+    - id: RA
+      name: Risk Assessment
+      severity: high
+      controls:
+        - RA-1: Policy and Procedures
+        - RA-2: Security Categorization
+        - RA-3: Risk Assessment
+        - RA-5: Vulnerability Monitoring and Scanning
+        - RA-6: Technical Surveillance Countermeasures
+        - RA-7: Risk Response
+        - RA-8: Privacy Impact Assessment
+        - RA-9: Criticality Analysis
+        - RA-10: Threat Hunting
+      requirements:
+        - Categorize information systems per FIPS 199
+        - Conduct risk assessments as part of security authorization
+        - Perform vulnerability scanning at defined frequencies
+        - Conduct privacy impact assessments for systems processing PII
+
+    - id: SA
+      name: System and Services Acquisition
+      severity: medium
+      controls:
+        - SA-1: Policy and Procedures
+        - SA-2: Allocation of Resources
+        - SA-3: System Development Life Cycle
+        - SA-4: Acquisition Process
+        - SA-5: System Documentation
+        - SA-6: Software Usage Restrictions
+        - SA-8: Security and Privacy Engineering Principles
+        - SA-9: External System Services
+        - SA-10: Developer Configuration Management
+        - SA-11: Developer Testing and Evaluation
+        - SA-15: Development Process, Standards, and Tools
+        - SA-17: Developer Security and Privacy Architecture and Design
+        - SA-22: Unsupported System Components
+      requirements:
+        - Integrate security into the system development lifecycle
+        - Include security requirements in acquisition contracts
+        - Manage the security of external system services
+
+    - id: SC
+      name: System and Communications Protection
+      severity: high
+      controls:
+        - SC-1: Policy and Procedures
+        - SC-2: Separation of System and User Functionality
+        - SC-3: Security Function Isolation
+        - SC-4: Information in Shared System Resources
+        - SC-5: Denial-of-Service Protection
+        - SC-6: Resource Availability
+        - SC-7: Boundary Protection
+        - SC-8: Transmission Confidentiality and Integrity
+        - SC-10: Network Disconnect
+        - SC-11: Trusted Path
+        - SC-12: Cryptographic Key Establishment and Management
+        - SC-13: Cryptographic Protection
+        - SC-15: Collaborative Computing Devices
+        - SC-16: Transmission of Security and Privacy Attributes
+        - SC-17: PKI Certificates
+        - SC-18: Mobile Code
+        - SC-20: Secure Name/Address Resolution (Authoritative)
+        - SC-21: Secure Name/Address Resolution (Recursive)
+        - SC-22: Architecture and Provisioning for Name/Address Resolution
+        - SC-23: Session Authenticity
+        - SC-28: Protection of Information at Rest
+        - SC-38: Operations Security
+        - SC-39: Process Isolation
+      requirements:
+        - Implement boundary protection: deny by default, allow by exception
+        - Encrypt data in transit using FIPS 140-2 validated cryptography
+        - Protect cryptographic keys through their lifecycle
+        - Implement DoS protection mechanisms
+
+    - id: SI
+      name: System and Information Integrity
+      severity: high
+      controls:
+        - SI-1: Policy and Procedures
+        - SI-2: Flaw Remediation
+        - SI-3: Malicious Code Protection
+        - SI-4: System Monitoring
+        - SI-5: Security Alerts, Advisories, and Directives
+        - SI-6: Security and Privacy Function Verification
+        - SI-7: Software, Firmware, and Information Integrity
+        - SI-8: Spam Protection
+        - SI-10: Information Input Validation
+        - SI-11: Error Handling
+        - SI-12: Information Management and Retention
+        - SI-16: Memory Protection
+      requirements:
+        - Identify, report, and correct system flaws
+        - Deploy malicious code protection on all systems
+        - Monitor systems for attacks and unauthorized activities
+        - Receive and process security advisories from authoritative sources
+
+    - id: SR
+      name: Supply Chain Risk Management
+      severity: medium
+      controls:
+        - SR-1: Policy and Procedures
+        - SR-2: Supply Chain Risk Management Plan
+        - SR-3: Supply Chain Controls and Processes
+        - SR-4: Provenance
+        - SR-5: Acquisition Strategies, Tools, and Methods
+        - SR-6: Supplier Assessments and Reviews
+        - SR-7: Supply Chain Operations Security
+        - SR-8: Notification Agreements
+        - SR-9: Tamper Resistance and Detection
+        - SR-10: Inspection of Systems or Components
+        - SR-11: Component Authenticity
+        - SR-12: Component Disposal
+      requirements:
+        - Develop a supply chain risk management plan
+        - Assess suppliers for security risks before engagement
+        - Inspect acquired systems for tampering
+        - Verify authenticity and integrity of system components

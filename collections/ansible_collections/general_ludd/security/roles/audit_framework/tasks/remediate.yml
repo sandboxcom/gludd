@@ -1,0 +1,141 @@
+---
+# remediate — generate remediation plan from audit report results
+#
+# Reads audit_framework__audit_results (path to audit_report.json).
+# Groups failures by framework category and severity.
+# Generates remediation steps with priority, effort, and verification info.
+# Optionally dispatches to gludd_model_call for AI-assisted suggestions.
+
+- name: Assert audit results path is set
+  ansible.builtin.assert:
+    that:
+      - audit_framework__audit_results | default('') | length > 0
+    fail_msg: "audit_framework__audit_results is required for remediation"
+
+- name: Stat audit results file
+  ansible.builtin.stat:
+    path: "{{ audit_framework__audit_results }}"
+  register: _rm_results_stat
+
+- name: Assert audit results file exists
+  ansible.builtin.assert:
+    that:
+      - _rm_results_stat.stat.exists | bool
+    fail_msg: "Audit results file not found: {{ audit_framework__audit_results }}"
+
+- name: Read audit results
+  ansible.builtin.include_vars:
+    file: "{{ audit_framework__audit_results }}"
+    name: _rm_audit_data
+
+# ── Extract failures ───────────────────────────────────────────────────────────
+
+- name: Extract failed and partial results
+  ansible.builtin.set_fact:
+    _rm_failures: >-
+      {{
+        _rm_audit_data.results | default([])
+        | selectattr('status', 'in', ['fail', 'partial'])
+        | list
+      }}
+
+- name: Group failures by category
+  ansible.builtin.set_fact:
+    _rm_failures_by_category: {}
+    _rm_failure_count: "{{ _rm_failures | length }}"
+
+# ── Severity weight map ────────────────────────────────────────────────────────
+
+- name: Set severity priority weights
+  ansible.builtin.set_fact:
+    _rm_severity_weights:
+      critical: 1
+      high: 2
+      medium: 3
+      low: 4
+
+- name: Set framework weight multiplier
+  ansible.builtin.set_fact:
+    _rm_fw_weight: >-
+      {%- set weights = {'pci_dss_4': 1.0, 'fedramp': 1.0, 'hipaa': 1.2, 'gdpr': 1.1, 'soc2': 0.9, 'iso_27001': 0.8, 'nist_800_53': 0.85, 'fips_140_3': 0.95} -%}
+      {{ weights.get(audit_framework__framework | default('iso_27001'), 0.8) }}
+
+# ── Generate remediation steps ─────────────────────────────────────────────────
+
+- name: Build remediation steps
+  ansible.builtin.set_fact:
+    _rm_remediation_steps: >-
+      {%- set steps = [] -%}
+      {%- for failure in _rm_failures -%}
+      {%-   set sev = failure.get('severity', 'medium') -%}
+      {%-   set sev_weight = _rm_severity_weights.get(sev, 3) | int -%}
+      {%-   set priority = 'P' ~ (sev_weight | int) -%}
+      {%-   set effort = 'Medium' if sev in ['critical', 'high'] else ('Low' if sev == 'low' else 'Medium') -%}
+      {%-   set _ = steps.append({
+              'control_id': failure.control_id,
+              'gap_description': 'Control ' ~ failure.control_id ~ ' status: ' ~ failure.status ~ '. Evidence: ' ~ (failure.evidence | default('none')),
+              'remediation_action': 'Address gaps in control ' ~ failure.control_id,
+              'priority': priority,
+              'severity': sev,
+              'framework_weight': _rm_fw_weight | float,
+              'estimated_effort': effort,
+              'verification_method': 'Re-run audit_execute for control ' ~ failure.control_id
+            }) -%}
+      {%- endfor -%}
+      {{ steps }}
+
+# ── Optional AI-assisted remediation suggestions ───────────────────────────────
+
+- name: Dispatch AI-assisted remediation suggestions
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url | default('http://localhost:5680') }}"
+    psk: "{{ psk | default('') }}"
+    prompt: >-
+      You are a compliance remediation specialist. Given these audit failures,
+      suggest specific, actionable remediation steps for the top priority items.
+
+      Framework: {{ audit_framework__framework | default('unknown') }}
+      Failures: {{ _rm_failures[:3000] | to_json }}
+
+      For each failure, provide: a specific fix command or configuration change,
+      a verification test, and any prerequisite steps.
+    model_profile: "{{ audit_framework__model_profile | default('') }}"
+  register: _rm_model_result
+  no_log: "{{ (psk | default('')) | length > 0 }}"
+  when:
+    - audit_framework__enable_model_call | default(false) | bool
+    - _rm_failures | length > 0
+    - not ansible_check_mode
+
+- name: Set AI suggestions fact
+  ansible.builtin.set_fact:
+    _rm_ai_suggestions: "{{ _rm_model_result.answer | default('') }}"
+  when: audit_framework__enable_model_call | default(false) | bool
+
+- name: Set empty AI suggestions
+  ansible.builtin.set_fact:
+    _rm_ai_suggestions: ""
+  when: not (audit_framework__enable_model_call | default(false) | bool)
+
+# ── Write remediation plan artifact ────────────────────────────────────────────
+
+- name: Write remediation plan JSON
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'audit_framework',
+        'mode': 'remediate',
+        'framework': audit_framework__framework | default(''),
+        'timestamp': lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601),
+        'source_audit_results': audit_framework__audit_results,
+        'failure_count': _rm_failure_count,
+        'framework_weight': _rm_fw_weight | float,
+        'remediation_steps': _rm_remediation_steps,
+        'ai_suggestions': _rm_ai_suggestions
+      } | to_nice_json }}
+    dest: "{{ audit_framework__artifact_dir }}/remediation_plan.json"
+    mode: "0644"
+
+- name: Report remediation plan completion
+  ansible.builtin.debug:
+    msg: "Remediation plan: {{ _rm_failure_count }} failures addressed in {{ _rm_remediation_steps | length }} steps"

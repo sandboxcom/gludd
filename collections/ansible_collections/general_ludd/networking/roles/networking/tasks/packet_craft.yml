@@ -1,0 +1,108 @@
+---
+# packet_craft — craft and optionally send packets via gludd_scapy
+#
+# Uses ScapyAdapter.craft_packet(protocol_stack, fields) to build a packet
+# specification. When networking__send is true, also sends the packet via
+# ScapyAdapter.send_packet. Writes crafted spec and send result to artifacts.
+
+- name: Validate packet_craft prerequisites
+  ansible.builtin.assert:
+    that:
+      - networking__protocol_stack | default([]) | length > 0
+      - networking__protocol_stack is iterable
+      - networking__packet_fields | default({}) | length > 0
+    fail_msg: "networking__protocol_stack (list) and networking__packet_fields (dict) are required for packet_craft"
+
+- block:
+    - name: Craft packet specification via gludd_scapy
+      general_ludd.agent.gludd_scapy:
+        action: craft_packet
+        protocol_stack: "{{ networking__protocol_stack }}"
+        packet_fields: "{{ networking__packet_fields }}"
+      register: _pc_craft_result
+      no_log: "{{ networking__psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Set crafted packet fact
+      ansible.builtin.set_fact:
+        _pc_spec: "{{ _pc_craft_result.spec | default({}) }}"
+
+    - name: Debug crafted packet spec
+      ansible.builtin.debug:
+        msg: >-
+          Crafted packet: protocol_stack={{ networking__protocol_stack }}
+          layers={{ _pc_spec.layers | default([]) | length }}
+          total_bytes={{ _pc_spec.total_bytes | default(0) }}
+
+    - name: Send crafted packet when networking__send is true
+      general_ludd.agent.gludd_scapy:
+        action: send_packet
+        packets: "{{ [_pc_spec] }}"
+        interface: "{{ networking__interface | default('eth0') }}"
+        count: "{{ networking__count | default(1) }}"
+      register: _pc_send_result
+      no_log: "{{ networking__psk | length > 0 }}"
+      when:
+        - networking__send | default(false) | bool
+        - _pc_spec | length > 0
+        - not ansible_check_mode
+
+    - name: Set send statistics
+      ansible.builtin.set_fact:
+        _pc_send_stats: >-
+          {{ _pc_send_result.stats | default({}) }}
+      when: networking__send | default(false) | bool
+
+    - name: Debug send result
+      ansible.builtin.debug:
+        msg: >-
+          Send complete: sent={{ _pc_send_stats.sent | default('N/A') }}
+          interface={{ networking__interface }}
+      when: networking__send | default(false) | bool
+
+  rescue:
+    - name: Handle packet craft failure
+      ansible.builtin.debug:
+        msg: >-
+          Packet craft failed for protocol_stack={{ networking__protocol_stack }}.
+          Reason: {{ _pc_craft_result.msg | default('scapy unavailable or invalid protocol stack') }}
+      failed_when: false
+
+    - name: Set empty spec on failure
+      ansible.builtin.set_fact:
+        _pc_spec: {}
+        _pc_send_stats: {}
+      when: _pc_spec is not defined
+
+  always:
+    - name: Set timestamp
+      ansible.builtin.set_fact:
+        _pc_timestamp: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601) }}"
+
+    - name: Write packet craft artifact JSON
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'networking',
+            'mode': 'packet_craft',
+            'timestamp': _pc_timestamp,
+            'protocol_stack': networking__protocol_stack,
+            'packet_fields': networking__packet_fields,
+            'spec': _pc_spec,
+            'sent': networking__send | default(false),
+            'send_stats': {
+              'interface': networking__interface | default('eth0'),
+              'count': networking__count | default(1),
+              'result': _pc_send_stats,
+            } if networking__send | default(false) else {},
+            'error': _pc_craft_result.msg | default(none) | default(_pc_send_result.msg | default(none)),
+          } | to_nice_json }}
+        dest: "{{ networking__artifact_dir }}/packet_craft.json"
+        mode: "0644"
+
+    - name: Report packet craft completion
+      ansible.builtin.debug:
+        msg: >-
+          Packet craft complete: protocol_stack={{ networking__protocol_stack }}
+          sent={{ networking__send | default(false) }}
+          artifact={{ networking__artifact_dir }}/packet_craft.json

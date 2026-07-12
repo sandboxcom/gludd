@@ -1,0 +1,305 @@
+hipaa:
+  category: HIPAA
+  version: "Security Rule"
+  description: >
+    Health Insurance Portability and Accountability Act (HIPAA) Security Rule
+    (45 CFR Parts 160, 162, and 164). Establishes national standards for
+    protecting electronic protected health information (ePHI). Consists of
+    Administrative, Physical, and Technical Safeguards, plus Organizational
+    and Policy/Procedure requirements.
+  safeguards:
+    - id: ADMIN
+      name: Administrative Safeguards
+      description: >
+        Administrative actions, policies, and procedures to manage the
+        selection, development, implementation, and maintenance of security
+        measures to protect ePHI and manage the conduct of the workforce.
+      severity: high
+      controls:
+        - id: "164.308(a)(1)(i)"
+          name: Security Management Process
+          description: >
+            Implement policies and procedures to prevent, detect, contain,
+            and correct security violations.
+          severity: high
+          requirements:
+            - Implement a risk analysis process to identify threats and vulnerabilities to ePHI
+            - Conduct an accurate and thorough assessment of potential risks and vulnerabilities
+            - Implement risk management to reduce risks to a reasonable and appropriate level
+            - Implement sanction policies for workforce members who violate security policies
+            - Implement procedures to review system activity records (audit logs, access reports)
+            - Perform risk analysis on a periodic basis, not just once
+          sub_id: "164.308(a)(1)"
+        - id: "164.308(a)(2)"
+          name: Assigned Security Responsibility
+          description: >
+            Identify a security official responsible for developing and
+            implementing security policies and procedures.
+          severity: high
+          requirements:
+            - Designate a HIPAA Security Officer
+            - Document the security officer's responsibilities
+            - Security officer must have adequate authority and resources
+        - id: "164.308(a)(3)"
+          name: Workforce Security
+          description: >
+            Implement policies and procedures to ensure all workforce
+            members have appropriate access to ePHI and prevent
+            unauthorized access.
+          severity: high
+          requirements:
+            - Implement authorization and/or supervision of workforce members
+            - Implement workforce clearance procedures (background checks)
+            - Implement termination procedures to revoke access upon departure
+            - Document access authorization for each workforce member
+          sub_id: "164.308(a)(3)(i)"
+        - id: "164.308(a)(4)"
+          name: Information Access Management
+          description: >
+            Implement policies and procedures for authorizing access to
+            ePHI, consistent with the Privacy Rule minimum necessary.
+          severity: high
+          requirements:
+            - Isolate healthcare clearinghouse functions if multiple functions exist
+            - Implement access authorization policies for each information system
+            - Implement access establishment and modification procedures
+            - Enforce the principle of least privilege for ePHI access
+          sub_id: "164.308(a)(4)(i)"
+        - id: "164.308(a)(5)"
+          name: Security Awareness and Training
+          description: >
+            Implement a security awareness and training program for all
+            workforce members, including management.
+          severity: high
+          requirements:
+            - Deliver security awareness training at time of hire and periodically thereafter
+            - Include training on protection against malicious software
+            - Include training on login monitoring and password management
+            - Conduct periodic security reminders beyond annual training
+            - Document all training activities and attendance
+          sub_id: "164.308(a)(5)(i)"
+        - id: "164.308(a)(6)"
+          name: Security Incident Procedures
+          description: >
+            Implement policies and procedures to address and respond to
+            security incidents.
+          severity: high
+          requirements:
+            - Define what constitutes a security incident
+            - Identify and respond to suspected or known security incidents
+            - Mitigate harmful effects of security incidents to the extent practicable
+            - Document security incidents and their outcomes
+            - Include breach notification procedures per Breach Notification Rule
+          sub_id: "164.308(a)(6)(i)"
+        - id: "164.308(a)(7)"
+          name: Contingency Plan
+          description: >
+            Establish and implement policies and procedures for responding
+            to emergencies or other occurrences that damage systems
+            containing ePHI.
+          severity: high
+          requirements:
+            - Develop a data backup plan with documented backup procedures
+            - Develop a disaster recovery plan to restore lost data
+            - Develop an emergency mode operation plan for protecting ePHI during emergencies
+            - Test and revise contingency plans periodically
+            - Perform applications and data criticality analysis
+            - Identify all software applications and data critical to operations
+          sub_id: "164.308(a)(7)(i)"
+        - id: "164.308(a)(8)"
+          name: Evaluation
+          description: >
+            Perform periodic technical and non-technical evaluations of
+            security safeguards in response to environmental or operational
+            changes affecting ePHI security.
+          severity: high
+          requirements:
+            - Perform periodic security evaluations at least annually
+            - Trigger evaluations after significant operational or environmental changes
+            - Document evaluation findings and remediation actions
+          sub_id: "164.308(a)(8)"
+        - id: "164.308(b)(1)"
+          name: Business Associate Contracts and Other Arrangements
+          description: >
+            Ensure business associates that create, receive, maintain, or
+            transmit ePHI agree to implement appropriate safeguards.
+          severity: high
+          requirements:
+            - Obtain satisfactory assurances through written contracts (BAAs)
+            - Ensure BAAs specify permitted uses and disclosures of ePHI
+            - Require business associates to implement administrative, physical, and technical safeguards
+            - Require business associates to report security incidents and breaches
+            - Require business associates to ensure subcontractor compliance
+            - Review business associate arrangements periodically
+
+    - id: PHYS
+      name: Physical Safeguards
+      description: >
+        Physical measures, policies, and procedures to protect electronic
+        information systems and related buildings and equipment from natural
+        and environmental hazards and unauthorized intrusion.
+      severity: high
+      controls:
+        - id: "164.310(a)(1)"
+          name: Facility Access Controls
+          description: >
+            Implement policies and procedures to limit physical access to
+            electronic information systems and facilities that house them.
+          severity: high
+          requirements:
+            - Maintain contingency operations facilities for emergency access
+            - Implement facility security plans defining physical safeguards
+            - Control and validate access to facilities based on role or function
+            - Maintain maintenance records for security-related facility modifications
+          sub_id: "164.310(a)(1)"
+        - id: "164.310(b)"
+          name: Workstation Use
+          description: >
+            Implement policies and procedures specifying proper functions,
+            physical attributes, and security of specific workstations
+            that can access ePHI.
+          severity: medium
+          requirements:
+            - Define appropriate uses of workstations that access ePHI
+            - Define physical security requirements for workstations
+            - Restrict workstation functions to authorized purposes only
+        - id: "164.310(c)"
+          name: Workstation Security
+          description: >
+            Implement physical safeguards for all workstations that
+            access ePHI to restrict access to authorized users.
+          severity: medium
+          requirements:
+            - Position workstations to prevent unauthorized viewing
+            - Implement automatic screen locks after periods of inactivity
+            - Implement cable locks or other physical security for portable workstations
+            - Secure workstations in limited-access areas
+        - id: "164.310(d)(1)"
+          name: Device and Media Controls
+          description: >
+            Implement policies and procedures governing receipt and removal
+            of hardware and electronic media containing ePHI.
+          severity: high
+          requirements:
+            - Dispose of electronic media containing ePHI using secure methods (degaussing, shredding, wiping)
+            - Re-use media only after ePHI has been securely removed
+            - Maintain an inventory of all hardware and electronic media containing ePHI
+            - Create a retrievable, exact copy of ePHI before moving equipment
+          sub_id: "164.310(d)(1)"
+
+    - id: TECH
+      name: Technical Safeguards
+      description: >
+        Technology and related policies and procedures that protect ePHI
+        and control access to it.
+      severity: high
+      controls:
+        - id: "164.312(a)(1)"
+          name: Access Control
+          description: >
+            Implement technical policies and procedures for electronic
+            information systems that maintain ePHI to allow access only
+            to authorized persons or software programs.
+          severity: high
+          requirements:
+            - Assign a unique user identification for tracking user identity
+            - Establish procedures for obtaining necessary emergency access to ePHI
+            - Implement automatic logoff after a specified period of inactivity
+            - Implement encryption and decryption of ePHI at rest
+            - Implement encryption of ePHI in transit
+          sub_id: "164.312(a)(1)"
+        - id: "164.312(b)"
+          name: Audit Controls
+          description: >
+            Implement hardware, software, and/or procedural mechanisms
+            that record and examine activity in information systems
+            containing or using ePHI.
+          severity: high
+          requirements:
+            - Implement audit logging for all systems containing ePHI
+            - Record access events: user, timestamp, ePHI accessed, action taken
+            - Protect audit logs from unauthorized modification
+            - Retain audit logs per organizational policy (minimum 6 years recommended)
+            - Regularly review audit logs for suspicious activity
+        - id: "164.312(c)(1)"
+          name: Integrity
+          description: >
+            Implement policies and procedures to protect ePHI from
+            improper alteration or destruction.
+          severity: high
+          requirements:
+            - Implement mechanism to authenticate ePHI integrity
+            - Use digital signatures or checksums for data integrity verification
+            - Detect and alert on unauthorized modification of ePHI
+            - Maintain an audit trail of all changes to ePHI
+          sub_id: "164.312(c)(1)"
+        - id: "164.312(d)"
+          name: Person or Entity Authentication
+          description: >
+            Implement procedures to verify that a person or entity
+            seeking access to ePHI is the one claimed.
+          severity: high
+          requirements:
+            - Implement strong authentication mechanisms (MFA recommended)
+            - Require unique credentials for each user
+            - Implement password complexity and rotation policies
+            - Authenticate users before granting access to any ePHI
+            - Authenticate system-to-system communications
+        - id: "164.312(e)(1)"
+          name: Transmission Security
+          description: >
+            Implement technical security measures to guard against
+            unauthorized access to ePHI transmitted over networks.
+          severity: high
+          requirements:
+            - Encrypt ePHI in transit using TLS 1.2 or higher
+            - Implement integrity controls for transmitted ePHI
+            - Secure all network communication channels carrying ePHI
+            - Disable or prohibit transmission of ePHI over unsecured networks (e.g., unencrypted email)
+            - Verify endpoint identity before transmitting ePHI
+
+  organizational_requirements:
+    - id: "164.314(a)(1)"
+      name: Business Associate Contracts
+      description: >
+        Covered entities must have contracts or arrangements with business
+        associates requiring compliance with the HIPAA Security Rule.
+      severity: high
+      requirements:
+        - Execute written BAAs with all business associates
+        - Ensure BAAs require administrative, physical, and technical safeguards
+        - Report breaches to covered entities per contract terms
+
+    - id: "164.314(b)(1)"
+      name: Group Health Plan Requirements
+      description: >
+        Group health plans must ensure plan documents require plan sponsors
+        to implement safeguards for ePHI.
+      severity: medium
+      requirements:
+        - Amend plan documents to require compliance with Security Rule
+        - Certify separation of ePHI from employment records
+
+  policies_and_procedures:
+    - id: "164.316(a)"
+      name: Documentation
+      description: >
+        Maintain policies and procedures implemented to comply with the
+        Security Rule in written form.
+      severity: medium
+      requirements:
+        - Maintain written policies and procedures for all required safeguards
+        - Retain documentation for 6 years from date created or last in effect
+        - Make documentation available to those responsible for implementation
+        - Review and update documentation periodically
+
+    - id: "164.316(b)(2)(i)"
+      name: Updates
+      description: >
+        Review documentation periodically and update as needed in response
+        to environmental or operational changes.
+      severity: medium
+      requirements:
+        - Review all policies at least annually
+        - Update policies following security incidents or breaches
+        - Update policies when new technology or systems are introduced

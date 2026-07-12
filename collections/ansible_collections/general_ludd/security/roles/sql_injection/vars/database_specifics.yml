@@ -1,0 +1,147 @@
+---
+# Database-Specific SQL Injection Quirks — per-DBMS attack surface
+
+database_specifics:
+  mysql:
+    version: "^5.x, ^8.x"
+    comment_styles:
+      - "-- "  # space required
+      - "#"
+      - "/*! ... */"  # versioned comment (executes if MySQL version >= N)
+    default_databases:
+      - "information_schema"
+      - "mysql"
+      - "performance_schema"
+      - "sys"
+    information_schema:
+      tables: "information_schema.TABLES"
+      columns: "information_schema.COLUMNS"
+      schemata: "information_schema.SCHEMATA"
+    attacks_unique:
+      - "BENCHMARK(count, expr) — CPU-intensive delay"
+      - "/*!50000 SELECT ... */ — version-conditional execution"
+      - "LOAD_FILE('/etc/passwd') — file read"
+      - "SELECT ... INTO OUTFILE '/var/www/shell.php' — file write"
+      - "SELECT ... INTO DUMPFILE — single-line file write"
+    detection_queries:
+      - "SELECT @@version, @@hostname, @@datadir, @@basedir"
+      - "SHOW VARIABLES"
+      - "SHOW GRANTS"
+
+  postgresql:
+    version: "^9.x — ^16.x"
+    comment_styles:
+      - "--"
+      - "/* */"
+    default_databases:
+      - "postgres"
+      - "template0"
+      - "template1"
+    information_schema:
+      tables: "information_schema.tables"
+      columns: "information_schema.columns"
+      schemata: "information_schema.schemata"
+    attacks_unique:
+      - "pg_sleep(seconds) — time-based delay"
+      - "pg_read_file('/etc/passwd') — file read (superuser)"
+      - "pg_read_binary_file() — binary file read"
+      - "COPY ... FROM PROGRAM — command execution (superuser)"
+      - "lo_import(), lo_export() — large object file access"
+      - "dblink — cross-database query"
+    detection_queries:
+      - "SELECT version(), current_user, current_database()"
+      - "SELECT setting FROM pg_settings"
+      - "SELECT datname FROM pg_database"
+
+  mssql:
+    version: "^2008 — ^2022"
+    comment_styles:
+      - "--"
+      - "/* */"
+    default_databases:
+      - "master"
+      - "model"
+      - "msdb"
+      - "tempdb"
+    information_schema:
+      tables: "INFORMATION_SCHEMA.TABLES"
+      columns: "INFORMATION_SCHEMA.COLUMNS"
+      schemata: "INFORMATION_SCHEMA.SCHEMATA"
+    attacks_unique:
+      - "WAITFOR DELAY 'hh:mm:ss' — time delay"
+      - "xp_cmdshell — command execution (if enabled)"
+      - "xp_dirtree — directory listing, UNC path SMB capture"
+      - "xp_fileexist — file existence check"
+      - "xp_regread, xp_regwrite — registry access"
+      - "OPENROWSET, OPENDATASOURCE — linked server access"
+      - "sp_addsrvrolemember — privilege escalation"
+      - "Stacked queries always enabled (no semicolon restriction)"
+    detection_queries:
+      - "SELECT @@version, @@servername, db_name()"
+      - "SELECT name FROM master..sysdatabases"
+      - "EXEC sp_configure"
+
+  oracle:
+    version: "^11g — ^19c"
+    comment_styles:
+      - "--"
+      - "/* */"
+    default_databases:
+      - "ORCL"
+      - "XE"
+    information_schema:
+      tables: "ALL_TABLES, USER_TABLES, DBA_TABLES"
+      columns: "ALL_TAB_COLUMNS, USER_TAB_COLUMNS"
+      schemata: "ALL_USERS, DBA_USERS"
+    attacks_unique:
+      - "DBMS_LOCK.SLEEP(seconds) — time delay"
+      - "UTL_HTTP.REQUEST — outbound HTTP requests"
+      - "UTL_FILE — file system access"
+      - "UTL_TCP — raw TCP connections"
+      - "CTXSYS.DRITHSX.SN() — custom function abuse"
+      - "DBMS_PIPE.RECEIVE_MESSAGE — pipe-based delay"
+      - "DBMS_XMLQUERY — XML-based extraction"
+    detection_queries:
+      - "SELECT * FROM v$version"
+      - "SELECT banner FROM v$version"
+      - "SELECT username FROM all_users"
+
+  sqlite:
+    version: "^3.x"
+    comment_styles:
+      - "--"
+      - "/* */"
+    default_databases: []
+    information_schema:
+      tables: "sqlite_master WHERE type='table'"
+      columns: "PRAGMA table_info(table_name)"
+      schemata: "N/A (no schema concept)"
+    attacks_unique:
+      - "No user authentication — file permissions are only barrier"
+      - "ATTACH DATABASE — attach additional databases"
+      - "sqlite_version() — version discovery"
+      - "PRAGMA database_list — discover attached databases"
+      - "No multi-statement restriction by default"
+      - "Can write to filesystem via ATTACH + table creation"
+    detection_queries:
+      - "SELECT sqlite_version()"
+      - "PRAGMA database_list"
+      - "SELECT sql FROM sqlite_master"
+
+  common_evasion:
+    comment_obfuscation:
+      - "SEL/**/ECT — inline comment splitting"
+      - "UN/**/ION/**/SEL/**/ECT — multi-comment split"
+      - "SE%00LECT — null byte termination (PHP)" 
+    whitespace_alternatives:
+      - "UNION%0dSELECT — carriage return"
+      - "UNION%0aSELECT — newline"
+      - "UNION%09SELECT — tab"
+      - "UNION+SELECT — plus sign (URL encoding)"
+    case_variation:
+      - "sElEcT — mixed case"
+      - "UnIoN SeLeCt — camel case"
+    encoding:
+      - "0x554e494f4e — hex encoding (MySQL)"
+      - "CHAR(85,78,73,79,78) — CHAR() function (MySQL/MSSQL)"
+      - "CHR(85)||CHR(78) — CHR() concatenation (Oracle/PostgreSQL)"

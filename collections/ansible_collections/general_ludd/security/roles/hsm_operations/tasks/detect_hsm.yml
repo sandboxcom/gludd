@@ -1,0 +1,145 @@
+---
+# detect_hsm.yml — HSM detection and configuration
+
+- name: Stat PKCS#11 module
+  ansible.builtin.stat:
+    path: "{{ hsm_operations__pkcs11_module }}"
+  register: _hsm_detect_pkcs11_stat
+
+- name: Fallback scan for SoftHSM module
+  ansible.builtin.shell:
+    cmd: >-
+      find /usr/lib /opt/homebrew/lib /usr/local/lib
+      -name 'libsofthsm2.so' -o -name 'libsofthsm2.dylib'
+      2>/dev/null | head -1
+  args:
+    warn: false
+  register: _hsm_detect_softhsm_find
+  changed_when: false
+  failed_when: false
+  when: not _hsm_detect_pkcs11_stat.stat.exists
+
+- name: Set SoftHSM module from fallback scan
+  ansible.builtin.set_fact:
+    hsm_operations__pkcs11_module: "{{ _hsm_detect_softhsm_find.stdout | trim }}"
+    _hsm_detected_vendor: "softhsm2"
+  when:
+    - not _hsm_detect_pkcs11_stat.stat.exists
+    - _hsm_detect_softhsm_find.stdout | default('') | length > 0
+
+- name: Probe vendor-specific module paths
+  ansible.builtin.stat:
+    path: "{{ item.value.pkcs11_module }}"
+  register: _hsm_detect_vendor_probe
+  loop: "{{ hsm_vendors | dict2items }}"
+  when:
+    - not _hsm_detect_pkcs11_stat.stat.exists
+    - _hsm_detect_softhsm_find.stdout | default('') | length == 0
+
+- name: Match first found vendor
+  ansible.builtin.set_fact:
+    hsm_operations__pkcs11_module: "{{ item.item.value.pkcs11_module }}"
+    _hsm_detected_vendor: "{{ item.item.key }}"
+  when:
+    - not _hsm_detect_pkcs11_stat.stat.exists
+    - _hsm_detect_softhsm_find.stdout | default('') | length == 0
+    - item.stat.exists | default(false)
+  loop: "{{ _hsm_detect_vendor_probe.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
+- name: Fail if no PKCS#11 module found
+  ansible.builtin.fail:
+    msg: >
+      No PKCS#11 module found. Set hsm_operations__pkcs11_module explicitly
+      or ensure HSM vendor libraries are installed.
+  when:
+    - hsm_operations__pkcs11_module | length == 0
+    - not _hsm_detect_pkcs11_stat.stat.exists | default(true)
+
+# ── HSM connectivity test ──
+- name: List HSM slots via pkcs11-tool
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --list-slots
+  register: _hsm_detect_slots
+  changed_when: false
+  failed_when: false
+
+- name: Parse slot count from output
+  ansible.builtin.set_fact:
+    _hsm_slots_raw: >-
+      {{ _hsm_detect_slots.stdout | default('')
+         | regex_findall('Slot\s+(\d+)') | length }}
+    _hsm_slots_output: "{{ _hsm_detect_slots.stdout | default('') }}"
+
+- name: Fail if no slots found
+  ansible.builtin.fail:
+    msg: >
+      No HSM slots found. Check HSM connectivity and module path:
+      {{ hsm_operations__pkcs11_module }}
+  when:
+    - _hsm_detect_slots.rc == 0
+    - (_hsm_slots_raw | int) == 0
+
+- name: List tokens on first slot
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --list-token-slots
+  register: _hsm_detect_tokens
+  changed_when: false
+  failed_when: false
+
+- name: Parse token labels
+  ansible.builtin.set_fact:
+    _hsm_token_labels: >-
+      {{ _hsm_detect_tokens.stdout | default('')
+         | regex_findall('token label\s*:\s*(.+)') }}
+
+# ── AI-assisted HSM diagnostics (model call, gated) ──
+- name: Request HSM diagnostic analysis from model
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ hsm_operations__daemon_url }}"
+    psk: "{{ hsm_operations__psk }}"
+    prompt: >-
+      You are an HSM diagnostic expert. Analyze this HSM detection output for
+      issues (missing slots, broken PKCS#11 chain, token errors, initialization
+      problems). Vendor: {{ _hsm_detected_vendor | default('unknown') }}.
+      Module: {{ hsm_operations__pkcs11_module }}.
+
+      Slot listing:
+      {{ _hsm_slots_output[:4000] }}
+
+      Token listing:
+      {{ _hsm_detect_tokens.stdout | default('(token listing not obtained)')[:4000] }}
+    model_profile: "{{ hsm_operations__model_profile | default('') }}"
+  register: _hsm_diag_result
+  no_log: "{{ hsm_operations__psk | length > 0 }}"
+  when:
+    - hsm_operations__enable_model_call | bool
+    - not ansible_check_mode
+
+- name: Set HSM diagnostic summary
+  ansible.builtin.set_fact:
+    _hsm_diagnostics: "{{ _hsm_diag_result.answer | default('Model call disabled or failed.') }}"
+  when: _hsm_diag_result is defined
+
+# ── Write detection artifact ──
+- name: Write HSM detection artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'hsm_operations',
+        'phase': 'detect',
+        'status': 'completed',
+        'vendor': _hsm_detected_vendor | default('unknown'),
+        'pkcs11_module': hsm_operations__pkcs11_module,
+        'slot_count': _hsm_slots_raw | default(0) | int,
+        'tokens': _hsm_token_labels | default([]),
+        'diagnostics': _hsm_diagnostics | default(''),
+        'slot_output_tail': (_hsm_detect_slots.stdout | default(''))[-2000:]
+      } | to_nice_json }}
+    dest: "{{ hsm_operations__artifact_dir }}/hsm_detect.json"
+    mode: "0640"
