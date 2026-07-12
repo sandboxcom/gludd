@@ -44,18 +44,21 @@ class EpisodicMemoryRecorder:
         self._repo = memory_repo
         self._namespace = EPISODIC_NAMESPACE
 
-    async def record_episode(self, episode: Episode) -> str:
+    async def record_episode(self, episode: Episode, project_id: str | None = None) -> str:
         serialized = json.dumps(_episode_to_dict(episode), default=str)
         await self._repo.set(
             agent_id=episode.agent_id,
             key=episode.id,
             value=serialized,
             namespace=self._namespace,
+            project_id=project_id,
         )
         return episode.id
 
-    async def get_episode(self, agent_id: str, episode_id: str) -> Episode | None:
-        row = await self._repo.get(agent_id, episode_id, namespace=self._namespace)
+    async def get_episode(
+        self, agent_id: str, episode_id: str, project_id: str | None = None,
+    ) -> Episode | None:
+        row = await self._repo.get(agent_id, episode_id, namespace=self._namespace, project_id=project_id)
         if row is None:
             return None
         return _dict_to_episode(json.loads(row.value))
@@ -65,10 +68,11 @@ class EpisodicMemoryRecorder:
         agent_id: str,
         task_type: str | None = None,
         outcome: str | None = None,
+        project_id: str | None = None,
         limit: int = 100,
     ) -> list[Episode]:
         rows = await self._repo.list_by_namespace(
-            agent_id, namespace=self._namespace, limit=limit
+            agent_id, namespace=self._namespace, project_id=project_id, limit=limit
         )
         episodes = []
         for row in rows:
@@ -84,9 +88,9 @@ class EpisodicMemoryRecorder:
         return episodes
 
     async def list_by_outcome(
-        self, agent_id: str, outcome: str, limit: int = 100
+        self, agent_id: str, outcome: str, project_id: str | None = None, limit: int = 100,
     ) -> list[Episode]:
-        return await self.list_episodes(agent_id, outcome=outcome, limit=limit)
+        return await self.list_episodes(agent_id, outcome=outcome, project_id=project_id, limit=limit)
 
     async def record_completion(
         self,
@@ -99,6 +103,7 @@ class EpisodicMemoryRecorder:
         takeaway: str = "",
         error_message: str = "",
         duration_seconds: float = 0.0,
+        project_id: str | None = None,
     ) -> str:
         episode = Episode(
             agent_id=agent_id,
@@ -111,7 +116,7 @@ class EpisodicMemoryRecorder:
             error_message=error_message,
             duration_seconds=duration_seconds,
         )
-        return await self.record_episode(episode)
+        return await self.record_episode(episode, project_id=project_id)
 
 
 def _episode_to_dict(ep: Episode) -> dict[str, object]:

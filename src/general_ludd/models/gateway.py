@@ -1520,7 +1520,7 @@ class ModelGateway:
                 continue
             if prev_id is not None:
                 self._record_failover(
-                    prev_id, fb_id, str(last_exc) if last_exc is not None else ""
+                    prev_id, fb_id, sanitize_error_message(str(last_exc)) if last_exc is not None else ""
                 )
             try:
                 result = self._call_fallback(fb_id, messages, **kwargs)
@@ -1543,7 +1543,7 @@ class ModelGateway:
                 raise
             except Exception as exc:  # try the next hop (this fallback's own chain)
                 last_exc = exc
-                attempts.append({"profile_id": fb_id, "reason": str(exc)})
+                attempts.append({"profile_id": fb_id, "reason": sanitize_error_message(str(exc))})
                 prev_id = fb_id
                 next_profile = self._profiles.get(fb_id)
                 if next_profile is not None:
@@ -1681,7 +1681,7 @@ class ModelGateway:
 
         all_attempts: list[dict[str, str]] = []
         if primary_exc is not None:
-            all_attempts.append({"profile_id": profile_id, "reason": str(primary_exc)})
+            all_attempts.append({"profile_id": profile_id, "reason": sanitize_error_message(str(primary_exc))})
 
         # D-04: route fallback walk through _walk_fallbacks (health-gated)
         result, last_exc, fallback_attempts = self._walk_fallbacks(
@@ -1738,7 +1738,7 @@ class ModelGateway:
             try:
                 self._broadcaster.broadcast_model_update(action, model_id, broadcast_payload)
             except Exception as exc:
-                logger.warning("Worker broadcast failed for model %s: %s", action, exc)
+                logger.warning("Worker broadcast failed for model %s: %s", action, sanitize_error_message(str(exc)))
 
     @staticmethod
     def select_cost_effective_profile(
