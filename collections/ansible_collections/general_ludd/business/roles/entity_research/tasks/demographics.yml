@@ -1,0 +1,91 @@
+---
+# demographics.yml — Consumer demographics
+# Target market segments, geographic distribution, customer size,
+# acquisition channels, and public market research.
+
+- name: Initialize demographics
+  ansible.builtin.set_fact:
+    entity_demographics:
+      entity_name: "{{ entity_name }}"
+      target_market_segments: []
+      geographic_distribution: []
+      customer_size:
+        b2b: []
+        b2c: []
+      acquisition_channels: []
+      market_research: []
+      gathered_at: "{{ ansible_date_time.iso8601 }}"
+
+# ── Target market research ──
+- name: SearX search for target market
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} target market customer demographics audience"
+    categories: "general"
+    page: 1
+  register: searx_market_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Customer acquisition research ──
+- name: SearX search for customer acquisition
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} customer acquisition marketing strategy channels"
+    categories: "general"
+    page: 1
+  register: searx_acquisition_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Geographic distribution ──
+- name: SearX search for geographic presence
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} locations offices operations countries"
+    categories: "general"
+    page: 1
+  register: searx_geo_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── B2B/B2C Classification ──
+- name: SearX search for business model
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} business model B2B B2C enterprise SMB customers"
+    categories: "general"
+    page: 1
+  register: searx_bizmodel_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: Write demographics artifact
+  ansible.builtin.copy:
+    content: "{{ entity_demographics | to_nice_json }}"
+    dest: "{{ entity_research_artifact_dir }}/entity_demographics.json"
+    mode: "0644"

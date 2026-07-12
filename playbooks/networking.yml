@@ -1,0 +1,8 @@
+---
+- name: Networking role test playbook
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Import networking role
+      ansible.builtin.include_role:
+        name: general_ludd.networking.networking

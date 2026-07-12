@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: audit_framework
+  author: Agentic Harness Agent
+  description: >
+    Comprehensive audit framework knowledge role with data for PCI DSS 4.0,
+    FIPS 140-3, SOC 2, HIPAA, FedRAMP, ISO 27001:2022, NIST 800-53 Rev 5,
+    and GDPR. Supports audit execution against compliance requirements,
+    SearX-powered framework update checking, compliance gap mapping,
+    remediation planning, and audit tool recommendations. Designed as a
+    sub-role callable from compliance and governance playbooks via
+    include_role.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

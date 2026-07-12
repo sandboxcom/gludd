@@ -1,0 +1,115 @@
+---
+# framework_lookup — query framework data against a target and optional AI analysis
+#
+# Uses audit_framework__framework to load a framework-specific vars file.
+# Filters controls by audit_framework__filter_category and audit_framework__filter_severity.
+# Optionally dispatches to gludd_model_call for AI-assisted analysis.
+
+- name: Assert framework is set
+  ansible.builtin.assert:
+    that:
+      - audit_framework__framework | default('') in ['pci_dss_4', 'fips_140_3', 'soc2', 'hipaa', 'fedramp', 'iso_27001', 'nist_800_53', 'gdpr']
+    fail_msg: "audit_framework__framework must be one of: pci_dss_4, fips_140_3, soc2, hipaa, fedramp, iso_27001, nist_800_53, gdpr"
+
+- name: Include framework vars file
+  ansible.builtin.include_vars:
+    file: "vars/{{ audit_framework__framework }}.yml"
+    name: _fw_lookup_vars
+  failed_when: false
+  register: _fw_lookup_vars_result
+
+- name: Set empty controls if vars file missing
+  ansible.builtin.set_fact:
+    _fw_lookup_controls: []
+  when: _fw_lookup_vars_result is failed or not _fw_lookup_vars_result.ansible_included_var_files | default([])
+
+- name: Load controls from vars
+  ansible.builtin.set_fact:
+    _fw_lookup_controls: "{{ _fw_lookup_vars.controls | default([]) }}"
+  when: _fw_lookup_vars_result is succeeded and _fw_lookup_vars.controls is defined
+
+# ── Filter controls ────────────────────────────────────────────────────────────
+
+- name: Filter controls by category
+  ansible.builtin.set_fact:
+    _fw_filtered: >-
+      {{
+        _fw_lookup_controls
+        | selectattr('category', 'equalto', audit_framework__filter_category)
+        | list
+      }}
+  when: audit_framework__filter_category | default('') | length > 0
+
+- name: Keep all controls when no category filter
+  ansible.builtin.set_fact:
+    _fw_filtered: "{{ _fw_lookup_controls }}"
+  when: audit_framework__filter_category | default('') | length == 0
+
+- name: Filter controls by severity
+  ansible.builtin.set_fact:
+    _fw_filtered: >-
+      {{
+        _fw_filtered
+        | selectattr('severity', 'equalto', audit_framework__filter_severity)
+        | list
+      }}
+  when: audit_framework__filter_severity | default('') | length > 0
+
+# ── Optional AI analysis via gludd_model_call ─────────────────────────────────
+
+- name: Dispatch AI-assisted framework analysis
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url | default('http://localhost:5680') }}"
+    psk: "{{ psk | default('') }}"
+    prompt: >-
+      You are an audit framework analyst. Analyze this framework data and
+      identify the most critical controls, gaps in coverage, and recommendations
+      for implementation priority.
+
+      Framework: {{ audit_framework__framework }}
+      Target: {{ audit_framework__target | default('unspecified') }}
+      Controls: {{ _fw_filtered[:3000] | to_json }}
+      Category filter: {{ audit_framework__filter_category | default('none') }}
+      Severity filter: {{ audit_framework__filter_severity | default('none') }}
+
+      Return a structured analysis with: top_critical_controls (list),
+      coverage_gaps (list), implementation_recommendations (list).
+    model_profile: "{{ audit_framework__model_profile | default('') }}"
+  register: _fw_lookup_model_result
+  no_log: "{{ (psk | default('')) | length > 0 }}"
+  when:
+    - audit_framework__enable_model_call | default(false) | bool
+    - not ansible_check_mode
+
+- name: Set model analysis fact
+  ansible.builtin.set_fact:
+    _fw_lookup_analysis: "{{ _fw_lookup_model_result.answer | default('{}') }}"
+  when: audit_framework__enable_model_call | default(false) | bool
+
+- name: Set empty model analysis
+  ansible.builtin.set_fact:
+    _fw_lookup_analysis: "{}"
+  when: not (audit_framework__enable_model_call | default(false) | bool)
+
+# ── Write output ───────────────────────────────────────────────────────────────
+
+- name: Write framework lookup JSON artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'audit_framework',
+        'mode': 'framework_lookup',
+        'framework': audit_framework__framework,
+        'target': audit_framework__target | default(''),
+        'category_filter': audit_framework__filter_category | default(''),
+        'severity_filter': audit_framework__filter_severity | default(''),
+        'total_controls': _fw_filtered | length,
+        'controls': _fw_filtered,
+        'model_analysis': _fw_lookup_analysis
+      } | to_nice_json }}
+    dest: "{{ audit_framework__artifact_dir }}/framework_lookup.json"
+    mode: "0644"
+
+- name: Report framework lookup completion
+  ansible.builtin.debug:
+    msg: "Framework lookup complete: {{ _fw_filtered | length }} controls for {{ audit_framework__framework }}"

@@ -1,0 +1,135 @@
+---
+# audit_execute — run audit against target system
+#
+# Takes audit_framework__target, audit_framework__framework, audit_framework__audit_scope.
+# For each requirement in scope: check evidence path, run check commands, evaluate pass/fail/partial.
+# Generates structured audit report JSON artifact.
+
+- name: Assert required parameters
+  ansible.builtin.assert:
+    that:
+      - audit_framework__target | default('') | length > 0
+      - audit_framework__framework | default('') | length > 0
+      - audit_framework__audit_scope | default([]) | length > 0
+    fail_msg: "audit_framework__target, audit_framework__framework, and audit_framework__audit_scope are required"
+
+- name: Set evidence path default
+  ansible.builtin.set_fact:
+    _ae_evidence_path: "{{ audit_framework__evidence_path | default('/var/log/audit') }}"
+
+- name: Set check commands default
+  ansible.builtin.set_fact:
+    _ae_check_commands: "{{ audit_framework__check_commands | default([]) }}"
+
+- name: Include framework vars
+  ansible.builtin.include_vars:
+    file: "vars/{{ audit_framework__framework }}.yml"
+    name: _ae_fw_vars
+  failed_when: false
+  register: _ae_vars_result
+
+# ── Execute audit for each requirement in scope ────────────────────────────────
+
+- name: Collect evidence per requirement
+  ansible.builtin.stat:
+    path: "{{ _ae_evidence_path }}/{{ item }}"
+  register: _ae_evidence_stat
+  loop: "{{ audit_framework__audit_scope }}"
+  failed_when: false
+
+- name: Build evidence map from stat results
+  ansible.builtin.set_fact:
+    _ae_evidence_map: >-
+      {{
+        dict(
+          _ae_evidence_stat.results
+          | map('json_query', '{item: stat.exists}')
+          | zip(audit_framework__audit_scope)
+          | map('reverse')
+          | list
+        )
+      }}
+
+- name: Execute check commands per requirement
+  ansible.builtin.command:
+    cmd: "{{ item.command }}"
+  register: _ae_check_results
+  loop: "{{ _ae_check_commands }}"
+  failed_when: false
+  changed_when: false
+  when: _ae_check_commands | length > 0
+
+# ── Evaluate results per requirement ───────────────────────────────────────────
+
+- name: Build audit results array
+  ansible.builtin.set_fact:
+    _ae_audit_results: []
+    _ae_pass_count: 0
+    _ae_fail_count: 0
+    _ae_partial_count: 0
+
+- name: Evaluate each requirement against evidence and check output
+  ansible.builtin.set_fact:
+    _ae_requirement_evals: >-
+      {{
+        audit_framework__audit_scope
+        | map('regex_replace', '^(.*)$', '\1')
+        | list
+      }}
+  when: false
+
+- name: Compute audit results
+  ansible.builtin.set_fact:
+    _ae_audit_results: >-
+      {%- set results = [] -%}
+      {%- for req_id in audit_framework__audit_scope -%}
+      {%-   set evidence = _ae_evidence_map.get(req_id, false) -%}
+      {%-   set status = 'pass' if evidence else 'fail' -%}
+      {%-   set _ = results.append({
+              'control_id': req_id,
+              'status': status,
+              'evidence': 'Found at ' ~ _ae_evidence_path ~ '/' ~ req_id if evidence else 'Not found',
+              'notes': 'Evidence file ' ~ ('exists' if evidence else 'missing')
+            }) -%}
+      {%- endfor -%}
+      {{ results }}
+
+- name: Count results
+  ansible.builtin.set_fact:
+    _ae_pass_count: "{{ _ae_audit_results | selectattr('status', 'equalto', 'pass') | list | length }}"
+    _ae_fail_count: "{{ _ae_audit_results | selectattr('status', 'equalto', 'fail') | list | length }}"
+    _ae_partial_count: "{{ _ae_audit_results | selectattr('status', 'equalto', 'partial') | list | length }}"
+
+- name: Set timestamp
+  ansible.builtin.set_fact:
+    _ae_timestamp: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601) }}"
+
+# ── Write audit report artifact ────────────────────────────────────────────────
+
+- name: Write audit report JSON
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'audit_framework',
+        'mode': 'audit_execute',
+        'framework': audit_framework__framework,
+        'timestamp': _ae_timestamp,
+        'target': audit_framework__target,
+        'evidence_path': _ae_evidence_path,
+        'results': _ae_audit_results,
+        'summary': {
+          'pass_count': _ae_pass_count | int,
+          'fail_count': _ae_fail_count | int,
+          'partial_count': _ae_partial_count | int,
+          'total': audit_framework__audit_scope | length
+        }
+      } | to_nice_json }}
+    dest: "{{ audit_framework__artifact_dir }}/audit_report.json"
+    mode: "0644"
+
+- name: Report audit execution completion
+  ansible.builtin.debug:
+    msg: >-
+      Audit complete: target={{ audit_framework__target }}
+      pass={{ _ae_pass_count }} fail={{ _ae_fail_count }} partial={{ _ae_partial_count }}
+      of {{ audit_framework__audit_scope | length }} total

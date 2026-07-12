@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: log_analyzer
+  author: Agentic Harness Agent
+  description: >
+    Comprehensive log analysis for gludd — gathers logs from daemon, agents, event
+    traces, CI/gate output, OpenShift containers, systemd/journald, and SearX. Feeds
+    all sources to model-driven analysis tasks: error clustering, anomaly detection,
+    agent behavior analysis, performance regression, and root cause suggestion.
+    Produces structured JSON + markdown reports and a separate chain-of-thought log
+    (log_analyzer_cot.log) capturing every model call's prompt and response.
+    REPORT-ONLY — never mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

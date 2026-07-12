@@ -1,0 +1,1080 @@
+fedramp:
+  category: FedRAMP
+  version: "NIST 800-53 Rev 5"
+  description: >
+    Federal Risk and Authorization Management Program (FedRAMP). Baseline
+    security controls for cloud service providers serving US federal agencies.
+    Maps to NIST SP 800-53 Rev 5 controls with FedRAMP-specific parameterizations,
+    enhancements, and additional control requirements beyond the NIST baselines.
+  baseline_levels:
+    - level: Low
+      description: For systems where loss of confidentiality, integrity, or
+        availability has limited adverse effect on operations, assets, or individuals.
+    - level: Moderate
+      description: For systems where loss of C/I/A has serious adverse effect.
+        Most FedRAMP authorizations target this baseline.
+    - level: High
+      description: For systems where loss of C/I/A has severe or catastrophic
+        adverse effect. Includes all Moderate controls plus enhancements.
+    - level: FedRAMP_Specific
+      description: Controls or enhancements that are FedRAMP-specific
+        parameterizations, above and beyond NIST 800-53 baseline.
+  control_families:
+    - id: AC
+      name: Access Control
+      description: >
+        Controls governing access to information systems. Covers account
+        management, access enforcement, information flow, separation of duties,
+        least privilege, session controls, and access control for mobile devices.
+      severity: high
+      key_controls:
+        - id: AC-1
+          name: Access Control Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: AC-2
+          name: Account Management
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Requires automated account management; account types include
+            individual, group, system, guest, temporary, emergency, and
+            service accounts. Disable accounts after 90 days of inactivity.
+        - id: AC-3
+          name: Access Enforcement
+          severity: high
+          scope: [Low, Moderate, High]
+        - id: AC-4
+          name: Information Flow Enforcement
+          severity: high
+          scope: [Moderate, High]
+        - id: AC-5
+          name: Separation of Duties
+          severity: high
+          scope: [Moderate, High]
+        - id: AC-6
+          name: Least Privilege
+          severity: high
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Prohibits privileged access for non-human accounts except as
+            absolutely necessary. Review privileged role assignments
+            at least every 90 days.
+        - id: AC-7
+          name: Unsuccessful Logon Attempts
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Lock account or node for 30 minutes after 3 consecutive
+            invalid attempts within 15 minutes.
+        - id: AC-8
+          name: System Use Notification
+          severity: medium
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Must display before granting system access; must remain on
+            screen until user acknowledges. Must be approved by the
+            Authorizing Official.
+        - id: AC-11
+          name: Device Lock
+          severity: medium
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Device lock after 15 minutes of inactivity at Moderate,
+            15 minutes at High.
+        - id: AC-12
+          name: Session Termination
+          severity: medium
+          scope: [Moderate, High]
+        - id: AC-14
+          name: Permitted Actions Without Identification or Authentication
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: AC-17
+          name: Remote Access
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            MFA required for all remote access. Monitor remote connections
+            for unauthorized use. Route remote access through managed
+            access control points.
+        - id: AC-18
+          name: Wireless Access
+          severity: high
+          scope: [Low, Moderate, High]
+        - id: AC-19
+          name: Access Control for Mobile Devices
+          severity: high
+          scope: [Moderate, High]
+        - id: AC-20
+          name: Use of External Systems
+          severity: high
+          scope: [Low, Moderate, High]
+        - id: AC-21
+          name: Information Sharing
+          severity: medium
+          scope: [Moderate, High]
+        - id: AC-22
+          name: Publicly Accessible Content
+          severity: medium
+          scope: [Low, Moderate, High]
+
+    - id: AT
+      name: Awareness and Training
+      description: >
+        Controls governing security awareness and role-based training
+        for personnel accessing federal information systems.
+      severity: medium
+      key_controls:
+        - id: AT-1
+          name: Awareness and Training Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: AT-2
+          name: Literacy Training and Awareness
+          severity: medium
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Initial training before access granted; annual refresher.
+            Include phishing, social engineering, insider threats.
+        - id: AT-3
+          name: Role-Based Training
+          severity: medium
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Training before performing security-relevant duties; annual refresher.
+        - id: AT-4
+          name: Training Records
+          severity: low
+          scope: [Low, Moderate, High]
+
+    - id: AU
+      name: Audit and Accountability
+      description: >
+        Controls for creating, protecting, and retaining system audit
+        records to support monitoring, analysis, investigation, and
+        reporting of system activity.
+      severity: high
+      key_controls:
+        - id: AU-1
+          name: Audit and Accountability Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: AU-2
+          name: Event Logging
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Log all administrative activity, authentication events,
+            access to audit logs, and creation/modification/deletion
+            of system-level objects.
+        - id: AU-3
+          name: Content of Audit Records
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Each record must include: timestamp, event type, event outcome,
+            subject identity, source IP/device, and object identity.
+        - id: AU-4
+          name: Audit Log Storage Capacity
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: AU-5
+          name: Response to Audit Logging Process Failures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: AU-6
+          name: Audit Record Review, Analysis, and Reporting
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Review audit records at least weekly. Report findings to
+            designated officials. Correlate audit records across
+            system components.
+        - id: AU-7
+          name: Audit Record Reduction and Report Generation
+          severity: medium
+          scope: [Moderate, High]
+        - id: AU-8
+          name: Time Stamps
+          severity: medium
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Synchronize internal system clocks with authoritative
+            time source at least every 24 hours.
+        - id: AU-9
+          name: Protection of Audit Information
+          severity: high
+          scope: [Low, Moderate, High]
+        - id: AU-10
+          name: Non-Repudiation
+          severity: medium
+          scope: [Moderate, High]
+        - id: AU-11
+          name: Audit Record Retention
+          severity: medium
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Retain audit records for at least 90 days online; maintain
+            backup for at least one year for incident response.
+        - id: AU-12
+          name: Audit Record Generation
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Generate audit records for all auditable events as defined
+            in AU-2. Must be generated on all system components
+            within the authorization boundary.
+        - id: AU-16
+          name: Cross-Organizational Audit Logging
+          severity: medium
+          scope: [Moderate, High]
+
+    - id: CA
+      name: Assessment, Authorization, and Monitoring
+      description: >
+        Controls for security assessments, system authorizations,
+        continuous monitoring, and plan of action and milestones (POA&M).
+      severity: high
+      key_controls:
+        - id: CA-1
+          name: Assessment, Authorization, and Monitoring Policy
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: CA-2
+          name: Control Assessments
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Independent assessor must conduct annual assessment.
+            Assessor independence must be verified by AO.
+        - id: CA-3
+          name: Information Exchange
+          severity: high
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Interconnection Security Agreements (ISAs) required for
+            all interconnections.
+        - id: CA-5
+          name: Plan of Action and Milestones
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            POA&M updated monthly. Must be submitted to FedRAMP PMO.
+            All vulnerabilities must be tracked to remediation.
+        - id: CA-6
+          name: Authorization
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            AO must authorize system before production. FedRAMP Joint
+            Authorization Board (JAB) or Agency AO. Provisional ATO
+            to operate (P-ATO) or Agency ATO.
+        - id: CA-7
+          name: Continuous Monitoring
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Monthly continuous monitoring submission to FedRAMP.
+            Includes vulnerability scan results, POA&M updates,
+            significant change requests.
+        - id: CA-8
+          name: Penetration Testing
+          severity: high
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Annual penetration testing by an independent assessor
+            required for Moderate and High baselines.
+        - id: CA-9
+          name: Internal System Connections
+          severity: medium
+          scope: [Moderate, High]
+
+    - id: CM
+      name: Configuration Management
+      description: >
+        Controls for establishing and maintaining baseline configurations
+        and managing configuration changes throughout the system lifecycle.
+      severity: high
+      key_controls:
+        - id: CM-1
+          name: Configuration Management Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: CM-2
+          name: Baseline Configuration
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Use USGCB/FDCC or CIS benchmarks for baseline. Maintain
+            inventory of all hardware/software components.
+        - id: CM-3
+          name: Configuration Change Control
+          severity: high
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Require change requests; test, validate, and document
+            changes; retain records per CM-11.
+        - id: CM-4
+          name: Impact Analyses
+          severity: medium
+          scope: [Moderate, High]
+        - id: CM-5
+          name: Access Restrictions for Change
+          severity: high
+          scope: [Moderate, High]
+        - id: CM-6
+          name: Configuration Settings
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Document all configuration settings. Review and update
+            settings at least annually. Use automated mechanisms
+            to enforce and verify configuration settings.
+        - id: CM-7
+          name: Least Functionality
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Only permitted ports, protocols, and services. Annual review.
+        - id: CM-8
+          name: System Component Inventory
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Update inventory when installing, removing, or changing
+            components. Verify inventory at least monthly.
+        - id: CM-9
+          name: Configuration Management Plan
+          severity: medium
+          scope: [Moderate, High]
+        - id: CM-10
+          name: Software Usage Restrictions
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: CM-11
+          name: User-Installed Software
+          severity: medium
+          scope: [Moderate, High]
+        - id: CM-12
+          name: Information Location
+          severity: medium
+          scope: [Moderate, High]
+        - id: CM-14
+          name: Signed Components
+          severity: medium
+          scope: [Moderate, High]
+
+    - id: CP
+      name: Contingency Planning
+      description: >
+        Controls for establishing, maintaining, and testing contingency
+        plans for information system recovery and restoration.
+      severity: high
+      key_controls:
+        - id: CP-1
+          name: Contingency Planning Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: CP-2
+          name: Contingency Plan
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Must include essential missions/business functions, recovery
+            objectives, roles and responsibilities, and coordination
+            with external service providers.
+        - id: CP-3
+          name: Contingency Training
+          severity: medium
+          scope: [Moderate, High]
+        - id: CP-4
+          name: Contingency Plan Testing
+          severity: high
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Test annually at minimum for Moderate; more frequently
+            for High. Must include full recovery test for High.
+        - id: CP-6
+          name: Alternate Storage Site
+          severity: high
+          scope: [Moderate, High]
+        - id: CP-7
+          name: Alternate Processing Site
+          severity: high
+          scope: [Moderate, High]
+        - id: CP-8
+          name: Telecommunications Services
+          severity: medium
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Primary and alternate telecommunications services must
+            have sufficient capacity.
+        - id: CP-9
+          name: System Backup
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Back up user-level information daily; system-level
+            information weekly. Store backups at alternate location.
+        - id: CP-10
+          name: System Recovery and Reconstitution
+          severity: high
+          scope: [Low, Moderate, High]
+
+    - id: IA
+      name: Identification and Authentication
+      description: >
+        Controls for identifying and authenticating users, devices, and
+        processes accessing the information system.
+      severity: high
+      key_controls:
+        - id: IA-1
+          name: Identification and Authentication Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: IA-2
+          name: Identification and Authentication (Organizational Users)
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            MFA required for all network access to non-privileged
+            accounts; MFA for all network access to privileged
+            accounts. MFA must be PIV-derived or equivalent.
+        - id: IA-3
+          name: Device Identification and Authentication
+          severity: medium
+          scope: [Moderate, High]
+        - id: IA-4
+          name: Identifier Management
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: IA-5
+          name: Authenticator Management
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Minimum password length: 12 characters. Password complexity.
+            Change authenticators every 60 days for privileged,
+            90 days for non-privileged.
+        - id: IA-6
+          name: Authentication Feedback
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: IA-7
+          name: Cryptographic Module Authentication
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: IA-8
+          name: Identification and Authentication (Non-Organizational Users)
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            MFA required for all non-organizational user access.
+
+    - id: IR
+      name: Incident Response
+      description: >
+        Controls for establishing an incident response capability,
+        including preparation, detection, analysis, containment,
+        recovery, and post-incident activities.
+      severity: high
+      key_controls:
+        - id: IR-1
+          name: Incident Response Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: IR-2
+          name: Incident Response Training
+          severity: medium
+          scope: [Moderate, High]
+        - id: IR-3
+          name: Incident Response Testing
+          severity: medium
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Test incident response capability annually at minimum.
+        - id: IR-4
+          name: Incident Handling
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Report incidents to FedRAMP ISSO and AO per incident
+            communication plan timelines.
+        - id: IR-5
+          name: Incident Monitoring
+          severity: medium
+          scope: [Moderate, High]
+        - id: IR-6
+          name: Incident Reporting
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Report to US-CERT within 1 hour for High systems,
+            4 hours for Moderate. Report to FedRAMP PMO.
+        - id: IR-7
+          name: Incident Response Assistance
+          severity: medium
+          scope: [Moderate, High]
+        - id: IR-8
+          name: Incident Response Plan
+          severity: high
+          scope: [Low, Moderate, High]
+
+    - id: MA
+      name: Maintenance
+      description: >
+        Controls for performing routine, preventive, and corrective
+        maintenance on organizational systems.
+      severity: medium
+      key_controls:
+        - id: MA-1
+          name: Maintenance Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: MA-2
+          name: Controlled Maintenance
+          severity: medium
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Maintain maintenance logs. All maintenance must be scheduled,
+            controlled, and authorized.
+        - id: MA-3
+          name: Maintenance Tools
+          severity: medium
+          scope: [Moderate, High]
+        - id: MA-4
+          name: Nonlocal Maintenance
+          severity: high
+          scope: [Moderate, High]
+          fedramp_specific: >
+            All nonlocal maintenance requires MFA and must be managed
+            through controlled access points.
+        - id: MA-5
+          name: Maintenance Personnel
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: MA-6
+          name: Timely Maintenance
+          severity: medium
+          scope: [Moderate, High]
+
+    - id: MP
+      name: Media Protection
+      description: >
+        Controls for protecting physical and digital media containing
+        sensitive information, including access, marking, storage,
+        transport, sanitization, and disposal.
+      severity: high
+      key_controls:
+        - id: MP-1
+          name: Media Protection Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: MP-2
+          name: Media Access
+          severity: medium
+          scope: [Moderate, High]
+        - id: MP-3
+          name: Media Marking
+          severity: medium
+          scope: [Moderate, High]
+        - id: MP-4
+          name: Media Storage
+          severity: medium
+          scope: [Moderate, High]
+        - id: MP-5
+          name: Media Transport
+          severity: medium
+          scope: [Moderate, High]
+        - id: MP-6
+          name: Media Sanitization
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Sanitize per NIST SP 800-88 Rev 1. Validate sanitization.
+            Use FIPS 140-2 validated cryptographic module for digital
+            media sanitization.
+        - id: MP-7
+          name: Media Use
+          severity: medium
+          scope: [Moderate, High]
+
+    - id: PE
+      name: Physical and Environmental Protection
+      description: >
+        Controls for protecting physical facilities, infrastructure,
+        and environmental conditions for information systems.
+      severity: high
+      key_controls:
+        - id: PE-1
+          name: Physical and Environmental Protection Policy
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PE-2
+          name: Physical Access Authorizations
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PE-3
+          name: Physical Access Control
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Must enforce access at all physical access points.
+            Review physical access logs at least monthly.
+        - id: PE-4
+          name: Access Control for Transmission
+          severity: medium
+          scope: [Moderate, High]
+        - id: PE-5
+          name: Access Control for Output Devices
+          severity: low
+          scope: [Moderate, High]
+        - id: PE-6
+          name: Monitoring Physical Access
+          severity: high
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Monitor physical access to facilities containing
+            information systems. Retain recordings for 90 days.
+        - id: PE-8
+          name: Visitor Access Records
+          severity: low
+          scope: [Low, Moderate, High]
+        - id: PE-11
+          name: Emergency Power
+          severity: medium
+          scope: [Moderate, High]
+        - id: PE-13
+          name: Fire Protection
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PE-14
+          name: Environmental Controls
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PE-15
+          name: Water Damage Protection
+          severity: medium
+          scope: [Low, Moderate, High]
+
+    - id: PL
+      name: Planning
+      description: >
+        Controls for security planning, system security plans,
+        rules of behavior, and privacy impact assessments.
+      severity: medium
+      key_controls:
+        - id: PL-1
+          name: Security Planning Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PL-2
+          name: System Security and Privacy Plans
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            SSP must be approved by AO. Must include FedRAMP-specific
+            appendices (FIPS 199 categorization, eAuthentication,
+            Privacy Threshold Analysis).
+        - id: PL-4
+          name: Rules of Behavior
+          severity: medium
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Users must sign acknowledging they have read and
+            understand rules of behavior before access granted.
+        - id: PL-8
+          name: Security and Privacy Architectures
+          severity: medium
+          scope: [Moderate, High]
+        - id: PL-9
+          name: Central Management
+          severity: low
+          scope: [Moderate, High]
+
+    - id: PS
+      name: Personnel Security
+      description: >
+        Controls for personnel screening, termination, transfer,
+        access agreements, and sanctions.
+      severity: medium
+      key_controls:
+        - id: PS-1
+          name: Personnel Security Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PS-2
+          name: Position Risk Designation
+          severity: low
+          scope: [Low, Moderate, High]
+        - id: PS-3
+          name: Personnel Screening
+          severity: medium
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Background investigation commensurate with position
+            risk before access grant.
+        - id: PS-4
+          name: Personnel Termination
+          severity: medium
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Terminate access within a FedRAMP-defined time period
+            after termination.
+        - id: PS-5
+          name: Personnel Transfer
+          severity: medium
+          scope: [Moderate, High]
+        - id: PS-6
+          name: Access Agreements
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PS-7
+          name: External Personnel Security
+          severity: medium
+          scope: [Moderate, High]
+        - id: PS-8
+          name: Personnel Sanctions
+          severity: medium
+          scope: [Low, Moderate, High]
+
+    - id: RA
+      name: Risk Assessment
+      description: >
+        Controls for risk assessment, vulnerability scanning, and
+        managing supply chain risk.
+      severity: high
+      key_controls:
+        - id: RA-1
+          name: Risk Assessment Policy and Procedures
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: RA-2
+          name: Security Categorization
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Categorize per FIPS 199 (Low/Moderate/High) for each
+            security objective (C/I/A).
+        - id: RA-3
+          name: Risk Assessment
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Complete risk assessment before authorization. Update
+            every 3 years or when significant changes occur.
+        - id: RA-5
+          name: Vulnerability Monitoring and Scanning
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Monthly vulnerability scanning for all hosts, web
+            applications, and databases. Quarterly external scanning
+            by an accredited 3PAO. Remediate high-risk within 30 days,
+            moderate within 90 days.
+        - id: RA-7
+          name: Risk Response
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: RA-9
+          name: Criticality Analysis
+          severity: medium
+          scope: [Moderate, High]
+
+    - id: SC
+      name: System and Communications Protection
+      description: >
+        Controls for protecting system and communication boundaries,
+        including cryptographic protections, denial of service protection,
+        and boundary defense.
+      severity: high
+      key_controls:
+        - id: SC-1
+          name: System and Communications Protection Policy
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: SC-2
+          name: Separation of System and User Functionality
+          severity: medium
+          scope: [Moderate, High]
+        - id: SC-4
+          name: Information in Shared System Resources
+          severity: medium
+          scope: [Moderate, High]
+        - id: SC-5
+          name: Denial-of-Service Protection
+          severity: high
+          scope: [Moderate, High]
+        - id: SC-7
+          name: Boundary Protection
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Deny by default; allow by exception. Cyber defense sensors
+            at all boundary points. Separate external-facing from
+            internal system components.
+        - id: SC-8
+          name: Transmission Confidentiality and Integrity
+          severity: high
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Use FIPS 140-2 validated cryptography. TLS 1.2 or higher.
+        - id: SC-10
+          name: Network Disconnect
+          severity: medium
+          scope: [Moderate, High]
+        - id: SC-12
+          name: Cryptographic Key Establishment and Management
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Use FIPS 140-2 validated modules. FedRAMP requires key
+            management per NIST SP 800-57.
+        - id: SC-13
+          name: Cryptographic Protection
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Use FIPS 140-2 validated cryptography for all encryption.
+            Maintain list of all FIPS 140-2 validated modules.
+        - id: SC-17
+          name: Public Key Infrastructure Certificates
+          severity: medium
+          scope: [Moderate, High]
+        - id: SC-20
+          name: Secure Name/Address Resolution Service (Authoritative Source)
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: SC-21
+          name: Secure Name/Address Resolution Service (Recursive or Caching)
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: SC-22
+          name: Architecture and Provisioning for Name/Address Resolution
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: SC-28
+          name: Protection of Information at Rest
+          severity: high
+          scope: [Moderate, High]
+          fedramp_specific: >
+            Encrypt all data at rest using FIPS 140-2 validated
+            cryptography.
+        - id: SC-39
+          name: Process Isolation
+          severity: medium
+          scope: [Moderate, High]
+
+    - id: SI
+      name: System and Information Integrity
+      description: >
+        Controls for identifying, reporting, and correcting system
+        flaws; protecting against malicious code; and monitoring
+        system security alerts.
+      severity: high
+      key_controls:
+        - id: SI-1
+          name: System and Information Integrity Policy
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: SI-2
+          name: Flaw Remediation
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Deploy security-relevant patches within 30 days of release.
+            Test patches before deployment. Centralized patch management.
+        - id: SI-3
+          name: Malicious Code Protection
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Centralized management. Signature updates in real-time.
+            Cannot be disabled by non-administrative users.
+        - id: SI-4
+          name: System Monitoring
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Continuous monitoring of all inbound and outbound traffic.
+            IDS/IPS at network boundaries. File integrity monitoring
+            at least weekly.
+        - id: SI-5
+          name: Security Alerts, Advisories, and Directives
+          severity: high
+          scope: [Low, Moderate, High]
+          fedramp_specific: >
+            Receive and process US-CERT and FedRAMP security advisories.
+        - id: SI-6
+          name: Security and Privacy Function Verification
+          severity: medium
+          scope: [Moderate, High]
+        - id: SI-7
+          name: Software, Firmware, and Information Integrity
+          severity: high
+          scope: [Moderate, High]
+        - id: SI-8
+          name: Spam Protection
+          severity: medium
+          scope: [Moderate, High]
+        - id: SI-10
+          name: Information Input Validation
+          severity: medium
+          scope: [Moderate, High]
+        - id: SI-11
+          name: Error Handling
+          severity: medium
+          scope: [Moderate, High]
+        - id: SI-12
+          name: Information Management and Retention
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: SI-16
+          name: Memory Protection
+          severity: medium
+          scope: [Moderate, High]
+
+    - id: SR
+      name: Supply Chain Risk Management
+      description: >
+        Controls for managing supply chain risks throughout the
+        system development lifecycle.
+      severity: medium
+      key_controls:
+        - id: SR-1
+          name: Supply Chain Risk Management Policy
+          severity: medium
+          scope: [Moderate, High]
+        - id: SR-2
+          name: Supply Chain Risk Management Plan
+          severity: medium
+          scope: [Moderate, High]
+        - id: SR-3
+          name: Supply Chain Controls and Processes
+          severity: medium
+          scope: [Moderate, High]
+        - id: SR-5
+          name: Acquisition Strategies, Tools, and Methods
+          severity: medium
+          scope: [Moderate, High]
+        - id: SR-6
+          name: Supplier Assessments and Reviews
+          severity: medium
+          scope: [Moderate, High]
+        - id: SR-8
+          name: Notification Agreements
+          severity: medium
+          scope: [Moderate, High]
+        - id: SR-10
+          name: Inspection of Systems or Components
+          severity: medium
+          scope: [Moderate, High]
+
+    - id: PM
+      name: Program Management
+      description: >
+        Controls for organization-wide information security program
+        management, not specific to any single system.
+      severity: medium
+      key_controls:
+        - id: PM-1
+          name: Information Security Program Plan
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-2
+          name: Information Security Program Leadership Role
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-3
+          name: Information Security and Privacy Resources
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-4
+          name: Plan of Action and Milestones Process
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-5
+          name: System Inventory
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-6
+          name: Measures of Performance
+          severity: low
+          scope: [Moderate, High]
+        - id: PM-7
+          name: Enterprise Architecture
+          severity: low
+          scope: [Moderate, High]
+        - id: PM-8
+          name: Critical Infrastructure Plan
+          severity: medium
+          scope: [Moderate, High]
+        - id: PM-9
+          name: Risk Management Strategy
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-10
+          name: Authorization Process
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-11
+          name: Mission/Business Process Definition
+          severity: low
+          scope: [Moderate, High]
+        - id: PM-14
+          name: Testing, Training, and Monitoring
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-15
+          name: Security and Privacy Groups and Associations
+          severity: low
+          scope: [Low, Moderate, High]
+        - id: PM-16
+          name: Threat Awareness Program
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-17
+          name: Protecting Controlled Unclassified Information on External Systems
+          severity: medium
+          scope: [Moderate, High]
+        - id: PM-18
+          name: Privacy Program Plan
+          severity: medium
+          scope: [Moderate, High]
+        - id: PM-19
+          name: Privacy Program Leadership Role
+          severity: medium
+          scope: [Moderate, High]
+        - id: PM-20
+          name: Dissemination of Privacy Program Information
+          severity: medium
+          scope: [Moderate, High]
+        - id: PM-21
+          name: Accounting of Disclosures
+          severity: medium
+          scope: [Moderate, High]
+        - id: PM-22
+          name: Personally Identifiable Information Quality Management
+          severity: medium
+          scope: [Moderate, High]
+        - id: PM-23
+          name: Data Governance Body
+          severity: low
+          scope: [Moderate, High]
+        - id: PM-25
+          name: Minimization of Personally Identifiable Information Used
+          severity: medium
+          scope: [Moderate, High]
+        - id: PM-26
+          name: Complaint Management
+          severity: low
+          scope: [Moderate, High]
+        - id: PM-28
+          name: Risk Framing
+          severity: medium
+          scope: [Low, Moderate, High]
+        - id: PM-30
+          name: Supply Chain Risk Management Strategy
+          severity: medium
+          scope: [Moderate, High]

@@ -1,0 +1,24 @@
+---
+artifact_dir: "/tmp/gludd-prompt-injection"
+target_path: "."
+enable_scan: false
+enable_git_push: false
+defensive_tools:
+  - name: "Meta PromptGuard"
+    type: "Classifier"
+    description: "Meta's prompt injection and jailbreak classifier"
+  - name: "LLM Guard"
+    type: "Sandbox"
+    description: "Input/output sanitization for LLM applications"
+  - name: "Garak"
+    type: "Red-team"
+    description: "LLM vulnerability scanner — probes for injection, jailbreak, data leakage"
+  - name: "guardrails-ai"
+    type: "Guard"
+    description: "Guardrails framework — input/output validation for LLMs"
+  - name: "NVIDIA NeMo Guardrails"
+    type: "Guard"
+    description: "Programmable guardrails for dialog systems"
+  - name: "lakera-guard"
+    type: "API"
+    description: "Real-time prompt injection detection API"

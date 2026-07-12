@@ -1,0 +1,114 @@
+---
+hsm_vendors:
+  softhsm2:
+    display: "SoftHSMv2"
+    pkcs11_module: "/usr/lib/softhsm/libsofthsm2.so"
+    pkcs11_module_macos: "/opt/homebrew/lib/softhsm/libsofthsm2.so"
+    pkcs11_module_fallback: "/usr/local/lib/softhsm/libsofthsm2.so"
+    token_dir: "/var/lib/softhsm/tokens"
+    install_package: "softhsm2"
+    mechanisms:
+      - RSA_PKCS
+      - ECDSA
+      - EDDSA
+    label_regex: "SoftHSM"
+    opencryptoki_slot: false
+
+  yubihsm2:
+    display: "YubiHSM 2"
+    pkcs11_module: "/usr/lib/x86_64-linux-gnu/libykcs11.so"
+    pkcs11_module_macos: "/opt/homebrew/lib/libykcs11.dylib"
+    pkcs11_module_fallback: "/usr/local/lib/libykcs11.so"
+    connector_url: "http://localhost:12345"
+    install_package: "yubihsm-connector"
+    mechanisms:
+      - RSA_PKCS
+      - RSA_PSS
+      - ECDSA
+      - EDDSA
+      - HMAC
+    label_regex: "YubiHSM"
+    opencryptoki_slot: false
+
+  cloudhsm:
+    display: "AWS CloudHSM"
+    pkcs11_module: "/opt/cloudhsm/lib/libcloudhsm_pkcs11.so"
+    client_config: "/opt/cloudhsm/etc/cloudhsm_client.cfg"
+    mechanisms:
+      - RSA_PKCS
+      - RSA_PSS
+      - ECDSA
+      - HMAC
+    label_regex: "CloudHSM"
+    opencryptoki_slot: false
+
+  azure_dedicated_hsm:
+    display: "Azure Dedicated HSM"
+    pkcs11_module: "/usr/safenet/lunaclient/lib/libCryptoki2_64.so"
+    mechanisms:
+      - RSA_PKCS
+      - RSA_PSS
+      - ECDSA
+      - AES
+      - HMAC
+    label_regex: "Luna"
+    opencryptoki_slot: false
+
+  nethsm:
+    display: "NetHSM"
+    pkcs11_module: "/usr/lib/x86_64-linux-gnu/libnethsm_pkcs11.so"
+    pkcs11_module_macos: "/opt/homebrew/lib/libnethsm_pkcs11.dylib"
+    api_url: "https://nethsm.example.com/api/v1"
+    mechanisms:
+      - RSA_PKCS
+      - RSA_PSS
+      - ECDSA
+      - EDDSA
+      - AES
+    label_regex: "NetHSM"
+    opencryptoki_slot: false
+
+  ncipher:
+    display: "nCipher nShield"
+    pkcs11_module: "/opt/nfast/toolkits/pkcs11/libcknfast.so"
+    mechanisms:
+      - RSA_PKCS
+      - RSA_PSS
+      - ECDSA
+      - HMAC
+    label_regex: "nCipher"
+    opencryptoki_slot: false
+
+  utimaco:
+    display: "Utimaco SecurityServer"
+    pkcs11_module: "/opt/utimaco/lib/libcs_pkcs11_R3.so"
+    mechanisms:
+      - RSA_PKCS
+      - RSA_PSS
+      - ECDSA
+      - EDDSA
+      - AES
+    label_regex: "Utimaco"
+    opencryptoki_slot: false
+
+  thales:
+    display: "Thales Luna"
+    pkcs11_module: "/usr/safenet/lunaclient/lib/libCryptoki2_64.so"
+    mechanisms:
+      - RSA_PKCS
+      - RSA_PSS
+      - ECDSA
+      - AES
+      - HMAC
+    label_regex: "Luna"
+    opencryptoki_slot: false
+
+  opencryptoki:
+    display: "openCryptoki (IBM)"
+    pkcs11_module: "/usr/lib/pkcs11/PKCS11_API.so"
+    pkcs11_module_macos: ""
+    mechanisms:
+      - RSA_PKCS
+      - ECDSA
+    label_regex: "opencryptoki"
+    opencryptoki_slot: true

@@ -1,0 +1,175 @@
+---
+# Data source registry for entity research.
+# Each source maps to the APIs and endpoints used for discovery.
+
+entity_data_sources:
+  # ── Legal / Registration ──
+  opencorporates:
+    base_url: "https://api.opencorporates.com/v0.4"
+    endpoints:
+      company_search: "/companies/search"
+      company_detail: "/companies/{{ jurisdiction }}/{{ company_number }}"
+      officer_search: "/officers/search"
+    description: "Global company registry aggregator"
+    categories: [discovery, associations]
+
+  sec_edgar:
+    base_url: "https://data.sec.gov"
+    endpoints:
+      submissions: "/submissions/CIK{{ cik }}.json"
+      company_facts: "/api/xbrl/companyfacts/CIK{{ cik }}.json"
+      company_concept: "/api/xbrl/companyconcept/CIK{{ cik }}/{{ taxonomy }}/{{ concept }}.json"
+      search: "https://efts.sec.gov/LATEST/search-index?q={{ query }}"
+    description: "US SEC EDGAR filings database"
+    categories: [discovery, assets, risks]
+
+  companies_house:
+    base_url: "https://api.company-information.service.gov.uk"
+    endpoints:
+      search: "/search/companies"
+      company_profile: "/company/{{ company_number }}"
+      officers: "/company/{{ company_number }}/officers"
+      filings: "/company/{{ company_number }}/filing-history"
+      persons_significant_control: "/company/{{ company_number }}/persons-with-significant-control"
+    description: "UK Companies House"
+    categories: [discovery, associations]
+
+  # ── Business Intelligence ──
+  crunchbase:
+    base_url: "https://api.crunchbase.com/api/v4"
+    endpoints:
+      autocomplete: "/autocompletes"
+      entity_lookup: "/entities/{{ slug }}"
+      search: "/searches/organizations"
+    description: "Business information platform"
+    categories: [discovery, associations, assets, risks]
+
+  wikipedia:
+    base_url: "https://en.wikipedia.org/w/api.php"
+    endpoints:
+      page: "/w/api.php?action=query&prop=extracts&exintro&explaintext&titles={{ title }}&format=json"
+      search: "/w/api.php?action=query&list=search&srsearch={{ query }}&format=json"
+    description: "Wikipedia for organizational background"
+    categories: [discovery, associations]
+
+  # ── Digital Assets ──
+  whois_rdap:
+    base_url: "https://rdap.org"
+    endpoints:
+      domain: "/domain/{{ domain }}"
+      ip: "/ip/{{ ip }}"
+      autnum: "/autnum/{{ asn }}"
+      entity: "/entity/{{ handle }}"
+    description: "Registration Data Access Protocol"
+    categories: [assets]
+
+  crt_sh:
+    base_url: "https://crt.sh"
+    endpoints:
+      query: "/?q={{ domain }}&output=json"
+      identity: "/?Identity={{ org }}&output=json"
+    description: "SSL certificate transparency log search"
+    categories: [assets, exposure]
+
+  peeringdb:
+    base_url: "https://www.peeringdb.com/api"
+    endpoints:
+      net_search: "/net?name__icontains={{ query }}"
+      net_detail: "/net/{{ asn }}"
+      org_detail: "/org/{{ org_id }}"
+      facility: "/fac/{{ fac_id }}"
+    description: "Network interconnection database"
+    categories: [assets]
+
+  ripestat:
+    base_url: "https://stat.ripe.net/data"
+    endpoints:
+      as_overview: "/as-overview/data.json?resource={{ asn }}"
+      asn_neighbours: "/asn-neighbours/data.json?resource={{ asn }}"
+      routing_history: "/routing-history/data.json?resource={{ asn }}"
+      prefix_overview: "/prefix-overview/data.json?resource={{ prefix }}"
+    description: "RIPE NCC routing and Internet statistics"
+    categories: [assets]
+
+  # ── Intellectual Property ──
+  uspto:
+    base_url: "https://developer.uspto.gov/ibd-api/v1"
+    endpoints:
+      patent_search: "/application/patents"
+      patent_detail: "/application/{{ patent_number }}"
+      trademark_search: "/trademark/{{ query }}"
+    description: "US Patent and Trademark Office"
+    categories: [assets]
+
+  espa_net:
+    base_url: "https://worldwide.espacenet.com/3.2/rest/v1"
+    endpoints:
+      search: "/search"
+      patent_detail: "/publication/{{ publication_id }}"
+    description: "European Patent Office worldwide search"
+    categories: [assets]
+
+  wipo:
+    base_url: "https://api.wipo.int"
+    endpoints:
+      trademark_search: "/trademarks/search"
+      brand_search: "/branddb/search"
+    description: "World Intellectual Property Organization"
+    categories: [assets]
+
+  # ── Security / Exposure ──
+  shodan:
+    base_url: "https://api.shodan.io"
+    endpoints:
+      host: "/shodan/host/{{ ip }}"
+      search: "/shodan/host/search?query={{ query }}"
+      org: "/shodan/host/search?query=org:%22{{ org }}%22"
+      domain: "/dns/domain/{{ domain }}"
+      resolve: "/dns/resolve?hostnames={{ hostnames }}"
+    description: "Internet-connected device search engine"
+    categories: [exposure]
+
+  censys:
+    base_url: "https://search.censys.io/api/v2"
+    endpoints:
+      hosts_search: "/hosts/search"
+      hosts_detail: "/hosts/{{ ip }}"
+      certificates_search: "/certificates/search"
+      domains_search: "/domains/search"
+    description: "Internet asset discovery platform"
+    categories: [exposure]
+
+  # ── Data Breaches ──
+  haveibeenpwned:
+    base_url: "https://haveibeenpwned.com/api/v3"
+    endpoints:
+      domain_search: "/breaches?domain={{ domain }}"
+      breach_detail: "/breach/{{ breach_name }}"
+      pastes: "/pasteaccount/{{ email }}"
+    description: "Data breach notification service"
+    categories: [exposure, risks]
+
+  # ── Search ──
+  searx:
+    base_url: "{{ entity_research_searx_url | default('http://localhost:8888') }}"
+    endpoints:
+      search: "/search?q={{ query }}&format=json&categories={{ categories }}&pageno={{ page }}"
+    description: "Privacy-respecting meta-search engine"
+    categories: [discovery, associations, exposure, risks, demographics]
+
+  # ── Technology Stack ──
+  builtwith:
+    base_url: "https://api.builtwith.com"
+    endpoints:
+      domain: "/v19/api.json?KEY={{ key }}&LOOKUP={{ domain }}"
+      technology: "/v19/api.json?KEY={{ key }}&LOOKUP={{ domain }}&TECH={{ tech }}"
+    description: "Website technology profiler"
+    categories: [assets]
+
+  # ── Social / Market ──
+  glassdoor:
+    base_url: "https://www.glassdoor.com"
+    endpoints:
+      company_overview: "/Overview/Working-at-{{ company }}-EI_IE{{ id }}.htm"
+    description: "Employee review and salary database"
+    categories: [risks, demographics]

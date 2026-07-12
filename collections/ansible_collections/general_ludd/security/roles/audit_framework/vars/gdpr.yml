@@ -1,0 +1,318 @@
+gdpr:
+  category: GDPR
+  version: "2016/679"
+  description: >
+    EU General Data Protection Regulation (Regulation 2016/679). Establishes
+    requirements for processing personal data of individuals in the EU/EEA.
+    Key articles driving technical and organizational controls: Art 5
+    (principles), Art 25 (data protection by design/default), Art 28
+    (processor requirements), Art 30 (records of processing), Art 32
+    (security of processing), Art 33/34 (breach notification), Art 35
+    (DPIA), and data subject rights (Art 15-22).
+  articles:
+    - id: "Art.5"
+      name: Principles Relating to Processing of Personal Data
+      description: >
+        Personal data must be processed lawfully, fairly, and transparently;
+        collected for specified, explicit, legitimate purposes; adequate,
+        relevant, and limited to what is necessary; accurate and kept up
+        to date; kept no longer than necessary; and processed securely.
+      severity: high
+      requirements:
+        - Process personal data lawfully, fairly, and transparently (lawfulness, fairness, transparency)
+        - Collect data for specified, explicit, and legitimate purposes only (purpose limitation)
+        - Collect only data that is adequate, relevant, and limited to what is necessary (data minimization)
+        - Maintain accurate and up-to-date personal data (accuracy)
+        - Retain data only as long as necessary for the stated purpose (storage limitation)
+        - Process data in a manner that ensures appropriate security (integrity and confidentiality)
+        - Document and be able to demonstrate compliance with all principles (accountability)
+
+    - id: "Art.25"
+      name: Data Protection by Design and by Default
+      description: >
+        Controllers must implement appropriate technical and organizational
+        measures designed to implement data protection principles and
+        integrate necessary safeguards into processing. By default, only
+        personal data necessary for each specific purpose shall be processed.
+      severity: high
+      requirements:
+        - Implement data protection measures at the time of determining processing means
+        - Implement measures at the time of processing itself
+        - Apply pseudonymization and minimization techniques
+        - Enable data subjects to control the processing of their data
+        - Ensure only necessary data is processed by default for each purpose
+        - Limit access to personal data to those needing it for processing
+        - Review and update data protection measures at regular intervals
+        - Document the data protection by design and default implementation
+        - Make data protection features the default, not opt-in
+
+    - id: "Art.28"
+      name: Processor Requirements
+      description: >
+        Controllers must only use processors that provide sufficient
+        guarantees of appropriate technical and organizational measures.
+        Processing must be governed by a contract binding the processor
+        to the controller.
+      severity: high
+      requirements:
+        - Assess processor's security measures before engagement
+        - Execute a legally binding contract with every processor
+        - Contract must specify: subject matter, duration, nature, purpose of processing
+        - Contract must specify: type of personal data, categories of data subjects
+        - Contract must specify: processor obligations per Art 28(3)
+        - Require processor to process only on documented instructions
+        - Require processor to ensure personnel are committed to confidentiality
+        - Require processor to take appropriate security measures per Art 32
+        - Require processor to not engage another processor without authorization
+        - Require processor to assist controller with data subject rights
+        - Require processor to assist with Art 32-36 obligations (security, breach, DPIA)
+        - Require processor to delete or return all data at the end of services
+        - Require processor to make available information for compliance audits
+        - Require processor to inform controller if instructions infringe GDPR
+        - Maintain a record of all processors and sub-processors
+
+    - id: "Art.30"
+      name: Records of Processing Activities
+      description: >
+        Controller and processor must maintain a record of processing
+        activities under their responsibility. Records must be in writing,
+        including electronic form.
+      severity: high
+      requirements:
+        - Controller must record: name and contact details of controller/DPO
+        - Controller must record: purposes of the processing
+        - Controller must record: categories of data subjects and personal data
+        - Controller must record: categories of recipients (including third countries)
+        - Controller must record: transfers to third countries and documentation of safeguards
+        - Controller must record: where possible, time limits for erasure of each category
+        - Controller must record: where possible, general description of security measures
+        - Processor must record: name and contact details of each processor and controller
+        - Processor must record: categories of processing carried out for each controller
+        - Processor must record: transfers to third countries and documentation of safeguards
+        - Processor must record: where possible, general description of security measures
+        - Make records available to supervisory authority on request
+        - Maintain records for the lifetime of the processing activity
+
+    - id: "Art.32"
+      name: Security of Processing
+      description: >
+        Controller and processor must implement appropriate technical and
+        organizational measures to ensure a level of security appropriate
+        to the risk, considering the state of the art, costs of implementation,
+        and the nature, scope, context, and purposes of processing.
+      severity: high
+      requirements:
+        - Implement pseudonymization and encryption of personal data
+        - Ensure ongoing confidentiality, integrity, availability, and resilience of systems
+        - Restore availability and access to personal data in timely manner after an incident
+        - Implement a process for regularly testing, assessing, and evaluating security measures
+        - Assess risks to personal data from unauthorized access, disclosure, alteration, loss
+        - Protect against accidental or unlawful destruction, loss, or alteration
+        - Implement access controls based on need-to-know and least privilege
+        - Encrypt data at rest and in transit using strong, modern cryptography
+        - Implement logging and monitoring for processing systems
+        - Maintain physical security of processing facilities
+        - Implement business continuity and disaster recovery capabilities
+        - Conduct periodic security assessments and penetration testing
+        - Ensure personnel handling personal data are trained on secure processing
+        - Adhere to approved codes of conduct or certification mechanisms where applicable
+
+    - id: "Art.33"
+      name: Notification of a Personal Data Breach to the Supervisory Authority
+      description: >
+        In the case of a personal data breach, the controller must notify
+        the supervisory authority within 72 hours of becoming aware.
+      severity: high
+      requirements:
+        - Notify supervisory authority within 72 hours of becoming aware of a breach
+        - If later than 72 hours, provide reasons for the delay
+        - Describe the nature of the personal data breach
+        - Describe categories and approximate number of data subjects concerned
+        - Describe categories and approximate number of personal data records concerned
+        - Communicate name and contact details of the DPO or other contact point
+        - Describe likely consequences of the breach
+        - Describe measures taken or proposed to address the breach
+        - Describe measures to mitigate possible adverse effects
+        - Provide information in phases if it cannot be provided simultaneously
+        - Document any personal data breach, including facts, effects, and remedial actions
+        - Processor must notify controller without undue delay upon becoming aware of a breach
+
+    - id: "Art.34"
+      name: Communication of a Personal Data Breach to the Data Subject
+      description: >
+        When a personal data breach is likely to result in a high risk to
+        the rights and freedoms of data subjects, the controller must
+        communicate the breach to the data subject without undue delay.
+      severity: high
+      requirements:
+        - Communicate breach to data subject when high risk to their rights and freedoms
+        - Describe in clear and plain language the nature of the breach
+        - Communicate name and contact details of DPO or other contact point
+        - Describe likely consequences of the breach
+        - Describe measures taken or proposed to address the breach
+        - Describe measures to mitigate possible adverse effects
+        - Communication is NOT required if: data was encrypted/intelligible to unauthorized persons
+        - Communication is NOT required if: controller took subsequent measures ensuring high risk no longer likely
+        - Communication is NOT required if: it would involve disproportionate effort (public communication instead)
+
+    - id: "Art.35"
+      name: Data Protection Impact Assessment
+      description: >
+        A Data Protection Impact Assessment (DPIA) must be conducted where
+        processing is likely to result in a high risk to the rights and
+        freedoms of natural persons.
+      severity: high
+      requirements:
+        - Conduct DPIA before processing where processing is likely to result in high risk
+        - DPIA triggers: systematic and extensive profiling with legal/significant effects
+        - DPIA triggers: large-scale processing of special categories of data (Art 9)
+        - DPIA triggers: large-scale processing of criminal conviction data (Art 10)
+        - DPIA triggers: systematic monitoring of publicly accessible areas on a large scale
+        - DPIA must contain: systematic description of processing operations and purposes
+        - DPIA must contain: assessment of necessity and proportionality of processing
+        - DPIA must contain: assessment of risks to rights and freedoms of data subjects
+        - DPIA must contain: measures to address risks (safeguards, security, mechanisms)
+        - Seek advice of DPO where designated
+        - Seek views of data subjects or their representatives where appropriate
+        - Review DPIA when processing operations or risks change significantly
+        - Consult supervisory authority if DPIA indicates high risk that cannot be mitigated
+
+    - id: "Art.15"
+      name: Right of Access by the Data Subject
+      description: >
+        Data subjects have the right to obtain confirmation whether their
+        personal data is being processed and to access that data.
+      severity: high
+      requirements:
+        - Respond to access requests within one month (extendable by two months for complex requests)
+        - Confirm whether or not personal data concerning the subject is being processed
+        - Provide purposes of processing
+        - Provide categories of personal data concerned
+        - Provide recipients or categories of recipients to whom data has been disclosed
+        - Provide, where possible, the envisaged retention period
+        - Inform of the right to rectification, erasure, restriction, objection
+        - Inform of the right to lodge a complaint with a supervisory authority
+        - Provide the source of personal data if not collected from the data subject
+        - Inform of the existence of automated decision-making, including profiling
+        - Provide a copy of personal data undergoing processing
+        - Transfers to third countries: inform of appropriate safeguards
+        - Provide data in a structured, commonly used, machine-readable format
+        - No fee unless the request is manifestly unfounded or excessive
+
+    - id: "Art.16"
+      name: Right to Rectification
+      description: >
+        Data subjects have the right to obtain rectification of inaccurate
+        personal data and completion of incomplete personal data.
+      severity: high
+      requirements:
+        - Rectify inaccurate personal data without undue delay
+        - Complete incomplete personal data, including by means of a supplementary statement
+        - Inform recipients to whom data has been disclosed of the rectification
+        - Provide mechanism for data subjects to submit rectification requests
+        - Respond to rectification requests within one month
+
+    - id: "Art.17"
+      name: Right to Erasure (Right to be Forgotten)
+      description: >
+        Data subjects have the right to obtain erasure of personal data
+        under certain conditions without undue delay.
+      severity: high
+      requirements:
+        - Erase data when no longer necessary for the purpose collected
+        - Erase data when data subject withdraws consent and no other legal basis exists
+        - Erase data when data subject objects and no overriding legitimate grounds exist
+        - Erase data when processing is unlawful
+        - Erase data to comply with a legal obligation under EU or Member State law
+        - Inform recipients to whom data has been disclosed of the erasure
+        - Take reasonable steps, considering technology and cost, to inform other controllers
+        - Limitations: erasure does not apply when processing is necessary for freedom of expression,
+          compliance with a legal obligation, public interest in public health,
+          archiving in the public interest, or legal claims
+
+    - id: "Art.18"
+      name: Right to Restriction of Processing
+      description: >
+        Data subjects have the right to restrict processing under
+        certain circumstances.
+      severity: high
+      requirements:
+        - Restrict processing when accuracy is contested (for a period enabling verification)
+        - Restrict processing when processing is unlawful and data subject opposes erasure
+        - Restrict processing when controller no longer needs data but data subject needs it for legal claims
+        - Restrict processing when data subject has objected to processing pending verification
+        - While restricted, process data only with consent, for legal claims, protecting others,
+          or for important public interest reasons
+        - Inform data subject before lifting the restriction
+        - Inform recipients to whom data has been disclosed of the restriction
+
+    - id: "Art.20"
+      name: Right to Data Portability
+      description: >
+        Data subjects have the right to receive personal data they have
+        provided in a structured, commonly used, machine-readable format
+        and transmit it to another controller.
+      severity: high
+      requirements:
+        - Provide personal data in a structured, commonly used, machine-readable format
+        - Provide data portability when processing is based on consent or contract
+        - Provide data portability when processing is carried out by automated means
+        - Transmit data directly to another controller where technically feasible
+        - Respond to portability requests within one month
+        - Do not adversely affect the rights and freedoms of others during portability
+        - Portability does not apply to processing necessary for public interest or official authority
+
+    - id: "Art.21"
+      name: Right to Object
+      description: >
+        Data subjects have the right to object to processing of their
+        personal data based on certain grounds.
+      severity: high
+      requirements:
+        - Allow objection to processing based on legitimate interests or public interest
+        - Allow objection to processing for direct marketing purposes at any time
+        - Allow objection to processing for scientific/historical research/statistical purposes
+        - Upon objection, cease processing unless compelling legitimate grounds override the objection
+        - Inform data subjects of the right to object at the first communication and clearly
+        - Provide an easy-to-use mechanism for exercising the right to object
+        - For direct marketing objection, cease processing without exception
+
+    - id: "Art.22"
+      name: Automated Individual Decision-Making, Including Profiling
+      description: >
+        Data subjects have the right not to be subject to a decision based
+        solely on automated processing, including profiling, which produces
+        legal effects or similarly significantly affects them.
+      severity: high
+      requirements:
+        - Do not subject data subjects to decisions based solely on automated processing
+          that produce legal or similarly significant effects
+        - Exceptions: when the decision is necessary for a contract, authorized by law,
+          or based on explicit consent
+        - When using exceptions, implement safeguards: human intervention, ability to
+          express point of view, ability to contest the decision
+        - Profiling of special categories of data (Art 9) is prohibited unless
+          explicit consent or substantial public interest
+        - Provide meaningful information about the logic involved in automated decisions
+        - Provide information about the significance and envisaged consequences of processing
+        - Conduct DPIA before implementing automated decision-making
+
+    - id: "Art.44-49"
+      name: International Data Transfers
+      description: >
+        Transfers of personal data to third countries or international
+        organizations are only permitted subject to appropriate safeguards
+        and conditions.
+      severity: high
+      requirements:
+        - Transfer data to third countries only if adequacy decision exists (Art 45)
+        - Without adequacy decision, implement appropriate safeguards (Art 46):
+          standard contractual clauses (SCCs), binding corporate rules (BCRs),
+          approved codes of conduct, approved certification mechanisms
+        - Document transfer impact assessment for each transfer
+        - For US transfers: ensure Data Privacy Framework (DPF) certification exists
+        - Review adequacy decisions and safeguards periodically
+        - Inform data subjects of international data transfers and safeguards
+        - Use derogations (Art 49) only as exceptions: explicit consent, contract necessity,
+          important reasons of public interest, legal claims, vital interests
+        - Assess lawfulness of transfers in light of relevant case law (Schrems II, etc.)

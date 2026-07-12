@@ -1,0 +1,52 @@
+---
+# hsm_operations role — HSM and smartcard operations for SSL cert management
+#
+# Callable from ssl_cert via include_role. Handles:
+#   1. HSM detection and configuration
+#   2. Key management (generate, import, export public, list, delete)
+#   3. Signing operations (CSR signing, data signing, verification, self-signed)
+#   4. Smartcard operations (detect, ATR, PIN mgmt, cert read/import, APDU)
+#
+# PINs and secret material: no_log enforced throughout.
+# gludd_model_call used for AI-assisted HSM diagnostics.
+# Python modules for deterministic PKCS11/PCSC operations.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ hsm_operations__artifact_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Resolve HSM vendor config
+  ansible.builtin.set_fact:
+    _hsm_vendor_config: >-
+      {{ hsm_vendors[hsm_operations__hsm_vendor | default('')] | default({}) }}
+  when: hsm_operations__hsm_vendor | default('') | length > 0
+
+- name: Set PKCS#11 module from vendor config
+  ansible.builtin.set_fact:
+    hsm_operations__pkcs11_module: "{{ _hsm_vendor_config.pkcs11_module }}"
+  when:
+    - hsm_operations__pkcs11_module | length == 0
+    - _hsm_vendor_config is defined
+    - _hsm_vendor_config.pkcs11_module is defined
+
+# ── Phase 1: HSM Detection ──
+- name: Detect HSM
+  ansible.builtin.include_tasks: detect_hsm.yml
+  when: hsm_operations__mode | default('detect') == 'detect'
+
+# ── Phase 2: Key Operations ──
+- name: Key operations
+  ansible.builtin.include_tasks: key_ops.yml
+  when: hsm_operations__mode | default('') | regex_search('^(gen_key|import_key|export_pubkey|list_keys|delete_key)$')
+
+# ── Phase 3: Signing Operations ──
+- name: Signing operations
+  ansible.builtin.include_tasks: sign_ops.yml
+  when: hsm_operations__mode | default('') | regex_search('^(sign_csr|sign_data|verify_sig|self_sign)$')
+
+# ── Phase 4: Smartcard Operations ──
+- name: Smartcard operations
+  ansible.builtin.include_tasks: smartcard.yml
+  when: hsm_operations__mode | default('') | regex_search('^(card_detect|card_atr|card_pin|card_read_cert|card_import_cert|card_apdu)$')

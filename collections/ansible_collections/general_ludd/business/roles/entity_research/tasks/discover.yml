@@ -1,0 +1,163 @@
+---
+# discover.yml — Entity discovery: legal name, jurisdiction, type, industry, founding
+# Searches OpenCorporates, Wikipedia, and optionally SEC EDGAR to build
+# a foundational entity profile.
+
+# ── Register discovered facts ──
+- name: Initialize entity fact cache
+  ansible.builtin.set_fact:
+    entity_discovered:
+      entity_name: "{{ entity_name }}"
+      search_name: "{{ entity_name }}"
+      aliases_searched: "{{ entity_search_aliases | default([]) }}"
+      raw_results: []
+      legal_name: ""
+      dba_names: []
+      jurisdiction: "{{ entity_jurisdiction }}"
+      entity_type: "organization"
+      industry_classification: {}
+      year_founded: null
+      status: "unknown"
+      description: ""
+
+# ── SearX initial discovery ──
+- name: SearX search for entity
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} company headquarters industry founded"
+    categories: "general"
+    page: 1
+  register: searx_discovery_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: Cache SearX results
+  ansible.builtin.set_fact:
+    entity_discovered: "{{ entity_discovered | combine({'raw_results': entity_discovered.raw_results + [{'source': 'searx', 'data': searx_discovery_result.json | default({})}]}) }}"
+  when:
+    - entity_research_use_searx | bool
+    - searx_discovery_result is success
+  ignore_errors: true
+
+# ── Wikipedia lookup ──
+- name: Wikipedia search for entity
+  ansible.builtin.uri:
+    url: "https://en.wikipedia.org/w/api.php"
+    method: GET
+    body_format: json
+    timeout: 30
+  vars:
+    query_strings:
+      action: query
+      list: search
+      srsearch: "{{ entity_name }}"
+      format: json
+  register: wiki_search_result
+  when: entity_research_use_wikipedia | bool
+  ignore_errors: true
+
+- name: Wikipedia page extract for entity
+  ansible.builtin.uri:
+    url: "https://en.wikipedia.org/w/api.php"
+    method: GET
+    body_format: json
+    timeout: 30
+  vars:
+    query_strings:
+      action: query
+      prop: extracts
+      exintro: "1"
+      explaintext: "1"
+      titles: "{{ entity_name }}"
+      format: json
+  register: wiki_extract_result
+  when:
+    - entity_research_use_wikipedia | bool
+    - wiki_search_result is success
+  ignore_errors: true
+
+- name: Cache Wikipedia results
+  ansible.builtin.set_fact:
+    entity_discovered: "{{ entity_discovered | combine({
+      'raw_results': entity_discovered.raw_results + [
+        {'source': 'wikipedia_extract', 'data': wiki_extract_result.json | default({})}
+      ]
+    }) }}"
+  when:
+    - entity_research_use_wikipedia | bool
+    - wiki_extract_result is success
+  ignore_errors: true
+
+# ── OpenCorporates lookup ──
+- name: OpenCorporates company search
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.opencorporates.base_url }}/companies/search"
+    method: GET
+    body_format: json
+    headers:
+      Authorization: "{{ opencorporates_api_token | ternary('Token token=' + opencorporates_api_token, '') }}"
+    timeout: 30
+  vars:
+    query_strings:
+      q: "{{ entity_name }}"
+  register: oc_search_result
+  when: entity_research_use_opencorporates | bool
+  ignore_errors: true
+
+- name: Parse OpenCorporates result
+  ansible.builtin.set_fact:
+    entity_discovered: "{{ entity_discovered | combine({
+      'raw_results': entity_discovered.raw_results + [{'source': 'opencorporates', 'data': oc_search_result.json | default({})}],
+      'legal_name': (oc_search_result.json.results.companies[0].company.name | default(entity_name)),
+      'jurisdiction': (oc_search_result.json.results.companies[0].company.jurisdiction_code | default(entity_jurisdiction)),
+      'entity_type': (oc_search_result.json.results.companies[0].company.company_type | default('organization')),
+    }) }}"
+  when:
+    - entity_research_use_opencorporates | bool
+    - oc_search_result is success
+    - oc_search_result.json.results.companies | default([]) | length > 0
+  ignore_errors: true
+
+# ── SEC EDGAR lookup (US entities) ──
+- name: SEC EDGAR company search
+  ansible.builtin.uri:
+    url: "https://efts.sec.gov/LATEST/search-index"
+    method: GET
+    body_format: json
+    headers:
+      User-Agent: "Gludd Agent (entity_research)"
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query_strings:
+      q: "{{ entity_name }}"
+      page: "1"
+  register: sec_search_result
+  when:
+    - entity_research_use_sec_edgar | bool
+    - entity_discovered.jurisdiction | default('') in ['us', 'us_de', 'us_ca', 'us_ny', '']
+  ignore_errors: true
+
+- name: Cache SEC EDGAR result
+  ansible.builtin.set_fact:
+    entity_discovered: "{{ entity_discovered | combine({
+      'raw_results': entity_discovered.raw_results + [{'source': 'sec_edgar', 'data': sec_search_result.json | default({})}]
+    }) }}"
+  when:
+    - entity_research_use_sec_edgar | bool
+    - sec_search_result is success
+  ignore_errors: true
+
+# ── Save discovery artifact ──
+- name: Write entity discovery artifact
+  ansible.builtin.copy:
+    content: "{{ entity_discovered | to_nice_json }}"
+    dest: "{{ entity_research_artifact_dir }}/entity_discovery.json"
+    mode: "0644"
+  when: entity_research_discover | bool

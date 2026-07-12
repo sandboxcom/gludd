@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: auto_register_service
+  author: Agentic Harness Agent
+  description: >
+    Register a newly discovered cloud/AI service by generating a minimal
+    Python connector module from a Jinja2 template, registering it in the
+    provider registry, and verifying the import via healthcheck.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,140 @@
+---
+# assets.yml — Asset discovery
+# Physical, digital, IP, financial, and technology stack inventory.
+
+- name: Initialize asset inventory
+  ansible.builtin.set_fact:
+    entity_assets:
+      entity_name: "{{ entity_name }}"
+      physical_assets: []
+      digital_assets:
+        domains: []
+        ip_ranges: []
+        asns: []
+        ssl_certificates: []
+      intellectual_property:
+        patents: []
+        trademarks: []
+        copyrights: []
+      financial_assets:
+        sec_filings: []
+        revenue_estimates: []
+        funding_rounds: []
+      technology_stack: []
+      gathered_at: "{{ ansible_date_time.iso8601 }}"
+
+# ── Domain discovery via crt.sh ──
+- name: crt.sh certificate transparency lookup
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.crt_sh.base_url }}/?q=%25.{{ entity_domain }}&output=json"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  register: crtsh_result
+  when: entity_domain | length > 0
+  ignore_errors: true
+
+- name: Parse domains from crt.sh results
+  ansible.builtin.set_fact:
+    entity_assets: "{{ entity_assets | combine({
+      'digital_assets': entity_assets.digital_assets | combine({
+        'domains': (crtsh_result.json | default([]) | map(attribute='name_value') | list | flatten | unique | list)[:100],
+        'ssl_certificates': crtsh_result.json | default([])
+      })
+    }) }}"
+  when:
+    - entity_domain | length > 0
+    - crtsh_result is success
+  ignore_errors: true
+
+# ── IP/ASN discovery via SearX ──
+- name: SearX search for IP ranges and ASNs
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} ASN peeringdb IP ranges data center"
+    categories: "general"
+    page: 1
+  register: searx_network_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Patent search via SearX ──
+- name: SearX search for patents
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} patents USPTO intellectual property"
+    categories: "general"
+    page: 1
+  register: searx_patent_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Technology stack via SearX ──
+- name: SearX search for technology stack
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} technology stack software engineering blog"
+    categories: "general"
+    page: 1
+  register: searx_tech_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── Funding search ──
+- name: SearX search for funding rounds
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} funding round investment"
+    categories: "general"
+    page: 1
+  register: searx_funding_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── SEC filings (if US entity) ──
+- name: SEC EDGAR filings lookup
+  ansible.builtin.uri:
+    url: "https://data.sec.gov/submissions/CIK{{ sec_cik | default('0000000000') }}.json"
+    method: GET
+    body_format: json
+    headers:
+      User-Agent: "Gludd Agent (entity_research)"
+      Accept: "application/json"
+    timeout: 30
+  register: sec_filings_result
+  when:
+    - entity_research_use_sec_edgar | bool
+    - sec_cik is defined
+  ignore_errors: true
+
+- name: Write asset inventory artifact
+  ansible.builtin.copy:
+    content: "{{ entity_assets | to_nice_json }}"
+    dest: "{{ entity_research_artifact_dir }}/entity_assets.json"
+    mode: "0644"

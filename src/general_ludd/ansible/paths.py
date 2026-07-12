@@ -385,11 +385,30 @@ def activate_collection_version(
     return (temp_dir, temp_dir if owned_by_caller else None)
 
 
+def list_all_collections(
+    base: Path,
+    namespace: str = "general_ludd",
+) -> list[str]:
+    """List all collection names discovered under a namespace at *base*.
+
+    Scans ``<base>/ansible_collections/<namespace>/`` and returns the
+    directory names found there (each is a collection name). Returns an
+    empty list if the namespace directory does not exist.
+    """
+    ns_dir = base / "ansible_collections" / namespace
+    if not ns_dir.is_dir():
+        return []
+    return sorted(
+        d.name for d in ns_dir.iterdir() if d.is_dir()
+    )
+
+
 __all__ = [
     "CollectionVersionInfo",
     "CollectionsPathEntry",
     "activate_collection_version",
     "find_resource",
+    "list_all_collections",
     "list_collection_versions",
     "resolve_collection_version",
     "resolve_collections_paths",

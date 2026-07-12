@@ -1,0 +1,17 @@
+galaxy_info:
+  author: general-ludd
+  description: >-
+    Mark vanished services as deprecated — set status to inactive, log
+    retirement events, remove from active pricing sources. Never deletes
+    connector files; keeps full audit trail.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: ["9"]
+  galaxy_tags:
+    - service
+    - lifecycle
+    - catalog
+    - retirement
+dependencies: []

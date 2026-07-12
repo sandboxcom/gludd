@@ -1,0 +1,208 @@
+---
+# log_audit.yml — scan web server and database logs for SQL injection attempts
+#
+# Parses access logs, error logs, and database query logs for SQLi patterns:
+# UNION SELECT, 1=1, sleep(), benchmark(), WAITFOR DELAY, information_schema
+# probes, hex-encoded payloads. Correlates by source IP and timestamp.
+
+# ── Web server access log audit ────────────────────────────────────────────
+
+- name: Stat web log path
+  ansible.builtin.stat:
+    path: "{{ web_log_path }}"
+  register: _sql_web_log_stat
+  when: web_log_path | length > 0
+
+- name: Scan web log — UNION SELECT attempts
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)union\s+(all\s+)?select" "{{ web_log_path }}"
+  register: _sql_log_union
+  changed_when: false
+  failed_when: false
+  when:
+    - web_log_path | length > 0
+    - _sql_web_log_stat.stat.exists | default(false)
+
+- name: Scan web log — boolean-based blind (1=1, ''='', OR 1)
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)(\d+=\d+|['\"]\s*=\s*['\"]|or\s+\d+=\d+|and\s+\d+=\d+|or\s+['\"]\w+['\"]\s*=\s*['\"]\w+['\"])" "{{ web_log_path }}"
+  register: _sql_log_boolean
+  changed_when: false
+  failed_when: false
+  when:
+    - web_log_path | length > 0
+    - _sql_web_log_stat.stat.exists | default(false)
+
+- name: Scan web log — time-based injection (sleep, benchmark, WAITFOR)
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)(sleep\(\d+\)|benchmark\(\d+|pg_sleep\(\d+|WAITFOR\s+DELAY|DBMS_LOCK\.SLEEP)" "{{ web_log_path }}"
+  register: _sql_log_time
+  changed_when: false
+  failed_when: false
+  when:
+    - web_log_path | length > 0
+    - _sql_web_log_stat.stat.exists | default(false)
+
+- name: Scan web log — information_schema probes
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)(information_schema|sqlite_master|pg_database|sys\.databases|ALL_TABLES|v\$version)" "{{ web_log_path }}"
+  register: _sql_log_info_schema
+  changed_when: false
+  failed_when: false
+  when:
+    - web_log_path | length > 0
+    - _sql_web_log_stat.stat.exists | default(false)
+
+- name: Scan web log — stacked query attempts (DROP, INSERT, UPDATE, EXEC)
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i);\s*(drop|insert|update|delete|alter|create|exec|truncate|grant|revoke)\s" "{{ web_log_path }}"
+  register: _sql_log_stacked
+  changed_when: false
+  failed_when: false
+  when:
+    - web_log_path | length > 0
+    - _sql_web_log_stat.stat.exists | default(false)
+
+- name: Scan web log — hex/encoded payloads
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)(0x[0-9a-f]{6,}|CHAR\(\d|UNHEX\(|CONCAT\(0x|%27|%22|/\*\d{5})" "{{ web_log_path }}"
+  register: _sql_log_encoded
+  changed_when: false
+  failed_when: false
+  when:
+    - web_log_path | length > 0
+    - _sql_web_log_stat.stat.exists | default(false)
+
+- name: Scan web log — xp_cmdshell / UTL_HTTP / LOAD_FILE
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)(xp_cmdshell|xp_dirtree|xp_regread|UTL_HTTP|UTL_FILE|LOAD_FILE|INTO\s+(OUTFILE|DUMPFILE)|COPY\s+.*PROGRAM)" "{{ web_log_path }}"
+  register: _sql_log_advanced
+  changed_when: false
+  failed_when: false
+  when:
+    - web_log_path | length > 0
+    - _sql_web_log_stat.stat.exists | default(false)
+
+# ── Database query log audit ───────────────────────────────────────────────
+
+- name: Stat DB log path
+  ansible.builtin.stat:
+    path: "{{ db_log_path }}"
+  register: _sql_db_log_stat
+  when: db_log_path | length > 0
+
+- name: Scan DB log — SELECT without WHERE (full table scan, suspicious)
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)SELECT\s+\*\s+FROM\s+\w+\s*(?:--|#|/\*|$)" "{{ db_log_path }}"
+  register: _sql_db_select_star
+  changed_when: false
+  failed_when: false
+  when:
+    - db_log_path | length > 0
+    - _sql_db_log_stat.stat.exists | default(false)
+
+- name: Scan DB log — UNION SELECT in query log
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)union\s+(all\s+)?select" "{{ db_log_path }}"
+  register: _sql_db_union
+  changed_when: false
+  failed_when: false
+  when:
+    - db_log_path | length > 0
+    - _sql_db_log_stat.stat.exists | default(false)
+
+- name: Scan DB log — information_schema queries
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)(information_schema|sqlite_master|pg_database|ALL_TABLES)" "{{ db_log_path }}"
+  register: _sql_db_schema
+  changed_when: false
+  failed_when: false
+  when:
+    - db_log_path | length > 0
+    - _sql_db_log_stat.stat.exists | default(false)
+
+- name: Scan DB log — xp_cmdshell / file operations
+  ansible.builtin.command:
+    cmd: >-
+      grep -Pin "(?i)(xp_cmdshell|xp_dirtree|LOAD_FILE|INTO\s+OUTFILE|COPY\s+.*PROGRAM)" "{{ db_log_path }}"
+  register: _sql_db_fileops
+  changed_when: false
+  failed_when: false
+  when:
+    - db_log_path | length > 0
+    - _sql_db_log_stat.stat.exists | default(false)
+
+# ── Extract source IPs from log lines ──────────────────────────────────────
+
+- name: Extract source IPs from web log findings
+  ansible.builtin.set_fact:
+    _sql_log_all_raw: >-
+      {{ 
+        (_sql_log_union.stdout_lines | default([]))
+        + (_sql_log_boolean.stdout_lines | default([]))
+        + (_sql_log_time.stdout_lines | default([]))
+        + (_sql_log_info_schema.stdout_lines | default([]))
+        + (_sql_log_stacked.stdout_lines | default([]))
+        + (_sql_log_encoded.stdout_lines | default([]))
+        + (_sql_log_advanced.stdout_lines | default([]))
+      }}
+
+# ── Collate log findings ───────────────────────────────────────────────────
+
+- name: Build log findings with severity and attack type classification
+  ansible.builtin.set_fact:
+    _sql_log_findings: >-
+      {{
+        (
+          ([{'attack_type': 'UNION SELECT', 'severity': 'critical', 'log_source': 'web',
+             'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
+             'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
+            for item in _sql_log_union.stdout_lines if _sql_log_union.rc == 0])
+          + ([{'attack_type': 'Boolean-based blind', 'severity': 'high', 'log_source': 'web',
+               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
+               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
+              for item in _sql_log_boolean.stdout_lines if _sql_log_boolean.rc == 0])
+          + ([{'attack_type': 'Time-based blind', 'severity': 'critical', 'log_source': 'web',
+               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
+               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
+              for item in _sql_log_time.stdout_lines if _sql_log_time.rc == 0])
+          + ([{'attack_type': 'Information schema probe', 'severity': 'medium', 'log_source': 'web',
+               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
+               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
+              for item in _sql_log_info_schema.stdout_lines if _sql_log_info_schema.rc == 0])
+          + ([{'attack_type': 'Stacked queries', 'severity': 'critical', 'log_source': 'web',
+               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
+               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
+              for item in _sql_log_stacked.stdout_lines if _sql_log_stacked.rc == 0])
+          + ([{'attack_type': 'Encoded payload', 'severity': 'medium', 'log_source': 'web',
+               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
+               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
+              for item in _sql_log_encoded.stdout_lines if _sql_log_encoded.rc == 0])
+          + ([{'attack_type': 'Advanced exploitation', 'severity': 'critical', 'log_source': 'web',
+               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
+               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
+              for item in _sql_log_advanced.stdout_lines if _sql_log_advanced.rc == 0])
+          + ([{'attack_type': 'Suspicious full scan', 'severity': 'medium', 'log_source': 'database',
+               'entry': item, 'source_ip': 'N/A (database log)', 'timestamp': 'unknown'}
+              for item in _sql_db_select_star.stdout_lines if _sql_db_select_star.rc == 0])
+          + ([{'attack_type': 'UNION SELECT (DB log)', 'severity': 'critical', 'log_source': 'database',
+               'entry': item, 'source_ip': 'N/A (database log)', 'timestamp': 'unknown'}
+              for item in _sql_db_union.stdout_lines if _sql_db_union.rc == 0])
+          + ([{'attack_type': 'Schema exploration (DB log)', 'severity': 'medium', 'log_source': 'database',
+               'entry': item, 'source_ip': 'N/A (database log)', 'timestamp': 'unknown'}
+              for item in _sql_db_schema.stdout_lines if _sql_db_schema.rc == 0])
+          + ([{'attack_type': 'File/OS operations (DB log)', 'severity': 'critical', 'log_source': 'database',
+               'entry': item, 'source_ip': 'N/A (database log)', 'timestamp': 'unknown'}
+              for item in _sql_db_fileops.stdout_lines if _sql_db_fileops.rc == 0])
+        )
+      }}

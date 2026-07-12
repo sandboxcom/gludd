@@ -1,0 +1,188 @@
+---
+# Risk scoring templates and categories for entity risk analysis.
+# Each category defines scoring dimensions, weights, and thresholds.
+
+risk_categories:
+  financial:
+    weight: 0.25
+    description: "Financial health and stability indicators"
+    dimensions:
+      debt_level:
+        weight: 0.30
+        scoring:
+          low: "debt_to_equity < 0.5"
+          medium: "0.5 <= debt_to_equity < 2.0"
+          high: "debt_to_equity >= 2.0"
+          unknown: "no financial data available"
+      profitability:
+        weight: 0.25
+        scoring:
+          low: "consistent profit growth >= 2 years"
+          medium: "marginal profit or recent decline"
+          high: "sustained losses >= 2 quarters"
+      cash_flow:
+        weight: 0.25
+        scoring:
+          low: "strong operating cash flow"
+          medium: "break-even cash flow"
+          high: "negative operating cash flow"
+      funding_runway:
+        weight: 0.20
+        scoring:
+          low: "runway > 24 months"
+          medium: "runway 12-24 months"
+          high: "runway < 12 months or unknown"
+    thresholds:
+      low_risk: "score < 0.35"
+      medium_risk: "0.35 <= score < 0.65"
+      high_risk: "score >= 0.65"
+
+  security:
+    weight: 0.20
+    description: "Cybersecurity posture and incident history"
+    dimensions:
+      breach_history:
+        weight: 0.30
+        scoring:
+          low: "no known breaches in 3 years"
+          medium: "1 minor breach in 3 years"
+          high: "multiple breaches or major breach in 3 years"
+      security_program:
+        weight: 0.25
+        scoring:
+          low: "bug bounty program + security.txt + dedicated team"
+          medium: "some security measures, no dedicated team"
+          high: "no observable security program"
+      email_security:
+        weight: 0.20
+        scoring:
+          low: "DMARC reject + SPF + DKIM"
+          medium: "partial email security config"
+          high: "no SPF/DKIM/DMARC"
+      tls_config:
+        weight: 0.15
+        scoring:
+          low: "TLS 1.3 only, strong ciphers"
+          medium: "TLS 1.2 acceptable config"
+          high: "outdated TLS or weak ciphers"
+      cloud_exposure:
+        weight: 0.10
+        scoring:
+          low: "no exposed cloud assets"
+          medium: "limited public cloud resources"
+          high: "exposed S3 buckets/DBs/public resources"
+    thresholds:
+      low_risk: "score < 0.30"
+      medium_risk: "0.30 <= score < 0.60"
+      high_risk: "score >= 0.60"
+
+  personnel:
+    weight: 0.15
+    description: "Leadership and workforce stability"
+    dimensions:
+      leadership_turnover:
+        weight: 0.35
+        scoring:
+          low: "stable leadership >= 3 years"
+          medium: "moderate turnover in C-suite"
+          high: "frequent C-level departures or founder departure"
+      layoff_history:
+        weight: 0.25
+        scoring:
+          low: "no layoffs in 2 years"
+          medium: "1 round of layoffs in 2 years"
+          high: "multiple layoff rounds in 2 years"
+      employee_satisfaction:
+        weight: 0.25
+        scoring:
+          low: "Glassdoor >= 4.0"
+          medium: "Glassdoor 3.0-3.9"
+          high: "Glassdoor < 3.0 or no data"
+      hiring_trend:
+        weight: 0.15
+        scoring:
+          low: "actively hiring, growing headcount"
+          medium: "steady state hiring"
+          high: "hiring freeze or declining headcount"
+    thresholds:
+      low_risk: "score < 0.35"
+      medium_risk: "0.35 <= score < 0.60"
+      high_risk: "score >= 0.60"
+
+  market:
+    weight: 0.20
+    description: "Market position and competitive dynamics"
+    dimensions:
+      market_share_change:
+        weight: 0.35
+        scoring:
+          low: "gaining market share"
+          medium: "stable market share"
+          high: "losing market share to competitors"
+      competitor_movements:
+        weight: 0.25
+        scoring:
+          low: "well-positioned vs competitors"
+          medium: "competitive pressure in some segments"
+          high: "under threat from multiple competitors"
+      regulatory_exposure:
+        weight: 0.25
+        scoring:
+          low: "no significant regulatory actions"
+          medium: "regulatory scrutiny in 1 jurisdiction"
+          high: "active enforcement or multiple investigations"
+      disruption_risk:
+        weight: 0.15
+        scoring:
+          low: "well-diversified, resilient business model"
+          medium: "some technology disruption risk"
+          high: "core business model under disruption"
+    thresholds:
+      low_risk: "score < 0.35"
+      medium_risk: "0.35 <= score < 0.60"
+      high_risk: "score >= 0.60"
+
+  legal:
+    weight: 0.20
+    description: "Legal exposure and regulatory status"
+    dimensions:
+      active_litigation:
+        weight: 0.40
+        scoring:
+          low: "no significant litigation"
+          medium: "ongoing litigation, routine nature"
+          high: "material litigation or class action"
+      regulatory_actions:
+        weight: 0.35
+        scoring:
+          low: "clean regulatory record"
+          medium: "past enforcement, resolved"
+          high: "active enforcement action or consent decree"
+      ip_risk:
+        weight: 0.25
+        scoring:
+          low: "strong IP portfolio, no disputes"
+          medium: "some IP challenges"
+          high: "active patent litigation or weak IP position"
+    thresholds:
+      low_risk: "score < 0.30"
+      medium_risk: "0.30 <= score < 0.55"
+      high_risk: "score >= 0.55"
+
+overall_risk_scoring:
+  description: "Weighted composite risk score across all categories"
+  low_risk: "score < 0.35"
+  medium_risk: "0.35 <= score < 0.60"
+  high_risk: "score >= 0.60"
+
+association_risk_factors:
+  description: "Risk factors that propagate through association graph"
+  factors:
+    - key_leadership_change
+    - bankruptcy_filing
+    - security_breach
+    - regulatory_action
+    - major_layoffs
+    - acquisition
+    - patent_dispute
+    - supply_chain_disruption

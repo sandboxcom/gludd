@@ -1,0 +1,35 @@
+---
+hsm_operations__artifact_dir: "/tmp/gludd-hsm-operations"
+hsm_operations__daemon_url: "http://localhost:8000"
+hsm_operations__psk: ""
+
+hsm_operations__pkcs11_module: ""
+hsm_operations__slot_label: ""
+hsm_operations__token_label: ""
+hsm_operations__slot_id: 0
+hsm_operations__user_type: "user"
+
+hsm_operations__key_type: "RSA"
+hsm_operations__key_size: 2048
+hsm_operations__ec_curve: "prime256v1"
+hsm_operations__key_label: ""
+hsm_operations__key_id: ""
+
+hsm_operations__csr_path: ""
+hsm_operations__sign_mechanism: ""
+hsm_operations__sign_hash: "SHA256"
+hsm_operations__cert_output: ""
+
+hsm_operations__pin_retry_max: 3
+hsm_operations__pin_prompt: "Enter HSM PIN"
+hsm_operations__so_pin_prompt: "Enter HSM SO PIN"
+
+hsm_operations__smartcard_reader: ""
+hsm_operations__smartcard_atr_expected: ""
+hsm_operations__apdu_timeout_ms: 5000
+
+hsm_operations__enable_model_call: false
+hsm_operations__model_profile: ""
+hsm_operations__handoff_recipient: ""
+
+hsm_operations__audit_log_path: "/var/log/gludd/hsm_operations.log"

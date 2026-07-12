@@ -1,7 +1,7 @@
 """Integration tests for the log_analyzer Ansible role and Python module.
 
 Tests role invocation via AnsibleRunnerAdapter with the FQCN
-``general_ludd.agent.log_analyzer``, plus end-to-end behaviours
+``general_ludd.operations.log_analyzer``, plus end-to-end behaviours
 through the Python module: ingestion, clustering, COT logging, reports,
 empty logs, and malformed logs.
 """

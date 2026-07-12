@@ -4,4 +4,4 @@
   connection: local
   gather_facts: false
   roles:
-    - role: general_ludd.agent.log_analyzer
+    - role: general_ludd.operations.log_analyzer

@@ -1,0 +1,224 @@
+---
+# Algorithm security data — key types, curves, hashes, post-quantum info.
+# Query model: algorithms[key_type][algorithm_id] or algorithms_hashes[hash_id]
+# Security bits per NIST SP 800-57 Part 1 Rev 5.
+
+algorithms:
+  rsa:
+    rsa-1024:
+      security_bits: 80
+      nist_status: deprecated
+      quantum_resistance: none
+      deprecation_date: "2011-01-01"
+      min_key_size_80bit: 1024
+      min_key_size_112bit: 2048
+      min_key_size_128bit: 3072
+      min_key_size_192bit: 7680
+      min_key_size_256bit: 15360
+    rsa-2048:
+      security_bits: 112
+      nist_status: approved
+      quantum_resistance: none
+      deprecation_date: "2030-12-31"
+      min_key_size_80bit: 1024
+      min_key_size_112bit: 2048
+      min_key_size_128bit: 3072
+      min_key_size_192bit: 7680
+      min_key_size_256bit: 15360
+    rsa-3072:
+      security_bits: 128
+      nist_status: approved
+      quantum_resistance: none
+      deprecation_date: null
+      min_key_size_80bit: 1024
+      min_key_size_112bit: 2048
+      min_key_size_128bit: 3072
+      min_key_size_192bit: 7680
+      min_key_size_256bit: 15360
+    rsa-4096:
+      security_bits: 152
+      nist_status: approved
+      quantum_resistance: none
+      deprecation_date: null
+      min_key_size_80bit: 1024
+      min_key_size_112bit: 2048
+      min_key_size_128bit: 3072
+      min_key_size_192bit: 7680
+      min_key_size_256bit: 15360
+    rsa-8192:
+      security_bits: 192
+      nist_status: approved
+      quantum_resistance: none
+      deprecation_date: null
+
+  ecdsa:
+    ecdsa-p256:
+      security_bits: 128
+      nist_status: approved
+      quantum_resistance: none
+      deprecation_date: null
+      min_key_size_128bit: 256
+      min_key_size_192bit: 384
+      min_key_size_256bit: 521
+    ecdsa-p384:
+      security_bits: 192
+      nist_status: approved
+      quantum_resistance: none
+      deprecation_date: null
+      min_key_size_128bit: 256
+      min_key_size_192bit: 384
+      min_key_size_256bit: 521
+    ecdsa-p521:
+      security_bits: 256
+      nist_status: approved
+      quantum_resistance: none
+      deprecation_date: null
+    ecdsa-p224:
+      security_bits: 112
+      nist_status: deprecated
+      quantum_resistance: none
+      deprecation_date: "2016-01-01"
+
+  eddsa:
+    ed25519:
+      security_bits: 128
+      nist_status: approved
+      quantum_resistance: none
+      deprecation_date: null
+    ed448:
+      security_bits: 224
+      nist_status: approved
+      quantum_resistance: none
+      deprecation_date: null
+
+  dsa:
+    dsa-1024:
+      security_bits: 80
+      nist_status: deprecated
+      quantum_resistance: none
+      deprecation_date: "2011-01-01"
+    dsa-2048:
+      security_bits: 112
+      nist_status: deprecated
+      quantum_resistance: none
+      deprecation_date: "2023-12-31"
+    dsa-3072:
+      security_bits: 128
+      nist_status: deprecated
+      quantum_resistance: none
+      deprecation_date: "2023-12-31"
+
+  dh:
+    dh-2048:
+      security_bits: 112
+      nist_status: approved
+      quantum_resistance: none
+    dh-3072:
+      security_bits: 128
+      nist_status: approved
+      quantum_resistance: none
+    dh-4096:
+      security_bits: 152
+      nist_status: approved
+      quantum_resistance: none
+
+  post_quantum:
+    ml-kem-512:
+      security_bits: 128
+      nist_status: standard
+      quantum_resistance: conjectured
+      deprecation_date: null
+      standard: FIPS 203
+    ml-kem-768:
+      security_bits: 192
+      nist_status: standard
+      quantum_resistance: conjectured
+      deprecation_date: null
+      standard: FIPS 203
+    ml-kem-1024:
+      security_bits: 256
+      nist_status: standard
+      quantum_resistance: conjectured
+      deprecation_date: null
+      standard: FIPS 203
+    ml-dsa-44:
+      security_bits: 128
+      nist_status: standard
+      quantum_resistance: conjectured
+      deprecation_date: null
+      standard: FIPS 204
+    ml-dsa-65:
+      security_bits: 192
+      nist_status: standard
+      quantum_resistance: conjectured
+      deprecation_date: null
+      standard: FIPS 204
+    ml-dsa-87:
+      security_bits: 256
+      nist_status: standard
+      quantum_resistance: conjectured
+      deprecation_date: null
+      standard: FIPS 204
+    slh-dsa-128s:
+      security_bits: 128
+      nist_status: standard
+      quantum_resistance: conjectured
+      deprecation_date: null
+      standard: FIPS 205
+    frodokem-976:
+      security_bits: 128
+      nist_status: candidate
+      quantum_resistance: conjectured
+      deprecation_date: null
+
+algorithms_hashes:
+  md5:
+    security_bits: 0
+    nist_status: forbidden
+    deprecated: true
+    deprecation_date: "2005-01-01"
+    collision_resistance: broken
+    preimage_resistance: broken
+  sha1:
+    security_bits: 0
+    nist_status: deprecated
+    deprecated: true
+    deprecation_date: "2017-01-01"
+    collision_resistance: broken
+    preimage_resistance: vulnerable
+  sha224:
+    security_bits: 112
+    nist_status: approved
+    deprecated: false
+    collision_resistance: 112
+    preimage_resistance: 112
+  sha256:
+    security_bits: 128
+    nist_status: approved
+    deprecated: false
+    collision_resistance: 128
+    preimage_resistance: 128
+  sha384:
+    security_bits: 192
+    nist_status: approved
+    deprecated: false
+    collision_resistance: 192
+    preimage_resistance: 192
+  sha512:
+    security_bits: 256
+    nist_status: approved
+    deprecated: false
+    collision_resistance: 256
+    preimage_resistance: 256
+  sha3-256:
+    security_bits: 128
+    nist_status: approved
+    deprecated: false
+  sha3-384:
+    security_bits: 192
+    nist_status: approved
+    deprecated: false
+  sha3-512:
+    security_bits: 256
+    nist_status: approved
+    deprecated: false

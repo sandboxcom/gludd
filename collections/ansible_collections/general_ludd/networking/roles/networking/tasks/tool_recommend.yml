@@ -1,0 +1,187 @@
+---
+# tool_recommend — recommend networking diagnostic tools by scenario
+#
+# Matches networking__diagnostic_scenario against a scenario→tools registry
+# and returns the top 2-3 recommended tools with specific command examples.
+# Unknown scenarios gracefully default to general-purpose tools.
+
+- name: Validate tool_recommend prerequisites
+  ansible.builtin.assert:
+    that:
+      - networking__diagnostic_scenario | default('') | length > 0
+    fail_msg: "networking__diagnostic_scenario is required for tool_recommend mode"
+
+- block:
+    - name: Define scenario-to-tools diagnostic registry
+      ansible.builtin.set_fact:
+        _tr_scenario_registry:
+          packet_loss:
+            scenario: "Packet loss on a link or interface"
+            tools:
+              - name: "mtr"
+                description: "Combined traceroute and ping — shows per-hop loss"
+                command: "mtr --report {{ networking__scan_target | default('<host>') }}"
+              - name: "iperf3"
+                description: "Bandwidth and packet loss test between client and server"
+                command: "iperf3 -c {{ networking__scan_target | default('<host>') }} -u -b 10M"
+              - name: "tcpdump"
+                description: "Capture retransmissions and gaps"
+                command: "tcpdump -i {{ networking__interface }} -n 'tcp[tcpflags] & (tcp-syn|tcp-fin) != 0'"
+          slow_connection:
+            scenario: "Slow or degraded connection"
+            tools:
+              - name: "iperf3"
+                description: "Measure throughput between endpoints"
+                command: "iperf3 -c {{ networking__scan_target | default('<host>') }} -t 30 -P 4"
+              - name: "tcptraceroute"
+                description: "Trace TCP path with per-hop latency"
+                command: "tcptraceroute {{ networking__scan_target | default('<host>') }} 443"
+              - name: "ss"
+                description: "Socket statistics — buffer sizes and retransmits"
+                command: "ss -ti 'dst {{ networking__scan_target | default('<host>') }}'"
+          dns_failure:
+            scenario: "DNS resolution failures"
+            tools:
+              - name: "dig"
+                description: "DNS lookup with full trace and timing"
+                command: "dig +trace +stats {{ networking__tool_context | default('example.com') }}"
+              - name: "nslookup"
+                description: "Query specific DNS server"
+                command: "nslookup {{ networking__tool_context | default('example.com') }} 8.8.8.8"
+              - name: "dnstracer"
+                description: "Trace DNS delegation chain"
+                command: "dnstracer -s . -4 {{ networking__tool_context | default('example.com') }}"
+          tls_error:
+            scenario: "TLS/SSL handshake or certificate errors"
+            tools:
+              - name: "openssl s_client"
+                description: "Debug TLS handshake and certificate chain"
+                command: "openssl s_client -connect {{ networking__tool_context | default('host:443') }} -showcerts -servername {{ networking__scan_target | default('host') }}"
+              - name: "testssl.sh"
+                description: "Comprehensive TLS configuration scanner"
+                command: "testssl --color 0 --severity LOW {{ networking__scan_target | default('<host>') }}"
+              - name: "sslyze"
+                description: "TLS configuration analyzer"
+                command: "sslyze --regular {{ networking__scan_target | default('<host>') }}"
+          port_scan:
+            scenario: "Open port discovery and service enumeration"
+            tools:
+              - name: "nmap"
+                description: "Port scanning and service version detection"
+                command: "nmap -sV --version-intensity 5 {{ networking__scan_target | default('<host>') }} -p {{ networking__scan_ports | default('1-1000') }}"
+              - name: "masscan"
+                description: "Fast port scanning across large ranges"
+                command: "masscan {{ networking__scan_target | default('<cidr>') }} -p{{ networking__scan_ports | default('1-65535') }} --rate=10000"
+              - name: "rustscan"
+                description: "Very fast port scanner with nmap integration"
+                command: "rustscan -a {{ networking__scan_target | default('<host>') }} -- -sV"
+          bandwidth_saturation:
+            scenario: "Bandwidth saturation and congestion"
+            tools:
+              - name: "iftop"
+                description: "Real-time per-connection bandwidth usage"
+                command: "iftop -i {{ networking__interface }} -P"
+              - name: "nload"
+                description: "In/out traffic rates per interface"
+                command: "nload {{ networking__interface }}"
+              - name: "bmon"
+                description: "Bandwidth monitor with text graphs"
+                command: "bmon -p {{ networking__interface }}"
+          arp_spoof:
+            scenario: "ARP spoofing or duplicate IP detection"
+            tools:
+              - name: "arp-scan"
+                description: "Send ARP requests and list responses"
+                command: "arp-scan --localnet --interface {{ networking__interface }}"
+              - name: "arping"
+                description: "ARP-level ping to detect duplicate IPs"
+                command: "arping -c 3 -I {{ networking__interface }} {{ networking__scan_target | default('<ip>') }}"
+              - name: "tcpdump (ARP)"
+                description: "Capture ARP traffic for analysis"
+                command: "tcpdump -i {{ networking__interface }} -n arp"
+          routing_loop:
+            scenario: "Routing loops or asymmetric paths"
+            tools:
+              - name: "traceroute"
+                description: "Show path hops and per-hop latency"
+                command: "traceroute -n {{ networking__scan_target | default('<host>') }}"
+              - name: "mtr"
+                description: "Continuous per-hop statistics"
+                command: "mtr --report-wide --show-ips {{ networking__scan_target | default('<host>') }}"
+              - name: "ping -R"
+                description: "Record route option (up to 9 hops)"
+                command: "ping -R -c 3 {{ networking__scan_target | default('<host>') }}"
+
+    - name: Look up tools for scenario
+      ansible.builtin.set_fact:
+        _tr_scenario: >-
+          {{ _tr_scenario_registry.get(networking__diagnostic_scenario, {}) }}
+
+    - name: Set recommended tools from registry match
+      ansible.builtin.set_fact:
+        _tr_tools: "{{ _tr_scenario.tools | default([]) }}"
+        _tr_description: "{{ _tr_scenario.scenario | default('') }}"
+
+    - name: Fallback to general-purpose tools for unknown scenario
+      ansible.builtin.set_fact:
+        _tr_tools:
+          - name: "tcpdump"
+            description: "General-purpose packet capture"
+            command: "tcpdump -i {{ networking__interface }} -nn -s0 -w /tmp/capture.pcap"
+          - name: "ss"
+            description: "Socket statistics — connections and listeners"
+            command: "ss -tulpn"
+          - name: "nmap"
+            description: "Port and service discovery"
+            command: "nmap -sV {{ networking__scan_target | default('<host>') }}"
+        _tr_description: "Unknown scenario '{{ networking__diagnostic_scenario }}' — showing general-purpose tools"
+      when: _tr_tools | length == 0
+
+    - name: Debug tool recommendation
+      ansible.builtin.debug:
+        msg: >-
+          Scenario: {{ networking__diagnostic_scenario }}
+          Description: {{ _tr_description }}
+          Recommended tools: {{ _tr_tools | map(attribute='name') | join(', ') }}
+
+  rescue:
+    - name: Handle tool recommendation failure
+      ansible.builtin.debug:
+        msg: >-
+          Tool recommendation failed for scenario={{ networking__diagnostic_scenario }}.
+          Reason: {{ ansible_failed_result.msg | default('unknown') }}
+      failed_when: false
+
+    - name: Set empty tools on failure
+      ansible.builtin.set_fact:
+        _tr_tools: []
+        _tr_description: "Recommendation failed"
+      when: _tr_tools is not defined
+
+  always:
+    - name: Set timestamp
+      ansible.builtin.set_fact:
+        _tr_timestamp: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601) }}"
+
+    - name: Write tool recommendation artifact JSON
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'networking',
+            'mode': 'tool_recommend',
+            'timestamp': _tr_timestamp,
+            'scenario': networking__diagnostic_scenario,
+            'scenario_description': _tr_description,
+            'recommended_tools': _tr_tools,
+            'total_recommended': _tr_tools | length,
+            'context': networking__tool_context | default(''),
+          } | to_nice_json }}
+        dest: "{{ networking__artifact_dir }}/tool_recommendations.json"
+        mode: "0644"
+
+    - name: Report tool recommendation completion
+      ansible.builtin.debug:
+        msg: >-
+          Tool recommendations: scenario={{ networking__diagnostic_scenario }}
+          tools={{ _tr_tools | map(attribute='name') | join(', ') }}
+          artifact={{ networking__artifact_dir }}/tool_recommendations.json

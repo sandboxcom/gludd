@@ -1,0 +1,20 @@
+---
+namespace: general_ludd
+name: networking
+version: 0.2.0
+readme: README.md
+description: >
+  Network analysis roles including packet inspection, scapy dissectors, and
+  traffic analysis.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - networking
+  - packet
+  - scapy
+  - traffic
+  - analysis
+  - inspection
+dependencies: {}

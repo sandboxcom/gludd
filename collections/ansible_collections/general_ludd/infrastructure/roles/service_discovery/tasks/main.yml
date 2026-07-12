@@ -1,0 +1,99 @@
+---
+# service_discovery — discover services via SearXNG search queries.
+#
+# Flow:
+#   1. Validate required vars (searx_url, search_terms)
+#   2. For each search term, query the SearXNG JSON API
+#   3. Parse results into DiscoveredService records
+#   4. Normalize: deduplicate by URL, fill in missing fields
+#   5. Save to results_path YAML file
+#   6. Report: count of discovered services, any errors
+
+- name: "Validate required vars"
+  ansible.builtin.assert:
+    that:
+      - searx_url is defined
+      - searx_url | trim | length > 0
+      - search_terms is defined
+      - search_terms | length > 0
+    fail_msg: >-
+      service_discovery requires non-empty 'searx_url' and 'search_terms'.
+      Got searx_url={{ searx_url | default('<undefined>') }},
+      search_terms={{ search_terms | default('<undefined>') }}.
+
+- name: "Report discovery scope"
+  ansible.builtin.debug:
+    msg: >-
+      service_discovery: querying SearXNG at {{ searx_url }}
+      with {{ search_terms | length }} search terms
+      (timeout={{ discovery_timeout }}s).
+
+- name: "Initialize result accumulator"
+  ansible.builtin.set_fact:
+    _sd_services: []
+    _sd_errors: []
+    _sd_urls_seen: []
+
+- name: "Discover services per search term"
+  ansible.builtin.include_tasks: search_term.yml
+  loop: "{{ search_terms }}"
+  loop_control:
+    loop_var: _sd_term
+    label: "{{ _sd_term }}"
+
+- name: "Ensure accumulator lists exist"
+  ansible.builtin.set_fact:
+    _sd_services: "{{ _sd_services | default([]) }}"
+    _sd_errors: "{{ _sd_errors | default([]) }}"
+
+- name: "Deduplicate services by URL"
+  ansible.builtin.set_fact:
+    _sd_deduped: >-
+      {%- set seen = namespace(urls=[]) -%}
+      {%- set out = [] -%}
+      {%- for s in _sd_services -%}
+        {%- if s.url not in seen.urls -%}
+          {%- set _ = seen.urls.append(s.url) -%}
+          {%- set _ = out.append(s) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: "Save discovered services to YAML"
+  vars:
+    _sd_output:
+      generated_at: "{{ ansible_date_time.iso8601 }}"
+      searx_url: "{{ searx_url }}"
+      search_terms: "{{ search_terms }}"
+      total_discovered: "{{ _sd_deduped | length }}"
+      errors: "{{ _sd_errors }}"
+      services: "{{ _sd_deduped }}"
+  ansible.builtin.copy:
+    content: "{{ _sd_output | to_nice_yaml(indent=2, sort_keys=false) }}"
+    dest: "{{ results_path }}"
+    mode: "0644"
+
+- name: "Report summary"
+  ansible.builtin.debug:
+    msg: >-
+      service_discovery complete: {{ _sd_deduped | length }} unique services
+      discovered from {{ search_terms | length }} search terms
+      {% if _sd_errors | length > 0 %}
+      ({{ _sd_errors | length }} errors)
+      {% endif %}
+      saved to {{ results_path }}
+
+- name: "WARN — errors during discovery"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ _sd_errors | length }} search term(s) returned errors.
+      Errors: {{ _sd_errors | to_nice_json }}
+  when: _sd_errors | length > 0
+
+- name: "WARN — zero services discovered"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: Zero services discovered across all search terms.
+      Check that the SearXNG instance at {{ searx_url }} is reachable
+      and returning results.
+  when: _sd_deduped | length == 0

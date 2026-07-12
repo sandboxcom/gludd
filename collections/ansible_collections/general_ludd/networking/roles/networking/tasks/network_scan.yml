@@ -1,0 +1,122 @@
+---
+# network_scan — perform network discovery scan via nmap
+#
+# Supports scan types: syn (-sS), tcp (-sT), udp (-sU), version (-sV), os (-O).
+# Parses XML output into structured facts and writes artifact JSON.
+# Falls back gracefully when nmap is not installed.
+
+- name: Validate network_scan prerequisites
+  ansible.builtin.assert:
+    that:
+      - networking__scan_target | default('') | length > 0
+    fail_msg: "networking__scan_target is required for network_scan mode"
+
+- block:
+    - name: Map scan type to nmap flags
+      ansible.builtin.set_fact:
+        _ns_scan_flags: >-
+          {%- set mapping = {
+            'syn': '-sS',
+            'tcp': '-sT',
+            'udp': '-sU',
+            'version': '-sV',
+            'os': '-O',
+          } -%}
+          {{ mapping.get(networking__scan_type | default('syn'), '-sS') }}
+
+    - name: Build nmap port argument
+      ansible.builtin.set_fact:
+        _ns_port_arg: >-
+          {{ '-p ' ~ networking__scan_ports if networking__scan_ports | default('') | length > 0 else '' }}
+
+    - name: Set output XML path
+      ansible.builtin.set_fact:
+        _ns_xml_path: "{{ networking__artifact_dir }}/nmap_scan.xml"
+
+    - name: Create artifact directory for scan output
+      ansible.builtin.file:
+        path: "{{ networking__artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Run nmap scan
+      ansible.builtin.command:
+        cmd: >-
+          nmap {{ _ns_scan_flags }}
+          {{ _ns_port_arg | trim }}
+          -oX {{ _ns_xml_path }}
+          {{ networking__scan_target }}
+      register: _ns_scan_raw
+      changed_when: true
+      when: not ansible_check_mode
+
+    - name: Parse nmap XML output into structured facts
+      ansible.builtin.set_fact:
+        _ns_hosts: >-
+          {%- set hosts = [] -%}
+          {%- for host in _ns_scan_raw.stdout_lines | default([]) -%}
+          {%-   if host is match('^Nmap scan report for') -%}
+          {%-     set _ = hosts.append({
+                    'address': host | regex_replace('^Nmap scan report for ', ''),
+                    'ports': [],
+                  }) -%}
+          {%-   endif -%}
+          {%- endfor -%}
+          {{ hosts }}
+
+    - name: Set scan statistics
+      ansible.builtin.set_fact:
+        _ns_open_ports: >-
+          {{ _ns_scan_raw.stdout | default('') | regex_findall('(\\d+/\\w+)\\s+open') | length }}
+
+    - name: Debug scan results
+      ansible.builtin.debug:
+        msg: >-
+          Scan complete: target={{ networking__scan_target }}
+          type={{ networking__scan_type | default('syn') }}
+          open_ports={{ _ns_open_ports }}
+
+  rescue:
+    - name: Handle nmap scan failure
+      ansible.builtin.debug:
+        msg: >-
+          Nmap scan failed for target={{ networking__scan_target }}.
+          Reason: {{ _ns_scan_raw.msg | default('nmap not installed or scan permission denied') }}
+      failed_when: false
+
+    - name: Set empty scan result on failure
+      ansible.builtin.set_fact:
+        _ns_hosts: []
+        _ns_open_ports: 0
+      when: _ns_hosts is not defined
+
+  always:
+    - name: Set timestamp
+      ansible.builtin.set_fact:
+        _ns_timestamp: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601) }}"
+
+    - name: Write network scan artifact JSON
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'networking',
+            'mode': 'network_scan',
+            'timestamp': _ns_timestamp,
+            'target': networking__scan_target,
+            'scan_type': networking__scan_type | default('syn'),
+            'scan_flags': _ns_scan_flags | default('-sS'),
+            'ports': networking__scan_ports | default('common'),
+            'open_ports': _ns_open_ports,
+            'hosts_discovered': _ns_hosts,
+            'xml_output': _ns_xml_path | default(''),
+            'error': _ns_scan_raw.msg | default(none),
+          } | to_nice_json }}
+        dest: "{{ networking__artifact_dir }}/network_scan.json"
+        mode: "0644"
+
+    - name: Report network scan completion
+      ansible.builtin.debug:
+        msg: >-
+          Network scan complete: target={{ networking__scan_target }}
+          type={{ networking__scan_type | default('syn') }}
+          artifact={{ networking__artifact_dir }}/network_scan.json

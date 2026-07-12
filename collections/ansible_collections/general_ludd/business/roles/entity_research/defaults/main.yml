@@ -1,0 +1,75 @@
+---
+# entity_research role defaults — Business entity intelligence
+# SAFE-BY-DEFAULT: all API calls and data collection require explicit opt-in.
+
+# ── Daemon connectivity ──
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# ── Entity identity ──
+entity_name: ""
+entity_jurisdiction: ""
+entity_domain: ""
+entity_search_aliases: []
+entity_industry_hint: ""
+
+# ── Category enable flags ──
+entity_research_discover: false
+entity_research_associations: false
+entity_research_assets: false
+entity_research_exposure: false
+entity_research_risks: false
+entity_research_demographics: false
+entity_research_searx_monitor: false
+entity_research_generate_output: false
+
+# ── Data source toggles ──
+entity_research_use_opencorporates: true
+entity_research_use_sec_edgar: false
+entity_research_use_crunchbase: false
+entity_research_use_wikipedia: true
+entity_research_use_shodan: false
+entity_research_use_censys: false
+entity_research_use_searx: true
+
+# ── API keys (loaded from env/secrets, never hardcoded) ──
+opencorporates_api_token: ""
+crunchbase_api_key: ""
+shodan_api_key: ""
+censys_api_id: ""
+censys_api_secret: ""
+uspto_api_key: ""
+
+# ── Research depth ──
+entity_research_association_max_depth: 3
+entity_research_association_max_nodes: 200
+entity_research_asset_scan_depth: "medium"
+entity_research_risk_confidence_threshold: 0.6
+
+# ── Monitoring ──
+entity_research_searx_check_interval_hours: 24
+entity_research_searx_alert_on_risk_threshold: 0.7
+entity_research_searx_alert_topics:
+  - acquisition
+  - breach
+  - funding
+  - layoff
+  - leadership
+  - lawsuit
+  - bankruptcy
+
+# ── Output ──
+entity_research_output_dir: /tmp/gludd-entity-research
+entity_research_output_formats:
+  - json
+  - markdown
+  - dot
+  - csv
+
+# ── Model integration ──
+entity_research_model_label: general-ludd
+entity_research_artifact_dir: /tmp/gludd-entity-research
+
+# ── API rate limiting ──
+entity_research_api_delay_seconds: 1
+entity_research_api_max_retries: 3

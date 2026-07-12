@@ -1,0 +1,121 @@
+---
+# Certificate minting & signing
+# Generates private keys, CSRs, self-signed certs, CA-signed certs, and chains.
+# Uses community.crypto openssl_* modules.
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ ssl_cert_output_dir }}"
+    state: directory
+    mode: "0700"
+
+# ── RSA private key generation ──
+- name: Generate RSA private key
+  community.crypto.openssl_privatekey:
+    path: "{{ ssl_cert_key_path }}"
+    size: "{{ ssl_cert_key_size }}"
+    type: RSA
+    cipher: auto
+    passphrase: "{{ ssl_cert_key_passphrase | default(omit) }}"
+    mode: "0600"
+  when: ssl_cert_key_type | default('RSA') == 'RSA'
+  tags: [keygen, rsa]
+
+# ── ECDSA private key generation ──
+- name: Generate ECDSA private key
+  community.crypto.openssl_privatekey:
+    path: "{{ ssl_cert_key_path }}"
+    type: ECC
+    curve: "{{ ssl_cert_ec_curve }}"
+    cipher: auto
+    passphrase: "{{ ssl_cert_key_passphrase | default(omit) }}"
+    mode: "0600"
+  when: ssl_cert_key_type | default('RSA') == 'ECDSA'
+  tags: [keygen, ecdsa]
+
+# ── Ed25519 private key generation ──
+- name: Generate Ed25519 private key
+  community.crypto.openssl_privatekey:
+    path: "{{ ssl_cert_key_path }}"
+    type: Ed25519
+    cipher: auto
+    passphrase: "{{ ssl_cert_key_passphrase | default(omit) }}"
+    mode: "0600"
+  when: ssl_cert_key_type | default('RSA') == 'Ed25519'
+  tags: [keygen, ed25519]
+
+# ── CSR generation ──
+- name: Generate CSR
+  community.crypto.openssl_csr:
+    path: "{{ ssl_cert_csr_path }}"
+    privatekey_path: "{{ ssl_cert_key_path }}"
+    privatekey_passphrase: "{{ ssl_cert_key_passphrase | default(omit) }}"
+    common_name: "{{ ssl_cert_cn }}"
+    country_name: "{{ ssl_cert_country }}"
+    state_or_province_name: "{{ ssl_cert_state | default(omit) }}"
+    locality_name: "{{ ssl_cert_locality | default(omit) }}"
+    organization_name: "{{ ssl_cert_org }}"
+    organizational_unit_name: "{{ ssl_cert_ou }}"
+    subject_alt_name: "{{ ssl_cert_sans }}"
+    key_usage: "{{ ssl_cert_key_usage }}"
+    extended_key_usage: "{{ ssl_cert_extended_key_usage }}"
+    digest: "{{ ssl_cert_digest }}"
+  tags: [csr]
+
+# ── Self-signed certificate ──
+- name: Create self-signed certificate
+  community.crypto.x509_certificate:
+    path: "{{ ssl_cert_cert_path }}"
+    privatekey_path: "{{ ssl_cert_key_path }}"
+    privatekey_passphrase: "{{ ssl_cert_key_passphrase | default(omit) }}"
+    csr_path: "{{ ssl_cert_csr_path }}"
+    provider: selfsigned
+    selfsigned_digest: "{{ ssl_cert_digest }}"
+    selfsigned_not_after: "+{{ ssl_cert_days_valid }}d"
+  when: ssl_cert_sign_as_ca | default(false) | bool == false
+  tags: [selfsign]
+
+# ── CA-signed certificate ──
+- name: Sign certificate with CA
+  community.crypto.x509_certificate:
+    path: "{{ ssl_cert_cert_path }}"
+    privatekey_path: "{{ ssl_cert_ca_key }}"
+    privatekey_passphrase: "{{ ssl_cert_ca_key_passphrase | default(omit) }}"
+    csr_path: "{{ ssl_cert_csr_path }}"
+    provider: ownca
+    ownca_path: "{{ ssl_cert_ca_cert }}"
+    ownca_privatekey_path: "{{ ssl_cert_ca_key }}"
+    ownca_privatekey_passphrase: "{{ ssl_cert_ca_key_passphrase | default(omit) }}"
+    ownca_digest: "{{ ssl_cert_digest }}"
+    ownca_not_after: "+{{ ssl_cert_days_valid }}d"
+  when: ssl_cert_sign_as_ca | default(false) | bool and ssl_cert_ca_cert and ssl_cert_ca_key
+  tags: [ca-sign]
+
+# ── Certificate chain bundle ──
+- name: Create certificate chain bundle
+  ansible.builtin.copy:
+    content: |
+      {{ lookup('file', ssl_cert_cert_path) }}
+      {{ lookup('file', ssl_cert_ca_cert) }}
+    dest: "{{ ssl_cert_chain_path }}"
+    mode: "0644"
+  when: ssl_cert_ca_cert | length > 0
+  tags: [chain]
+
+# ── Certificate info debug ──
+- name: Show generated certificate info
+  community.crypto.x509_certificate_info:
+    path: "{{ ssl_cert_cert_path }}"
+  register: minted_cert_info
+  tags: [info, debug]
+
+- name: Print certificate summary
+  ansible.builtin.debug:
+    msg:
+      - "Subject: {{ minted_cert_info.subject }}"
+      - "Issuer: {{ minted_cert_info.issuer }}"
+      - "Not after: {{ minted_cert_info.not_after }}"
+      - "Key type: {{ minted_cert_info.public_key_type }}"
+      - "SANs: {{ minted_cert_info.subject_alt_name }}"
+  when: minted_cert_info is defined and not minted_cert_info.failed
+  tags: [info, debug]

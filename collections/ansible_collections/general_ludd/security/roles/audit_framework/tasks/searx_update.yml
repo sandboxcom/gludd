@@ -1,0 +1,139 @@
+---
+# searx_update — query a SearX instance for framework updates
+#
+# Uses audit_framework__searx_url (default http://localhost:8888) and
+# audit_framework__search_query to fetch and parse results.
+# Compares found version dates against vars/ file metadata.
+# Optionally writes update pending flag if newer version found.
+
+- name: Set SearX URL default
+  ansible.builtin.set_fact:
+    _sx_searx_url: "{{ audit_framework__searx_url | default('http://localhost:8888') }}"
+
+- name: Set search query default
+  ansible.builtin.set_fact:
+    _sx_search_query: "{{ audit_framework__search_query | default(audit_framework__framework + ' framework update latest version') }}"
+
+- name: Assert framework is set
+  ansible.builtin.assert:
+    that:
+      - audit_framework__framework | default('') | length > 0
+    fail_msg: "audit_framework__framework is required for searx_update"
+
+# ── Query SearX ────────────────────────────────────────────────────────────────
+
+- name: Build SearX search URL
+  ansible.builtin.set_fact:
+    _sx_search_url: "{{ _sx_searx_url }}/search?q={{ _sx_search_query | urlencode }}&format=json&categories=general"
+
+- name: Fetch search results from SearX
+  ansible.builtin.uri:
+    url: "{{ _sx_search_url }}"
+    method: GET
+    return_content: true
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  register: _sx_search_response
+  failed_when: false
+  no_log: false
+
+- name: Parse search results
+  ansible.builtin.set_fact:
+    _sx_parsed_results: >-
+      {{
+        (_sx_search_response.json | default({'results': []})).get('results', [])
+        if _sx_search_response.status | default(500) == 200
+        else []
+      }}
+
+# ── Load framework vars for version comparison ─────────────────────────────────
+
+- name: Include framework vars for current version metadata
+  ansible.builtin.include_vars:
+    file: "vars/{{ audit_framework__framework }}.yml"
+    name: _sx_framework_vars
+  failed_when: false
+  register: _sx_vars_result
+
+- name: Extract current version metadata
+  ansible.builtin.set_fact:
+    _sx_current_version: "{{ _sx_framework_vars.metadata.version | default('unknown') }}"
+    _sx_current_version_date: "{{ _sx_framework_vars.metadata.version_date | default('1970-01-01') }}"
+    _sx_current_last_updated: "{{ _sx_framework_vars.metadata.last_updated | default('1970-01-01') }}"
+  when: _sx_vars_result is succeeded
+
+- name: Set defaults when vars file missing
+  ansible.builtin.set_fact:
+    _sx_current_version: "unknown"
+    _sx_current_version_date: "1970-01-01"
+    _sx_current_last_updated: "1970-01-01"
+  when: _sx_vars_result is failed
+
+# ── Compare and detect outdated controls ───────────────────────────────────────
+
+- name: Flag outdated controls (no version data available)
+  ansible.builtin.set_fact:
+    _sx_update_found: false
+    _sx_update_details: []
+  when: >
+    _sx_current_version_date == '1970-01-01'
+    or _sx_parsed_results | length == 0
+
+- name: Detect newer framework version from search results
+  ansible.builtin.set_fact:
+    _sx_update_found: true
+    _sx_update_details: >-
+      {{
+        _sx_parsed_results
+        | map(attribute='title')
+        | select('search', '\\d{4}\\.\\d{2}\\.\\d{2}')
+        | list
+      }}
+  when: >
+    _sx_current_version_date != '1970-01-01'
+    and _sx_parsed_results | length > 0
+
+# ── Write auto-update flag ─────────────────────────────────────────────────────
+
+- name: Write update pending flag (auto_update enabled + newer found)
+  ansible.builtin.copy:
+    content: |
+      ---
+      searx_update_pending: true
+      framework: {{ audit_framework__framework }}
+      current_version: {{ _sx_current_version }}
+      current_version_date: {{ _sx_current_version_date }}
+      search_query: {{ _sx_search_query }}
+      detected_updates: {{ _sx_update_details }}
+      timestamp: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601) }}"
+    dest: "{{ audit_framework__artifact_dir }}/searx_update_pending.yml"
+    mode: "0644"
+  when:
+    - audit_framework__auto_update | default(false) | bool
+    - _sx_update_found | default(false) | bool
+
+# ── Write results artifact ─────────────────────────────────────────────────────
+
+- name: Write searx update results JSON
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'audit_framework',
+        'mode': 'searx_update',
+        'framework': audit_framework__framework,
+        'searx_url': _sx_searx_url,
+        'search_query': _sx_search_query,
+        'current_version': _sx_current_version,
+        'current_version_date': _sx_current_version_date,
+        'search_hits': _sx_parsed_results | length,
+        'update_found': _sx_update_found | default(false),
+        'update_details': _sx_update_details | default([]),
+        'auto_update_flag_written': audit_framework__auto_update | default(false) and (_sx_update_found | default(false))
+      } | to_nice_json }}
+    dest: "{{ audit_framework__artifact_dir }}/searx_update_results.json"
+    mode: "0644"
+
+- name: Report searx update completion
+  ansible.builtin.debug:
+    msg: "SearX update: {{ _sx_parsed_results | length }} hits, update_found={{ _sx_update_found | default(false) }}"

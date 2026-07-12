@@ -1,0 +1,19 @@
+---
+namespace: general_ludd
+name: operations
+version: 0.2.0
+readme: README.md
+description: >
+  Operations roles for log analysis, CI pipeline repair, and model server
+  deployment.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - operations
+  - log-analysis
+  - ci-pipeline
+  - model-server
+  - deployment
+dependencies: {}

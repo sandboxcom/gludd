@@ -1,0 +1,129 @@
+---
+# tool_recommend — recommend audit tools for framework + target type
+#
+# Maps audit_framework__framework and audit_framework__target_type to
+# appropriate open-source audit and compliance scanning tools.
+# Writes structured recommendations to artifact directory.
+
+- name: Assert framework and target_type are set
+  ansible.builtin.assert:
+    that:
+      - audit_framework__framework | default('') | length > 0
+      - audit_framework__target_type | default('') in ['aws', 'azure', 'gcp', 'on_prem', 'container', 'code_repo']
+    fail_msg: "audit_framework__framework and audit_framework__target_type (aws/azure/gcp/on_prem/container/code_repo) are required"
+
+# ── Tool registry ──────────────────────────────────────────────────────────────
+
+- name: Define tool registry with framework mappings
+  ansible.builtin.set_fact:
+    _tr_tool_registry:
+      - name: "OpenSCAP"
+        description: "Security compliance scanning for Linux hosts using SCAP content"
+        install_cmd: "apt-get install openscap-scanner scap-security-guide"
+        typical_usage: "oscap xccdf eval --profile <profile> --results results.xml <content>"
+        target_types: ["on_prem", "container"]
+        applicable_frameworks: ["pci_dss_4", "fips_140_3", "hipaa", "fedramp", "nist_800_53"]
+      - name: "Lynis"
+        description: "Security auditing tool for Unix/Linux systems"
+        install_cmd: "apt-get install lynis"
+        typical_usage: "lynis audit system --auditor 'Compliance'"
+        target_types: ["on_prem", "container"]
+        applicable_frameworks: ["iso_27001", "pci_dss_4", "hipaa", "gdpr", "soc2"]
+      - name: "Trivy"
+        description: "Vulnerability and misconfiguration scanner for containers, filesystems, and repos"
+        install_cmd: "curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh"
+        typical_usage: "trivy image --compliance <compliance-spec> <image>"
+        target_types: ["container", "code_repo"]
+        applicable_frameworks: ["pci_dss_4", "nist_800_53", "soc2"]
+      - name: "Chef InSpec"
+        description: "Compliance-as-code framework for automated testing"
+        install_cmd: "gem install inspec"
+        typical_usage: "inspec exec <profile> --target <target>"
+        target_types: ["on_prem", "aws", "azure", "gcp", "container"]
+        applicable_frameworks: ["pci_dss_4", "hipaa", "fedramp", "nist_800_53", "iso_27001", "soc2", "gdpr"]
+      - name: "Prowler"
+        description: "AWS security assessment and compliance checks"
+        install_cmd: "pip install prowler"
+        typical_usage: "prowler aws --compliance <framework>"
+        target_types: ["aws"]
+        applicable_frameworks: ["pci_dss_4", "hipaa", "fedramp", "iso_27001", "soc2", "gdpr", "nist_800_53"]
+      - name: "ScoutSuite"
+        description: "Multi-cloud security auditing for AWS, Azure, GCP"
+        install_cmd: "pip install scoutsuite"
+        typical_usage: "scout aws --compliance"
+        target_types: ["aws", "azure", "gcp"]
+        applicable_frameworks: ["pci_dss_4", "hipaa", "iso_27001", "soc2", "gdpr", "nist_800_53"]
+      - name: "CIS-CAT"
+        description: "CIS Benchmark assessment tool for systems and cloud"
+        install_cmd: "Download from https://www.cisecurity.org/cybersecurity-tools/cis-cat-pro/"
+        typical_usage: "java -jar CIS-CAT.jar --accept-terms --benchmark <benchmark>"
+        target_types: ["on_prem", "aws", "azure", "gcp"]
+        applicable_frameworks: ["pci_dss_4", "fedramp", "nist_800_53", "iso_27001", "soc2"]
+      - name: "Wazuh"
+        description: "SIEM compliance monitoring with built-in PCI DSS, HIPAA mappings"
+        install_cmd: "curl -sO https://packages.wazuh.com/4.x/wazuh-install.sh && bash wazuh-install.sh --generate-config-files"
+        typical_usage: "Run agents and configure compliance rules in wazuh-dashboard"
+        target_types: ["on_prem", "aws", "azure", "gcp", "container"]
+        applicable_frameworks: ["pci_dss_4", "hipaa", "gdpr", "nist_800_53"]
+      - name: "Falco"
+        description: "Runtime security and compliance anomaly detection"
+        install_cmd: "helm install falco falcosecurity/falco"
+        typical_usage: "falco --rules-file /etc/falco/falco_rules.yaml"
+        target_types: ["container"]
+        applicable_frameworks: ["pci_dss_4", "soc2", "nist_800_53"]
+      - name: "kube-bench"
+        description: "Kubernetes CIS benchmark compliance checker"
+        install_cmd: "kubectl apply -f https://raw.githubusercontent.com/aquasecurity/kube-bench/main/job.yaml"
+        typical_usage: "kube-bench run --targets master,node"
+        target_types: ["container"]
+        applicable_frameworks: ["pci_dss_4", "soc2", "nist_800_53", "iso_27001"]
+
+# ── Filter tools by target type and framework ──────────────────────────────────
+
+- name: Filter tools by target type
+  ansible.builtin.set_fact:
+    _tr_target_matched: >-
+      {{
+        _tr_tool_registry
+        | selectattr('target_types', 'contains', audit_framework__target_type)
+        | list
+      }}
+
+- name: Filter target-matched tools by applicable frameworks
+  ansible.builtin.set_fact:
+    _tr_recommended: >-
+      {{
+        _tr_target_matched
+        | selectattr('applicable_frameworks', 'contains', audit_framework__framework)
+        | list
+      }}
+
+- name: Fallback to all target-matched tools when no framework match
+  ansible.builtin.set_fact:
+    _tr_recommended: "{{ _tr_target_matched }}"
+  when: _tr_recommended | length == 0 and _tr_target_matched | length > 0
+
+# ── Write recommendations artifact ─────────────────────────────────────────────
+
+- name: Write tool recommendations JSON
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'audit_framework',
+        'mode': 'tool_recommend',
+        'framework': audit_framework__framework,
+        'target_type': audit_framework__target_type,
+        'recommended_tools': _tr_recommended,
+        'total_recommended': _tr_recommended | length,
+        'timestamp': lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601)
+      } | to_nice_json }}
+    dest: "{{ audit_framework__artifact_dir }}/tool_recommendations.json"
+    mode: "0644"
+
+- name: Report tool recommendations
+  ansible.builtin.debug:
+    msg: >-
+      Tool recommendations: framework={{ audit_framework__framework }}
+      target_type={{ audit_framework__target_type }}
+      tools={{ _tr_recommended | length }}
+      {% for tool in _tr_recommended %}  - {{ tool.name }}{% endfor %}
