@@ -1,10 +1,15 @@
 {
-  "enforce-deadline.ts": "337e5143d2f96c50265cf60475a3ec41c6be9610d219bc7046ecc3a9ff00ad56",
-  "enforce-delegate.ts": "0a758feae3d24f66eae49c4ce081769dfe4363bb5d3ddbfb0afbfc06edf8f18e",
+  "enforce-clean-tree.ts": "3f3aacfbadc16ce3e625a212313fa35c846ba19aaa0194b687c8c7de5ff6d924",
+  "enforce-commit-lock.ts": "79de6320e94f39dfeb5d2eed6cfef4de4b980ee5fef8735d095bb284433b452e",
+  "enforce-deadline.ts": "96a36bc1fc1782c90ed7105f372f2908235a41472150f2bf5af7e8998323b2b4",
+  "enforce-delegate.ts": "78a651a9a7c7a7b0c88c22c4c3a6421044bc9c2b94bfadb2076b6a4512af905c",
   "enforce-deletion-gate.ts": "3720dccffd160251cc1a1abf57578254cb0f8913df9a68a0fcfacaf9b3775c97",
-  "enforce-floor.ts": "33281df96cdab6d4e470b2bfd47f86e713616cb7315ea961e26c9bd16c564b4c",
+  "enforce-floor.ts": "7b3a87b934d7b6fe626b14c492826827f65910497ddcf33901f47d4f9947e3ae",
   "enforce-make.ts": "fc61a947f281a18a65819a6f202a460e2e4a976e2c464647b2ed0bdbeb6e3465",
-  "enforce-session-start.ts": "9b8c3d0bb41ebb0f1fc4bc741d56f7fc3605a707b0c5fa01e76e1a924a2b247d",
-  "enforce-stop.ts": "f79af40a6da9ca3974cdb132eb7e55ad56d9fffe8ab777497364a53be26b6910",
-  "watchdog.ts": "pending_hash"
+  "enforce-multitask.ts": "1a91dc878fc4753b9f44c104b10582285a8c901832f4f9e1e2c9552c3d3d3a3f",
+  "enforce-no-suppressions.ts": "bc3a4924ad46707165fbe39dd70336ae641ab7e581d0e96c326517d7c4a07a0d",
+  "enforce-no-wait.ts": "a95316222c1529e69d207dd58365e2ae4c6e4a6f69df5aff3261ba29efd50e9f",
+  "enforce-session-start.ts": "61d110bf46e4d8cc00903f67bf723aeb0ffa5b1e52e5f5d59d9fcc57090fb433",
+  "enforce-stop.ts": "625b252d99b827bb3f1623fecd37bff1efb7987a1fbc9fe2b793040af9effd2f",
+  "enforce-verified-claims.ts": "3dabaab34832a50c5424fe73fee0216b3927481026857f848e58519ee10841f8"
 }

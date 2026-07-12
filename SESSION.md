@@ -5,7 +5,25 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-11 — Session 22. On `development` branch, HEAD `d2c20db6` (25 commits ahead of `master`). Connector test fix wave completed: ~76 stale connector health assertion fixes across 34 test files over 3 batches (commits `b5894567`, `023d5f09`, `d2c20db6`). Gate-lite: 4556 passed, 3 skipped, 1 remaining known failure (dynatrace health test stale assertion — patched in dirty tree, not yet committed). Fixed since Wave E: D12 Slack KIND fixed, D15 CachedSource wired, D14 path traversal fixed, C11 flaky test fixed. Alias `make push-dev` added for development branch push. All commits pushed to sandboxcom/development; CI pending. Dirty tree: `test_connector_dynatrace.py` stale-assertion fix (1 line).
+- 2026-07-12 — Session 23. On `development` branch, HEAD `d2c20db6` (25 commits ahead of `master`).
+
+### Session 23 Bugs Found & Fixed
+
+**Bug 1: enforce-multitask.ts text.complete hook replacing Read/Grep/Glob results**
+- `text.complete` hook was transforming ALL text (including Read/Grep/Glob tool result content) with "MUST DISPATCH..." enforcement messages when zeroStreak hit threshold.
+- Root cause: hook failed to distinguish agent-generated text from tool-result content (`_input.role` not checked).
+- Fix: added `isToolOutput` guard (`_input.role !== "assistant"`) that returns early before any enforcement.
+- Additional gap: `tool.execute.before` has no disengage escape — blocking edits with no bypass path.
+- Additional gap: `zeroStreak` loads stale state from disk, causing persistent false enforcement.
+
+**Bug 2: enforce-stop.ts text.complete hook prepending "DELEGATE-FIRST" nag to tool output**
+- `text.complete` hook was prepending "DELEGATE-FIRST" nag text to ALL output including Read/Grep/Glob results.
+- Root cause: same as Bug 1 — no `_input.role` check guard.
+- Fix: same `isToolOutput` guard added, returning early before nag injection.
+
+**Tests added:** 16 new tests — 7 in `tests/unit/test_multitask_plugin.py` (TestTextCompleteSkipsToolOutput), 9 in `tests/unit/test_plugin_behavior.py` (TestEnforceStopTextCompleteSkipsToolOutput).
+
+Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks). Connector test fix wave (session 22): ~76 stale connector health assertion fixes across 34 test files over 3 batches (`b5894567`, `023d5f09`, `d2c20db6`). Gate-lite: 4556 passed, 3 skipped, 1 remaining known failure. Dirty tree: `test_connector_dynatrace.py` stale-assertion fix (1 line). CI pending on development.
 
 ## Current Work
 
@@ -130,7 +148,8 @@
 
 ## Historical State
 
-- **2026-07-11 session 22 (current)**: HEAD `d2c20db6` on `development` branch (25 commits ahead of master). Connector test fix wave completed: ~76 stale connector health assertions fixed across 34 test files over 3 batches (`b5894567`, `023d5f09`, `d2c20db6`). D12 Slack KIND fixed, D15 CachedSource wired, D14 path traversal fixed, C11 flaky test fixed. `make push-dev` added (`9365e393`). Gate-lite: 4556 passed, 3 skipped, 1 stale assertion (dynatrace) patched in dirty tree. CI pending. Next: commit dynatrace fix → gate → merge to master → Tier 1 items.
+- **2026-07-12 session 23 (current):** HEAD `d2c20db6` on `development` branch (25 commits ahead of master). Fixed two bugs in plugin text.complete hooks: (1) enforce-multitask.ts was replacing Read/Grep/Glob results with "MUST DISPATCH..." messages when zeroStreak hit threshold; (2) enforce-stop.ts was prepending "DELEGATE-FIRST" nag to all text including tool output. Root cause: both hooks failed to distinguish agent-generated text from tool-result content (`_input.role` not checked). Fix: `isToolOutput` guard (`_input.role !== "assistant"`) returns early before enforcement. Additional gaps: enforce-multitask.ts tool.execute.before has no disengage escape; zeroStreak loads stale state from disk. 16 new tests (7 in test_multitask_plugin.py + 9 in test_plugin_behavior.py). Also fixed agent_floor_check ansible role task-naming syntax (8 tasks). TASKS.md tracks text.complete pass-through fix as unchecked item.
+- **2026-07-11 session 22 (prior)**: HEAD `d2c20db6` on `development` branch (25 commits ahead of master). Connector test fix wave completed: ~76 stale connector health assertions fixed across 34 test files over 3 batches (`b5894567`, `023d5f09`, `d2c20db6`). D12 Slack KIND fixed, D15 CachedSource wired, D14 path traversal fixed, C11 flaky test fixed. `make push-dev` added (`9365e393`). Gate-lite: 4556 passed, 3 skipped, 1 stale assertion (dynatrace) patched in dirty tree. CI pending. Next: commit dynatrace fix → gate → merge to master → Tier 1 items.
 - **2026-07-11 session 21 (prior)**: HEAD `0a07421d` on `development` branch (21 commits ahead of master). Phase S2 Waves C-E completed (23 items, commit `b8a18e2f`). Features landed: D4 DAST, D12 Slack connector, D14 background_test_runner, D15 CachedSource, C27 MCP argv fix, C26 async lifecycle, C23 connector security audit (703+ test assertions). `make gate-lite`: 1908 passed, 2 failed (1 stale assertion FIXED, 1 C11 flaky). Dirty tree: alembic migration rename, secrets baseline, azure_resource_graph test fix. Next: commit dirty tree → gate → merge to master → release cut.
 - **2026-07-10 session 20 (prior)**: HEAD `4113f206` (was LOCAL/UNPUSHED at session end; since pushed to master per `make verify-remote`).
 - **2026-07-09 session 19 Wave 17 (prior)**: HEAD `9b61065f` (+10 past `b4bd6c93`). Multitasking audit P0-P8 complete: heartbeat verification on enforce-floor/delegate/stop (P0), fail-closed countLiveAgents + FORCE_DELEGATE polarity split (P2+P8, 111 tests), message-shape loophole closure capping zero-dispatch at 2 (P4+P6), false-done markdown-table bypass removal + stop-pattern phrases (P5). Anti-lying guardrail trilogy: enforce-verified-claims (`71b8edce`), enforce-clean-tree (`ae9861f3`), verify-state (`9f55812d`). Agent-worktree isolation targets (`416b6285`). Gate unblocked: env-writes + stale assertion + plugin-count drift (`9b61065f`). CI pending; commit batcher in flight. **Retroactive correction: the CI-green claim that followed this wave was never re-confirmed and was FALSE — see session 20.**

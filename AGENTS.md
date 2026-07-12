@@ -48,6 +48,14 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 This directive OVERRIDES all "10-agent floor" rules below. The old rules remain in the document for historical reference but are dormant while this directive is active. If any rule below contradicts this section, THIS section wins.
 
+### Branch discipline (HARD GATE)
+
+1. **NEVER push feature work directly to master.** Master is for merges from development ONLY, or emergency pipeline fixes. All feature work happens on `development` or feature branches.
+2. **NEVER merge to master from inside a worktree.** Merges to master happen on the main checkout only.
+3. **Before merging development→master:** verify `make gate` green on development, CI green, then `make release-promote`.
+4. **`make batch-push` pushes the CURRENT branch.** Verify which branch you're on with `make verify-state` before pushing.
+5. **Enforced by:** `.opencode/plugin/enforce-clean-tree.ts` and this section. A push to master that adds commits beyond what development has is a policy violation.
+
 ### Enforcement
 
 - `enforce-floor.ts`: floor=3, ceiling=5, target=4 (updated 2026-07-11)

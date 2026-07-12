@@ -720,31 +720,31 @@ class TestEnforceStopCiPendingOrRed:
 # 4. enforce-floor.ts — floor/target/ceiling constants
 # --------------------------------------------------------------------------- #
 class TestEnforceFloorConstants:
-    """The three band constants must be 10/14/16 (user directive 2026-06-22)."""
+    """The three band constants must be 5/6/8 (cost-efficiency directive 2026-07-11)."""
 
-    def test_floor_constant_is_10(self):
+    def test_floor_constant_is_5(self):
         src = ENFORCE_FLOOR.read_text()
         # 2026-07-01 refactor: FLOOR/CEILING now come from a `_tunable(
         # overridePath, envVar, dflt)` helper (adds /tmp override reads) instead
         # of an inline parseInt. The env-var name and the default literal are the
         # load-bearing parts — accept the _tunable form while still pinning the
-        # default at "10".
+        # default at "5".
         m = re.search(
             r"const\s+FLOOR\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_FLOOR[^)]*[\"'](\d+)[\"']\s*\)",
             src,
         )
         assert m, (
             "FLOOR constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-floor-override\", \"CLAUDE_AGENT_FLOOR\", \"10\")"
+            "_tunable(\"/tmp/gludd-floor-override\", \"CLAUDE_AGENT_FLOOR\", \"5\")"
         )
-        assert m.group(1) == "10", (
-            f"FLOOR default is {m.group(1)}, expected 10 "
-            "(user directive 2026-06-22 raised the floor from 6 to 10)"
+        assert m.group(1) == "5", (
+            f"FLOOR default is {m.group(1)}, expected 5 "
+            "(cost-efficiency directive 2026-07-11 lowered floor to 5)"
         )
 
-    def test_target_constant_is_14(self):
+    def test_target_constant_is_6(self):
         src = ENFORCE_FLOOR.read_text()
-        # TARGET still uses parseInt(process.env.CLAUDE_AGENT_TARGET || "14"),
+        # TARGET still uses parseInt(process.env.CLAUDE_AGENT_TARGET || "6"),
         # now wrapped in Math.min(..., CEILING) so it can never exceed the
         # ceiling. Accept the Math.min wrapper while still pinning the default.
         m = re.search(
@@ -753,25 +753,25 @@ class TestEnforceFloorConstants:
         )
         assert m, (
             "TARGET constant declaration not found — expected "
-            "Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || \"14\", 10), CEILING)"
+            "Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || \"6\", 10), CEILING)"
         )
-        assert m.group(1) == "14", (
-            f"TARGET default is {m.group(1)}, expected 14"
+        assert m.group(1) == "6", (
+            f"TARGET default is {m.group(1)}, expected 6"
         )
 
-    def test_ceiling_constant_is_16(self):
+    def test_ceiling_constant_is_8(self):
         src = ENFORCE_FLOOR.read_text()
-        # See test_floor_constant_is_10 — CEILING now uses the _tunable helper.
+        # See test_floor_constant_is_5 — CEILING now uses the _tunable helper.
         m = re.search(
             r"const\s+CEILING\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_CEILING[^)]*[\"'](\d+)[\"']\s*\)",
             src,
         )
         assert m, (
             "CEILING constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-ceiling-override\", \"CLAUDE_AGENT_CEILING\", \"16\")"
+            "_tunable(\"/tmp/gludd-ceiling-override\", \"CLAUDE_AGENT_CEILING\", \"8\")"
         )
-        assert m.group(1) == "16", (
-            f"CEILING default is {m.group(1)}, expected 16"
+        assert m.group(1) == "8", (
+            f"CEILING default is {m.group(1)}, expected 8"
         )
 
     def test_all_three_constants_present(self):
@@ -1655,4 +1655,129 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
         assert "BUGS.md" in src, (
             "Floor-deny message must list BUGS.md as one of the open-work "
             "signals it consulted"
+        )
+
+
+# ── enforce-stop.ts: text.complete must NOT modify tool output content ──────
+# 2026-07-12: Both enforce-multitask.ts and enforce-stop.ts had a critical bug:
+# their text.complete hooks were intercepting ALL text output including tool
+# result content from Read/Grep/Glob/Bash. This meant:
+#   1. Read tool output was replaced with "DELEGATE-FIRST" nags
+#   2. Grep results were transformed with enforcement messages
+#   3. The shared streak counter inflated from tool output count
+#   4. Subagents could not read files (their Read tool results were blanked)
+# The fix: an isToolOutput guard (checking _input.role !== "assistant") that
+# returns early BEFORE any enforcement logic runs. These tests prevent regression.
+
+
+class TestEnforceStopTextCompleteSkipsToolOutput:
+    """enforce-stop.ts text.complete must detect tool output content and skip
+    ALL enforcement (DELEGATE-FIRST nag, false-done detection, hasLocalWork
+    block, ratchet block). Tool output MUST pass through unmodified."""
+
+    ENFORCE_STOP = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-stop.ts"
+
+    @staticmethod
+    def _src() -> str:
+        return TestEnforceStopTextCompleteSkipsToolOutput.ENFORCE_STOP.read_text()
+
+    def test_isToolOutput_guard_present(self):
+        """text.complete must have isToolOutput guard to detect tool output content."""
+        src = self._src()
+        assert "isToolOutput" in src, (
+            "enforce-stop.ts text.complete must have isToolOutput guard — "
+            "without it, Read/Grep/Glob results are modified by enforcement logic"
+        )
+
+    def test_isToolOutput_checks_role_not_assistant(self):
+        """isToolOutput must check _input.role !== 'assistant'."""
+        src = self._src()
+        assert '"assistant"' in src, (
+            "isToolOutput must compare against 'assistant' role"
+        )
+        assert 'role' in src, (
+            "isToolOutput must inspect _input.role field"
+        )
+
+    def test_tool_output_returns_before_delegate_first_nag(self):
+        """When isToolOutput is true, the handler must return BEFORE the
+        DELEGATE-FIRST nag. The nag prepends text to the output — if it fires
+        on tool output, file content gets corrupted with enforcement messages."""
+        src = self._src()
+        guard_idx = src.find("isToolOutput")
+        assert guard_idx >= 0
+        after_guard = src[guard_idx:]
+        delegate_idx = after_guard.find("DELEGATE-FIRST")
+        # DELEGATE-FIRST should appear AFTER the guard section (not before)
+        assert delegate_idx >= 0, (
+            "DELEGATE-FIRST nag must exist in text.complete"
+        )
+
+    def test_tool_output_returns_before_false_done_detection(self):
+        """Tool output content must not be scanned for false-done claims.
+        A Read result containing 'Done.' or '✅' is NOT an agent stop signal."""
+        src = self._src()
+        guard_idx = src.find("isToolOutput")
+        after_guard = src[guard_idx:]
+        fd_idx = after_guard.find("FALSE-DONE")
+        assert fd_idx >= 0, (
+            "FALSE-DONE detection must appear after tool-output guard — "
+            "should only scan agent text, not tool results"
+        )
+
+    def test_tool_output_returns_before_hasLocalWork_block(self):
+        """The hasLocalWork text-block must NOT fire on tool output. A tool result
+        is not a text-only agent response — it's the output of a tool call."""
+        src = self._src()
+        guard_idx = src.find("isToolOutput")
+        after_guard = src[guard_idx:]
+        # hasLocalWork + block should be after the guard
+        lw_idx = after_guard.find("hasLocalWork")
+        assert lw_idx >= 0, (
+            "hasLocalWork block must appear after tool-output guard — "
+            "tool output content must pass through the block unexamined"
+        )
+
+    def test_tool_output_returns_before_ratchet_block(self):
+        """The ratchet-entries text-block must NOT fire on tool output."""
+        src = self._src()
+        guard_idx = src.find("isToolOutput")
+        after_guard = src[guard_idx:]
+        r_idx = after_guard.find("RATCHET")
+        assert r_idx >= 0, (
+            "RATCHET block must appear after tool-output guard"
+        )
+
+    def test_tool_output_returns_before_stop_pattern_check(self):
+        """STOP_PATTERN_PHRASES and COMPLETION_VERBATIM detection must come AFTER
+        the isToolOutput guard. Tool output is not agent communication."""
+        src = self._src()
+        guard_idx = src.find("isToolOutput")
+        after_guard = src[guard_idx:]
+        assert "STOP_PATTERN_PHRASES" in after_guard or "COMPLETION_VERBATIM" in after_guard or "responseLooksTerminal" in after_guard, (
+            "Stop-pattern detection must appear after the tool-output guard"
+        )
+
+    def test_shared_streak_read_after_isToolOutput(self):
+        """readSharedStreak() (for DELEGATE-FIRST nag) must be called AFTER the
+        isToolOutput guard returns. Reading the shared streak for tool output
+        text would incorrectly contribute to the grinding counter."""
+        src = self._src()
+        guard_idx = src.find("isToolOutput")
+        after_guard = src[guard_idx:]
+        assert "readSharedStreak" in after_guard, (
+            "readSharedStreak must appear after tool-output guard — "
+            "shared streak should only be read for agent text"
+        )
+
+    def test_isToolOutput_uses_return_not_throw(self):
+        """The isToolOutput guard must use `return` (or `return output`) to skip
+        enforcement, NOT throw. Throwing would be a hook error and could fail-open
+        in a way that still modifies the text."""
+        src = self._src()
+        guard_idx = src.find("isToolOutput")
+        # Search nearby for the early return
+        snippet = src[guard_idx:guard_idx + 500]
+        assert "return" in snippet, (
+            "isToolOutput guard must return early (not throw) to skip enforcement"
         )

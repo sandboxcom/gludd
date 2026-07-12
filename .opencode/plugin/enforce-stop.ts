@@ -844,20 +844,31 @@ export default (async ({ }) => {
       // Item 18: env var gates — disable enforcement entirely
       if (!STOP_ENFORCE || !NO_WAIT_ENFORCE) return
 
-      try {
-        const text = output.text
-        if (!text || text.trim().length === 0) return
+  try {
+    const text = output.text
+    if (!text || text.trim().length === 0) return
 
-        // BUG #12 fix: check disengaged state first — legitimate admin override
-        if (isDisengaged()) return
+    // BUG #12 fix: check disengaged state first — legitimate admin override
+    if (isDisengaged()) return
 
-        // P3: DELEGATE-FIRST nag — when shared streak > 8, prepend a nag
-        // that survives subagent-report bypass and text-only blocks.
-        // Uses the shared streak file (written by enforce-floor.ts) so it
-        // catches grinding even when enforce-stop.ts's own tool.execute.before
-        // hasn't fired recently.
-        const shared = readSharedStreak()
-        if (shared.streak > DELEGATE_FIRST_THRESHOLD) {
+    // Guard: text.complete fires on ALL text (agent responses AND tool
+    // results from Read/Grep/Glob/Bash). Tool output content MUST pass
+    // through unmodified so the agent can actually read files. Only
+    // enforce stop-pattern rules on agent-generated text.
+    const isToolOutput = _input && typeof _input === "object"
+      && "role" in _input
+      && String((_input as Record<string, unknown>).role).toLowerCase() !== "assistant"
+    if (isToolOutput) {
+      return
+    }
+
+    // P3: DELEGATE-FIRST nag — when shared streak > 8, prepend a nag
+    // that survives subagent-report bypass and text-only blocks.
+    // Uses the shared streak file (written by enforce-floor.ts) so it
+    // catches grinding even when enforce-stop.ts's own tool.execute.before
+    // hasn't fired recently.
+    const shared = readSharedStreak()
+    if (shared.streak > DELEGATE_FIRST_THRESHOLD) {
           output.text = [
             `⛔ DELEGATE-FIRST — ${shared.streak} consecutive non-dispatch calls.`,
             `Streak: ${shared.readStreak} reads, ${shared.editStreak} edits/bash.`,

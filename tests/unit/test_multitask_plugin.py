@@ -71,9 +71,9 @@ class TestPluginStructure:
 
     def test_exports_deny_messages(self):
         src = _plugin_source()
-        assert "DENY_PREFIX" in src, "DENY_PREFIX export missing"
-        assert "ZERO_STREAK_DENY_PREFIX" in src, "ZERO_STREAK_DENY_PREFIX export missing"
-        assert "STOP_GUARD_PREFIX" in src, "STOP_GUARD_PREFIX export missing"
+        assert "MULTITASKING FLOOR BREACH" in src, "Min-dispatch deny message missing"
+        assert "ZERO-DISPATCH STREAK" in src, "Zero-streak deny message missing"
+        assert "MUST DISPATCH" in src, "text.complete block message missing"
 
     def test_exports_dispatch_tools(self):
         src = _plugin_source()
@@ -85,13 +85,13 @@ class TestPluginStructure:
 
 
 class TestMinDispatchesDefault:
-    def test_default_is_2(self):
+    def test_default_is_5(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MIN_DISPATCHES")
-        assert default == 2, f"MIN_DISPATCHES default should be 2, got {default}"
+        assert default == 5, f"MIN_DISPATCHES default should be 5, got {default}"
 
     def test_string_value_matches_default(self):
         raw = _extract_export_value(_plugin_source(), "MIN_DISPATCHES")
-        assert "2" in raw
+        assert "5" in raw
 
 
 class TestMaxZeroStreak:
@@ -117,20 +117,22 @@ class TestMaxZeroStreak:
             "otherwise after a dispatch wave the next read gets denied"
         )
 
-    def test_zero_streak_check_gates_on_tasks_has_unchecked(self):
-        """Enforcement only fires when TASKS.md has unchecked items. Without this
-        gate, a session with no pending work would be forced to dispatch."""
+    def test_zero_streak_check_is_unconditional(self):
+        """Enforcement is unconditional — no pending-work gate. The old
+        tasksHasUnchecked gate was removed per the cost-efficiency directive
+        (2026-07-11) because the floor is HARD and cannot be bypassed by
+        alternating tool types or gating on pending-work checks."""
         src = _plugin_source()
         m = re.search(
             r"prevMessageDispatches\s*===\s*0\s*&&\s*_state\.zeroStreak\s*>=\s*MAX_ZERO_STREAK",
             src,
         )
         assert m, "Zero-streak check block not found"
-        # The next line(s) must call tasksHasUnchecked()
+        # tasksHasUnchecked was removed — enforcement is unconditional
         after_block = src[m.end():m.end()+200]
-        assert "tasksHasUnchecked" in after_block, (
-            "Zero-streak enforcement must call tasksHasUnchecked() — "
-            "enforcement fires only when unchecked work exists"
+        assert "tasksHasUnchecked" not in after_block, (
+            "tasksHasUnchecked should NOT gate zero-streak enforcement — "
+            "enforcement is now unconditional (2026-07-11 refactoring)"
         )
 
     def test_zero_streak_resets_on_dispatch(self):
@@ -155,45 +157,44 @@ class TestZeroStreakDenyMessage:
     """The zero-streak deny message must clearly state that ≤0 dispatches was detected."""
 
     def test_mentions_zero_dispatches_detected(self):
-        raw = _extract_string_value(_plugin_source(), "ZERO_STREAK_DENY_PREFIX")
-        assert "ZERO DISPATCHES DETECTED" in raw or "zero subagent dispatches" in raw.lower(), (
-            "ZERO_STREAK_DENY_PREFIX must mention zero dispatches detection"
+        src = _plugin_source()
+        assert "0 subagent dispatches" in src, (
+            "Zero-streak deny must mention zero subagent dispatches"
         )
 
     def test_mentions_not_dispatching(self):
-        raw = _extract_string_value(_plugin_source(), "ZERO_STREAK_DENY_PREFIX")
-        assert "NOT dispatching" in raw, (
-            "Zero-streak deny must state the agent IS NOT dispatching — "
-            "this is the multitasking failure being detected"
+        src = _plugin_source()
+        assert "0 subagent dispatches" in src, (
+            "Zero-streak deny must state the agent had 0 subagent dispatches"
         )
 
     def test_mentions_dispatch_count_requirement(self):
-        raw = _extract_string_value(_plugin_source(), "ZERO_STREAK_DENY_PREFIX")
-        assert "parallel task" in raw.lower() or "dispatch" in raw.lower(), (
+        src = _plugin_source()
+        assert "parallel task" in src.lower() or "task/agent/workflow" in src, (
             "Zero-streak deny must mention the dispatch requirement"
         )
 
     def test_mentions_consecutive_count(self):
-        raw = _extract_string_value(_plugin_source(), "ZERO_STREAK_DENY_PREFIX")
-        assert "consecutive" in raw.lower(), (
-            "Zero-streak deny must mention consecutive responses — the pattern matters"
+        src = _plugin_source()
+        # The zero-streak deny message includes "consecutive responses with 0 subagent dispatches"
+        assert "consecutive" in src.lower() and "responses" in src.lower(), (
+            "Zero-streak deny must mention consecutive responses"
         )
 
 
 class TestSubMinDenyMessage:
-    """The sub-minimum deny message (1 dispatch when floor is 2) must be correct."""
+    """The sub-minimum deny message (1 dispatch when floor is 5) must be correct."""
 
     def test_mentions_sub_minimum(self):
         src = _plugin_source()
-        # The deny message for 1 dispatch when MIN is 2
-        assert "SUB-MINIMUM DISPATCH WAVE" in src or "SUB-MINIMUM" in src, (
+        assert "MULTITASKING FLOOR BREACH" in src, (
             "Deny message must detect sub-minimum dispatch waves"
         )
 
     def test_mentions_required_min(self):
-        raw = _extract_string_value(_plugin_source(), "DENY_PREFIX")
-        assert "2" in raw or "batch" in raw.lower(), (
-            "DENY_PREFIX must mention the required minimum dispatch count"
+        src = _plugin_source()
+        assert "Codified floor" in src, (
+            "Deny message must mention the codified floor requirement"
         )
 
 
@@ -258,12 +259,14 @@ class TestStateFilePath:
 
 class TestDenyMessageContent:
     def test_deny_prefix_mentions_multitasking(self):
-        raw = _extract_string_value(_plugin_source(), "DENY_PREFIX")
-        assert "MULTITASKING" in raw, "DENY_PREFIX should mention MULTITASKING"
+        src = _plugin_source()
+        assert "MULTITASKING" in src, "Deny message should mention MULTITASKING"
 
     def test_deny_prefix_mentions_batch_wider(self):
-        raw = _extract_string_value(_plugin_source(), "DENY_PREFIX")
-        assert "batch" in raw.lower() or "Batch" in raw, "DENY_PREFIX should mention batching"
+        src = _plugin_source()
+        assert "parallel task/agent/workflow dispatches" in src, (
+            "Deny message should mention parallel dispatch requirement"
+        )
 
     def test_deny_prefix_mentions_env_disable(self):
         src = _plugin_source()
@@ -271,11 +274,14 @@ class TestDenyMessageContent:
 
     def test_zero_streak_prefix_mentions_consecutive(self):
         src = _plugin_source()
-        assert "consecutive" in src.lower(), "ZERO_STREAK_DENY_PREFIX should mention consecutive"
+        assert "consecutive" in src.lower(), "Zero-streak deny should mention consecutive"
 
-    def test_stop_guard_prefix_mentions_unchecked(self):
-        raw = _extract_string_value(_plugin_source(), "STOP_GUARD_PREFIX")
-        assert "unchecked" in raw.lower(), "STOP_GUARD_PREFIX should mention unchecked items"
+    def test_stop_guard_prefix_mentions_unconditional(self):
+        src = _plugin_source()
+        assert "UNCONDITIONAL" in src, (
+            "Zero-streak deny should mention UNCONDITIONAL enforcement — "
+            "there is no pending-work gate"
+        )
 
 
 class TestResultMarkers:
@@ -286,13 +292,115 @@ class TestResultMarkers:
         assert "subagent result" in src
 
 
-class TestTasksHasUnchecked:
-    def test_tasks_has_unchecked_function_present(self):
-        src = _plugin_source()
-        assert "tasksHasUnchecked" in src or "tasks.md" in src.lower()
+class TestTextCompleteSkipsToolOutput:
+    """text.complete fires on ALL text — agent responses AND tool output content
+    from Read/Grep/Glob/Bash. Tool output MUST pass through unmodified because
+    the agent cannot read files if tool results are replaced with enforcement
+    messages.
 
-    def test_checks_markdown_checkbox(self):
+    Bugs this prevents (2026-07-12):
+    - Read tool output replaced with "MUST DISPATCH 5+ SUBAGENTS NOW"
+    - Grep/Glob output replaced with zero-streak enforcement message
+    - Subagents unable to read files due to grinding-detector nags
+    - zeroStreak inflating from tool output count, causing premature blocking
+    """
+
+    def test_isToolOutput_guard_present(self):
+        """text.complete must detect tool output content and skip enforcement."""
         src = _plugin_source()
-        assert "[-*]\\s+\\[\\s*\\]" in src or "/\\[\\s*\\]" in src, (
-            "Should check for unchecked markdown checkboxes"
+        assert "isToolOutput" in src, (
+            "text.complete must have isToolOutput guard to skip tool output content — "
+            "without it, Read/Grep/Glob results are replaced with enforcement messages"
+        )
+
+    def test_isToolOutput_checks_role_not_assistant(self):
+        """isToolOutput must check _input.role !== 'assistant' to distinguish
+        tool results from agent-generated text."""
+        src = _plugin_source()
+        assert 'role' in src and '"assistant"' in src, (
+            "isToolOutput must inspect _input.role to distinguish tool output "
+            "from agent text"
+        )
+
+    def test_tool_output_returns_before_zero_streak_increment(self):
+        """When isToolOutput is true, the handler must return output BEFORE
+        incrementing zeroStreak. Otherwise tool output inflates the streak counter
+        and causes premature enforcement blocks."""
+        src = _plugin_source()
+        # The isToolOutput guard + return must appear BEFORE zeroStreak++
+        guard_idx = src.find("isToolOutput")
+        assert guard_idx >= 0
+        zero_plus_idx = src.find("zeroStreak++", guard_idx)
+        assert zero_plus_idx >= 0
+        return_output_idx = src.find("return output", guard_idx)
+        assert return_output_idx >= 0
+        # return output (for tool output) must be BEFORE zeroStreak++
+        assert return_output_idx < zero_plus_idx, (
+            "return output for tool output content must appear BEFORE zeroStreak++ — "
+            "tool output should NEVER increment the zero-dispatch streak"
+        )
+
+    def test_zero_streak_increment_after_isToolOutput_guard(self):
+        """zeroStreak++ must be guarded by !isToolOutput. A counter that increments
+        on every text.complete call (including tool results) blocks the agent
+        prematurely because Read/Grep/Glob output is not a 'response with no dispatch.'"""
+        src = _plugin_source()
+        guard_idx = src.find("isToolOutput")
+        after_guard = src[guard_idx:]
+        assert "zeroStreak++" in after_guard, (
+            "zeroStreak++ must appear after the isToolOutput guard section — "
+            "tool output should not contribute to the zero-dispatch count"
+        )
+
+    def test_deny_block_after_isToolOutput_guard(self):
+        """The 'MUST DISPATCH N+ SUBAGENTS NOW' text replacement must come AFTER
+        the isToolOutput guard, so tool output content is never replaced."""
+        src = _plugin_source()
+        guard_idx = src.find("isToolOutput")
+        after_guard = src[guard_idx:]
+        assert "MUST DISPATCH" in after_guard, (
+            "MUST DISPATCH block must appear after tool-output guard — "
+            "should only replace agent text, never tool output"
+        )
+
+    def test_nag_injection_after_isToolOutput_guard(self):
+        """The '0 estimated in-flight' nag must come AFTER the isToolOutput guard,
+        so tool output is never prepended with a dispatch nag."""
+        src = _plugin_source()
+        guard_idx = src.find("isToolOutput")
+        after_guard = src[guard_idx:]
+        assert "DISPATCH SUBAGENTS NOW" in after_guard or "in-flight" in after_guard, (
+            "in-flight nag must appear after tool-output guard — "
+            "should only inject into agent text, never tool output"
+        )
+
+    def test_result_markers_still_tracked_for_tool_output(self):
+        """hasResultMarker tracking (estimatedInFlight) must run even for tool output.
+        Subagent completion markers arrive as tool output text and must still be counted."""
+        src = _plugin_source()
+        guard_idx = src.find("isToolOutput")
+        before_guard = src[:guard_idx] if guard_idx > 0 else src
+        assert "hasResultMarker" in before_guard, (
+            "hasResultMarker check must run BEFORE the isToolOutput guard — "
+            "subagent completion detection must work even when the text is tool output"
+        )
+
+
+class TestTasksHasUnchecked:
+    def test_tasks_has_unchecked_removed(self):
+        """tasksHasUnchecked was intentionally removed — enforcement is now
+        unconditional (the floor is HARD and cannot be bypassed). See
+        cost-efficiency directive (2026-07-11)."""
+        src = _plugin_source()
+        assert "tasksHasUnchecked" not in src, (
+            "tasksHasUnchecked should NOT be present — enforcement is now "
+            "unconditional (hard floor, no pending-work gate)"
+        )
+
+    def test_no_checkbox_pattern_in_source(self):
+        """No markdown checkbox check — no TASKS.md gate exists."""
+        src = _plugin_source()
+        assert "TASKS.md" not in src, (
+            "No TASKS.md references in enforce-multitask.ts — "
+            "enforcement is unconditional, no file-based gate"
         )
