@@ -435,9 +435,10 @@ class TodoRepository:
         from sqlalchemy import update
 
         _pid = self._resolve_pid(project_id)
+        if _pid is None:
+            return []
         stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
-        if _pid is not None:
-            stmt = stmt.where(TodoModel.project_id == _pid)
+        stmt = stmt.where(TodoModel.project_id == _pid)
         # FIFO fairness: claim oldest QUEUED todos first so a backlog of newer
         # todos can never indefinitely starve an older one. Without an explicit
         # ORDER BY, row order is database-defined (undefined) and starvation is

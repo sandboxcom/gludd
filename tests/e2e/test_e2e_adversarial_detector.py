@@ -460,7 +460,7 @@ class TestMixedContent:
 +DATABASE_URL = "postgresql://user:pass@localhost/db"
 +LOG_LEVEL = "INFO"
 +WORKER_COUNT = 4
-+api_key = "test_key_abcdefghijklmnopqrstuvwxyz123456_abcdefghijklmnopqrst12345678"
++api_key = "stripe_test_abcdefghijklmnopqrstuvwxyz123456"
 +RETRY_DELAY = 2
 """
         result = _detector().scan_diff(diff)

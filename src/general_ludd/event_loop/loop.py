@@ -29,6 +29,7 @@ from general_ludd.controllers.compaction_aggressiveness import (
 )
 from general_ludd.controllers.floor import FloorController
 from general_ludd.controllers.load_scrape import LoadSnapshot
+from general_ludd.db.tenant import set_tenant as _set_tenant, reset_tenant as _reset_tenant
 from general_ludd.controllers.pid import LoadController
 from general_ludd.db.models import TaskDecisionModel
 from general_ludd.db.repository import (
@@ -106,6 +107,7 @@ PHASE_ORDER = [
     "remediate_blocked_tasks",
     "self_improve",
     "poll_issue_sources",
+    "service_discovery",
     "emit_tick_metrics",
 ]
 
@@ -344,6 +346,7 @@ class EventLoop:
         ephemeral_account_manager: Any | None = None,
         inbound_queue: WriteQueue | None = None,
         checkpoint_manager: Any | None = None,
+        service_discovery: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -485,6 +488,8 @@ class EventLoop:
         # empties this queue between ticks (non-blocking) and applies each
         # Envelope inside its own DB session. None = drain disabled (no-op).
         self._inbound_queue: WriteQueue | None = inbound_queue
+        self._service_discovery = service_discovery
+        self._service_discovery_last_run: float = 0.0
 
     def _track_background_task(self, task: asyncio.Task[None]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -725,6 +730,9 @@ class EventLoop:
                 self._push_retry_count = previous.get("_push_retry_count", self._push_retry_count)
         # M14 (W3.14): select ONE project per tick before phases run; reset after.
         self._tick_project_id = self._select_tick_project_id()
+        # C.3: propagate tenant context into thread-pool workers so sessions
+        # created inside asyncio.to_thread carry the project_id filter.
+        _tenant_token = _set_tenant(self._tick_project_id)
         start = time.monotonic()
         try:
             needs_own_session = self.session is None and self._session_factory is not None
@@ -770,6 +778,9 @@ class EventLoop:
         finally:
             # M14 (W3.14): always reset tick-scoped project selection after the tick.
             self._tick_project_id = None
+            # C.3: clear tenant context after tick so thread workers in
+            # subsequent ticks do not inherit a stale project_id.
+            _reset_tenant(_tenant_token)
         elapsed = time.monotonic() - start
         self._tick_metrics["tick_duration_ms"] = elapsed * 1000
         if self._daemon_state is not None:
@@ -1524,6 +1535,9 @@ class EventLoop:
 
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
+            return
+        if self._tick_project_id is None:
+            self._tick_state["claimed_todos"] = []
             return
         if (
             self._pause_controller is not None
@@ -2506,12 +2520,26 @@ class EventLoop:
                         from general_ludd.execution.langgraph_agent import LangGraphAgentLoop
 
                         auditor = ToolCallAuditor()
+                        _adversarial_detector = None
+                        if self._daemon_state is not None:
+                            _adversarial_detector = self._daemon_state.get(
+                                "_adversarial_detector"
+                            )
+                        _max_total_tokens = (
+                            self.config.get("tool_loop", {})
+                            .get("max_total_tokens", None)
+                            if isinstance(self.config, dict)
+                            else None
+                        )
                         tool_loop = LangGraphAgentLoop(
                             model_gateway=self._model_gateway,
                             mcp_client=self._mcp_client,
                             mcp_registry=self._mcp_tool_registry,
                             role="event_loop",
                             tool_auditor=auditor,
+                            budget_guard=self._budget_guard,
+                            adversarial_detector=_adversarial_detector,
+                            max_total_tokens=_max_total_tokens,
                         )
                         logger.debug(
                             "EventLoop: using LangGraphAgentLoop for Phase-2"
@@ -4569,6 +4597,33 @@ class EventLoop:
                 logger.info("Polled %d new issue(s) into intake queue", persisted)
         except Exception as exc:
             logger.warning("Issue source polling failed: %s", exc)
+
+    async def _phase_service_discovery(self) -> None:
+        if self._service_discovery is None:
+            return
+        cfg = self.config if isinstance(self.config, dict) else {}
+        enabled = cfg.get("service_discovery_enabled", True)
+        if not enabled:
+            return
+        interval = cfg.get("service_discovery_interval_seconds", 86400)
+        now = time.monotonic()
+        if now - self._service_discovery_last_run < interval:
+            return
+        self._service_discovery_last_run = now
+        try:
+            report = await self._bounded_to_thread(
+                self._service_discovery.run_discovery_pipeline,
+            )
+            logger.info(
+                "Service discovery: %d new, %d changed, %d retired, %d total, %d errors",
+                len(getattr(report, "new_services", []) or []),
+                len(getattr(report, "changed_services", []) or []),
+                len(getattr(report, "retired_services", []) or []),
+                getattr(report, "total_discovered", 0),
+                len(getattr(report, "errors", []) or []),
+            )
+        except Exception as exc:
+            logger.warning("Service discovery tick failed: %s", exc, exc_info=True)
 
     async def _phase_emit_tick_metrics(self) -> None:
         logger.info("Tick metrics: %s", self._tick_metrics)
