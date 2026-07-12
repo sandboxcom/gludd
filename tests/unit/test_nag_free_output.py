@@ -47,6 +47,10 @@ class TestReadSharedStreakStaleZero:
         assert "lastDispatchTs: 0" in src or "lastDispatchTs:0" in src, (
             f"zeroed lastDispatchTs not found in {path.name}"
         )
+        # W.1 fix: pid field must be in all zeroed states
+        assert "pid:" in src and ("process.pid" in src or "pid: 0" in src), (
+            f"pid field missing from readSharedStreak zeroed/default returns in {path.name}"
+        )
 
     def test_floor_readSharedStreak_zeroes_stale_state(self):
         self._check_stale_zero_in(FLOOR_PATH)

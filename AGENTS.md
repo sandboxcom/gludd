@@ -58,6 +58,26 @@ This directive OVERRIDES all "10-agent floor" rules below. The old rules remain 
 4. **Enhancement categories:** new self-tests, new features from TASKS.md, documentation, tooling/scripts, guardrail improvements, new make targets, observability improvements.
 5. **This overrides any conflicting priority language elsewhere.** A "fix top priority" directive means fixes get the FIRST dispatch slot — the remaining 4+ slots must still include 2+ enhancements.
 
+### Machine-Enforced Enhancement Ratio (2026-07-12)
+
+The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
+
+| Mechanism | What it does |
+|---|---|
+| `tool.execute.before` (task/agent/workflow) | Classifies each dispatch prompt: keywords `enhancement`, `feature`, `docs`, `test`, `tooling`, `script`, `make target`, `presentation`, `skill`, `guardrail`, `refactor`, `observability`, `codify`, `self-test` → **enhancement**; `fix`, `bug`, `repair`, `regression`, `broken`, `incident`, `hotfix` → **fix**; unknown → **fix** (conservative default) |
+| `text.complete` (wave boundary) | When ≥2 dispatches accumulated in the wave, computes fix/enhancement ratio; if fix% > 50%, emits `console.warn` with violation message |
+| State file `/tmp/gludd-enhancement-ratio.json` | Persists current wave array + session aggregate counters |
+| `make check-enhancement-ratio` | Read-only diagnostic: prints current wave ratio + session totals, exits 1 on violation |
+| `OPENCODE_SUBAGENT=1` | Skips enforcement entirely (subagents don't enforce their parent's ratio) |
+| `GLUDD_ENHANCEMENT_RATIO_ENFORCE=0` | Disables the plugin |
+
+### Pre-Dispatch Checklist (mechanical — run before composing any dispatch wave)
+
+1. **Count enhancement vs. fix dispatches** in the wave you are composing.
+2. **If ≥2 dispatches and >50% are fixes** → replace some fix dispatches with enhancement work. Enhancement categories available: new self-tests, new features from TASKS.md, documentation, tooling/scripts, guardrail improvements, new make targets, observability improvements.
+3. **If <2 dispatches in the wave** → the plugin won't check it (minimum wave size is 2), but the prompt-level rule still applies: at least half must be enhancements when feasible.
+4. **"Fix-only waves"** (all dispatches classified as fix) with ≥2 dispatches **will trigger a console.warn violation**. Re-split the wave.
+
 ### Branch discipline (HARD GATE)
 
 1. **NEVER push feature work directly to master.** Master is for merges from development ONLY, or emergency pipeline fixes. All feature work happens on `development` or feature branches.

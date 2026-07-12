@@ -1,0 +1,169 @@
+import type { Plugin } from "@opencode-ai/plugin"
+import * as fs from "node:fs"
+
+// enforce-enhancement-ratio.ts — per-wave enhancement/fix dispatch ratio enforcement.
+//
+// AGENTS.md COST-EFFICIENCY DIRECTIVE §5 (2026-07-12): at least 50% of every
+// dispatch wave must be project enhancements, not just bug fixes. Multiple
+// sessions of fix-only dispatches were observed — the agent was only dispatching
+// repair work and never advancing the project.
+//
+// WHAT IT DOES:
+//   * tool.execute.before (task/agent/workflow) — classifies dispatch as
+//     "enhancement" or "fix" based on prompt keywords, appends to wave array
+//   * text.complete — finalizes the wave: when ≥2 dispatches accumulated,
+//     computes ratio, console.warn if fix% > 50%, resets wave
+//   * Conservative default: unknown prompts count as "fix" (err on the side
+//     of flagging)
+//
+// STATE FILE: /tmp/gludd-enhancement-ratio.json
+// DISABLE: GLUDD_ENHANCEMENT_RATIO_ENFORCE=0
+// SUBAGENT SKIP: OPENCODE_SUBAGENT=1 — subagents don't enforce this
+//
+// FAIL-OPEN: every code path wrapped; internal errors never wedge the session.
+
+const STATE_FILE = process.env.GLUDD_ENHANCEMENT_RATIO_STATE || "/tmp/gludd-enhancement-ratio.json"
+const ENABLED = (process.env.GLUDD_ENHANCEMENT_RATIO_ENFORCE || "1") !== "0"
+
+const ENHANCEMENT_KEYWORDS = [
+  "enhancement", "feature", "docs", "documentation",
+  "test", "tooling", "script", "make target",
+  "presentation", "skill", "guardrail", "refactor",
+  "observability", "new feature", "new test", "add test",
+  "add feature", "codify", "self-test",
+]
+
+const FIX_KEYWORDS = [
+  "fix", "bug", "repair", "regression",
+  "broken", "repair", "incident", "hotfix",
+]
+
+interface WaveEntry {
+  type: "enhancement" | "fix"
+  prompt_head: string
+  ts: number
+}
+
+interface RatioState {
+  wave: WaveEntry[]
+  session_enhancements: number
+  session_fixes: number
+  session_unknown: number
+  wave_count_since_last_warn: number
+}
+
+function loadState(): RatioState {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"))
+      return {
+        wave: Array.isArray(raw.wave) ? raw.wave : [],
+        session_enhancements: typeof raw.session_enhancements === "number" ? raw.session_enhancements : 0,
+        session_fixes: typeof raw.session_fixes === "number" ? raw.session_fixes : 0,
+        session_unknown: typeof raw.session_unknown === "number" ? raw.session_unknown : 0,
+        wave_count_since_last_warn: typeof raw.wave_count_since_last_warn === "number" ? raw.wave_count_since_last_warn : 0,
+      }
+    }
+  } catch {}
+  return { wave: [], session_enhancements: 0, session_fixes: 0, session_unknown: 0, wave_count_since_last_warn: 0 }
+}
+
+function saveState(s: RatioState): void {
+  try { fs.writeFileSync(STATE_FILE, JSON.stringify(s), "utf8") } catch {}
+}
+
+function extractPrompt(args: any): string {
+  if (!args) return ""
+  if (typeof args.prompt === "string") return args.prompt
+  if (typeof args.description === "string") return args.description
+  if (typeof args.message === "string") return args.message
+  if (typeof args.content === "string") return args.content
+  if (typeof args.text === "string") return args.text
+  try { return JSON.stringify(args).substring(0, 500) } catch { return "" }
+}
+
+function classify(prompt: string): "enhancement" | "fix" {
+  const lower = prompt.toLowerCase()
+  for (const kw of ENHANCEMENT_KEYWORDS) {
+    if (lower.includes(kw)) return "enhancement"
+  }
+  for (const kw of FIX_KEYWORDS) {
+    if (lower.includes(kw)) return "fix"
+  }
+  return "fix"
+}
+
+function isDispatchTool(tool: string): boolean {
+  return tool === "task" || tool === "agent" || tool === "workflow"
+}
+
+function _reportAlive(): void {
+  try {
+    const alivePath = "/tmp/gludd-plugin-heartbeat-enforce-enhancement-ratio.json"
+    fs.writeFileSync(alivePath, JSON.stringify({ ts: Date.now(), pid: process.pid }), "utf8")
+  } catch {}
+}
+
+export default (async ({ }) => {
+  return {
+    "tool.execute.before": async (input, _output) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
+      _reportAlive()
+      if (!ENABLED) return
+
+      const tool = input.tool
+      if (!isDispatchTool(tool)) return
+
+      try {
+        const prompt = extractPrompt(input.args)
+        const category = classify(prompt)
+        const s = loadState()
+
+        s.wave.push({
+          type: category,
+          prompt_head: prompt.substring(0, 120),
+          ts: Date.now(),
+        })
+
+        if (category === "enhancement") s.session_enhancements++
+        else if (category === "fix") s.session_fixes++
+        else s.session_unknown++
+
+        saveState(s)
+      } catch { /* fail open */ }
+    },
+
+    "text.complete": async (output) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
+      if (!ENABLED) return
+
+      try {
+        const s = loadState()
+        if (s.wave.length < 2) return
+
+        const fixCount = s.wave.filter(e => e.type === "fix").length
+        const total = s.wave.length
+        const fixRatio = fixCount / total
+        const enhancementRatio = 1 - fixRatio
+
+        if (fixRatio > 0.5) {
+          const fixPct = (fixRatio * 100).toFixed(0)
+          const enhancementPct = (enhancementRatio * 100).toFixed(0)
+
+          console.warn(
+            `ENHANCEMENT RATIO VIOLATION: ${fixPct}% fixes (${fixCount}/${total}) in this wave. ` +
+            `Only ${enhancementPct}% enhancements. ` +
+            `At least 50% of dispatches must be enhancements per AGENTS.md COST-EFFICIENCY DIRECTIVE §5.`
+          )
+
+          s.wave_count_since_last_warn = 0
+        }
+
+        s.wave = []
+        saveState(s)
+      } catch { /* fail open */ }
+
+      return output
+    },
+  }
+}) satisfies Plugin

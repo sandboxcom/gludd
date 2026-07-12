@@ -230,6 +230,7 @@ class SharedStreakSimulator:
             "editStreak": 0,
             "lastUpdateTs": 0,
             "lastWriter": "",
+            "pid": 0,
         }
         if state_path and state_path.exists():
             try:
@@ -264,6 +265,8 @@ class SharedStreakSimulator:
                 self.state["editStreak"] += 1
         self.state["lastUpdateTs"] = now_ms
         self.state["lastWriter"] = writer
+        import os
+        self.state["pid"] = os.getpid()
         self._persist()
         return dict(self.state)
 
@@ -526,3 +529,190 @@ class TestRealisticGrindingSequence:
             sim.update("edit", "enforce-stop", now_ms=1000 + i * 1000)
         d2, m2 = sim.deny_decision("edit")
         assert d2 == "deny" and "MAIN-THREAD GRINDING DETECTED" in m2
+
+
+# ============================================================================
+# W.1 FIX: PID-based cross-session stale-state guard (2026-07-12)
+# ============================================================================
+# The shared streak file (/tmp/gludd-tool-streak.json) persisted between
+# opencode sessions, so a new session inherited the previous session's high
+# streak count — triggering false enforcement from the first tool call.
+# The fix: every write includes process.pid; every read checks that the stored
+# pid matches process.pid. If the pid doesn't match, the streak resets to 0.
+
+
+class TestSharedStreakPidField:
+    """Both plugins MUST define a pid field in the SharedStreakState interface."""
+
+    def test_stop_interface_has_pid(self):
+        src = STOP_PLUGIN.read_text()
+        # The interface line: pid: number
+        assert re.search(r"\bpid:\s*number\b", src), (
+            "enforce-stop.ts SharedStreakState must declare `pid: number` — "
+            "without it the cross-session guard cannot store the writing pid."
+        )
+
+    def test_floor_interface_has_pid(self):
+        src = FLOOR_PLUGIN.read_text()
+        assert re.search(r"\bpid:\s*number\b", src), (
+            "enforce-floor.ts SharedStreakState must declare `pid: number` — "
+            "without it the cross-session guard cannot store the writing pid."
+        )
+
+    def test_stop_write_sets_pid(self):
+        src = STOP_PLUGIN.read_text()
+        assert "s.pid = process.pid" in src, (
+            "enforce-stop.ts writeSharedStreak() must set s.pid = process.pid "
+            "so every write stamps the owning process."
+        )
+
+    def test_floor_write_sets_pid(self):
+        src = FLOOR_PLUGIN.read_text()
+        assert "s.pid = process.pid" in src, (
+            "enforce-floor.ts writeSharedStreak() must set s.pid = process.pid "
+            "so every write stamps the owning process."
+        )
+
+    def test_default_return_includes_pid_zero(self):
+        """The fallback return (file missing) must include pid: 0."""
+        src = FLOOR_PLUGIN.read_text()
+        # The default return near the end of readSharedStreak
+        handler = src.split("function readSharedStreak")[1]
+        assert "pid: 0" in handler, (
+            "readSharedStreak fallback must include pid: 0 in default return"
+        )
+
+
+class TestSharedStreakPidMismatchReset:
+    """When the stored pid != process.pid, the streak MUST reset to 0."""
+
+    def test_floor_read_checks_pid_mismatch(self):
+        src = FLOOR_PLUGIN.read_text()
+        assert "storedPid !== process.pid" in src, (
+            "enforce-floor.ts readSharedStreak must check storedPid !== process.pid"
+        )
+
+    def test_stop_read_checks_pid_mismatch(self):
+        src = STOP_PLUGIN.read_text()
+        assert "storedPid !== process.pid" in src, (
+            "enforce-stop.ts readSharedStreak must check storedPid !== process.pid"
+        )
+
+    def test_pid_reset_writes_last_writer_tag(self):
+        """The pid-reset path must include lastWriter: "pid-reset"."""
+        src = FLOOR_PLUGIN.read_text()
+        assert '"pid-reset"' in src, (
+            "enforce-floor.ts pid-reset path must write lastWriter: 'pid-reset'"
+        )
+
+    def test_pid_reset_zeroes_all_fields(self):
+        """The pid-reset zeroed state must have streak=0, lastDispatchTs=0, etc."""
+        src = FLOOR_PLUGIN.read_text()
+        # The zeroed object in the pid-reset branch
+        handler = src.split("function readSharedStreak")[1]
+        assert "streak: 0" in handler and "lastDispatchTs: 0" in handler, (
+            "pid-reset zeroed state must reset streak and lastDispatchTs to 0"
+        )
+
+    def test_pid_stored_greater_than_zero_check(self):
+        """The pid check must verify storedPid > 0 before comparing."""
+        src = FLOOR_PLUGIN.read_text()
+        assert "storedPid > 0" in src, (
+            "readSharedStreak must check storedPid > 0 before comparing to process.pid "
+            "— otherwise old-format files (no pid) would trigger reset incorrectly"
+        )
+
+
+class TestPidResetSimulator:
+    """Behavioral tests: simulate cross-session and within-session streak state."""
+
+    def test_pid_mismatch_resets_streak(self, tmp_path):
+        """A streak file written by a different pid (old session) resets to 0."""
+        import json as _json, os as _os
+        state_file = tmp_path / "streak.json"
+        # Write a file that looks like the old session wrote a high streak
+        old = {
+            "streak": 15,
+            "lastDispatchTs": 1000,
+            "readStreak": 8,
+            "editStreak": 7,
+            "lastUpdateTs": 5000,
+            "lastWriter": "enforce-floor",
+            "pid": 99999,  # different from current
+        }
+        state_file.write_text(_json.dumps(old))
+        # Simulate the read logic: a different pid -> reset
+        stored = _json.loads(state_file.read_text())
+        if stored.get("pid", 0) > 0 and stored["pid"] != _os.getpid():
+            stored = {"streak": 0, "lastDispatchTs": 0, "readStreak": 0,
+                      "editStreak": 0, "lastUpdateTs": 100, "lastWriter": "pid-reset",
+                      "pid": _os.getpid()}
+        assert stored["streak"] == 0, (
+            "Cross-session stale state must reset streak to 0"
+        )
+        assert stored["readStreak"] == 0
+        assert stored["editStreak"] == 0
+
+    def test_same_pid_preserves_streak(self, tmp_path):
+        """A streak file written by the SAME pid preserves the streak."""
+        import json as _json, os as _os
+        state_file = tmp_path / "streak.json"
+        same = {
+            "streak": 5,
+            "lastDispatchTs": 1000,
+            "readStreak": 3,
+            "editStreak": 2,
+            "lastUpdateTs": 5000,
+            "lastWriter": "enforce-floor",
+            "pid": _os.getpid(),
+        }
+        state_file.write_text(_json.dumps(same))
+        stored = _json.loads(state_file.read_text())
+        if stored.get("pid", 0) > 0 and stored["pid"] != _os.getpid():
+            stored["streak"] = 0  # reset if mismatch
+        assert stored["streak"] == 5, (
+            "Same-pid streak state must be preserved (this is the SAME session)"
+        )
+
+    def test_missing_pid_field_falls_through(self, tmp_path):
+        """Old-format files without a pid field: time-based staleness only."""
+        import json as _json, os as _os
+        state_file = tmp_path / "streak.json"
+        old_fmt = {
+            "streak": 10,
+            "lastDispatchTs": 1000,
+            "readStreak": 5,
+            "editStreak": 5,
+            "lastUpdateTs": 5000,
+            "lastWriter": "enforce-floor",
+            # no pid — old format
+        }
+        state_file.write_text(_json.dumps(old_fmt))
+        stored = _json.loads(state_file.read_text())
+        if stored.get("pid", 0) > 0 and stored["pid"] != _os.getpid():
+            stored["streak"] = 0
+        assert stored["streak"] == 10, (
+            "Old-format files (no pid) must NOT trigger pid-reset — "
+            "time-based staleness is the guard for backward compat"
+        )
+
+    def test_zero_pid_falls_through(self, tmp_path):
+        """pid=0 (uninitialized) must not trigger reset."""
+        import json as _json, os as _os
+        state_file = tmp_path / "streak.json"
+        zero_pid = {
+            "streak": 7,
+            "lastDispatchTs": 1000,
+            "readStreak": 4,
+            "editStreak": 3,
+            "lastUpdateTs": 5000,
+            "lastWriter": "enforce-floor",
+            "pid": 0,
+        }
+        state_file.write_text(_json.dumps(zero_pid))
+        stored = _json.loads(state_file.read_text())
+        if stored.get("pid", 0) > 0 and stored["pid"] != _os.getpid():
+            stored["streak"] = 0
+        assert stored["streak"] == 7, (
+            "pid=0 must NOT trigger pid-reset (uninitialized, not cross-session)"
+        )

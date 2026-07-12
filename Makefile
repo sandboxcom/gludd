@@ -357,7 +357,7 @@ collect-check:
 collect-check-e2e-live:
 	@$(UV) run python -m pytest tests/e2e/ tests/live/ --collect-only -q 2>&1 | tail -5
 
-gate: check-subagent-guards verify-plugin-manifest check-skills-frontmatter
+gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -2479,6 +2479,12 @@ check-readme-status:
 check-subagent-guards:
 	@$(PYTHON) scripts/check_subagent_guards.py
 
+# --- Enhancement ratio diagnostic — reads state file and prints current wave ratio ---
+# Machine-enforced counter for AGENTS.md COST-EFFICIENCY DIRECTIVE §5: at least
+# 50% of every dispatch wave must be project enhancements.
+check-enhancement-ratio:
+	@$(UV) run python3 scripts/check_enhancement_ratio.py
+
 # --- Plugin manifest verification — opencode.json ↔ disk ↔ guard coverage ---
 verify-plugin-manifest:
 	@$(PYTHON) scripts/verify_plugin_manifest.py
@@ -2486,6 +2492,14 @@ verify-plugin-manifest:
 # --- Skill frontmatter validation ---
 check-skills-frontmatter:
 	@$(UV) run python scripts/check_skills_frontmatter.py
+
+# --- Task ledger validation: duplicate IDs, re-dispatched completed items, stale in_progress, missing IDs ---
+validate-task-ledger:
+	@$(UV) run python scripts/validate_task_ledger.py
+
+# --- Dispatch dedup: cross-reference /tmp/gludd-dispatched-tasks.json against TASKS.md completed items ---
+check-dispatch-dedup:
+	@$(UV) run python scripts/check_dispatch_dedup.py
 
 # --- Test env-write lint: forbid bare os.environ[...] = in tests/ (use monkeypatch.setenv) ---
 check-test-env-writes:

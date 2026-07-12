@@ -1131,7 +1131,85 @@ class TestEnforceDelegateMainthreadStreak:
 
 
 # --------------------------------------------------------------------------- #
-# 4e. enforce-delegate.ts — countLiveAgents probe fail-closed (P2 fix)
+# 4e. enforce-delegate.ts — disengage escape (W.1 fix, 2026-07-12)
+# --------------------------------------------------------------------------- #
+# The disengage escape (/tmp/gludd-watchdog-disengage.json) must allow edits
+# to proceed when enforcement is disengaged. Both enforceForceDelegate() and
+# mainthreadBudgetBefore() must call isDisengaged() and return null (allow)
+# when disengagement is active.
+class TestEnforceDelegateDisengageEscape:
+    """Disengage escape must allow ALL tool calls to proceed when active."""
+
+    def test_is_disengaged_function_exists(self):
+        src = ENFORCE_DELEGATE.read_text()
+        assert "function isDisengaged" in src, (
+            "isDisengaged() function missing from enforce-delegate.ts — "
+            "the disengage escape cannot work without it"
+        )
+
+    def test_is_disengaged_reads_watchdog_disengage_file(self):
+        src = ENFORCE_DELEGATE.read_text()
+        assert "/tmp/gludd-watchdog-disengage.json" in src, (
+            "isDisengaged() must read /tmp/gludd-watchdog-disengage.json "
+            "to detect when the operator has disengaged enforcement"
+        )
+
+    def test_enforce_force_delegate_checks_disengaged(self):
+        """enforceForceDelegate() must return null when isDisengaged() is true,
+        skipping ALL blocks so edits can proceed."""
+        src = ENFORCE_DELEGATE.read_text()
+        handler = src.split("function enforceForceDelegate")[1]
+        assert "isDisengaged()" in handler, (
+            "enforceForceDelegate must call isDisengaged() — "
+            "without it, disengage-enforcement cannot bypass force-delegate"
+        )
+
+    def test_mainthread_budget_before_checks_disengaged(self):
+        """mainthreadBudgetBefore() must return null when isDisengaged() is true,
+        so the mainthread streak blocker does not fire during disengagement."""
+        src = ENFORCE_DELEGATE.read_text()
+        handler = src.split("function mainthreadBudgetBefore")[1]
+        assert "isDisengaged()" in handler, (
+            "mainthreadBudgetBefore must call isDisengaged() — "
+            "without it, disengage-enforcement cannot bypass the streak blocker"
+        )
+
+    def test_disengage_allows_writes_when_active(self):
+        """When the disengage file has a valid disengage_until timestamp, edits,
+        writes, and mutating bash must be allowed through."""
+        src = ENFORCE_DELEGATE.read_text()
+        # isDisengaged() must check disengage_until > now
+        assert "disengage_until" in src, (
+            "isDisengaged must check the disengage_until field"
+        )
+        assert "effective > now" in src or "d.disengage_until > now" in src, (
+            "isDisengaged must compare disengage timestamp against current time"
+        )
+
+    def test_disengage_max_duration_clamped(self):
+        """The disengage must be clamped to MAX_DISENGAGE_MS (1 hour) to prevent
+        indefinite disengagement."""
+        src = ENFORCE_DELEGATE.read_text()
+        assert "MAX_DISENGAGE_MS" in src, (
+            "MAX_DISENGAGE_MS constant must exist to clamp disengage duration"
+        )
+        assert "Math.min" in src or "3_600_000" in src, (
+            "isDisengaged must clamp disengage_until via Math.min to "
+            "prevent indefinite disengagement"
+        )
+
+    def test_floor_disengage_early_return_exists(self):
+        """enforce-floor.ts must have an early disengage check that resets
+        the streak counters and returns before any enforcement blocks."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "disengagedEarly = true" in src, (
+            "enforce-floor must set disengagedEarly when /tmp/gludd-watchdog-disengage.json "
+            "has a valid disengage_until timestamp"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 4f. enforce-delegate.ts — countLiveAgents probe fail-closed (P2 fix)
 # --------------------------------------------------------------------------- #
 # Audit gap P2 (2026-07-09): countLiveAgents() returned null on ANY probe error
 # (python3 missing, agent_liveness.py threw, non-integer stdout), and callers
