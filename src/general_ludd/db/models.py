@@ -197,6 +197,8 @@ class TodoModel(Base):
     risk_level: Mapped[str] = mapped_column(String(16), nullable=False, default="low")
     work_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown", index=True)
     resource_profile: Mapped[str] = mapped_column(String(32), nullable=False, default="low_resource")
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    actual_cost_accrued: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     parent_todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     child_todo_ids: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     acceptance_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)

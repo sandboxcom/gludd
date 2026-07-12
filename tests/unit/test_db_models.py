@@ -156,6 +156,18 @@ class TestTodoModel:
         await async_session.flush()
         assert todo.plan_artifact == plan
 
+    async def test_estimated_cost_usd_defaults_to_none(self, async_session: AsyncSession):
+        todo = TodoModel(title="Cost estimate test")
+        async_session.add(todo)
+        await async_session.flush()
+        assert todo.estimated_cost_usd is None
+
+    async def test_actual_cost_accrued_defaults_to_zero(self, async_session: AsyncSession):
+        todo = TodoModel(title="Accrued cost test")
+        async_session.add(todo)
+        await async_session.flush()
+        assert todo.actual_cost_accrued == 0.0
+
 
 class TestTodoEventModel:
     async def test_create_todo_event(self, async_session: AsyncSession):

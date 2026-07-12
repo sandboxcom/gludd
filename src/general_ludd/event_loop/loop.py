@@ -12,6 +12,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import select
@@ -93,6 +94,7 @@ PHASE_ORDER = [
     "evaluate_pid_controllers",
     "refill_task_buckets",
     "run_scheduler",
+    "sdlc_gate",
     "claim_runnable_todos",
     "evaluate_rules",
     "dispatch_execute_jobs",
@@ -273,6 +275,21 @@ def _playbook_for_work_type(
         if pb_path.is_file():
             return str(pb_path)
     return _WORK_TYPE_PLAYBOOK_MAP.get(work_type, default)
+
+
+_RESOURCE_BASE_COST: dict[str, float] = {
+    "low_resource": 0.05,
+    "medium_resource": 0.25,
+    "high_resource": 1.0,
+}
+
+
+def _compute_todo_estimate(todo: object) -> float:
+    resource_profile: str = getattr(todo, "resource_profile", "low_resource") or "low_resource"
+    confidence: float | None = getattr(todo, "confidence", None)
+    base_cost = _RESOURCE_BASE_COST.get(resource_profile, 0.05)
+    effective_confidence = 0.5 if confidence is None else float(confidence)
+    return round(base_cost * (1.5 - effective_confidence), 4)
 
 
 class EventLoop:
@@ -1443,6 +1460,63 @@ class EventLoop:
         self._tick_metrics["scheduled_promoted"] = promoted
         self._tick_metrics["scheduled_spawned"] = spawned
 
+    async def _phase_sdlc_gate(self) -> None:
+        if not isinstance(self.config, dict):
+            return
+        sdlc_cfg = self.config.get("ai_sdlc", {})
+        if not sdlc_cfg:
+            return
+        enforce = sdlc_cfg.get("enforce", False)
+        stages = sdlc_cfg.get("pipeline_stages", {})
+        results: dict[str, Any] = {
+            "enforce": enforce,
+            "stages_checked": 0,
+            "stages_blocked": 0,
+            "stage_results": {},
+        }
+        for stage_name, stage_spec in stages.items():
+            if not isinstance(stage_spec, dict):
+                continue
+            entry_gates = stage_spec.get("entry_gates", {})
+            exit_gates = stage_spec.get("exit_gates", {})
+            stage_result = {
+                "entry_passed": True,
+                "exit_passed": True,
+                "entry_checks": [],
+                "exit_checks": [],
+            }
+            required_artifact_dir = stage_spec.get("artifact_dir")
+            if required_artifact_dir:
+                artifact_path = Path(required_artifact_dir)
+                if not artifact_path.exists():
+                    stage_result["entry_passed"] = False
+                    stage_result["entry_checks"].append(
+                        f"artifact_dir missing: {required_artifact_dir}"
+                    )
+            for gate_name, gate_spec in entry_gates.items():
+                if isinstance(gate_spec, dict) and gate_spec.get("required"):
+                    stage_result["entry_passed"] = False
+                    stage_result["entry_checks"].append(
+                        f"entry gate unsatisfied: {gate_name}"
+                    )
+            for gate_name, gate_spec in exit_gates.items():
+                if isinstance(gate_spec, dict) and gate_spec.get("required"):
+                    stage_result["exit_passed"] = False
+                    stage_result["exit_checks"].append(
+                        f"exit gate unsatisfied: {gate_name}"
+                    )
+            if not stage_result["entry_passed"] or not stage_result["exit_passed"]:
+                results["stages_blocked"] += 1
+            results["stages_checked"] += 1
+            results["stage_results"][stage_name] = stage_result
+        self._tick_state["sdlc_gate_results"] = results
+        if enforce and results["stages_blocked"] > 0:
+            logger.warning(
+                "SDLC gate: %d/%d stages blocked (enforce=true)",
+                results["stages_blocked"],
+                results["stages_checked"],
+            )
+
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
@@ -1497,6 +1571,10 @@ class EventLoop:
         else:
             claimed = await self._todo_repo.claim_runnable(limit=effective_limit)
         self._tick_state["claimed_todos"] = claimed
+        # ── Resource estimation: set estimated_cost_usd per claimed todo ──
+        if claimed and self._active_session is not None:
+            for todo in claimed:
+                todo.estimated_cost_usd = _compute_todo_estimate(todo)
         # H15 (W2.5): record a bucket lease per claimed todo so a crashed tick's
         # work can be reclaimed once the lease expires.
         if claimed and self._active_session is not None:
@@ -4604,3 +4682,5 @@ class EventLoop:
         elif decision.decision == "manual_hold":
             todo.transition_to(TodoStatus.MANUAL_HOLD)
         return todo
+
+

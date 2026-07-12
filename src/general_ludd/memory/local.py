@@ -162,7 +162,7 @@ class LocalAgentMemory:
             )
             if cache_key.startswith(self._index_prefix):
                 continue
-            data = self._cache.get(cache_key, default=None)
+            data = self._cache.get(cache_key, default=None, read=True)
             if data is None:
                 self._cache.delete(cache_key)
                 continue
