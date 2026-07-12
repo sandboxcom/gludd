@@ -432,12 +432,15 @@ class TestAdminProjects:
         assert resp.status_code == 200
         assert isinstance(resp.json(), dict)
 
-    def test_add_project_returns_422_on_invalid(self, project_app):
+    def test_add_project_succeeds_with_valid_input(self, project_app):
         resp = project_app.post(
             "/admin/projects",
-            json={"name": "", "weight": 0},
+            json={"name": "test-project", "weight": 0.5, "description": "e2e test"},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "project_id" in data
+        assert data["name"] == "test-project"
 
     def test_set_dispatch_mode(self, project_app):
         resp = project_app.put(
