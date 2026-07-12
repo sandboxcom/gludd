@@ -851,11 +851,7 @@ export default (async ({ }) => {
     // BUG #12 fix: check disengaged state first — legitimate admin override
     if (isDisengaged()) return
 
-    // RESEARCH FINDING (2026-07-12): opencode's text.complete hook NEVER
-    // fires on tool output — it only fires on text-end LLM stream events.
-    // The _input.role field does not exist in the payload. So no tool-output
-    // guard is needed: all text here is agent-generated. Do NOT add an
-    // isToolOutput / role-based guard — it is dead code.
+    // RESEARCH FINDING (2026-07-12): text.complete hook NEVER fires on tool output — it only fires on text-end LLM stream events. All text here is agent-generated. Do NOT add an isToolOutput / role-based guard — it is dead code.
 
     // P3: DELEGATE-FIRST nag — when shared streak > 8, prepend a nag
     // that survives subagent-report bypass and text-only blocks.

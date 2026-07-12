@@ -122,6 +122,8 @@ class Todo(BaseModel):
     risk_level: RiskLevel = RiskLevel.LOW
     work_type: WorkType = WorkType.UNKNOWN
     resource_profile: ResourceProfile = ResourceProfile.LOW_RESOURCE
+    estimated_cost_usd: float | None = None
+    actual_cost_accrued: float = 0.0
     parent_todo_id: str | None = None
     child_todo_ids: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list, max_length=20)

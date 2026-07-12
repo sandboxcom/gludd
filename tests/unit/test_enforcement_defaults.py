@@ -127,9 +127,9 @@ class TestEnforcementDefaultsOn:
         )
         assert line is not None, (
             "CLAUDE_AGENT_FLOOR default line not found in enforce-floor.ts "
-            "(expected _tunable(..., \"CLAUDE_AGENT_FLOOR\", \"10\") or a parseInt form)"
+            "(expected _tunable(..., \"CLAUDE_AGENT_FLOOR\", \"5\") or a parseInt form)"
         )
-        assert '"10"' in line, (
-            "CLAUDE_AGENT_FLOOR default must be \"10\" (per the 2026-06-22 user mandate "
-            "raising the floor from 6 to 10). The floor must not be silently lowered."
+        assert '"5"' in line, (
+            "CLAUDE_AGENT_FLOOR default must be \"5\" (per the 2026-07-11 cost-efficiency "
+            "directive lowering the floor from 10 to 5). The floor must not be silently raised."
         )

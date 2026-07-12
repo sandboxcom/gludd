@@ -645,6 +645,7 @@ test-install:
 healthcheck:
 	@$(UV) run python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
 	@$(UV) run python -c "from general_ludd.event_loop.loop import EventLoop; print('Event loop import OK')"
+	@$(UV) run python -c "from general_ludd.commands.make import MakeRunner; print('MakeRunner import OK')"
 
 ansible-syntax:
 	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run ansible-playbook --syntax-check "$$f" || exit 1; done
@@ -2300,6 +2301,13 @@ development-push:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch pushed and verified"
+
+# Force-push the development branch (when rebase rewrites history).
+development-force-push:
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
+	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
+	@echo "Development branch force-pushed and verified"
+
 
 # Merge development into master for release prep.
 # Requires CI-green on the development tip before allowing the merge.

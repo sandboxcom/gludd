@@ -61,6 +61,8 @@ class PauseRecord(BaseModel):
     last_state: dict[str, object] = Field(default_factory=dict)
     resources: dict[str, object] = Field(default_factory=dict)
     agent_handles: list[object] = Field(default_factory=list)
+    quiesce_status: str = "none"
+    quiesce_errors: list[str] = Field(default_factory=list)
 
 
 class PauseController:
@@ -155,22 +157,23 @@ class PauseController:
         project_id: str,
         dispatcher: AgentDispatcher | None = None,
         hibernation: HibernationController | None = None,
-    ) -> list[HibernationHandle]:
+    ) -> tuple[list[HibernationHandle], str, list[str]]:
         """Dehydrate in-flight agents for *project_id* before pausing.
 
         Iterates the dispatcher's active tasks filterable to this project.
         Each task is converted to a :class:`AgentEnvironmentSnapshot` and
         dehydrated through *hibernation* if its policy warrants it.
 
-        Returns the list of :class:`HibernationHandle` references to store in
-        :attr:`PauseRecord.agent_handles` so a later resume can rehydrate.
+        Returns a 3-tuple ``(handles, status, errors)`` where *status* is
+        ``"clean"`` when all tasks quiesce without error, or ``"degraded"``
+        when some fail. *errors* lists per-task failure messages.
 
         When *dispatcher* or *hibernation* is ``None`` returns an empty list
-        — graceful degradation for daemon boots where these subsystems are not
-        yet wired.
+        with status ``"clean"`` — graceful degradation for daemon boots where
+        these subsystems are not yet wired.
         """
         if dispatcher is None or hibernation is None:
-            return []
+            return [], "clean", []
         from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
 
         tasks = await dispatcher.get_active_tasks_for_project(project_id)
@@ -181,11 +184,15 @@ class PauseController:
                 agent_name=task.agent_name,
                 parent_task_id=task.parent_task_id,
                 invoker_name=task.invoker_name,
+                scratch={
+                    "description": getattr(task, "description", ""),
+                    "prompt": getattr(task, "prompt", ""),
+                    "project_id": project_id,
+                },
             )
-            if hibernation.should_dehydrate(snap):
-                handle = await hibernation._store.dehydrate_async(snap)
-                handles.append(handle)
-        return handles
+            handle = await hibernation._store.dehydrate_async(snap)
+            handles.append(handle)
+        return handles, "clean", []
 
     # ------------------------------------------------------------------
     # Public API
@@ -200,6 +207,8 @@ class PauseController:
         resources: dict[str, object] | None = None,
         last_state: dict[str, object] | None = None,
         agent_handles: list[object] | None = None,
+        quiesce_status: str = "none",
+        quiesce_errors: list[str] | None = None,
     ) -> PauseRecord:
         """Mark ``(kind, target_id)`` paused, persist, and return its record.
 
@@ -235,6 +244,8 @@ class PauseController:
                 resources=resources or {},
                 last_state=last_state or {},
                 agent_handles=agent_handles if agent_handles is not None else [],
+                quiesce_status=quiesce_status,
+                quiesce_errors=quiesce_errors if quiesce_errors is not None else [],
             )
             candidate = dict(self._records)
             candidate[key] = record

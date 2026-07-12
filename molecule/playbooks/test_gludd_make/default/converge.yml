@@ -1,0 +1,45 @@
+---
+# Exercise the gludd_make module against a real make invocation.
+# The module calls MakeRunner which runs `make <target>` in a subprocess.
+- name: Converge - exercise gludd_make module
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run make hello (should succeed)
+      general_ludd.agent.gludd_make:
+        target: hello
+        cwd: /tmp
+        env_extra:
+          MAKEFILES: "/tmp/gludd-test-make-Makefile"
+      register: hello_result
+
+    - name: Run make versions (should succeed)
+      general_ludd.agent.gludd_make:
+        target: versions
+        cwd: /tmp
+        env_extra:
+          MAKEFILES: "/tmp/gludd-test-make-Makefile"
+      register: versions_result
+
+    - name: Run make bad (should fail)
+      general_ludd.agent.gludd_make:
+        target: bad
+        cwd: /tmp
+        env_extra:
+          MAKEFILES: "/tmp/gludd-test-make-Makefile"
+      register: bad_result
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: "{{ { 'hello': hello_result, 'versions': versions_result, 'bad': bad_result } | to_nice_json }}"
+        dest: "/tmp/gludd-test-make-results.json"
+        mode: "0644"
+
+    - name: Show hello result
+      ansible.builtin.debug:
+        var: hello_result
+
+    - name: Show bad result
+      ansible.builtin.debug:
+        var: bad_result

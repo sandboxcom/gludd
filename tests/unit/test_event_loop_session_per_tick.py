@@ -41,9 +41,9 @@ class TestEventLoopSessionPerTick:
         with patch.object(logging.getLogger("general_ludd.event_loop.loop"), "error") as mock_log:
             result = await loop.tick()
 
-        # PHASE_ORDER has 18 phases; claim_runnable raises,
-        # so the other 17 still complete.
-        assert result["phases_completed"] == 17
+        # PHASE_ORDER has 19 phases; claim_runnable raises,
+        # so the other 18 still complete.
+        assert result["phases_completed"] == 18
         mock_log.assert_called()
 
     async def test_tick_returns_metrics(self):

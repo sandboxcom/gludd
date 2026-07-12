@@ -216,6 +216,35 @@ class ProjectCommandRunner:
     def workspace(self) -> Path:
         return self._workspace
 
+    def run_make(
+        self,
+        target: str,
+        *,
+        extra_args: list[str] | None = None,
+        timeout_s: int | None = None,
+    ) -> CheckResult:
+        """Run a make target via MakeRunner and return a CheckResult.
+
+        Delegates to MakeRunner for sanitized env + bounded capture, then
+        maps the MakeResult fields to a CheckResult for uniformity with
+        the rest of the project_runner surface.
+        """
+        from general_ludd.commands.make import MakeRunner
+
+        mr = MakeRunner(cwd=self._workspace)
+        result = mr.run(target, extra_args=extra_args, timeout_s=timeout_s)
+        return CheckResult(
+            name=f"make:{target}",
+            exit_code=result.exit_code,
+            passed=result.success,
+            duration_s=result.duration_s,
+            stdout_tail=result.stdout_tail,
+            stderr_tail=result.stderr_tail,
+            timed_out=result.timed_out,
+            oom_killed=result.oom_killed,
+            error=result.error,
+        )
+
     def run(self, check: str, *, timeout_s: int | None = None) -> CheckResult:
         """Run the ``check`` command; never raises for a check failure/timeout —
         the outcome is always a :class:`CheckResult` (raises only for an

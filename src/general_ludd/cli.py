@@ -907,6 +907,15 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_core_changes_subparser(sub)
     core_changes_parser = sub.choices["core-changes"]
 
+    make_parser = sub.add_parser("make", help="Run a make target via MakeRunner")
+    make_parser.add_argument("target", help="Make target to run (e.g. test, lint, gate)")
+    make_parser.add_argument("--cwd", default=None, help="Working directory for make")
+    make_parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds")
+    make_parser.add_argument("--env", nargs="*", default=None,
+                             help="Extra env vars (KEY=VALUE ...)")
+    make_parser.add_argument("--stream", action="store_true", help="Stream phase markers")
+    make_parser.set_defaults(func=_cmd_make)
+
     # `gludd account` — account backup, deletion, and cloud retention policy.
     from general_ludd.cli_account import add_account_subparser
 
@@ -964,6 +973,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "ornith": ornith_parser,
         "deploy-check": deploy_check_parser,
         "core-changes": core_changes_parser,
+        "make": make_parser,
         "payment": payment_parser,
         "account": account_parser,
         "audit-plugins": audit_plugins_parser,
@@ -3854,6 +3864,50 @@ def _cmd_testbg_results(args: argparse.Namespace) -> None:
     runner = BackgroundTestRunner()
     result = runner.results(args.testfile)
     print(json.dumps(result, indent=2))
+
+
+def _cmd_make(args: argparse.Namespace) -> None:
+    from general_ludd.commands.make import MakeRunner
+
+    env_extra: dict[str, str] | None = None
+    if args.env:
+        env_extra = {}
+        for pair in args.env:
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                env_extra[k] = v
+
+    runner = MakeRunner(cwd=args.cwd)
+    if args.stream:
+        phases_seen: list[str] = []
+
+        def _cb(phase: str) -> None:
+            phases_seen.append(phase)
+            print(f"[PHASE] {phase}")
+
+        result = runner.run(
+            args.target,
+            timeout_s=args.timeout,
+            env_extra=env_extra,
+            stream=True,
+            stream_callback=_cb,
+        )
+    else:
+        result = runner.run(
+            args.target,
+            timeout_s=args.timeout,
+            env_extra=env_extra,
+        )
+
+    print(json.dumps({
+        "target": result.target,
+        "exit_code": result.exit_code,
+        "success": result.success,
+        "duration_s": result.duration_s,
+        "timed_out": result.timed_out,
+        "phases": result.phases,
+    }, indent=2))
+    sys.exit(0 if result.success else 1)
 
 
 if __name__ == "__main__":

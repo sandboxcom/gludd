@@ -199,13 +199,13 @@ class TestSessionStartConstants:
         )
 
     def test_effective_min_bounded(self):
-        """EFFECTIVE_MIN must be >= 5 and <= 10, derived via Math.max/min."""
+        """EFFECTIVE_MIN must be >= 5 and <= 5, derived via Math.max/min."""
         src = PLUGIN.read_text()
         assert "EFFECTIVE_MIN" in src, "EFFECTIVE_MIN constant not found."
-        # The derivation: Math.max(MIN_DISPATCHES, Math.min(FLOOR, 10))
-        assert "Math.max(MIN_DISPATCHES, Math.min(FLOOR, 10))" in src, (
-            "EFFECTIVE_MIN must be 'Math.max(MIN_DISPATCHES, Math.min(FLOOR, 10))' "
-            "so the floor is bounded between MIN_DISPATCHES (>=5) and 10."
+        # The derivation: Math.max(MIN_DISPATCHES, Math.min(FLOOR, 5))
+        assert "Math.max(MIN_DISPATCHES, Math.min(FLOOR, 5))" in src, (
+            "EFFECTIVE_MIN must be 'Math.max(MIN_DISPATCHES, Math.min(FLOOR, 5))' "
+            "so the floor is bounded at 5 (ceiling lowered per cost-efficiency directive)."
         )
 
     def test_fresh_secs_constant_exists(self):

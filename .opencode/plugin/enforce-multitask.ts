@@ -159,13 +159,10 @@ export default (async ({ }) => {
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       try {
         if (!output || typeof output.text !== "string") return output
+        // RESEARCH FINDING (2026-07-12): text.complete hook NEVER fires on tool output — it only fires on text-end LLM stream events. The _input.role field does not exist in the payload. So no tool-output guard is needed: all text here is agent-generated. Do NOT add an isToolOutput / role-based guard — it is dead code.
 
-        // RESEARCH FINDING (2026-07-12): opencode's text.complete hook NEVER
-        // fires on tool output — it only fires on text-end LLM stream events.
-        // The _input.role field does not exist in the payload. So no tool-output
-        // guard is needed: all text here is agent-generated. Do NOT add an
-        // isToolOutput / role-based guard — it is dead code.
-
+        // Track subagent result markers (these arrive in agent text, since
+        // text.complete only fires on agent-generated text).
         if (hasResultMarker(output.text)) {
           _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 2)
         }

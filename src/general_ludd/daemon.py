@@ -2855,6 +2855,7 @@ def create_daemon_app(
         human_todos,
         integrity,
         maintenance,
+        make,
         mcp,
         memory,
         messages,
@@ -2927,6 +2928,7 @@ def create_daemon_app(
     self_improve.register(app, daemon_state)
     self_update.register(app, daemon_state)
     maintenance.register(app, daemon_state)
+    make.register(app, daemon_state)
     remediation.register(app, daemon_state)
     review.register(app, daemon_state)
     ornith.register(app, daemon_state)

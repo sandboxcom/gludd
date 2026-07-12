@@ -1658,49 +1658,114 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
         )
 
 
-# ── enforce-stop.ts: text.complete never fires on tool output ───────────
-# 2026-07-12: Research found opencode's text.complete hook ONLY fires on
-# text-end LLM stream events — never on tool output from Read/Grep/Glob/Bash.
-# The isToolOutput guard (checking _input.role) was dead code that never
-# executed. Removed; replaced with a RESEARCH FINDING comment to prevent
-# re-addition.
+# ── enforce-stop.ts: RESEARCH FINDING on text.complete hook scope ──────────
+# 2026-07-12: The RESEARCH FINDING comment documents that opencode's
+# text.complete hook only fires on LLM-generated text, never on tool output
+# (Read/Grep/Glob/Bash results). The _input.role field does not exist in the
+# text.complete payload. Therefore isToolOutput / role-based guard is dead code.
+# These tests verify the RESEARCH FINDING is present and isToolOutput is absent.
 
 
-class TestEnforceStopTextCompleteNoToolOutputGuard:
-    """enforce-stop.ts text.complete must NOT have a dead isToolOutput guard.
-    Since text.complete never fires on tool output, no guard is needed.
-    The research finding must be documented to prevent re-addition."""
+class TestEnforceStopResearchFinding:
+    """RESEARCH FINDING in enforce-stop.ts text.complete documents that the hook
+    only fires on agent-generated text, never on tool output. isToolOutput guard
+    is dead code and must NOT be present."""
 
     ENFORCE_STOP = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-stop.ts"
 
     @staticmethod
     def _src() -> str:
-        return TestEnforceStopTextCompleteNoToolOutputGuard.ENFORCE_STOP.read_text()
-
-    def test_isToolOutput_variable_removed(self):
-        src = self._src()
-        assert "const isToolOutput" not in src, (
-            "const isToolOutput variable declaration must be removed from enforce-stop.ts"
-        )
-        assert "if (isToolOutput)" not in src, (
-            "if(isToolOutput) dead code block must be removed from enforce-stop.ts"
-        )
+        return TestEnforceStopResearchFinding.ENFORCE_STOP.read_text()
 
     def test_research_finding_comment_present(self):
+        """RESEARCH FINDING comment must be present in text.complete handler."""
         src = self._src()
         assert "RESEARCH FINDING" in src, (
-            "RESEARCH FINDING comment must document that text.complete never "
-            "receives tool output, to prevent re-addition of dead isToolOutput guards"
+            "enforce-stop.ts text.complete must have RESEARCH FINDING comment — "
+            "it documents that the hook only fires on LLM text, never tool output"
         )
 
-    def test_enforcement_still_active(self):
-        """Enforcement (DELEGATE-FIRST, FALSE-DONE, hasLocalWork) must still
-        exist — removal is of the dead guard only, not the enforcement logic."""
+    def test_isToolOutput_not_present(self):
+        """isToolOutput must NOT be present — it is documented as dead code
+        in the RESEARCH FINDING comment."""
         src = self._src()
-        handler_start = src.find('"experimental.text.complete"')
-        after_handler = src[handler_start:]
-        assert "DELEGATE-FIRST" in after_handler, "DELEGATE-FIRST nag must survive"
-        assert "FALSE-DONE" in after_handler, "FALSE-DONE detection must survive"
-        assert "hasLocalWork" in after_handler or "HARD STOP" in after_handler, (
-            "hasLocalWork block must survive"
+        assert "isToolOutput" not in src, (
+            "isToolOutput must NOT be in enforce-stop.ts — "
+            "RESEARCH FINDING documents it as dead code "
+            "(_input.role does not exist in text.complete payload)"
+        )
+
+    def test_delegate_first_after_research_finding(self):
+        """DELEGATE-FIRST nag must appear AFTER the RESEARCH FINDING comment.
+        The finding documents scope before enforcement logic runs."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        assert guard_idx >= 0
+        after_guard = src[guard_idx:]
+        delegate_idx = after_guard.find("DELEGATE-FIRST")
+        assert delegate_idx >= 0, (
+            "DELEGATE-FIRST nag must exist in text.complete, "
+            "after the RESEARCH FINDING comment"
+        )
+
+    def test_false_done_after_research_finding(self):
+        """FALSE-DONE detection must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        fd_idx = after_guard.find("FALSE-DONE")
+        assert fd_idx >= 0, (
+            "FALSE-DONE detection must appear after RESEARCH FINDING comment"
+        )
+
+    def test_hasLocalWork_after_research_finding(self):
+        """hasLocalWork block must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        lw_idx = after_guard.find("hasLocalWork")
+        assert lw_idx >= 0, (
+            "hasLocalWork block must appear after RESEARCH FINDING comment"
+        )
+
+    def test_ratchet_after_research_finding(self):
+        """RATCHET block must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        r_idx = after_guard.find("RATCHET")
+        assert r_idx >= 0, (
+            "RATCHET block must appear after RESEARCH FINDING comment"
+        )
+
+    def test_stop_pattern_after_research_finding(self):
+        """Stop-pattern detection must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        assert (
+            "STOP_PATTERN_PHRASES" in after_guard
+            or "COMPLETION_VERBATIM" in after_guard
+            or "responseLooksTerminal" in after_guard
+        ), (
+            "Stop-pattern detection must appear after RESEARCH FINDING comment"
+        )
+
+    def test_readSharedStreak_after_research_finding(self):
+        """readSharedStreak() must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        assert "readSharedStreak" in after_guard, (
+            "readSharedStreak must appear after RESEARCH FINDING comment"
+        )
+
+    def test_return_after_research_finding(self):
+        """RESEARCH FINDING must be followed by enforcement code that uses
+        return (not throw) to skip enforcement."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        snippet = src[guard_idx:guard_idx + 600]
+        assert "return" in snippet, (
+            "enforcement code after RESEARCH FINDING must use return (not throw)"
         )
