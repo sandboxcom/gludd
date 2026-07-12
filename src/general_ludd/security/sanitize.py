@@ -6,6 +6,9 @@ import os
 import re
 from urllib.parse import urlparse
 
+from general_ludd.security.ssrf import _ip_addr_is_blocked, host_is_blocked
+from general_ludd.security.ssrf import is_url_blocked as _is_url_blocked
+
 _CREDENTIAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"https?://[^@\s]+:[^@\s]+@", re.IGNORECASE), "https://[REDACTED_CREDS_IN_URL]@"),
     (re.compile(r"sk-[A-Za-z0-9_-]{20,}", re.IGNORECASE), "[REDACTED_OPENAI_KEY]"),
@@ -33,10 +36,7 @@ def sanitize_error_message(text: str) -> str:
     result = text
     for pattern, replacement in _CREDENTIAL_PATTERNS:
         result = pattern.sub(replacement, result)
-    return result
-
-from general_ludd.security.ssrf import _ip_addr_is_blocked, host_is_blocked
-from general_ludd.security.ssrf import is_url_blocked as _is_url_blocked
+        return result
 
 _PATH_TRAVERSAL = re.compile(r"(?:\.\./|\.\.\\)")
 _ABSOLUTE_PATH = re.compile(r"^/|^[A-Za-z]:\\")

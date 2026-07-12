@@ -114,6 +114,66 @@ def _is_single_label_hostname(host: str) -> bool:
     return True
 
 
+def _nonstandard_ip_blocked(host: str) -> bool:
+    """True if host, as a non-standard IP literal encoding, maps to a blocked IP.
+
+    Handles three SSRF bypass encodings that ``ipaddress.ip_address`` rejects
+    but many HTTP clients (curl, wget, Go net/http, browsers) accept:
+
+    - Decimal integer IPv4: ``2130706433`` \u2192 ``127.0.0.1``
+    - Octal dotted-quad:    ``0177.0.0.1`` \u2192 ``127.0.0.1``
+    - Hex dotted-quad:      ``0x7f.0.0.1`` \u2192 ``127.0.0.1``
+    - Mixed encodings:      ``0177.0x1f.0.1`` \u2192 ``127.31.0.1``
+
+    For dotted-quad forms with non-standard octets, BOTH curl-style (leading
+    ``0`` = octal, ``0x`` = hex) and decimal-style (ignore leading zeros)
+    interpretations are checked; if EITHER yields a blocked IP the host is
+    denied.
+    """
+    # -- decimal integer IPv4: "2130706433" → 127.0.0.1 -----------------------
+    if host.isdigit() and len(host) <= 10:
+        ip_int = int(host)
+        if ip_int < (1 << 32):
+            try:
+                if _ip_addr_is_blocked(ipaddress.IPv4Address(ip_int)):
+                    return True
+            except ipaddress.AddressValueError:
+                pass
+
+    # -- octal / hex / mixed dotted-quad --------------------------------------
+    if "." in host:
+        parts = host.split(".")
+        if len(parts) == 4 and all(parts):
+            # Curl-style: leading 0x=hex, leading 0=octal, else decimal.
+            try:
+                octets: list[int] = []
+                for p in parts:
+                    if p.startswith(("0x", "0X")):
+                        octets.append(int(p, 16))
+                    elif p.startswith("0") and len(p) > 1 and set(p) <= set("01234567"):
+                        octets.append(int(p, 8))
+                    else:
+                        octets.append(int(p, 10))
+                    if not (0 <= octets[-1] <= 255):
+                        raise ValueError
+                if _ip_addr_is_blocked(ipaddress.IPv4Address(bytes(octets))):
+                    return True
+            except (ValueError, OverflowError):
+                pass
+
+            # Decimal-style: all octets as decimal (python requests / modern go).
+            try:
+                octets_dec = [int(p, 10) for p in parts]
+                if all(0 <= o <= 255 for o in octets_dec) and _ip_addr_is_blocked(
+                    ipaddress.IPv4Address(bytes(octets_dec))
+                ):
+                    return True
+            except (ValueError, OverflowError):
+                pass
+
+    return False
+
+
 def host_is_blocked(host: str) -> bool:
     """LITERAL deny check for a URL host — no DNS, no network.
 
@@ -160,6 +220,8 @@ def host_is_blocked(host: str) -> bool:
     if host in BLOCKED_METADATA_IPS:
         return True
     if _is_single_label_hostname(host):
+        return True
+    if _nonstandard_ip_blocked(host):
         return True
     try:
         ip = ipaddress.ip_address(host)

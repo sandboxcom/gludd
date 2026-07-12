@@ -15,7 +15,7 @@ FALLBACK_NOTIFICATION_CONFIG: dict[str, Any] = {
 }
 
 NOTIFICATION_TEMPLATE = (
-    "[gludd] {priority.upper()} human-todo #{id}: {title}\n"
+    "[gludd] {priority} human-todo #{id}: {title}\n"
     "  Category: {category}\n"
     "  Agent: {agent_id}\n"
     "  {body}"
@@ -79,7 +79,8 @@ class NotificationDispatcher:
             source = self._slack_sources.get(source_name)
             if source is None:
                 return {"ok": False, "backend": "slack", "error": f"slack source {source_name!r} not found"}
-            return source.send_notification(message)
+            result: dict[str, object] = source.send_notification(message)
+            return result
         except Exception as exc:
             logger.warning("slack notification dispatch failed: %s", exc)
             return {"ok": False, "backend": "slack", "error": str(exc)}

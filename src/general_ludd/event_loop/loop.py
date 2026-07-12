@@ -4618,7 +4618,7 @@ class EventLoop:
                 min_episodes_to_consolidate=10,
             )
             agent_id = str(self._tick_project_id or "gludd")
-            result = await consolidator.consolidate(agent_id)
+            result = await consolidator.consolidate(agent_id, project_id=self._tick_project_id)
             if result["consolidated"] > 0:
                 self._tick_metrics["memory_consolidated"] = result["consolidated"]
                 self._tick_metrics["memory_episodes_consolidated"] = result.get(
