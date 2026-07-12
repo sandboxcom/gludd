@@ -3287,6 +3287,55 @@ class EventLoop:
                     new_status = self._decision_to_status(_verified.decision)
                     if new_status is None:
                         continue
+            # D2: gate a still-COMPLETE decision behind the EXTERNAL target
+            # project's own quality gate when it declares one via project.yml.
+            # This mirrors the gate in decision_applier.py (apply_decision) so
+            # the reconcile phase applies the same quality-gate policy as the
+            # review phase. Fail-safe: any error resolving/running the gate
+            # leaves the decision unchanged.
+            if d.decision == "complete" and _repo_root is not None:
+                _ws = Path(_repo_root)
+                if (_ws / "project.yml").is_file():
+                    from general_ludd.quality.project_gate import run_project_gate
+                    try:
+                        _gate_report = await self._bounded_to_thread(
+                            run_project_gate, str(_ws)
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Reconcile: project gate errored for decision %s "
+                            "(repo_root=%s): %s — leaving decision unchanged "
+                            "(fail-safe)",
+                            decision_id, _repo_root, exc,
+                        )
+                    else:
+                        if isinstance(_gate_report, dict) and not _gate_report.get("passed"):
+                            _checks = _gate_report.get("checks")
+                            _lines: list[str] = []
+                            if isinstance(_checks, list):
+                                for _c in _checks:
+                                    if (
+                                        isinstance(_c, dict)
+                                        and not _c.get("passed", True)
+                                    ):
+                                        _s = _c.get("summary")
+                                        if isinstance(_s, str) and _s:
+                                            _lines.append(_s)
+                                        else:
+                                            _lines.append(
+                                                f"{_c.get('name', 'check')}: FAIL"
+                                            )
+                            _fail_summary = (
+                                "; ".join(_lines)
+                                if _lines
+                                else "project gate FAILED"
+                            )
+                            logger.warning(
+                                "Reconcile: project gate FAILED for decision %s "
+                                "— downgrading complete -> needs_more_work: %s",
+                                decision_id, _fail_summary,
+                            )
+                            new_status = TodoStatus.NEEDS_MORE_WORK
             # Human-in-the-loop gate: when config ``review.human_in_the_loop`` is
             # enabled and the decision confidence is below the configured
             # threshold, pause via LangGraph interrupt() for human approval.
@@ -3403,19 +3452,21 @@ class EventLoop:
             )
             return False
 
-        # D10 (#53): exponential backoff with jitter — after the first
-        # failure, add a jittered sleep so competing workers don't retry
-        # in lockstep (both claim, both see conflict, both release, repeat).
-        # The tick-based window still skips most ticks; the jitter breaks
-        # the exact-phase alignment that causes the livelock.
+        # D10 (#53): exponential backoff with jitter + per-todo hash offset.
+        # Two todos at the same retry_count that use only tick % window
+        # always check the same tick — they collide deterministically.
+        # Per-todo offset (hash(tid) % window) spreads their check ticks
+        # apart, making deterministic collision structurally impossible.
+        # The jittered sleep after still provides runtime de-sync.
         retry_count = self._push_retry_count.get(tid, 0)
         if retry_count > 0:
             window = 2 ** min(retry_count, 6)  # cap at 64-tick window
             tick = self._total_ticks
-            if tick % window != 0:
+            offset = abs(hash(tid)) % window
+            if (tick + offset) % window != 0:
                 logger.debug(
-                    "#53: backoff skip for %s (retry %d, tick %d, window %d)",
-                    tid, retry_count, tick, window,
+                    "#53: backoff skip for %s (retry %d, tick %d, window %d, offset %d)",
+                    tid, retry_count, tick, window, offset,
                 )
                 return True  # signal failure so ledger skips marking pushed
             # D10: jittered backoff to break retry-phase alignment

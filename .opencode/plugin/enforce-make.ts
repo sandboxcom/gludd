@@ -352,7 +352,7 @@ function _reportAlive(): void {
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return
+      const isSubagent = process.env.OPENCODE_SUBAGENT === "1"
       _reportAlive()
 
       // BUG #16 fix: track tool calls and dispatches for text.complete bypass
@@ -569,6 +569,8 @@ export default (async ({ }) => {
           }
         }
       }
+
+      if (isSubagent) return
 
       if (input.tool === "edit" || input.tool === "write") {
         const filePath: string = output?.args?.filePath ?? output?.args?.path ?? ""

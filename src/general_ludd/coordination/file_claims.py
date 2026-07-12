@@ -162,9 +162,11 @@ class FileClaimRegistry:
         now = self._clock()
         with self._lock:
             self._reap_stale_locked(now)
-            # Conflict check: all-or-nothing
+            # Conflict check: all-or-nothing.  Exclude the calling worker
+            # so a re-claim (heartbeat) from the same worker_id is not
+            # treated as a self-conflict.
             for path in file_set:
-                others = self._file_workers.get(path, set())
+                others = self._file_workers.get(path, set()) - {worker_id}
                 if others:
                     return False
             # No conflicts — claim

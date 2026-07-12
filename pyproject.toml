@@ -130,9 +130,6 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-# Sandbox backends (security/sandboxes/*) — re-enabled 2026-07-10 (E3).
-# Previously excluded because of in-flight PermissionSpec/Capability API surface;
-# the schema has since landed.
 exclude = ["scripts/"]
 
 [[tool.mypy.overrides]]
