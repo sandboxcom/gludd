@@ -628,7 +628,8 @@ class TestPidResetSimulator:
 
     def test_pid_mismatch_resets_streak(self, tmp_path):
         """A streak file written by a different pid (old session) resets to 0."""
-        import json as _json, os as _os
+        import json as _json
+        import os as _os
         state_file = tmp_path / "streak.json"
         # Write a file that looks like the old session wrote a high streak
         old = {
@@ -655,7 +656,8 @@ class TestPidResetSimulator:
 
     def test_same_pid_preserves_streak(self, tmp_path):
         """A streak file written by the SAME pid preserves the streak."""
-        import json as _json, os as _os
+        import json as _json
+        import os as _os
         state_file = tmp_path / "streak.json"
         same = {
             "streak": 5,
@@ -676,7 +678,8 @@ class TestPidResetSimulator:
 
     def test_missing_pid_field_falls_through(self, tmp_path):
         """Old-format files without a pid field: time-based staleness only."""
-        import json as _json, os as _os
+        import json as _json
+        import os as _os
         state_file = tmp_path / "streak.json"
         old_fmt = {
             "streak": 10,
@@ -698,7 +701,8 @@ class TestPidResetSimulator:
 
     def test_zero_pid_falls_through(self, tmp_path):
         """pid=0 (uninitialized) must not trigger reset."""
-        import json as _json, os as _os
+        import json as _json
+        import os as _os
         state_file = tmp_path / "streak.json"
         zero_pid = {
             "streak": 7,

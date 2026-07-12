@@ -592,7 +592,7 @@ class TestEscalationRequest:
         assert data["status"] == "pending"
         assert data["human_todo_id"] is None
         assert any(
-            "no session factory" in rec.message for rec in caplog.records
+            "no session factory" in rec.getMessage() for rec in caplog.records
         ), "expected a warning that the escalation will not surface a HumanTodo"
 
         # The row is still recorded and visible even though no HumanTodo fired.

@@ -1,8 +1,8 @@
 {
   "version": "0.1.0-beta.3",
-  "git_sha": "e43bf99",
-  "test_count": 23006,
-  "role_count": 109,
+  "git_sha": "5de6dc7",
+  "test_count": 25173,
+  "role_count": 110,
   "features": [
     {
       "name": "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)",
@@ -10,9 +10,9 @@
       "evidence": "**PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
     }
   ],
-  "generated_at": "2026-07-10T17:44:50Z",
+  "generated_at": "2026-07-12T10:40:37Z",
   "game_audit": {
-    "report_generated": "2026-07-09T21:13:29Z",
+    "report_generated": "2026-07-12T09:31:40Z",
     "games": {
       "snake": {
         "game_id": "snake",
@@ -75,15 +75,15 @@
           }
         },
         "tokens_in": 522,
-        "tokens_out": 655,
+        "tokens_out": 827,
         "tool_calls": 0,
-        "content_len": 2499,
+        "content_len": 3298,
         "model": "unknown",
         "phases": {
-          "model_call": 5383.7,
+          "model_call": 5784.1,
           "extract_code": 0.1,
-          "ast_parse": 1.1,
-          "game_verify": 2.1
+          "ast_parse": 1.2,
+          "game_verify": 1.6
         },
         "errors": [],
         "gaps": [],
@@ -150,15 +150,15 @@
           }
         },
         "tokens_in": 584,
-        "tokens_out": 1948,
+        "tokens_out": 2140,
         "tool_calls": 0,
-        "content_len": 7486,
+        "content_len": 8004,
         "model": "unknown",
         "phases": {
-          "model_call": 12688.0,
-          "extract_code": 0.1,
-          "ast_parse": 4.5,
-          "game_verify": 2.8
+          "model_call": 13507.6,
+          "extract_code": 0.2,
+          "ast_parse": 9.0,
+          "game_verify": 3.2
         },
         "errors": [],
         "gaps": [],
@@ -171,7 +171,7 @@
         "game_id": "minesweeper",
         "imported": true,
         "instantiated": true,
-        "checks_passed": 11,
+        "checks_passed": 12,
         "checks_total": 14,
         "checks": {
           "import_and_instantiate": {
@@ -191,7 +191,7 @@
             "desc": "revealing a 0 cell auto-reveals adjacent cells"
           },
           "flag_toggle": {
-            "passed": false,
+            "passed": true,
             "desc": "flag() toggles between flagged/unflagged"
           },
           "win_detection": {
@@ -232,21 +232,19 @@
           }
         },
         "tokens_in": 613,
-        "tokens_out": 1280,
+        "tokens_out": 1284,
         "tool_calls": 0,
-        "content_len": 5161,
+        "content_len": 5109,
         "model": "unknown",
         "phases": {
-          "model_call": 7399.9,
-          "extract_code": 0.0,
-          "ast_parse": 1.5,
-          "game_verify": 3.2
+          "model_call": 8418.8,
+          "extract_code": 0.1,
+          "ast_parse": 3.2,
+          "game_verify": 5.0
         },
         "errors": [],
         "gaps": [],
-        "feature_failures": [
-          "reveal returned unexpected value: 'no_op'"
-        ]
+        "feature_failures": []
       },
       "checkers": {
         "game_id": "checkers",
@@ -313,14 +311,14 @@
           }
         },
         "tokens_in": 728,
-        "tokens_out": 2202,
+        "tokens_out": 3073,
         "tool_calls": 0,
-        "content_len": 8326,
+        "content_len": 11803,
         "model": "unknown",
         "phases": {
-          "model_call": 14207.1,
+          "model_call": 20465.4,
           "extract_code": 0.1,
-          "ast_parse": 2.7,
+          "ast_parse": 3.9,
           "game_verify": 2.9
         },
         "errors": [],
@@ -388,27 +386,27 @@
           }
         },
         "tokens_in": 677,
-        "tokens_out": 1318,
+        "tokens_out": 1069,
         "tool_calls": 0,
-        "content_len": 4844,
+        "content_len": 4076,
         "model": "unknown",
         "phases": {
-          "model_call": 5682.6,
-          "extract_code": 0.1,
-          "ast_parse": 16.8,
-          "game_verify": 4.5
+          "model_call": 7359.9,
+          "extract_code": 0.0,
+          "ast_parse": 1.0,
+          "game_verify": 2.0
         },
         "errors": [],
         "gaps": [],
         "feature_failures": [
-          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='crashed', won_attr=None)"
+          "no obstacle-list attribute found (trees/rocks); skifree must track obstacle positions"
         ]
       },
       "banana": {
         "game_id": "banana",
         "imported": true,
         "instantiated": true,
-        "checks_passed": 12,
+        "checks_passed": 11,
         "checks_total": 13,
         "checks": {
           "import_and_instantiate": {
@@ -460,25 +458,26 @@
             "desc": "tick()/move() after game_over does not change state"
           },
           "lifecycle_restart": {
-            "passed": true,
+            "passed": false,
             "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
           }
         },
         "tokens_in": 767,
-        "tokens_out": 1553,
+        "tokens_out": 1413,
         "tool_calls": 0,
-        "content_len": 6111,
+        "content_len": 5334,
         "model": "unknown",
         "phases": {
-          "model_call": 9145.6,
+          "model_call": 10173.6,
           "extract_code": 0.1,
-          "ast_parse": 9.7,
-          "game_verify": 1.8
+          "ast_parse": 2.2,
+          "game_verify": 1.7
         },
         "errors": [],
         "gaps": [],
         "feature_failures": [
-          "throw trajectory must be a non-empty list, got []"
+          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='game_over', won_attr='won')",
+          "lifecycle.restart: no restart method found (restart/reset/new_game/start_over/play_again) \u2014 cannot verify reusability"
         ]
       },
       "pong": {
@@ -542,15 +541,15 @@
           }
         },
         "tokens_in": 728,
-        "tokens_out": 967,
+        "tokens_out": 957,
         "tool_calls": 0,
-        "content_len": 3252,
+        "content_len": 3199,
         "model": "unknown",
         "phases": {
-          "model_call": 5692.2,
-          "extract_code": 0.0,
-          "ast_parse": 0.8,
-          "game_verify": 1.3
+          "model_call": 6318.5,
+          "extract_code": 0.2,
+          "ast_parse": 3.3,
+          "game_verify": 2.4
         },
         "errors": [],
         "gaps": [],
@@ -560,7 +559,7 @@
         "game_id": "breakout",
         "imported": true,
         "instantiated": true,
-        "checks_passed": 9,
+        "checks_passed": 10,
         "checks_total": 13,
         "checks": {
           "import_and_instantiate": {
@@ -592,7 +591,7 @@
             "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
           },
           "lifecycle_start": {
-            "passed": false,
+            "passed": true,
             "desc": "calling start() transitions state to 'playing'"
           },
           "lifecycle_score_starts_zero": {
@@ -600,11 +599,11 @@
             "desc": "score is 0 at start of play"
           },
           "lifecycle_score_increments": {
-            "passed": false,
+            "passed": true,
             "desc": "score increases after positive event"
           },
           "lifecycle_game_over": {
-            "passed": true,
+            "passed": false,
             "desc": "triggering lose condition sets game_over=True and state='game_over'"
           },
           "lifecycle_game_over_idempotent": {
@@ -617,15 +616,15 @@
           }
         },
         "tokens_in": 815,
-        "tokens_out": 959,
+        "tokens_out": 969,
         "tool_calls": 0,
-        "content_len": 3596,
+        "content_len": 3620,
         "model": "unknown",
         "phases": {
-          "model_call": 6512.8,
-          "extract_code": 0.0,
-          "ast_parse": 0.9,
-          "game_verify": 1.9
+          "model_call": 6494.2,
+          "extract_code": 0.1,
+          "ast_parse": 3.8,
+          "game_verify": 2.1
         },
         "errors": [],
         "gaps": [],
@@ -635,7 +634,7 @@
         "game_id": "maze_runner",
         "imported": true,
         "instantiated": true,
-        "checks_passed": 9,
+        "checks_passed": 10,
         "checks_total": 12,
         "checks": {
           "import_and_instantiate": {
@@ -643,7 +642,7 @@
             "desc": "class imports and instantiates without error"
           },
           "maze_moves": {
-            "passed": false,
+            "passed": true,
             "desc": "input('right') moves player on a path cell"
           },
           "maze_wall_blocks": {
@@ -688,15 +687,15 @@
           }
         },
         "tokens_in": 601,
-        "tokens_out": 865,
+        "tokens_out": 857,
         "tool_calls": 0,
-        "content_len": 3326,
+        "content_len": 3323,
         "model": "unknown",
         "phases": {
-          "model_call": 7105.9,
-          "extract_code": 0.0,
-          "ast_parse": 0.9,
-          "game_verify": 1.6
+          "model_call": 6641.9,
+          "extract_code": 0.1,
+          "ast_parse": 1.0,
+          "game_verify": 1.7
         },
         "errors": [],
         "gaps": [],
@@ -765,21 +764,19 @@
           }
         },
         "tokens_in": 704,
-        "tokens_out": 728,
+        "tokens_out": 742,
         "tool_calls": 0,
-        "content_len": 2857,
+        "content_len": 2917,
         "model": "unknown",
         "phases": {
-          "model_call": 5733.4,
+          "model_call": 5979.1,
           "extract_code": 0.0,
-          "ast_parse": 0.7,
-          "game_verify": 1.5
+          "ast_parse": 0.8,
+          "game_verify": 1.6
         },
         "errors": [],
         "gaps": [],
-        "feature_failures": [
-          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='game_over', won_attr='won')"
-        ]
+        "feature_failures": []
       },
       "memory_match": {
         "game_id": "memory_match",
@@ -842,15 +839,15 @@
           }
         },
         "tokens_in": 702,
-        "tokens_out": 716,
+        "tokens_out": 626,
         "tool_calls": 0,
-        "content_len": 2935,
+        "content_len": 2610,
         "model": "unknown",
         "phases": {
-          "model_call": 3893.2,
-          "extract_code": 0.1,
-          "ast_parse": 0.8,
-          "game_verify": 1.8
+          "model_call": 5315.8,
+          "extract_code": 0.0,
+          "ast_parse": 0.6,
+          "game_verify": 1.9
         },
         "errors": [],
         "gaps": [],
@@ -917,15 +914,15 @@
           }
         },
         "tokens_in": 753,
-        "tokens_out": 1410,
+        "tokens_out": 1301,
         "tool_calls": 0,
-        "content_len": 5445,
+        "content_len": 4925,
         "model": "unknown",
         "phases": {
-          "model_call": 6635.6,
-          "extract_code": 0.1,
-          "ast_parse": 269.7,
-          "game_verify": 4.5
+          "model_call": 9312.2,
+          "extract_code": 0.0,
+          "ast_parse": 3.7,
+          "game_verify": 2.9
         },
         "errors": [],
         "gaps": [],
@@ -937,9 +934,9 @@
       "games_imported": 12,
       "games_fully_verified": 0,
       "total_tokens_in": 8194,
-      "total_tokens_out": 14601,
-      "total_latency_ms": 90420.7,
-      "total_latency_s": 90.42,
+      "total_tokens_out": 15258,
+      "total_latency_ms": 105834.80000000002,
+      "total_latency_s": 105.83,
       "most_tokens": "checkers",
       "most_latency": "checkers"
     }

@@ -30,6 +30,7 @@ EXPECTED_PLUGIN_FILES = [
     "enforce-clean-tree.ts",
     "enforce-verified-claims.ts",
     "enforce-multitask.ts",
+    "enforce-enhancement-ratio.ts",
 ]
 EXPECTED_PLUGINS_FILES = ["watchdog.ts"]
 

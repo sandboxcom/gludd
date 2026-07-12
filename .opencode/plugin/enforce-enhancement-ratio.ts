@@ -134,7 +134,7 @@ export default (async ({ }) => {
     },
 
     "text.complete": async (output) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return
+      if (process.env.OPENCODE_SUBAGENT === "1") return output
       if (!ENABLED) return
 
       try {

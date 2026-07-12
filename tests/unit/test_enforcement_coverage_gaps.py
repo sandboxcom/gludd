@@ -550,8 +550,8 @@ class TestMainthreadBudget:
         src = _src(DELEGATE_PATH)
         assert "mainthreadBudgetAfter" in src
 
-    def test_streak_threshold_default_4(self):
-        assert _extract_env_default(DELEGATE_PATH, "GLUDD_MAINTHREAD_THRESHOLD") == "4"
+    def test_streak_threshold_default_2(self):
+        assert _extract_env_default(DELEGATE_PATH, "GLUDD_MAINTHREAD_THRESHOLD") == "2"
 
     def test_streak_hard_denies_above_threshold(self):
         src = _src(DELEGATE_PATH)

@@ -8,7 +8,6 @@ from the TypeScript source and exercises each against the spec cases.
 """
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 

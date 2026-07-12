@@ -213,7 +213,7 @@ class TestStructuralGuardPresence:
                 )
             elif idx != first:
                 actual_line = body.split("\n")[idx].strip()
-                expected_line = body.split("\n")[first].strip() if first >= 0 else "(none)"
+                body.split("\n")[first].strip() if first >= 0 else "(none)"
                 misplaced.append(
                     f"{name}.ts @ src-line ~{line_no} — "
                     f"guard at body-line {idx} but first substantive line is {first}. "

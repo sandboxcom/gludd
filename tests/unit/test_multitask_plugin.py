@@ -74,6 +74,7 @@ class TestPluginStructure:
         assert "MULTITASKING FLOOR BREACH" in src, "Min-dispatch deny message missing"
         assert "ZERO-DISPATCH STREAK" in src, "Zero-streak deny message missing"
         assert "MUST DISPATCH" in src, "text.complete block message missing"
+        assert "MESSAGE BLOCKED" in src, "text.complete <2 dispatch block message missing"
 
     def test_exports_dispatch_tools(self):
         src = _plugin_source()
@@ -348,19 +349,20 @@ class TestTextCompleteResearchFinding:
 
 class TestTasksHasUnchecked:
     def test_tasks_has_unchecked_removed(self):
-        """tasksHasUnchecked was intentionally removed — enforcement is now
-        unconditional (the floor is HARD and cannot be bypassed). See
-        cost-efficiency directive (2026-07-11)."""
+        """tasksHasUnchecked was intentionally removed; the pending-work gate
+        for <2 dispatch blocking uses hasPendingWork() instead. The zero-streak
+        enforcement remains unconditional (hard floor, no pending-work gate)."""
         src = _plugin_source()
         assert "tasksHasUnchecked" not in src, (
-            "tasksHasUnchecked should NOT be present — enforcement is now "
-            "unconditional (hard floor, no pending-work gate)"
+            "tasksHasUnchecked should NOT be present — was replaced by hasPendingWork"
         )
 
     def test_no_checkbox_pattern_in_source(self):
-        """No markdown checkbox check — no TASKS.md gate exists."""
+        """TASKS.md is now referenced by hasPendingWork() in text.complete
+        for the <2 dispatch block — the pending-work gate was added per
+        user mandate (2026-07-12) to prevent blocking when work is done."""
         src = _plugin_source()
-        assert "TASKS.md" not in src, (
-            "No TASKS.md references in enforce-multitask.ts — "
-            "enforcement is unconditional, no file-based gate"
+        assert "TASKS.md" in src, (
+            "TASKS.md must be referenced by hasPendingWork() — "
+            "the pending-work gate was added per user mandate (2026-07-12)"
         )

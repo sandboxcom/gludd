@@ -63,6 +63,17 @@ function hasResultMarker(text: string): boolean {
   return RESULT_MARKERS.some(m => lower.includes(m))
 }
 
+function hasPendingWork(): boolean {
+  try {
+    const tasksPath = path.join(process.cwd(), "TASKS.md")
+    if (!fs.existsSync(tasksPath)) return false
+    const content = fs.readFileSync(tasksPath, "utf8")
+    return /^\s*[-*]\s*\[\s*\]/m.test(content)
+  } catch {
+    return false
+  }
+}
+
 function spawnGateRefresh(): void {
   try {
     const gatePath = path.join(process.cwd(), ".gate-status")
@@ -212,6 +223,18 @@ export default (async ({ }) => {
             }
           }
         } catch {}
+
+        if (!disengagedText && _state.thisMessageDispatches < 2 && hasPendingWork()) {
+          return {
+            text: [
+              "⛔ MESSAGE BLOCKED: must dispatch ≥2 subagents when work remains.",
+              "Instead got " + String(_state.thisMessageDispatches) + " dispatch(es).",
+              "Resend with more task/agent/workflow dispatches.",
+              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+              "Run 'make disengage-enforcement' to bypass.",
+            ].join(" "),
+          }
+        }
 
         if (!disengagedText && _state.zeroStreak >= MAX_ZERO_STREAK) {
           return {

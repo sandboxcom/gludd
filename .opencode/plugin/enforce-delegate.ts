@@ -39,7 +39,7 @@ const FORCE_DELEGATE_STATE = process.env.GLUDD_FORCE_DELEGATE_STATE || "/tmp/glu
 
 // MAINTHREAD STREAK (2026-06-29 strengthening): consecutive main-thread mutating
 // tool calls with no intervening dispatch. After MAINTHREAD_THRESHOLD (default
-// 4) consecutive calls, the 5th is HARD-DENIED. Default ON; disable with
+// 2) consecutive calls, the 3rd is HARD-DENIED. Default ON; disable with
 // GLUDD_MAINTHREAD_STREAK_ENFORCE=0.
 //
 // P8 FIX (2026-07-09 — polarity trap): previously MAINTHREAD_STREAK_ENABLED was
@@ -57,7 +57,7 @@ const FORCE_DELEGATE_STATE = process.env.GLUDD_FORCE_DELEGATE_STATE || "/tmp/glu
 // caps cannot interfere.
 const MAINTHREAD_STREAK_ENABLED = (process.env.GLUDD_MAINTHREAD_STREAK_ENFORCE || "1") !== "0"
 const MAINTHREAD_STREAK_FILE = process.env.GLUDD_MAINTHREAD_STREAK_FILE || "/tmp/gludd-mainthread-streak.json"
-const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || "4", 10)
+const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || "2", 10)
 
 // READ-GRINDING detection (2026-07-09 — multitasking audit P1 fix).
 // Investigation tools (grep/glob/file-view) don't count toward the

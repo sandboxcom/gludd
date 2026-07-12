@@ -981,9 +981,9 @@ class TestEnforceDelegateMainthreadStreak:
             src,
         )
         assert m, "MAINTHREAD_THRESHOLD declaration not found"
-        assert m.group(1) == "4", (
-            f"MAINTHREAD_THRESHOLD default is {m.group(1)}, expected 4 — the "
-            "5th consecutive mutating call must be the one that blocks"
+        assert m.group(1) == "2", (
+            f"MAINTHREAD_THRESHOLD default is {m.group(1)}, expected 2 — the "
+            "3rd consecutive mutating call must be the one that blocks"
         )
         # mainthreadBudgetBefore must compare streak >= threshold (via
         # `streak < MAINTHREAD_THRESHOLD ... return null` inverted — i.e. the

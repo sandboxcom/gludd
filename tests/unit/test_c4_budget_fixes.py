@@ -51,7 +51,7 @@ class TestEstimateCallCostUnknownModel:
             controller.estimate_call_cost(tokens=1000, cost_per_1k=0.0)
 
         assert any(
-            "unknown" in record.message.lower() or "unpriced" in record.message.lower()
+            "unknown" in record.getMessage().lower() or "unpriced" in record.getMessage().lower()
             for record in caplog.records
         ), f"No unknown/unpriced warning logged; records={caplog.records}"
 

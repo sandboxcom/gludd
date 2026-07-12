@@ -93,7 +93,7 @@
     &mdash; explained, with exact code paths
   </p>
   <p style="margin-top:30px; font-size:0.5em; color:#484f58;">
-    v{{VERSION}} &middot; commit {{GIT_SHA}} &middot; MIT License &middot; built {{GENERATED_AT}}
+    v0.1.0-beta.3 &middot; commit 5de6dc7 &middot; MIT License &middot; built 2026-07-12T10:39:48Z
   </p>
 </section>
 
@@ -160,6 +160,42 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 4b: DAEMON OVERVIEW -->
+<!-- ============================================================ -->
+<section>
+  <h2>Daemon overview &mdash; the central orchestrator</h2>
+  <p><span class="path">src/general_ludd/daemon.py</span> (3,126 lines) is the single entry point. It boots a FastAPI process, wires every subsystem, and runs the EventLoop forever.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+graph TD
+  subgraph Boot["Lifespan startup (daemon.py)"]
+    A1["init DB + session factory<br/>:1188"] --> A2["wire controllers<br/>(SpendLimiter, BudgetGuard,<br/>Hibernation, Pause)"]
+    A2 --> A3["wire agents<br/>(AgentDispatcher, ModelGateway,<br/>AnsibleRunnerAdapter)"]
+    A3 --> A4["register all routers<br/>(todos, review, admin, MCP,<br/>self-improve, compute...)"]
+    A4 --> A5["start EventLoop<br/>asyncio.create_task"]
+  end
+  subgraph Runtime["Per-tick (event_loop/loop.py)"]
+    B1["open DB session"] --> B2["run 16 PHASE_ORDER phases"]
+    B2 --> B3["commit + close session"]
+  end
+  subgraph Shutdown["Lifespan teardown"]
+    C1["drain background tasks"] --> C2["close MCP subprocesses"]
+    C2 --> C3["close DB connections"]
+  end
+  Boot --> Runtime
+  Runtime -.->|"~1s tick"| Runtime
+  Runtime --> Shutdown
+    </div>
+  </div>
+  <ul class="bullets-tight">
+    <li class="fragment"><strong>Wired at boot:</strong> 24 model providers, 109 Ansible roles, 14 enforcement plugins, 27 DB tables</li>
+    <li class="fragment"><strong>Routers registered:</strong> todos, review, admin, MCP, self-improve, compute, pause, remediation, eval, security, account, memory, worktree, stream, files, facts, ornith, benchmark, model-performance</li>
+    <li class="fragment"><strong>Daemon state:</strong> single source of truth (&lt;code&gt;app.state&lt;/code&gt;) — DB factory, controllers, agent registry, dispatcher, all in one process</li>
+  </ul>
+  <p class="cite">Source: src/general_ludd/daemon.py:1-3126, src/general_ludd/event_loop/loop.py</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 5: FLAGSHIP FLOW OVERVIEW -->
 <!-- ============================================================ -->
 <section>
@@ -179,7 +215,7 @@ flowchart TD
   n8 -.->|reject: retry| n6
     </div>
   </div>
-  <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on {{GENERATED_AT}}</p>
+  <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
 </section>
 
 <!-- ============================================================ -->
@@ -529,7 +565,36 @@ flowchart TD
     <li class="fragment"><span class="path">Return &amp; review</span> &mdash; worker output lands in <code>task_returns</code> (<span class="path">loop.py:3068</span>); a second model reviews it (<span class="path">review/reviewer.py</span>) and writes <code>task_decisions</code></li>
     <li class="fragment"><span class="path">Reconcile + commit</span> &mdash; <span class="path">loop.py:3066</span> applies the decision; <span class="path">git_automation/repo.py:180</span> commits + pushes</li>
   </ul>
-  <p class="cite">Source: code-trace audit against src/general_ludd/ on {{GENERATED_AT}}</p>
+  <p class="cite">Source: code-trace audit against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 15c: EXACT CODE PATHS — SUBSYSTEM MAP -->
+<!-- ============================================================ -->
+<section>
+  <div class="stage-kicker">Flagship flow &middot; subsystem map</div>
+  <h2>Exact code paths &mdash; every subsystem, one slide</h2>
+  <table>
+    <thead><tr><th>Subsystem</th><th>Key file(s)</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>HTTP API</td><td><span class="path">routers/todos.py:170</span></td><td>POST /api/todos &rarr; INSERT todos (BACKLOG)</td></tr>
+      <tr><td>Event Loop</td><td><span class="path">event_loop/loop.py:88</span></td><td>16-phase tick, ~1s cycle, one DB session</td></tr>
+      <tr><td>Scheduler</td><td><span class="path">event_loop/scheduler.py:107</span></td><td>SCHEDULED &rarr; QUEUED promotion, cron fire</td></tr>
+      <tr><td>Claim (CAS)</td><td><span class="path">db/repository.py:424</span></td><td>QUEUED &rarr; ACTIVE, version-guarded</td></tr>
+      <tr><td>Lease</td><td><span class="path">event_loop/lease.py:15</span></td><td>bucket_leases row, holder_id + expires_at</td></tr>
+      <tr><td>Spend Gate</td><td><span class="path">controllers/spend_limiter.py:278</span></td><td>try_charge (in-memory), defer on reject</td></tr>
+      <tr><td>Model Call</td><td><span class="path">models/gateway.py:642</span></td><td>LangChain + tenacity retries, 24 providers</td></tr>
+      <tr><td>Tool Loop</td><td><span class="path">execution/tool_loop.py:139</span></td><td>Model proposes tool &rarr; execute &rarr; feed back</td></tr>
+      <tr><td>Execute</td><td><span class="path">ansible/runner.py:166</span> / <span class="path">worker/app.py:315</span></td><td>Local playbook or remote worker HTTP</td></tr>
+      <tr><td>Persist</td><td><span class="path">event_loop/loop.py:3016</span></td><td>INSERT task_returns (unreviewed)</td></tr>
+      <tr><td>Review</td><td><span class="path">review/reviewer.py:49</span></td><td>Adversarial scan, JSON-fence-tolerant parse</td></tr>
+      <tr><td>Decision</td><td><span class="path">review/decision_applier.py:28</span></td><td>INSERT task_decisions + audit_events</td></tr>
+      <tr><td>Reconcile</td><td><span class="path">event_loop/loop.py:3066</span></td><td>Apply decision, update todo status</td></tr>
+      <tr><td>Commit</td><td><span class="path">git_automation/repo.py:180</span></td><td>git commit + push to gludd-&lt;todo_id&gt; branch</td></tr>
+      <tr><td>PR (optional)</td><td><span class="path">git_automation/pr_delivery.py</span></td><td>_maybe_open_pr, via loop.py:3448</td></tr>
+    </tbody>
+  </table>
+  <p class="cite">Source: code-trace audit against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
 </section>
 
 <!-- ============================================================ -->
@@ -634,6 +699,104 @@ flowchart TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19b: BEHAVIORS → DB TABLES -->
+<!-- ============================================================ -->
+<section>
+  <h2>Behaviors &rarr; DB tables &mdash; what writes where</h2>
+  <p>Every meaningful action in gludd writes a row to a specific table. Here is the complete mapping.</p>
+  <table>
+    <thead><tr><th>Behavior</th><th>Table</th><th>Line</th><th>What is recorded</th></tr></thead>
+    <tbody>
+      <tr><td>Submit a task</td><td><code>todos</code></td><td>180</td><td>Description, queue, priority, schedule, cost est.</td></tr>
+      <tr><td>Status transition</td><td><code>todo_events</code></td><td>289</td><td>old_status &rarr; new_status, actor, reason</td></tr>
+      <tr><td>Claim a todo</td><td><code>bucket_leases</code></td><td>504</td><td>Exclusive CAS lease (holder_id, expires_at)</td></tr>
+      <tr><td>Spend gate pass</td><td><code>spend_records</code></td><td>634</td><td>Unix-ts cost event (rolling-window math)</td></tr>
+      <tr><td>Model API call</td><td><code>model_call_logs</code></td><td>962</td><td>Tokens in/out, latency, provider, cost</td></tr>
+      <tr><td>Model perf rollup</td><td><code>model_performance</code></td><td>1005</td><td>Aggregated success/latency/cost per model</td></tr>
+      <tr><td>Job executes</td><td><code>task_returns</code></td><td>315</td><td>Raw result: exit code, summary, artifacts</td></tr>
+      <tr><td>Review verdict</td><td><code>task_decisions</code></td><td>353</td><td>approve / changes / reject, confidence</td></tr>
+      <tr><td>Any audit event</td><td><code>audit_events</code></td><td>422</td><td>System-wide event log (all action types)</td></tr>
+      <tr><td>Needs human</td><td><code>human_todos</code></td><td>857</td><td>Tasks awaiting human approval or input</td></tr>
+      <tr><td>Agent memory</td><td><code>memory_records</code></td><td>741</td><td>Key-value store, TTL, per-agent namespace</td></tr>
+      <tr><td>Queue config</td><td><code>queues</code></td><td>397</td><td>Caps, allowed playbooks/models, retry policy</td></tr>
+      <tr><td>Role execution</td><td><code>role_runs</code></td><td>665</td><td>Accounting ledger per role invocation</td></tr>
+      <tr><td>Benchmark run</td><td><code>benchmark_results</code></td><td>685</td><td>Completion/quality/adherence/efficiency scores</td></tr>
+      <tr><td>Task embedding</td><td><code>task_embeddings</code></td><td>776</td><td>Cosine-similarity routing vectors (RAG)</td></tr>
+    </tbody>
+  </table>
+  <p class="cite">Source: src/general_ludd/db/models.py (27 total tables; 15 shown above are the behavioral spine)</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19c: MCP INTEGRATION -->
+<!-- ============================================================ -->
+<section>
+  <h2>MCP integration &mdash; the tool-call boundary</h2>
+  <p>gludd implements the <strong>Model Context Protocol (MCP)</strong> as the boundary between AI reasoning and real-world execution. The model proposes a tool; MCP validates, executes, and returns the result.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+graph TD
+  subgraph MCP["src/general_ludd/mcp/"]
+    A["client.py<br/>MCPClient<br/>stdin/stdout subprocess"] --> B["transport.py<br/>Transport launcher<br/>(python, node, uvx, npm)"]
+    B --> C["loader.py<br/>MCPToolLoader<br/>register + load"]
+    C --> D["registry.py<br/>ToolRegistry<br/>register + lookup"]
+    D --> E["builtins.py<br/>Built-in tools<br/>(run_project_check...)"]
+    C --> F["catalog.py<br/>ToolCatalog<br/>discover + list"]
+  end
+  subgraph Model["Model side"]
+    M1["execution/tool_loop.py<br/>model proposes tool call"] --> M2["DynamicDispatcher<br/>capability lattice"]
+    M2 --> M3["MCPClient.call_tool()"]
+    M3 --> M4["return result to model"]
+  end
+  Model -.->|"validate + execute"| MCP
+    </div>
+  </div>
+  <ul class="bullets-tight">
+    <li class="fragment"><strong>Transport:</strong> Python subprocess, Node subprocess, uvx, npm — all argv-validated against a per-interpreter allowlist</li>
+    <li class="fragment"><strong>Secrets:</strong> <span class="path">mcp/secrets.py</span> — MCP-specific secret resolution, scoped per server</li>
+    <li class="fragment"><strong>Config:</strong> <span class="path">mcp/config.py</span> — server discovery, allowlist, version pins</li>
+    <li class="fragment"><strong>DynamicDispatcher</strong> fails <strong>closed</strong> on unknown tools — no tool the system doesn't recognize ever executes</li>
+  </ul>
+  <p class="cite">Source: src/general_ludd/mcp/ (8 modules), src/general_ludd/execution/tool_loop.py:139, src/general_ludd/dispatch/dynamic_dispatcher.py</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19d: SELF-IMPROVE PIPELINE -->
+<!-- ============================================================ -->
+<section>
+  <h2>Self-improve pipeline &mdash; gludd audits itself</h2>
+  <p>Every tick, the EventLoop runs a <strong>self-improve phase</strong> that audits gludd's own code, proposes fixes, gates them through approval, and tracks outcomes.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+graph TD
+  subgraph SI["src/general_ludd/self_improve/"]
+    A["harness.py<br/>SelfImproveHarness<br/>gap-finding scan"] --> B["gate.py<br/>SelfImproveGate<br/>auto_queue + promote"]
+    B --> C["approval.py<br/>ApprovalController<br/>human-in-the-loop gate"]
+    C --> D["outcomes.py<br/>OutcomeTracker<br/>track success/failure"]
+  end
+  subgraph Loop["EventLoop phase (loop.py)"]
+    E1["self_improve phase"] --> E2["Scan source tree<br/>(lint, typecheck, audit)"]
+    E2 --> E3["Propose fixes<br/>(model-generated patches)"]
+    E3 --> E4["Gate approval<br/>(manual or auto)"]
+    E4 --> E5["Apply approved fix<br/>(hot-reload or commit)"]
+    E5 --> E6["Track outcome<br/>(test pass/fail, regressions)"]
+  end
+  Loop -.->|"reads + mutates"| SI
+    </div>
+  </div>
+  <ul class="bullets-tight">
+    <li class="fragment"><strong>Harness:</strong> scans for gaps using SAST (semgrep, bandit), typecheck (mypy), lint (ruff)</li>
+    <li class="fragment"><strong>Gate:</strong> <span class="path">auto_queue=True</span> bypasses approval (P1 item C13 tracks this)</li>
+    <li class="fragment"><strong>Approval:</strong> human-in-the-loop default; <span class="path">POST /admin/self-improve/run</span> bypasses the gate</li>
+    <li class="fragment"><strong>Apply path:</strong> currently hardcoded to <code>make test-unit</code> — generalization to external projects is D3 (P1)</li>
+  </ul>
+  <p class="honest-note">
+    Self-improve has 4 known gate bypasses (item C13). It works, but the approval path needs hardening.
+  </p>
+  <p class="cite">Source: src/general_ludd/self_improve/ (4 modules), src/general_ludd/routers/self_improve.py, src/general_ludd/event_loop/loop.py self_improve phase</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 20: SECURITY -->
 <!-- ============================================================ -->
 <section>
@@ -656,6 +819,46 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 20b: GUARDRAILS ARCHITECTURE -->
+<!-- ============================================================ -->
+<section>
+  <h2>Guardrails architecture &mdash; 14 plugins, 3 layers</h2>
+  <p>Every agent action passes through <strong>three enforceable layers</strong>. No single layer is trusted alone.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+graph TD
+  subgraph L1["Layer 1 — Config (hard gate)"]
+    C1["opencode.json<br/>permission block"]
+    C2["Make only: deny *,<br/>allow make *"]
+  end
+  subgraph L2["Layer 2 — Runtime (real-time hooks)"]
+    P1["enforce-make.ts<br/>Bash make-only"]
+    P2["enforce-floor.ts<br/>agent-count floor"]
+    P3["enforce-stop.ts<br/>premature-stop block"]
+    P4["enforce-delegate.ts<br/>delegation budget"]
+    P5["enforce-no-wait.ts<br/>anti-wait CI poll"]
+    P6["enforce-session-start.ts<br/>dispatch-on-start"]
+    P7["enforce-verified-claims.ts<br/>evidence-required"]
+    P8["enforce-clean-tree.ts<br/>dirty-tree dispatch deny"]
+    P9["+6 more plugins<br/>(14 total)"]
+  end
+  subgraph L3["Layer 3 — Prompt (instruction)"]
+    D1["AGENTS.md<br/>policy sections"]
+    D2["TDD, commit-after-green,<br/>guardrail integrity..."]
+  end
+  L1 --> L2 --> L3
+    </div>
+  </div>
+  <ul class="bullets-tight">
+    <li class="fragment"><strong>14 plugins</strong> in <span class="path">.opencode/plugin/</span>, all registered in <span class="path">opencode.json</span></li>
+    <li class="fragment">Each plugin is pinned by a test in <span class="path">tests/unit/</span> (plugin behavior tests)</li>
+    <li class="fragment"><strong>Fail-open on error</strong>: a broken hook never blocks legitimate work; the next layer still enforces</li>
+    <li class="fragment">All 14 verified active via <span class="path">make verify-plugin-manifest</span></li>
+  </ul>
+  <p class="cite">Source: .opencode/plugin/ (14 files), opencode.json, tests/unit/test_*_plugin*.py</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 21: SCALE OF THE SYSTEM -->
 <!-- ============================================================ -->
 <section>
@@ -668,12 +871,12 @@ graph TD
       <span class="cite"><code>find src -name '*.py'</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">{{TEST_COUNT}}</div>
+      <div class="number">25,173</div>
       <div class="label">tests</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">{{ROLE_COUNT}}</div>
+      <div class="number">110</div>
       <div class="label">Ansible roles</div>
       <span class="cite"><code>make collection-roles</code></span>
     </div>
@@ -830,12 +1033,12 @@ make init</code></pre>
   </p>
   <div class="metrics-grid">
     <div class="metric-box">
-      <div class="number">v{{VERSION}}</div>
+      <div class="number">v0.1.0-beta.3</div>
       <div class="label">current version</div>
       <span class="cite"><code>pyproject.toml</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">{{TEST_COUNT}}</div>
+      <div class="number">25,173</div>
       <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
@@ -874,7 +1077,7 @@ make init</code></pre>
   </div>
   <p class="honest-note" style="margin-top:12px;">
     These are truth, not aspiration. Every citation is a command you can run yourself.
-    Commit <span class="path">{{GIT_SHA}}</span>, generated {{GENERATED_AT}}.
+    Commit <span class="path">5de6dc7</span>, generated 2026-07-12T10:39:48Z.
   </p>
 </section>
 
@@ -907,7 +1110,7 @@ make init</code></pre>
   <p style="color:#8b949e; margin-top:20px;">Questions?</p>
   <p style="font-size:0.6em; margin-top:40px;">
     gludd &mdash; Autonomous Software Development<br>
-    v{{VERSION}} &middot; MIT License &middot; built {{GENERATED_AT}} &middot; commit {{GIT_SHA}}
+    v0.1.0-beta.3 &middot; MIT License &middot; built 2026-07-12T10:39:48Z &middot; commit 5de6dc7
   </p>
   <p style="font-size:0.5em; margin-top:20px;">
     <a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a><br>

@@ -18,10 +18,10 @@ test_verified_claims_plugin.py).
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
-import subprocess
 import time
 from pathlib import Path
 
@@ -191,10 +191,8 @@ def _write_floor_override(value: int) -> None:
 
 
 def _remove_floor_override() -> None:
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.remove("/tmp/gludd-floor-override")
-    except FileNotFoundError:
-        pass
 
 
 def _read_floor_override(fallback: int = 7) -> int:
@@ -231,7 +229,13 @@ def _read_multitask_state() -> dict:
             return json.loads(p.read_text())
     except (FileNotFoundError, ValueError, json.JSONDecodeError):
         pass
-    return {"thisMessageDispatches": 0, "prevMessageDispatches": 0, "zeroStreak": 0, "estimatedInFlight": 0, "lastTs": 0}
+    return {
+        "thisMessageDispatches": 0,
+        "prevMessageDispatches": 0,
+        "zeroStreak": 0,
+        "estimatedInFlight": 0,
+        "lastTs": 0,
+    }
 
 
 def _write_session_start_state(dispatch_count: int) -> None:
@@ -262,10 +266,8 @@ def _write_disengage(until_epoch: int) -> None:
 
 
 def _remove_disengage() -> None:
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.remove("/tmp/gludd-watchdog-disengage.json")
-    except FileNotFoundError:
-        pass
 
 
 def _is_disengaged() -> bool:
@@ -298,7 +300,13 @@ def _check_gate_status() -> dict:
         is_green = "=== GATE: PASSED ===" in content or "PASS" in content
         mtime = gs.stat().st_mtime
         fresh = (time.time() - mtime) < 3600  # <1 hour
-        return {"exists": True, "is_green": is_green, "is_fresh": fresh, "mtime": mtime, "content": content.strip()[:200]}
+        return {
+            "exists": True,
+            "is_green": is_green,
+            "is_fresh": fresh,
+            "mtime": mtime,
+            "content": content.strip()[:200],
+        }
     except OSError:
         return {"exists": False, "is_green": False, "is_fresh": False}
 
@@ -321,10 +329,8 @@ def _write_gate_status_passing() -> None:
 
 
 def _remove_gate_status() -> None:
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.remove(str(_gate_status_path()))
-    except FileNotFoundError:
-        pass
 
 
 # --------------------------------------------------------------------------

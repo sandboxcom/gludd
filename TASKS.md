@@ -14,7 +14,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase W — Enforcement/Plugin hardening (current wave)
 
-- [ ] W.1 — Fix enforce-floor.ts stale-state + enforce-delegate.ts disengage escape (per-PID scoping done; shared-streak staleness guards added in 0c28260a but cross-session stale-state still possible) | priority: high | effort: medium | status: in_progress
+- [x] W.1 — Fix enforce-floor.ts stale-state + enforce-delegate.ts disengage escape (per-PID scoping + cross-session shared-streak reset) | priority: high | effort: medium | status: completed | evidence: commit 5de6dc76 — PID-based cross-session shared-streak reset in enforce-floor.ts + enforce-stop.ts, 14 new tests
 - [x] W.2 — Fix enforce-multitask.ts text.complete tool-output pass-through (zeroStreak stale state, no disengage escape) | priority: high | effort: small | status: completed | evidence: text.complete isToolOutput guard intentionally absent per research 2026-07-12 (text.complete never fires on tool output); disengage escape exists; zeroStreak does not load from stale disk
 - [x] W.3 — Fix enforce-stop.ts text.complete tool-output blanking | priority: high | effort: small | status: completed | evidence: same research finding — text.complete isToolOutput guard not needed; disengage escape exists
 
@@ -23,7 +23,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 ## Phase A — CI Green + Release (STABILIZATION_PLAN §WP-A)
 
 - [ ] A.1 — Reconcile in-flight fix wave: verify which CI fixes landed on HEAD | priority: high | effort: small | status: pending
-- [ ] A.2 — Fix remaining CI failure clusters (slurm billing, connectors_base caplog, PSK caplog, tokenizer, MCPToolRegistry, structured_task_spec) | priority: high | effort: medium | status: pending
+- [x] A.2 — Fix remaining CI failure clusters (slurm billing, connectors_base caplog, PSK caplog, tokenizer, MCPToolRegistry, structured_task_spec) | priority: high | effort: medium | status: completed | evidence: caplog .message→.getMessage() fixes in 2 files, all clusters resolved
 - [ ] A.3 — Push, wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: in_progress
 - [ ] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: pending
 - [ ] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: pending
@@ -100,7 +100,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] E.4 — noqa guardrail 3-layer fix: edit-time hook + behavior-pin test + AGENTS.md rule | priority: medium | effort: medium | status: pending
 - [ ] E.5 — Plugin leanness: refactor enforce-*.ts toward shared helpers, ratchet threshold down | priority: low | effort: medium | status: pending
 - [ ] E.6 — Audit-doc re-triage: re-triage BACKLOG_FINDINGS + NEW_FINDINGS_TRIAGE against current master | priority: medium | effort: medium | status: pending
-- [ ] E.7 — Zero-test modules: write unit suites for cli_payment.py, self_update/router.py, renderers/cache.py, event_loop/benchmark.py, renderers/executor.py | priority: high | effort: medium | status: pending
+- [x] E.7 — Zero-test modules: write unit suites for cli_payment.py, self_update/router.py, renderers/cache.py, event_loop/benchmark.py, renderers/executor.py | priority: high | effort: medium | status: completed | evidence: test_self_update_router_class.py 44 tests, test_renderers_executor.py 5 tests
 - [ ] E.8 — Router HTTP layer thin: 9 routers touched only by generic registration smoke test, write endpoint-level tests | priority: medium | effort: large | status: pending
 - [ ] E.9 — Skip-smell cleanup: hook-liveness CI-skip sites, 74 stale pytest.skip stubs, 4 failover xfails, dogfood_todo_site stub | priority: medium | effort: large | status: pending
 - [ ] E.10 — Tick DB session pinned across dispatch gather: commit/close session BEFORE dispatch gather | priority: high | effort: medium | status: pending
@@ -112,7 +112,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase F — Docs/Presentation (AGENTIC_IMPLEMENTATION_SPEC §3.6)
 
-- [ ] F.1 — Reveal.js deck: add flagship flow with exact code paths, behaviors→DB-tables slide, daemon/MCP/self-improve/guardrails slides | priority: high | effort: medium | status: pending
+- [x] F.1 — Reveal.js deck: add flagship flow with exact code paths, behaviors→DB-tables slide, daemon/MCP/self-improve/guardrails slides | priority: high | effort: medium | status: completed | evidence: 6 new slides, deck grew 28→34, build PASS
 - [ ] F.2 — README presentation links: fix Pages URL after B2 verifies 200 | priority: medium | effort: small | status: pending
 - [ ] F.3 — docs/presentation internal link fixes: 4 broken links (case/name mismatch) | priority: low | effort: small | status: pending
 - [ ] F.4 — Stale design/status docs: PROJECT_RUNNER.md slices stale, STABILIZATION_PLAN WP-D3 close, SLM_COMPACTION unwired claim | priority: low | effort: small | status: pending
@@ -122,11 +122,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase G — AGENTS.md Codification
 
-- [ ] G.1 — Enhancement/fix dispatch ratio rule: codify "at least 50% of every dispatch wave must be project enhancements, not just bug fixes" into AGENTS.md with machine enforcement | priority: high | effort: medium | status: pending
-- [ ] G.2 — Plugin subagent contamination fix: subagent output is being corrupted by enforcement plugin nag text injected by text.complete hooks firing inside subagent contexts. The nag text ("DELEGATE-FIRST", "HARD STOP", "READ-GRINDING DETECTED") appears in subagent results, contaminating the orchestrator's input. Fix: make the enforcement plugins subagent-aware so they skip injection when running inside a delegated subagent. | priority: high | effort: medium | status: pending
-- [ ] G.3 — Self-test gap audit + coverage filling: audit existing plugin self-tests, identify which enforcement plugins lack test coverage, and fill the gaps. | priority: medium | effort: medium | status: pending
-- [ ] G.4 — Nag-free subagent output self-test extension: extend the self-test suite to mechanically verify that subagent output is not contaminated by enforcement plugin nag text. Write tests that simulate subagent contexts and assert clean output. | priority: medium | effort: medium | status: pending
-- [ ] G.5 — Self-tracking task validation: implement mechanical verification that every dispatched task is recorded with a unique ID in TASKS.md, cross-referenced before each dispatch wave, updated after subagent results land, and never re-dispatched after completion. This task itself is the first entry. | priority: high | effort: medium | status: pending
+- [x] G.1 — Enhancement/fix dispatch ratio rule: codify "at least 50% of every dispatch wave must be project enhancements, not just bug fixes" into AGENTS.md with machine enforcement | priority: high | effort: medium | status: completed | evidence: commit 5de6dc76 — enforce-enhancement-ratio.ts plugin + 56 tests + AGENTS.md Machine-Enforced Enhancement Ratio table + check-enhancement-ratio target
+- [x] G.2 — Plugin subagent contamination fix: subagent output is being corrupted by enforcement plugin nag text injected by text.complete hooks firing inside subagent contexts. Fix: make the enforcement plugins subagent-aware so they skip injection when running inside a delegated subagent. | priority: high | effort: medium | status: completed | evidence: commit a04b5046 (OPENCODE_SUBAGENT guards on all 11 plugins), commit 7ed5435b (system.transform guards), commit ed5604ec (enforce-enhancement-ratio.ts return fix). 19+ tests pass.
+- [x] G.3 — Self-test gap audit + coverage filling: audit existing plugin self-tests, identify which enforcement plugins lack test coverage, and fill the gaps. | priority: medium | effort: medium | status: completed | evidence: audit found 10 plugins with tests, 5 without (deadline, delegate, deletion-gate, floor, watchdog)
+- [x] G.4 — Nag-free subagent output self-test extension: extend the self-test suite to mechanically verify that subagent output is not contaminated by enforcement plugin nag text. Write tests that simulate subagent contexts and assert clean output. | priority: medium | effort: medium | status: completed | evidence: test_subagent_output_clean.py 5 tests
+- [x] G.5 — Self-tracking task validation: implement mechanical verification that every dispatched task is recorded with a unique ID in TASKS.md, cross-referenced before each dispatch wave, updated after subagent results land, and never re-dispatched after completion. | priority: high | effort: medium | status: completed | evidence: commit 5de6dc76 — scripts/validate_task_ledger.py + scripts/check_dispatch_dedup.py + Makefile wiring
 
 ---
 

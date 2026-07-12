@@ -54,10 +54,10 @@ class TestEnforceFloorPlugin:
     def test_file_exists(self):
         assert ENFORCE_FLOOR.exists(), "enforce-floor.ts must exist"
 
-    def test_floor_default_is_five(self):
+    def test_floor_default_is_seven(self):
         line = _floor_declaration(ENFORCE_FLOOR.read_text())
-        assert "5" in line, (
-            f"enforce-floor.ts FLOOR must default to 5; got: {line!r}"
+        assert "7" in line, (
+            f"enforce-floor.ts FLOOR must default to 7; got: {line!r}"
         )
 
 
@@ -65,10 +65,10 @@ class TestEnforceDelegatePlugin:
     def test_file_exists(self):
         assert ENFORCE_DELEGATE.exists(), "enforce-delegate.ts must exist"
 
-    def test_floor_default_is_five(self):
+    def test_floor_default_is_seven(self):
         line = _floor_declaration(ENFORCE_DELEGATE.read_text())
-        assert "5" in line, (
-            f"enforce-delegate.ts FLOOR must default to 5; got: {line!r}"
+        assert "7" in line, (
+            f"enforce-delegate.ts FLOOR must default to 7; got: {line!r}"
         )
 
 
@@ -76,10 +76,10 @@ class TestEnforceStopPlugin:
     def test_file_exists(self):
         assert ENFORCE_STOP.exists(), "enforce-stop.ts must exist"
 
-    def test_floor_default_is_five(self):
+    def test_floor_default_is_seven(self):
         line = _floor_declaration(ENFORCE_STOP.read_text())
-        assert "5" in line, (
-            f"enforce-stop.ts FLOOR must default to 5; got: {line!r}"
+        assert "7" in line, (
+            f"enforce-stop.ts FLOOR must default to 7; got: {line!r}"
         )
 
 
