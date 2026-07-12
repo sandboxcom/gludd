@@ -1658,130 +1658,48 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
         )
 
 
-# ── enforce-stop.ts: text.complete must NOT modify tool output content ──────
-# 2026-07-12: Both enforce-multitask.ts and enforce-stop.ts had a critical bug:
-# their text.complete hooks were intercepting ALL text output including tool
-# result content from Read/Grep/Glob/Bash. This meant:
-#   1. Read tool output was replaced with "DELEGATE-FIRST" nags
-#   2. Grep results were transformed with enforcement messages
-#   3. The shared streak counter inflated from tool output count
-#   4. Subagents could not read files (their Read tool results were blanked)
-# The fix: an isToolOutput guard (checking _input.role !== "assistant") that
-# returns early BEFORE any enforcement logic runs. These tests prevent regression.
+# ── enforce-stop.ts: text.complete never fires on tool output ───────────
+# 2026-07-12: Research found opencode's text.complete hook ONLY fires on
+# text-end LLM stream events — never on tool output from Read/Grep/Glob/Bash.
+# The isToolOutput guard (checking _input.role) was dead code that never
+# executed. Removed; replaced with a RESEARCH FINDING comment to prevent
+# re-addition.
 
 
-class TestEnforceStopTextCompleteSkipsToolOutput:
-    """enforce-stop.ts text.complete must detect tool output content and skip
-    ALL enforcement (DELEGATE-FIRST nag, false-done detection, hasLocalWork
-    block, ratchet block). Tool output MUST pass through unmodified."""
+class TestEnforceStopTextCompleteNoToolOutputGuard:
+    """enforce-stop.ts text.complete must NOT have a dead isToolOutput guard.
+    Since text.complete never fires on tool output, no guard is needed.
+    The research finding must be documented to prevent re-addition."""
 
     ENFORCE_STOP = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-stop.ts"
 
     @staticmethod
     def _src() -> str:
-        return TestEnforceStopTextCompleteSkipsToolOutput.ENFORCE_STOP.read_text()
+        return TestEnforceStopTextCompleteNoToolOutputGuard.ENFORCE_STOP.read_text()
 
-    def test_isToolOutput_guard_present(self):
-        """text.complete must have isToolOutput guard to detect tool output content."""
+    def test_isToolOutput_removed(self):
         src = self._src()
-        assert "isToolOutput" in src, (
-            "enforce-stop.ts text.complete must have isToolOutput guard — "
-            "without it, Read/Grep/Glob results are modified by enforcement logic"
+        assert "isToolOutput" not in src, (
+            "isToolOutput guard must be removed from enforce-stop.ts — "
+            "it is dead code that never fires because text.complete only "
+            "receives text-end LLM stream events"
         )
 
-    def test_isToolOutput_checks_role_not_assistant(self):
-        """isToolOutput must check _input.role !== 'assistant'."""
+    def test_research_finding_comment_present(self):
         src = self._src()
-        assert '"assistant"' in src, (
-            "isToolOutput must compare against 'assistant' role"
-        )
-        assert 'role' in src, (
-            "isToolOutput must inspect _input.role field"
+        assert "text.complete hook NEVER fires on tool output" in src, (
+            "RESEARCH FINDING comment must document that text.complete never "
+            "receives tool output, to prevent re-addition of dead isToolOutput guards"
         )
 
-    def test_tool_output_returns_before_delegate_first_nag(self):
-        """When isToolOutput is true, the handler must return BEFORE the
-        DELEGATE-FIRST nag. The nag prepends text to the output — if it fires
-        on tool output, file content gets corrupted with enforcement messages."""
+    def test_enforcement_still_active(self):
+        """Enforcement (DELEGATE-FIRST, FALSE-DONE, hasLocalWork) must still
+        exist — removal is of the dead guard only, not the enforcement logic."""
         src = self._src()
-        guard_idx = src.find("isToolOutput")
-        assert guard_idx >= 0
-        after_guard = src[guard_idx:]
-        delegate_idx = after_guard.find("DELEGATE-FIRST")
-        # DELEGATE-FIRST should appear AFTER the guard section (not before)
-        assert delegate_idx >= 0, (
-            "DELEGATE-FIRST nag must exist in text.complete"
-        )
-
-    def test_tool_output_returns_before_false_done_detection(self):
-        """Tool output content must not be scanned for false-done claims.
-        A Read result containing 'Done.' or '✅' is NOT an agent stop signal."""
-        src = self._src()
-        guard_idx = src.find("isToolOutput")
-        after_guard = src[guard_idx:]
-        fd_idx = after_guard.find("FALSE-DONE")
-        assert fd_idx >= 0, (
-            "FALSE-DONE detection must appear after tool-output guard — "
-            "should only scan agent text, not tool results"
-        )
-
-    def test_tool_output_returns_before_hasLocalWork_block(self):
-        """The hasLocalWork text-block must NOT fire on tool output. A tool result
-        is not a text-only agent response — it's the output of a tool call."""
-        src = self._src()
-        guard_idx = src.find("isToolOutput")
-        after_guard = src[guard_idx:]
-        # hasLocalWork + block should be after the guard
-        lw_idx = after_guard.find("hasLocalWork")
-        assert lw_idx >= 0, (
-            "hasLocalWork block must appear after tool-output guard — "
-            "tool output content must pass through the block unexamined"
-        )
-
-    def test_tool_output_returns_before_ratchet_block(self):
-        """The ratchet-entries text-block must NOT fire on tool output."""
-        src = self._src()
-        guard_idx = src.find("isToolOutput")
-        after_guard = src[guard_idx:]
-        r_idx = after_guard.find("RATCHET")
-        assert r_idx >= 0, (
-            "RATCHET block must appear after tool-output guard"
-        )
-
-    def test_tool_output_returns_before_stop_pattern_check(self):
-        """STOP_PATTERN_PHRASES and COMPLETION_VERBATIM detection must come AFTER
-        the isToolOutput guard. Tool output is not agent communication."""
-        src = self._src()
-        guard_idx = src.find("isToolOutput")
-        after_guard = src[guard_idx:]
-        assert (
-            "STOP_PATTERN_PHRASES" in after_guard
-            or "COMPLETION_VERBATIM" in after_guard
-            or "responseLooksTerminal" in after_guard
-        ), (
-            "Stop-pattern detection must appear after the tool-output guard"
-        )
-
-    def test_shared_streak_read_after_isToolOutput(self):
-        """readSharedStreak() (for DELEGATE-FIRST nag) must be called AFTER the
-        isToolOutput guard returns. Reading the shared streak for tool output
-        text would incorrectly contribute to the grinding counter."""
-        src = self._src()
-        guard_idx = src.find("isToolOutput")
-        after_guard = src[guard_idx:]
-        assert "readSharedStreak" in after_guard, (
-            "readSharedStreak must appear after tool-output guard — "
-            "shared streak should only be read for agent text"
-        )
-
-    def test_isToolOutput_uses_return_not_throw(self):
-        """The isToolOutput guard must use `return` (or `return output`) to skip
-        enforcement, NOT throw. Throwing would be a hook error and could fail-open
-        in a way that still modifies the text."""
-        src = self._src()
-        guard_idx = src.find("isToolOutput")
-        # Search nearby for the early return
-        snippet = src[guard_idx:guard_idx + 500]
-        assert "return" in snippet, (
-            "isToolOutput guard must return early (not throw) to skip enforcement"
+        handler_start = src.find('"experimental.text.complete"')
+        after_handler = src[handler_start:]
+        assert "DELEGATE-FIRST" in after_handler, "DELEGATE-FIRST nag must survive"
+        assert "FALSE-DONE" in after_handler, "FALSE-DONE detection must survive"
+        assert "hasLocalWork" in after_handler or "HARD STOP" in after_handler, (
+            "hasLocalWork block must survive"
         )

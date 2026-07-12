@@ -292,97 +292,43 @@ class TestResultMarkers:
         assert "subagent result" in src
 
 
-class TestTextCompleteSkipsToolOutput:
-    """text.complete fires on ALL text — agent responses AND tool output content
-    from Read/Grep/Glob/Bash. Tool output MUST pass through unmodified because
-    the agent cannot read files if tool results are replaced with enforcement
-    messages.
+class TestTextCompleteResearchFinding:
+    """text.complete never fires on tool output (2026-07-12 research finding).
+    The hook only fires on text-end LLM stream events — _input.role never
+    exists in the payload. So no tool-output guard is needed. These tests
+    verify the research finding is documented in the plugin source to prevent
+    re-addition of dead isToolOutput code."""
 
-    Bugs this prevents (2026-07-12):
-    - Read tool output replaced with "MUST DISPATCH 5+ SUBAGENTS NOW"
-    - Grep/Glob output replaced with zero-streak enforcement message
-    - Subagents unable to read files due to grinding-detector nags
-    - zeroStreak inflating from tool output count, causing premature blocking
-    """
-
-    def test_isToolOutput_guard_present(self):
-        """text.complete must detect tool output content and skip enforcement."""
+    def test_research_finding_comment_present(self):
         src = _plugin_source()
-        assert "isToolOutput" in src, (
-            "text.complete must have isToolOutput guard to skip tool output content — "
-            "without it, Read/Grep/Glob results are replaced with enforcement messages"
+        assert "text.complete hook NEVER fires on tool output" in src, (
+            "Plugin must document that text.complete never receives tool output — "
+            "the RESEARCH FINDING comment prevents re-adding dead isToolOutput guards"
         )
 
-    def test_isToolOutput_checks_role_not_assistant(self):
-        """isToolOutput must check _input.role !== 'assistant' to distinguish
-        tool results from agent-generated text."""
+    def test_isToolOutput_removed(self):
         src = _plugin_source()
-        assert 'role' in src and '"assistant"' in src, (
-            "isToolOutput must inspect _input.role to distinguish tool output "
-            "from agent text"
+        assert "isToolOutput" not in src, (
+            "isToolOutput guard must be removed — it is dead code that never fires "
+            "because text.complete only receives text-end LLM stream events"
         )
 
-    def test_tool_output_returns_before_zero_streak_increment(self):
-        """When isToolOutput is true, the handler must return output BEFORE
-        incrementing zeroStreak. Otherwise tool output inflates the streak counter
-        and causes premature enforcement blocks."""
+    def test_role_field_not_referenced_as_guard(self):
+        """_input.role is dead code in text.complete — remove references to it."""
         src = _plugin_source()
-        # The isToolOutput guard + return must appear BEFORE zeroStreak++
-        guard_idx = src.find("isToolOutput")
-        assert guard_idx >= 0
-        zero_plus_idx = src.find("zeroStreak++", guard_idx)
-        assert zero_plus_idx >= 0
-        return_output_idx = src.find("return output", guard_idx)
-        assert return_output_idx >= 0
-        # return output (for tool output) must be BEFORE zeroStreak++
-        assert return_output_idx < zero_plus_idx, (
-            "return output for tool output content must appear BEFORE zeroStreak++ — "
-            "tool output should NEVER increment the zero-dispatch streak"
+        handler_start = src.find('"experimental.text.complete"')
+        after_handler = src[handler_start:]
+        assert not ('"role"' in after_handler[:500]), (
+            "No role-based guard should exist in text.complete handler"
         )
 
-    def test_zero_streak_increment_after_isToolOutput_guard(self):
-        """zeroStreak++ must be guarded by !isToolOutput. A counter that increments
-        on every text.complete call (including tool results) blocks the agent
-        prematurely because Read/Grep/Glob output is not a 'response with no dispatch.'"""
+    def test_no_dead_if_isToolOutput_return_block(self):
+        """The `if (isToolOutput) { return output }` block must be removed."""
         src = _plugin_source()
-        guard_idx = src.find("isToolOutput")
-        after_guard = src[guard_idx:]
-        assert "zeroStreak++" in after_guard, (
-            "zeroStreak++ must appear after the isToolOutput guard section — "
-            "tool output should not contribute to the zero-dispatch count"
-        )
-
-    def test_deny_block_after_isToolOutput_guard(self):
-        """The 'MUST DISPATCH N+ SUBAGENTS NOW' text replacement must come AFTER
-        the isToolOutput guard, so tool output content is never replaced."""
-        src = _plugin_source()
-        guard_idx = src.find("isToolOutput")
-        after_guard = src[guard_idx:]
-        assert "MUST DISPATCH" in after_guard, (
-            "MUST DISPATCH block must appear after tool-output guard — "
-            "should only replace agent text, never tool output"
-        )
-
-    def test_nag_injection_after_isToolOutput_guard(self):
-        """The '0 estimated in-flight' nag must come AFTER the isToolOutput guard,
-        so tool output is never prepended with a dispatch nag."""
-        src = _plugin_source()
-        guard_idx = src.find("isToolOutput")
-        after_guard = src[guard_idx:]
-        assert "DISPATCH SUBAGENTS NOW" in after_guard or "in-flight" in after_guard, (
-            "in-flight nag must appear after tool-output guard — "
-            "should only inject into agent text, never tool output"
-        )
-
-    def test_result_markers_still_tracked_for_tool_output(self):
-        """hasResultMarker tracking (estimatedInFlight) must run even for tool output.
-        Subagent completion markers arrive as tool output text and must still be counted."""
-        src = _plugin_source()
-        guard_idx = src.find("isToolOutput")
-        before_guard = src[:guard_idx] if guard_idx > 0 else src
-        assert "hasResultMarker" in before_guard, (
-            "hasResultMarker check must run BEFORE the isToolOutput guard — "
-            "subagent completion detection must work even when the text is tool output"
+        handler_start = src.find('"experimental.text.complete"')
+        after_handler = src[handler_start:]
+        assert not ('if (isToolOutput)' in after_handler), (
+            "Dead if(isToolOutput) return output block must be removed"
         )
 
 

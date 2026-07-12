@@ -2676,6 +2676,12 @@ analyze-jsonl:
 list-tests:
 	@find tests -name 'test_*.py' -type f | sort
 
+# List every documented make target (lines matching `target-name:`), one per line.
+# Excludes internal/helper targets starting with `_`. Subagents use this to discover
+# available targets instead of guessing nonexistent ones.
+list-targets:
+	@$(PYTHON) -c "import re, sys; targets = re.findall(r'^(?!#)([a-zA-Z][-a-zA-Z0-9]*):', open('Makefile').read()); [print(t) for t in sorted(set(targets)) if not t.startswith('_')]"
+
 dogfood:
 	@$(UV) run python scripts/dogfood.py
 

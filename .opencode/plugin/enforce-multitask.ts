@@ -160,24 +160,14 @@ export default (async ({ }) => {
       try {
         if (!output || typeof output.text !== "string") return output
 
-        // Guard: text.complete fires on ALL text (agent responses AND tool
-        // results from Read/Grep/Glob/Bash). Tool output content MUST pass
-        // through unmodified so the agent can actually read files. Only
-        // enforce zero-streak rules on agent-generated text.
-        const isToolOutput = _input && typeof _input === "object"
-          && "role" in _input
-          && String((_input as Record<string, unknown>).role).toLowerCase() !== "assistant"
+        // RESEARCH FINDING (2026-07-12): opencode's text.complete hook NEVER
+        // fires on tool output — it only fires on text-end LLM stream events.
+        // The _input.role field does not exist in the payload. So no tool-output
+        // guard is needed: all text here is agent-generated. Do NOT add an
+        // isToolOutput / role-based guard — it is dead code.
 
-        // Track subagent result markers even for tool outputs (keeps
-        // estimatedInFlight accurate regardless of text source).
         if (hasResultMarker(output.text)) {
           _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 2)
-        }
-
-        // Allow tool output content through unchanged — never block or
-        // transform Read/Grep/Glob/Bash results.
-        if (isToolOutput) {
-          return output
         }
 
         _state.prevMessageDispatches = _state.thisMessageDispatches

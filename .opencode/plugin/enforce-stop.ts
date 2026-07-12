@@ -851,16 +851,11 @@ export default (async ({ }) => {
     // BUG #12 fix: check disengaged state first — legitimate admin override
     if (isDisengaged()) return
 
-    // Guard: text.complete fires on ALL text (agent responses AND tool
-    // results from Read/Grep/Glob/Bash). Tool output content MUST pass
-    // through unmodified so the agent can actually read files. Only
-    // enforce stop-pattern rules on agent-generated text.
-    const isToolOutput = _input && typeof _input === "object"
-      && "role" in _input
-      && String((_input as Record<string, unknown>).role).toLowerCase() !== "assistant"
-    if (isToolOutput) {
-      return
-    }
+    // RESEARCH FINDING (2026-07-12): opencode's text.complete hook NEVER
+    // fires on tool output — it only fires on text-end LLM stream events.
+    // The _input.role field does not exist in the payload. So no tool-output
+    // guard is needed: all text here is agent-generated. Do NOT add an
+    // isToolOutput / role-based guard — it is dead code.
 
     // P3: DELEGATE-FIRST nag — when shared streak > 8, prepend a nag
     // that survives subagent-report bypass and text-only blocks.
