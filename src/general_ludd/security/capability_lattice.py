@@ -63,6 +63,11 @@ PROTECTED_PATH_SUBSTRINGS: tuple[str, ...] = (
     "/module_utils/capability_policy",
     "/module_utils/fs_write_policy",
     "/security/capability_lattice",
+    "/agents.md",
+    "/claude.md",
+    "/tasks.md",
+    "/bugs.md",
+    "/session.md",
 )
 
 #: Bare path SEGMENTS that mark a protected harness control-surface directory
@@ -74,7 +79,17 @@ PROTECTED_PATH_SUBSTRINGS: tuple[str, ...] = (
 #: the sibling ``self_update/applier.py`` deny-list — which already catches the
 #: relative form.  This only ADDS the relative case; it never loosens the
 #: existing absolute-path coverage.
-PROTECTED_PATH_SEGMENTS: frozenset[str] = frozenset({".opencode", ".claude"})
+PROTECTED_PATH_SEGMENTS: frozenset[str] = frozenset(
+    {
+        ".opencode",
+        ".claude",
+        "agents.md",
+        "claude.md",
+        "tasks.md",
+        "bugs.md",
+        "session.md",
+    }
+)
 
 
 class CapabilityError(Exception):

@@ -151,4 +151,4 @@ async def test_event_loop_claims_normally_when_project_not_paused(tmp_path):
     claimed = loop._tick_state.get("claimed_todos", [])
     assert claimed == fake_todos
     assert len(claimed) == 2
-    mock_todo_repo.claim_runnable.assert_called_once_with(project_id="test-project")
+    mock_todo_repo.claim_runnable.assert_called_once_with(limit=10, project_id="test-project")

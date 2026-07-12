@@ -1554,6 +1554,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         "MCP startup failed (continuing without MCP)",
                         exc_info=True,
                     )
+                    if mcp_client is not None:
+                        try:
+                            await mcp_client.stop_all()
+                        except Exception:
+                            logger.warning("MCP cleanup during startup failure also failed", exc_info=True)
                     mcp_client = None
         app.state._mcp_client = mcp_client
 

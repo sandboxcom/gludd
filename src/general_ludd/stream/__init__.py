@@ -74,6 +74,14 @@ class RoleCloner:
             raise FileNotFoundError(f"Role {role_name!r} not found under {roles_root}")
         self.work_root.mkdir(parents=True, exist_ok=True)
         clone_path = self.work_root / f"{role_name}-{uuid.uuid4().hex}"
+        src = src.resolve()
+        roles_root = (self.collection_root / "roles").resolve()
+        try:
+            src.relative_to(roles_root)
+        except ValueError:
+            raise ValueError(
+                f"Role {role_name!r} resolves outside {roles_root}"
+            ) from None
         shutil.copytree(src, clone_path)
 
         (clone_path / "clone-overrides.json").write_text(

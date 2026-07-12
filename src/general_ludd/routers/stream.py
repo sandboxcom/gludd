@@ -54,6 +54,13 @@ class StreamDispatchRequest(BaseModel):
             raise ValueError("role must be a simple identifier ([A-Za-z0-9_-]+)")
         return v
 
+    @field_validator("role")
+    @classmethod
+    def _validate_role_no_traversal(cls, v: str) -> str:
+        if "/" in v or "\\" in v or ".." in v:
+            raise ValueError("role must not contain path traversal characters")
+        return v
+
 
 def _get_role_cloner(app: FastAPI) -> RoleCloner | None:
     cloner = getattr(app.state, "_role_cloner", None)

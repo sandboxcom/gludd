@@ -61,6 +61,11 @@ PROTECTED_PATH_MARKERS: tuple[str, ...] = (
     "tox.ini",
     ".pre-commit",
     "dockerfile",
+    "agents.md",
+    "claude.md",
+    "tasks.md",
+    "bugs.md",
+    "session.md",
 )
 
 # Bare-word markers that must match a whole PATH SEGMENT (or exact basename),

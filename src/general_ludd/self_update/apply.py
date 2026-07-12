@@ -55,6 +55,11 @@ _HARD_DENY_SUBSTRINGS: tuple[str, ...] = (
     "/.claude/",
     "settings.json",
     "settings.local.json",
+    "agents.md",
+    "claude.md",
+    "tasks.md",
+    "bugs.md",
+    "session.md",
 )
 
 #: Bare path SEGMENTS hard-denied regardless of a leading slash.  DERIVED from

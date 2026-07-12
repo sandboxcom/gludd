@@ -2,14 +2,48 @@
 
 from __future__ import annotations
 
+import logging
+import shlex
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from general_ludd.project_runner.profile import load_project_profile
 from general_ludd.reload.hot_reloader import HotReloader
 from general_ludd.reload.manager import ReloadManager, ReloadResult, ReloadType
 from general_ludd.validation.runner import ValidationResult, ValidationRunner
+
+logger = logging.getLogger(__name__)
+
+_HARDCODED_FALLBACK = ["make test-unit"]
+
+
+def _resolve_test_commands(worktree_path: str) -> list[str]:
+    """Detect the target project's test command from its toolchain profile.
+
+    Uses :func:`load_project_profile` (explicit ``project.yml`` → marker-file
+    detection) to discover the test command the project actually uses. Falls
+    back to ``["make test-unit"]`` when detection fails (no profile, no
+    recognized markers, or the profile has no ``test`` command), so a
+    legacy/undetectable project can still be validated.
+    """
+    try:
+        profile = load_project_profile(worktree_path)
+    except Exception:
+        logger.debug("no project profile for %s — using fallback test command", worktree_path)
+        return _HARDCODED_FALLBACK
+    if not profile.has("test"):
+        logger.debug("project profile for %s has no 'test' command — using fallback", worktree_path)
+        return _HARDCODED_FALLBACK
+    try:
+        argv = profile.resolve_argv("test")
+    except Exception:
+        logger.warning("could not resolve 'test' command for %s — using fallback", worktree_path)
+        return _HARDCODED_FALLBACK
+    test_cmd = shlex.join(argv)
+    logger.debug("detected test command for %s: %s", worktree_path, test_cmd)
+    return [test_cmd]
 
 
 @dataclass
@@ -97,10 +131,11 @@ class SelfImprovementWorkflow:
 
         expected_root = os.path.dirname(worktree_path.rstrip("/")) or "/"
         try:
+            test_commands = _resolve_test_commands(worktree_path)
             runner = ValidationRunner(
                 todo_id="self-improve",
                 worktree_path=worktree_path,
-                test_commands=["make test-unit"],
+                test_commands=test_commands,
                 expected_worktree_root=expected_root,
             )
             return runner.run_validation()
