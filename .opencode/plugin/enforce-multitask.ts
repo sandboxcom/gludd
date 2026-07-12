@@ -149,6 +149,18 @@ export default (async ({ }) => {
         _state.thisMessageDispatches = 0
         writeState(_state)
 
+        // BLOCKING: when zeroStreak exceeds max, REPLACE the entire response.
+        // The agent is refusing to dispatch — silence their output.
+        if (_state.zeroStreak >= MAX_ZERO_STREAK) {
+          return {
+            text: [
+              "MUST DISPATCH " + String(MIN_DISPATCHES) + "+ SUBAGENTS NOW.",
+              "Floor=" + String(MIN_DISPATCHES) + ", zeroStreak=" + String(_state.zeroStreak) + ".",
+              "All other output blocked. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+            ].join(" "),
+          }
+        }
+
         // Inject nag when estimated in-flight is 0
         if (_state.estimatedInFlight === 0) {
           return {
