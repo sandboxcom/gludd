@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import time
-import uuid
 
-import pytest
 import pytest_asyncio
 
-from general_ludd.memory.local import LocalAgentMemory, MemoryRecord
+from general_ludd.memory.local import LocalAgentMemory
 
 
 @pytest_asyncio.fixture

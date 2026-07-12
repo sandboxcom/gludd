@@ -11,7 +11,6 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import diskcache
 
@@ -157,7 +156,10 @@ class LocalAgentMemory:
     async def purge_expired(self) -> int:
         purged = 0
         for cache_key_bytes in list(self._cache):
-            cache_key = cache_key_bytes if isinstance(cache_key_bytes, str) else cache_key_bytes.decode(errors="replace")
+            cache_key = (
+                cache_key_bytes if isinstance(cache_key_bytes, str)
+                else cache_key_bytes.decode(errors="replace")
+            )
             if cache_key.startswith(self._index_prefix):
                 continue
             data = self._cache.get(cache_key, default=None)
