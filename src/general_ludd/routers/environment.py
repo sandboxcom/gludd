@@ -174,9 +174,7 @@ async def _resolve_advice(
         from general_ludd.schemas.benchmark import TaskType
         from general_ludd.scoring.router import AdaptiveRouter
 
-        from general_ludd.daemon import _get_app_adaptive_router
-
-        router = _get_app_adaptive_router(app)
+        router = getattr(app.state, "_adaptive_router", None)
         if router is None or not hasattr(router, "route"):
             router = AdaptiveRouter()
 
