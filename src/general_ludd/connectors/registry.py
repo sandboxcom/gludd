@@ -53,6 +53,7 @@ import contextlib
 import importlib
 import logging
 import pkgutil
+import re
 from typing import Any, Protocol, runtime_checkable
 
 from general_ludd.connectors import __path__ as _connectors_pkg_path
@@ -201,10 +202,7 @@ class ConnectorRegistry:
             mod = importlib.import_module(mod_path)
             class_name = config.get("class_name")
             if isinstance(class_name, str) and class_name:
-                if not class_name.endswith("Source"):
-                    raise ValueError(
-                        f"class_name {class_name!r} must end with 'Source'"
-                    )
+                _validate_class_name(class_name)
                 return getattr(mod, class_name)
             return _single_source_class(mod, mod_path)
 
@@ -443,6 +441,36 @@ def _check_module_allowlist(path: str, *, selector: str) -> None:
         )
 
 
+_VALID_CLASS_NAME_RE = re.compile(r"^[A-Z][A-Za-z0-9]*Source$")
+
+
+def _validate_class_name(class_name: str) -> None:
+    """Reject class_name values that are not valid connector Source class names.
+
+    A valid class_name must:
+    - Start with a letter (no underscore, so dunder/private attrs blocked)
+    - Contain only ``[A-Za-z0-9]`` after the first character
+    - End with ``Source``
+
+    Raises ValueError for any name that could leak internal attributes via
+    ``getattr(mod, class_name)`` — ``__subclasses__``, ``__init__``,
+    ``__builtins__``, ``_private_attr``, ``os_systemSource``, etc.
+    """
+    if not _VALID_CLASS_NAME_RE.match(class_name):
+        if class_name.startswith("_"):
+            detail = "starts with '_' (private/dunder attrs blocked)"
+        elif not class_name.endswith("Source"):
+            detail = "must end with 'Source'"
+        elif not class_name[0].isupper():
+            detail = "must start with an uppercase letter (PascalCase class name)"
+        else:
+            detail = "contains invalid characters"
+        raise ValueError(
+            f"class_name {class_name!r} is not a valid connector class name: "
+            f"{detail}"
+        )
+
+
 def _import_dotted(dotted: str) -> SourceFactory:
     """Import a ``module.path:ClassName`` or ``module.path.ClassName`` target."""
     if ":" in dotted:
@@ -453,6 +481,7 @@ def _import_dotted(dotted: str) -> SourceFactory:
         raise ValueError(f"malformed class path {dotted!r}")
     _assert_allowed_module(mod_path)
     mod = importlib.import_module(mod_path)
+    _validate_class_name(class_name)
     return getattr(mod, class_name)
 
 

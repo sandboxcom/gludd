@@ -2009,6 +2009,7 @@ The goal is a **continuous, pipelined** stream of subagent batches — not a saw
 4. **Prefer uniform-duration tasks.** If all 10 tasks take ~2 min, they finish together and you refill immediately. If some take 30s and others 5min, you're at 3-4 agents for minutes waiting for the slow ones.
 5. **Read-only research tasks are the filler.** When you don't have 10 edit tasks, fill the remaining slots with research/audit/review tasks. They're reliable and always productive.
 6. **Dispatch commit+push AS a subagent.** One of the 10 tasks runs `make ship-commit MSG='...'`. This keeps 9 productive tasks running while the commit happens in parallel.
+7. **Max 3 file reads between results and dispatch.** After subagent results arrive, the agent gets at most 3 read/grep/glob calls before the next tool call MUST be a dispatch. File inspection between waves is a dispatching bug — reads during the result-processing window drain the subagent pool and reduce the refill wave size. Enforced mechanically by `enforce-floor.ts` (`POST_RESULT_READ_LIMIT = 3`; the 4th read in the post-result grace window is denied).
 
 ### Message-shape mechanical rule (HARD ENFORCEMENT)
 

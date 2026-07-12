@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
-from general_ludd.connectors.registry import ConnectorRegistry, _check_module_allowlist
+from general_ludd.connectors.registry import ConnectorRegistry, _check_module_allowlist, _validate_class_name
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -353,3 +353,139 @@ class TestSourceLikePreflight:
         )
         with pytest.raises(KeyError):
             reg.query("broken", {})
+
+
+# --------------------------------------------------------------------------- #
+# P3 — _validate_class_name: getattr class_name guard (D4/CA-Connectors)
+# --------------------------------------------------------------------------- #
+
+
+class TestValidateClassName:
+    """Direct unit tests for the class_name validator."""
+
+    def test_valid_Source_class_name_passes(self) -> None:
+        _validate_class_name("PrometheusSource")
+
+    def test_valid_multiword_Source_passes(self) -> None:
+        _validate_class_name("DatadogLogSource")
+
+    def test_dunder_subclasses_rejected(self) -> None:
+        with pytest.raises(ValueError, match="private/dunder"):
+            _validate_class_name("__subclasses__")
+
+    def test_dunder_init_rejected(self) -> None:
+        with pytest.raises(ValueError, match="private/dunder"):
+            _validate_class_name("__init__")
+
+    def test_dunder_builtins_rejected(self) -> None:
+        with pytest.raises(ValueError, match="private/dunder"):
+            _validate_class_name("__builtins__")
+
+    def test_single_underscore_private_rejected(self) -> None:
+        with pytest.raises(ValueError, match="private/dunder"):
+            _validate_class_name("_private_attr")
+
+    def test_class_name_not_ending_in_Source_rejected(self) -> None:
+        with pytest.raises(ValueError, match="must end with 'Source'"):
+            _validate_class_name("SomeClass")
+
+    def test_lowercase_start_rejected(self) -> None:
+        with pytest.raises(ValueError, match="must start with an uppercase"):
+            _validate_class_name("prometheusSource")
+
+    def test_digit_start_rejected(self) -> None:
+        with pytest.raises(ValueError, match="must start with an uppercase"):
+            _validate_class_name("1Source")
+
+    def test_os_systemSource_special_chars_rejected(self) -> None:
+        with pytest.raises(ValueError, match="must start with an uppercase"):
+            _validate_class_name("os.systemSource")
+
+
+# --------------------------------------------------------------------------- #
+# P3 integration — hostile class_name via module+class_name config blocked
+# --------------------------------------------------------------------------- #
+
+
+class TestImportGuardClassnameIntegration:
+    """End-to-end: hostile class_name via module+class_name config is rejected."""
+
+    def test_valid_class_name_works_with_module_config(self) -> None:
+        import types
+
+        _MOD_PATH = "general_ludd.connectors.prometheus"
+        mock_mod = types.ModuleType(_MOD_PATH)
+
+        class PrometheusSource:
+            __module__ = _MOD_PATH
+            KIND = "metrics"
+
+            def __init__(self, config: dict[str, Any]) -> None:
+                self.name = str(config.get("name") or "prom")
+
+            def health(self) -> dict[str, Any]:
+                return {"ok": True}
+
+            def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+                return []
+
+        cast(Any, mock_mod).PrometheusSource = PrometheusSource
+
+        with patch("importlib.import_module", return_value=mock_mod):
+            reg = ConnectorRegistry.from_config(
+                [
+                    {
+                        "name": "prom",
+                        "kind": "metrics",
+                        "module": "general_ludd.connectors.prometheus",
+                        "class_name": "PrometheusSource",
+                    }
+                ]
+            )
+        assert reg.get("prom") is not None
+        assert reg.errors() == []
+
+    def test_dunder_class_name_in_module_config_rejected(self) -> None:
+        """class_name='__subclasses__' must be rejected before getattr."""
+        import types
+
+        _MOD_PATH = "general_ludd.connectors.prometheus"
+        mock_mod = types.ModuleType(_MOD_PATH)
+        mock_mod.PrometheusSource = _GoodSource
+
+        with patch("importlib.import_module", return_value=mock_mod):
+            reg = ConnectorRegistry.from_config(
+                [
+                    {
+                        "name": "evil",
+                        "kind": "metrics",
+                        "module": "general_ludd.connectors.prometheus",
+                        "class_name": "__subclasses__",
+                    }
+                ]
+            )
+        assert reg.get("evil") is None
+        assert len(reg.errors()) == 1
+        assert "class_name" in reg.errors()[0]["error"]
+
+    def test_class_name_without_Source_suffix_rejected(self) -> None:
+        """class_name='SomeClass' (no Source suffix) must be rejected."""
+        import types
+
+        _MOD_PATH = "general_ludd.connectors.prometheus"
+        mock_mod = types.ModuleType(_MOD_PATH)
+        mock_mod.PrometheusSource = _GoodSource
+
+        with patch("importlib.import_module", return_value=mock_mod):
+            reg = ConnectorRegistry.from_config(
+                [
+                    {
+                        "name": "evil",
+                        "kind": "metrics",
+                        "module": "general_ludd.connectors.prometheus",
+                        "class_name": "SomeClass",
+                    }
+                ]
+            )
+        assert reg.get("evil") is None
+        assert len(reg.errors()) == 1

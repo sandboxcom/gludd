@@ -35,6 +35,7 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
 
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
+let _bashPolicyNudge = false
 
 // Turn state for text.complete bypass (BUG #16 fix)
 const DISPATCH_TOOLS_MAKE = new Set(["task", "agent", "workflow"])
@@ -362,10 +363,25 @@ export default (async ({ }) => {
       }
 
       if (input.tool === "bash") {
-        const command = output?.args?.command ?? ""
+        const command = (input as any)?.args?.command ?? ""
         const trimmed = typeof command === "string" ? command.trim() : ""
 
+        if (trimmed && SHELL_META_CHARS.test(trimmed)) {
+          const matched = trimmed.match(SHELL_META_CHARS)
+          _bashPolicyNudge = true
+          throw new Error(
+            formatBashBlockedMessage(
+              trimmed,
+              `Shell metacharacter(s) forbidden: ${matched?.join(", ")}. ` +
+              `Pipes (|), chaining (&&, ||, ;), subshells ($(), ()), backticks (\`), ` +
+              `variable expansion ($), and brace expansion ({}) are not allowed. ` +
+              `Create a Makefile target instead.`
+            )
+          )
+        }
+
         if (!trimmed.startsWith("make ") && trimmed !== "make") {
+          _bashPolicyNudge = true
           throw new Error(formatBashBlockedMessage(trimmed, "Command does not start with 'make'"))
         }
 
@@ -861,6 +877,7 @@ export default (async ({ }) => {
     "session.idle": async () => {
       _pendingCommitReminder = false
       _pendingPreflightGate = ""
+      _bashPolicyNudge = false
       _makeTurnState.dispatchCount = 0
       _makeTurnState.toolCallMade = false
     },
@@ -955,6 +972,25 @@ export default (async ({ }) => {
     "experimental.text.complete": async (_input, output) => {
       if (process.env.OPENCODE_SUBAGENT === "1") return output
       if (typeof output?.text !== "string") return output
+
+      if (_bashPolicyNudge) {
+        _bashPolicyNudge = false
+        const BASH_POLICY_NUDGE = [
+          "",
+          "⛔ BASH POLICY NUDGE — NON-MAKE COMMAND BLOCKED",
+          "",
+          "A non-make bash command was attempted and BLOCKED by enforce-make.",
+          "Only `make <target>` commands are permitted. Example: `make test`,",
+          "`make lint`, `make gate-refresh`. All other commands (ls, echo,",
+          "python3, git, cat, which, pwd, whoami, etc.) are FORBIDDEN.",
+          "",
+          "If you need a command:\n  1. Create a Makefile target for it.\n  2. Run `make <target>`.",
+          "See AGENTS.md Bash Command Policy.",
+          BASH_METACHAR_POLICY,
+        ].join("\n")
+        output.text = output.text + "\n" + BASH_POLICY_NUDGE
+        return output
+      }
 
       const text = output.text
 
