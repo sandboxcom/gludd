@@ -198,13 +198,12 @@ class TestProjectOverlayInLoadStartupConfig:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         (config_dir / "general-ludd.yml").write_text(
-            "agents:\n  timeout: 10\n"
+            "rules:\n  - name: user_rule\n"
         )
         gludd_dir = tmp_path / ".gludd"
         gludd_dir.mkdir()
-        # Project sets a different (winning) timeout.
         (gludd_dir / "general-ludd.yml").write_text(
-            "agents:\n  timeout: 99\n"
+            "rules:\n  - name: project_rule\npipeline:\n  enabled: true\n"
         )
         monkeypatch.setenv("GLUDD_PROJECT_DIR", str(gludd_dir))
 
@@ -212,5 +211,5 @@ class TestProjectOverlayInLoadStartupConfig:
 
         cfg = load_startup_config(config_dir=str(config_dir))
         uc = cfg["user_config"]
-        agents = getattr(uc, "agents", {}) or {}
-        assert agents.get("timeout") == 99
+        rules = getattr(uc, "rules", []) or []
+        assert rules == [{"name": "project_rule"}]

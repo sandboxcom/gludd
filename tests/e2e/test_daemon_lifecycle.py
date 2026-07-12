@@ -170,8 +170,6 @@ class TestDaemonShutdown:
             )
 
     def test_event_loop_task_cancelled_after_shutdown(self):
-        import asyncio
-
         import general_ludd.daemon as daemon_mod
 
         with patch(
@@ -201,7 +199,6 @@ class TestDaemonReload:
             )
             with TestClient(app) as client:
                 original_config = app.state._startup_config
-                original_rules = original_config.get("rules", [])
 
                 resp = client.post("/admin/config/reload")
                 assert resp.status_code == 200

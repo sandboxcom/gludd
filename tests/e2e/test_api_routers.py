@@ -4,7 +4,7 @@ Exercises real FastAPI apps with in-memory SQLite and ASGITransport/AsyncClient.
 """
 from __future__ import annotations
 
-import os
+import asyncio
 
 import pytest
 import pytest_asyncio
@@ -13,8 +13,6 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-
-import asyncio
 
 from general_ludd.db.models import Base
 
@@ -62,8 +60,8 @@ async def db_app():
         app.state.daemon_state = daemon_state
 
         from general_ludd.routers.facts import register as register_facts
-        from general_ludd.routers.todos import register as register_todos
         from general_ludd.routers.human_todos import register as register_human_todos
+        from general_ludd.routers.todos import register as register_todos
 
         register_facts(app, daemon_state)
         register_todos(app, daemon_state)
@@ -373,6 +371,7 @@ class TestTodosCRUD:
                 "priority": "high",
                 "work_type": "code",
                 "status": "active",
+                "project_id": "e2e-status",
             })
             await repo.create(todo_data={
                 "todo_id": "TODO-QUEUED",
@@ -381,16 +380,20 @@ class TestTodosCRUD:
                 "priority": "low",
                 "work_type": "fix",
                 "status": "queued",
+                "project_id": "e2e-status",
             })
             await session.commit()
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/api/todos", params={"project_id": "test", "status": "active"})
+            resp = await client.get(
+                "/api/todos",
+                params={"project_id": "e2e-status", "status": "active"},
+            )
             assert resp.status_code == 200
             data = resp.json()
-            statuses = {t["status"] for t in data}
-            assert "active" in statuses or len(data) >= 1
+            assert len(data) >= 1
+            assert data[0]["status"] == "active"
 
     @pytest.mark.asyncio
     async def test_api_status_endpoint(self, db_app):
@@ -606,7 +609,7 @@ class TestHumanTodos:
                 agent_id="agent-4",
                 title="Delete me",
                 body="This should be dismissed",
-                category="generic",
+                category="decision",
             )
             await session.commit()
             htid = str(row.id)
@@ -631,9 +634,9 @@ class TestHumanTodos:
             )
             await repo.create(
                 agent_id="agent-6",
-                title="Generic request",
-                body="Something",
-                category="generic",
+                title="Input request",
+                body="Need input on X",
+                category="input_request",
             )
             await session.commit()
 

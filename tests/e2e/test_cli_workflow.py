@@ -211,19 +211,15 @@ class TestHumanTodoListWorkflow:
     def test_human_todo_list_with_json_flag(self, capsys):
         mock_rows = [{"id": "ht-1", "status": "open", "title": "Need token"}]
         with patch("general_ludd.cli_human_todos._http", return_value=mock_rows):
-            with patch.object(sys, "argv", [
-                "gludd", "human-todo", "list", "--json",
-            ]):
-                main()
-        out, _err, _code = _run_cli_output(["human-todo", "list", "--json"], capsys)
+            out, _err, code = _run_cli_output(["human-todo", "list", "--json"], capsys)
+        assert code == 0
         assert "ht-1" in out
 
     def test_human_todo_list_empty(self, capsys):
-        with patch("general_ludd.cli_human_todos._http", return_value=[]):
-            with patch.object(sys, "argv", [
-                "gludd", "human-todo", "list",
-            ]):
-                main()
+        with patch("general_ludd.cli_human_todos._http", return_value=[]), patch.object(sys, "argv", [
+            "gludd", "human-todo", "list",
+        ]):
+            main()
         out, _err, _code = _run_cli_output(["human-todo", "list"], capsys)
         assert "(no human-todos)" in out
 
@@ -311,7 +307,7 @@ class TestAuditPluginsWorkflow:
 
 class TestHelpWorkflow:
     def test_help_flag_exits_zero(self, capsys):
-        out, _err, code = _run_cli_output(["--help"], capsys)
+        _out, _err, code = _run_cli_output(["--help"], capsys)
         assert code == 0
 
     def test_help_output_contains_key_commands(self, capsys):
@@ -328,12 +324,12 @@ class TestHelpWorkflow:
     def test_project_list_help_output(self, capsys):
         out, _err, code = _run_cli_output(["project", "list", "--help"], capsys)
         assert code == 0
-        assert "List registered projects" in out
+        assert "daemon-url" in out
 
     def test_human_todo_list_help_output(self, capsys):
         out, _err, code = _run_cli_output(["human-todo", "list", "--help"], capsys)
         assert code == 0
-        assert "human-todos" in out.lower()
+        assert "human-todo" in out
 
     def test_audit_plugins_help_output(self, capsys):
         out, _err, code = _run_cli_output(["audit-plugins", "--help"], capsys)
