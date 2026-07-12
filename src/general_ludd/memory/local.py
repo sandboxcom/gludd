@@ -47,9 +47,15 @@ class MemoryRecord:
             key=str(data.get("key", "")),
             value=str(data.get("value", "")),
             namespace=str(data.get("namespace", "default")),
-            ttl_seconds=int(data["ttl_seconds"]) if data.get("ttl_seconds") is not None else None,
-            created_at=float(data.get("created_at", 0.0)),
-            updated_at=float(data.get("updated_at", 0.0)),
+            ttl_seconds=(
+                int(d) if isinstance(d := data.get("ttl_seconds"), (int, float)) else None
+            ),
+            created_at=(
+                float(d) if isinstance(d := data.get("created_at"), (int, float, str)) else 0.0
+            ),
+            updated_at=(
+                float(d) if isinstance(d := data.get("updated_at"), (int, float, str)) else 0.0
+            ),
         )
 
 

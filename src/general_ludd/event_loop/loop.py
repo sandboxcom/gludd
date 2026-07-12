@@ -1479,30 +1479,32 @@ class EventLoop:
                 continue
             entry_gates = stage_spec.get("entry_gates", {})
             exit_gates = stage_spec.get("exit_gates", {})
-            stage_result = {
+            entry_checks: list[str] = []
+            exit_checks: list[str] = []
+            stage_result: dict[str, object] = {
                 "entry_passed": True,
                 "exit_passed": True,
-                "entry_checks": [],
-                "exit_checks": [],
+                "entry_checks": entry_checks,
+                "exit_checks": exit_checks,
             }
             required_artifact_dir = stage_spec.get("artifact_dir")
             if required_artifact_dir:
                 artifact_path = Path(required_artifact_dir)
                 if not artifact_path.exists():
                     stage_result["entry_passed"] = False
-                    stage_result["entry_checks"].append(
+                    entry_checks.append(
                         f"artifact_dir missing: {required_artifact_dir}"
                     )
             for gate_name, gate_spec in entry_gates.items():
                 if isinstance(gate_spec, dict) and gate_spec.get("required"):
                     stage_result["entry_passed"] = False
-                    stage_result["entry_checks"].append(
+                    entry_checks.append(
                         f"entry gate unsatisfied: {gate_name}"
                     )
             for gate_name, gate_spec in exit_gates.items():
                 if isinstance(gate_spec, dict) and gate_spec.get("required"):
                     stage_result["exit_passed"] = False
-                    stage_result["exit_checks"].append(
+                    exit_checks.append(
                         f"exit gate unsatisfied: {gate_name}"
                     )
             if not stage_result["entry_passed"] or not stage_result["exit_passed"]:
