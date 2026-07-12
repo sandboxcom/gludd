@@ -28,10 +28,9 @@ from __future__ import annotations
 
 import os
 import urllib.parse
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol, cast, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 import yaml
 
@@ -292,9 +291,7 @@ class UpdateApplier:
                     "content_signature or public_key provided — refusing to apply",
                 )
             try:
-                ok = bool(
-                    verify_signature(change_content, content_signature, public_key)  # type: ignore[operator]
-                )
+                ok = verify_signature(change_content, content_signature, public_key)
             except Exception as exc:
                 return ApplyResult(
                     status="denied",
