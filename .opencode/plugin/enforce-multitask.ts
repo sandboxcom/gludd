@@ -92,6 +92,7 @@ export default (async ({ }) => {
 
   return {
     "tool.execute.before": async (input: { tool?: string }) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
       _reportAlive()
       try {
         if (!FLOOR_ENFORCE) return

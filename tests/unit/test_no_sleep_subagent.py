@@ -32,10 +32,6 @@ ALLOWLIST = frozenset({
     "heavy_sem.py",
     "run_test_background.sh",
     "token_window_monitor.py",
-    # CI infrastructure scripts — called directly by CI pipelines, not subagent-dispatched
-    "ci_poll.py",
-    "ci_annotations_poll.py",
-    "ci_push_and_verify.sh",
 })
 
 
