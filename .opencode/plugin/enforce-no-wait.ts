@@ -110,6 +110,7 @@ function _extractDispatchText(params: unknown): string {
 
 export default function noWaitPlugin(api: PluginAPI): void {
   api.tool.execute.before((params) => {
+    if (process.env.OPENCODE_SUBAGENT === "1") return
     _reportAlive();
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;

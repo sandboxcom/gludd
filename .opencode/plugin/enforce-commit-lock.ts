@@ -113,6 +113,7 @@ export function releaseLock(): void {
 
 export default function commitLockPlugin(api: PluginAPI): void {
   api.tool.execute.before((params) => {
+    if (process.env.OPENCODE_SUBAGENT === "1") return
     _reportAlive();
     _heldByThisCall = false;
     try {

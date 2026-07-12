@@ -184,6 +184,7 @@ function _reportAlive(): void {
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
       _reportAlive()
       if (!DEADLINE_ENABLED) return
       const tool = input.tool

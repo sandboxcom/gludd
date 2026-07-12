@@ -260,6 +260,7 @@ export default (async ({ }) => {
       input: { tool?: string } & Record<string, unknown>,
       _output: unknown,
     ) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
       _reportAlive()
       _writeHeartbeat()
       let denyMessage: string | null = null

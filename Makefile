@@ -71,7 +71,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     git-index git-search git-stats \
     searx-up searx-down searx-test \
     disk-guard disk-check disk \
-    install-bats test-install
+     install-bats test-install check-subagent-guards verify-plugin-manifest
 
 help:
 	@echo "Usage: make [target]"
@@ -357,7 +357,7 @@ collect-check:
 collect-check-e2e-live:
 	@$(UV) run python -m pytest tests/e2e/ tests/live/ --collect-only -q 2>&1 | tail -5
 
-gate: check-skills-frontmatter
+gate: check-subagent-guards verify-plugin-manifest check-skills-frontmatter
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -421,7 +421,7 @@ gate: check-skills-frontmatter
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: check-skills-frontmatter
+gate-lite: check-subagent-guards check-skills-frontmatter
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
@@ -2474,6 +2474,14 @@ audit-features:
 
 check-readme-status:
 	@$(UV) run python scripts/check_readme_status_current.py $(TAG)
+
+# --- Subagent guard validation ---
+check-subagent-guards:
+	@$(PYTHON) scripts/check_subagent_guards.py
+
+# --- Plugin manifest verification — opencode.json ↔ disk ↔ guard coverage ---
+verify-plugin-manifest:
+	@$(PYTHON) scripts/verify_plugin_manifest.py
 
 # --- Skill frontmatter validation ---
 check-skills-frontmatter:

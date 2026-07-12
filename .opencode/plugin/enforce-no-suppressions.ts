@@ -100,6 +100,7 @@ function _reportAlive(): void {
 export default (async () => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
       _reportAlive()
       // Only edit/write are in scope. Other tools pass through unchanged.
       if (input?.tool !== "edit" && input?.tool !== "write") {

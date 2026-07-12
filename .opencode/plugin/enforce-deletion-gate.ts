@@ -94,6 +94,7 @@ const plugin: Plugin = {
   version: "1.0.0",
   hooks: {
     "tool.execute.before": async (toolCall: ToolCall) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
       await _reportAlive();
       const threshold = getDeletionThreshold();
       if (threshold <= 0) {

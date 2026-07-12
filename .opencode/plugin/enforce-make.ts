@@ -352,6 +352,7 @@ function _reportAlive(): void {
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
       _reportAlive()
 
       // BUG #16 fix: track tool calls and dispatches for text.complete bypass
@@ -949,6 +950,7 @@ export default (async ({ }) => {
 
     // --- Per-chunk state-based block (port of enforce-stop.ts text.complete) ---
     "experimental.text.complete": async (_input, output) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return output
       if (typeof output?.text !== "string") return output
 
       const text = output.text

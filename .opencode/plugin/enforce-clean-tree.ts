@@ -86,6 +86,7 @@ export function buildDenyMessage(count: number): string {
 
 export default function cleanTreePlugin(api: PluginAPI): void {
   api.tool.execute.before((params) => {
+    if (process.env.OPENCODE_SUBAGENT === "1") return
     _reportAlive();
     try {
       if (process.env.GLUDD_CLEAN_TREE_ENFORCE === "0") return;

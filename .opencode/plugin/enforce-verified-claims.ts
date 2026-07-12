@@ -134,6 +134,7 @@ export default (async () => {
       _input: unknown,
       output: { text: string },
     ) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return output
       _reportAlive()
       try {
         if (process.env.GLUDD_VERIFIED_CLAIMS_ENFORCE === "0") return

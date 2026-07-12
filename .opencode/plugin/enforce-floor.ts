@@ -745,6 +745,7 @@ export default (async ({ }) => {
     },
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return output
       try {
         // Increment fire counter — proves text.complete actually fires
         try {
