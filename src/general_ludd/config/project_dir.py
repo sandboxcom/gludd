@@ -16,6 +16,92 @@ import os
 from pathlib import Path
 from typing import Any
 
+# H.7 / H-PROJECT-OVERLAY-DANGEROUS-FIELDS:
+#
+# An untrusted project config (.gludd/general-ludd.yml) must NEVER override
+# security-critical infrastructure settings.  If a project could set e.g.
+# ``database.url`` or ``self_improve.enabled``, a malicious or compromised
+# repository could redirect the daemon's database, install self-improving
+# code, bypass the budget cap, rewire connectors, or reconfigure issues
+# polling — all without operator knowledge.
+#
+# The denylist below is the set of top-level UserConfig fields that a
+# project overlay MUST NOT set.  Sub-fields of these are also blocked
+# because the merge is deep (a project setting ``database.url`` wins over
+# the user's ``database.port`` via recursive dict merge).
+#
+# Fields explicitly ALLOWED for project override:
+#   rules, pipeline, compaction, remediation, orchestration,
+#   relationship_routing, notifications, human_in_the_loop,
+#   deletion_gate_threshold, use_langgraph_*, use_langchain_*,
+#   use_hub, checkpointing, default_spot, slurm_*,
+#   compute_idle_*, ornith_*
+#
+# Everything else — especially connectors, database, budget, issues,
+# self_improve, agents, model_routing, model_profiles, network,
+# observability, process_isolation, self_update — is DENIED.
+
+PROJECT_OVERLAY_DENYLIST: frozenset[str] = frozenset(
+    {
+        "agents",
+        "budget",
+        "connectors",
+        "database",
+        "issues",
+        "model_profiles",
+        "model_routing",
+        "network",
+        "observability",
+        "process_isolation",
+        "self_improve",
+        "self_update",
+    }
+)
+
+# Allowlist: fields that a project overlay MAY set.  When None (the default)
+# the validator uses the denylist (everything EXCEPT these fields is blocked).
+# When set, the allowlist takes precedence — a project may ONLY set fields
+# in this list.
+PROJECT_OVERLAY_ALLOWLIST: frozenset[str] | None = None
+
+
+class ProjectOverlayValidationError(ValueError):
+    """Raised when a project config overlay attempts to set dangerous fields."""
+
+
+def validate_project_overlay(
+    project_data: dict[str, Any],
+    *,
+    denylist: frozenset[str] | None = None,
+    allowlist: frozenset[str] | None = None,
+) -> None:
+    """Reject dangerous field overrides from an untrusted project config.
+
+    By default uses the module-level :data:`PROJECT_OVERLAY_DENYLIST` and
+    :data:`PROJECT_OVERLAY_ALLOWLIST`.  Callers may pass explicit lists for
+    testing or for operator-supplied overrides.
+
+    Raises :class:`ProjectOverlayValidationError` if any key in
+    *project_data* is forbidden.
+    """
+    denylist = PROJECT_OVERLAY_DENYLIST if denylist is None else denylist
+    _allowlist = PROJECT_OVERLAY_ALLOWLIST if allowlist is None else allowlist
+
+    forbidden: list[str] = []
+    for key in project_data:
+        if _allowlist is not None:
+            if key not in _allowlist:
+                forbidden.append(key)
+        elif key in denylist:
+            forbidden.append(key)
+
+    if forbidden:
+        raise ProjectOverlayValidationError(
+            f"Project config overlay sets forbidden field(s): "
+            f"{', '.join(sorted(forbidden))}. "
+            f"Untrusted project configs must not override infrastructure settings."
+        )
+
 
 def find_project_gludd_dir(start: Path | None = None) -> Path | None:
     """Return the first ancestor of *start* that contains a ``.gludd/`` dir.

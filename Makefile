@@ -71,7 +71,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     git-index git-search git-stats \
     searx-up searx-down searx-test \
     disk-guard disk-check disk \
-     install-bats test-install check-subagent-guards verify-plugin-manifest
+     install-bats test-install check-subagent-guards verify-plugin-manifest \
+    check-task-ledger
 
 help:
 	@echo "Usage: make [target]"
@@ -2485,6 +2486,10 @@ check-subagent-guards:
 check-enhancement-ratio:
 	@$(UV) run python3 scripts/check_enhancement_ratio.py
 
+clean-enhancement-ratio:
+	@rm -f /tmp/gludd-enhancement-ratio.json
+	@echo "Enhancement-ratio state cleared."
+
 # --- Plugin manifest verification — opencode.json ↔ disk ↔ guard coverage ---
 verify-plugin-manifest:
 	@$(PYTHON) scripts/verify_plugin_manifest.py
@@ -2495,6 +2500,10 @@ check-skills-frontmatter:
 
 # --- Task ledger validation: duplicate IDs, re-dispatched completed items, stale in_progress, missing IDs ---
 validate-task-ledger:
+	@$(UV) run python scripts/validate_task_ledger.py
+
+# --- Task ledger validation: check-* naming convention alias ---
+check-task-ledger:
 	@$(UV) run python scripts/validate_task_ledger.py
 
 # --- Dispatch dedup: cross-reference /tmp/gludd-dispatched-tasks.json against TASKS.md completed items ---

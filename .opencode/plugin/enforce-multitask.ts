@@ -6,7 +6,7 @@
  * zero-dispatch responses, ALL non-dispatch tool calls are denied.
  *
  * FAIL-OPEN: any error → allow. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.
- * Floor: GLUDD_MULTITASK_MIN_DISPATCHES (default 3).
+ * Floor: GLUDD_MULTITASK_MIN_DISPATCHES (default 5).
  */
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
@@ -32,6 +32,7 @@ interface MultitaskState {
   zeroStreak: number
   estimatedInFlight: number
   lastTs: number
+  lastToolCallTs: number
 }
 
 function readState(): MultitaskState {
@@ -44,10 +45,11 @@ function readState(): MultitaskState {
         zeroStreak: typeof raw.zeroStreak === "number" ? raw.zeroStreak : 0,
         estimatedInFlight: typeof raw.estimatedInFlight === "number" ? raw.estimatedInFlight : 0,
         lastTs: typeof raw.lastTs === "number" ? raw.lastTs : 0,
+        lastToolCallTs: typeof raw.lastToolCallTs === "number" ? raw.lastToolCallTs : 0,
       }
     }
   } catch { /* corrupt → fresh */ }
-  return { thisMessageDispatches: 0, prevMessageDispatches: 0, zeroStreak: 0, estimatedInFlight: 0, lastTs: 0 }
+  return { thisMessageDispatches: 0, prevMessageDispatches: 0, zeroStreak: 0, estimatedInFlight: 0, lastTs: 0, lastToolCallTs: 0 }
 }
 
 function writeState(s: MultitaskState): void {
@@ -105,6 +107,7 @@ let _state: MultitaskState = (() => {
   s.thisMessageDispatches = 0
   s.prevMessageDispatches = 0
   s.estimatedInFlight = 0
+  s.lastToolCallTs = 0
   writeState(s)
   return s
 })()
@@ -125,6 +128,13 @@ export default (async ({ }) => {
       try {
         if (!FLOOR_ENFORCE) return
         const tool = (input?.tool ?? "") as string
+
+        // Message boundary detection: if >5s since last tool call, new message
+        const now = Date.now()
+        if (_state.lastToolCallTs > 0 && (now - _state.lastToolCallTs) > 5000) {
+          _state.thisMessageDispatches = 0
+        }
+        _state.lastToolCallTs = now
 
         if (isDispatchTool(tool)) {
           _state.thisMessageDispatches++
@@ -154,10 +164,27 @@ export default (async ({ }) => {
             message: [
               "MULTITASKING FLOOR BREACH: only " + String(_state.prevMessageDispatches) + " dispatch(es) in prior message.",
               "Codified floor: " + String(MIN_DISPATCHES) + ". This is NOT advisory.",
-              "REQUIRED: ≥" + String(MIN_DISPATCHES) + " parallel task/agent/workflow dispatches in ONE message.",
+              "REQUIRED: \u2265" + String(MIN_DISPATCHES) + " parallel task/agent/workflow dispatches in ONE message.",
               "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
               "Run 'make disengage-enforcement' to bypass.",
             ].join("\n"),
+          }
+        }
+
+        // PER-MESSAGE DISPATCH ENFORCEMENT: non-dispatch tools blocked if
+        // current message has <2 dispatches AND pending work exists.
+        if (!disengaged && hasPendingWork() && _state.thisMessageDispatches < 2) {
+          const lt = tool.toLowerCase()
+          if (lt === "edit" || lt === "write" || lt === "bash") {
+            return {
+              permissionDecision: "deny" as const,
+              message: [
+                "INSUFFICIENT DISPATCHES: only " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
+                "Must dispatch \u22652 subagents when work exists. Add dispatches and resend.",
+                "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+                "Run 'make disengage-enforcement' to bypass.",
+              ].join("\n"),
+            }
           }
         }
 

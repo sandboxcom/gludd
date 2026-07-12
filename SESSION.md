@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-12 — Session 23. On `development` branch, HEAD `d2c20db6` (25 commits ahead of `master`).
+- 2026-07-12 — Session 24. On `development` branch, HEAD `d15acc10` (30+ commits ahead of `master`).
 
 ### Session 23 Bugs Found & Fixed
 
@@ -27,7 +27,7 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Current Work
 
-- **HEAD: `d2c20db6`** on `development` branch (2026-07-11). `development` is 25 commits ahead of `master`.
+- **HEAD: `d15acc10`** on `development` branch (2026-07-12). `development` is 30+ commits ahead of `master`.
 - **Phase S2 Waves C, D, E COMPLETED** — 23 items across Waves C, D, E ([C-4 through C-27] + [D-4 through D-15] + [E-5 through E-12]). Evidence commit `b8a18e2f`.
 - **Connector test fix wave COMPLETED** — ~76 stale connector health assertions fixed across 34 test files over 3 batches:
   - **Batch 1 (`b5894567`):** consolidated development branch work — alembic 027→028 rename, secrets baseline, 3 stale connector health assertions, background_test_runner wiring, slack connector, pricing sources, C11 event loop, session/task ledger updates.
@@ -43,18 +43,47 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
   - **C26 async lifecycle patterns** — standardized async/await lifecycle in event-loop components.
   - **C23 Connector security audit** — F1-F4, F8 fixes across 34+ connectors (`3584f55e`). SSRF: single-label hostname rejection added to canonical `ssrf.py` guard (F1/F4). Exception leaks: scrubbed `query()` record leaks in datadog/nagios/splunk_observability/elasticsearch/redfish/kubernetes (F3); scrubbed `health()` leaks across 34 connectors (F3). Path injection: `quote()` repo/run_id/namespace in github_actions/buildkite/travis/argo_workflows (F2). Resilience: elasticsearch `query()` returns error record instead of raising (F8). 703+ new assertion tests, zero regressions.
   - **C11 flaky test** — intermittent failure under xdist fixed.
-- **Dirty tree (2026-07-11):** `test_connector_dynatrace.py` stale-assertion fix (1 line, not yet committed).
+### Waves 24-27 (2026-07-12, current session)
+
+**Wave 24 — Plugin hardening + presentation + audit:**
+- **G.2 Subagent guard fix** — enforce-clean-tree subagent dispatch denial on dirty tree.
+- **G.4 Subagent output clean test** — verified subagent tool results not polluted by enforcement plugin text hooks (follow-up to Session 23 text.complete fixes).
+- **A.2 Caplog fixes** — additional caplog-related test isolation improvements.
+- **E.7 Zero-test module tests** — test coverage for modules with no prior tests.
+- **F.1 Reveal.js deck** — presentation rebuilt/updated with latest data.
+- **G.3 Coverage audit** — test coverage gap analysis across plugin enforcement tests.
+
+**Wave 25 — Multitask + delegate hardening:**
+- **enforce-multitask dispatch-count blocking** — plugin now structurally blocks under-dispatched waves when pending work exists.
+- **enforce-delegate threshold 4→2** — tightened main-thread grind threshold.
+- **Plugin test coverage surge:** 60 delegate tests + 38 deadline tests + 19 task-ledger tests.
+- **Gate-lite assertion fixes** — stale assertion drift resolved.
+
+**Wave 26-27 — Plugin test coverage + tooling:**
+- **enforce-deletion-gate tests (52)** — comprehensive test suite for file-deletion gate plugin.
+- **enforce-floor tests (101)** — comprehensive test suite for floor enforcement plugin.
+- **task-ledger ID_PATTERN fix** — corrected task ID validation regex.
+- **check-task-ledger Makefile target** — `make check-task-ledger` for mechanical task ledger validation.
+- **enhancement-ratio clean target** — `make check-enhancement-ratio` clean target.
+- **Deck rebuild** — presentation deck rebuilt with updated statistics.
+
+- **Dirty tree (2026-07-12):** `Makefile`, `docs/presentation/deck-data.json`, `scripts/validate_task_ledger.py` modified; `tests/unit/test_enforcement_deletion_gate_plugin.py` + `tests/unit/test_enforcement_floor_plugin.py` added; `tests/unit/test_task_ledger_validation.py` modified. Not yet committed.
 - **CI status:** all commits pushed to sandboxcom/development; CI pending.
 
-## Last Commits (development branch — 2026-07-11)
+## Last Commits (development branch — 2026-07-12)
 
 | Hash | Message |
 |------|---------|
-| `d2c20db6` | chore: update secrets baseline on development |
-| `9365e393` | infra: add push-dev target for development branch |
-| `023d5f09` | fix: final 4 stale connector health test assertions — dynatrace, gitlab_ci, appdynamics, circleci |
-| `b5894567` | chore: consolidate development branch work — alembic 027→028 rename, secrets baseline, fix 3 stale connector health assertions, background_test_runner wiring, slack connector, pricing sources, c11 event loop, session/task ledger updates |
-| `0a07421d` | D14: expose background_test_runner via make target + CLI subcommand |
+| `d15acc10` | fix: test_w3_12_reload.py reload status assertion update |
+| `b1a2b004` | fix: resolve test_gen_status_table.py lint errors |
+| `9e4fa419` | fix: resolve 2 more lint errors (unsorted imports, unused pytest) |
+| `d1d367d1` | fix: remove unused pytest import from test_w3_12_reload.py |
+| `c8f4b685` | fix: resolve 2 more lint errors (unused idx, ambiguous var l) |
+| `0fd61dff` | fix: resolve 5 lint errors (unused vars/imports) for push-dev |
+| `c4806007` | chore: uncommitted test file changes |
+| `ab63c17f` | chore: clean stale gate-lite PID file |
+| `c4a7ac1f` | Wave 25: enforce-multitask dispatch-count blocking, enforce-delegate threshold 4→2, plugin test coverage (60 delegate + 38 deadline + 19 task-ledger), TASKS.md update for Wave 24 items, gate-lite assertion fixes |
+| `5de6dc76` | feat: W.1 stale-state PID fix + G.1 enhancement-ratio plugin + G.5 task-ledger validators |
 | `b31988ab` | infra: add development CI trigger + push target; pre-commit auto-fixes |
 | `728d58a3` | merge: agent-d12-slack-connector worktree work into master |
 | `0cccee7f` | D12: Slack connector - outbound notifications + channel history read, SSRF-guarded, auto-registered via pkgutil discovery |
@@ -67,32 +96,30 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Known Gaps
 
-1. **Dirty tree not yet committed** — `test_connector_dynatrace.py` stale-assertion fix (1 line).
-2. **`make gate` not yet run on development** — `make gate-lite` showed 4556 passed, 3 skipped, 1 remaining known failure (dynatrace stale assertion, patched in dirty tree).
-3. **development → master merge pending** — development is 25 commits ahead; gate must be green before merging.
-4. **CI pending** — `make push-dev` landed commits on sandboxcom/development; CI verdict not yet available.
+1. **Dirty tree not yet committed** — Wave 26-27 work: `Makefile`, `deck-data.json`, `validate_task_ledger.py`, new test files (`test_enforcement_deletion_gate_plugin.py`, `test_enforcement_floor_plugin.py`), `test_task_ledger_validation.py` modified.
+2. **`make gate` not yet run on development** — gate-lite assertion fixes in Wave 25; full gate pending.
+3. **development → master merge pending** — development is 30+ commits ahead; gate must be green before merging.
+4. **CI pending** — commits pushed to sandboxcom/development; CI verdict not yet available.
 5. **No release tag cut** — next version tag not yet created; blocked on gate green + merge.
 6. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used; `make gate-lite` is the local approximation.
 7. **Connector gaps** — no WebSocket or reconnect logic (feature requests, not blocking).
-8. **Phase F docs** — not yet started (tracked in `docs/AGENTIC_IMPLEMENTATION_SPEC.md` §3.6, items F1-F5).
+8. **Phase F docs** — partially addressed with F.1 reveal.js deck in Wave 24; remaining items F2-F5 pending (tracked in `docs/AGENTIC_IMPLEMENTATION_SPEC.md` §3.6).
 
 ## Next Steps
 
-1. [ ] **Commit dynatrace dirty-tree fix** — `test_connector_dynatrace.py` stale-assertion patch.
-2. [ ] **Run `make gate` on development** — confirm all tests pass (gate-lite: 4556 passed, 3 skipped, 1 stale assertion patched in dirty tree).
+1. [ ] **Commit Wave 26-27 dirty tree** — `make git-add FILES='...' && make ship-commit MSG='...'`.
+2. [ ] **Run `make gate` on development** — confirm all tests pass with new plugin test suites (101 floor + 52 deletion-gate).
 3. [ ] **Merge development → master** — once gate is green on development, merge to master via `make git-checkout MSG='master'` + `make git-merge MSG='development'`.
 4. [ ] **Proceed to Tier 1 items** from `docs/AGENTIC_IMPLEMENTATION_SPEC.md` — after merge, begin Tier 1 feature/audit work.
 5. [ ] **Cut next release tag** — `make release-cut TAG='v0.1.0-beta.3' MSG='...'` (or next appropriate version) after merge + CI green.
-6. [ ] **Annotate stale audit docs** — `E2E_AUDIT_2026-07-06.md` and `ALPHA4_VERIFIED_BACKLOG_2026-06-24.md` (spec item F4).
+6. [ ] **Phase F docs F2-F5** — remaining doc items after F.1 reveal.js deck.
 7. [ ] **Restart opencode** — to activate enforce-multitask plugin + P1/P3 read-grinding fixes committed in session 19.
 
-## Current Gate Status (2026-07-11)
+## Current Gate Status (2026-07-12)
 <!-- gate:begin -->
-- **`make gate-lite`** (2026-07-11): **4556 passed, 3 skipped**
-  - 1 stale assertion in `test_connector_dynatrace.py` — PATCHED in dirty tree, not yet committed
-  - (C11 flaky test, D12 KIND, D14 path traversal, D15 CachedSource — all fixed in connector test fix wave)
+- **`make gate-lite`** (2026-07-12): last known 4556 passed, 3 skipped (Session 23/24).
 - Lint: 0 errors. Typecheck: baseline 0. Collect-check: OK.
-- Full `make gate` with xdist test suite not yet run on development branch.
+- Full `make gate` not yet run on current HEAD `d15acc10`.
 - CI status: pushed to sandboxcom/development; CI pending.
 <!-- gate:end -->
 
@@ -148,7 +175,8 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Historical State
 
-- **2026-07-12 session 23 (current):** HEAD `d2c20db6` on `development` branch (25 commits ahead of master). Fixed two bugs in plugin text.complete hooks: (1) enforce-multitask.ts was replacing Read/Grep/Glob results with "MUST DISPATCH..." messages when zeroStreak hit threshold; (2) enforce-stop.ts was prepending "DELEGATE-FIRST" nag to all text including tool output. Root cause: both hooks failed to distinguish agent-generated text from tool-result content (`_input.role` not checked). Fix: `isToolOutput` guard (`_input.role !== "assistant"`) returns early before enforcement. Additional gaps: enforce-multitask.ts tool.execute.before has no disengage escape; zeroStreak loads stale state from disk. 16 new tests (7 in test_multitask_plugin.py + 9 in test_plugin_behavior.py). Also fixed agent_floor_check ansible role task-naming syntax (8 tasks). TASKS.md tracks text.complete pass-through fix as unchecked item.
+- **2026-07-12 session 24 (current):** HEAD `d15acc10` on `development` branch (30+ commits ahead of master). Waves 24-27: G.2 subagent guard fix, G.4 subagent output clean test, A.2 caplog fixes, E.7 zero-test module tests, F.1 reveal.js deck, G.3 coverage audit (Wave 24); enforce-multitask dispatch-count blocking, enforce-delegate threshold 4→2, plugin test coverage surge — 60 delegate + 38 deadline + 19 task-ledger tests, gate-lite assertion fixes (Wave 25, commit `c4a7ac1f`); enforce-deletion-gate tests (52), enforce-floor tests (101), task-ledger ID_PATTERN fix, check-task-ledger Makefile target, enhancement-ratio clean target, deck rebuild (Waves 26-27). Dirty tree: Makefile, deck-data.json, validate_task_ledger.py, new test files, test_task_ledger_validation.py. Not yet committed.
+- **2026-07-12 session 23 (prior):** HEAD `d2c20db6` on `development` branch (25 commits ahead of master). Fixed two bugs in plugin text.complete hooks: (1) enforce-multitask.ts was replacing Read/Grep/Glob results with "MUST DISPATCH..." messages when zeroStreak hit threshold; (2) enforce-stop.ts was prepending "DELEGATE-FIRST" nag to all text including tool output. Root cause: both hooks failed to distinguish agent-generated text from tool-result content (`_input.role` not checked). Fix: `isToolOutput` guard (`_input.role !== "assistant"`) returns early before enforcement. Additional gaps: enforce-multitask.ts tool.execute.before has no disengage escape; zeroStreak loads stale state from disk. 16 new tests (7 in test_multitask_plugin.py + 9 in test_plugin_behavior.py). Also fixed agent_floor_check ansible role task-naming syntax (8 tasks). TASKS.md tracks text.complete pass-through fix as unchecked item.
 - **2026-07-11 session 22 (prior)**: HEAD `d2c20db6` on `development` branch (25 commits ahead of master). Connector test fix wave completed: ~76 stale connector health assertions fixed across 34 test files over 3 batches (`b5894567`, `023d5f09`, `d2c20db6`). D12 Slack KIND fixed, D15 CachedSource wired, D14 path traversal fixed, C11 flaky test fixed. `make push-dev` added (`9365e393`). Gate-lite: 4556 passed, 3 skipped, 1 stale assertion (dynatrace) patched in dirty tree. CI pending. Next: commit dynatrace fix → gate → merge to master → Tier 1 items.
 - **2026-07-11 session 21 (prior)**: HEAD `0a07421d` on `development` branch (21 commits ahead of master). Phase S2 Waves C-E completed (23 items, commit `b8a18e2f`). Features landed: D4 DAST, D12 Slack connector, D14 background_test_runner, D15 CachedSource, C27 MCP argv fix, C26 async lifecycle, C23 connector security audit (703+ test assertions). `make gate-lite`: 1908 passed, 2 failed (1 stale assertion FIXED, 1 C11 flaky). Dirty tree: alembic migration rename, secrets baseline, azure_resource_graph test fix. Next: commit dirty tree → gate → merge to master → release cut.
 - **2026-07-10 session 20 (prior)**: HEAD `4113f206` (was LOCAL/UNPUSHED at session end; since pushed to master per `make verify-remote`).

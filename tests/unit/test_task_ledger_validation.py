@@ -16,8 +16,8 @@ class TestIdPattern:
         assert ID_PATTERN.findall("A.10 — single letter") == ["A.10"]
         assert ID_PATTERN.findall("H.16 — triple-digit suffix") == ["H.16"]
 
-    def test_hyphenated_ids_not_currently_supported(self) -> None:
-        assert not ID_PATTERN.findall("FIX-3 — hotfix id")
+    def test_hyphenated_ids_supported(self) -> None:
+        assert ID_PATTERN.findall("FIX-3 — hotfix id") == ["FIX-3"]
 
     def test_does_not_match_plain_text(self) -> None:
         assert not ID_PATTERN.findall("description with 1.2 value")
@@ -75,11 +75,11 @@ class TestExtractTasks:
         assert len(checked) == 1
         assert len(unchecked) == 0
 
-    def test_multiple_ids_per_line_captures_first_only(self) -> None:
+    def test_multiple_ids_per_line_captures_all(self) -> None:
         content = "- [ ] W.1 W.2 — Two IDs\n"
         _checked, unchecked = extract_tasks_content(content)
         assert len(unchecked) == 1
-        assert unchecked[0]["ids"] == ["W.1"]
+        assert unchecked[0]["ids"] == ["W.1", "W.2"]
 
 
 class TestValidateAgainstRealTas:

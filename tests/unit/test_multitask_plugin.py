@@ -366,3 +366,100 @@ class TestTasksHasUnchecked:
             "TASKS.md must be referenced by hasPendingWork() — "
             "the pending-work gate was added per user mandate (2026-07-12)"
         )
+
+
+class TestPerMessageEnforcement:
+    """Per-message dispatch-count enforcement added 2026-07-12:
+    tool.execute.before blocks Edit/Write/Bash when current message
+    has <2 dispatches AND pending work exists."""
+
+    def test_state_interface_includes_last_tool_call_ts(self):
+        src = _plugin_source()
+        assert "lastToolCallTs: number" in src, (
+            "MultitaskState interface must include lastToolCallTs field"
+        )
+
+    def test_last_tool_call_ts_in_default_return(self):
+        src = _plugin_source()
+        assert "lastToolCallTs: 0" in src, (
+            "readState() default return must include lastToolCallTs: 0"
+        )
+
+    def test_last_tool_call_ts_initialized_in_iife(self):
+        src = _plugin_source()
+        assert "s.lastToolCallTs = 0" in src, (
+            "_state IIFE must initialize lastToolCallTs to 0"
+        )
+
+    def test_time_heuristic_message_boundary_present(self):
+        src = _plugin_source()
+        assert "lastToolCallTs > 0" in src, (
+            "Message boundary heuristic must check if lastToolCallTs > 0"
+        )
+        assert "> 5000" in src, (
+            "Message boundary threshold must be 5000ms (5s)"
+        )
+        assert "thisMessageDispatches = 0" in src, (
+            "Time heuristic must reset thisMessageDispatches to 0 on new message"
+        )
+
+    def test_insufficient_dispatches_deny_message(self):
+        src = _plugin_source()
+        assert "INSUFFICIENT DISPATCHES" in src, (
+            "Per-message deny must include INSUFFICIENT DISPATCHES message"
+        )
+        assert "Add dispatches and resend" in src, (
+            "Deny must instruct to add dispatches and resend"
+        )
+
+    def test_per_message_check_uses_has_pending_work(self):
+        src = _plugin_source()
+        assert "hasPendingWork()" in src, (
+            "Per-message enforcement must gate on hasPendingWork()"
+        )
+
+    def test_per_message_check_targets_edit_write_bash(self):
+        src = _plugin_source()
+        blocked_pattern = 'lt === "edit" || lt === "write" || lt === "bash"'
+        assert blocked_pattern in src, (
+            "Per-message check must target edit, write, and bash tools"
+        )
+
+    def test_per_message_check_respects_disengage(self):
+        src = _plugin_source()
+        handler = src.split('"tool.execute.before"')[1]
+        insuff_idx = handler.find("INSUFFICIENT DISPATCHES")
+        assert insuff_idx > 0, "INSUFFICIENT DISPATCHES must exist in tool.execute.before"
+        before_insuff = handler[:insuff_idx]
+        assert "disengaged" in before_insuff, (
+            "Per-message check must be gated by disengaged variable — "
+            "must be after the disengage escape block"
+        )
+
+    def test_per_message_check_skipped_for_subagents(self):
+        src = _plugin_source()
+        assert 'OPENCODE_SUBAGENT === "1"' in src, (
+            "OPENCODE_SUBAGENT guard must be present in tool.execute.before"
+        )
+
+    def test_per_message_threshold_is_2(self):
+        """The per-message enforcement must block when dispatch count is <2
+        (i.e., 0 or 1 dispatches in the current message)."""
+        src = _plugin_source()
+        assert "_state.thisMessageDispatches < 2" in src, (
+            "Per-message threshold must be <2 dispatches"
+        )
+
+    def test_per_message_time_heuristic_updates_on_every_tool(self):
+        """lastToolCallTs must be updated to Date.now() on EVERY tool call,
+        not just after the time gap check."""
+        src = _plugin_source()
+        assert "_state.lastToolCallTs = now" in src, (
+            "lastToolCallTs must be updated on every tool call"
+        )
+
+    def test_per_message_check_denies_with_permission_decision(self):
+        src = _plugin_source()
+        assert 'permissionDecision: "deny"' in src, (
+            "Per-message check must return permissionDecision: deny"
+        )
