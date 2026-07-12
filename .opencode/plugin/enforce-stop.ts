@@ -30,6 +30,7 @@ interface SharedStreakState {
   editStreak: number
   lastUpdateTs: number
   lastWriter: string
+  pid: number
 }
 
 function readSharedStreak(): SharedStreakState {
@@ -40,7 +41,17 @@ function readSharedStreak(): SharedStreakState {
       const lastTs = typeof raw.lastUpdateTs === "number" ? raw.lastUpdateTs : 0
       const STALE_MS = 60_000
       if (lastTs > 0 && now - lastTs > STALE_MS) {
-        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "stale-reset" }
+        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "stale-reset", pid: process.pid }
+        try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
+        return zeroed
+      }
+      // PID-based cross-session guard: if the stored pid exists and does not
+      // match process.pid, the file was written by a DIFFERENT opencode session.
+      // Reset to 0 — each session owns its own streak; cross-session pollution
+      // is the bug this check prevents.
+      const storedPid = typeof raw.pid === "number" ? raw.pid : 0
+      if (storedPid > 0 && storedPid !== process.pid) {
+        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "pid-reset", pid: process.pid }
         try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
         return zeroed
       }
@@ -51,13 +62,15 @@ function readSharedStreak(): SharedStreakState {
         editStreak: typeof raw.editStreak === "number" ? raw.editStreak : 0,
         lastUpdateTs: lastTs,
         lastWriter: typeof raw.lastWriter === "string" ? raw.lastWriter : "",
+        pid: storedPid || process.pid,
       }
     }
   } catch {}
-  return { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: 0, lastWriter: "" }
+  return { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: 0, lastWriter: "", pid: 0 }
 }
 
 function writeSharedStreak(s: SharedStreakState): void {
+  s.pid = process.pid
   try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(s), "utf8") } catch {}
 }
 
@@ -827,6 +840,7 @@ export default (async ({ }) => {
     },
 
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return output
       const unchecked = countTasksMdUnchecked()
       const ratchetCount = ratchetHasEntries()
       const bugsOpen = bugsMdHasOpenIncidents()

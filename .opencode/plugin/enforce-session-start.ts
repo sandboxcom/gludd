@@ -216,6 +216,7 @@ export default (async ({ }) => {
       _input: unknown,
       output: unknown,
     ) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return output
       try {
         // Initialize per-session state so the tool.execute.before gate knows
         // this is a fresh session.

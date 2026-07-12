@@ -864,6 +864,7 @@ export default (async ({ }) => {
     },
 
     "experimental.chat.system.transform": async (_input, output) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return output
       // --- BASH-AVAILABILITY CHECK (2026-07-03) -------------------------------
       // Reads SESSION.md for the "CRITICAL: bash tool unavailable" banner.
       // If present, injects a prominent warning at the VERY TOP of the system

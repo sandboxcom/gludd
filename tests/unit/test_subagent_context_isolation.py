@@ -169,21 +169,22 @@ PLUGINS_WITH_TOOL_BEFORE = [
     "enforce-multitask",    # style A; has guard
     "enforce-stop",         # style A; has guard
     "enforce-deadline",     # style A; has guard
-    "enforce-session-start",  # style A; MISSING guard
-    "enforce-deletion-gate",  # style A; MISSING guard
-    "enforce-no-suppressions",  # style A; MISSING guard
-    "enforce-no-wait",      # style B; MISSING guard
-    "enforce-commit-lock",  # style B; MISSING guard
-    "enforce-clean-tree",   # style B; MISSING guard
+    "enforce-session-start",  # style A; has guard
+    "enforce-deletion-gate",  # style A; has guard
+    "enforce-no-suppressions",  # style A; has guard
+    "enforce-no-wait",      # style B; has guard
+    "enforce-commit-lock",  # style B; has guard
+    "enforce-clean-tree",   # style B; has guard
+    "enforce-enhancement-ratio",  # style A; has guard
 ]
 
 # Plugins with text.complete hooks
 PLUGINS_WITH_TEXT_COMPLETE = [
-    "enforce-floor",         # no guard
-    "enforce-make",          # no guard (not needed — it's per-instance state)
+    "enforce-floor",         # has guard
+    "enforce-make",          # has guard
     "enforce-multitask",     # has guard
     "enforce-stop",          # has guard
-    "enforce-verified-claims",  # MISSING guard
+    "enforce-verified-claims",  # has guard
 ]
 
 
@@ -482,6 +483,54 @@ class TestTextCompleteGuards:
             "Subagent results containing done-words (committed, fixed, passed, etc.) "
             "would be blanked by the false-done claim detector."
         )
+
+
+class TestSystemTransformGuards:
+    """system.transform hooks inject directives into the system prompt.
+    Inside subagent contexts (OPENCODE_SUBAGENT=1), these MUST return
+    output unchanged to avoid contaminating subagent prompts with
+    orchestrator-oriented directives (SESSION START PROTOCOL, HARD STOP,
+    DELEGATE-FIRST nag, bash-availability warning).
+    """
+
+    def test_stop_has_system_transform_guard(self):
+        _check_system_transform_guard(
+            _read_plugin("enforce-stop"), "experimental.chat.system.transform",
+            "enforce-stop.ts",
+        )
+
+    def test_session_start_has_system_transform_guard(self):
+        _check_system_transform_guard(
+            _read_plugin("enforce-session-start"), "experimental.chat.system.transform",
+            "enforce-session-start.ts",
+        )
+
+    def test_make_has_system_transform_guard(self):
+        _check_system_transform_guard(
+            _read_plugin("enforce-make"), "experimental.chat.system.transform",
+            "enforce-make.ts",
+        )
+
+
+def _check_system_transform_guard(src: str, hook_key: str, plugin_name: str):
+    """Verify a system.transform hook has the OPENCODE_SUBAGENT guard with return output."""
+    idx = src.find(hook_key)
+    assert idx != -1, f"{plugin_name}: {hook_key} hook not found"
+    body = src[idx + len(hook_key):]
+    # Find opening brace
+    brace_idx = body.find("{")
+    assert brace_idx != -1, f"{plugin_name}: no opening brace after {hook_key}"
+    body = body[brace_idx + 1:]
+    guard_match = re.search(
+        r'if\s*\(\s*process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"\s*\)\s*return\s+output',
+        body,
+        re.MULTILINE,
+    )
+    assert guard_match is not None, (
+        f"{plugin_name}: system.transform MISSING OPENCODE_SUBAGENT guard. "
+        f"Must have: `if (process.env.OPENCODE_SUBAGENT === \"1\") return output` "
+        f"as first substantive line."
+    )
 
 
 class TestGuardNotInFilesThatDontNeedIt:

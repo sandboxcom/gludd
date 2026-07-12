@@ -18,6 +18,9 @@ TOOL_BEFORE_RE = re.compile(
 TEXT_COMPLETE_RE = re.compile(
     r'"experimental\.text\.complete"\s*:\s*async\s*\(|api\.experimental\.text\.complete\s*\('
 )
+SYSTEM_TRANSFORM_RE = re.compile(
+    r'"experimental\.(?:chat\.)?system\.transform"\s*:\s*async\s*\('
+)
 
 SUBAGENT_GUARD_RE = re.compile(
     r'process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"'
@@ -124,6 +127,37 @@ def check_plugin(filepath):
         findings.append({
             "plugin": filepath.name,
             "hook": "text.complete",
+            "status": status,
+            "reason": reason,
+        })
+
+    st = _find_handler_start(lines, SYSTEM_TRANSFORM_RE)
+    if st is not None:
+        decl_idx, brace_idx = st
+        substantive = _extract_first_substantive_lines(lines, brace_idx + 1)
+        has_guard = _check_guard_in_lines(substantive)
+        guard_uses_bare_return = False
+        for line in substantive:
+            if SUBAGENT_GUARD_RE.search(line):
+                stripped = line.strip()
+                if "return output" not in stripped and "return" in stripped:
+                    guard_uses_bare_return = True
+                break
+
+        status = "PASS"
+        reason = ""
+        if not has_guard:
+            status = "FAIL"
+            reason = "missing OPENCODE_SUBAGENT guard"
+        elif guard_uses_bare_return:
+            status = "FAIL"
+            reason = "guard uses bare 'return' — should be 'return output'"
+        else:
+            reason = "guard present"
+
+        findings.append({
+            "plugin": filepath.name,
+            "hook": "system.transform",
             "status": status,
             "reason": reason,
         })
