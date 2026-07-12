@@ -2487,7 +2487,7 @@ def create_daemon_app(
     app.state._self_update_audit_sink = None
     app.state._compaction_compactor = None
     app.state._compaction_metrics = None
-    app.state._allowed_cidr: list[str] = []
+    app.state._allowed_cidr = []
     app.state._network_host = "127.0.0.1"
     app.state._network_port = 8000
     app.state._startup_config = load_startup_config(config_dir)

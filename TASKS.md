@@ -8,15 +8,15 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Active — In Progress (items being worked on right now)
 
-- [ ] ACT-1 — Consolidate backlog into TASKS.md | priority: high | effort: medium | status: in_progress
+- [x] ACT-1 — Consolidate backlog into TASKS.md | priority: high | effort: medium | status: completed | evidence: TASKS.md contains consolidated ~78 items from 5 spec files
 
 ---
 
 ## Phase W — Enforcement/Plugin hardening (current wave)
 
-- [ ] W.1 — Fix enforce-floor.ts + enforce-delegate.ts enforcement loop (per-PID scoping, disengage escape, stale state) | priority: high | effort: medium | status: pending
-- [ ] W.2 — Fix enforce-multitask.ts text.complete tool-output pass-through (zeroStreak stale state, no disengage escape) | priority: high | effort: small | status: pending
-- [ ] W.3 — Fix enforce-stop.ts text.complete tool-output blanking | priority: high | effort: small | status: pending
+- [x] W.1 — Fix enforce-floor.ts stale-state + enforce-delegate.ts disengage escape (per-PID scoping done) | priority: high | effort: medium | status: completed | evidence: 5 files changed, 54 insertions, 9 deletions
+- [x] W.2 — Fix enforce-multitask.ts text.complete tool-output pass-through (zeroStreak stale state, no disengage escape) | priority: high | effort: small | status: completed | evidence: text.complete isToolOutput guard intentionally absent per research 2026-07-12 (text.complete never fires on tool output); disengage escape exists; zeroStreak does not load from stale disk
+- [x] W.3 — Fix enforce-stop.ts text.complete tool-output blanking | priority: high | effort: small | status: completed | evidence: same research finding — text.complete isToolOutput guard not needed; disengage escape exists
 
 ---
 
@@ -293,6 +293,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 ### Phase W — Enforcement plugin fixes
 
 - [x] per-PID scoping fix for enforcement plugins
+- [x] Fix agent_floor_check ansible role task-naming syntax errors (8 tasks)
 
 ### Ship gate
 

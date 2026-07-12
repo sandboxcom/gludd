@@ -36,7 +36,7 @@ def sanitize_error_message(text: str) -> str:
     result = text
     for pattern, replacement in _CREDENTIAL_PATTERNS:
         result = pattern.sub(replacement, result)
-        return result
+    return result
 
 _PATH_TRAVERSAL = re.compile(r"(?:\.\./|\.\.\\)")
 _ABSOLUTE_PATH = re.compile(r"^/|^[A-Za-z]:\\")

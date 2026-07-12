@@ -451,6 +451,27 @@ export default (async ({ }) => {
       "utf8",
     )
   } catch { /* fail-open */ }
+
+  // Stale-state cleanup (P3 fix, 2026-07-12): when opcode restarts and reloads
+  // plugins, enforce-delegate.ts's read-grind counter in /tmp/gludd-read-grind.json
+  // persists from the prior process. If the lastDispatchTs or ts is older than 60s,
+  // the counter is stale and must be reset — an agent in a fresh session should not
+  // start with a grinding-detection counter inherited from the previous run.
+  try {
+    const GRIND_FILE = process.env.GLUDD_READ_GRIND_FILE || "/tmp/gludd-read-grind.json"
+    if (fs.existsSync(GRIND_FILE)) {
+      const obj = JSON.parse(fs.readFileSync(GRIND_FILE, "utf8"))
+      const ts = typeof obj.lastDispatchTs === "number" ? obj.lastDispatchTs
+               : typeof obj.ts === "number" ? obj.ts : 0
+      const age = Date.now() - ts
+      if (age > 60_000) {
+        const tmp = GRIND_FILE + ".tmp"
+        fs.writeFileSync(tmp, JSON.stringify({ count: 0, lastDispatchTs: Date.now(), ts: Date.now() }), "utf8")
+        fs.renameSync(tmp, GRIND_FILE)
+      }
+    }
+  } catch { /* fail-open */ }
+
   return {
     "tool.execute.before": async (input: { tool?: string }, output: unknown) => {
       _reportAlive()

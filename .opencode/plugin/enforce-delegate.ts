@@ -78,6 +78,9 @@ const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1
 const WORKTREE_CAP = parseInt(process.env.GLUDD_WORKTREE_CAP || "6", 10)
 const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
 
+const DISENGAGE_FILE = "/tmp/gludd-watchdog-disengage.json"
+const MAX_DISENGAGE_MS = 3_600_000
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -131,6 +134,20 @@ function countLiveAgents(): number | null {
   } catch (e) {
     return recordFailure("exec threw: " + String(e).substring(0, 120))
   }
+}
+
+function isDisengaged(): boolean {
+  try {
+    if (fs.existsSync(DISENGAGE_FILE)) {
+      const d = JSON.parse(fs.readFileSync(DISENGAGE_FILE, "utf8"))
+      if (d.disengage_until) {
+        const now = Date.now()
+        const effective = Math.min(d.disengage_until, now + MAX_DISENGAGE_MS)
+        if (effective > now) return true
+      }
+    }
+  } catch {}
+  return false
 }
 
 // ============================================================================
@@ -400,6 +417,7 @@ function enforceForceDelegate(
 ): string | null {
   try {
     if (!FORCE_DELEGATE_ENABLED) return null
+    if (isDisengaged()) return null
 
     const command = ((args?.command as string) || "").trim()
     const filePath = ((args?.filePath as string) || "").trim()
@@ -559,13 +577,17 @@ function writeStreak(n: number): void {
 // dispatch so time-based detection can distinguish a legitimate burst from
 // a grinding spree.
 // ---------------------------------------------------------------------------
+const READ_GRIND_STALE_MS = parseFloat(process.env.GLUDD_READ_GRIND_STALE_MS || "60000")
+
 function loadReadGrindState(): { count: number; lastDispatchTs: number } {
   try {
     const obj = JSON.parse(fs.readFileSync(READ_GRIND_FILE, "utf8"))
-    return {
-      count: typeof obj.count === "number" ? obj.count : 0,
-      lastDispatchTs: typeof obj.lastDispatchTs === "number" ? obj.lastDispatchTs : Date.now(),
+    const count = typeof obj.count === "number" ? obj.count : 0
+    const lastDispatchTs = typeof obj.lastDispatchTs === "number" ? obj.lastDispatchTs : Date.now()
+    if (count > 0 && (Date.now() - lastDispatchTs) > READ_GRIND_STALE_MS) {
+      return { count: 0, lastDispatchTs: Date.now() }
     }
+    return { count, lastDispatchTs }
   } catch {
     return { count: 0, lastDispatchTs: Date.now() }
   }
@@ -595,6 +617,7 @@ function isDelegateTool(tool: string): boolean {
 function mainthreadBudgetBefore(tool: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
+    if (isDisengaged()) return null
 
     // Read-grind check (separate from the edit-streak below): investigation
     // tools don't count toward the edit/write/bash streak, but they DO count
