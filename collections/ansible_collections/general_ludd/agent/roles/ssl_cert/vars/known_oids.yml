@@ -1,0 +1,148 @@
+---
+known_oids:
+  # PKCS #1 — RSA Cryptography
+  "1.2.840.113549.1.1.1": "RSA Encryption (PKCS #1 v1.5) — rsaEncryption"
+  "1.2.840.113549.1.1.4": "MD5 with RSA Encryption (pkcs1-md5WithRSAEncryption)"
+  "1.2.840.113549.1.1.5": "SHA-1 with RSA Encryption (pkcs1-sha1WithRSAEncryption)"
+  "1.2.840.113549.1.1.7": "RSAES-OAEP (PKCS #1 v2.0)"
+  "1.2.840.113549.1.1.10": "RSASSA-PSS (PKCS #1 v2.1)"
+  "1.2.840.113549.1.1.11": "SHA-256 with RSA Encryption (sha256WithRSAEncryption)"
+  "1.2.840.113549.1.1.12": "SHA-384 with RSA Encryption (sha384WithRSAEncryption)"
+  "1.2.840.113549.1.1.13": "SHA-512 with RSA Encryption (sha512WithRSAEncryption)"
+  "1.2.840.113549.1.1.14": "SHA-224 with RSA Encryption (sha224WithRSAEncryption)"
+
+  # PKCS #7 / CMS
+  "1.2.840.113549.1.7.1": "PKCS #7 Data (CMS Data Content Type)"
+  "1.2.840.113549.1.7.2": "PKCS #7 Signed Data (CMS SignedData)"
+  "1.2.840.113549.1.7.3": "PKCS #7 Enveloped Data (CMS EnvelopedData)"
+  "1.2.840.113549.1.7.6": "PKCS #7 Encrypted Data"
+
+  # PKCS #9
+  "1.2.840.113549.1.9.1": "PKCS #9 Email Address (emailAddress)"
+  "1.2.840.113549.1.9.3": "PKCS #9 Content Type"
+  "1.2.840.113549.1.9.4": "PKCS #9 Message Digest"
+  "1.2.840.113549.1.9.14": "PKCS #9 Extension Request (extReq)"
+
+  # Elliptic Curve Public Key
+  "1.2.840.10045.1.1": "ECDSA with SHA-1 (ecdsa-with-SHA1)"
+  "1.2.840.10045.2.1": "EC Public Key (id-ecPublicKey) — RFC 5480"
+  "1.2.840.10045.4.1": "ECDSA with SHA-256 (ecdsa-with-SHA256)"
+  "1.2.840.10045.4.2": "ECDSA with SHA-384 (ecdsa-with-SHA384)"
+  "1.2.840.10045.4.3": "ECDSA with SHA-512 (ecdsa-with-SHA512)"
+
+  # NIST Curves (ANS X9.62 / SEC 2)
+  "1.2.840.10045.3.1.1": "NIST P-192 (secp192r1)"
+  "1.2.840.10045.3.1.2": "NIST P-224 (secp224r1)"
+  "1.2.840.10045.3.1.3": "NIST P-256 (secp256r1)"
+  "1.2.840.10045.3.1.4": "NIST P-384 (secp384r1)"
+  "1.2.840.10045.3.1.5": "NIST P-521 (secp521r1)"
+
+  # EdDSA (RFC 8410)
+  "1.3.101.112": "Ed25519 (id-Ed25519) — RFC 8410 / RFC 8032"
+  "1.3.101.113": "Ed448 (id-Ed448) — RFC 8410 / RFC 8032"
+  "1.3.101.114": "Ed25519ph (pre-hash) — RFC 8032"
+  "1.3.101.115": "Ed448ph (pre-hash) — RFC 8032"
+
+  # Certificate Extensions — X.509 (2.5.29.*)
+  "2.5.29.1": "Old Authority Key Identifier (deprecated — use 2.5.29.35)"
+  "2.5.29.2": "Old Primary Key Attributes (deprecated)"
+  "2.5.29.3": "Certificate Policies (deprecated — use 2.5.29.32)"
+  "2.5.29.9": "Subject Directory Attributes"
+  "2.5.29.14": "Subject Key Identifier (id-ce-subjectKeyIdentifier) — RFC 5280 §4.2.1.2"
+  "2.5.29.15": "Key Usage (id-ce-keyUsage) — RFC 5280 §4.2.1.3"
+  "2.5.29.16": "Private Key Usage Period"
+  "2.5.29.17": "Subject Alternative Name (id-ce-subjectAltName) — RFC 5280 §4.2.1.6"
+  "2.5.29.18": "Issuer Alternative Name (id-ce-issuerAltName)"
+  "2.5.29.19": "Basic Constraints (id-ce-basicConstraints) — RFC 5280 §4.2.1.9"
+  "2.5.29.20": "CRL Number (id-ce-cRLNumber) — RFC 5280 §5.2.3"
+  "2.5.29.21": "Reason Code (id-ce-reasonCode) — CRL entry extension"
+  "2.5.29.23": "Hold Instruction Code"
+  "2.5.29.24": "Invalidity Date"
+  "2.5.29.27": "Delta CRL Indicator"
+  "2.5.29.28": "Issuing Distribution Point"
+  "2.5.29.29": "Certificate Issuer"
+  "2.5.29.30": "Name Constraints (id-ce-nameConstraints) — RFC 5280 §4.2.1.10"
+  "2.5.29.31": "CRL Distribution Points (id-ce-cRLDistributionPoints) — RFC 5280 §4.2.1.13"
+  "2.5.29.32": "Certificate Policies (id-ce-certificatePolicies) — RFC 5280 §4.2.1.4"
+  "2.5.29.33": "Policy Mappings (id-ce-policyMappings) — RFC 5280 §4.2.1.5"
+  "2.5.29.35": "Authority Key Identifier (id-ce-authorityKeyIdentifier) — RFC 5280 §4.2.1.1"
+  "2.5.29.36": "Policy Constraints (id-ce-policyConstraints) — RFC 5280 §4.2.1.11"
+  "2.5.29.37": "Extended Key Usage (id-ce-extKeyUsage) — RFC 5280 §4.2.1.12"
+  "2.5.29.46": "Freshest CRL (id-ce-freshestCRL) — RFC 5280 §5.2.6"
+  "2.5.29.54": "Inhibit Any Policy (id-ce-inhibitAnyPolicy) — RFC 5280 §4.2.1.14"
+
+  # Extended Key Usage (EKU) — id-kp
+  "1.3.6.1.5.5.7.3.1": "Server Authentication (id-kp-serverAuth)"
+  "1.3.6.1.5.5.7.3.2": "Client Authentication (id-kp-clientAuth)"
+  "1.3.6.1.5.5.7.3.3": "Code Signing (id-kp-codeSigning)"
+  "1.3.6.1.5.5.7.3.4": "Email Protection (id-kp-emailProtection)"
+  "1.3.6.1.5.5.7.3.5": "IPsec End System (id-kp-ipsecEndSystem)"
+  "1.3.6.1.5.5.7.3.6": "IPsec Tunnel (id-kp-ipsecTunnel)"
+  "1.3.6.1.5.5.7.3.7": "IPsec User (id-kp-ipsecUser)"
+  "1.3.6.1.5.5.7.3.8": "Time Stamping (id-kp-timeStamping)"
+  "1.3.6.1.5.5.7.3.9": "OCSP Signing (id-kp-OCSPSigning)"
+  "1.3.6.1.5.5.7.3.10": "DVCS (id-kp-dvcs)"
+  "1.3.6.1.5.5.7.3.11": "S/MIME CA (id-kp-sbgpCertAAClient)"
+  "1.3.6.1.5.5.7.3.12": "Document Signing (id-kp-documentSigning)"  # Adobe / DocuSign
+  "1.3.6.1.5.5.7.3.13": "EAP-TLS (id-kp-eapOverPPP)"
+  "1.3.6.1.5.5.7.3.14": "EAP-TLS (id-kp-eapOverLAN)"
+
+  # Certificate Policy OIDs — CAB/F Baseline Requirements
+  "2.23.140.1.1": "BIMI (Brand Indicators for Message Identification) — Verified Mark Certificate"
+  "2.23.140.1.2.1": "CAB/F Domain Validated (DV) — baseline requirements §7.1.6.2"
+  "2.23.140.1.2.2": "CAB/F Organization Validated (OV) — baseline requirements §7.1.6.2"
+  "2.23.140.1.2.3": "CAB/F Individual Validated (IV) — baseline requirements §7.1.6.2"
+  "2.23.140.1.3": "CAB/F Extended Validation (EV) — EV guidelines"
+  "2.23.140.1.4.1": "CAB/F EV Code Signing Certificate"
+  "1.3.6.1.4.1.311.21.20": "Microsoft SGC (Server Gated Cryptography) — legacy IE"
+
+  # Hash Algorithms
+  "1.2.840.113549.2.5": "MD5"
+  "1.3.14.3.2.26": "SHA-1 (id-sha1)"
+  "2.16.840.1.101.3.4.2.1": "SHA-256 (id-sha256)"
+  "2.16.840.1.101.3.4.2.2": "SHA-384 (id-sha384)"
+  "2.16.840.1.101.3.4.2.3": "SHA-512 (id-sha512)"
+  "2.16.840.1.101.3.4.2.4": "SHA-224 (id-sha224)"
+
+  # Certificate Transparency
+  "1.3.6.1.4.1.11129.2.4.2": "Certificate Transparency — Signed Certificate Timestamp (SCT) list embedded in X.509 extension"
+
+  # TLS Features (RFC 7633)
+  "1.3.6.1.5.5.7.1.24": "TLS Feature (id-pe-tlsfeature) — RFC 7633; signals MUST-staple OCSP, etc."
+
+  # Authority Information Access (RFC 5280)
+  "1.3.6.1.5.5.7.1.1": "Authority Information Access (AIA) — id-pe-authorityInfoAccess"
+  "1.3.6.1.5.5.7.48.1": "OCSP (id-ad-ocsp) — Online Certificate Status Protocol access method"
+  "1.3.6.1.5.5.7.48.2": "CA Issuers (id-ad-caIssuers) — AIA access method for CA certificate download"
+
+  # Subject Information Access (RFC 5280)
+  "1.3.6.1.5.5.7.1.11": "Subject Information Access (SIA) — id-pe-subjectInfoAccess"
+  "1.3.6.1.5.5.7.48.5": "CA Repository (id-ad-caRepository) — SIA access method"
+
+  # Signed Certificate Timestamp (CT)
+  "1.3.6.1.4.1.11129.2.4.5": "OCSP Response with SCT extension — RFC 6962"
+
+  # Precertificate Poison
+  "1.3.6.1.4.1.11129.2.4.3": "CT Precertificate Poison extension — RFC 6962 §3.1"
+
+  # Qualified Certificate Statements (ETSI EN 319 412)
+  "1.3.6.1.5.5.7.1.3": "Qualified Certificate Statements (id-pe-qcStatements) — ETSI"
+  "0.4.0.1862.1.1": "QcCompliance statement — ETSI EN 319 412-5"
+  "0.4.0.1862.1.4": "QcType — eIDAS electronic signature"
+  "0.4.0.1862.1.6": "QcType — eIDAS electronic seal"
+
+  # Attribute OIDs — Subject DN Components
+  "2.5.4.3": "Common Name (CN)"
+  "2.5.4.4": "Surname (SN)"
+  "2.5.4.5": "Serial Number (serialNumber)"
+  "2.5.4.6": "Country Name (C)"
+  "2.5.4.7": "Locality Name (L)"
+  "2.5.4.8": "State or Province Name (ST)"
+  "2.5.4.9": "Street Address (streetAddress)"
+  "2.5.4.10": "Organization Name (O)"
+  "2.5.4.11": "Organizational Unit Name (OU)"
+  "2.5.4.12": "Title"
+  "2.5.4.13": "Description"
+  "2.5.4.15": "Business Category"
+  "2.5.4.17": "Postal Code (postalCode)"
+  "1.2.840.113549.1.9.1": "Email Address (emailAddress) — PKCS #9"

@@ -1,0 +1,60 @@
+---
+# ssl_cert role defaults — SSL/TLS certificate management
+# SAFE-BY-DEFAULT: all destructive operations require explicit opt-in.
+
+# ── Daemon connectivity ──
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# ── Certificate generation defaults ──
+ssl_cert_key_size: 3072
+ssl_cert_ec_curve: secp384r1
+ssl_cert_ed_curve: Ed25519
+ssl_cert_digest: sha384
+ssl_cert_days_valid: 398
+ssl_cert_sans: []
+ssl_cert_key_usage:
+  - digitalSignature
+  - keyEncipherment
+ssl_cert_extended_key_usage:
+  - serverAuth
+ssl_cert_ca_cert: null
+ssl_cert_ca_key: null
+ssl_cert_output_dir: /tmp/gludd-certs
+
+# ── Certificate identity ──
+ssl_cert_cn: "{{ ansible_hostname }}"
+ssl_cert_country: US
+ssl_cert_state: null
+ssl_cert_locality: null
+ssl_cert_org: "Gludd Agent"
+ssl_cert_ou: "Security"
+
+# ── Output file paths ──
+ssl_cert_cert_path: "{{ ssl_cert_output_dir }}/{{ ssl_cert_cn }}.crt"
+ssl_cert_key_path: "{{ ssl_cert_output_dir }}/{{ ssl_cert_cn }}.key"
+ssl_cert_csr_path: "{{ ssl_cert_output_dir }}/{{ ssl_cert_cn }}.csr"
+ssl_cert_chain_path: "{{ ssl_cert_output_dir }}/{{ ssl_cert_cn }}-chain.crt"
+
+# ── Certificate validation ──
+ssl_cert_ocsp_url: null
+ssl_cert_crl_url: null
+
+# ── HSM / smartcard ──
+ssl_cert_pkcs11_module: /usr/lib/opensc-pkcs11.so
+ssl_cert_pkcs11_pin: null
+ssl_cert_hsm_slot: 0
+
+# ── Security policy ──
+ssl_cert_security_level: 128
+ssl_cert_compliance_profile: null
+ssl_cert_ca_jurisdiction_lookup: false
+
+# ── Model integration ──
+ssl_cert_model_label: general-ludd
+ssl_cert_artifact_dir: /tmp/gludd-ssl-cert
+
+# ── Destructive ops guard ──
+ssl_cert_generate: false
+ssl_cert_sign: false
+ssl_cert_import_hsm: false
