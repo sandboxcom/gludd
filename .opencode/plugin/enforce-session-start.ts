@@ -32,8 +32,8 @@ const MIN_DISPATCHES = parseInt(
   process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "10",
   10,
 )
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
-const EFFECTIVE_MIN = Math.max(MIN_DISPATCHES, Math.min(FLOOR, 10))
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "3", 10)
+const EFFECTIVE_MIN = Math.max(MIN_DISPATCHES, Math.min(FLOOR, 3))
 
 // Hard-deny mode (mirrors GLUDD_FLOOR_ENFORCE / GLUDD_NO_WAIT_ENFORCE).
 // Default is ON (hard deny on premature mutations). Set

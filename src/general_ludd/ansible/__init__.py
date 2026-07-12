@@ -9,6 +9,7 @@ from general_ludd.ansible.action_policy import (
 from general_ludd.ansible.ara import ARAConfig
 from general_ludd.ansible.audit import AuditEvent, PlaybookAuditLogger
 from general_ludd.ansible.core_runner import AnsibleResult, CoreAnsibleRunner
+from general_ludd.ansible.file_tracker import FILE_MODULES, FileChangeTracker
 from general_ludd.ansible.galaxy import (
     get_builtin_modules,
     install_galaxy,
@@ -21,6 +22,7 @@ from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.ansible.templating import AnsibleTemplater
 
 __all__ = [
+    "FILE_MODULES",
     "ARAConfig",
     "ActionManifest",
     "ActionPolicyConfig",
@@ -29,6 +31,7 @@ __all__ = [
     "AnsibleTemplater",
     "AuditEvent",
     "CoreAnsibleRunner",
+    "FileChangeTracker",
     "PlaybookAuditLogger",
     "PolicyResult",
     "ProcessIsolationConfig",

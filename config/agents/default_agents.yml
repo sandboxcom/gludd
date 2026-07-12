@@ -60,3 +60,18 @@ agents:
       allowed_subagents: []
     max_concurrent: 3
     enabled: true
+
+  - name: research
+    description: "Research agent — SearXNG-powered web research with source verification, confidence scoring, and structured citation output"
+    type: subagent
+    model_profile: zai_coder
+    prompt_profile: default
+    max_steps: 10
+    permissions:
+      can_edit: false
+      can_bash: false
+      can_read: true
+      can_dispatch_subagents: false
+      allowed_subagents: []
+    max_concurrent: 3
+    enabled: true

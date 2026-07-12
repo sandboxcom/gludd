@@ -127,22 +127,22 @@ class TestAgentFloorEnforcement:
             "AGENTS.md must list forbidden main-thread commands"
         )
 
-    def test_enforce_floor_defaults_to_10(self):
+    def test_enforce_floor_defaults_to_two(self):
         content = ENFORCE_FLOOR.read_text()
-        assert '"10"' in content, "enforce-floor.ts FLOOR must default to 10"
+        assert '"2"' in content, "enforce-floor.ts FLOOR must default to 2"
 
-    def test_enforce_delegate_defaults_to_10(self):
+    def test_enforce_delegate_defaults_to_two(self):
         content = ENFORCE_DELEGATE.read_text()
-        assert '"10"' in content, "enforce-delegate.ts FLOOR must default to 10"
+        assert '"2"' in content, "enforce-delegate.ts FLOOR must default to 2"
 
-    def test_enforce_stop_defaults_to_10(self):
+    def test_enforce_stop_defaults_to_two(self):
         content = ENFORCE_STOP.read_text()
-        assert '"10"' in content, "enforce-stop.ts FLOOR must default to 10"
+        assert '"3"' in content, "enforce-stop.ts FLOOR must default to 3"
 
-    def test_settings_json_floor_is_10(self):
+    def test_settings_json_floor_is_three(self):
         settings = (ROOT / ".claude" / "settings.json").read_text()
-        assert '"CLAUDE_AGENT_FLOOR": "10"' in settings, (
-            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 10"
+        assert '"CLAUDE_AGENT_FLOOR": "3"' in settings, (
+            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 3"
         )
 
 

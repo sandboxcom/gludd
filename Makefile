@@ -34,39 +34,44 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
- 		feature-start feature-done test-and-commit preflight \
-  		agent-worktree agent-merge agent-cleanup agent-worktree-list \
-  		agent-worktree-dev agent-merge-dev \
-  		development-push development-merge-to-master development-start development-status \
-  		git-commit-no-verify git-amend-msg \
- 		_commit-lock-acquire check-clean-tree ship-commit-files \
-		molecule-version molecule-test molecule-test-all \
-		collection-roles collection-modules molecule-scenarios \
-		container-build container-run container-push \
+        feature-start feature-done test-and-commit preflight \
+        agent-worktree agent-merge agent-cleanup agent-worktree-list \
+        agent-worktree-dev agent-merge-dev \
+        development-push development-merge-to-master development-start development-status \
+        git-commit-no-verify git-amend-msg \
+        _commit-lock-acquire check-clean-tree ship-commit-files \
+        molecule-version molecule-test molecule-test-all \
+        collection-roles collection-modules molecule-scenarios \
+        container-build container-run container-push \
         file-executable build-executable dist dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check gate gate-lite smoke install-hooks \
-        status-snapshot audit-evidence deps-audit dogfood-features \
+        status-snapshot audit-evidence deps-audit dogfood-features ruff-audit \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-		gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
-		repo-visibility \
- 		watchdog-start watchdog-status watchdog-stop watchdog-log \
- 		task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
- 		check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
-		check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
-		verify-release-artifact git-tag-rm release-cut release-recut release-create \
-		verify-feature-claims audit-coverage gate-audit coverage-json \
-		tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
-		deck deck-serve deck-preview deck-data deck-honesty \
-		sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
-		sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
-		script-count test-hooks-live \
-		ci-view ci-rerun ci-trigger ci-active ci-job-log
+        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
+        repo-visibility \
+        watchdog-start watchdog-status watchdog-stop watchdog-log \
+        task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
+        check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
+        check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
+        verify-release-artifact git-tag-rm release-cut release-recut release-create \
+        verify-feature-claims audit-coverage gate-audit coverage-json \
+        tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
+        deck deck-serve deck-preview deck-data deck-honesty \
+        sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
+        sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
+    script-count test-hooks-live \
+    ci-view ci-rerun ci-trigger ci-active ci-job-log \
+    search-coverage-agentconfig \
+    git-index git-search git-stats \
+    searx-up searx-down searx-test \
+    disk-guard disk-check disk \
+    install-bats test-install
 
 help:
 	@echo "Usage: make [target]"
@@ -76,6 +81,7 @@ help:
 	@echo "  sync                  Sync uv dependencies"
 	@echo "  bootstrap             init + lint + test + healthcheck"
 	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
+	@echo "  install-bats          Install bats-core via Homebrew"
 	@echo ""
 	@echo "  --- Quality ---"
 	@echo "  lint                  Run ruff linter"
@@ -111,6 +117,7 @@ help:
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
 	@echo "  test-guardrails       Test guardrail infrastructure"
+	@echo "  test-install          Run install.sh bats tests"
 	@echo ""
 	@echo "  --- Terraform ---"
 	@echo "  tf-cache-warm         Download all providers ONCE into the shared plugin cache"
@@ -137,6 +144,9 @@ help:
 	@echo "  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)"
 	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
 	@echo "  agent-worktree-list           List active git worktrees"
+	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
+	@echo "  git-search Q='...'           Search indexed git history"
+	@echo "  git-stats                    Show git history index statistics"
 	@echo "  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch"
 	@echo "  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development"
 	@echo "  development-push             Push the development branch to remote"
@@ -173,6 +183,16 @@ help:
 	@echo "  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd"
 	@echo "  git-fetch-sandboxcom  Fetch from sandboxcom/gludd"
 	@echo "  ship-async REF=<hash> [TARGET=master]  Run gate in background job; ff-only merge on green"
+	@echo ""
+	@echo "  --- SearXNG Research Backend ---"
+	@echo "  searx-up              Start SearXNG via Docker Compose"
+	@echo "  searx-down            Stop SearXNG and remove volumes"
+	@echo "  searx-test            Health-check the SearXNG JSON API"
+	@echo ""
+	@echo "  --- Disk ---"
+	@echo "  disk-guard            Check disk usage + clean caches if above threshold (default 95%)"
+	@echo "  disk-check            Check disk usage only, exit 1 if above threshold"
+	@echo "  disk                  Print disk usage + gludd footprint"
 	@echo ""
 	@echo "  --- Other ---"
 	@echo "  smoke                 Quick daemon boot health check"
@@ -259,6 +279,9 @@ lint:
 
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests
+
+ruff-audit:
+	@$(UV) run python scripts/ruff_plugins/return_type_checker.py
 
 typecheck:
 	@$(UV) run mypy src tests
@@ -613,6 +636,12 @@ test-db:
 test-scripts:
 	@$(UV) run python -m pytest tests/unit/test_guardrails.py::TestSkeletonScript $(_XD) -v
 
+test-install:
+	@command -v bats >/dev/null 2>&1 || { echo "bats not installed — run: make install-bats"; exit 1; }
+	@echo "Running install.sh bats tests..."
+	@mkdir -p dist tests/install
+	@BATS_TEST_DIRNAME="$$(pwd)/tests/install" bats --print-output-on-failure tests/install/install.bats
+
 healthcheck:
 	@$(UV) run python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
 	@$(UV) run python -c "from general_ludd.event_loop.loop import EventLoop; print('Event loop import OK')"
@@ -695,28 +724,14 @@ clean-tmp:
 	@rm -rf /private/tmp/gludd-iso-* /private/tmp/pytest-of-* 2>/dev/null || true
 	@echo "clean-tmp done"
 
-# Proactive ENOSPC guard: reclaim scratch + venvs + already-merged worktrees,
-# then FAIL FAST if free space is still under FLOOR (default 2048 MiB) so a gate
-# or agent batch can never silently drive the volume to the ENOSPC deadlock.
-# Run `make disk-guard` before every gate / agent wave.
+# Disk guard — checks disk usage % and cleans caches (pip, uv, pytest, mypy,
+# ruff, __pycache__, tmp) when above GLUDD_DISK_THRESHOLD (default 95%).
+# Delegate to scripts/disk-guard.sh for the full cleanup logic.
 disk-guard:
-	@# SAFE reclaim ONLY — regenerable scratch + venvs. NEVER removes a worktree
-	@# (a worktree may hold UNSYNCED agent work; --force here once destroyed 5
-	@# fixes). Worktree teardown is a SEPARATE, deliberate step (wt-prune-safe,
-	@# no --force) done only AFTER the work is synced. This guard just reclaims
-	@# scratch and refuses the heavy op below the floor.
-	@# Also reap stale orphaned gludd daemons/test-servers (memory + held ports)
-	@# before the heavy op — kill-stale is self-tree- and active-daemon-safe.
-	@$(MAKE) --no-print-directory kill-stale || true
-	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /private/tmp/pytest-of-* 2>/dev/null || true
-	@rm -rf /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv 2>/dev/null || true
-	@FREE=$$(df -m / | awk 'NR==2{print $$4}'); FLOOR=$${FLOOR:-2048}; \
-	if [ "$$FREE" -lt "$$FLOOR" ]; then \
-		echo "DISK-GUARD FAIL: only $${FREE}MiB free (< $${FLOOR}MiB floor) — refusing heavy op."; \
-		echo "  Free space first, e.g.: tmutil deletelocalsnapshots / ; rm -rf ~/Library/Caches/*"; \
-		exit 1; \
-	fi; \
-	echo "disk-guard OK: $${FREE}MiB free (floor $${FLOOR})"
+	@bash scripts/disk-guard.sh guard
+
+disk-check:
+	@bash scripts/disk-guard.sh check
 
 # Disk headroom check — run BEFORE any heavy op (gate, agent dispatch) so we
 # never silently refill the volume. Prints % used + free on the data volume.
@@ -949,6 +964,32 @@ git-ls-tracked:
 git-history-file:
 	@[ -n "$(Q)" ] || { echo "Usage: make git-history-file Q='path'"; exit 1; }
 	@git log --all --full-history --oneline -- "$(Q)" || echo "No history"
+
+Q ?=
+AUTHOR ?=
+SINCE ?=
+PATH_FILTER ?=
+LIMIT ?= 100
+OFFSET ?= 0
+JSON_OUT ?= 0
+
+git-index:
+	@$(PYTHON) scripts/git_history_index.py --repo . --db .gludd/git_history.db index
+
+git-search:
+	@if [ -z "$(Q)" ] && [ -z "$(AUTHOR)" ] && [ -z "$(SINCE)" ] && [ -z "$(PATH_FILTER)" ]; then \
+		echo "Usage: make git-search Q='...' [AUTHOR='...'] [SINCE='YYYY-MM-DD'] [PATH_FILTER='...'] [LIMIT=100] [JSON_OUT=1]"; exit 1; fi
+	@$(PYTHON) scripts/git_history_index.py --repo . --db .gludd/git_history.db search \
+		$(if $(Q),--query '$(Q)') \
+		$(if $(AUTHOR),--author '$(AUTHOR)') \
+		$(if $(SINCE),--since '$(SINCE)') \
+		$(if $(PATH_FILTER),--path '$(PATH_FILTER)') \
+		--limit $(LIMIT) --offset $(OFFSET) \
+		$(if $(filter 1,$(JSON_OUT)),--json,)
+
+git-stats:
+	@$(PYTHON) scripts/git_history_index.py --repo . --db .gludd/git_history.db stats \
+		$(if $(filter 1,$(JSON_OUT)),--json,)
 
 audit-messages:
 	@$(PYTHON) scripts/audit_messages.py 2>&1 || echo "No opencode database found"
@@ -1718,6 +1759,13 @@ ci-auth:
 	@command -v gh >/dev/null 2>&1 && gh --version || echo "gh-not-installed"
 
 # Probe for any tooling that could read the CI run without gh.
+install-bats:
+	@command -v bats >/dev/null 2>&1 && { echo "bats already installed: $$(bats --version)"; exit 0; } || true
+	@command -v brew >/dev/null 2>&1 || { echo "brew MISSING — cannot install bats"; exit 1; }
+	@echo "Installing bats-core via brew (may take a minute)..."
+	@brew install bats-core 2>&1 | tail -15 || echo "brew-install-bats-failed"
+	@command -v bats >/dev/null 2>&1 && bats --version || echo "bats still missing after install"
+
 ci-install-gh:
 	@command -v gh >/dev/null 2>&1 && { echo "gh already installed: $$(gh --version | head -1)"; exit 0; } || true
 	@command -v brew >/dev/null 2>&1 || { echo "brew MISSING — cannot install gh"; exit 1; }
@@ -3117,6 +3165,9 @@ deck-honesty:
 verify-banana:
 	@$(PYTHON) /tmp/verify_banana.py
 
+search-coverage-agentconfig:
+	@$(PYTHON) /tmp/search_coverage_agentconfig.py
+
 # --- SDD workflow targets (DevSpark + DeepSpec integration) ---
 # Each target prints the corresponding DevSpark command file when the
 # .devspark/ scaffolding is populated (via `make setup-devspark`), otherwise
@@ -3167,3 +3218,38 @@ check-all-guardrails: check-plugin-heartbeats check-test-env-writes check-clean-
 
 check-clean-tree-status:
 	@$(UV) run python3 scripts/check_clean_tree.py
+
+search-coverage-agentconfig:
+	@$(PYTHON) /tmp/search_coverage_agentconfig.py
+
+search-coverage-v2:
+	@$(PYTHON) /tmp/search_coverage_v2.py
+
+# --------------------------------------------------------------------------- #
+# SearXNG research backend — privacy-respecting meta-search
+# --------------------------------------------------------------------------- #
+SEARXNG_DIR := infra/searxng
+SEARXNG_URL ?= http://localhost:8080
+
+searx-up:
+	@if ! command -v docker >/dev/null 2>&1; then echo "docker not found"; exit 1; fi
+	@cd "$(SEARXNG_DIR)" && docker compose up -d
+	@echo "SearXNG starting at $(SEARXNG_URL)"
+	@echo "Health check:  make searx-test"
+
+searx-down:
+	@if ! command -v docker >/dev/null 2>&1; then echo "docker not found"; exit 1; fi
+	@cd "$(SEARXNG_DIR)" && docker compose down -v
+	@echo "SearXNG stopped, volumes removed"
+
+searx-test:
+	@URL="$(SEARXNG_URL)/search?q=test&format=json"; \
+	code=$$(curl -s -o /tmp/gludd-searx-test.json -w '%{http_code}' "$$URL" 2>&1); \
+	if [ "$$code" = "200" ]; then \
+		count=$$($(PYTHON) -c "import json;d=json.load(open('/tmp/gludd-searx-test.json'));print(len(d.get('results',[])))" 2>/dev/null); \
+		echo "SearXNG OK (HTTP $$code, $$count results)"; \
+	else \
+		echo "SearXNG FAIL: HTTP $$code (is it running? try 'make searx-up')"; \
+		exit 1; \
+	fi
+

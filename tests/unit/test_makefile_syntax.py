@@ -1,54 +1,38 @@
-"""Makefile syntax guardrail.
-
-Runs ``make -n gate`` (dry-run — no commands actually execute) and asserts it
-parses cleanly. This catches the class of Makefile corruption where a recipe
-line is turned from a tab to spaces (or any other syntactic breakage) before
-it can land a broken commit that wedges every gate / test-and-commit /
-release-cut target in the repository.
-
-The check is fast (<1s), hermetic (``-n`` prints commands without running
-them), and runs as part of the normal unit-test suite so a syntax break is
-surfaced at ``make collect-check`` / ``make gate`` time, not at release time.
-"""
-
-from __future__ import annotations
-
+"""Validate Makefile syntax — catches TAB vs space errors and missing separators."""
 import subprocess
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-MAKEFILE = ROOT / "Makefile"
+MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
-class TestMakefileSyntax:
-    def test_makefile_exists(self) -> None:
-        assert MAKEFILE.exists(), "Makefile must exist at repo root"
+def test_makefile_parses():
+    """make -n on a no-op target must exit 0 (no syntax errors)."""
+    result = subprocess.run(
+        ["make", "-n", "-f", str(MAKEFILE), "help"],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, (
+        f"Makefile has syntax errors:\n{result.stderr[-500:]}"
+    )
 
-    def test_make_dry_run_gate_parses(self) -> None:
-        """``make -n gate`` must exit 0 (Makefile parses with no syntax error).
 
-        ``-n`` (--dry-run --just-print) reads and expands the Makefile without
-        executing any recipe, so a non-zero exit here is purely a syntax /
-        parse error — not a flaky test, not an environment issue. The most
-        common root cause is a recipe line whose leading TAB was replaced by
-        SPACES (the editor-silent space/tab corruption that prompted this
-        test), which make reports as "missing separator".
-        """
-        result = subprocess.run(
-            ["make", "-n", "gate"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, (
-            "Makefile syntax broken: `make -n gate` exited "
-            f"{result.returncode}.\n"
-            "--- stdout ---\n"
-            f"{result.stdout}\n"
-            "--- stderr ---\n"
-            f"{result.stderr}\n"
-            "Common cause: a recipe line uses spaces instead of a TAB. "
-            "Open the Makefile, find the line make complains about, and "
-            "restore the leading TAB character."
-        )
+def test_makefile_no_tabs_in_phony():
+    """.PHONY continuation lines must use spaces, not tabs."""
+    content = MAKEFILE.read_text()
+    in_phony = False
+    for i, line in enumerate(content.split("\n"), 1):
+        if line.strip().startswith(".PHONY:"):
+            in_phony = True
+            continue
+        if in_phony:
+            if line.rstrip("\n").endswith("\\"):
+                assert "\t" not in line.lstrip("\n"), (
+                    f"Makefile:{i}: TAB in .PHONY continuation — use spaces only"
+                )
+            else:
+                in_phony = False
+
+
+if __name__ == "__main__":
+    sys.exit(pytest.main([__file__, "-v"]))

@@ -43,10 +43,10 @@ function _tunable(overridePath: string, envVar: string, dflt: string): number {
   } catch { /* no override file -> env/default */ }
   return base
 }
-const FLOOR = _tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "10")
-const CEILING = _tunable("/tmp/gludd-ceiling-override", "CLAUDE_AGENT_CEILING", "16")
+const FLOOR = _tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "3")
+const CEILING = _tunable("/tmp/gludd-ceiling-override", "CLAUDE_AGENT_CEILING", "6")
 const TARGET = Math.min(
-  parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10),
+  parseInt(process.env.CLAUDE_AGENT_TARGET || "5", 10),
   CEILING,
 )
 

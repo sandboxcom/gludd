@@ -134,5 +134,20 @@ def default_registry() -> AgentRegistry:
         behavior=subagent_behavior,
     ))
 
+    registry.register(AgentConfig(
+        name="research",
+        description="Research agent — SearXNG-powered web research with source verification and citation tracking",
+        type=AgentType.SUBAGENT,
+        permissions=AgentPermission(
+            can_edit=False,
+            can_bash=False,
+            can_read=True,
+            can_dispatch_subagents=False,
+            allowed_subagents=[],
+        ),
+        max_concurrent=3,
+        behavior=subagent_behavior,
+    ))
+
     registry.seal()
     return registry

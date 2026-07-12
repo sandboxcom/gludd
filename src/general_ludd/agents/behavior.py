@@ -48,6 +48,8 @@ class AgentBehavior(BaseModel):
     self_improve_interval: int = 0
     never_block_on_questions: bool = True
     repair_not_disable: bool = True
+    prefer_automated_tools: bool = True  # write scripts/make-targets/ruff-plugins instead of manual code walks
+    research_before_build: bool = True  # dispatch research check before writing new code for data ingestion
     assume_and_proceed: bool = True  # when True, record assumptions instead of blocking on questions
     assumption_log: list[str] = Field(default_factory=list)
 
@@ -195,6 +197,30 @@ class BehaviorRenderer:
             )
             sections.append(
                 "If you found it, you own it. Fix it, test it, commit it, then continue."
+            )
+            sections.append("")
+
+        if behavior.prefer_automated_tools:
+            sections.append("## Automated Tooling Over Manual Code Walks")
+            sections.append(
+                "You MUST prefer automated tools (make targets, ruff plugins, ansible roles, "
+                "shell scripts) over manually walking through code with grep/read loops."
+            )
+            sections.append(
+                "When you need to find issues in the codebase, WRITE A SCRIPT or make target "
+                "that does the work mechanically, then rely on its output. Do NOT spend agent "
+                "context/tokens on serial grep→read→analyze loops."
+            )
+            sections.append(
+                "A one-time investment in an automated checker pays off on every future use. "
+                "Manual code walks cost tokens every time and miss patterns."
+            )
+            sections.append("")
+            sections.append(
+                "Before writing new code to parse a format, ingest data, or perform a common "
+                "operation, dispatch a RESEARCH CHECK FIRST: does an existing library, module, "
+                "CLI tool, ansible collection, or code in this repo already solve this? "
+                "Never write new code for a problem that has a mature OSS solution."
             )
             sections.append("")
 

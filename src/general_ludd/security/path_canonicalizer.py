@@ -87,6 +87,13 @@ CANONICAL_DENY_MARKERS: frozenset[str] = frozenset(
         "/module_utils/capability_policy",
         "/module_utils/fs_write_policy",
         "/security/capability_lattice",
+        # Harness meta-files (from capability_lattice.PROTECTED_PATH_SUBSTRINGS,
+        # applier.PROTECTED_PATH_MARKERS, apply._HARD_DENY_SUBSTRINGS)
+        "agents.md",
+        "claude.md",
+        "tasks.md",
+        "bugs.md",
+        "session.md",
     }
 )
 

@@ -20,7 +20,24 @@ from pathlib import Path
 
 def parse_coverage_json(json_path: str, threshold: float, source_path: str) -> tuple[dict, list[str], bool]:
     with open(json_path) as f:
-        data = json.load(f)
+        raw = f.read()
+    data = json.loads(raw)
+
+    # --- AgentConfig search in raw coverage.json ---
+    import re as _re
+    _matches = list(_re.finditer(r'\bAgentConfig\b', raw))
+    print(f"\n=== AgentConfig search in {json_path} ===")
+    print(f"  File size: {len(raw)} bytes")
+    print(f"  Whole-word \\bAgentConfig\\b matches: {len(_matches)}")
+    for _i, _m in enumerate(_matches):
+        _s = max(0, _m.start() - 80)
+        _e = min(len(raw), _m.end() + 80)
+        print(f"  Match {_i+1} at char {_m.start()}: ...{raw[_s:_e]}...")
+    if not _matches:
+        print("  (no whole-word matches found)")
+    _subs = len(_re.findall(r'AgentConfig', raw))
+    print(f"  Any substring 'AgentConfig' occurrences: {_subs}")
+    print("=== End AgentConfig search ===\n")
 
     files_under: list[str] = []
     files_ok: list[str] = []

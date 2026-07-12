@@ -122,6 +122,7 @@ class TestAgentToolAdapter:
             "dispatch_plan",
             "dispatch_explore",
             "dispatch_general",
+            "dispatch_research",
         }
 
     def test_list_agent_tools_structure(self):
