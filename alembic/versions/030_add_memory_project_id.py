@@ -20,14 +20,14 @@ def upgrade() -> None:
         "memory_records",
         sa.Column("project_id", sa.String(32), nullable=True),
     )
-    op.create_foreign_key(
-        "fk_memory_records_project_id",
-        "memory_records",
-        "projects",
-        ["project_id"],
-        ["project_id"],
-        ondelete="SET NULL",
-    )
+    with op.batch_alter_table("memory_records") as batch_op:
+        batch_op.create_foreign_key(
+            "fk_memory_records_project_id",
+            "projects",
+            ["project_id"],
+            ["project_id"],
+            ondelete="SET NULL",
+        )
     op.create_index(
         "ix_memory_records_project_id",
         "memory_records",
@@ -37,5 +37,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_memory_records_project_id", table_name="memory_records")
-    op.drop_constraint("fk_memory_records_project_id", "memory_records", type_="foreignkey")
+    with op.batch_alter_table("memory_records") as batch_op:
+        batch_op.drop_constraint("fk_memory_records_project_id", type_="foreignkey")
     op.drop_column("memory_records", "project_id")

@@ -2364,7 +2364,7 @@ def _get_or_create_extended_subsystems(
         or app.state._adaptive_router is None
         or app.state._adaptive_router is _STARTUP_UNSET
     ):
-        if app.state._adaptive_router is _STARTUP_UNSET:
+        if getattr(app.state, "_adaptive_router", None) is _STARTUP_UNSET:
             logger.warning(
                 "_adaptive_router was still _STARTUP_UNSET during "
                 "_get_or_create_extended_subsystems; constructing now"

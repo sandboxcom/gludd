@@ -99,12 +99,20 @@ function readSharedStreak(): SharedStreakState {
   try {
     if (fs.existsSync(SHARED_STREAK_FILE)) {
       const raw = JSON.parse(fs.readFileSync(SHARED_STREAK_FILE, "utf8"))
+      const now = Date.now()
+      const lastTs = typeof raw.lastUpdateTs === "number" ? raw.lastUpdateTs : 0
+      const STALE_MS = 60_000
+      if (lastTs > 0 && now - lastTs > STALE_MS) {
+        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "stale-reset" }
+        try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
+        return zeroed
+      }
       return {
         streak: typeof raw.streak === "number" ? raw.streak : 0,
         lastDispatchTs: typeof raw.lastDispatchTs === "number" ? raw.lastDispatchTs : 0,
         readStreak: typeof raw.readStreak === "number" ? raw.readStreak : 0,
         editStreak: typeof raw.editStreak === "number" ? raw.editStreak : 0,
-        lastUpdateTs: typeof raw.lastUpdateTs === "number" ? raw.lastUpdateTs : 0,
+        lastUpdateTs: lastTs,
         lastWriter: typeof raw.lastWriter === "string" ? raw.lastWriter : "",
       }
     }
