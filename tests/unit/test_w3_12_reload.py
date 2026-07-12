@@ -83,7 +83,7 @@ class TestReloadModelsHonesty:
 
         rm = ReloadManager()
         requested = rm.request_reload(ReloadType.CONFIG)
-        assert requested.status == "requested"
+        assert requested.status == "pending"
 
         result = rm.execute_reload(requested.reload_id)
         assert result.status == "no_op", (
