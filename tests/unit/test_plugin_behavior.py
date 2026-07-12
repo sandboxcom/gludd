@@ -1754,7 +1754,11 @@ class TestEnforceStopTextCompleteSkipsToolOutput:
         src = self._src()
         guard_idx = src.find("isToolOutput")
         after_guard = src[guard_idx:]
-        assert "STOP_PATTERN_PHRASES" in after_guard or "COMPLETION_VERBATIM" in after_guard or "responseLooksTerminal" in after_guard, (
+        assert (
+            "STOP_PATTERN_PHRASES" in after_guard
+            or "COMPLETION_VERBATIM" in after_guard
+            or "responseLooksTerminal" in after_guard
+        ), (
             "Stop-pattern detection must appear after the tool-output guard"
         )
 

@@ -29,7 +29,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 ### Behavioral rules (prompt-enforced)
 
 1. **Max 5 subagents per wave.** Never dispatch more than 5 task/agent/workflow calls in a single message.
-2. **Terse subagent prompts.** Each subagent prompt must be ≤20 lines. Ask for EXACTLY what you need; specify "return ≤N bullet points" or "return ≤N lines."  
+2. **Terse subagent prompts.** Each subagent prompt must be ≤20 lines. Ask for EXACTLY what you need; specify "return ≤N bullet points" or "return ≤N lines."
    - **Subagent context size:** Minimal — ask for only what you need. Each prompt must explicitly say "return ≤5 bullet points" or similar.
 3. **Subagents MUST read files but return ONLY terse summaries.** Subagents MUST read files to gather context, but return ONLY terse summaries (≤5 bullet points or ≤10 lines). Subagent prompts must specify: "Read files you need, but return a ≤N-line summary. Do NOT dump large file contents into your response."
 4. **Research serialized.** Only 1 research/explore subagent at a time. Coding subagents can run in parallel with research.
