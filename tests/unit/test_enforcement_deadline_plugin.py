@@ -339,7 +339,6 @@ class TestWarningsLogInvariants:
     def test_warnings_log_written_with_iso_timestamp(self):
         src = _src()
         idx = src.find("appendWarning")
-        caller = src[max(0, idx - 5):idx + 20] if idx > 0 else ""
         assert "appendWarning" in src
         warn_call_idx = src.find("appendWarning(`${new Date().toISOString()}")
         assert warn_call_idx > 0, "warnings should include ISO timestamp"

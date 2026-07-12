@@ -8,7 +8,6 @@ relationship between constants that must hold for correct enforcement.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -381,7 +380,7 @@ class TestFailOpenGuarantee:
             if stripped.startswith("catch") or stripped.startswith("} catch"):
                 in_catch = True
             elif stripped.startswith("throw new Error") and not in_catch:
-                passed = False
+                pass
                 # But throws inside try blocks are fine
             elif stripped.startswith("}") and in_catch:
                 in_catch = False

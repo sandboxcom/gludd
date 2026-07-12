@@ -5,8 +5,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.validate_task_ledger import ID_PATTERN, extract_tasks, main
 
@@ -79,7 +77,7 @@ class TestExtractTasks:
 
     def test_multiple_ids_per_line_captures_first_only(self) -> None:
         content = "- [ ] W.1 W.2 — Two IDs\n"
-        checked, unchecked = extract_tasks_content(content)
+        _checked, unchecked = extract_tasks_content(content)
         assert len(unchecked) == 1
         assert unchecked[0]["ids"] == ["W.1"]
 
