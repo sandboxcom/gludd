@@ -1,0 +1,276 @@
+---
+# CA jurisdiction database — major Certificate Authorities, their parent
+# companies, jurisdiction country, applicable laws, and ownership chains.
+# Query model: ca_jurisdictions[ca_id][field]
+# For cross-referencing with algorithmic sovereignty concerns.
+
+ca_jurisdictions:
+  letsencrypt:
+    display: "Let's Encrypt"
+    parent_company: "Internet Security Research Group (ISRG)"
+    jurisdiction_country: US
+    jurisdiction_code: US-CA
+    applicable_laws:
+      - US Federal law
+      - California state law
+      - CLOUD Act
+      - FISA
+      - Patriot Act
+    ownership_chain:
+      - "Internet Security Research Group (ISRG) — 501(c)(3) nonprofit"
+    established: 2014
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Nonprofit; no commercial parent; transparent via Certificate Transparency"
+
+  digicert:
+    display: "DigiCert"
+    parent_company: "Clearlake Capital (majority), TA Associates, DigiCert management"
+    jurisdiction_country: US
+    jurisdiction_code: US-UT
+    applicable_laws:
+      - US Federal law
+      - Utah state law
+      - CLOUD Act
+      - FISA
+      - Patriot Act
+    ownership_chain:
+      - "Clearlake Capital Group (PE firm, US)"
+      - "TA Associates (PE firm, US)"
+      - "DigiCert management"
+    established: 2003
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Acquired Symantec CA business (2017), QuoVadis (2015)"
+
+  sectigo:
+    display: "Sectigo (formerly Comodo CA)"
+    parent_company: "GI Partners (PE firm)"
+    jurisdiction_country: US
+    jurisdiction_code: US-NJ
+    applicable_laws:
+      - US Federal law
+      - New Jersey state law
+      - CLOUD Act
+      - FISA
+      - Patriot Act
+    ownership_chain:
+      - "GI Partners (PE firm, US)"
+    established: 1998
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Rebranded from Comodo CA in 2018"
+
+  globalsign:
+    display: "GlobalSign"
+    parent_company: "GMO GlobalSign K.K. (subsidiary of GMO Internet Group)"
+    jurisdiction_country: JP
+    jurisdiction_code: JP
+    applicable_laws:
+      - Japanese law
+      - GDPR (EU customers)
+    ownership_chain:
+      - "GMO Internet Group (public, TYO: 9449, JP)"
+    established: 1996
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Originally Belgian (founded in Belgium); acquired by GMO in 2006"
+
+  amazon_trust:
+    display: "Amazon Trust Services"
+    parent_company: "Amazon Web Services, Inc. (subsidiary of Amazon.com, Inc.)"
+    jurisdiction_country: US
+    jurisdiction_code: US-WA
+    applicable_laws:
+      - US Federal law
+      - Washington state law
+      - CLOUD Act
+      - FISA
+      - Patriot Act
+    ownership_chain:
+      - "Amazon.com, Inc. (public, NASDAQ: AMZN, US)"
+    established: 2015
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Used for AWS Certificate Manager; 4 root CAs"
+
+  google_trust:
+    display: "Google Trust Services"
+    parent_company: "Google LLC (subsidiary of Alphabet Inc.)"
+    jurisdiction_country: US
+    jurisdiction_code: US-CA
+    applicable_laws:
+      - US Federal law
+      - California state law
+      - CLOUD Act
+      - FISA
+      - Patriot Act
+    ownership_chain:
+      - "Alphabet Inc. (public, NASDAQ: GOOGL, US)"
+    established: 2017
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Used for Google Cloud Certificate Manager; 2 root CAs"
+
+  microsoft:
+    display: "Microsoft Corporation"
+    parent_company: "Microsoft Corporation"
+    jurisdiction_country: US
+    jurisdiction_code: US-WA
+    applicable_laws:
+      - US Federal law
+      - Washington state law
+      - CLOUD Act
+      - FISA
+      - Patriot Act
+    ownership_chain:
+      - "Microsoft Corporation (public, NASDAQ: MSFT, US)"
+    established: 1975
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Microsoft IT TLS CA and Azure TLS CA"
+
+  certigna:
+    display: "Certigna (DHIMYOTIS)"
+    parent_company: "DHIMYOTIS SAS"
+    jurisdiction_country: FR
+    jurisdiction_code: FR
+    applicable_laws:
+      - French law
+      - EU law
+      - GDPR
+    ownership_chain:
+      - "DHIMYOTIS SAS (private, FR)"
+    root_program: "Mozilla, Apple, Microsoft"
+    notes: "French CA; AC RGS qualified certificates"
+
+  harica:
+    display: "Hellenic Academic and Research Institutions CA (Harica)"
+    parent_company: "GRNET (Greek Research and Technology Network)"
+    jurisdiction_country: GR
+    jurisdiction_code: GR
+    applicable_laws:
+      - Greek law
+      - EU law
+      - GDPR
+    ownership_chain:
+      - "GRNET — National Infrastructures for Research and Technology (public, GR)"
+    root_program: "Mozilla, Apple, Microsoft"
+    notes: "Greek academic CA"
+
+  swisssign:
+    display: "SwissSign AG"
+    parent_company: "Swiss Post"
+    jurisdiction_country: CH
+    jurisdiction_code: CH
+    applicable_laws:
+      - Swiss law
+      - Swiss Federal Act on Data Protection (FADP)
+    ownership_chain:
+      - "Swiss Post (state-owned enterprise, CH)"
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Swiss qualified certificates; strong privacy jurisdiction"
+
+  certum:
+    display: "Certum (Asseco Data Systems)"
+    parent_company: "Asseco Poland S.A."
+    jurisdiction_country: PL
+    jurisdiction_code: PL
+    applicable_laws:
+      - Polish law
+      - EU law
+      - GDPR
+    ownership_chain:
+      - "Asseco Poland S.A. (public, WSE: ACP, PL)"
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Polish CA; qualified certificates"
+
+  buypass:
+    display: "Buypass AS"
+    parent_company: "Buypass AS"
+    jurisdiction_country: NO
+    jurisdiction_code: NO
+    applicable_laws:
+      - Norwegian law
+      - EEA / GDPR
+    ownership_chain:
+      - "Buypass AS (jointly owned by Norwegian banks)"
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Norwegian CA; eIDAS qualified"
+
+  actalis:
+    display: "Actalis S.p.A."
+    parent_company: "Actalis S.p.A."
+    jurisdiction_country: IT
+    jurisdiction_code: IT
+    applicable_laws:
+      - Italian law
+      - EU law
+      - GDPR
+    ownership_chain:
+      - "Actalis S.p.A. (private, IT)"
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Italian CA; eIDAS qualified"
+
+  telia:
+    display: "Telia Company AB"
+    parent_company: "Telia Company AB"
+    jurisdiction_country: SE
+    jurisdiction_code: SE
+    applicable_laws:
+      - Swedish law
+      - EU law
+      - GDPR
+    ownership_chain:
+      - "Telia Company AB (public, OMX: TELIA, SE)"
+    root_program: "Mozilla, Apple, Microsoft"
+    notes: "Nordic CA; qualified certificates"
+
+  trustis:
+    display: "Trustis"
+    parent_company: "Exponential-e Ltd"
+    jurisdiction_country: GB
+    jurisdiction_code: GB
+    applicable_laws:
+      - UK law
+      - UK GDPR
+      - Investigatory Powers Act
+    ownership_chain:
+      - "Exponential-e Ltd (private, GB)"
+    root_program: "Mozilla"
+    notes: "UK CA"
+
+  cybertrust:
+    display: "Cybertrust Japan"
+    parent_company: "SoftBank Corp."
+    jurisdiction_country: JP
+    jurisdiction_code: JP
+    applicable_laws:
+      - Japanese law
+      - Act on Protection of Personal Information (APPI)
+    ownership_chain:
+      - "SoftBank Corp. (public, TYO: 9434, JP)"
+    root_program: "Mozilla, Apple, Google, Microsoft"
+    notes: "Japanese CA"
+
+  certinomis:
+    display: "Certinomis (Docaposte)"
+    parent_company: "Docaposte (subsidiary of La Poste Groupe)"
+    jurisdiction_country: FR
+    jurisdiction_code: FR
+    applicable_laws:
+      - French law
+      - EU law
+      - GDPR
+    ownership_chain:
+      - "La Poste Groupe (state-owned, FR)"
+      - "Docaposte (digital subsidiary)"
+    root_program: "Mozilla, Microsoft"
+    notes: "French qualified CA"
+
+  hongkong_post:
+    display: "Hongkong Post"
+    parent_company: "Hongkong Post (Government of Hong Kong SAR)"
+    jurisdiction_country: HK
+    jurisdiction_code: HK
+    applicable_laws:
+      - Hong Kong law
+      - National Security Law (2020)
+    ownership_chain:
+      - "Government of Hong Kong SAR"
+      - "China (sovereign state)"
+    root_program: "Mozilla, Apple, Microsoft"
+    notes: "Hong Kong government CA"

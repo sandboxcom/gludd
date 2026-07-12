@@ -1,0 +1,215 @@
+---
+# HSM & smartcard operations
+# PKCS#11 engine config, key listing, signing with HSM-protected keys,
+# key import to HSM, smartcard ATR parsing, APDU reference data.
+
+# ── Detect PKCS#11 module ──
+- name: Check PKCS#11 module existence
+  ansible.builtin.stat:
+    path: "{{ ssl_cert_pkcs11_module }}"
+  register: pkcs11_module_stat
+  tags: [hsm, detect]
+
+- name: Warn if PKCS#11 module not found
+  ansible.builtin.debug:
+    msg: "PKCS#11 module not found at {{ ssl_cert_pkcs11_module }} — HSM/smartcard operations will be skipped"
+  when: not pkcs11_module_stat.stat.exists
+
+# ── Configure OpenSSL PKCS#11 engine ──
+- name: Create OpenSSL engine config for PKCS#11
+  ansible.builtin.copy:
+    content: |
+      openssl_conf = openssl_init
+      [openssl_init]
+      engines = engine_section
+      [engine_section]
+      pkcs11 = pkcs11_section
+      [pkcs11_section]
+      engine_id = pkcs11
+      dynamic_path = /usr/lib/engines-3/pkcs11.so
+      MODULE_PATH = {{ ssl_cert_pkcs11_module }}
+      init = 0
+    dest: "{{ ssl_cert_output_dir }}/openssl-pkcs11.cnf"
+    mode: "0644"
+  when: pkcs11_module_stat.stat.exists and ssl_cert_pkcs11_pin | length > 0
+  tags: [hsm, config]
+
+# ── List keys on HSM/smartcard ──
+- name: List PKCS#11 tokens
+  ansible.builtin.command:
+    cmd: pkcs11-tool --module {{ ssl_cert_pkcs11_module }} --list-token-slots
+  register: pkcs11_tokens
+  changed_when: false
+  failed_when: false
+  when: pkcs11_module_stat.stat.exists
+  tags: [hsm, list]
+
+- name: List objects on token
+  ansible.builtin.command:
+    cmd: pkcs11-tool --module {{ ssl_cert_pkcs11_module }} --slot {{ ssl_cert_hsm_slot }} --list-objects
+  environment:
+    PKCS11_PIN: "{{ ssl_cert_pkcs11_pin }}"
+  register: pkcs11_objects
+  changed_when: false
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"
+  when: pkcs11_module_stat.stat.exists and ssl_cert_pkcs11_pin | length > 0
+  tags: [hsm, list]
+
+- name: List keys (filtered)
+  ansible.builtin.set_fact:
+    hsm_key_list: >-
+      {{ pkcs11_objects.stdout_lines
+         | select('match', '.*Private Key Object.*|.*Public Key Object.*')
+         | list }}
+  when: pkcs11_objects is not skipped and pkcs11_objects.stdout | length > 0
+  tags: [hsm, list]
+
+# ── Sign with HSM-protected key ──
+- name: Sign CSR with HSM-protected CA key
+  ansible.builtin.command:
+    cmd: >
+      openssl x509 -req
+      -in {{ ssl_cert_csr_path }}
+      -CA {{ ssl_cert_ca_cert }}
+      -CAkey "pkcs11:token={{ ssl_cert_hsm_token | default('') }};object={{ ssl_cert_hsm_key_label | default('ca-key') }};type=private;pin-value={{ ssl_cert_pkcs11_pin }}"
+      -engine pkcs11
+      -keyform engine
+      -out {{ ssl_cert_cert_path }}
+      -days {{ ssl_cert_days_valid }}
+      -{{ ssl_cert_digest }}
+    environment:
+      OPENSSL_CONF: "{{ ssl_cert_output_dir }}/openssl-pkcs11.cnf"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - ssl_cert_sign | bool
+    - ssl_cert_ca_cert | length > 0
+    - ssl_cert_pkcs11_pin | length > 0
+    - pkcs11_module_stat.stat.exists
+  tags: [hsm, sign]
+
+# ── Import key to HSM ──
+- name: Import private key to HSM token
+  ansible.builtin.command:
+    cmd: >
+      pkcs11-tool --module {{ ssl_cert_pkcs11_module }}
+      --slot {{ ssl_cert_hsm_slot }}
+      --write-object {{ ssl_cert_key_path }}
+      --type privkey
+      --label "{{ ssl_cert_hsm_import_label | default('gludd-' + ssl_cert_cn) }}"
+      --login
+      --pin {{ ssl_cert_pkcs11_pin }}
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - ssl_cert_import_hsm | bool
+    - ssl_cert_pkcs11_pin | length > 0
+    - pkcs11_module_stat.stat.exists
+  tags: [hsm, import]
+
+# ── Smartcard ATR reference ──
+- name: Load smartcard ATR reference data
+  ansible.builtin.set_fact:
+    smartcard_atr_reference:
+      "3B F9 18 00 00 81 31 FE 45 00": "YubiKey NEO"
+      "3B F8 13 00 00 81 31 FE 15":   "YubiKey 4/5 (OTP applet)"
+      "3B F8 18 00 00 81 31 FE 45":   "YubiKey 4/5 (CCID applet)"
+      "3B FA 18 00 00 81 31 FE 45":   "YubiKey 4/5 (PGP applet)"
+      "3B FE 18 00 00 80 31 FE 45":   "YubiKey 4/5 (PIV applet)"
+      "3B 8A 00 01":                   "OpenPGP card v2"
+      "3B DA 18 00":                   "Gemalto IDPrime"
+      "3B DB 96 00":                   "ACOS5"
+      "3B 7D 96 00 00 80 31 80":      "CAC (PIV)"
+      "3B F5 91 00":                   "eToken / SafeNet"
+      "3B FE 94 00":                   "Nitrokey Pro"
+      "3B 9F 95 80":                   "Nitrokey 3"
+  tags: [smartcard, atr, docs]
+
+# ── APDU command reference (documentation only) ──
+- name: Load APDU command reference data
+  ansible.builtin.set_fact:
+    apdu_command_reference:
+      select_applet:
+        cla: "00"
+        ins: "A4"
+        p1p2: "04 00"
+        desc: "SELECT APPLICATION by AID"
+      verify_pin:
+        cla: "00"
+        ins: "20"
+        p1p2: "00 80"
+        desc: "VERIFY (PIN)"
+      generate_asymmetric_keypair:
+        cla: "00"
+        ins: "47"
+        p1p2: "80 00"
+        desc: "GENERATE ASYMMETRIC KEY PAIR (PIV)"
+      sign_data:
+        cla: "00"
+        ins: "87"
+        p1p2: "9A 9A"
+        desc: "PERFORM SECURITY OPERATION — SIGN (PIV)"
+      read_certificate:
+        cla: "00"
+        ins: "CB"
+        p1p2: "3F FF"
+        desc: "GET DATA (certificate)"
+      get_challenge:
+        cla: "00"
+        ins: "84"
+        p1p2: "00 00"
+        desc: "GET CHALLENGE (PIV)"
+      external_authenticate:
+        cla: "00"
+        ins: "82"
+        p1p2: "00 00"
+        desc: "EXTERNAL AUTHENTICATE"
+  tags: [smartcard, apdu, docs]
+
+# ── Parse connected smartcard ATR ──
+- name: Read ATR from smartcard
+  ansible.builtin.command:
+    cmd: opensc-tool --atr
+  register: card_atr_raw
+  changed_when: false
+  failed_when: false
+  when: pkcs11_module_stat.stat.exists
+  tags: [smartcard, detect]
+
+- name: Match ATR to known cards
+  ansible.builtin.set_fact:
+    card_type: >-
+      {%- set best = '' -%}
+      {%- for atr, name in smartcard_atr_reference.items() -%}
+      {%- if card_atr_raw.stdout is search(atr | replace(' ', '') | replace(' ', '')) -%}
+      {%- set best = name -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ best if best else 'Unknown card' }}
+  when: card_atr_raw is not skipped and card_atr_raw.stdout | length > 0
+  tags: [smartcard]
+
+- name: Report detected smartcard
+  ansible.builtin.debug:
+    msg:
+      - "Smartcard detected: {{ card_type | default('none') }}"
+      - "ATR: {{ card_atr_raw.stdout | default('(not available)') }}"
+      - "HSM key count: {{ hsm_key_list | default([]) | length }}"
+  when: pkcs11_module_stat.stat.exists
+  tags: [smartcard, debug]
+
+# ── Write HSM artifact ──
+- name: Write HSM result artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'pkcs11_module': ssl_cert_pkcs11_module,
+        'module_exists': pkcs11_module_stat.stat.exists | default(false),
+        'card_type': card_type | default('none'),
+        'tokens': pkcs11_tokens.stdout | default('(not available)'),
+        'key_count': hsm_key_list | default([]) | length,
+        'apdu_reference': apdu_command_reference,
+        'timestamp': ansible_date_time.iso8601
+      } | to_nice_json }}
+    dest: "{{ ssl_cert_artifact_dir }}/hsm-status.json"
+    mode: "0644"
+  tags: [artifact]
