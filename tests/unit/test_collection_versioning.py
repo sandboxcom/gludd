@@ -310,3 +310,110 @@ class TestCollectionVersionInfo:
         assert info.is_semver is False
         assert info.is_latest is True
 
+
+class TestExportSurface:
+    """Verify versioned collection functions are importable from the canonical module."""
+
+    def test_functions_in_paths_all(self):
+        from general_ludd.ansible import paths as p
+
+        assert callable(p.scan_collection_versions)
+        assert callable(p.list_collection_versions)
+        assert callable(p.resolve_collection_version)
+        assert callable(p.activate_collection_version)
+
+    def test_collection_version_info_importable(self):
+        from general_ludd.ansible.paths import CollectionVersionInfo
+
+        assert CollectionVersionInfo is not None
+
+    def test_scan_accepts_filter_kwargs(self):
+        from general_ludd.ansible.paths import scan_collection_versions as scv
+
+        assert scv is not None  # import succeeds
+
+
+class TestVersionedInCollectionsPath:
+    """Verify versioned collection dirs coexist with the 3-tier resolver."""
+
+    def test_versioned_dirs_dont_break_path_resolution(self, tmp_path: Path):
+        """Versioned dirs (ns@v) sit alongside the 3-tier layout without conflict."""
+        proj = tmp_path / "project"
+        proj.mkdir()
+        coll_root = proj / ".gludd" / "collections"
+        coll_root.mkdir(parents=True)
+        _make_versioned_collection(coll_root, "general_ludd", "agent", "0.1.0")
+        _make_bare_collection(coll_root, "general_ludd", "agent")
+        from general_ludd.ansible.paths import resolve_collections_paths
+
+        entries = resolve_collections_paths(project_root=proj)
+        assert len(entries) >= 1
+        proj_entry = next((e for e in entries if e.source == "project"), None)
+        assert proj_entry is not None
+
+    def test_list_versions_from_project_root(self, collections_root: Path):
+        """list_collection_versions works against a collections root directly."""
+        _make_versioned_collection(collections_root, "general_ludd", "agent", "0.2.0")
+        _make_versioned_collection(collections_root, "general_ludd", "agent", "0.1.0")
+        _make_versioned_collection(collections_root, "general_ludd", "agent", "latest")
+        _make_bare_collection(collections_root, "general_ludd", "agent")
+
+        versions = list_collection_versions(collections_root, "general_ludd", "agent")
+        assert "0.1.0" in versions
+        assert "0.2.0" in versions
+        assert "latest" in versions
+
+
+class TestRunnerCollectionsEnv:
+    """Verify AnsibleRunnerAdapter resolves versioned paths into its env."""
+
+    def test_runner_includes_project_collections_in_env(self, tmp_path: Path):
+        from general_ludd.ansible.runner import AnsibleRunnerAdapter
+
+        proj = tmp_path / "project"
+        proj.mkdir()
+        coll_dir = proj / ".gludd" / "collections"
+        coll_dir.mkdir(parents=True)
+
+        adapter = AnsibleRunnerAdapter(project_root=proj)
+        env = adapter._collections_env
+
+        assert "ANSIBLE_COLLECTIONS_PATH" in env
+        assert str(coll_dir) in env["ANSIBLE_COLLECTIONS_PATH"]
+        assert "ANSIBLE_ROLES_PATH" in env
+        assert str(coll_dir) in env["ANSIBLE_ROLES_PATH"]
+
+    def test_set_project_root_rebuilds_env(self, tmp_path: Path):
+        from general_ludd.ansible.runner import AnsibleRunnerAdapter
+
+        proj_a = tmp_path / "proj_a"
+        proj_a.mkdir()
+        coll_a = proj_a / ".gludd" / "collections"
+        coll_a.mkdir(parents=True)
+
+        proj_b = tmp_path / "proj_b"
+        proj_b.mkdir()
+        coll_b = proj_b / ".gludd" / "collections"
+        coll_b.mkdir(parents=True)
+
+        adapter = AnsibleRunnerAdapter(project_root=proj_a)
+        assert str(coll_a) in adapter._collections_env["ANSIBLE_COLLECTIONS_PATH"]
+
+        adapter.set_project_root(proj_b)
+        assert str(coll_b) in adapter._collections_env["ANSIBLE_COLLECTIONS_PATH"]
+        assert str(coll_a) not in adapter._collections_env["ANSIBLE_COLLECTIONS_PATH"]
+
+    def test_versioned_collections_coexist_in_env(self, tmp_path: Path):
+        """Versioned dirs (ns@v) under .gludd/collections are picked up as part of the collections path."""
+        from general_ludd.ansible.runner import AnsibleRunnerAdapter
+
+        proj = tmp_path / "project"
+        proj.mkdir()
+        coll_root = proj / ".gludd" / "collections"
+        coll_root.mkdir(parents=True)
+        (coll_root / "ansible_collections" / "general_ludd@0.1.0" / "agent" / "roles").mkdir(parents=True)
+
+        adapter = AnsibleRunnerAdapter(project_root=proj)
+        env = adapter._collections_env
+        assert str(coll_root) in env["ANSIBLE_COLLECTIONS_PATH"]
+

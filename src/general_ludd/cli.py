@@ -610,6 +610,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_audit_plugins_subparser(sub)
     audit_plugins_parser = sub.choices["audit-plugins"]
 
+    # `gludd collection` — multi-version collection management.
+    from general_ludd.cli_collection import add_collection_subparser
+
+    add_collection_subparser(sub)
+    collection_parser = sub.choices["collection"]
+
     integrity_parser = sub.add_parser("integrity", help="File integrity monitoring commands")
     int_sub = integrity_parser.add_subparsers(dest="integrity_command")
 
@@ -977,6 +983,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "payment": payment_parser,
         "account": account_parser,
         "audit-plugins": audit_plugins_parser,
+        "collection": collection_parser,
         "test-bg": testbg_parser,
     }
 

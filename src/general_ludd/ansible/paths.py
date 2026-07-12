@@ -373,6 +373,7 @@ def activate_collection_version(
             + f" under {base}"
         )
 
+    owned_by_caller = temp_dir is None
     if temp_dir is None:
         temp_dir = Path(tempfile.mkdtemp(prefix="gludd-collections-"))
     ns_dir = temp_dir / "ansible_collections" / namespace
@@ -381,7 +382,7 @@ def activate_collection_version(
     if link.exists() or link.is_symlink():
         link.unlink()
     link.symlink_to(resolved, target_is_directory=True)
-    return (temp_dir, None if temp_dir != Path(tempfile.gettempdir()) else temp_dir)
+    return (temp_dir, temp_dir if owned_by_caller else None)
 
 
 __all__ = [
