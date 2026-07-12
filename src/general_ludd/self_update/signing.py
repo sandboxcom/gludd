@@ -13,6 +13,7 @@ pin it to a filesystem path or env var, and sign every update payload.
 from __future__ import annotations
 
 import base64
+import binascii
 import os
 
 from cryptography.exceptions import InvalidSignature
@@ -28,7 +29,7 @@ def _public_key_bytes(raw: str) -> bytes:
         pass
     try:
         return base64.b64decode(stripped, validate=True)
-    except Exception:
+    except binascii.Error:
         pass
     return base64.b64decode(stripped)
 

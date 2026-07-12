@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
@@ -274,7 +275,7 @@ class UpdateApplier:
         *,
         content_signature: str = "",
         public_key: str = "",
-        verify_signature: object | None = None,
+        verify_signature: Callable[[str, str, str], bool] | None = None,
     ) -> ApplyResult:
         target_paths = list(plan.target_paths)
 
