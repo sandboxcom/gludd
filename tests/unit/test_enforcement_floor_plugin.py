@@ -533,7 +533,7 @@ class TestDisengage:
         src = _src()
         idx = src.find("disengagedEarly")
         assert idx > 0
-        after = src[idx:idx + 2000]
+        after = src[idx:idx + 5000]
         read_grind_idx = after.find("_readStreak++")
         assert read_grind_idx > 0
         # _readStreak++ appears after disengagedEarly check — disengage is hoisted first

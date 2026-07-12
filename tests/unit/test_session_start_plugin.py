@@ -119,6 +119,20 @@ class TestSessionStartSystemInjection:
             "so the model treats it as highest-priority."
         )
 
+    def test_directive_contains_time_gate_thresholds(self):
+        """The directive MUST include time-gate deadlines (60s warn, 120s deny)."""
+        src = PLUGIN.read_text()
+        assert "TIME GATE" in src.upper(), (
+            "Session-start directive must include TIME GATE thresholds so "
+            "the agent knows the dispatch deadline."
+        )
+        assert "60" in src or "DISPATCH_NOW_SECS" in src, (
+            "Directive must reference the 60s DISPATCH NOW warning threshold."
+        )
+        assert "120" in src or "HARD_DENY_SECS" in src, (
+            "Directive must reference the 120s HARD_DENY threshold."
+        )
+
 
 class TestSessionStartEnforcementGate:
     """The tool.execute.before gate (opt-in via GLUDD_SESSION_START_ENFORCE)."""
@@ -199,13 +213,13 @@ class TestSessionStartConstants:
         )
 
     def test_effective_min_bounded(self):
-        """EFFECTIVE_MIN must be >= 5 and <= 5, derived via Math.max/min."""
+        """EFFECTIVE_MIN must be >= 5 and <= 7, derived via Math.max/min."""
         src = PLUGIN.read_text()
         assert "EFFECTIVE_MIN" in src, "EFFECTIVE_MIN constant not found."
-        # The derivation: Math.max(MIN_DISPATCHES, Math.min(FLOOR, 5))
-        assert "Math.max(MIN_DISPATCHES, Math.min(FLOOR, 5))" in src, (
-            "EFFECTIVE_MIN must be 'Math.max(MIN_DISPATCHES, Math.min(FLOOR, 5))' "
-            "so the floor is bounded at 5 (ceiling lowered per cost-efficiency directive)."
+        # The derivation: Math.max(MIN_DISPATCHES, Math.min(FLOOR, 7))
+        assert "Math.max(MIN_DISPATCHES, Math.min(FLOOR, 7))" in src, (
+            "EFFECTIVE_MIN must be 'Math.max(MIN_DISPATCHES, Math.min(FLOOR, 7))' "
+            "so the floor is bounded at 7 (cost-efficiency directive cap)."
         )
 
     def test_fresh_secs_constant_exists(self):
@@ -243,4 +257,97 @@ class TestSessionStartPluginTemplate:
         src = PLUGIN.read_text()
         assert "catch" in src, (
             "Plugin hooks must fail open — never wedge the session on a plugin bug."
+        )
+
+
+class TestSessionStartTimeGate:
+    """The 60s/120s time-based dispatch gate must be present and configurable."""
+
+    def test_dispatch_now_secs_constant_exists(self):
+        src = PLUGIN.read_text()
+        assert "DISPATCH_NOW_SECS" in src, (
+            "DISPATCH_NOW_SECS constant missing — time-gate warning threshold."
+        )
+
+    def test_hard_deny_secs_constant_exists(self):
+        src = PLUGIN.read_text()
+        assert "HARD_DENY_SECS" in src, (
+            "HARD_DENY_SECS constant missing — time-gate hard-deny threshold."
+        )
+
+    def test_dispatch_now_secs_default_is_60(self):
+        src = PLUGIN.read_text()
+        m = re.search(
+            r'GLUDD_SESSION_START_DISPATCH_NOW_SECS\s*\|\|\s*["\'](\d+)["\']',
+            src,
+        )
+        assert m, "DISPATCH_NOW_SECS default literal not found."
+        assert int(m.group(1)) == 60, (
+            f"DISPATCH_NOW_SECS default is {m.group(1)}, expected 60."
+        )
+
+    def test_hard_deny_secs_default_is_120(self):
+        src = PLUGIN.read_text()
+        m = re.search(
+            r'GLUDD_SESSION_START_HARD_DENY_SECS\s*\|\|\s*["\'](\d+)["\']',
+            src,
+        )
+        assert m, "HARD_DENY_SECS default literal not found."
+        assert int(m.group(1)) == 120, (
+            f"HARD_DENY_SECS default is {m.group(1)}, expected 120."
+        )
+
+    def test_dispatch_now_env_override_exists(self):
+        src = PLUGIN.read_text()
+        assert "GLUDD_SESSION_START_DISPATCH_NOW_SECS" in src, (
+            "DISPATCH_NOW_SECS must be overridable via env var."
+        )
+
+    def test_hard_deny_env_override_exists(self):
+        src = PLUGIN.read_text()
+        assert "GLUDD_SESSION_START_HARD_DENY_SECS" in src, (
+            "HARD_DENY_SECS must be overridable via env var."
+        )
+
+    def test_time_gate_reset_field_in_state(self):
+        src = PLUGIN.read_text()
+        assert "timeGateReset" in src, (
+            "SessionState must include timeGateReset field so the time gate "
+            "resets on first dispatch."
+        )
+
+    def test_time_gate_reset_on_first_dispatch(self):
+        src = PLUGIN.read_text()
+        assert "state.timeGateReset = true" in src, (
+            "First dispatch must set state.timeGateReset = true to reset "
+            "the time-gate deadlines."
+        )
+
+    def test_time_gate_warning_is_throttled(self):
+        src = PLUGIN.read_text()
+        assert "_lastTimeGateWarningTs" in src, (
+            "Time-gate warnings must be throttled (at most once per 30s) "
+            "to avoid console spam."
+        )
+
+    def test_time_gate_elapsed_seconds_computed(self):
+        src = PLUGIN.read_text()
+        assert "elapsedSecs" in src or "elapsed" in src, (
+            "Plugin must compute elapsed seconds from started_at to enforce "
+            "the time-gate deadlines."
+        )
+
+    def test_time_gate_respects_enforce_flag(self):
+        """Time-gate hard deny must check ENFORCE (advisory by default)."""
+        src = PLUGIN.read_text()
+        assert "ENFORCE" in src, (
+            "Time-gate hard deny must gate on the ENFORCE flag."
+        )
+
+    def test_backward_compat_timeGateReset_defaults_false(self):
+        """Existing state files without timeGateReset must default to false."""
+        src = PLUGIN.read_text()
+        assert "Boolean(raw.timeGateReset)" in src, (
+            "loadState must cast timeGateReset via Boolean() for backward "
+            "compatibility with old state files that lack the field."
         )

@@ -89,6 +89,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] D.19 — Postgres path / multi-worker (gated on owner go-ahead) | priority: low | effort: large | status: pending
 - [ ] D.20 — Dedup/coherence cleanups: 8 duplicate pairs, missing __init__.py, model_routing_coherence 5 gaps | priority: low | effort: medium | status: pending
 - [ ] D.21 — Remediation idempotency guard (only piece not yet closed from D21) | priority: medium | effort: small | status: pending
+- [x] D.22 — task_splitter Ansible role: scaffold defaults + meta + README, document in TASKS/SESSION/README/docs | priority: medium | effort: small | status: completed | evidence: role scaffolded at collections/ansible_collections/general_ludd/agent/roles/task_splitter/ (defaults/main.yml, meta/main.yml, README.md), docs/TASK_SPLITTER.md created
 
 ---
 

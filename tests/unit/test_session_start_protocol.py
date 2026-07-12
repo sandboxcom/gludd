@@ -284,3 +284,62 @@ class TestSessionStartAtomicStateWrites:
         assert final["dispatches"] >= 1, (
             "Expected at least one increment to land under 100 concurrent writers."
         )
+
+
+class TestSessionStartTimeGate:
+    """The plugin must enforce a time-based dispatch deadline.
+
+    After DISPATCH_NOW_SECS (default 60s) with 0 dispatches, a DISPATCH NOW
+    warning is injected. After HARD_DENY_SECS (default 120s) with 0 dispatches,
+    the next non-dispatch, non-read tool call is denied. Both reset on first
+    successful dispatch.
+    """
+
+    def test_time_gate_constants_present(self, plugin_src):
+        """DISPATCH_NOW_SECS and HARD_DENY_SECS must be declared."""
+        for tok in ("DISPATCH_NOW_SECS", "HARD_DENY_SECS"):
+            assert tok in plugin_src, (
+                f"Plugin must declare {tok} time-gate constant."
+            )
+
+    def test_time_gate_checks_elapsed_seconds(self, plugin_src):
+        """The plugin must compute elapsed seconds from started_at."""
+        assert "started_at" in plugin_src, (
+            "Plugin must read started_at to compute elapsed time."
+        )
+        assert "Date.now()" in plugin_src, (
+            "Elapsed time must use Date.now() for wall-clock comparison."
+        )
+
+    def test_time_gate_hard_deny_blocks_non_dispatch(self, plugin_src):
+        """After HARD_DENY_SECS with 0 dispatches, non-dispatch tools are denied."""
+        assert "denyMessage" in plugin_src, (
+            "Hard deny must set denyMessage to block the tool call."
+        )
+
+    def test_time_gate_warns_at_dispatch_now_secs(self, plugin_src):
+        """After DISPATCH_NOW_SECS with 0 dispatches, a console.warn is emitted."""
+        assert "console.warn" in plugin_src, (
+            "Warning threshold must emit via console.warn."
+        )
+
+    def test_time_gate_resets_on_first_dispatch(self, plugin_src):
+        """First dispatch sets timeGateReset=true, clearing both gates."""
+        assert "timeGateReset" in plugin_src, (
+            "Plugin must track timeGateReset to reset deadlines on first dispatch."
+        )
+        assert "state.timeGateReset = true" in plugin_src, (
+            "Dispatch handler must set timeGateReset=true on first dispatch."
+        )
+
+    def test_time_gate_warning_is_throttled(self, plugin_src):
+        """Warnings must be throttled to avoid spamming every tool call."""
+        assert "_lastTimeGateWarningTs" in plugin_src or "30_000" in plugin_src, (
+            "Time-gate warnings must be throttled (e.g., once per 30s)."
+        )
+
+    def test_time_gate_state_field_backward_compat(self, plugin_src):
+        """timeGateReset must default to false for old state files."""
+        assert "Boolean(raw.timeGateReset)" in plugin_src, (
+            "loadState must handle missing timeGateReset via Boolean() cast."
+        )

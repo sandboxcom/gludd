@@ -62,6 +62,17 @@ const TASKS_STALE_MINUTES = parseInt(
 
 let _lastTasksReadMtime = 0
 
+// Time-based gate constants. After DISPATCH_NOW_SECS with 0 dispatches, a
+// "DISPATCH NOW" warning is emitted. After HARD_DENY_SECS with 0 dispatches,
+// non-dispatch, non-read tools are denied. Both gates reset on first dispatch.
+const DISPATCH_NOW_SECS = parseInt(
+  process.env.GLUDD_SESSION_START_DISPATCH_NOW_SECS || "60", 10)
+const HARD_DENY_SECS = parseInt(
+  process.env.GLUDD_SESSION_START_HARD_DENY_SECS || "120", 10)
+
+// Throttle warning emission (at most once per 30s) to avoid spam.
+let _lastTimeGateWarningTs = 0
+
 // Per-module-instance latch (Fix B). Once the primed condition has been
 // observed — `readsDone && dispatches >= EFFECTIVE_MIN` — this instance
 // skips ALL state-file I/O on subsequent tool calls. That eliminates the
@@ -90,6 +101,9 @@ const SESSION_START_DIRECTIVE = [
   "DO NOT WRITE any prose between session start and the first dispatch wave.",
   "Do not answer the user's prompt first and dispatch second — dispatch first.",
   "No prose, no summaries, no status reports, no planning before the wave.",
+  `⏱  TIME GATE: dispatch within ${DISPATCH_NOW_SECS}s — warning emitted.`,
+  `   After ${HARD_DENY_SECS}s with 0 dispatches: non-dispatch mutations DENIED.`,
+  "   Both gates reset on first successful dispatch.",
   "Why: a session that boots and then grinds inline (0 subagents live) looks",
   "hung to the user. The fix is structural — locate work, then fan out.",
   "Enforced by .opencode/plugin/enforce-session-start.ts (hard-deny by",
@@ -103,6 +117,7 @@ interface SessionState {
   started_at: number
   readsDone: boolean
   dispatches: number
+  timeGateReset: boolean
 }
 
 function loadState(): SessionState {
@@ -112,6 +127,7 @@ function loadState(): SessionState {
         started_at: Date.now(),
         readsDone: false,
         dispatches: 0,
+        timeGateReset: false,
       }
       fs.writeFileSync(STATE_FILE, JSON.stringify(initial))
       return initial
@@ -121,9 +137,13 @@ function loadState(): SessionState {
       started_at: Number(raw.started_at) || Date.now(),
       readsDone: Boolean(raw.readsDone),
       dispatches: Number(raw.dispatches) || 0,
+      timeGateReset: Boolean(raw.timeGateReset),
     }
   } catch {
-    return { started_at: Date.now(), readsDone: false, dispatches: 0 }
+    return {
+      started_at: Date.now(), readsDone: false, dispatches: 0,
+      timeGateReset: false,
+    }
   }
 }
 
@@ -277,8 +297,12 @@ export default (async ({ }) => {
         const state = loadState()
 
         // Count + record dispatches — they are what we want more of.
+        // First dispatch resets the time gate.
         if (isDispatchTool(tool)) {
           state.dispatches += 1
+          if (!state.timeGateReset) {
+            state.timeGateReset = true
+          }
           saveState(state)
           updatePrimedLatch(state)
           return
@@ -306,6 +330,34 @@ export default (async ({ }) => {
         if (isReadTool(tool)) {
           updatePrimedLatch(state)
           return
+        }
+
+        // ⏱ Time-based dispatch gate — fires when dispatches remain at 0
+        // past configurable deadlines (60s warn, 120s deny). Resets on
+        // first successful dispatch (timeGateReset flag).
+        if (!state.timeGateReset && state.dispatches === 0) {
+          const elapsedSecs = (Date.now() - state.started_at) / 1000
+          if (elapsedSecs >= HARD_DENY_SECS) {
+            const msg = (
+              `⛔ TIME GATE: ${Math.round(elapsedSecs)}s elapsed with 0 ` +
+              `dispatches. Non-dispatch mutations DENIED. Dispatch >= ` +
+              `${EFFECTIVE_MIN} parallel subagents NOW.`
+            )
+            console.warn(msg)
+            if (ENFORCE) {
+              denyMessage = msg
+            }
+          } else if (elapsedSecs >= DISPATCH_NOW_SECS) {
+            const now = Date.now()
+            if (now - _lastTimeGateWarningTs > 30_000) {
+              _lastTimeGateWarningTs = now
+              console.warn(
+                `⛔ DISPATCH NOW: ${Math.round(elapsedSecs)}s elapsed, ` +
+                `0 dispatches. Hard deny at ${HARD_DENY_SECS}s. ` +
+                `Dispatch >= ${EFFECTIVE_MIN} parallel subagents immediately.`
+              )
+            }
+          }
         }
 
         // For any other tool (edit/write/bash/etc.) in a fresh, unprimed
