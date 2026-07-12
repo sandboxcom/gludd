@@ -132,7 +132,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase H — Security Hardening (HARDENING_BACKLOG_2026-07-10)
 
-- [ ] H.1 — H-STARTUP-NULL-DEPS: infra_tracker, deployment_manager, adaptive_router all None at EventLoop construction (4th instance of construction-order bug class) | priority: high | effort: small | status: pending
+- [x] H.1 — H-STARTUP-NULL-DEPS: infra_tracker, deployment_manager, adaptive_router all None at EventLoop construction (4th instance of construction-order bug class) | priority: high | effort: small | status: completed | evidence: fix already applied in daemon.py:1753-1766 (pre-built before EventLoop constructor); test in tests/unit/test_daemon_startup.py 4 passed
 - [ ] H.2 — H-RELOAD-CONCURRENT: concurrent /admin/reload calls race on shared registries with no lock | priority: medium | effort: medium | status: pending
 - [ ] H.3 — H-READYZ-PREMATURE: /readyz treats "task not yet set" same as "task healthy" | priority: low | effort: small | status: pending
 - [ ] H.4 — H-LANGGRAPH-AUDITOR-NOOP: tool_auditor stored but never invoked in LangGraphAgentLoop | priority: medium | effort: medium | status: pending
