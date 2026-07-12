@@ -25,7 +25,12 @@ from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.config.binary_paths import BinaryPaths
 from general_ludd.config.loader import load_user_config
 from general_ludd.config.model_routing import ModelRoutingConfig, load_model_routing
-from general_ludd.config.project_dir import find_project_gludd_dir, merge_config, project_config_path
+from general_ludd.config.project_dir import (
+    find_project_gludd_dir,
+    merge_config,
+    project_config_path,
+    validate_project_overlay,
+)
 from general_ludd.config.task_loader import discover_task_definitions
 from general_ludd.config.user_config import UserConfig
 from general_ludd.controllers.budget import RunBudgetGuard
@@ -227,6 +232,13 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
             logger.warning("Failed to load project config overlay %s: %s", proj_cfg, exc)
             return
         if not proj_data:
+            return
+        try:
+            validate_project_overlay(proj_data)
+        except Exception as exc:
+            logger.warning(
+                "Project config overlay rejected (dangerous fields): %s", exc
+            )
             return
         uc = cfg["user_config"]
         user_dict: dict[str, Any] = (
