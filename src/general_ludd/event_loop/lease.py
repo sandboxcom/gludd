@@ -12,39 +12,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from general_ludd.db.models import BucketLeaseModel
 
 
-async def acquire_lease(
+async def acquire_leases_batch(
     session: AsyncSession,
-    bucket_key: str,
+    bucket_keys: list[str],
     holder_id: str,
     ttl_seconds: int = 300,
     project_id: str | None = None,
-) -> BucketLeaseModel:
-    """Acquire (or renew) a lease on a bucket for a holder.
-
-    Idempotent per (bucket_key, holder_id): an existing row is renewed rather
-    than duplicated (the unique constraint forbids duplicates anyway).
-    """
+) -> list[BucketLeaseModel]:
     expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
     stmt = select(BucketLeaseModel).where(
-        BucketLeaseModel.bucket_key == bucket_key,
+        BucketLeaseModel.bucket_key.in_(bucket_keys),
         BucketLeaseModel.holder_id == holder_id,
     )
-    existing = (await session.execute(stmt)).scalar_one_or_none()
-    if existing is not None:
-        existing.expires_at = expires_at
-        if project_id is not None:
-            existing.project_id = project_id
-        await session.flush()
-        return existing
-    lease = BucketLeaseModel(
-        bucket_key=bucket_key,
-        holder_id=holder_id,
-        expires_at=expires_at,
-        project_id=project_id,
-    )
-    session.add(lease)
+    existing_rows = list((await session.execute(stmt)).scalars().all())
+    existing_map: dict[str, BucketLeaseModel] = {r.bucket_key: r for r in existing_rows}
+    results: list[BucketLeaseModel] = []
+    for key in bucket_keys:
+        if key in existing_map:
+            existing = existing_map[key]
+            existing.expires_at = expires_at
+            if project_id is not None:
+                existing.project_id = project_id
+            results.append(existing)
+        else:
+            lease = BucketLeaseModel(
+                bucket_key=key,
+                holder_id=holder_id,
+                expires_at=expires_at,
+                project_id=project_id,
+            )
+            session.add(lease)
+            results.append(lease)
     await session.flush()
-    return lease
+    return results
 
 
 async def reclaim_expired_leases(
@@ -70,30 +70,30 @@ async def reclaim_expired_leases(
     stmt = select(BucketLeaseModel).where(BucketLeaseModel.expires_at < now)
     result = await session.execute(stmt)
     expired = list(result.scalars().all())
+    if not expired:
+        return 0
+    bucket_keys = [
+        lease.bucket_key for lease in expired
+        if isinstance(lease.bucket_key, str) and ":" in lease.bucket_key
+    ]
+    live_map: dict[str, list[BucketLeaseModel]] = {}
+    if bucket_keys:
+        live_stmt = (
+            select(BucketLeaseModel)
+            .where(
+                BucketLeaseModel.bucket_key.in_(bucket_keys),
+                BucketLeaseModel.expires_at >= now,
+            )
+        )
+        for live in (await session.execute(live_stmt)).scalars().all():
+            live_map.setdefault(live.bucket_key, []).append(live)
     for lease in expired:
-        # bucket_key == f"{queue}:{todo_id}"; the todo_id is the part after the
-        # first ':' (queue names contain no ':'). Guard non-str/malformed keys
-        # (e.g. a mocked lease, or a legacy bucket_key without a ':') so a bad
-        # key just skips the requeue instead of raising.
         bucket_key = lease.bucket_key
         todo_id = bucket_key.partition(":")[2] if isinstance(bucket_key, str) else ""
         if todo_id:
-            # F1 (defense-in-depth): only requeue if NO newer live lease covers
-            # this same bucket. A bucket can carry BOTH an expired lease (from
-            # a crashed tick) and a live lease (from the tick that legitimately
-            # re-claimed the todo after the crash). Requeueing in that window
-            # duplicates the work: the live holder is still dispatching it AND
-            # the next claim_runnable picks up the requeued row.
-            live = await session.scalar(
-                select(BucketLeaseModel)
-                .where(
-                    BucketLeaseModel.bucket_key == bucket_key,
-                    BucketLeaseModel.expires_at >= now,
-                    BucketLeaseModel.id != lease.id,
-                )
-                .limit(1)
-            )
-            if live is None:
+            live_leases = live_map.get(bucket_key, [])
+            has_live = any(live.id != lease.id for live in live_leases)
+            if not has_live:
                 await session.execute(
                     update(TodoModel)
                     .where(

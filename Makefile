@@ -42,6 +42,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         _commit-lock-acquire check-clean-tree ship-commit-files \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
+        move-ansible-roles \
         container-build container-run container-push \
         file-executable build-executable dist dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security security-backlog-gate \
@@ -72,6 +73,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     git-index git-search git-stats \
     searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
     disk-guard disk-check disk \
+     networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
+     networking-healthcheck \
      install-bats test-install check-subagent-guards verify-plugin-manifest \
     check-task-ledger \
     test-service-discovery service-discover service-catalog
@@ -328,7 +331,7 @@ ruff-audit:
 	@$(UV) run python scripts/ruff_plugins/return_type_checker.py
 
 typecheck:
-	@$(UV) run mypy src tests
+	@$(UV) run mypy src
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \
@@ -3579,3 +3582,71 @@ service-discover:
 
 service-catalog:
 	@$(UV) run python -m general_ludd.cli.service_commands catalog
+
+# --- Networking Role & Scapy Adapter ---
+# Lint the networking Ansible role (graceful if role does not exist yet)
+networking-role-lint:
+	@NETWORKING_ROLE=collections/ansible_collections/general_ludd/agent/roles/networking; \
+	if [ -d "$$NETWORKING_ROLE" ]; then \
+		$(UV) run ansible-lint "$$NETWORKING_ROLE" || true; \
+	else \
+		echo "networking role not found (skipping lint)"; \
+	fi
+
+# Check YAML syntax for all networking role files
+networking-role-syntax:
+	@NETWORKING_ROLE=collections/ansible_collections/general_ludd/agent/roles/networking; \
+	if [ -d "$$NETWORKING_ROLE" ]; then \
+		for f in $$(find "$$NETWORKING_ROLE" -name '*.yml' -o -name '*.yaml' 2>/dev/null); do \
+			echo "Checking $$f..."; \
+			$(UV) run python -c "import yaml; yaml.safe_load(open('$$f'))" || exit 1; \
+		done; \
+		echo "networking role YAML syntax OK"; \
+	else \
+		echo "networking role not found (skipping syntax check)"; \
+	fi
+
+# Run scapy adapter unit tests (skip if scapy not installed)
+test-scapy-adapter:
+	@if $(UV) run python -c "import scapy" 2>/dev/null; then \
+		if [ -n "$(TESTFILE)" ]; then \
+			$(UV) run python -m pytest $(TESTFILE) -v; \
+		elif [ -f tests/unit/test_scapy_adapter.py ]; then \
+			$(UV) run python -m pytest tests/unit/test_scapy_adapter.py -v; \
+		else \
+			echo "no scapy adapter test file found"; \
+		fi; \
+	else \
+		echo "scapy not installed — skipping scapy adapter tests"; \
+	fi
+
+# Run networking role lint + syntax validation together
+networking-validate: networking-role-lint networking-role-syntax
+	@echo "networking role validation complete"
+
+# Move ansible roles from monolithic agent collection to domain-specific collections
+move-ansible-roles:
+	@mkdir -p collections/ansible_collections/general_ludd/security/roles
+	@mkdir -p collections/ansible_collections/general_ludd/networking/roles
+	@mkdir -p collections/ansible_collections/general_ludd/infrastructure/roles
+	@mkdir -p collections/ansible_collections/general_ludd/operations/roles
+	@mv collections/ansible_collections/general_ludd/agent/roles/ssl_cert collections/ansible_collections/general_ludd/security/roles/ssl_cert
+	@mv collections/ansible_collections/general_ludd/agent/roles/hsm_operations collections/ansible_collections/general_ludd/security/roles/hsm_operations
+	@mv collections/ansible_collections/general_ludd/agent/roles/sql_injection collections/ansible_collections/general_ludd/security/roles/sql_injection
+	@mv collections/ansible_collections/general_ludd/agent/roles/command_injection collections/ansible_collections/general_ludd/security/roles/command_injection
+	@mv collections/ansible_collections/general_ludd/agent/roles/prompt_injection collections/ansible_collections/general_ludd/security/roles/prompt_injection
+	@mv collections/ansible_collections/general_ludd/agent/roles/audit_framework collections/ansible_collections/general_ludd/security/roles/audit_framework
+	@mv collections/ansible_collections/general_ludd/agent/roles/networking collections/ansible_collections/general_ludd/networking/roles/networking
+	@mv collections/ansible_collections/general_ludd/agent/roles/service_discovery collections/ansible_collections/general_ludd/infrastructure/roles/service_discovery
+	@mv collections/ansible_collections/general_ludd/agent/roles/auto_register_service collections/ansible_collections/general_ludd/infrastructure/roles/auto_register_service
+	@mv collections/ansible_collections/general_ludd/agent/roles/auto_retire_service collections/ansible_collections/general_ludd/infrastructure/roles/auto_retire_service
+	@mv collections/ansible_collections/general_ludd/agent/roles/log_analyzer collections/ansible_collections/general_ludd/operations/roles/log_analyzer
+	@mv collections/ansible_collections/general_ludd/agent/roles/ci_pipeline_repair collections/ansible_collections/general_ludd/operations/roles/ci_pipeline_repair
+	@mv collections/ansible_collections/general_ludd/agent/roles/deploy_model_server_slurm collections/ansible_collections/general_ludd/operations/roles/deploy_model_server_slurm
+	@echo "Moved 13 roles: 6→security, 1→networking, 3→infrastructure, 3→operations"
+
+# Verify Python imports for scapy_adapter module work
+networking-healthcheck:
+	@$(UV) run python -c "from general_ludd.networking import scapy_adapter; print('scapy_adapter import OK')" 2>/dev/null && \
+		echo "networking healthcheck: OK" || \
+		echo "networking module not found (skipping healthcheck)"

@@ -349,6 +349,10 @@ class TaskReturnModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    __table_args__ = (
+        Index("ix_task_returns_status_created", "status", "created_at"),
+    )
+
 
 class TaskDecisionModel(Base):
     __tablename__ = "task_decisions"
@@ -518,6 +522,7 @@ class BucketLeaseModel(Base):
 
     __table_args__ = (
         UniqueConstraint("bucket_key", "holder_id", name="uq_bucket_lease"),
+        Index("ix_bucket_leases_key_expires", "bucket_key", "expires_at"),
     )
 
 

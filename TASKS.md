@@ -111,6 +111,29 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
+## Phase R — Collection Split + Documentation (docs wave)
+
+- [x] R.1 — Update TASKS.md with ssl_cert role entry (certificate management) | priority: medium | effort: small | status: completed | evidence: role fully populated with tasks/vars/defaults/README/meta; docs/SSL_CERT_SYSTEM.md exists
+- [x] R.2 — Update TASKS.md with hsm_operations role entry (HSM/smartcard) | priority: medium | effort: small | status: completed | evidence: role fully populated with tasks/vars/defaults/README/meta; docs/SSL_CERT_SYSTEM.md covers HSM integration
+- [x] R.3 — Update TASKS.md with audit_framework role entry (compliance auditing) | priority: medium | effort: small | status: completed | evidence: documented in docs/SECURITY_ROLES.md; role scaffold in collections/
+- [x] R.4 — Update TASKS.md with sql_injection role entry (SQLi attack/remediate/audit) | priority: medium | effort: small | status: completed | evidence: defaults/main.yml + meta/main.yml exist; documented in docs/SECURITY_ROLES.md
+- [x] R.5 — Update TASKS.md with command_injection role entry (command injection) | priority: medium | effort: small | status: completed | evidence: documented in docs/SECURITY_ROLES.md; role scaffold in collections/
+- [x] R.6 — Update TASKS.md with prompt_injection role entry (LLM prompt injection) | priority: medium | effort: small | status: completed | evidence: documented in docs/SECURITY_ROLES.md; role scaffold in collections/
+- [x] R.7 — Create docs/SECURITY_ROLES.md with overview, interop, SearX awareness, tool matrix, sample flow | priority: medium | effort: medium | status: completed | evidence: docs/SECURITY_ROLES.md created
+- [x] R.8 — Update SESSION.md with Wave 35 entry | priority: low | effort: small | status: completed | evidence: SESSION.md Wave 35 entry added
+- [x] R.9 — Update README.md Ansible Collections section with new security roles | priority: low | effort: small | status: completed | evidence: 6 new roles added to Secure-SDLC roles list
+- [x] R.10 — Update CHANGELOG.md [Unreleased] with security roles documentation entry | priority: low | effort: small | status: completed | evidence: CHANGELOG entry added
+- [x] R.11 — Update docs/SECURITY_ROLES.md FQCN from agent.*→security.* | priority: medium | effort: small | status: completed | evidence: all 6 role FQCNs + collection references updated
+- [x] R.12 — Update docs/SSL_CERT_SYSTEM.md FQCN from agent.*→security.* | priority: medium | effort: small | status: completed | evidence: ssl_cert + hsm_operations FQCNs updated, data path updated
+- [x] R.13 — Create docs/NETWORKING_SYSTEM.md | priority: medium | effort: medium | status: completed | evidence: ~280 lines covering architecture, 7 modes, ScapyAdapter, tool matrix, dissector templates, usage examples
+- [x] R.14 — Create docs/BUSINESS_RESEARCH_SYSTEM.md | priority: medium | effort: medium | status: completed | evidence: ~230 lines covering entity_research role, 6 research capabilities, SearX monitoring, entity graph
+- [x] R.15 — Update README.md with collections split (agent/security/business/networking) | priority: medium | effort: medium | status: completed | evidence: restructured from single collection section to 4 collection sub-sections with FQCN tables
+- [x] R.16 — Update TASKS.md with networking + entity_research role entries | priority: low | effort: small | status: completed | evidence: R.13-R.15 entries added
+- [x] R.17 — Update SESSION.md with Wave 35 completion details | priority: low | effort: small | status: completed | evidence: SESSION.md updated
+- [x] R.18 — Update CHANGELOG.md [Unreleased] with collection split + docs entries | priority: low | effort: small | status: completed | evidence: CHANGELOG updated
+
+---
+
 ## Phase F — Docs/Presentation (AGENTIC_IMPLEMENTATION_SPEC §3.6)
 
 - [x] F.1 — Reveal.js deck: add flagship flow with exact code paths, behaviors→DB-tables slide, daemon/MCP/self-improve/guardrails slides | priority: high | effort: medium | status: completed | evidence: 6 new slides, deck grew 28→34, build PASS
@@ -118,6 +141,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] F.3 — docs/presentation internal link fixes: 4 broken links (case/name mismatch) | priority: low | effort: small | status: completed | evidence: all 5 links in index.md already correct, fixed in prior session
 - [x] F.4 — Stale design/status docs: PROJECT_RUNNER.md slices stale, STABILIZATION_PLAN WP-D3 close, SLM_COMPACTION unwired claim | priority: low | effort: small | status: completed | evidence: PROJECT_RUNNER.md roadmap cleaned up (slices 1-3 marked complete), STABILIZATION_PLAN WP-D3 already CLOSED (migration 024, commit ff8a8298, 9/9 parity tests), SLM_COMPACTION.md §6 already daemon-wired (3 wiring points documented)
 - [x] F.5 — Missing standard docs: config reference, MCP tool reference, CONTRIBUTING pointer, CHANGELOG sync | priority: low | effort: medium | status: completed | evidence: CONFIG_REFERENCE.md (386 lines, v0.1.0-beta.3) already existed; CONTRIBUTING.md (root 434 lines + docs/ 136 lines) already existed; CHANGELOG.md (371 lines, synced to 0.1.0-beta.3) already existed; MCP_TOOL_REFERENCE.md CREATED (682 lines, 37 tools with params/types/defaults) via scripts/gen_mcp_tool_reference_md.py + make gen-mcp-tool-ref target, stale check wired into mcp-docs-check. Commits: 25641bd1 (generator + ref doc), Makefile/manifest commit pending gate green (blocked by pre-existing type errors in unrelated dirty files). make mcp-docs-check PASS.
+- [x] F.6 — SSL Certificate Management System documentation: comprehensive architecture overview, role reference (ssl_cert + hsm_operations), usage examples, data file reference, Python API, compliance quick reference, security considerations | priority: medium | effort: medium | status: completed | evidence: docs/SSL_CERT_SYSTEM.md created (~370 lines, 7 sections, 2 Ansible role specs, 4 data file specs, 5 Python module APIs, 6-standard compliance matrix)
 
 ---
 

@@ -354,12 +354,19 @@ To add support for a new model or compute provider:
 3. **Restart the daemon** — the new provider is loaded on boot from the presets file and
    becomes selectable in model routing and profile configuration.
 
-## The `general_ludd.agent` Ansible Collection
+## Ansible Collections
 
-All task execution happens through the `general_ludd.agent` Ansible collection. Install it
-via the collection path (`collections/ansible_collections/general_ludd/agent/`).
+All task execution happens through the `general_ludd.*` Ansible collections. Collections
+are split by domain: `agent` (core modules + general roles), `security` (offensive/defensive
+security), `business` (entity intelligence), and `networking` (packet analysis + network ops).
 
-### Modules (36 total — 12 core modules shown below)
+### `general_ludd.agent` — Core Collection
+
+Install via `collections/ansible_collections/general_ludd/agent/`. This is the base
+collection that all others build on — modules, general-purpose roles, and the daemon
+integration layer.
+
+#### Modules (36 total — 12 core modules shown below)
 
 The collection ships 36 modules total (`make collection-modules`); the table below covers
 the 12 core ones — the full set lives in
@@ -385,7 +392,7 @@ playbook logic; message provides the inter-agent coordination queue. `gludd_metr
 `gludd_traces` expose observability data as Ansible dynamic facts for playbooks that need
 to branch on telemetry.
 
-### Roles
+#### Roles
 
 Roles compose modules into full agent task runs. They are grouped by family:
 
@@ -407,7 +414,60 @@ Roles compose modules into full agent task runs. They are grouped by family:
 `story_create`, `estimate_story`, `backlog_groom`, `sprint_plan`, `standup_report`,
 `sprint_board_report`, `velocity_report`, `sprint_review`, `retrospective`
 
-The actual count can be verified with: `make collection-roles`
+### `general_ludd.security` — Security Collection
+
+Install via `collections/ansible_collections/general_ludd/security/`. Six roles covering
+the full security lifecycle: certificate management, hardware-backed key operations,
+compliance auditing, and injection attack detection/remediation.
+
+**FQCN prefix:** `general_ludd.security.`
+
+| Role | Description |
+|---|---|
+| `ssl_cert` | SSL/TLS certificate lifecycle (mint, research, verify, compliance) |
+| `hsm_operations` | HSM and smartcard operations (PKCS#11 sign, keygen, attest) |
+| `audit_framework` | Compliance auditing against PCI-DSS, SOC2, NIST, FIPS |
+| `sql_injection` | SQL injection detection and remediation (Python, Go, JS) |
+| `command_injection` | Command injection detection in source, CI configs, IaC |
+| `prompt_injection` | LLM prompt injection detection and mitigation strategies |
+
+See `docs/SECURITY_ROLES.md` for the full reference with interoperability matrix,
+SearX integration, tool awareness table, and sample audit flow.
+
+### `general_ludd.business` — Business Intelligence Collection
+
+Install via `collections/ansible_collections/general_ludd/business/`. Business-domain
+roles for entity research and corporate intelligence.
+
+**FQCN prefix:** `general_ludd.business.`
+
+| Role | Description |
+|---|---|
+| `entity_research` | Full entity intelligence: discovery, associations, assets, exposure, risks, demographics |
+
+All data collection requires explicit opt-in via category enable flags. Integrates with
+OpenCorporates, SEC EDGAR, Crunchbase, Wikipedia, Shodan, Censys, and SearX. Supports
+entity graph visualization via DOT export.
+
+See `docs/BUSINESS_RESEARCH_SYSTEM.md` for the full reference.
+
+### `general_ludd.networking` — Networking Collection
+
+Install via `collections/ansible_collections/general_ludd/networking/`. Network
+operations role with packet analysis, traffic inspection, and dissector development.
+
+**FQCN prefix:** `general_ludd.networking.`
+
+| Role | Description |
+|---|---|
+| `networking` | 7-mode networking: pcap read, packet craft, network scan, traffic analyze, dissector create, tool recommend, packet dissect |
+
+Integrates with `ScapyAdapter` for packet-level operations, nmap for discovery,
+and Wireshark Lua dissector templates for protocol analysis.
+
+See `docs/NETWORKING_SYSTEM.md` for the full reference.
+
+The actual role count can be verified with: `make collection-roles`
 
 ## Testing
 

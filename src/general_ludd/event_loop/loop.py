@@ -1598,26 +1598,26 @@ class EventLoop:
         # H15 (W2.5): record a bucket lease per claimed todo so a crashed tick's
         # work can be reclaimed once the lease expires.
         if claimed and self._active_session is not None:
-            from general_ludd.event_loop.lease import acquire_lease
+            from general_ludd.event_loop.lease import acquire_leases_batch
             holder = f"tick-{self._total_ticks}"
+            bucket_keys = []
             for todo in claimed:
                 bucket_key = _safe_str(todo, "queue", "core") or "core"
                 todo_id = _safe_str(todo, "todo_id", "") or ""
-                try:
-                    await acquire_lease(
-                        self._active_session,
-                        bucket_key=f"{bucket_key}:{todo_id}",
-                        holder_id=holder,
-                        project_id=project_id,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Lease acquisition failed for todo %s (bucket=%s): %s",
-                        todo_id,
-                        bucket_key,
-                        exc,
-                        exc_info=True,
-                    )
+                bucket_keys.append(f"{bucket_key}:{todo_id}")
+            try:
+                await acquire_leases_batch(
+                    self._active_session,
+                    bucket_keys,
+                    holder_id=holder,
+                    project_id=project_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Batch lease acquisition failed for %d todos: %s",
+                    len(bucket_keys), exc,
+                    exc_info=True,
+                )
 
     async def _phase_dispatch_execute_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_todos", [])
@@ -3246,6 +3246,10 @@ class EventLoop:
             stmt = stmt.where(TaskDecisionModel.project_id == project_id)
         result = await self._active_session.execute(stmt)
         decisions = list(result.scalars().all())
+        todo_ids = [d.matched_todo_id for d in decisions if d.matched_todo_id]
+        todo_map: dict[str, Any] = {}
+        if todo_ids and self._todo_repo is not None:
+            todo_map = await self._todo_repo.get_by_ids(todo_ids, project_id=project_id)
         reconciled = 0
         push_failures = 0
         for d in decisions:
@@ -3263,11 +3267,11 @@ class EventLoop:
                     d.decision == "complete"
                     and d.matched_todo_id not in self._pushed_work
                 ):
-                    todo = await self._todo_repo.get_by_id(d.matched_todo_id)
+                    todo = todo_map.get(d.matched_todo_id)
                     if todo is not None and await self._attempt_completed_push(todo):
                         push_failures += 1
                 continue
-            todo = await self._todo_repo.get_by_id(d.matched_todo_id)
+            todo = todo_map.get(d.matched_todo_id)
             if todo is None or todo.status != TodoStatus.REVIEWING_RETURN.value:
                 continue
             new_status = self._decision_to_status(d.decision)

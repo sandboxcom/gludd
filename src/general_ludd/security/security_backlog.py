@@ -260,10 +260,11 @@ def _check_d17_psk_rotation() -> tuple[bool, str]:
 def _check_d27_sandbox_limits() -> tuple[bool, str]:
     """Static probe: RLIMIT-based resource caps exist and are wired into the runners.
 
-    Source-scans (no subprocess/exec) three things:
+    Source-scans (no subprocess/exec) four things:
       * ``general_ludd.system.rlimit`` defines ``apply_limits``.
       * ``general_ludd.project_runner.runner`` imports it.
       * ``general_ludd.abtest._child`` imports it.
+      * ``general_ludd.ornith.mcp_server`` imports ``ornith_sandbox_preexec``.
 
     This is the actual landed guard: real container/cgroup sandboxing (the
     D-27 title) has NOT landed, but the RLIMIT_AS/RLIMIT_CPU best-effort caps
@@ -299,9 +300,20 @@ def _check_d27_sandbox_limits() -> tuple[bool, str]:
             "system.rlimit.apply_limits (regression)"
         )
 
+    try:
+        import general_ludd.ornith.mcp_server as mcp_mod
+    except ImportError as exc:
+        return False, f"OPEN — general_ludd.ornith.mcp_server failed to import: {exc}"
+    mcp_src = _read_module_source(mcp_mod)
+    if "ornith_sandbox_preexec" not in mcp_src:
+        return False, (
+            "OPEN — general_ludd.ornith.mcp_server no longer imports "
+            "ornith_sandbox_preexec (regression)"
+        )
+
     return True, (
         "LANDED-VERIFIED — system.rlimit.apply_limits exists and is imported "
-        "by both project_runner.runner and abtest._child"
+        "by project_runner.runner, abtest._child, and ornith.mcp_server"
     )
 
 

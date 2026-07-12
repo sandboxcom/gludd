@@ -12,6 +12,10 @@ const BLOCK_COUNTER_FILE = process.env.GLUDD_BLOCK_COUNTER_FILE || "/tmp/gludd-b
 const BLANKED_RESPONSE_FILE = "/tmp/gludd-blanked-responses.json"
 const FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
 
+const POST_RESULTS_STATE_FILE = process.env.GLUDD_POST_RESULTS_STATE_FILE || "/tmp/gludd-post-results-state.json"
+const TEXT_ONLY_STATE_FILE = process.env.GLUDD_TEXT_ONLY_STATE_FILE || "/tmp/gludd-text-only-state.json"
+const WAVE_RESULT_THRESHOLD = 3
+
 // ── SHARED STREAK STATE (P3: cross-call grinding detection) ────────────────
 // Shared between enforce-floor.ts and enforce-stop.ts so EITHER plugin can
 // catch main-thread grinding (serial read/edit/bash with no dispatch). The
@@ -563,6 +567,60 @@ function computeHealthScore(): number {
 
 // ── PLUGIN ─────────────────────────────────────────────────────────────────
 
+interface PostResultsState {
+  lastTurnHadResults: boolean
+  lastTurnHadWave: boolean
+  lastTurnTs: number
+  lastResultCount: number
+}
+
+interface TextOnlyState {
+  count: number
+  lastTs: number
+  sameSession: boolean
+}
+
+function readPostResultsState(): PostResultsState {
+  try {
+    if (fs.existsSync(POST_RESULTS_STATE_FILE)) {
+      return JSON.parse(fs.readFileSync(POST_RESULTS_STATE_FILE, "utf8"))
+    }
+  } catch {}
+  return { lastTurnHadResults: false, lastTurnHadWave: false, lastTurnTs: 0, lastResultCount: 0 }
+}
+
+function writePostResultsState(s: PostResultsState): void {
+  try { fs.writeFileSync(POST_RESULTS_STATE_FILE, JSON.stringify(s), "utf8") } catch {}
+}
+
+function readTextOnlyState(): TextOnlyState {
+  try {
+    if (fs.existsSync(TEXT_ONLY_STATE_FILE)) {
+      return JSON.parse(fs.readFileSync(TEXT_ONLY_STATE_FILE, "utf8"))
+    }
+  } catch {}
+  return { count: 0, lastTs: 0, sameSession: false }
+}
+
+function writeTextOnlyState(s: TextOnlyState): void {
+  try { fs.writeFileSync(TEXT_ONLY_STATE_FILE, JSON.stringify(s), "utf8") } catch {}
+}
+
+function textHasResultMarkers(text: string): { found: boolean; count: number } {
+  let count = 0
+  const lower = text.toLowerCase()
+  const markers = ["task result","subagent result","workflow result","task_result","subagent_result","workflow_result","<result>","</result>"]
+  for (const marker of markers) {
+    const lowerMarker = marker.toLowerCase()
+    let idx = 0
+    while ((idx = lower.indexOf(lowerMarker, idx)) !== -1) {
+      count++
+      idx += lowerMarker.length
+    }
+  }
+  return { found: count > 0, count }
+}
+
 function _reportAlive(): void {
   try {
     const alive: Record<string, any> = {}
@@ -939,6 +997,27 @@ export default (async ({ }) => {
           return output
         }
 
+        // ── POST-RESULTS TEXT-ONLY BLOCK ──────────────────────────────────
+        // After subagent results (or a full wave) arrive, a text-only
+        // response with no tool calls is a premature stop. This is the
+        // "summary table after subagent results" failure mode.
+        const postResultsState = readPostResultsState()
+        const isTextOnlyThisTurn1 = !turnState.toolCallMade && turnState.dispatchCount === 0
+        if ((postResultsState.lastTurnHadResults || postResultsState.lastTurnHadWave) && isTextOnlyThisTurn1) {
+          updateSharedStreak("text-only")
+          logFalseDoneBlock(text, "after-results-text-only")
+          recordBlock("after-results-text-only")
+          output.text = [
+            "⛔ AFTER-RESULTS TEXT-ONLY BLOCKED — RESUME WORK: dispatch subagents immediately.",
+            "",
+            `Previous turn had results: ${postResultsState.lastTurnHadResults}, wave: ${postResultsState.lastTurnHadWave}`,
+            "You sent a text-only response after receiving subagent results.",
+            "DISPATCH THE NEXT WAVE VIA task/agent/workflow NOW.",
+          ].join("\n")
+          turnState.blocked = true
+          return
+        }
+
         // Check short completion claims (✅, "Done.") before the 60-char minimum
         if (text.trim().length < 60) {
           if (responseLooksTerminal(text)) {
@@ -989,6 +1068,37 @@ export default (async ({ }) => {
             healthScore: computeHealthScore(),
             watchdogDisengage,
           }
+        }
+
+        // ── CONSECUTIVE TEXT-ONLY LIMIT ──────────────────────────────────
+        // At most 1 text-only response per session when work is pending.
+        // Resets when the agent makes tool calls. Prevents the pattern of
+        // repeated status reports / summaries with no dispatch.
+        const textOnly = readTextOnlyState()
+        if (!turnState.toolCallMade && turnState.dispatchCount === 0) {
+          const now = Date.now()
+          const sameSession = textOnly.lastTs > 0 && (now - textOnly.lastTs) < 300_000
+          const newCount = sameSession ? textOnly.count + 1 : 1
+          textOnly.count = newCount
+          textOnly.lastTs = now
+          textOnly.sameSession = sameSession
+          writeTextOnlyState(textOnly)
+          if (textOnly.count >= 2 && (cache.hasLocalWork || cache.ciVerdictPendingOrRed)) {
+            logFalseDoneBlock(turnState.accumulatedText, "consecutive-text-only")
+            recordBlock("consecutive-text-only")
+            output.text = [
+              "⛔ CONSECUTIVE TEXT-ONLY RESPONSES BLOCKED.",
+              `Count: ${newCount} text-only responses in ${Math.round((now - textOnly.lastTs) / 1000)}s.`,
+              "",
+              "Max 1 text-only response allowed when work is pending.",
+              "DISPATCH A TOOL CALL NOW.",
+            ].join("\n")
+            turnState.blocked = true
+            return
+          }
+        } else {
+          // Reset text-only counter — agent made tool calls
+          writeTextOnlyState({ count: 0, lastTs: 0, sameSession: false })
         }
 
         // DIRECT FALSE-DONE DETECTION: check completion claim patterns
@@ -1214,6 +1324,28 @@ export default (async ({ }) => {
           ].join("\n")
           turnState.blocked = true
           return
+        }
+
+        // ── UPDATE POST-RESULTS STATE FOR NEXT TURN ──────────────────────
+        // Detect subagent result markers in the current response so the
+        // NEXT turn knows whether it followed a result-filled turn. This
+        // is the cross-turn memory that drives the post-results block.
+        const combinedTextForResults = turnState.accumulatedText
+        const resultCheck = textHasResultMarkers(combinedTextForResults)
+        if (resultCheck.found) {
+          writePostResultsState({
+            lastTurnHadResults: true,
+            lastTurnHadWave: resultCheck.count >= WAVE_RESULT_THRESHOLD,
+            lastTurnTs: Date.now(),
+            lastResultCount: resultCheck.count,
+          })
+        } else {
+          writePostResultsState({
+            lastTurnHadResults: false,
+            lastTurnHadWave: false,
+            lastTurnTs: Date.now(),
+            lastResultCount: 0,
+          })
         }
 
         turnState.toolCallMade = false
