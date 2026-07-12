@@ -435,6 +435,15 @@ function gateStatusIsRed(): boolean {
   } catch { return false }
 }
 
+function gateStatusIsStale(minAgeMs: number = 300_000): boolean {
+  try {
+    const gatePath = path.join(process.cwd(), ".gate-status")
+    if (!fs.existsSync(gatePath)) return false
+    const stat = fs.statSync(gatePath)
+    return (Date.now() - stat.mtimeMs) > minAgeMs
+  } catch { return false }
+}
+
 function repoHasPendingWork(mode?: "commit" | "push"): boolean {
   try {
     const { execSync } = require("node:child_process")
@@ -712,7 +721,13 @@ export default (async ({ }) => {
               } catch {}
               const extraReasons: string[] = []
               if (bugsOpen) extraReasons.push("BUGS.md open incidents")
-              if (gateRed) extraReasons.push("gate RED")
+              if (gateRed) {
+                if (gateStatusIsStale()) {
+                  extraReasons.push("gate stale (>5min); run make gate-refresh to update lint/typecheck/collect")
+                } else {
+                  extraReasons.push("gate RED")
+                }
+              }
               if (ciBad) extraReasons.push("CI pending/red")
               if (repoPending) extraReasons.push("repo dirty")
               throw new Error(stopLikeDenyMessage(taskMd, ratchetCount, extraReasons))
