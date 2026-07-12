@@ -16,7 +16,6 @@ with a canned, injected runner (no real ``osqueryi`` binary required).
 from __future__ import annotations
 
 import json
-import logging
 import re
 import shutil
 from collections.abc import Sequence

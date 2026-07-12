@@ -26,7 +26,6 @@ One record is emitted per span. Zipkin span ``duration`` is in microseconds.
 from __future__ import annotations
 
 import json
-import logging
 import os
 import urllib.parse
 from typing import Protocol, cast, runtime_checkable

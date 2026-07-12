@@ -20,7 +20,6 @@ Contract (shared across general_ludd.connectors.*):
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit

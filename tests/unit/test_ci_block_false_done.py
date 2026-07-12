@@ -43,9 +43,7 @@ def ci_is_red(status, last_check, stale_sec=600):
     if status in ("SUCCESS", "PENDING"):
         return False
     now = _fresh_ts()
-    if now - last_check > stale_sec:
-        return False  # stale — fail open
-    return True
+    return not (now - last_check > stale_sec)
 
 
 def ci_is_pending(status, last_check, stale_sec=600):
@@ -53,14 +51,12 @@ def ci_is_pending(status, last_check, stale_sec=600):
     if status != "PENDING":
         return False
     now = _fresh_ts()
-    if now - last_check > stale_sec:
-        return False
-    return True
+    return not now - last_check > stale_sec
 
 
 def would_block_ci_red(text, ci_status, ci_last_check):
     """Returns True if the CI-RED block would fire for this response.
-    
+
     Block fires when:
       1. CI is RED (not SUCCESS, not PENDING, not stale)
       2. OR CI is PENDING (not stale)
@@ -74,9 +70,7 @@ def would_block_ci_red(text, ci_status, ci_last_check):
         return False
     if ci_is_red(ci_status, ci_last_check):
         return True
-    if ci_is_pending(ci_status, ci_last_check):
-        return True
-    return False
+    return bool(ci_is_pending(ci_status, ci_last_check))
 
 
 # ── STRUCTURAL TESTS — pin the CI RED block exists in plugin source ────────

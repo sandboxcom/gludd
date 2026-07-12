@@ -19,7 +19,6 @@ Security posture:
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit

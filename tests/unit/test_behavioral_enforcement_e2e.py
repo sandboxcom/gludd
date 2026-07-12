@@ -60,10 +60,7 @@ def _fail_open(src: str, hook_name: str = "tool.execute.before") -> bool:
     # catches tool.execute.before errors. The presence of throw within
     # deliberate enforcement paths is acceptable as the runtime is
     # the fail-open wrapper.
-    if '"tool.execute.before"' in src and "throw" in post_hook:
-        return True
-
-    return False
+    return bool('"tool.execute.before"' in src and "throw" in post_hook)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -333,7 +330,7 @@ class TestSubagentContextIsolation:
         """When OPENCODE_SUBAGENT=1, the tool.execute.before must return early."""
         src = ENFORCE_MULTITASK.read_text()
         subagent_line = next(
-            (l for l in src.splitlines() if "OPENCODE_SUBAGENT" in l and "return" in l.lower()),
+            (line_ for line_ in src.splitlines() if "OPENCODE_SUBAGENT" in line_ and "return" in line_.lower()),
             None,
         )
         assert subagent_line is not None, (

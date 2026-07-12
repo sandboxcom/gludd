@@ -16,7 +16,6 @@ own runner protocol so it can be unit-tested with a canned, injected runner
 from __future__ import annotations
 
 import json
-import logging
 import re
 import shutil
 from collections.abc import Sequence

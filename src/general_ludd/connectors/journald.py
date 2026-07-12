@@ -20,7 +20,6 @@ raises ValueError and the runner is never invoked.
 from __future__ import annotations
 
 import json
-import logging
 import subprocess
 from collections.abc import Callable, Mapping
 from typing import TypedDict, cast

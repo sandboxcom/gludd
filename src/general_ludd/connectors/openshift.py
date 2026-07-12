@@ -28,7 +28,6 @@ project dependency). It does not import from sibling connector modules, package
 from __future__ import annotations
 
 import ipaddress
-import logging
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit

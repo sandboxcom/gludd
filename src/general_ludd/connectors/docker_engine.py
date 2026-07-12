@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import logging
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass, field

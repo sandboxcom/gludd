@@ -14,7 +14,6 @@ own reader protocol so it can be unit-tested with a canned, injected reader
 
 from __future__ import annotations
 
-import logging
 import os
 import re
 from typing import Any, Protocol, runtime_checkable

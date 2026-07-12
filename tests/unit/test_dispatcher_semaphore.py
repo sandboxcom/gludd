@@ -334,7 +334,7 @@ class TestBoundedSemaphoreGuard:
 
         async def _go() -> None:
             s = await dispatcher._get_semaphore("bounded")
-            with pytest.raises(ValueError, match="BoundedSemaphore.*release"):
+            with pytest.raises(ValueError, match=r"BoundedSemaphore.*release"):
                 s.release()
 
         _run(_go())
