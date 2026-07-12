@@ -48,6 +48,16 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 This directive OVERRIDES all "10-agent floor" rules below. The old rules remain in the document for historical reference but are dormant while this directive is active. If any rule below contradicts this section, THIS section wins.
 
+### CRITICAL: Enhancement/Fix Dispatch Ratio
+
+**2026-07-12 user mandate: at least half of every dispatch wave must be project enhancements, not just bug fixes.** Multiple sessions of fix-only dispatches were observed — the agent was only dispatching repair work and never advancing the project with new features, tests, docs, or tooling.
+
+1. **At least 50% of every dispatch wave must be project enhancements.** New tests, new features, documentation, tooling/scripts, self-test mechanisms, guardrail improvements. In a 5-agent wave, at least 2-3 must be enhancements.
+2. **"Fix-only waves" are forbidden** when any Phase D/E/F items remain in TASKS.md. All 5 subagents doing bug fixes is a policy violation.
+3. **The ratio is checked per-wave, not per-session.** Every single dispatch message must include at least 2-3 enhancement subagents. No credit for "we did enhancements earlier."
+4. **Enhancement categories:** new self-tests, new features from TASKS.md, documentation, tooling/scripts, guardrail improvements, new make targets, observability improvements.
+5. **This overrides any conflicting priority language elsewhere.** A "fix top priority" directive means fixes get the FIRST dispatch slot — the remaining 4+ slots must still include 2+ enhancements.
+
 ### Branch discipline (HARD GATE)
 
 1. **NEVER push feature work directly to master.** Master is for merges from development ONLY, or emergency pipeline fixes. All feature work happens on `development` or feature branches.
@@ -1449,6 +1459,56 @@ This is enforced by:
 - This AGENTS.md section — proactive instruction
 - The General Ludd agent's own `AgentBehavior.session_persistence` flag — agents self-enforce
 - The `BehaviorRenderer` includes session persistence rules in rendered system prompts
+
+## CRITICAL: Task Self-Tracking (Anti-Forgetting)
+
+**The agent MUST maintain a structured, machine-verifiable task ledger in TASKS.md that prevents forgetting work between dispatch waves.**
+
+### Rules (enforced by the task ledger)
+
+1. **Every dispatched task gets a unique ID recorded in TASKS.md BEFORE dispatch.** Format: `W.N` (wave.item), `G.N` (phase.item), or `FIX-N` (hotfix). The ID must be checkable — grep for it, it exists or it doesn't.
+
+2. **Before each dispatch wave, cross-check against current TASKS.md.** Every task in the wave MUST have a corresponding entry in TASKS.md. Every TASKS.md entry that is "completed" MUST NOT be re-dispatched. This is a mechanical grep — no memory required.
+
+3. **After subagent results land, update TASKS.md status IMMEDIATELY.** Before processing the next result or dispatching the next wave, mark the completed task's status. The task ledger is the single source of truth; stale entries are indistinguishable from false claims.
+
+4. **Never re-dispatch completed tasks.** Before dispatching any task, check TASKS.md for a completed entry with the same description. A completed task re-dispatched is wasted tokens and duplicated work.
+
+### Anti-forgetting mechanism
+
+The task ledger prevents the class of failure where the agent:
+- Dispatches a wave → results arrive → agent writes a text summary → moves on without codifying any of the results
+- Dispatches the same task multiple times because it forgot the first one completed
+- Loses track of what was assigned to which subagent across waves
+- Cannot answer "what are you working on?" without re-reading conversation history
+
+### Pre-dispatch checklist (mechanical — run before composing any dispatch wave)
+
+1. Read TASKS.md (grep for `- [ ]` to find all unchecked items)
+2. For each task you plan to dispatch, verify it has an unchecked entry in TASKS.md
+3. If a task you want to dispatch is NOT in TASKS.md, add it FIRST, then dispatch
+4. If a task IS checked `[x]`, DO NOT re-dispatch it — it is already done
+5. Record the task ID you are about to dispatch in the task's TASKS.md entry (add `| dispatched: <timestamp>`)
+
+### Post-result checklist (mechanical — run after subagent results arrive)
+
+1. For each result received, find its TASKS.md entry by ID
+2. If the subagent completed the task, mark it `[x]` and add evidence (commit hash, test count)
+3. If the subagent failed or was partial, update status to `blocked` or `in_progress` with reason
+4. Move to next result — do not batch all results then update in bulk
+
+### Enforcement
+
+This is enforced by:
+- This AGENTS.md section — proactive instruction
+- TASKS.md — the machine-verifiable task ledger
+- `make git-log` / `make verify-state` — evidence for completed items
+- Future: a `check-task-ledger` make target that mechanically verifies no completed tasks are being re-dispatched
+- The "Never re-dispatch completed work" rule in the COST-EFFICIENCY DIRECTIVE above (item 14)
+
+### Why this matters
+
+Multiple sessions have demonstrated the forgetting pattern: the agent dispatches work, receives results, writes a summary, and moves on without codifying any of the results in the task ledger. The next session starts from scratch. The task ledger makes forgetting structurally impossible — every task exists as a checkable entry or it doesn't exist at all.
 
 ## Working Conventions
 

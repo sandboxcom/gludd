@@ -24,6 +24,7 @@ These tests pin the fix:
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -296,9 +297,6 @@ class TestWorkerGenerationDispatchesStructuredCalls:
             ]
         )
 
-        # Explicit gateway + dispatcher so the wired-dispatch branch is taken.
-        app = create_app(gateway=gateway, dispatcher=dispatcher)
-
         runner = MagicMock()
         runner.list_playbooks.return_value = ["test_playbook"]
         runner.prepare_job_dirs.return_value = {"root": "/tmp/wjob", "env": "/tmp/wjob/env"}
@@ -306,9 +304,10 @@ class TestWorkerGenerationDispatchesStructuredCalls:
         runner.run_playbook.return_value = {"rc": 0, "output": "done", "events": []}
 
         with (
+            patch.dict(os.environ, {"GLUDD_PSK_DISABLE": "1"}),
             patch("general_ludd.worker.app.get_runner", return_value=runner),
             patch("general_ludd.agents.capabilities.AgentCapabilities") as MockCaps,
-            TestClient(app) as client,
+            TestClient(create_app(gateway=gateway, dispatcher=dispatcher)) as client,
         ):
             mock_caps = MagicMock()
             mock_caps.prepare_messages.return_value = [

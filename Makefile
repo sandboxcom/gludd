@@ -1353,6 +1353,12 @@ ci-verdict:
 ci-verdict-safe:
 	@$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) && $(MAKE) --no-print-directory ci-verdict || exit $$?
 
+# ci-diagnose: fetch CI failure annotations and group by root cause.
+# Prints a compact diagnosis: run id, conclusion, top-5 failure clusters.
+# Exits 0 if CI is GREEN, 1 if RED (with diagnosis printed).
+ci-diagnose:
+	@$(PYTHON) scripts/ci_diagnose.py $(or $(BRANCH),master)
+
 # deploy-and-forget: push + record timestamp + print checkback time. This is
 # the fire-and-forget deployment pattern. After running this, RESUME REAL
 # WORK — do not poll CI. Check back at the printed time with ci-verdict-safe.

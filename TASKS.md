@@ -14,7 +14,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase W — Enforcement/Plugin hardening (current wave)
 
-- [x] W.1 — Fix enforce-floor.ts stale-state + enforce-delegate.ts disengage escape (per-PID scoping done) | priority: high | effort: medium | status: completed | evidence: 5 files changed, 54 insertions, 9 deletions
+- [ ] W.1 — Fix enforce-floor.ts stale-state + enforce-delegate.ts disengage escape (per-PID scoping done; shared-streak staleness guards added in 0c28260a but cross-session stale-state still possible) | priority: high | effort: medium | status: in_progress
 - [x] W.2 — Fix enforce-multitask.ts text.complete tool-output pass-through (zeroStreak stale state, no disengage escape) | priority: high | effort: small | status: completed | evidence: text.complete isToolOutput guard intentionally absent per research 2026-07-12 (text.complete never fires on tool output); disengage escape exists; zeroStreak does not load from stale disk
 - [x] W.3 — Fix enforce-stop.ts text.complete tool-output blanking | priority: high | effort: small | status: completed | evidence: same research finding — text.complete isToolOutput guard not needed; disengage escape exists
 
@@ -24,7 +24,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [ ] A.1 — Reconcile in-flight fix wave: verify which CI fixes landed on HEAD | priority: high | effort: small | status: pending
 - [ ] A.2 — Fix remaining CI failure clusters (slurm billing, connectors_base caplog, PSK caplog, tokenizer, MCPToolRegistry, structured_task_spec) | priority: high | effort: medium | status: pending
-- [ ] A.3 — Push, wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: pending
+- [ ] A.3 — Push, wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: in_progress
 - [ ] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: pending
 - [ ] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: pending
 - [ ] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: pending
@@ -106,6 +106,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] E.10 — Tick DB session pinned across dispatch gather: commit/close session BEFORE dispatch gather | priority: high | effort: medium | status: pending
 - [ ] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: pending
 - [ ] E.12 — Event-loop/repository perf batch: N+1 queries, missing composite index, full-table scans, per-lease N+1, no retention for task_returns/task_decisions | priority: low | effort: medium | status: pending
+- [ ] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: pending
 
 ---
 
@@ -116,6 +117,16 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] F.3 — docs/presentation internal link fixes: 4 broken links (case/name mismatch) | priority: low | effort: small | status: pending
 - [ ] F.4 — Stale design/status docs: PROJECT_RUNNER.md slices stale, STABILIZATION_PLAN WP-D3 close, SLM_COMPACTION unwired claim | priority: low | effort: small | status: pending
 - [ ] F.5 — Missing standard docs: config reference, MCP tool reference, CONTRIBUTING pointer, CHANGELOG sync | priority: low | effort: medium | status: pending
+
+---
+
+## Phase G — AGENTS.md Codification
+
+- [ ] G.1 — Enhancement/fix dispatch ratio rule: codify "at least 50% of every dispatch wave must be project enhancements, not just bug fixes" into AGENTS.md with machine enforcement | priority: high | effort: medium | status: pending
+- [ ] G.2 — Plugin subagent contamination fix: subagent output is being corrupted by enforcement plugin nag text injected by text.complete hooks firing inside subagent contexts. The nag text ("DELEGATE-FIRST", "HARD STOP", "READ-GRINDING DETECTED") appears in subagent results, contaminating the orchestrator's input. Fix: make the enforcement plugins subagent-aware so they skip injection when running inside a delegated subagent. | priority: high | effort: medium | status: pending
+- [ ] G.3 — Self-test gap audit + coverage filling: audit existing plugin self-tests, identify which enforcement plugins lack test coverage, and fill the gaps. | priority: medium | effort: medium | status: pending
+- [ ] G.4 — Nag-free subagent output self-test extension: extend the self-test suite to mechanically verify that subagent output is not contaminated by enforcement plugin nag text. Write tests that simulate subagent contexts and assert clean output. | priority: medium | effort: medium | status: pending
+- [ ] G.5 — Self-tracking task validation: implement mechanical verification that every dispatched task is recorded with a unique ID in TASKS.md, cross-referenced before each dispatch wave, updated after subagent results land, and never re-dispatched after completion. This task itself is the first entry. | priority: high | effort: medium | status: pending
 
 ---
 
@@ -294,10 +305,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [x] per-PID scoping fix for enforcement plugins
 - [x] Fix agent_floor_check ansible role task-naming syntax errors (8 tasks)
+- [x] Stale shared-streak staleness guards in enforce-stop.ts + enforce-floor.ts, alembic SQLite batch, daemon adaptive_router hasattr | evidence: commit 0c28260a
 
 ### Ship gate
 
-- [x] **Ship v0.1.0-beta.2** — CI GREEN run 29133276928 on HEAD 60a2b313.
+- [x] **Ship v0.1.0-beta.2** — CI GREEN run 29133276928 on HEAD 60a2b313 (superseded by later waves; current HEAD 0c28260a).
 
 ### Phase H-D — Hardening + Feature waves (2026-07-12)
 

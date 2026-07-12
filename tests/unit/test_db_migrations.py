@@ -99,7 +99,7 @@ class TestMigrationChainSingleHead:
     def test_single_head(self):
         script = self._script_dir()
         heads = script.get_heads()
-        assert "029" in heads, f"expected head to include '029', got {heads}"
+        assert "030" in heads, f"expected head to include '030', got {heads}"
         assert len(heads) == 1, f"expected single head, got {heads}"
 
     def test_ornith_014_migrations_are_distinct(self):

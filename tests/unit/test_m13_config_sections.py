@@ -15,6 +15,7 @@ CONSUMED_KEYS = {
     "orchestration",
     "process_isolation",
     "budget",
+    "network",
 }
 
 OPTIONAL_KEYS_WITH_DEFAULTS = {

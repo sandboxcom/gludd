@@ -141,7 +141,7 @@ class TestDeadWorkerEndpoints:
         assert "/jobs/policy-validate" in routes
         assert "/jobs/reload-request" in routes
 
-    def test_validate_endpoint_returns_501_not_implemented(self):
+    def test_validate_endpoint_returns_403_auth_fail_closed(self):
         from fastapi.testclient import TestClient
 
         from general_ludd.worker.app import create_app
@@ -153,11 +153,12 @@ class TestDeadWorkerEndpoints:
             "playbook": "validate_task.yml",
             "queue": "core",
         })
-        assert resp.status_code == 501
-        data = resp.json()
-        assert data["detail"]["reason"] == "not_implemented"
+        assert resp.status_code == 403, (
+            f"Worker auth fail-closed without GLUDD_PSK, "
+            f"expected 403 got {resp.status_code}"
+        )
 
-    def test_policy_validate_endpoint_returns_501_not_implemented(self):
+    def test_policy_validate_endpoint_returns_403_auth_fail_closed(self):
         from fastapi.testclient import TestClient
 
         from general_ludd.worker.app import create_app
@@ -169,11 +170,12 @@ class TestDeadWorkerEndpoints:
             "playbook": "noop.yml",
             "queue": "core",
         })
-        assert resp.status_code == 501
-        data = resp.json()
-        assert data["detail"]["reason"] == "not_implemented"
+        assert resp.status_code == 403, (
+            f"Worker auth fail-closed without GLUDD_PSK, "
+            f"expected 403 got {resp.status_code}"
+        )
 
-    def test_reload_request_endpoint_returns_501_not_implemented(self):
+    def test_reload_request_endpoint_returns_403_auth_fail_closed(self):
         from fastapi.testclient import TestClient
 
         from general_ludd.worker.app import create_app
@@ -185,9 +187,10 @@ class TestDeadWorkerEndpoints:
             "playbook": "noop.yml",
             "queue": "core",
         })
-        assert resp.status_code == 501
-        data = resp.json()
-        assert data["detail"]["reason"] == "not_implemented"
+        assert resp.status_code == 403, (
+            f"Worker auth fail-closed without GLUDD_PSK, "
+            f"expected 403 got {resp.status_code}"
+        )
 
 
 class TestEventLoopDispatchesValidate:

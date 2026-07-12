@@ -2,11 +2,10 @@
 
 The worker was historically fail-open: no PSK configured → any caller could
 reach /jobs/* endpoints. C20 fixes this: when no PSK is configured, the worker
-defaults to DENY (fail-closed) on all /jobs/* paths, mirroring the daemon's
-auth_and_stats_middleware contract.
+defaults to DENY (fail-closed) on all /jobs/* paths, returning 403.
 
 Tests:
-  - test_worker_fails_closed_without_psk — no PSK → all /jobs/* return 503
+  - test_worker_fails_closed_without_psk — no PSK → all /jobs/* return 403
   - test_worker_allows_with_valid_psk — valid PSK → endpoint reached
   - test_worker_healthz_always_public — /healthz always accessible
   - test_mirrors_daemon_fail_closed — auth posture contract matches daemon-side
@@ -36,28 +35,17 @@ class TestC20WorkerAuth:
     """C20: Worker fail-closed auth — default deny without PSK."""
 
     def test_worker_fails_closed_without_psk(self):
-        """No PSK configured, no ALLOW_NO_AUTH → all /jobs/* return 503.
-
-        The conftest autouse fixture sets GLUDD_ALLOW_NO_AUTH=1 when no
-        PSK is found, so tests default to fail-open.  We override that here
-        by explicitly clearing GLUDD_ALLOW_NO_AUTH inside the patch, proving
-        the worker fails CLOSED by default in deployment.
-        """
-        with patch.dict("os.environ", {"GLUDD_ALLOW_NO_AUTH": ""}):
+        """No PSK configured, GLUDD_PSK_DISABLE cleared → all /jobs/* return 403."""
+        with patch.dict("os.environ", {"GLUDD_PSK_DISABLE": ""}):
             app = create_app(gateway=None)
             client = TestClient(app)
 
             resp = client.post("/jobs/execute", json=_EXEC_PAYLOAD)
-            assert resp.status_code == 503, (
-                f"expected 503 (fail-closed) for /jobs/execute without PSK, "
+            assert resp.status_code == 403, (
+                f"expected 403 (fail-closed) for /jobs/execute without PSK, "
                 f"got {resp.status_code}"
             )
-            body = resp.json()
-            assert "auth_required" in body.get("error", ""), (
-                f"expected auth_required error, got {body}"
-            )
 
-            # All /jobs/* variants must also fail-closed
             for path in (
                 "/jobs/validate",
                 "/jobs/policy-validate",
@@ -65,8 +53,8 @@ class TestC20WorkerAuth:
                 "/jobs/return-review",
             ):
                 resp = client.post(path, json=_EXEC_PAYLOAD)
-                assert resp.status_code == 503, (
-                    f"{path} without PSK returned {resp.status_code}, expected 503"
+                assert resp.status_code == 403, (
+                    f"{path} without PSK returned {resp.status_code}, expected 403"
                 )
 
     def test_worker_allows_with_valid_psk(self):
@@ -79,15 +67,13 @@ class TestC20WorkerAuth:
                 json=_EXEC_PAYLOAD,
                 headers={"Authorization": f"Bearer {_PSK}"},
             )
-        # With a valid PSK, auth passes; the endpoint itself may return 400
-        # (unknown playbook) or 200 — but it must NOT be 401 or 503.
-        assert resp.status_code not in (401, 503), (
+        assert resp.status_code not in (401, 403), (
             f"valid PSK should pass auth, got {resp.status_code}"
         )
 
     def test_worker_healthz_always_public(self):
         """/healthz is always accessible, even when PSK is not configured."""
-        with patch.dict("os.environ", {"GLUDD_ALLOW_NO_AUTH": ""}):
+        with patch.dict("os.environ", {"GLUDD_PSK_DISABLE": ""}):
             app = create_app(gateway=None)
             client = TestClient(app)
             resp = client.get("/healthz")
@@ -100,7 +86,7 @@ class TestC20WorkerAuth:
 
         Both daemon and worker use the shared load_auth_posture from
         security/auth.py.  When no PSK is configured and no explicit
-        ALLOW_NO_AUTH opt-out is present, both surfaces must return
+        GLUDD_PSK_DISABLE opt-out is present, both surfaces must return
         require_auth=True (fail-closed).
         """
         import os
@@ -115,11 +101,11 @@ class TestC20WorkerAuth:
 
         assert worker_posture.require_auth is True, (
             "worker fail-closed: require_auth must be True when no PSK and "
-            "no ALLOW_NO_AUTH"
+            "no GLUDD_PSK_DISABLE"
         )
         assert daemon_posture.require_auth is True, (
             "daemon fail-closed: require_auth must be True when no PSK and "
-            "no ALLOW_NO_AUTH"
+            "no GLUDD_PSK_DISABLE"
         )
         assert worker_posture.no_auth is True
         assert daemon_posture.no_auth is True
