@@ -63,6 +63,22 @@ function hasResultMarker(text: string): boolean {
   return RESULT_MARKERS.some(m => lower.includes(m))
 }
 
+function spawnGateRefresh(): void {
+  try {
+    const gatePath = path.join(process.cwd(), ".gate-status")
+    if (!fs.existsSync(gatePath)) return
+    const stat = fs.statSync(gatePath)
+    if ((Date.now() - stat.mtimeMs) <= 300_000) return
+    const { spawn } = require("node:child_process")
+    const child = spawn("make", ["gate-refresh"], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: "ignore",
+    })
+    child.unref()
+  } catch { /* fire-and-forget */ }
+}
+
 function _reportAlive(): void {
   try {
     const alivePath = "/tmp/gludd-plugin-alive.json"
@@ -83,6 +99,7 @@ let _state: MultitaskState = (() => {
 })()
 
 export default (async ({ }) => {
+  spawnGateRefresh()
   try {
     fs.appendFileSync(
       "/tmp/gludd-plugin-loaded.log",

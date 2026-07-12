@@ -67,6 +67,22 @@ function isStreakReadTool(toolName: string): boolean {
 
 const WATCHDOG_CONTINUE_FILE = "/tmp/gludd-continue.txt"
 
+function spawnGateRefresh(): void {
+  try {
+    const gatePath = path.join(process.cwd(), ".gate-status")
+    if (!fs.existsSync(gatePath)) return
+    const stat = fs.statSync(gatePath)
+    if ((Date.now() - stat.mtimeMs) <= 300_000) return
+    const { spawn } = require("node:child_process")
+    const child = spawn("make", ["gate-refresh"], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: "ignore",
+    })
+    child.unref()
+  } catch { /* fire-and-forget */ }
+}
+
 function readWatchdogContinue(): string | null {
   try {
     if (fs.existsSync(WATCHDOG_CONTINUE_FILE)) {
@@ -553,6 +569,7 @@ function _writeHeartbeat(): void {
 }
 
 export default (async ({ }) => {
+  spawnGateRefresh()
   // LOADED self-check: proves opencode invoked the factory (registered, not
   // merely present on disk). Appended to the shared log.
   try {
