@@ -354,6 +354,12 @@ class MCPStdioClient:
         self._process: asyncio.subprocess.Process | None = None
         self._request_id = 0
 
+    @property
+    def pid(self) -> int | None:
+        if self._process is None:
+            return None
+        return self._process.pid
+
     def _build_env(self) -> dict[str, str]:
         """Minimal allowlisted base env + the server's declared/resolved env.
 

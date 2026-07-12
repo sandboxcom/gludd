@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-07-12 — Session 24. On `development` branch, HEAD `d15acc10` (30+ commits ahead of `master`).
+- 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 
 ### Session 23 Bugs Found & Fixed
 
@@ -27,7 +27,7 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Current Work
 
-- **HEAD: `d15acc10`** on `development` branch (2026-07-12). `development` is 30+ commits ahead of `master`.
+- **HEAD: `abf60765`** on `development` branch (2026-07-12). `development` is 35+ commits ahead of `master`.
 - **Phase S2 Waves C, D, E COMPLETED** — 23 items across Waves C, D, E ([C-4 through C-27] + [D-4 through D-15] + [E-5 through E-12]). Evidence commit `b8a18e2f`.
 - **Connector test fix wave COMPLETED** — ~76 stale connector health assertions fixed across 34 test files over 3 batches:
   - **Batch 1 (`b5894567`):** consolidated development branch work — alembic 027→028 rename, secrets baseline, 3 stale connector health assertions, background_test_runner wiring, slack connector, pricing sources, C11 event loop, session/task ledger updates.
@@ -97,7 +97,7 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Known Gaps
 
-1. **Dirty tree not yet committed** — Wave 26-27 work: `Makefile`, `deck-data.json`, `validate_task_ledger.py`, new test files (`test_enforcement_deletion_gate_plugin.py`, `test_enforcement_floor_plugin.py`), `test_task_ledger_validation.py` modified.
+1. **Dirty tree not yet committed** — Wave 26-27 work + Wave 33 TASKS/SESSION/CHANGELOG/enforce-floor.ts updates.
 2. **`make gate` not yet run on development** — gate-lite assertion fixes in Wave 25; full gate pending.
 3. **development → master merge pending** — development is 30+ commits ahead; gate must be green before merging.
 4. **CI pending** — commits pushed to sandboxcom/development; CI verdict not yet available.
@@ -209,6 +209,17 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 - **2026-06-29**: Recovery wave landed 11+ commits.
 - **2026-06-28**: Orchestrator collapsed — nothing-dropped guardrail strengthened.
 - **2026-06-24**: Ratchet cleared 93→0. Gate green (284+ tests).
+
+### Wave 33 — Security hardening + router tests + feature closure (2026-07-12)
+
+- **H.7 — Project overlay deny-list (70 tests)** — Field-level blocklist prevents untrusted project config from overriding connectors, database.url, budget, issues, and self_improve gates. All 70 tests pass.
+- **H.15 — MCP startup orphan cleanup (10 tests)** — Partial multi-server MCP startup failure now cleans up already-spawned subprocesses instead of orphaning them. 10 tests pass.
+- **S.1 — Registry seal + default_registry swap (13 tests)** — Security-critical: registry is sealed at construction time; default_registry is swapped atomically at daemon startup to prevent registry bypass. 13 tests pass.
+- **D.2 — run_project_gate wiring (24 tests)** — External project review/reconcile path now invokes `run_project_gate` for per-project validation. 24 tests pass.
+- **E.8 — Router endpoint tests (202 tests)** — 9 routers previously touched only by generic registration smoke tests now have 202 endpoint-level tests across all routes.
+- **D.22 — task_splitter Ansible role** — Ansible role `general_ludd.agent.task_splitter` scaffolded for analyzing complex tasks and recommending parallel subtask decomposition. Documented in `docs/TASK_SPLITTER.md`. Role wired via `daemon_url` + `psk` for model-call dispatch.
+- **Total Wave 33: 319 new tests** (70 + 10 + 13 + 24 + 202), 6 items completed.
+- **CHANGELOG updated** with all features since beta.3.
 
 ### Wave 32 — Security/doc closure (2026-07-12)
 

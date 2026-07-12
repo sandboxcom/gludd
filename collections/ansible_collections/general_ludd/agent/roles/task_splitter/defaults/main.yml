@@ -1,0 +1,19 @@
+---
+# task_splitter role defaults — analyze a task and recommend splitting into parallel subtasks
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Task input
+task_description: ""          # required — the prompt/task text to analyze
+task_context: ""              # optional background from TASKS.md, spec, or prior results
+max_subtasks: 7               # max subtasks to return
+min_cost_benefit_ratio: 2.0   # minimum estimated cost saving ratio to recommend splitting
+
+# Model routing — explicit profile or adaptive routing by task type
+model_profile: ""             # set to use a specific profile (overrides route_task_type)
+route_task_type: "analysis"   # adaptive routing when model_profile is empty
+
+# Artifact output
+artifact_dir: "/tmp/harness-task-splitter"

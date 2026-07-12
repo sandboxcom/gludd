@@ -304,3 +304,4 @@ class TestFinding6NoTransportLeakOnStartFailure:
         # The transport whose start sequence failed was reaped, not leaked.
         transport.stop.assert_awaited_once()
         assert client._transports == {}
+        assert client._started_pids == []

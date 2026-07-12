@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import os
+import signal
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
@@ -15,6 +17,9 @@ class _MCPTransport(Protocol):
 
     ``MCPStdioClient`` already satisfies this (its ``call_tool``/``stop`` match).
     """
+
+    @property
+    def pid(self) -> int | None: ...
 
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -39,6 +44,10 @@ class _BuiltinTransport:
     def __init__(self, handler: BuiltinHandler) -> None:
         self._handler = handler
 
+    @property
+    def pid(self) -> None:
+        return None
+
     async def start(self) -> None:
         return None
 
@@ -62,6 +71,7 @@ class MCPClient:
         self._registry = registry
         self._secrets_mgr = secrets_mgr
         self._transports: dict[str, _MCPTransport] = {}
+        self._started_pids: list[int] = []
 
     async def start_all(self) -> None:
         for server_id, config in self._configs.items():
@@ -79,18 +89,23 @@ class MCPClient:
                     await transport.start()
                     tools = await transport.list_tools()
                 except Exception:
-                    # Stop the failing transport's subprocess.
                     with contextlib.suppress(Exception):
                         await transport.stop()
-                    # Stop every previously-started transport to prevent orphans.
                     for _tid, t in list(self._transports.items()):
                         with contextlib.suppress(Exception):
                             await t.stop()
+                    for kill_pid in self._started_pids:
+                        with contextlib.suppress(ProcessLookupError, PermissionError):
+                            os.kill(kill_pid, signal.SIGKILL)
                     self._transports.clear()
+                    self._started_pids.clear()
                     raise
                 for tool in tools:
                     self._registry.register_tool(server_id, tool)
                 self._transports[server_id] = transport
+                tpid = transport.pid
+                if tpid is not None:
+                    self._started_pids.append(tpid)
 
     def register_builtin(
         self,
@@ -117,6 +132,7 @@ class MCPClient:
         for transport in self._transports.values():
             await transport.stop()
         self._transports.clear()
+        self._started_pids.clear()
 
     async def list_tools(self, server_id: str | None = None) -> list[MCPTool]:
         return self._registry.list_tools(server_id)

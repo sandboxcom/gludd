@@ -1,6 +1,8 @@
 """Planning — repository mapping and plan artifacts."""
 
-__all__ = ("CodeSymbol", "PlanArtifact", "PlanCritique", "RepoMap", "RepoMapBuilder")
+__all__ = (
+    "CodeSymbol", "PlanArtifact", "PlanCritique", "RepoMap", "RepoMapBuilder",
+)
 
 from general_ludd.planning.artifact import PlanArtifact
 from general_ludd.planning.critique import PlanCritique

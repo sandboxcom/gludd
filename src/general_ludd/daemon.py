@@ -2158,6 +2158,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as ornith_exc:
             logger.warning("Failed to launch Ornith MCP subprocess: %s", ornith_exc)
 
+    # S.1: Seal the process registry so no code path can modify it
+    # (register/deregister/reap) after daemon initialization.
+    from general_ludd.process.registry import default_registry as _proc_default_registry
+
+    _proc_default_registry().seal()
+
     yield
 
     # ── Slurm shutdown: scancel all active jobs owned by this daemon ──────

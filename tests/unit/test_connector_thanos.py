@@ -267,7 +267,7 @@ def test_query_transport_exception_yields_error_record_not_raise():
     records = src.query({"promql": "up"})
     assert len(records) == 1
     assert records[0]["level_or_status"] == "error"
-    assert "connection refused" in records[0]["message"]
+    assert records[0]["message"] == "transport error: RuntimeError"
 
 
 # ---------------------------------------------------------------------------

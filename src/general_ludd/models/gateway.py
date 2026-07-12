@@ -1688,14 +1688,13 @@ class ModelGateway:
         budget_remaining: float = float("inf"),
         **kwargs: Any,
     ) -> ModelResponse:
-        # D-04: gate primary on health tracker before attempting call
+        # S.3: gate primary on health tracker before attempting call,
+        # using _try_call_model which has its own built-in health gate
+        # and properly threads budget params through to call_model.
         primary_healthy = (
             self._health_tracker is None
             or self._health_tracker.is_healthy(profile_id)
         )
-        # Thread budget params into kwargs so _try_call_model / _walk_fallbacks
-        # forward them to call_model (they are explicit keyword-only params of
-        # call_model_with_fallback, NOT in **kwargs).
         _call_kwargs: dict[str, Any] = {
             "estimated_cost": estimated_cost,
             "budget_remaining": budget_remaining,
@@ -1703,15 +1702,18 @@ class ModelGateway:
         }
         if primary_healthy:
             try:
-                return self.call_model(profile_id, messages, **_call_kwargs)
+                result = self._try_call_model(profile_id, messages, **_call_kwargs)
+                if result is not None:
+                    return result
+                primary_exc = RuntimeError(
+                    f"Primary '{profile_id}' returned None (health or provider error)"
+                )
             except SSRFRejectionError:
                 raise
             except BudgetExceededError:
                 raise
             except ModelPausedError:
                 raise
-            except Exception as exc:
-                primary_exc = exc
         else:
             primary_exc = None
 

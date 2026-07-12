@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: task_splitter
+  author: Agentic Harness Agent
+  description: >
+    Analyze a task/prompt and decide whether to split it into parallel
+    sub-tasks for subagent dispatch.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

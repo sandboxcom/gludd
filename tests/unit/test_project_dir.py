@@ -35,8 +35,9 @@ class TestFindProjectGluddDir:
         result = find_project_gludd_dir(start=tmp_path)
         assert result == gludd_dir
 
-    def test_absent_returns_none(self, tmp_path: Path) -> None:
+    def test_absent_returns_none(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When no .gludd/ exists in the ancestry, returns None."""
+        monkeypatch.setenv("GLUDD_PROJECT_DIR", str(tmp_path / "no_such_gludd"))
         nested = tmp_path / "x" / "y"
         nested.mkdir(parents=True)
         result = find_project_gludd_dir(start=nested)

@@ -43,8 +43,29 @@ _DEFAULT_WORK_ROOT = Path("/tmp/gludd-stream-clones")
 _SAFE_BINARY_RE = re.compile(r"^(?!.*\.\.)[a-zA-Z0-9_./-]+$")
 
 _FORBIDDEN_SHELL_CHARS: frozenset[str] = frozenset(
-    "`$();|&<>!\n\r'\"\\"
+    "`$();|&<>!\n\r'\"\\\0"
 )
+
+
+def _parse_processor_args(raw: str) -> list[str]:
+    if not raw.strip():
+        return []
+    try:
+        tokens = shlex.split(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"processor args {raw!r} contain malformed shell quoting"
+        ) from exc
+    for token in tokens:
+        if "\0" in token:
+            raise ValueError(
+                "processor arg contains null byte"
+            )
+        if "\n" in token or "\r" in token:
+            raise ValueError(
+                "processor arg contains newline/carriage-return"
+            )
+    return tokens
 
 
 class RoleCloner:
@@ -148,17 +169,15 @@ class RoleCloner:
         clone_path: Path, processor: dict[str, Any], *, kind: str
     ) -> Path:
         binary = processor.get("binary", kind)
-        extra_args = processor.get("args", "")
+        extra_args_raw = processor.get("args", "")
         if not _SAFE_BINARY_RE.match(str(binary)):
             raise ValueError(
                 f"processor binary {binary!r} contains unsafe characters; "
                 f"expected [a-zA-Z0-9_./-]+"
             )
-        if any(ch in str(extra_args) for ch in _FORBIDDEN_SHELL_CHARS):
-            raise ValueError(
-                f"processor args {extra_args!r} contain forbidden shell characters"
-            )
+        extra_args_list = _parse_processor_args(str(extra_args_raw))
         quoted_binary = shlex.quote(str(binary))
+        safe_args = shlex.join(extra_args_list)
         out_path = clone_path / "process-chunk.sh"
         lines = [
             "#!/usr/bin/env bash",
@@ -168,7 +187,7 @@ class RoleCloner:
             'if [ -z "${CHUNK_PATH:-}" ]; then',
             '  CHUNK_PATH="$1"',
             'fi',
-            f'exec {quoted_binary} {extra_args} "$CHUNK_PATH"',
+            f'exec {quoted_binary} {safe_args} "$CHUNK_PATH"',
         ]
         out_path.write_text("\n".join(lines) + "\n")
         out_path.chmod(0o755)

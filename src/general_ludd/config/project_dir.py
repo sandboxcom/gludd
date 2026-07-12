@@ -58,11 +58,41 @@ PROJECT_OVERLAY_DENYLIST: frozenset[str] = frozenset(
     }
 )
 
-# Allowlist: fields that a project overlay MAY set.  When None (the default)
-# the validator uses the denylist (everything EXCEPT these fields is blocked).
-# When set, the allowlist takes precedence — a project may ONLY set fields
-# in this list.
-PROJECT_OVERLAY_ALLOWLIST: frozenset[str] | None = None
+# Allowlist: fields that a project overlay MAY set.  When set the validator
+# checks keys against this list — a project may ONLY set fields explicitly
+# listed here.  Behavioural / cosmetic fields only; security-posture fields
+# (connectors, database, budget, issues, self_improve, etc.) are absent by
+# design and can only be set by the operator's user-level config.
+PROJECT_OVERLAY_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "rules",
+        "pipeline",
+        "compaction",
+        "remediation",
+        "orchestration",
+        "relationship_routing",
+        "notifications",
+        "human_in_the_loop",
+        "deletion_gate_threshold",
+        "use_langgraph_tool_loop",
+        "use_langchain_routing",
+        "use_langchain_retry",
+        "use_hub",
+        "checkpointing",
+        "default_spot",
+        "slurm_max_resubmits",
+        "slurm_preemption_backoff_schedule",
+        "compute_idle_check_interval_ticks",
+        "compute_idle_teardown_threshold_ticks",
+        "compute_idle_gpu_sm_pct",
+        "compute_idle_preemption_notice_ticks",
+        "ornith_enabled",
+        "ornith_binary_path",
+        "ornith_model_sha",
+        "ornith_max_iterations",
+        "ornith_timeout_seconds",
+    }
+)
 
 
 class ProjectOverlayValidationError(ValueError):

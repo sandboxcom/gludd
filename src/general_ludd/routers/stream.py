@@ -26,7 +26,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from general_ludd.stream import _FORBIDDEN_SHELL_CHARS, _SAFE_BINARY_RE, SUPPORTED_PROCESSOR_TOOLS, RoleCloner
+from general_ludd.stream import (
+    _SAFE_BINARY_RE,
+    SUPPORTED_PROCESSOR_TOOLS,
+    RoleCloner,
+    _parse_processor_args,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,11 +146,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                         ),
                     )
                 extra_args = req.processor.get("args", "")
-                if any(ch in str(extra_args) for ch in _FORBIDDEN_SHELL_CHARS):
-                    raise HTTPException(
-                        status_code=422,
-                        detail="processor.args contain forbidden shell characters",
-                    )
+                try:
+                    _parse_processor_args(str(extra_args))
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         task_id = f"STREAM-{uuid.uuid4().hex[:12].upper()}"
 

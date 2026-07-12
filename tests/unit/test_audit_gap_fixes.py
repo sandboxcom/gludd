@@ -141,7 +141,7 @@ class TestDeadWorkerEndpoints:
         assert "/jobs/policy-validate" in routes
         assert "/jobs/reload-request" in routes
 
-    def test_validate_endpoint_returns_403_auth_fail_closed(self):
+    def test_validate_endpoint_returns_501_not_implemented(self):
         from fastapi.testclient import TestClient
 
         from general_ludd.worker.app import create_app
@@ -153,12 +153,12 @@ class TestDeadWorkerEndpoints:
             "playbook": "validate_task.yml",
             "queue": "core",
         })
-        assert resp.status_code == 403, (
-            f"Worker auth fail-closed without GLUDD_PSK, "
-            f"expected 403 got {resp.status_code}"
+        assert resp.status_code == 501, (
+            f"Worker validate endpoint not implemented, "
+            f"expected 501 got {resp.status_code}"
         )
 
-    def test_policy_validate_endpoint_returns_403_auth_fail_closed(self):
+    def test_policy_validate_endpoint_returns_501_not_implemented(self):
         from fastapi.testclient import TestClient
 
         from general_ludd.worker.app import create_app
@@ -170,9 +170,9 @@ class TestDeadWorkerEndpoints:
             "playbook": "noop.yml",
             "queue": "core",
         })
-        assert resp.status_code == 403, (
-            f"Worker auth fail-closed without GLUDD_PSK, "
-            f"expected 403 got {resp.status_code}"
+        assert resp.status_code == 501, (
+            f"Worker policy-validate not implemented, "
+            f"expected 501 got {resp.status_code}"
         )
 
     def test_reload_request_endpoint_returns_403_auth_fail_closed(self):
@@ -187,9 +187,9 @@ class TestDeadWorkerEndpoints:
             "playbook": "noop.yml",
             "queue": "core",
         })
-        assert resp.status_code == 403, (
-            f"Worker auth fail-closed without GLUDD_PSK, "
-            f"expected 403 got {resp.status_code}"
+        assert resp.status_code == 501, (
+            f"Worker reload-request not implemented, "
+            f"expected 501 got {resp.status_code}"
         )
 
 

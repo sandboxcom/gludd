@@ -2,7 +2,42 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [0.1.0-beta.3] — 2026-07-10
+## [Unreleased] — since beta.3 (2026-07-12)
+
+### Security Hardening (Phase H)
+- **H.7** — Project overlay deny-list: field-level blocklist prevents untrusted project config from overriding critical fields (connectors, database.url, budget, issues, self_improve gates). 70 tests.
+- **H.15** — MCP startup orphan cleanup: partial multi-server MCP startup failure now cleans up already-spawned subprocesses instead of orphaning them. 10 tests.
+- **H.8** — Memory cross-project bleed fix: `MemoryRecordModel` gained project_id isolation with migration 030. 32 tests.
+- **H.16** — SSRF numeric IP: decimal/octal/hex IP literal encodings no longer bypass `host_is_blocked`. 28 tests.
+- **H.17** — Signing verification: self-update + hot-reload now require cryptographic signature verification. (fc776d8f)
+- **H.23** — Gateway credential leak: raw provider-exception text now redacted from admin-visible facets and replay records. 11 tests.
+- **MCP argv validation extended** to python/node launchers. (fc776d8f)
+
+### Features (Phase D)
+- **D.2** — `run_project_gate` wired into review/reconcile path for external projects. 24 tests.
+- **D.4** — DAST driver + findings parser (ZAP-baseline wrapper). 97 tests. (fbbeec19)
+- **D.12** — Slack connector: outbound notifications + channel history read, SSRF-guarded. (0cccee7f)
+- **D.14** — Background test runner exposed via `make` target + CLI subcommand. (0a07421d)
+- **D.15** — Pricing sources static→live: CachedSource with TTL cache + static fallback. (651dfc33)
+- **D.22** — task_splitter Ansible role for analyzing complex tasks and recommending parallel subtask decomposition.
+
+### Quality/Coverage (Phase E)
+- **E.8** — Router HTTP layer tests: 202 endpoint-level tests across 9 routers previously only covered by registration smoke tests.
+- **E.2** — E2E audit closure: 150 new e2e tests (50 auth + 19 sts + 39 adversarial_detector + 28 dispatcher + 14 ipc).
+- **E.3** — Lint/type config gaps closed: mypy covers tests/, .pre-commit-config.yaml added.
+- **E.7** — Zero-test modules: 49 tests for previously-untested modules (cli_payment, self_update/router, renderers/cache, event_loop/benchmark, renderers/executor).
+
+### Enforcement (Waves 24-27)
+- 11 enforcement plugin subagent-awareness fix: all plugins now skip injection when `OPENCODE_SUBAGENT=1`. (a04b5046)
+- enforce-multitask dispatch-count blocking: structurally blocks under-dispatched waves.
+- enforce-delegate threshold tightened 4→2.
+- Plugin test coverage surge: 101 floor + 52 deletion-gate + 60 delegate + 38 deadline + 19 task-ledger tests.
+- enforce-enhancement-ratio.ts: machine-enforced ≥50% enhancement per dispatch wave with 56 tests.
+
+### Post-Ship (Phase S)
+- **S.1** — Registry seal + default_registry swap: registry sealed at construction, default_registry swapped atomically at daemon startup. 13 tests.
+
+
 
 ### Architecture (beta.3 Phase B)
 - B3.1.1 IPC broker (Broker + WriteQueue) + B3.1.2 read-only engine factory

@@ -204,3 +204,126 @@ class TestMCPStartupOrphan:
         t_c.stop.assert_awaited()
         t_d.stop.assert_not_awaited()
         assert client._transports == {}
+        assert client._started_pids == []
+
+    @pytest.mark.asyncio
+    async def test_pid_tracked_and_cleared_on_success(self):
+        cfg_a = MCPServerConfig(server_id="srv_a", command=["echo"])
+
+        registry = MCPToolRegistry()
+
+        transport_a = MagicMock()
+        transport_a.start = AsyncMock()
+        transport_a.list_tools = AsyncMock(
+            return_value=[MCPTool(name="tool_a", description="d", server_id="a")]
+        )
+        transport_a.stop = AsyncMock()
+        transport_a.pid = 12345
+
+        mock_class = MagicMock(side_effect=[transport_a])
+
+        with patch(
+            "general_ludd.mcp.client.MCPStdioClient", mock_class
+        ):
+            client = MCPClient(
+                configs={"a": cfg_a},
+                registry=registry,
+            )
+            await client.start_all()
+
+        assert client._started_pids == [12345]
+        assert "a" in client._transports
+
+    @pytest.mark.asyncio
+    async def test_pid_ignored_when_none(self):
+        cfg_a = MCPServerConfig(server_id="srv_a", command=["echo"])
+
+        registry = MCPToolRegistry()
+
+        transport_a = MagicMock()
+        transport_a.start = AsyncMock()
+        transport_a.list_tools = AsyncMock(
+            return_value=[MCPTool(name="tool_a", description="d", server_id="a")]
+        )
+        transport_a.stop = AsyncMock()
+        transport_a.pid = None
+
+        mock_class = MagicMock(side_effect=[transport_a])
+
+        with patch(
+            "general_ludd.mcp.client.MCPStdioClient", mock_class
+        ):
+            client = MCPClient(
+                configs={"a": cfg_a},
+                registry=registry,
+            )
+            await client.start_all()
+
+        assert client._started_pids == []
+
+    @pytest.mark.asyncio
+    async def test_pids_cleared_on_failure(self):
+        cfg_a = MCPServerConfig(server_id="srv_a", command=["echo"])
+        cfg_b = MCPServerConfig(server_id="srv_b", command=["echo"])
+
+        registry = MCPToolRegistry()
+
+        transport_a = MagicMock()
+        transport_a.start = AsyncMock()
+        transport_a.list_tools = AsyncMock(
+            return_value=[MCPTool(name="tool_a", description="d", server_id="a")]
+        )
+        transport_a.stop = AsyncMock()
+        transport_a.pid = 11111
+
+        transport_b = MagicMock()
+        transport_b.start = AsyncMock(side_effect=RuntimeError("boom"))
+        transport_b.stop = AsyncMock()
+        transport_b.pid = 22222
+
+        mock_class = MagicMock(side_effect=[transport_a, transport_b])
+
+        with patch(
+            "general_ludd.mcp.client.MCPStdioClient", mock_class
+        ):
+            client = MCPClient(
+                configs={"a": cfg_a, "b": cfg_b},
+                registry=registry,
+            )
+            with pytest.raises(RuntimeError):
+                await client.start_all()
+
+        assert client._started_pids == []
+        assert client._transports == {}
+
+    @pytest.mark.asyncio
+    async def test_pids_cleared_on_stop_all(self):
+        cfg_a = MCPServerConfig(server_id="srv_a", command=["echo"])
+
+        registry = MCPToolRegistry()
+
+        transport_a = MagicMock()
+        transport_a.start = AsyncMock()
+        transport_a.list_tools = AsyncMock(
+            return_value=[MCPTool(name="tool_a", description="d", server_id="a")]
+        )
+        transport_a.stop = AsyncMock()
+        transport_a.pid = 33333
+
+        mock_class = MagicMock(side_effect=[transport_a])
+
+        with patch(
+            "general_ludd.mcp.client.MCPStdioClient", mock_class
+        ):
+            client = MCPClient(
+                configs={"a": cfg_a},
+                registry=registry,
+            )
+            await client.start_all()
+
+        assert client._started_pids == [33333]
+
+        await client.stop_all()
+
+        assert client._started_pids == []
+        assert client._transports == {}

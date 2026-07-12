@@ -356,7 +356,7 @@ class KubernetesSource:
             return [self._error(f"unknown mode {mode!r} (expected 'logs' or 'events')")]
         except _ConfigError as exc:
             logger.warning("kubernetes config error in query", exc_info=True)
-            return [self._error(type(exc).__name__)]
+            return [self._error(str(exc))]
         except Exception:
             logger.warning("kubernetes query failed", exc_info=True)
             return [self._error("query failed")]

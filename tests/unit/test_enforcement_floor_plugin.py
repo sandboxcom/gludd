@@ -428,6 +428,43 @@ class TestRefillState:
         src = _src()
         assert "const RESULT_GRACE_CALLS = 2" in src
 
+    def test_grace_check_returns_deny_not_pass_through(self):
+        src = _src()
+        idx = src.find("if (_resultProcessingGrace > 0)")
+        assert idx > 0
+        after = src[idx:idx + 500]
+        assert 'permissionDecision: "deny"' in after, (
+            "grace window must deny non-read non-dispatch calls, not silently allow"
+        )
+
+    def test_grace_deny_message_mentions_dispatch_gap(self):
+        src = _src()
+        assert "DISPATCH GAP" in src, "deny message must label the dispatch-gap pattern"
+
+    def test_grace_deny_message_lists_allowed_tools(self):
+        src = _src()
+        idx = src.find("DISPATCH GAP")
+        assert idx > 0
+        after = src[idx:idx + 600]
+        assert "task/agent dispatches" in after
+        assert "read/grep/glob" in after
+
+    def test_grace_deny_message_lists_forbidden_tools(self):
+        src = _src()
+        idx = src.find("DISPATCH GAP")
+        assert idx > 0
+        after = src[idx:idx + 800]
+        assert "NO inline work" in after
+
+    def test_grace_still_resets_streak_on_block(self):
+        src = _src()
+        idx = src.find("if (_resultProcessingGrace > 0)")
+        assert idx > 0
+        after = src[idx:idx + 200]
+        assert "_streakCount = 0" in after, (
+            "grace block must still reset streak to prevent double-punishment"
+        )
+
     def test_refill_flag_set_when_peak_exceeds_and_count_drops(self):
         src = _src()
         idx = src.find("function _updateRefillState")

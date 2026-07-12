@@ -726,13 +726,42 @@ export default (async ({ }) => {
           }
         }
 
-        // Result-processing grace: after results arrive the agent gets a brief
-        // window to digest output. With RESULT_GRACE_CALLS=0 (hard default),
-        // this fires once then the streak counter resumes immediately.
+        // Result-processing grace: after subagent results arrive (detected by
+        // text.complete markers), block inline non-read tool calls to prevent
+        // the "dispatch gap" anti-pattern: agent runs git-status / writes /
+        // edits BEFORE dispatching the next wave.  With RESULT_GRACE_CALLS
+        // non-read calls blocked, the agent is forced to dispatch or read.
+        // Reads are free (caught earlier); dispatch resets everything.
+        //
+        // Wave 33 (2026-07-12): dispatch gap identified as a recurring failure
+        // mode — agents process results inline (reads → edits → bash) before
+        // composing the next dispatch wave, draining the subagent floor to
+        // zero.  The grace window RESULT_GRACE_CALLS=2 gives exactly 2
+        // non-dispatch inline calls after results before denial kicks in.
+        // This is paired with the enhance-enhancement-ratio.ts wave-composition
+        // checker to ensure the refill wave includes ≥50% enhancements.
         if (_resultProcessingGrace > 0) {
           _resultProcessingGrace--
           _streakCount = 0
-          return
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              "⛔  DISPATCH GAP — RESULTS RECEIVED, DISPATCH FIRST",
+              "",
+              "Subagent results just arrived.  You are running inline tool calls",
+              "(bash/edit/write) instead of dispatching the next wave.  This",
+              "creates a dispatch gap where the subagent floor drains.",
+              "",
+              "ALLOWED right now:",
+              "  → task/agent dispatches (REQUIRED — dispatch pending work NOW)",
+              "  → read/grep/glob (free — to survey results and prepare next wave)",
+              "",
+              "FORBIDDEN right now:",
+              "  → bash, edit, write — NO inline work between results and dispatch",
+              "",
+              "DISPATCH FIRST.  Reads are free.  Inline work after results is a bug.",
+            ].join("\n"),
+          }
         }
 
         // Disengage check: when the operator has explicitly disengaged

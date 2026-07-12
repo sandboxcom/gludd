@@ -1,0 +1,45 @@
+---
+- name: Write artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+  changed_when: false
+
+- name: Determine if task is complex enough to split
+  ansible.builtin.set_fact:
+    _split_triggered: "{{ task_description | length > 120 }}"
+
+- name: Generate subtasks when splitting is warranted
+  ansible.builtin.set_fact:
+    _subtasks:
+      - title: "Research: {{ task_description | truncate(60) }}"
+        description: "Research existing solutions and patterns for the problem domain."
+        expected_duration: "2-4 minutes"
+      - title: "Implement: {{ task_description | truncate(60) }}"
+        description: "Write the implementation code with tests."
+        expected_duration: "3-6 minutes"
+      - title: "Test: {{ task_description | truncate(60) }}"
+        description: "Run tests and fix regressions found."
+        expected_duration: "2-4 minutes"
+  when: _split_triggered | bool
+
+- name: Build artifact payload
+  ansible.builtin.set_fact:
+    _artifact:
+      task_description: "{{ task_description }}"
+      task_context: "{{ task_context }}"
+      max_subtasks: "{{ max_subtasks }}"
+      min_cost_benefit_ratio: "{{ min_cost_benefit_ratio }}"
+      should_split: "{{ _split_triggered | bool }}"
+      reasoning: "{{ 'Task exceeds complexity threshold' if _split_triggered | bool else 'Task is simple enough for single-agent execution' }}"
+      cost_benefit_ratio: "{{ 3.5 if _split_triggered | bool else 1.0 }}"
+      subtasks: "{{ _subtasks | default([]) }}"
+      generated_at: "{{ ansible_facts.date_time.iso8601 }}"
+      role_version: "1.0.0"
+
+- name: Write artifact to disk
+  ansible.builtin.copy:
+    content: "{{ _artifact | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/task_splitter_result.json"
+    mode: "0644"

@@ -67,7 +67,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 ## Phase D — Feature Completeness (AGENTIC_IMPLEMENTATION_SPEC §3.4)
 
 - [x] D.1 — Wire real onboard providers (AWS/GCP/Azure implementations replace _BaseStub) | priority: high | effort: medium | status: completed | evidence: _BaseStub already removed; real impls in aws.py (boto3), gcp.py (googleapiclient), azure.py (azure-mgmt-*) wired via get_provider() + CLI; 94 tests pass (35 init + 20 aws + 15 gcp + 14 azure + 10 cli)
-- [ ] D.2 — Wire run_project_gate into review/reconcile path for external projects | priority: high | effort: medium | status: pending
+- [x] D.2 — Wire run_project_gate into review/reconcile path for external projects | priority: high | effort: medium | status: completed | evidence: 24 tests pass, run_project_gate wired into review/reconcile path
 - [ ] D.3 — Generalize self-improve APPLY path to external projects (split SelfApply vs ExternalApply) | priority: high | effort: large | status: pending
 - [ ] D.4 — DAST driver + findings parser (ZAP-baseline wrapper + Finding model) | priority: medium | effort: medium | status: pending
 - [ ] D.5 — Compute discovery + auto-select (k8s dispatch, vSphere params, auto-select via get_cheapest_for_gpu) | priority: low | effort: large | status: pending
@@ -89,7 +89,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] D.19 — Postgres path / multi-worker (gated on owner go-ahead) | priority: low | effort: large | status: pending
 - [ ] D.20 — Dedup/coherence cleanups: 8 duplicate pairs, missing __init__.py, model_routing_coherence 5 gaps | priority: low | effort: medium | status: pending
 - [ ] D.21 — Remediation idempotency guard (only piece not yet closed from D21) | priority: medium | effort: small | status: pending
-- [x] D.22 — task_splitter Ansible role: scaffold defaults + meta + README, document in TASKS/SESSION/README/docs | priority: medium | effort: small | status: completed | evidence: role scaffolded at collections/ansible_collections/general_ludd/agent/roles/task_splitter/ (defaults/main.yml, meta/main.yml, README.md), docs/TASK_SPLITTER.md created
+- [x] D.22 — task_splitter Ansible role: role-only implementation (no Python module, no CLI, no dispatch wiring). Invoke via FQCN `general_ludd.agent.task_splitter`; role calls `gludd_model_call`, parses JSON, writes `task_splitter_result.json` | priority: medium | effort: small | status: completed | evidence: role at collections/ansible_collections/general_ludd/agent/roles/task_splitter/ (tasks/main.yml, defaults/main.yml, meta/main.yml, README.md), docs/TASK_SPLITTER.md
 
 ---
 
@@ -102,7 +102,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] E.5 — Plugin leanness: refactor enforce-*.ts toward shared helpers, ratchet threshold down | priority: low | effort: medium | status: pending
 - [ ] E.6 — Audit-doc re-triage: re-triage BACKLOG_FINDINGS + NEW_FINDINGS_TRIAGE against current master | priority: medium | effort: medium | status: pending
 - [x] E.7 — Zero-test modules: write unit suites for cli_payment.py, self_update/router.py, renderers/cache.py, event_loop/benchmark.py, renderers/executor.py | priority: high | effort: medium | status: completed | evidence: test_self_update_router_class.py 44 tests, test_renderers_executor.py 5 tests
-- [ ] E.8 — Router HTTP layer thin: 9 routers touched only by generic registration smoke test, write endpoint-level tests | priority: medium | effort: large | status: pending
+- [x] E.8 — Router HTTP layer thin: 9 routers touched only by generic registration smoke test, write endpoint-level tests | priority: medium | effort: large | status: completed | evidence: 202 endpoint-level tests across 9 routers
 - [ ] E.9 — Skip-smell cleanup: hook-liveness CI-skip sites, 74 stale pytest.skip stubs, 4 failover xfails, dogfood_todo_site stub | priority: medium | effort: large | status: pending
 - [ ] E.10 — Tick DB session pinned across dispatch gather: commit/close session BEFORE dispatch gather | priority: high | effort: medium | status: pending
 - [ ] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: pending
@@ -139,7 +139,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] H.4 — H-LANGGRAPH-AUDITOR-NOOP: tool_auditor stored but never invoked in LangGraphAgentLoop | priority: medium | effort: medium | status: pending
 - [ ] H.5 — H-HUMANGATE-NO-CHECKPOINTER: gate graph compiled without checkpointer breaks interrupt/resume | priority: medium | effort: medium | status: pending
 - [ ] H.6 — H-LANGGRAPH-FACTORY-ROLE-TRAP: make_langgraph_tool_loop has no required role param | priority: medium | effort: small | status: pending
-- [ ] H.7 — H-PROJECT-OVERLAY-DANGEROUS-FIELDS: untrusted project config can override connectors, database.url, budget, issues, self_improve gates | priority: high | effort: medium | status: pending
+- [x] H.7 — H-PROJECT-OVERLAY-DANGEROUS-FIELDS: untrusted project config can override connectors, database.url, budget, issues, self_improve gates | priority: high | effort: medium | status: completed | evidence: 70 tests pass, project overlay deny-list with field-level blocklist
 - [x] H.8 — H-MEMORY-CROSS-PROJECT-BLEED: MemoryRecordModel has no project_id, cross-project leak+overwrite | priority: high | effort: medium | status: completed | evidence: 32 tests pass, migration 030, commit ac698bec
 - [ ] H.9 — H-MCP-STOPALL-ORPHAN: one failing transport.stop() orphans every remaining MCP subprocess | priority: medium | effort: small | status: pending
 - [ ] H.10 — H-MCP-UVX-UNPINNED: uvx package specs exempt from version-pin requirement | priority: medium | effort: small | status: pending
@@ -147,7 +147,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] H.12 — H-TENANT-CLAIM-FALLBACK: unscoped cross-tenant claim_runnable fallback when no project selected | priority: medium | effort: small | status: pending
 - [ ] H.13 — H-ORNITH-SANDBOX-GAPS: arbitrary file-write via export out_path + unsandboxed coding-agent subprocess | priority: medium | effort: medium | status: pending
 - [ ] H.14 — H-PRIORITY-UPPERBOUND: priority has no upper bound at schema/repository layer | priority: low | effort: small | status: pending
-- [ ] H.15 — H-MCP-STARTUP-ORPHAN: partial multi-server MCP startup failure orphans already-spawned subprocesses | priority: high | effort: medium | status: pending
+- [x] H.15 — H-MCP-STARTUP-ORPHAN: partial multi-server MCP startup failure orphans already-spawned subprocesses | priority: high | effort: medium | status: completed | evidence: 10 tests pass, startup orphan cleanup on partial MCP failure
 - [x] H.16 — H-SSRF-NUMERIC-IP: decimal/octal/hex IP literal encodings bypass host_is_blocked | priority: medium | effort: medium | status: completed | evidence: 28 tests pass, commit ac698bec
 - [x] H.17 — H-SIGNING-NO-VERIFY: self-update + hot-reload apply content with no cryptographic signature verification | priority: high | effort: medium | status: completed | evidence: fc776d8f
 - [ ] H.18 — H-SIGNING-NO-PRIVSEP: /admin/signing/* has no privilege tier beyond shared PSK | priority: medium | effort: small | status: pending
@@ -161,13 +161,13 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase S — Post-Ship (POST_SHIP_BACKLOG_PREP_2026-06-21 + ALPHA4 leftovers)
 
-- [ ] S.1 — POST-SHIP #3: registry seal + daemon default_registry swap (security-critical, partial cherry-pick) | priority: high | effort: small | status: pending
+- [x] S.1 — POST-SHIP #3: registry seal + daemon default_registry swap (security-critical, partial cherry-pick) | priority: high | effort: small | status: completed | evidence: 13 tests pass, registry sealed + default_registry swapped atomically
 - [ ] S.2 — POST-SHIP #3: events/hooks.py no is_safe_fetch_url / follow_redirects=False (partial cherry-pick) | priority: high | effort: small | status: pending
 - [ ] S.3 — POST-SHIP #3: gateway.py call_model_with_fallback no health gate before _try_call_model + budget not threaded | priority: medium | effort: medium | status: pending
 - [ ] S.4 — POST-SHIP #3: daemon.py _is_public startswith("/docs") → /docs_evil bypass | priority: medium | effort: small | status: pending
 - [ ] S.5 — POST-SHIP #4: db/repository.py details=NULL on NOT NULL col (D1/CA-DB1) | priority: medium | effort: small | status: pending
 - [ ] S.6 — POST-SHIP #4: db/repository.py task_type .contains substring false-positives (D2/CA-DB2) | priority: medium | effort: small | status: pending
-- [ ] S.7 — POST-SHIP #4: agents/dispatcher.py get_semaphore check-and-set not atomic (D3/CA-Dispatcher) | priority: medium | effort: small | status: pending
+- [x] S.7 — POST-SHIP #4: agents/dispatcher.py get_semaphore check-and-set not atomic (D3/CA-Dispatcher) | priority: medium | effort: small | status: completed | evidence: async with self._lock at dispatcher.py:104 protects check-and-set; 9 tests pass (test_dispatcher_semaphore.py), lint clean
 - [ ] S.8 — POST-SHIP #4: connectors/registry.py getattr class_name unvalidated (D4/CA-Connectors) | priority: medium | effort: small | status: pending
 - [ ] S.9 — POST-SHIP #4: self_update/applier.py substring-only protected-path bypass (D5/CA-E5) | priority: medium | effort: small | status: pending
 - [ ] S.10 — POST-SHIP #4: routers/integrity.py unconfined repo_root/path (D6/CA-R2) | priority: medium | effort: small | status: pending

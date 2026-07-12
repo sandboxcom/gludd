@@ -86,7 +86,6 @@ class AgentDispatcher:
         self._model_call_semaphore = asyncio.Semaphore(
             max(model_call_limit, 1)
         )
-
     @property
     def active_count(self) -> int:
         return self._active_count

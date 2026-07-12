@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from general_ludd.config.project_dir import (
+    PROJECT_OVERLAY_ALLOWLIST,
     PROJECT_OVERLAY_DENYLIST,
     ProjectOverlayValidationError,
     validate_project_overlay,
@@ -38,7 +39,7 @@ class TestDangerousFieldsRejected:
 
 
 class TestSafeFieldsAllowed:
-    """Fields NOT in the denylist must pass validation."""
+    """Fields in the allowlist pass validation; unknown fields are rejected."""
 
     def test_allowed_field_passes(self) -> None:
         validate_project_overlay({"rules": [{"name": "ok"}]})
@@ -49,8 +50,9 @@ class TestSafeFieldsAllowed:
     def test_empty_project_data_passes(self) -> None:
         validate_project_overlay({})
 
-    def test_unknown_but_not_denied_field_passes(self) -> None:
-        validate_project_overlay({"custom_cool_feature": "yes"})
+    def test_unknown_field_rejected_under_allowlist_default(self) -> None:
+        with pytest.raises(ProjectOverlayValidationError):
+            validate_project_overlay({"custom_cool_feature": "yes"})
 
     def test_mixed_safe_and_unsafe_only_blocks_one(self) -> None:
         with pytest.raises(ProjectOverlayValidationError):
@@ -77,6 +79,45 @@ class TestDenylistContents:
 
     def test_denylist_is_frozenset(self) -> None:
         assert isinstance(PROJECT_OVERLAY_DENYLIST, frozenset)
+
+
+class TestAllowlistContents:
+    """The allowlist must contain the safe behavioral fields and exclude H.7 dangerous ones."""
+
+    H7_DANGEROUS = frozenset({"connectors", "database", "budget", "issues", "self_improve"})
+
+    def test_allowlist_is_frozenset(self) -> None:
+        assert isinstance(PROJECT_OVERLAY_ALLOWLIST, frozenset)
+
+    def test_allowlist_not_empty(self) -> None:
+        assert len(PROJECT_OVERLAY_ALLOWLIST) > 10
+
+    @pytest.mark.parametrize("field", sorted(H7_DANGEROUS))
+    def test_h7_dangerous_field_absent_from_allowlist(self, field: str) -> None:
+        assert field not in PROJECT_OVERLAY_ALLOWLIST, (
+            f"H.7 dangerous field '{field}' must NOT be in the project overlay allowlist"
+        )
+
+    def test_other_dangerous_fields_absent(self) -> None:
+        for field in PROJECT_OVERLAY_DENYLIST:
+            assert field not in PROJECT_OVERLAY_ALLOWLIST, (
+                f"Denylist field '{field}' must NOT be in the allowlist"
+            )
+
+    @pytest.mark.parametrize("field", sorted(PROJECT_OVERLAY_ALLOWLIST))
+    def test_allowlist_field_passes_validation(self, field: str) -> None:
+        validate_project_overlay({field: "test_value"})
+
+    def test_key_safe_fields_present(self) -> None:
+        for field in ("rules", "pipeline", "compaction", "notifications", "remediation"):
+            assert field in PROJECT_OVERLAY_ALLOWLIST, f"'{field}' must be in allowlist"
+
+    def test_ornith_fields_present(self) -> None:
+        for field in (
+            "ornith_enabled", "ornith_binary_path", "ornith_max_iterations",
+            "ornith_timeout_seconds",
+        ):
+            assert field in PROJECT_OVERLAY_ALLOWLIST, f"'{field}' must be in allowlist"
 
 
 class TestAllowlistMode:

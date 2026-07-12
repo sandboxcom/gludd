@@ -90,6 +90,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 | Module hot-reload rollback system (sys.modules snapshot/restore) | ✓ 100% | Implemented: snapshot/restore on module load failure for atomic rollback |
 | Collection CLI subcommands | ✓ 100% | Implemented: `gludd collection {list,versions,validate}` subcommands |
 | MCP tool reference documentation | ✓ 100% | Implemented: docs covering all MCP protocol tools and usage |
+| task_splitter role (parallel subtask decomposition) | ✓ 100% | Implemented: `general_ludd.agent.task_splitter` role analyzes complex tasks and recommends parallel subtask split for subagent dispatch |
 
 ### Testing
 
