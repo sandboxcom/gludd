@@ -3263,4 +3263,3 @@ searx-test:
 		echo "SearXNG FAIL: HTTP $$code (is it running? try 'make searx-up')"; \
 		exit 1; \
 	fi
-

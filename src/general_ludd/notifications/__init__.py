@@ -1,0 +1,3 @@
+from general_ludd.notifications.dispatcher import NotificationDispatcher
+
+__all__ = ["NotificationDispatcher"]

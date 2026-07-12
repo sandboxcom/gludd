@@ -749,6 +749,12 @@ class MemoryRecordModel(Base):
     __tablename__ = "memory_records"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_gen_memory_id)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     key: Mapped[str] = mapped_column(String(256), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False, default="")

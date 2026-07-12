@@ -6,6 +6,35 @@ import os
 import re
 from urllib.parse import urlparse
 
+_CREDENTIAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"(?:api[_-]?key|apikey|api_key)\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_API_KEY]"),
+    (re.compile(r"(?:Authorization|auth)\s*[:=]\s*Bearer\s+\S+", re.IGNORECASE), "[REDACTED_BEARER_TOKEN]"),
+    (re.compile(r"(?:Authorization|auth)\s*[:=]\s*Basic\s+\S+", re.IGNORECASE), "[REDACTED_BASIC_AUTH]"),
+    (re.compile(r"(?:token|secret|password|passwd|pwd)\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_CREDENTIAL]"),
+    (re.compile(r"https?://[^@\s]+:[^@\s]+@", re.IGNORECASE), "https://[REDACTED_CREDS_IN_URL]@"),
+    (re.compile(r"sk-[A-Za-z0-9]{20,}", re.IGNORECASE), "[REDACTED_OPENAI_KEY]"),
+    (re.compile(r"x-api-key\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_X_API_KEY]"),
+]
+
+
+def sanitize_error_message(text: str) -> str:
+    """Redact credential-bearing text from exception messages.
+
+    Strips API keys, Bearer tokens, Basic auth tokens, passwords, URLs with
+    embedded credentials, OpenAI-style API keys (``sk-...``), and header-style
+    API keys from the given string. Returns the sanitized string with each
+    match replaced by a ``[REDACTED_*]`` token.
+
+    Safe to call on any string including empty strings and strings without
+    credentials; those pass through unchanged.
+    """
+    if not text:
+        return text
+    result = text
+    for pattern, replacement in _CREDENTIAL_PATTERNS:
+        result = pattern.sub(replacement, result)
+    return result
+
 from general_ludd.security.ssrf import _ip_addr_is_blocked, host_is_blocked
 from general_ludd.security.ssrf import is_url_blocked as _is_url_blocked
 

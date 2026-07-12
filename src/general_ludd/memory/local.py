@@ -25,6 +25,7 @@ class MemoryRecord:
     key: str
     value: str
     namespace: str = "default"
+    project_id: str | None = None
     ttl_seconds: int | None = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
@@ -35,6 +36,7 @@ class MemoryRecord:
             "key": self.key,
             "value": self.value,
             "namespace": self.namespace,
+            "project_id": self.project_id,
             "ttl_seconds": self.ttl_seconds,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -47,6 +49,9 @@ class MemoryRecord:
             key=str(data.get("key", "")),
             value=str(data.get("value", "")),
             namespace=str(data.get("namespace", "default")),
+            project_id=(
+                str(d) if isinstance(d := data.get("project_id"), str) else None
+            ),
             ttl_seconds=(
                 int(d) if isinstance(d := data.get("ttl_seconds"), (int, float)) else None
             ),
