@@ -22,11 +22,13 @@ Design notes / safety contract
 This module imports only from the standard library and ``httpx`` (already a
 project dependency). It does not import from sibling connector modules, package
 ``__init__``, or any base class — it is intentionally standalone.
+
 """
 
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit

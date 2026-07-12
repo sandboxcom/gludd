@@ -26,7 +26,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from general_ludd.stream import SUPPORTED_PROCESSOR_TOOLS, RoleCloner
+from general_ludd.stream import _FORBIDDEN_SHELL_CHARS, _SAFE_BINARY_RE, SUPPORTED_PROCESSOR_TOOLS, RoleCloner
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +130,22 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                         f"{sorted(SUPPORTED_PROCESSOR_TOOLS)}"
                     ),
                 )
+            if tool in {"whisper.cpp", "ffmpeg"}:
+                binary = req.processor.get("binary", tool)
+                if not _SAFE_BINARY_RE.match(str(binary)):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"processor.binary {binary!r} contains unsafe characters; "
+                            f"expected [a-zA-Z0-9_./-]+"
+                        ),
+                    )
+                extra_args = req.processor.get("args", "")
+                if any(ch in str(extra_args) for ch in _FORBIDDEN_SHELL_CHARS):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="processor.args contain forbidden shell characters",
+                    )
 
         task_id = f"STREAM-{uuid.uuid4().hex[:12].upper()}"
 

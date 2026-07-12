@@ -77,9 +77,9 @@ class TestKeyConstants:
         src = _src()
         assert "const FLOOR_ENFORCE = true" in src
 
-    def test_max_streak_is_0(self):
+    def test_max_streak_is_2(self):
         src = _src()
-        assert "const MAX_STREAK = 0" in src
+        assert "const MAX_STREAK = 2" in src
 
     def test_tunable_function_reads_override_file(self):
         src = _src()

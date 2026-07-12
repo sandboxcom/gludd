@@ -1625,6 +1625,11 @@ class ModelGateway:
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> ModelResponse | None:
+        if (
+            self._health_tracker is not None
+            and not self._health_tracker.is_healthy(profile_id)
+        ):
+            return None
         try:
             return self.call_model(profile_id, messages, **kwargs)
         except SSRFRejectionError:

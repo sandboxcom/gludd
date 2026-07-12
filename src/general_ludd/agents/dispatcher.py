@@ -63,7 +63,7 @@ class AgentDispatcher:
     ) -> None:
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
-        self._semaphores: dict[str, asyncio.Semaphore] = {}
+        self._semaphores: dict[str, asyncio.BoundedSemaphore] = {}
         self._active_count = 0
         self._active_tasks: dict[str, AgentTask] = {}
         self._lock = asyncio.Lock()
@@ -101,12 +101,13 @@ class AgentDispatcher:
                 if t.project_id == project_id
             ]
 
-    def _get_semaphore(self, agent_name: str) -> asyncio.Semaphore:
-        if agent_name not in self._semaphores:
-            config = self._registry.get(agent_name)
-            limit = config.max_concurrent if config else 1
-            self._semaphores.setdefault(agent_name, asyncio.Semaphore(limit))
-        return self._semaphores[agent_name]
+    async def _get_semaphore(self, agent_name: str) -> asyncio.BoundedSemaphore:
+        async with self._lock:
+            if agent_name not in self._semaphores:
+                config = self._registry.get(agent_name)
+                limit = config.max_concurrent if config else 1
+                self._semaphores[agent_name] = asyncio.BoundedSemaphore(limit)
+            return self._semaphores[agent_name]
 
     def _record_if_wired(self, run_id: str, event: dict[str, object]) -> None:
         if self._run_recorder is not None:
@@ -340,7 +341,7 @@ class AgentDispatcher:
             except Exception:
                 pass
 
-        semaphore = self._get_semaphore(task.agent_name)
+        semaphore = await self._get_semaphore(task.agent_name)
         start = time.monotonic()
 
         async with semaphore:

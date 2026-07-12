@@ -57,7 +57,7 @@ def verify_signature(content: str, signature: str, public_key: str) -> bool:
     try:
         sig_bytes = _public_key_bytes(signature)
         key_bytes = _public_key_bytes(public_key)
-    except (ValueError, base64.binascii.Error):
+    except (ValueError, binascii.Error):
         return False
     if len(key_bytes) != 32 or len(sig_bytes) != 64:
         return False

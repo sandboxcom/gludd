@@ -14,10 +14,12 @@ Security posture:
   hosts unless ``config['allow_private']`` is explicitly truthy.
 * The injected HTTP transport is time-bounded and never uses ``shell=True``.
 * ``health()`` never raises.
+
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit

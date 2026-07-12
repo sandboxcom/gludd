@@ -1129,6 +1129,56 @@ export default (async ({ }) => {
           return
         }
 
+        // CI RED/PENDING block: text-only completion claims when CI is broken
+        // are forbidden. Even if local work is clean (gate green, TASKS.md empty),
+        // a broken CI pipeline means the project is not in a shippable state.
+        // This is a targeted check separate from the hasLocalWork block below.
+        if (ciVerdictPendingOrRed && !isSubagentFinalReport) {
+          const STALE_CI_MS = 600_000 // 10 min — CI can legitimately be PENDING
+          const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+          let ciStatus = "RED"
+          let ciLastCheck = 0
+          try {
+            if (fs.existsSync(ciCachePath)) {
+              const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
+              ciStatus = ciData.last_ci_status || "UNKNOWN"
+              ciLastCheck = ciData.last_ci_check || 0
+            }
+          } catch {}
+          const ciIsStale = (Date.now() - ciLastCheck) > STALE_CI_MS
+          const ciIsRed = ciStatus !== "SUCCESS" && ciStatus !== "PENDING"
+          if (ciIsRed && !ciIsStale) {
+            logFalseDoneBlock(combinedText, "ci-red-text-only")
+            recordBlock("ci-red-false-done")
+            output.text = [
+              "⛔ CI RED — COMPLETION CLAIM BLOCKED.",
+              "",
+              `CI status: ${ciStatus} (checked ${Math.round((Date.now() - ciLastCheck) / 1000)}s ago)`,
+              "",
+              "CI is RED. The pipeline is not green — no completion or done-claim",
+              "is valid until CI passes. Fix the CI failure, wait for green, then report.",
+              "DISPATCH A TOOL CALL NOW.",
+            ].join("\n")
+            turnState.blocked = true
+            return
+          }
+          if (ciStatus === "PENDING" && !ciIsStale) {
+            logFalseDoneBlock(combinedText, "ci-pending-text-only")
+            recordBlock("ci-pending-false-done")
+            output.text = [
+              "⛔ CI PENDING — COMPLETION CLAIM BLOCKED.",
+              "",
+              `CI status: PENDING (checked ${Math.round((Date.now() - ciLastCheck) / 1000)}s ago)`,
+              "",
+              "CI has not finished running. The pipeline verdict is unknown —",
+              "no completion or done-claim is valid until CI returns green.",
+              "Continue work in the meantime. DISPATCH A TOOL CALL NOW.",
+            ].join("\n")
+            turnState.blocked = true
+            return
+          }
+        }
+
         // BUG #6 fix: when hasLocalWork, block ALL text (not just terminal-looking).
         // If work is pending and the agent sends text without tool calls, it's a stop.
         // NARROWED 2026-07-07: subagent final reports (which arrive as text with no

@@ -294,7 +294,8 @@ class KafkaExporterSource:
                 url, params=None, headers=self._headers(), timeout=self._timeout
             )
         except Exception as exc:  # surfaced as a record, never raised
-            return [self._error_record(f"transport error: {exc}", {"url": url})]
+            logger.warning("kafka_exporter transport error", exc_info=True)
+            return [self._error_record(f"transport error: {type(exc).__name__}", {"url": url})]
 
         if not (200 <= int(status) < 300):
             return [self._error_record(f"http status {status}", {"status": status})]

@@ -23,10 +23,12 @@ Design notes
 
 This module is self-contained: it defines no base class and imports no sibling
 connector (the ``connectors`` package is a namespace package).
+
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Protocol, TypedDict, cast, runtime_checkable

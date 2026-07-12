@@ -341,7 +341,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
 // survey results and dispatch — blocking non-dispatch tools would wedge the
 // session.  A new dispatch resets _needsRefill to false.
 
-const MAX_STREAK = 0
+const MAX_STREAK = 2
 let _streakCount = 0
 
 // Read-grinding detection (2026-07-09 — multitasking audit P1 fix).

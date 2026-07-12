@@ -17,11 +17,13 @@ discrete list (never a shell string, never interpolated), shell metacharacters a
 inert; we additionally validate the predicate/level/duration and reject anything
 that looks like option-injection or a shell escape, failing closed BEFORE the
 runner is ever called.
+
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 from collections.abc import Callable, Mapping

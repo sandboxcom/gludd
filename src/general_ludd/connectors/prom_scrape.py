@@ -18,10 +18,12 @@ Design constraints (see connector contract):
     internal, so opt-in is expected and cheap).
   * ``health()`` never raises. ``query()`` returns normalized dicts and never
     shells out (``shell=True`` is never used — there is no subprocess at all).
+
 """
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import time

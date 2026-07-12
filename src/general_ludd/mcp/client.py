@@ -69,16 +69,24 @@ class MCPClient:
                 continue
             if config.is_stdio():
                 transport = MCPStdioClient(config, secrets_mgr=self._secrets_mgr)
-                # Finding 6: if start()/list_tools() raises mid-loop, this just-
-                # started transport is not yet tracked in self._transports, so
-                # stop_all() would never reap it — its subprocess would leak.
-                # Stop it here before re-raising so no orphan is left behind.
+                # Finding 6 / H.15: if start()/list_tools() raises mid-loop, we
+                # must stop BOTH the failing transport AND every previously-
+                # started transport already tracked in self._transports.
+                # Otherwise servers A, B, … that succeeded before server N
+                # failed are orphaned — stop_all() is never called because
+                # the exception propagates out.
                 try:
                     await transport.start()
                     tools = await transport.list_tools()
                 except Exception:
+                    # Stop the failing transport's subprocess.
                     with contextlib.suppress(Exception):
                         await transport.stop()
+                    # Stop every previously-started transport to prevent orphans.
+                    for _tid, t in list(self._transports.items()):
+                        with contextlib.suppress(Exception):
+                            await t.stop()
+                    self._transports.clear()
                     raise
                 for tool in tools:
                     self._registry.register_tool(server_id, tool)

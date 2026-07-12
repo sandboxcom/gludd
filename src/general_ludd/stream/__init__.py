@@ -19,12 +19,19 @@ the cloned role for execution via the existing job queue.
 from __future__ import annotations
 
 import json
+import re
+import shlex
 import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
-__all__ = ["RoleCloner"]
+__all__ = [
+    "SUPPORTED_PROCESSOR_TOOLS",
+    "_FORBIDDEN_SHELL_CHARS",
+    "_SAFE_BINARY_RE",
+    "RoleCloner",
+]
 
 # Supported external processor tool kinds. Unknown tool kinds raise ValueError.
 SUPPORTED_PROCESSOR_TOOLS: frozenset[str] = frozenset(
@@ -32,6 +39,12 @@ SUPPORTED_PROCESSOR_TOOLS: frozenset[str] = frozenset(
 )
 
 _DEFAULT_WORK_ROOT = Path("/tmp/gludd-stream-clones")
+
+_SAFE_BINARY_RE = re.compile(r"^(?!.*\.\.)[a-zA-Z0-9_./-]+$")
+
+_FORBIDDEN_SHELL_CHARS: frozenset[str] = frozenset(
+    "`$();|&<>!\n\r'\"\\"
+)
 
 
 class RoleCloner:
@@ -136,6 +149,16 @@ class RoleCloner:
     ) -> Path:
         binary = processor.get("binary", kind)
         extra_args = processor.get("args", "")
+        if not _SAFE_BINARY_RE.match(str(binary)):
+            raise ValueError(
+                f"processor binary {binary!r} contains unsafe characters; "
+                f"expected [a-zA-Z0-9_./-]+"
+            )
+        if any(ch in str(extra_args) for ch in _FORBIDDEN_SHELL_CHARS):
+            raise ValueError(
+                f"processor args {extra_args!r} contain forbidden shell characters"
+            )
+        quoted_binary = shlex.quote(str(binary))
         out_path = clone_path / "process-chunk.sh"
         lines = [
             "#!/usr/bin/env bash",
@@ -145,7 +168,7 @@ class RoleCloner:
             'if [ -z "${CHUNK_PATH:-}" ]; then',
             '  CHUNK_PATH="$1"',
             'fi',
-            f'exec {binary} {extra_args} "$CHUNK_PATH"',
+            f'exec {quoted_binary} {extra_args} "$CHUNK_PATH"',
         ]
         out_path.write_text("\n".join(lines) + "\n")
         out_path.chmod(0o755)

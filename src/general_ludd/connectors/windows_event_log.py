@@ -117,7 +117,8 @@ def _default_runner(argv: Sequence[str]) -> tuple[int, str, str]:
             check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return 1, "", str(exc)
+        logger.warning("windows_event_log runner error", exc_info=True)
+        return 1, "", type(exc).__name__
     return proc.returncode, proc.stdout, proc.stderr
 
 

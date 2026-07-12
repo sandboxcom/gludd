@@ -18,12 +18,14 @@ OpenTSDB-specific: ``POST {base_url}/api/query`` with a JSON body
 ``{start, end, queries:[{metric, aggregator, tags}]}`` returns a list of result
 objects each carrying a ``dps`` map of ``{timestamp: value}``. One normalized
 record is emitted per dps point.
+
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import urllib.parse
 from typing import Protocol, cast, runtime_checkable

@@ -216,7 +216,8 @@ class PyroscopeSource:
                 timeout=self._timeout,
             )
         except Exception as exc:
-            return {"ok": False, "detail": f"transport error: {exc}"}
+            logger.warning("pyroscope health check failed", exc_info=True)
+            return {"ok": False, "detail": f"transport error: {type(exc).__name__}"}
 
         if resp.status_code == 200:
             return {"ok": True, "detail": "render reachable (HTTP 200)"}

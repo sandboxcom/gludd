@@ -22,11 +22,13 @@ Security / contract notes:
   * `query()` is time-bound (a duration is always passed to `log`).
 
 No imports from sibling connectors or any gludd base module.
+
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Any, Protocol

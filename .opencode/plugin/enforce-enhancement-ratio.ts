@@ -50,26 +50,45 @@ interface RatioState {
   session_fixes: number
   session_unknown: number
   wave_count_since_last_warn: number
+  lastPid: number
+  lastTs: number
+}
+
+function _freshState(): RatioState {
+  return { wave: [], session_enhancements: 0, session_fixes: 0, session_unknown: 0, wave_count_since_last_warn: 0, lastPid: process.pid, lastTs: 0 }
+}
+
+function _isStale(raw: any): boolean {
+  if (typeof raw.lastPid === "number" && raw.lastPid !== process.pid) return true
+  if (typeof raw.lastTs === "number" && (Date.now() - raw.lastTs) > 3_600_000) return true
+  return false
 }
 
 function loadState(): RatioState {
   try {
     if (fs.existsSync(STATE_FILE)) {
       const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"))
+      if (_isStale(raw)) return _freshState()
       return {
         wave: Array.isArray(raw.wave) ? raw.wave : [],
         session_enhancements: typeof raw.session_enhancements === "number" ? raw.session_enhancements : 0,
         session_fixes: typeof raw.session_fixes === "number" ? raw.session_fixes : 0,
         session_unknown: typeof raw.session_unknown === "number" ? raw.session_unknown : 0,
         wave_count_since_last_warn: typeof raw.wave_count_since_last_warn === "number" ? raw.wave_count_since_last_warn : 0,
+        lastPid: typeof raw.lastPid === "number" ? raw.lastPid : process.pid,
+        lastTs: typeof raw.lastTs === "number" ? raw.lastTs : Date.now(),
       }
     }
   } catch {}
-  return { wave: [], session_enhancements: 0, session_fixes: 0, session_unknown: 0, wave_count_since_last_warn: 0 }
+  return _freshState()
 }
 
 function saveState(s: RatioState): void {
-  try { fs.writeFileSync(STATE_FILE, JSON.stringify(s), "utf8") } catch {}
+  try {
+    s.lastPid = process.pid
+    s.lastTs = Date.now()
+    fs.writeFileSync(STATE_FILE, JSON.stringify(s), "utf8")
+  } catch {}
 }
 
 function extractPrompt(args: any): string {

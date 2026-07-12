@@ -1,8 +1,8 @@
 """Behavior pin for the enforce-multitask plugin.
 
-Per AGENTS.md cost-efficiency directive (2026-07-11): floor is 2 agents max.
-Every assistant response MUST contain either zero or >=2 dispatches per wave.
-1 dispatch alone is DENIED when >=2 pending items exist. This test extracts
+Per AGENTS.md cost-efficiency directive (2026-07-11): floor is 7 agents max.
+Every assistant response MUST contain either zero or >=7 dispatches per wave.
+<7 dispatches are DENIED when >=2 pending items exist. This test extracts
 exported constants from the TypeScript source and validates them against the
 spec. Also verifies zero-streak enforcement: after N consecutive zero-dispatch
 responses, enforcement fires to FORCE a dispatch (detects ≤0 dispatches).
@@ -74,7 +74,7 @@ class TestPluginStructure:
         assert "MULTITASKING FLOOR BREACH" in src, "Min-dispatch deny message missing"
         assert "ZERO-DISPATCH STREAK" in src, "Zero-streak deny message missing"
         assert "MUST DISPATCH" in src, "text.complete block message missing"
-        assert "MESSAGE BLOCKED" in src, "text.complete <2 dispatch block message missing"
+        assert "MESSAGE BLOCKED" in src, "text.complete <7 dispatch block message missing"
 
     def test_exports_dispatch_tools(self):
         src = _plugin_source()
@@ -86,13 +86,13 @@ class TestPluginStructure:
 
 
 class TestMinDispatchesDefault:
-    def test_default_is_5(self):
+    def test_default_is_7(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MIN_DISPATCHES")
-        assert default == 5, f"MIN_DISPATCHES default should be 5, got {default}"
+        assert default == 7, f"MIN_DISPATCHES default should be 7, got {default}"
 
     def test_string_value_matches_default(self):
         raw = _extract_export_value(_plugin_source(), "MIN_DISPATCHES")
-        assert "5" in raw
+        assert "7" in raw
 
 
 class TestMaxZeroStreak:
@@ -184,7 +184,7 @@ class TestZeroStreakDenyMessage:
 
 
 class TestSubMinDenyMessage:
-    """The sub-minimum deny message (1 dispatch when floor is 5) must be correct."""
+    """The sub-minimum deny message (<7 dispatches when floor is 7) must be correct."""
 
     def test_mentions_sub_minimum(self):
         src = _plugin_source()
@@ -359,7 +359,7 @@ class TestTasksHasUnchecked:
 
     def test_no_checkbox_pattern_in_source(self):
         """TASKS.md is now referenced by hasPendingWork() in text.complete
-        for the <2 dispatch block — the pending-work gate was added per
+        for the <7 dispatch block — the pending-work gate was added per
         user mandate (2026-07-12) to prevent blocking when work is done."""
         src = _plugin_source()
         assert "TASKS.md" in src, (
@@ -371,7 +371,7 @@ class TestTasksHasUnchecked:
 class TestPerMessageEnforcement:
     """Per-message dispatch-count enforcement added 2026-07-12:
     tool.execute.before blocks Edit/Write/Bash when current message
-    has <2 dispatches AND pending work exists."""
+    has <7 dispatches AND pending work exists."""
 
     def test_state_interface_includes_last_tool_call_ts(self):
         src = _plugin_source()
@@ -442,12 +442,12 @@ class TestPerMessageEnforcement:
             "OPENCODE_SUBAGENT guard must be present in tool.execute.before"
         )
 
-    def test_per_message_threshold_is_2(self):
-        """The per-message enforcement must block when dispatch count is <2
-        (i.e., 0 or 1 dispatches in the current message)."""
+    def test_per_message_threshold_is_7(self):
+        """The per-message enforcement must block when dispatch count is <7
+        (i.e., 0-6 dispatches in the current message)."""
         src = _plugin_source()
-        assert "_state.thisMessageDispatches < 2" in src, (
-            "Per-message threshold must be <2 dispatches"
+        assert "_state.thisMessageDispatches < 7" in src, (
+            "Per-message threshold must be <7 dispatches"
         )
 
     def test_per_message_time_heuristic_updates_on_every_tool(self):

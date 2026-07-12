@@ -10,11 +10,13 @@ appended to the argv.
 Self-contained: imports nothing from sibling connector modules and defines its
 own runner protocol so it can be unit-tested with a canned, injected runner
 (no real ``dmesg`` binary or ``/dev/kmsg`` access required).
+
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 from collections.abc import Sequence

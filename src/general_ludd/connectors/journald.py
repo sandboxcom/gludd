@@ -14,11 +14,13 @@ Contract:
 All caller-supplied args (unit, since, priority) are validated to reject a
 leading dash or shell metacharacters BEFORE the argv is built; a rejected arg
 raises ValueError and the runner is never invoked.
+
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from collections.abc import Callable, Mapping
 from typing import TypedDict, cast

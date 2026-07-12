@@ -174,16 +174,16 @@ class TestFloorBreachNagConditional:
             "FLOOR BREACH must be gated by _streakCount > MAX_STREAK comparison"
         )
 
-    def test_max_streak_is_zero(self):
-        """MAX_STREAK = 0 means _streakCount > 0 triggers floor breach.
-        streak count must be explicitly tracked; clean state (streak=0) must
-        not trigger."""
+    def test_max_streak_is_two(self):
+        """MAX_STREAK = 2 allows 2 non-dispatch calls before blocking (floor
+        breach triggers when _streakCount > 2). Matches enforce-delegate's
+        MAINTHREAD_THRESHOLD = 2."""
         src = _src(FLOOR_PATH)
         assert "MAX_STREAK" in src
         idx = src.find("MAX_STREAK")
         after = src[idx: idx + 80]
-        assert "= 0" in after or "=0" in after, (
-            f"MAX_STREAK must be 0. Found: {after!r}"
+        assert "= 2" in after or "=2" in after, (
+            f"MAX_STREAK must be 2. Found: {after!r}"
         )
 
 

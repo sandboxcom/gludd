@@ -337,7 +337,8 @@ class DatadogSource:
                 timeout=self._timeout,
             )
         except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"transport error: {exc}"}
+            logger.warning("datadog health check failed", exc_info=True)
+            return {"ok": False, "detail": f"transport error: {type(exc).__name__}"}
 
         valid = bool(payload.get("valid")) if isinstance(payload, dict) else False
         ok = self._is_2xx(status) and valid

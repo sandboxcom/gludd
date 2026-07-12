@@ -37,11 +37,13 @@ Record shape (one dict per sample)::
         "labels": dict[str, str],    # {queue, vhost, node, metric, ...}
         "raw": Any,                  # original API object
     }
+
 """
 
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import time
 from collections.abc import Callable

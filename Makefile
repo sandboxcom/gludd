@@ -281,6 +281,41 @@ lint:
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests
 
+fix-logger-imports:
+	@$(UV) run python scripts/add_missing_logger_imports.py \
+		src/general_ludd/connectors/appdynamics.py \
+		src/general_ludd/connectors/aws_observability.py \
+		src/general_ludd/connectors/cloudflare.py \
+		src/general_ludd/connectors/containerd.py \
+		src/general_ludd/connectors/datadog.py \
+		src/general_ludd/connectors/dmesg.py \
+		src/general_ludd/connectors/docker_engine.py \
+		src/general_ludd/connectors/grafana_oncall.py \
+		src/general_ludd/connectors/graphite.py \
+		src/general_ludd/connectors/influxdb.py \
+		src/general_ludd/connectors/journald.py \
+		src/general_ludd/connectors/kafka_exporter.py \
+		src/general_ludd/connectors/kubernetes.py \
+		src/general_ludd/connectors/local_files.py \
+		src/general_ludd/connectors/mac_unified_log.py \
+		src/general_ludd/connectors/macos_log.py \
+		src/general_ludd/connectors/nats.py \
+		src/general_ludd/connectors/openshift.py \
+		src/general_ludd/connectors/opentsdb.py \
+		src/general_ludd/connectors/osquery.py \
+		src/general_ludd/connectors/parca.py \
+		src/general_ludd/connectors/podman.py \
+		src/general_ludd/connectors/proc_sys.py \
+		src/general_ludd/connectors/prom_scrape.py \
+		src/general_ludd/connectors/pyroscope.py \
+		src/general_ludd/connectors/rabbitmq.py \
+		src/general_ludd/connectors/rollbar.py \
+		src/general_ludd/connectors/thanos.py \
+		src/general_ludd/connectors/victoriametrics.py \
+		src/general_ludd/connectors/windows_event_log.py \
+		src/general_ludd/connectors/zabbix.py \
+		src/general_ludd/connectors/zipkin.py
+
 ruff-audit:
 	@$(UV) run python scripts/ruff_plugins/return_type_checker.py
 
@@ -2501,6 +2536,10 @@ check-skills-frontmatter:
 # --- Task ledger validation: duplicate IDs, re-dispatched completed items, stale in_progress, missing IDs ---
 validate-task-ledger:
 	@$(UV) run python scripts/validate_task_ledger.py
+
+# --- Auto-update: cross-reference git log against TASKS.md, mark matching items complete ---
+auto-update-ledger:
+	@$(UV) run python scripts/auto_update_task_ledger.py
 
 # --- Task ledger validation: check-* naming convention alias ---
 check-task-ledger:

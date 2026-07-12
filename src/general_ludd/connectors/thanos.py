@@ -227,7 +227,8 @@ class ThanosSource:
                 url, params=params, headers=self._headers(), timeout=self._timeout
             )
         except Exception as exc:  # surfaced as a record, never raised
-            return [self._error_record(f"transport error: {exc}", {"url": url})]
+            logger.warning("thanos transport error", exc_info=True)
+            return [self._error_record(f"transport error: {type(exc).__name__}", {"url": url})]
 
         return self._normalize(status, payload)
 
