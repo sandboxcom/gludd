@@ -10,32 +10,32 @@
 
 ### HEAD + Branch State
 
-- **HEAD: `006d4a8f`** on `development` branch
+- **HEAD: `a3a6a237`** on `development` branch
 - **Working tree: CLEAN**
 - **Runtime tests: 114 pass / 0 fail**
-- **Unit tests: 113 pass / 1 flaky** (watchdog test flaky)
-- **Hot modules: 10/13 built** (3 remaining proxy conversions)
+- **check-node-v26-compat: 2/2 PASS** — 0 `require()` calls remain in any plugin
+- **Hot modules: 13/13 built** — all 14 plugins proxy-converted + hot-reload capable
+- **E2E tests: 85+ tests across 9 files**
 
-### Key Deliverables (commits `ad2f32fb` → `006d4a8f`)
+### Key Deliverables (commits `ad2f32fb` → `a3a6a237`)
 
 | Category | Items | Commit(s) |
 |----------|-------|-----------|
-| **require()→import in 7 plugins** | Converted all `require()` calls to `import` in enforcement plugins for Node v26 `--experimental-strip-types` compat | `006d4a8f` |
-| **build_hot_modules fix** | Fixed proxy extraction bug; hot modules now build correctly | `006d4a8f` |
-| **6 new proxy conversions** | Hot-reload proxy added to 6 more plugins (10/13 total) | `006d4a8f` |
-| **14 e2e tests** | New end-to-end enforcement plugin tests | `006d4a8f` |
-| **enforce-clean-tree hot-reload proxy** | Proxy conversion + `require()` audit checker | `a68de353` |
-| **D.19 docs** | Postgres documentation verified and ticked | `a68de353` |
-| **enforce-clean-tree fix** | require→import execSync fix, 7 new runtime tests | `9d4e60da` |
-| **TASKS.md header counts** | Fixed header counts (4 open) | `9d4e60da` |
-| **enforce-stop dedup** | Deduplicated enforce-stop.ts using shared.ts helpers | `ad2f32fb` |
-| **.opencode.orig backup** | Created `.opencode.orig` snapshot | `ad2f32fb` |
-| **restore-opencode git fallback** | Added git HEAD fallback to restore-opencode | `ad2f32fb` |
+| **require()→import sweep** | All `require()` calls converted to `import` across all 14 enforcement plugins. check-node-v26-compat 2/2 PASS. | `006d4a8f`, `a3a6a237` |
+| **13/13 hot-module proxies** | All plugins now have hot-reload proxy; zero remaining conversions. `build_hot_modules` proxy extraction bug fixed. | `006d4a8f`, `cc133b2e` |
+| **E2E enforcement tests** | 85+ e2e tests across 9 files (56 new in `cc133b2e`, 6 new files in `a3a6a237`) | `006d4a8f`, `cc133b2e`, `a3a6a237` |
+| **TASKS.md archive** | Archived completed Phase D/AG items; D.19 docs expanded | `cc133b2e` |
+| **Gate-lite fixes** | Stale assertion drift resolved | `cc133b2e` |
+| **enforce-clean-tree fix** | execSync fix + hot-reload proxy + require() audit checker | `9d4e60da`, `a68de353` |
+| **enforce-stop dedup** | Deduplicated using shared.ts helpers | `ad2f32fb` |
+| **restore-opencode git fallback** | Added git HEAD fallback to restore-opencode; `.opencode.orig` backup | `ad2f32fb` |
 
-### Commits This Session (4 on development, cherry-picked from master fix commits)
+### Commits This Session (6 on development)
 
 | Hash | Message |
 |------|---------|
+| `a3a6a237` | enhancement: enforce-multitask require() fix, 85+ e2e tests (6 new files), check-node-v26-compat 2/2 PASS |
+| `cc133b2e` | enhancement: 3 final proxy conversions (13/13), 56 e2e tests, TASKS.md archive, D.19 expansion, gate-lite fixes |
 | `006d4a8f` | fix: require()→import in 7 plugins, build_hot_modules proxy extraction fix, 6 new proxy conversions, 14 e2e tests |
 | `a68de353` | enhancement: clean-tree hot-reload proxy + require() audit checker + D.19 docs + SESSION29 |
 | `9d4e60da` | fix: enforce-clean-tree require→import execSync, 7 new tests, TASKS.md header counts |
@@ -45,22 +45,20 @@ Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`
 
 ### Known Gaps
 
-1. **3 remaining proxy conversions** — 10/13 plugins have hot-reload proxies; need clean-tree, no-suppressions, verified-claims
-2. **A.3 push** — 4 unpushed commits on development. Push to remote pending.
-3. **A.4 release** — v0.1.0-beta.2 not yet cut. Blocked on CI green + push.
-4. **1 flaky watchdog test** — unit test sometimes fails; non-deterministic
+1. **CI PENDING** — no CI run for current development HEAD `a3a6a237`
+2. **A.3 push** — 6 unpushed commits on development. Push to remote pending.
+3. **A.4 release** — v0.1.0-beta.2 not yet cut. Blocked on CI green + development→master merge.
+4. **development → master merge** — pending gate-lite green + CI green + push
 
 ### Next Steps (Prioritized)
 
-1. [ ] **Convert remaining 3 plugins to hot-reload proxy** (clean-tree, no-suppressions, verified-claims)
-2. [ ] **A.3 push development to remote** — 4 unpushed commits
-3. [ ] **Run gate-lite** — validate current state
-4. [ ] **development → master merge** — after gate green
-5. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after merge + CI green
-6. [ ] **Continue Phase AG** — AG.2-AG.16 remain
+1. [ ] **A.3 push development to remote** — 6 unpushed commits
+2. [ ] **development → master merge** — after CI green
+3. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after merge + CI green
+4. [ ] **Continue Phase AG** — AG.2-AG.16 remain
 
 ### Last Updated
-- **2026-07-13 — Session 29 FINAL.** On `development` branch, HEAD `006d4a8f`. Working tree clean. 114/114 runtime tests pass, 113/114 unit tests pass (1 flaky watchdog). 4 commits landed (ad2f32fb..006d4a8f): require()→import in 7 plugins, build_hot_modules proxy extraction fix, 6 new proxy conversions (10/13 total), 14 e2e tests, enforce-clean-tree fix (7 tests), enforce-stop dedup, TASKS.md header fix, D.19 docs verified. 3 remaining proxy conversions (clean-tree, no-suppressions, verified-claims). A.3 push + A.4 release pending.
+- **2026-07-13 — Session 29 FINAL.** On `development` branch, HEAD `a3a6a237`. Working tree clean. 114/114 runtime tests pass. check-node-v26-compat 2/2 PASS (0 require() calls). 13/13 hot-module proxies built; all 14 plugins proxy-converted + hot-reload capable. 85+ e2e tests across 9 files. 6 commits landed (ad2f32fb..a3a6a237). A.3 push + A.4 release pending.
 
 ---
 

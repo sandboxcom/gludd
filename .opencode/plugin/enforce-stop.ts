@@ -888,7 +888,7 @@ const defaultImpl: HotModule = {
       textOnly.lastTs = now
       textOnly.sameSession = sameSession
       writeTextOnlyState(textOnly)
-      if (textOnly.count >= 2 && (cache.hasLocalWork || cache.ciVerdictPendingOrRed)) {
+      if (!watchdogDisengage && textOnly.count >= 2 && (cache.hasLocalWork || cache.ciVerdictPendingOrRed)) {
         logFalseDoneBlock(turnState.accumulatedText, "consecutive-text-only")
         recordBlock("consecutive-text-only")
         output.text = [
@@ -914,7 +914,7 @@ const defaultImpl: HotModule = {
     const tasksMdUnchecked = cache?.tasksMdUnchecked ?? tasksMdHasUnchecked()
     const ratchetCount = cache?.ratchetEntries ?? ratchetHasEntries()
 
-    if (hasDirectFalseDone) {
+    if (!watchdogDisengage && hasDirectFalseDone) {
       const SUBAGENT_REPORT_MARKERS = [
         "Files changed", "Files edited", "Test results",
         "## Report", "## Result", "RAW OUTPUT",
@@ -964,7 +964,7 @@ const defaultImpl: HotModule = {
         }
       }
 
-      if (ratchetCount > 0 && turnState.dispatchCount === 0) {
+      if (!watchdogDisengage && ratchetCount > 0 && turnState.dispatchCount === 0) {
         recordBlock("ratchet_entries_no_tool_calls")
         logFalseDoneBlock(combinedText, "ratchet-block-all-text")
         output.text = [
@@ -1069,7 +1069,7 @@ const defaultImpl: HotModule = {
         }
       }
 
-      if ((hasLocalWork || ciVerdictPendingOrRed) && !isSubagentFinalReport) {
+      if (!watchdogDisengage && (hasLocalWork || ciVerdictPendingOrRed) && !isSubagentFinalReport) {
         logFalseDoneBlock(turnState.accumulatedText, "hasLocalWork-text-only")
         output.text = [
           "HARD STOP — STATE-BASED BLOCK: local work pending.",

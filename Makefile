@@ -390,6 +390,10 @@ task:
 test-count:
 	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
 
+test-count-e2e:
+	@find tests/e2e -name 'test_*.py' | wc -l | xargs echo "e2e test files:"
+	@find tests/e2e -name 'test_*.py' -exec grep -c 'def test_' {} + | awk -F: '{sum+=$$2} END {print "e2e test functions:", sum}'
+
 test-failures:
 	@$(UV) run python -m pytest tests/ $(_XD) -q 2>&1 | tee /tmp/gludd-test-output.txt; EXIT=$$?; \
 	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt; \
