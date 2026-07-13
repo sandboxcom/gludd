@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 ROLE_ROOT = Path(__file__).resolve().parent.parent.parent / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles" / "git_automation"
 
 

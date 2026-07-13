@@ -5,11 +5,9 @@ Implements the hook dispatching API per docs/LIFECYCLE_HOOK_EXPANSION.md §4.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import threading
-from collections.abc import Callable, Awaitable
 from typing import Any, Protocol
 
 from general_ludd.ag2_lifecycle.types import (

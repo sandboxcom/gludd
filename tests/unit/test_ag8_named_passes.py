@@ -10,7 +10,6 @@ from general_ludd.ag8_named_passes.registry import (
     BUILTIN_PASSES,
     NamedPass,
     PassRegistry,
-    PassResult,
     PassStatus,
 )
 

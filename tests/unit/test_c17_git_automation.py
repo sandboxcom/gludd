@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from general_ludd.git_automation.repo import GitAutomation
-from general_ludd.git_automation.types import MergeResult
 
 
 def _ok(stdout="", stderr="", returncode=0):
@@ -38,24 +37,22 @@ class TestMergeBranchLock:
                 calls_in_lock += 1
             return _ok(stdout="merged")
 
-        with patch.object(auto, "_run_git", side_effect=tracking_run_git):
-            with patch(
-                "general_ludd.git_automation.repo.git_repo_lock",
-                return_value=FakeLock(),
-            ):
-                result = auto.merge_branch("/repo", "feat", "main", "ff")
-                assert result.success is True
-                assert calls_in_lock == 2
+        with patch.object(auto, "_run_git", side_effect=tracking_run_git), patch(
+            "general_ludd.git_automation.repo.git_repo_lock",
+            return_value=FakeLock(),
+        ):
+            result = auto.merge_branch("/repo", "feat", "main", "ff")
+            assert result.success is True
+            assert calls_in_lock == 2
 
     def test_merge_lock_called_once(self):
         auto = GitAutomation(".")
-        with patch.object(auto, "_run_git", return_value=_ok(stdout="merged")):
-            with patch(
-                "general_ludd.git_automation.repo.git_repo_lock"
-            ) as mock_lock:
-                mock_lock.return_value.__enter__.return_value = None
-                auto.merge_branch("/repo", "feat", "main", "ff")
-                assert mock_lock.call_count == 1
+        with patch.object(auto, "_run_git", return_value=_ok(stdout="merged")), patch(
+            "general_ludd.git_automation.repo.git_repo_lock"
+        ) as mock_lock:
+            mock_lock.return_value.__enter__.return_value = None
+            auto.merge_branch("/repo", "feat", "main", "ff")
+            assert mock_lock.call_count == 1
 
 
 class TestSquashPathNotFailOpen:
@@ -104,7 +101,7 @@ class TestBranchNameCollision:
             mock_run.return_value = _ok(stdout="main\nfeature-x\nbugfix\n")
             try:
                 auto.create_branch("feature-x")
-                assert False, "expected ValueError"
+                raise AssertionError("expected ValueError")
             except ValueError as exc:
                 assert "'feature-x'" in str(exc)
                 assert "already exists" in str(exc)
@@ -124,7 +121,7 @@ class TestBranchNameCollision:
         with patch.object(auto, "_run_git"):
             try:
                 auto.create_branch("--option-injection")
-                assert False, "expected ValueError"
+                raise AssertionError("expected ValueError")
             except ValueError as exc:
                 assert "begins with '-'" in str(exc)
 
@@ -134,6 +131,6 @@ class TestBranchNameCollision:
             mock_run.return_value = _ok(stdout="main\ndev\n")
             try:
                 auto.create_branch("dev")
-                assert False, "expected ValueError"
+                raise AssertionError("expected ValueError")
             except ValueError:
                 assert mock_run.call_count == 1  # only branch list, no checkout

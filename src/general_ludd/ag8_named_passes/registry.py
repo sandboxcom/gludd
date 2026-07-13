@@ -10,11 +10,11 @@ from __future__ import annotations
 import copy
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class PassStatus(str, Enum):
+class PassStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     PASSED = "passed"

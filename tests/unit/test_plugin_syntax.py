@@ -31,7 +31,7 @@ def test_invalid_ts_file_detected():
 
     try:
         plugin_dir = ROOT / ".opencode" / "plugin"
-        orig_files = list(plugin_dir.glob("*.ts"))
+        list(plugin_dir.glob("*.ts"))
 
         # Symlink broken file into plugin dir so the script finds it
         target = plugin_dir / "zzz_broken_test.ts"

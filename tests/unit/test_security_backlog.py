@@ -276,7 +276,6 @@ class TestD25ProbeRegressionDetection:
         assert "recursion_limit" in detail
 
     def test_fails_if_max_depth_missing(self, monkeypatch) -> None:
-        import general_ludd.ag2_lifecycle.hooks as hooks_mod
 
         def _fake_source(mod: object) -> str:
             if getattr(mod, "__name__", "") == "general_ludd.ag2_lifecycle.hooks":
