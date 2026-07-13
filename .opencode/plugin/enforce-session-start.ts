@@ -390,7 +390,6 @@ export default (({ }) => {
       _output: unknown,
     ) => {
       if (isSubagent()) return
-      console.log("SUBAGENT SKIP: enforce-session-start")
       const impl = loadHotModule("enforce-session-start", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, _output) : undefined

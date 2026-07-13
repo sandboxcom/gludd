@@ -143,7 +143,6 @@ let _lastHookOutputHash = ""
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, _output: any) => {
     if (isSubagent()) return
-    console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
     reportAlive("enforce-enhancement-ratio")
     if (!ENABLED) return
 
@@ -184,7 +183,8 @@ const defaultImpl: HotModule = {
     "experimental.text.complete": async (output: any) => {
     if (isSubagent()) return output
     if (!ENABLED) return output
-    if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? output ?? "").trim())) return output
+    const outText = typeof output === 'string' ? output : (output?.text ?? "")
+    if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test(outText)) return output
 
     try {
       const s = loadState()
@@ -256,7 +256,6 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input: any, _output: any) => {
       if (isSubagent()) return;
-      console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
       const impl = loadHotModule("enhancement-ratio", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, _output) : undefined
