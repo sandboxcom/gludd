@@ -2017,6 +2017,288 @@ def test_make_disengage_escape():
 
 
 # ---------------------------------------------------------------------------
+# watchdog.ts  —  session lifecycle daemon launcher
+# ---------------------------------------------------------------------------
+
+WATCHDOG_PATH = str(ROOT / ".opencode" / "plugins" / "watchdog.ts")
+
+
+def _watchdog_event_code(event_type: str) -> str:
+    """Generate TS code that loads watchdog.ts and calls its event hook."""
+    return f"""\
+const mod = await import('{WATCHDOG_PATH}')
+const plugin = await mod.default({{}})
+let result
+try {{
+    await plugin.event({{ event: {{ type: '{event_type}' }} }})
+    result = {{ ok: true }}
+}} catch (e) {{
+    result = {{ ok: false, error: String(e.message) }}
+}}
+console.log(JSON.stringify(result))
+"""
+
+
+def test_watchdog_event_session_created():
+    """session.created event fires, reportAlive writes to alive file, no crash."""
+    alive_path = os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json")
+    _clean_state_files(alive_path)
+    code = _watchdog_event_code("session.created")
+    result = _run_ts(code)
+    assert result["ok"] == True, f"session.created should not throw, got: {result}"
+    # Verify reportAlive was called
+    assert os.path.exists(alive_path), f"Alive file {alive_path} should exist after event"
+    with open(alive_path) as f:
+        alive = json.load(f)
+    assert "watchdog" in alive, f"watchdog key missing from alive file: {alive}"
+    assert isinstance(alive["watchdog"]["last_seen"], int)
+    _clean_state_files(alive_path)
+
+
+def test_watchdog_event_session_deleted():
+    """session.deleted event fires, handles missing PID files gracefully."""
+    code = _watchdog_event_code("session.deleted")
+    result = _run_ts(code)
+    assert result["ok"] == True, f"session.deleted should not throw, got: {result}"
+
+
+def test_watchdog_subagent_guard():
+    """OPENCODE_SUBAGENT=1: watchdog still operates (it's infra, NOT enforcement)."""
+    alive_path = os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json")
+    _clean_state_files(alive_path)
+    code = f"""\
+const mod = await import('{WATCHDOG_PATH}')
+const plugin = await mod.default({{}})
+try {{
+    await plugin.event({{ event: {{ type: 'session.created' }} }})
+    console.log(JSON.stringify({{ ok: true }}))
+}} catch (e) {{
+    console.log(JSON.stringify({{ ok: false, error: String(e.message) }}))
+}}
+"""
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["ok"] == True, f"Watchdog should run even in subagent context, got: {result}"
+    # Verify alive file was still written (watchdog is not skipped)
+    assert os.path.exists(alive_path), "Watchdog must report alive even as subagent"
+    _clean_state_files(alive_path)
+
+
+def test_watchdog_env_disable():
+    """GLUDD_WATCHDOG_ENABLED=0: event handler returns immediately, no alive write."""
+    alive_path = os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json")
+    _clean_state_files(alive_path)
+    code = f"""\
+const mod = await import('{WATCHDOG_PATH}')
+const plugin = await mod.default({{}})
+try {{
+    await plugin.event({{ event: {{ type: 'session.created' }} }})
+    console.log(JSON.stringify({{ ok: true }}))
+}} catch (e) {{
+    console.log(JSON.stringify({{ ok: false, error: String(e.message) }}))
+}}
+"""
+    result = _run_ts(code, env_override={"GLUDD_WATCHDOG_ENABLED": "0"})
+    assert result["ok"] == True, f"Disabled watchdog should not throw, got: {result}"
+    # reportAlive should NOT have been called
+    assert not os.path.exists(alive_path), \
+        f"Alive file should NOT exist when GLUDD_WATCHDOG_ENABLED=0"
+    _clean_state_files(alive_path)
+
+
+def test_watchdog_fail_open_corrupt_pid_file():
+    """Corrupt PID file on session.deleted does not crash (fail-open)."""
+    pid_file = os.environ.get("GLUDD_WATCHDOG_PID_FILE", ".gate-logs/watchdog.pid")
+    os.makedirs(os.path.dirname(pid_file) or ".", exist_ok=True)
+    with open(pid_file, "w") as f:
+        f.write("not-a-valid-pid-99999999999999999")
+    try:
+        code = _watchdog_event_code("session.deleted")
+        result = _run_ts(code)
+        assert result["ok"] == True, f"Corrupt PID file must not crash, got: {result}"
+    finally:
+        _clean_state_files(pid_file)
+
+
+# ---------------------------------------------------------------------------
+# enforce-commit-lock.ts  —  commit serialization via lock file
+# ---------------------------------------------------------------------------
+
+
+def test_commit_lock_allowed_no_lock():
+    """Commit target allowed when no lock file exists (tryAcquire succeeds)."""
+    lock_path = f"/tmp/gludd-commit-lock-test-a-{os.getpid()}"
+    _clean_state_files(lock_path)
+    code = f"""\
+let registeredBefore = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
+mod.default(api)
+const result = registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
+    assert result is None or result.get("allowed") == True, f"Expected allowed, got: {result}"
+    _clean_state_files(lock_path)
+
+
+def test_commit_lock_fresh_lock_denies():
+    """Fresh lock file (<5 min) blocks another commit with deny + DENY_MESSAGE."""
+    lock_path = f"/tmp/gludd-commit-lock-test-d-{os.getpid()}"
+    _clean_state_files(lock_path)
+    with open(lock_path, "w") as f:
+        f.write(str(os.getpid()))
+    code = f"""\
+let registeredBefore = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
+mod.default(api)
+const result = registeredBefore({{tool: 'bash', command: 'make git-commit MSG=test'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
+    assert result is not None, "Expected deny object, got None (allowed)"
+    assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+    assert "COMMIT-LOCK" in result.get("message", ""), f"Message missing COMMIT-LOCK: {result}"
+    _clean_state_files(lock_path)
+
+
+def test_commit_lock_stale_break_allows():
+    """Stale lock (>STALE_THRESHOLD_MS) is broken and commit allowed."""
+    lock_path = f"/tmp/gludd-commit-lock-test-s-{os.getpid()}"
+    _clean_state_files(lock_path)
+    with open(lock_path, "w") as f:
+        f.write("stale")
+    six_min_ago = time.time() - 360
+    os.utime(lock_path, (six_min_ago, six_min_ago))
+    code = f"""\
+let registeredBefore = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
+mod.default(api)
+const result = registeredBefore({{tool: 'bash', command: 'make repo-commit MSG=test'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
+    assert result is None or result.get("allowed") == True, f"Stale lock should allow, got: {result}"
+    _clean_state_files(lock_path)
+
+
+def test_commit_lock_non_commit_allowed():
+    """Non-commit bash command passes through without lock check."""
+    lock_path = f"/tmp/gludd-commit-lock-test-nc-{os.getpid()}"
+    _clean_state_files(lock_path)
+    code = f"""\
+let registeredBefore = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
+mod.default(api)
+const result = registeredBefore({{tool: 'bash', command: 'make test-unit'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
+    assert result is None or result.get("allowed") == True, f"Non-commit should pass through, got: {result}"
+    _clean_state_files(lock_path)
+
+
+def test_commit_lock_subagent_guard():
+    """OPENCODE_SUBAGENT=1 skips enforcement even with lock present."""
+    lock_path = f"/tmp/gludd-commit-lock-test-sub-{os.getpid()}"
+    _clean_state_files(lock_path)
+    with open(lock_path, "w") as f:
+        f.write("locked")
+    code = f"""\
+let registeredBefore = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
+mod.default(api)
+const result = registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_COMMIT_LOCK_PATH": lock_path,
+        "OPENCODE_SUBAGENT": "1",
+    })
+    assert result is None or result.get("allowed") == True, f"Subagent should skip, got: {result}"
+    _clean_state_files(lock_path)
+
+
+def test_commit_lock_env_disable():
+    """GLUDD_COMMIT_LOCK_ENFORCE=0 disables lock enforcement entirely."""
+    lock_path = f"/tmp/gludd-commit-lock-test-dis-{os.getpid()}"
+    _clean_state_files(lock_path)
+    with open(lock_path, "w") as f:
+        f.write("locked")
+    code = f"""\
+let registeredBefore = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
+mod.default(api)
+const result = registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_COMMIT_LOCK_PATH": lock_path,
+        "GLUDD_COMMIT_LOCK_ENFORCE": "0",
+    })
+    assert result is None or result.get("allowed") == True, f"Disabled should allow, got: {result}"
+    _clean_state_files(lock_path)
+
+
+def test_commit_lock_after_releases_lock():
+    """execute.after hook releases the lock file acquired by execute.before."""
+    lock_path = f"/tmp/gludd-commit-lock-test-af-{os.getpid()}"
+    _clean_state_files(lock_path)
+    code = f"""\
+const fs = await import('node:fs')
+let registeredBefore = null
+let registeredAfter = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{ registeredAfter = fn }} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
+mod.default(api)
+const beforeResult = registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+const lockBefore = fs.existsSync('{lock_path}')
+registeredAfter({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+const lockAfter = fs.existsSync('{lock_path}')
+console.log(JSON.stringify({{beforeOk: beforeResult === undefined, lockBefore, lockAfter: !lockAfter}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
+    assert result["beforeOk"] == True, "Before hook should allow"
+    assert result["lockBefore"] == True, "Lock must exist after before hook"
+    assert result["lockAfter"] == True, "Lock must be removed after after hook"
+    _clean_state_files(lock_path)
+
+
+def test_commit_lock_is_commit_command():
+    """isCommitCommand matches commit targets, rejects non-commit and non-make."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
+console.log(JSON.stringify({{
+    ship: mod.isCommitCommand('make ship-commit MSG=test'),
+    nonCommit: mod.isCommitCommand('make test-unit'),
+    gitCommit: mod.isCommitCommand('make git-commit MSG=test'),
+    commitNoVerify: mod.isCommitCommand('make commit-no-verify MSG=test'),
+    gitAmend: mod.isCommitCommand('make git-amend-msg MSG=fix'),
+    notMake: mod.isCommitCommand('git commit'),
+    testAndCommit: mod.isCommitCommand('make test-and-commit MSG=test'),
+    repoCommit: mod.isCommitCommand('make repo-commit MSG=test'),
+    empty: mod.isCommitCommand(''),
+    noTarget: mod.isCommitCommand('make '),
+}}))
+"""
+    result = _run_ts(code)
+    assert result["ship"] == True
+    assert result["nonCommit"] == False
+    assert result["gitCommit"] == True
+    assert result["commitNoVerify"] == True
+    assert result["gitAmend"] == True
+    assert result["notMake"] == False
+    assert result["testAndCommit"] == True
+    assert result["repoCommit"] == True
+    assert result["empty"] == False
+    assert result["noTarget"] == False
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 

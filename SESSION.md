@@ -6,6 +6,62 @@
 
 ---
 
+## SESSION 27 — 2026-07-13
+
+### HEAD + Branch State
+
+- **HEAD: `fe35ca62`** on `development` branch
+- **Working tree: DIRTY** — 6 files (Makefile, verify_enforcement.py, pareto.py, test_pareto_router.py, bisect_ts_parse.py, test_runtime_test_coverage.py)
+- **Test count: 30,486 collected** (1 deselected)
+- **Runtime tests: 85 pass / 9 fail** (enforce-stop.ts Node v26 TS syntax error: 8 failures; enforce-delegate streak threshold: 1 failure)
+
+### Key Deliverables (commits `d5c3df87` → `fe35ca62`)
+
+| Category | Items | Commit(s) |
+|----------|-------|-----------|
+| **restore-opencode fix** | `rsync --mirror` from `.opencode.orig/`; collection error import fixes (PROTECTED_PATH_SUBSTRINGS/MARKERS→path_canonicalizer); 4 new restore tests | `d5c3df87` |
+| **Plugin config fix** | Permission ordering, guard detection, 13 config tests | `2fbd012c` |
+| **E.5 shared.ts extraction** | Extracted shared plugin utilities; deduplicated enforcement plugins; added runtime test coverage | `68afa46b` |
+| **Lint-fix sweep** | 90 auto-fixes + scoring/metric module + hot-reload docs + opencode integrity scripts | `5a04fffb` |
+| **C.23 DB cred leak** | DB credential leak test + build_hot_modules.js update + post-hook test update | `c92683bd`, `69287239` |
+| **.opencode integrity checker** | Integrity checker with hot_reload exclusion; enforce-stop TS syntax fix; enforce-clean-tree dirty dispatch block | `0b81b298` |
+| **enforce-clean-tree fix** | Remaining changes from subagent wave | `763b2590` |
+| **enforce-stop Node v26 compat** | Enforce-stop.ts restored from pre-E.5-refactor (same Node v26 compat issue — predates refactor, not a regression) | `fe35ca62` |
+
+### New Files Created
+
+| File | Purpose |
+|------|---------|
+| `src/general_ludd/scoring/metric.py` | D.20 — scoring/metric module |
+| `src/general_ludd/scoring/pareto.py` | D.20 — ParetoRouter implementation |
+| `tests/unit/test_pareto_router.py` | D.20 tests |
+| `scripts/bisect_ts_parse.py` | TS parse bisect tool |
+| `tests/unit/test_runtime_test_coverage.py` | Runtime test coverage analysis |
+| `scripts/check_opencode_integrity.py` | .opencode integrity checker |
+| `scripts/verify_opencode_backup.py` | verify-opencode-backup script |
+| Hot-reload docs updated | `build_hot_modules.js` refresh |
+
+### Known Gaps
+
+1. **enforce-stop.ts Node v26 compat** — `ERR_INVALID_TYPESCRIPT_SYNTAX` at line 1453 (`}` trailing comma). Node v26 TS parser rejects syntax accepted by v22. Causes 8 runtime test failures. Same issue predates E.5 refactor — not a regression.
+2. **enforce-commit-lock no runtime tests** — 0 runtime test coverage for commit-lock plugin.
+3. **enforce-delegate streak threshold** — 1 runtime test failure (`test_delegate_streak_at_threshold_denied`); expects `deny` but gets `allowed`. Threshold/heuristic may need recalibration or test assertion update.
+4. **Dirty working tree** — 6 files uncommitted (Makefile, verify_enforcement.py, pareto.py, test_pareto_router.py, bisect_ts_parse.py, test_runtime_test_coverage.py).
+
+### Next Steps (Prioritized)
+
+1. [ ] **Fix enforce-stop.ts Node v26 syntax** — trailing comma at line 1453; `{...},` → `{...}`. Unblocks 8 runtime tests.
+2. [ ] **Commit dirty tree** — ship remaining D.20 + integrity checker + bisect work.
+3. [ ] **Push development to remote** — after tree clean.
+4. [ ] **Fix enforce-delegate streak test** — recalibrate threshold or update test expectation.
+5. [ ] **Add runtime tests for enforce-commit-lock** — currently 0.
+6. [ ] **Run gate-lite** — validate current state.
+
+### Last Updated
+- **2026-07-13 — Session 27.** On `development` branch, HEAD `fe35ca62`. 30,486 collected tests. 85/94 runtime tests pass (8 blocked by enforce-stop.ts Node v26 syntax, 1 delegate heuristic). Key deliverables: restore-opencode rsync mirror fix, enforce-clean-tree dirty dispatch block, .opencode integrity checker + verify-opencode-backup, D.20 metric.py + ParetoRouter, C.23 DB cred leak, E.5 shared.ts extraction, hot-reload docs update, 90 lint auto-fixes.
+
+---
+
 ## SESSION 26 — 2026-07-12/13 (FINAL)
 
 ### HEAD + Branch State

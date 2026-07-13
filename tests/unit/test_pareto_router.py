@@ -492,6 +492,114 @@ class TestParetoRouterCostQualityWeights:
         assert winner["model"] == "cheap"
 
 
+class TestPickWinnerPerCallWeights:
+    """Per-call weight overrides (bonus gap: hardcoded 0.5/0.5 → task-aware)."""
+
+    def test_per_call_override_quality_dominant(self) -> None:
+        router = ParetoRouter()  # defaults: 0.5, 0.5
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap", "cost": 0.01, "quality": 0.50},
+            {"model": "expensive", "cost": 0.10, "quality": 0.99},
+        ]
+        winner = router.pick_winner(
+            frontier, cost_weight=0.01, quality_weight=0.99
+        )
+        assert winner is not None
+        assert winner["model"] == "expensive"
+
+    def test_per_call_override_cost_dominant(self) -> None:
+        router = ParetoRouter()  # defaults: 0.5, 0.5
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap", "cost": 0.01, "quality": 0.50},
+            {"model": "expensive", "cost": 0.10, "quality": 0.99},
+        ]
+        winner = router.pick_winner(
+            frontier, cost_weight=0.99, quality_weight=0.01
+        )
+        assert winner is not None
+        assert winner["model"] == "cheap"
+
+    def test_per_call_override_does_not_mutate_instance(self) -> None:
+        router = ParetoRouter(cost_weight=0.2, quality_weight=0.8)
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap", "cost": 0.01, "quality": 0.50},
+            {"model": "expensive", "cost": 0.10, "quality": 0.99},
+        ]
+        router.pick_winner(frontier, cost_weight=0.99, quality_weight=0.01)
+        assert router._cost_weight == 0.2
+        assert router._quality_weight == 0.8
+
+    def test_per_call_override_one_param_only(self) -> None:
+        router = ParetoRouter(cost_weight=0.2, quality_weight=0.8)
+        frontier: list[dict[str, Any]] = [
+            {"model": "a", "cost": 0.01, "quality": 0.50},
+            {"model": "b", "cost": 0.10, "quality": 0.99},
+        ]
+        winner = router.pick_winner(frontier, quality_weight=0.99)
+        assert winner is not None
+        assert winner["model"] == "b"
+
+
+class TestPickWinnerForTask:
+    """Per-task weight lookup via pick_winner_for_task."""
+
+    def test_security_fix_prefers_quality_over_cost(self) -> None:
+        router = ParetoRouter()  # defaults: 0.5, 0.5
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap", "cost": 0.01, "quality": 0.60},
+            {"model": "secure", "cost": 0.15, "quality": 0.99},
+        ]
+        winner = router.pick_winner_for_task(
+            frontier, TaskType.SECURITY_FIX
+        )
+        assert winner is not None
+        # SECURITY_FIX: cost=0.05, quality=0.95 → quality-heavy
+        assert winner["model"] == "secure"
+
+    def test_different_tasks_pick_different_winners(self) -> None:
+        router = ParetoRouter()
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap", "cost": 0.01, "quality": 0.65},
+            {"model": "lowq_floor", "cost": 0.03, "quality": 0.50},
+            {"model": "expensive", "cost": 0.14, "quality": 0.85},
+        ]
+        sec_winner = router.pick_winner_for_task(
+            frontier, TaskType.SECURITY_FIX
+        )
+        doc_winner = router.pick_winner_for_task(
+            frontier, TaskType.DOCUMENTATION
+        )
+        assert sec_winner is not None
+        assert doc_winner is not None
+        assert sec_winner != doc_winner
+
+    def test_bug_fix_uses_correct_weights(self) -> None:
+        router = ParetoRouter()
+        frontier: list[dict[str, Any]] = [
+            {"model": "cheap", "cost": 0.02, "quality": 0.75},
+            {"model": "good", "cost": 0.08, "quality": 0.95},
+        ]
+        winner = router.pick_winner_for_task(frontier, TaskType.BUG_FIX)
+        assert winner is not None
+        # BUG_FIX: cost=0.15, quality=0.85 → mildly quality-leaning
+        assert winner["model"] == "good"
+
+    def test_single_candidate_always_wins_regardless_of_weights(self) -> None:
+        router = ParetoRouter()
+        frontier: list[dict[str, Any]] = [
+            {"model": "only", "cost": 0.50, "quality": 0.30},
+        ]
+        winner = router.pick_winner_for_task(frontier, TaskType.DOCUMENTATION)
+        assert winner is not None
+        assert winner["model"] == "only"
+
+    def test_empty_frontier_returns_none(self) -> None:
+        router = ParetoRouter()
+        assert (
+            router.pick_winner_for_task([], TaskType.FEATURE) is None
+        )
+
+
 class TestParetoFrontierMixedInvalid:
     def test_some_valid_some_nan_still_works(self) -> None:
         router = ParetoRouter()

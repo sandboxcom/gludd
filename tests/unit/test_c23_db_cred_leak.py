@@ -15,7 +15,6 @@ import logging
 
 import pytest
 
-
 # ── common credential-token patterns for caplog scans ────────────────────
 
 _CRED_PATTERNS = [
@@ -43,7 +42,7 @@ def _records_have_credentials(records: list[logging.LogRecord]) -> str:
 def _records_have_traceback(caplog_text: str) -> str:
     """Return a failing description if caplog output contains a traceback."""
     if "Traceback (most recent call last)" in caplog_text:
-        return f"traceback leaked in log output"
+        return "traceback leaked in log output"
     return ""
 
 
@@ -215,7 +214,8 @@ _DB_CONNECTORS = [
 
 
 def _health_method_source(mod_name: str) -> str:
-    import importlib, inspect
+    import importlib
+    import inspect
 
     mod = importlib.import_module(f"general_ludd.connectors.{mod_name}")
     source = inspect.getsource(mod)

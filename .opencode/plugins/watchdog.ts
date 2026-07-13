@@ -8,6 +8,7 @@ const TASK_PID_FILE = ".gate-logs/task-watchdog.pid"
 export default (async ({ $ }) => {
   return {
     event: async ({ event }: { event: { type: string } }) => {
+      if (process.env.GLUDD_WATCHDOG_ENABLED === "0") return
       reportAlive("watchdog")
       if (event.type === "session.created") {
         try { await $`make watchdog-auto` } catch {}
