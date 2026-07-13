@@ -67,7 +67,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         deck deck-serve deck-preview deck-data deck-honesty \
         sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
         sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
-    script-count test-hooks-live \
+    script-count test-hooks-live test-hook-runtime \
     ci-view ci-rerun ci-trigger ci-active ci-job-log \
     search-coverage-agentconfig \
     git-index git-search git-stats \
@@ -691,6 +691,13 @@ test-guardrails:
 # Skips cleanly (not fails) when node < 22.6 / absent.
 test-hooks-live:
 	@$(UV) run python -m pytest -m hook_live -v
+
+# Functional hook runtime tests: invokes actual plugin hook functions via
+# node --experimental-strip-types and verifies runtime behavior (deny/allow,
+# state-file side effects, fail-open). Distinct from structural source-pattern
+# tests; these tests MEASURE hook behavior, not source code shape.
+test-hook-runtime:
+	@$(UV) run python scripts/test_hook_runtime.py -v
 
 test-db:
 	@$(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
