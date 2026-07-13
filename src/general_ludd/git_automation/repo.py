@@ -36,10 +36,10 @@ logger = logging.getLogger(__name__)
 
 # ── ansible-runner availability ──────────────────────────────────────────────
 try:
-    import ansible_runner  # type: ignore[import]
+    import ansible_runner
     _HAS_ANSIBLE_RUNNER = True
 except ImportError:
-    ansible_runner = None  # type: ignore[assignment]
+    ansible_runner = None
     _HAS_ANSIBLE_RUNNER = False
 
 # Path to the role directory relative to this project root.  We resolve it at
@@ -392,15 +392,15 @@ class GitAutomation:
         role instead of running ``git`` via subprocess directly.
         """
         if use_ansible:
-            result = self._invoke_role(
+            ansible_result = self._invoke_role(
                 "commit", commit_message=message,
             )
-            if result.get("status") != "successful":
+            if ansible_result.get("status") != "successful":
                 raise subprocess.CalledProcessError(
-                    returncode=result.get("rc", 1),
+                    returncode=ansible_result.get("rc", 1),
                     cmd=["ansible_runner", "git_automation", "commit"],
                     output="",
-                    stderr=result.get("error", "commit failed via ansible-runner"),
+                    stderr=ansible_result.get("error", "commit failed via ansible-runner"),
                 )
             sha_result = self._run_git("rev-parse", "HEAD")
             return sha_result.stdout.strip()
@@ -578,15 +578,15 @@ class GitAutomation:
 
         # --- ansible-runner delegation path ---
         if use_ansible:
-            result = self._invoke_role(
+            ansible_result = self._invoke_role(
                 "clone", clone_url=url, target_dir=target_dir,
                 git_clone_timeout=int(timeout),
             )
             return CloneResult(
                 path=os.path.abspath(target_dir),
                 url=url,
-                success=result.get("status") == "successful",
-                message=result.get("error", ""),
+                success=ansible_result.get("status") == "successful",
+                message=ansible_result.get("error", ""),
             )
 
         # --- subprocess path (default) ---
@@ -748,14 +748,14 @@ class GitAutomation:
         _reject_leading_dash(target, kind="merge target ref")
 
         if use_ansible:
-            result = self._invoke_role(
+            ansible_result = self._invoke_role(
                 "merge", merge_source=source, merge_target=target,
                 merge_strategy=strategy, repo_path=repo_path,
             )
             return MergeResult(
-                success=result.get("status") == "successful",
+                success=ansible_result.get("status") == "successful",
                 strategy=strategy,
-                message=result.get("error", ""),
+                message=ansible_result.get("error", ""),
             )
 
         with git_repo_lock(repo_path):

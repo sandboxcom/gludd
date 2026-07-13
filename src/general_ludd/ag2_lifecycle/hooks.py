@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from general_ludd.ag2_lifecycle.types import (
@@ -303,8 +304,6 @@ class LifecycleHookSystem:
 
 
 # ── Dispatch result types ──────────────────────────────────────────────────────
-
-from dataclasses import dataclass, field
 
 
 @dataclass

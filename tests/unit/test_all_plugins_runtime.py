@@ -33,9 +33,20 @@ PLUGIN_TO_TEST = {
     "enforce-no-suppressions": ["test_no_suppression_comments_plugin.py"],
     "enforce-no-wait": ["test_no_wait_plugin.py"],
     "enforce-session-start": ["test_session_start_plugin.py", "test_enforcement_session_start_plugin.py"],
-    "enforce-stop": ["test_enforce_stop_syntax.py", "test_enforce_false_done.py", "test_false_done_plugin.py", "test_stop_pattern_qa.py", "test_todo_guard_plugin.py"],
+    "enforce-stop": [
+        "test_enforce_stop_syntax.py",
+        "test_enforce_false_done.py",
+        "test_false_done_plugin.py",
+        "test_stop_pattern_qa.py",
+        "test_todo_guard_plugin.py",
+    ],
     "enforce-verified-claims": ["test_verified_claims_plugin.py"],
-    "hot_reload": ["test_hot_reload_safe_merge.py", "test_hot_reload_code.py", "test_hot_reload_module.py", "test_hot_reload_toc.py"],
+    "hot_reload": [
+        "test_hot_reload_safe_merge.py",
+        "test_hot_reload_code.py",
+        "test_hot_reload_module.py",
+        "test_hot_reload_toc.py",
+    ],
     "watchdog": ["test_watchdog_plugin.py"],
 }
 

@@ -34,4 +34,5 @@ __all__ = [
     "MemoryConsolidator",
     "MemoryRecord",
     "MemoryRetriever",
+    "WorkingMemoryItem",
 ]

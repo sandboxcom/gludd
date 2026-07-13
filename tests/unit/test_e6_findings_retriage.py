@@ -224,19 +224,20 @@ def test_todo_model_version_id_col_wired() -> None:
     mapper_args_found = False
     for node in ast.walk(tree):
         # Check for AnnAssign with target __mapper_args__
-        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            if node.target.id == "__mapper_args__":
-                # Value is the dict literal: {"version_id_col": version}
-                if isinstance(node.value, ast.Dict):
-                    for key in node.value.keys:
-                        if isinstance(key, ast.Constant) and key.value == "version_id_col":
-                            mapper_args_found = True
-                            break
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__mapper_args__"
+            and isinstance(node.value, ast.Dict)
+        ):
+            for key in node.value.keys:
+                if isinstance(key, ast.Constant) and key.value == "version_id_col":
+                    mapper_args_found = True
+                    break
         # Also check plain assignment (no type annotation)
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == "__mapper_args__":
-                    if isinstance(node.value, ast.Dict):
+                if isinstance(target, ast.Name) and target.id == "__mapper_args__" and isinstance(node.value, ast.Dict):
                         for key in node.value.keys:
                             if isinstance(key, ast.Constant) and key.value == "version_id_col":
                                 mapper_args_found = True
