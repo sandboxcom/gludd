@@ -223,12 +223,16 @@ class CrossConversationStore:
     def purge_expired(self) -> int:
         purged = 0
         now = _now()
-        expired_keys = [sk for sk, deadline in self._ttl_registry.items() if now >= deadline]
-        for sk in expired_keys:
-            parts = sk.rsplit(":", 1)
-            ns = tuple(parts[0].split(":")) if len(parts) > 1 else ("default",)
-            key = parts[1] if len(parts) > 1 else parts[0]
-            self.delete(key, ns)
+        expired_sks = [sk for sk, deadline in self._ttl_registry.items() if now >= deadline]
+        for sk in expired_sks:
+            entry = self._ephemeral.get(sk, {})
+            ns = tuple(entry.get("namespace", ("default",)))
+            key = str(entry.get("key", ""))
+            if key:
+                self.delete(key, ns)
+            else:
+                self._ephemeral.pop(sk, None)
+                self._ttl_registry.pop(sk, None)
             purged += 1
         return purged
 

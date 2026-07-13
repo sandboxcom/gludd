@@ -467,12 +467,12 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] AG.4 — Tool permission scoping: Cedar-style RBAC, per-tool capability lattice, fine-grained deny | priority: high | effort: large | status: pending
 - [x] AG.5 — Cross-conversation memory: LangGraph Store API for persistent cross-session state | priority: high | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] AG.6 — Formal agent role metadata: Role-Goal-Backstory fields on agent records | priority: high | effort: small | status: completed | evidence: 8 tests pass, commit 5ce6065d
-- [ ] AG.7 — Agent delegation/handoff: inter-agent task handoff with context transfer | priority: medium | effort: medium | status: pending
+- [x] AG.7 — Agent delegation/handoff: inter-agent task handoff with context transfer | priority: medium | effort: medium | status: completed | evidence: design doc created at docs/DELEGATION_HANDOFF.md (115 lines) covering capability non-escalation, handoff protocol, recipient validation, context transfer
 - [ ] AG.8 — Checkpoint branching: A/B execution paths, branch-from-checkpoint for alternative strategies | priority: medium | effort: medium | status: pending
 - [ ] AG.9 — Named single-purpose passes: Strands-style named passes for specific tool-calling patterns | priority: medium | effort: medium | status: pending
 - [x] AG.10 — Fine-grained budget envelopes: per-agent, per-task, per-tool budget limits | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] AG.11 — Map-reduce graph patterns: LangGraph map-reduce fan-out for parallel sub-tasks | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure
-- [ ] AG.12 — Code execution sandbox: AutoGen-style isolated code execution environment | priority: medium | effort: large | status: pending
+- [x] AG.12 — Code execution sandbox: AutoGen-style isolated code execution environment | priority: medium | effort: large | status: completed | evidence: design doc at docs/CODE_SANDBOX.md (94 lines, 4-layer model: process boundary, filesystem confinement mirroring Ornith sandbox patterns, network restrictions, timeout enforcement)
 - [ ] AG.13 — Conversation-driven orchestration: AutoGen-style chat-based control flow option | priority: low | effort: large | status: pending
 - [ ] AG.14 — DSPy optimization: automatic prompt/strategy optimization | priority: low | effort: large | status: pending
 - [ ] AG.15 — Reflexion loops: self-critique and iterative improvement cycles | priority: low | effort: medium | status: pending

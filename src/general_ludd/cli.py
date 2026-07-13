@@ -977,6 +977,35 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     tbg_results.add_argument("testfile", help="Test file path")
     tbg_results.set_defaults(func=_cmd_testbg_results)
 
+    test_parser = sub.add_parser("test", help="Test runner commands")
+    test_parser.set_defaults(func=None)
+    test_sub = test_parser.add_subparsers(dest="test_command")
+
+    test_bg_parser = test_sub.add_parser("background", help="Background test runner commands")
+    test_bg_parser.set_defaults(func=None)
+    testbg2_sub = test_bg_parser.add_subparsers(dest="testbg_command")
+
+    tbg2_launch = testbg2_sub.add_parser("launch", help="Launch a test in the background")
+    tbg2_launch.add_argument("testfile", help="Test file path")
+    tbg2_launch.add_argument("--wait", action="store_true", help="Block until test completes")
+    tbg2_launch.set_defaults(func=_cmd_testbg_launch)
+
+    tbg2_status = testbg2_sub.add_parser("status", help="Check status of a background test")
+    tbg2_status.add_argument("testfile", help="Test file path")
+    tbg2_status.set_defaults(func=_cmd_testbg_status)
+
+    tbg2_poll = testbg2_sub.add_parser("poll-all", help="Status for all tracked background tests")
+    tbg2_poll.set_defaults(func=_cmd_testbg_poll_all)
+
+    tbg2_kill = testbg2_sub.add_parser("kill", help="Kill a background test")
+    tbg2_kill.add_argument("testfile", help="Test file path")
+    tbg2_kill.add_argument("--force", action="store_true", help="Force SIGKILL after SIGTERM")
+    tbg2_kill.set_defaults(func=_cmd_testbg_kill)
+
+    tbg2_results = testbg2_sub.add_parser("results", help="Get final results for a completed test")
+    tbg2_results.add_argument("testfile", help="Test file path")
+    tbg2_results.set_defaults(func=_cmd_testbg_results)
+
     subcommand_map = {
         "login": login_parser,
         "models": models_parser,
@@ -1010,6 +1039,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "collection": collection_parser,
         "searx": searx_parser,
         "test-bg": testbg_parser,
+        "test": test_parser,
     }
 
     return parser, subcommand_map
