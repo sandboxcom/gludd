@@ -451,34 +451,21 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] **enforce-multitask min-dispatch** — fix for enforce-multitask.ts min-dispatch threshold. | evidence: Wave 34
 
 
-## Phase AG — Agent Framework Research Gaps (2026-07-12)
+## Phase AG — Agent Framework Gaps (Strands/CrewAI/AutoGen/LangGraph research, 2026-07-12)
 
-Research: Amazon Strands Agents, CrewAI, AutoGen, LangGraph, and agent evaluation frameworks. Identified 16 gaps across 4 priority tiers.
-
-### CRITICAL (agent lifecycle + evaluation)
-
-- [ ] **AG.1 — Agent evaluation framework (Evals SDK equivalent)** | priority: critical | effort: large | status: pending | Strands Evals SDK has 25+ evaluators (trajectory, faithfulness, tool selection, harmful content), red teaming framework, failure detectors. gludd has scoring/engine (prompt-scoring) but no agent-trajectory evaluation. **Gap: no way to measure if an agent change improves behavior.** | category: enhancement
-- [ ] **AG.2 — Lifecycle hook system expansion** | priority: critical | effort: medium | status: pending | Strands hooks cover BeforeToolCall, AfterToolCall, BeforeModelCall, AfterModelCall, BeforeInvocation, AfterInvocation — composable via Plugin classes. gludd plugins only cover tool.execute.before + text.complete. **Gap: cannot intercept model calls, tool results, or invocation boundaries.** | category: enhancement
-
-### HIGH (orchestration + memory + permissions)
-
-- [ ] **AG.3 — Hierarchical task decomposition (manager agent)** | priority: high | effort: large | status: pending | CrewAI's hierarchical mode: manager agent dynamically decomposes and assigns subtasks. AutoGen's nested chat: sub-conversations for internal deliberation. gludd dispatches flat — no decomposition, no sub-tasking. **Gap: complex multi-step tasks require manual splitting.** | category: enhancement
-- [ ] **AG.4 — Tool permission scoping (hierarchical)** | priority: high | effort: medium | status: pending | Strands uses Cedar for RBAC with scoped tool permissions. gludd has flat allow/deny per-tool. **Gap: cannot grant read-only access to some tools and write to others per agent.** | category: enhancement
-- [ ] **AG.5 — Cross-conversation memory (LangGraph Store API)** | priority: high | effort: large | status: pending | LangGraph Store provides persistent KV/structured memory across conversations. gludd has per-run checkpoints but no cross-conversation recall. **Gap: agents forget everything between sessions.** | category: enhancement
-- [ ] **AG.6 — Agent role/skill metadata formalization** | priority: high | effort: small | status: pending | CrewAI's Role-Goal-Backstory triad. gludd agents defined by unstructured prompt text only. **Gap: no machine-readable agent capability description for auto-selection.** | category: enhancement
-
-### MEDIUM (delegation + branching + observability)
-
-- [ ] **AG.7 — Agent-to-agent delegation/handoff tools** | priority: medium | effort: medium | status: pending | Strands Swarm handoff, CrewAI delegation tool, AutoGen dynamic speaker selection. gludd agents cannot delegate to peers. **Gap: no inter-agent handoff capability.** | category: enhancement
-- [ ] **AG.8 — Checkpoint branching for A/B testing** | priority: medium | effort: medium | status: pending | LangGraph checkpoint branching enables forking execution paths and comparing outcomes. gludd has linear execution only. **Gap: cannot A/B test agent strategies.** | category: enhancement
-- [ ] **AG.9 — Named single-purpose passes (deterministic orchestration)** | priority: medium | effort: medium | status: pending | Strands Penta pattern: every AI call is a named pass with its own prompt/schema/cache; no agent chooses what to run next. gludd subagents are free-form. **Gap: no deterministic multi-pass pipeline pattern.** | category: enhancement
-- [ ] **AG.10 — Fine-grained budget envelopes (node-level)** | priority: medium | effort: medium | status: pending | Strands Loom: per-invocation cost tracking. LangGraph: node-level budget caps. gludd has coarse job-level budgets only. **Gap: cannot cap spend at sub-task granularity.** | category: enhancement
-- [ ] **AG.11 — Map-reduce fan-out within graph** | priority: medium | effort: medium | status: pending | LangGraph Send API: parallel branch execution within a single StateGraph run. gludd fans out via separate subprocesses, losing graph-native state sharing. **Gap: no graph-native parallelism.** | category: enhancement
-- [ ] **AG.12 — Code execution sandbox as primitive** | priority: medium | effort: medium | status: pending | AutoGen's Docker sandbox: code execution is conversational, results feed back inline. gludd has make-only bash with no sandbox. **Gap: agents cannot generate and test code in isolation mid-conversation.** | category: enhancement
-
-### LOW (paradigm-different + optimization)
-
-- [ ] **AG.13 — Conversation-driven orchestration** | priority: low | effort: large | status: pending | AutoGen's chat-as-control-flow paradigm differs fundamentally from gludd's dispatch model. Worth monitoring but not adopting wholesale. | category: research
-- [ ] **AG.14 — DSPy-style prompt optimization** | priority: low | effort: large | status: pending | Programmatic prompt optimization via gradient descent over eval metrics. Gludd prompts are hand-written. | category: research
-- [ ] **AG.15 — Reflexion / self-reflective agent loop** | priority: low | effort: medium | status: pending | Agents store self-reflections in episodic memory for future improvement. Gludd has review but not looped self-improvement. | category: enhancement
-- [ ] **AG.16 — External benchmark integration (SWE-bench, Tau-Bench)** | priority: low | effort: medium | status: pending | Standardized benchmarks for agent comparison. gludd has internal eval harness only. | category: enhancement
+- [ ] AG.1 — Agent evaluation framework: trajectory evaluation, benchmark harness, quality scoring | priority: critical | effort: large | status: pending
+- [ ] AG.2 — Lifecycle hook expansion: BeforeToolCall, AfterModelCall, AfterToolResult hooks for interception | priority: critical | effort: medium | status: pending
+- [ ] AG.3 — Hierarchical task decomposition: CrewAI-style role-goal-backstory + manager-agent patterns | priority: high | effort: large | status: pending
+- [ ] AG.4 — Tool permission scoping: Cedar-style RBAC, per-tool capability lattice, fine-grained deny | priority: high | effort: large | status: pending
+- [ ] AG.5 — Cross-conversation memory: LangGraph Store API for persistent cross-session state | priority: high | effort: medium | status: pending
+- [ ] AG.6 — Formal agent role metadata: Role-Goal-Backstory fields on agent records | priority: high | effort: small | status: pending
+- [ ] AG.7 — Agent delegation/handoff: inter-agent task handoff with context transfer | priority: medium | effort: medium | status: pending
+- [ ] AG.8 — Checkpoint branching: A/B execution paths, branch-from-checkpoint for alternative strategies | priority: medium | effort: medium | status: pending
+- [ ] AG.9 — Named single-purpose passes: Strands-style named passes for specific tool-calling patterns | priority: medium | effort: medium | status: pending
+- [ ] AG.10 — Fine-grained budget envelopes: per-agent, per-task, per-tool budget limits | priority: medium | effort: medium | status: pending
+- [ ] AG.11 — Map-reduce graph patterns: LangGraph map-reduce fan-out for parallel sub-tasks | priority: medium | effort: large | status: pending
+- [ ] AG.12 — Code execution sandbox: AutoGen-style isolated code execution environment | priority: medium | effort: large | status: pending
+- [ ] AG.13 — Conversation-driven orchestration: AutoGen-style chat-based control flow option | priority: low | effort: large | status: pending
+- [ ] AG.14 — DSPy optimization: automatic prompt/strategy optimization | priority: low | effort: large | status: pending
+- [ ] AG.15 — Reflexion loops: self-critique and iterative improvement cycles | priority: low | effort: medium | status: pending
+- [ ] AG.16 — External benchmarks: SWE-bench, GAIA, WebArena integration for measuring progress | priority: low | effort: medium | status: pending
