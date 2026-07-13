@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 Waves 11-12 FINAL — 111 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:0, W1:10, E:6, H:14, S:13).**
+**Last consolidated: 2026-07-12 Waves 11-12 + Agent Framework Research — 127 OPEN items across 11 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:0, W1:10, E:6, H:14, S:13, AG:16).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -22,7 +22,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | G | AGENTS.md Codification | 0 | 5 | 100% |
 | H | Security Hardening | 14 | 23 | 39% |
 | S | Post-Ship | 13 | 21 | 38% |
-| **Total** | | **111** | **198** | **44%** |
+| AG | Agent Framework Research | 16 | 16 | 0% |
+| **Total** | | **127** | **214** | **41%** |
 
 ---
 
@@ -74,7 +75,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] C.1 — SSRF canonicalization: unify is_url_blocked/resolved_host_is_blocked/resolve_and_pin | priority: high | effort: medium | status: completed | evidence: resolve_and_pin canonical guard, 188 tests pass, lint clean
 - [x] C.2 — Adversarial detector daemon-wiring + scan-file 400 fix | priority: high | effort: small | status: completed | evidence: 95 tests pass (test_adversarial_detector) + 17 pass (TestAdversarialEndpoints) + 11 pass (test_backlog_auditor), lint clean. detector added to daemon_state dict, scan_file symlink escape fixed (exclusive allowed_root confinement), backlog_auditor _real_file_reader path-confined.
 - [x] C.3 — DB tenant scoping: ThreadPoolExecutor spawns sessions without tenant filter | priority: high | effort: medium | status: completed | evidence: Wave 34
-- [ ] C.5 — Integrity store: HMAC canonical-JSON baseline, fail-closed on corrupt store | priority: medium | effort: medium | status: pending
+- [x] C.5 — Integrity store: HMAC canonical-JSON baseline, fail-closed on corrupt store | priority: medium | effort: medium | status: completed | evidence: 33 tests pass (test_integrity_store.py), daemon lifespan wired — IntegrityStore created at startup, verifies config baseline against GL_INTEGRITY_KEY HMAC, fail-closed (logs critical on mismatch)
 - [x] C.6 — Model gateway: strip caller kwargs base_url/api_key, default httpx timeout, redact resolved URL in errors | priority: medium | effort: small | status: completed | evidence: 17 tests pass (TestC6KwargsStripping, TestC6DefaultHttpxTimeout, TestC6UrlRedaction), _redact_url_in_exception in gateway.py
 - [ ] C.8 — Hot-reload/worker broadcast: snapshot→swap TOCTOU, unauthenticated worker registration leaks PSK, no concurrency guard, symlink bypass | priority: medium | effort: large | status: pending
 - [ ] C.9 — self_update deny-list family: consolidate applier.py + capability_lattice.py + apply.py protected-path lists | priority: medium | effort: medium | status: pending
@@ -448,3 +449,36 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] **log_analyzer role** — Ansible role for log analysis. | evidence: Wave 34
 - [x] **game SearX e2e tests** — end-to-end tests for SearX game integration. | evidence: Wave 34
 - [x] **enforce-multitask min-dispatch** — fix for enforce-multitask.ts min-dispatch threshold. | evidence: Wave 34
+
+
+## Phase AG — Agent Framework Research Gaps (2026-07-12)
+
+Research: Amazon Strands Agents, CrewAI, AutoGen, LangGraph, and agent evaluation frameworks. Identified 16 gaps across 4 priority tiers.
+
+### CRITICAL (agent lifecycle + evaluation)
+
+- [ ] **AG.1 — Agent evaluation framework (Evals SDK equivalent)** | priority: critical | effort: large | status: pending | Strands Evals SDK has 25+ evaluators (trajectory, faithfulness, tool selection, harmful content), red teaming framework, failure detectors. gludd has scoring/engine (prompt-scoring) but no agent-trajectory evaluation. **Gap: no way to measure if an agent change improves behavior.** | category: enhancement
+- [ ] **AG.2 — Lifecycle hook system expansion** | priority: critical | effort: medium | status: pending | Strands hooks cover BeforeToolCall, AfterToolCall, BeforeModelCall, AfterModelCall, BeforeInvocation, AfterInvocation — composable via Plugin classes. gludd plugins only cover tool.execute.before + text.complete. **Gap: cannot intercept model calls, tool results, or invocation boundaries.** | category: enhancement
+
+### HIGH (orchestration + memory + permissions)
+
+- [ ] **AG.3 — Hierarchical task decomposition (manager agent)** | priority: high | effort: large | status: pending | CrewAI's hierarchical mode: manager agent dynamically decomposes and assigns subtasks. AutoGen's nested chat: sub-conversations for internal deliberation. gludd dispatches flat — no decomposition, no sub-tasking. **Gap: complex multi-step tasks require manual splitting.** | category: enhancement
+- [ ] **AG.4 — Tool permission scoping (hierarchical)** | priority: high | effort: medium | status: pending | Strands uses Cedar for RBAC with scoped tool permissions. gludd has flat allow/deny per-tool. **Gap: cannot grant read-only access to some tools and write to others per agent.** | category: enhancement
+- [ ] **AG.5 — Cross-conversation memory (LangGraph Store API)** | priority: high | effort: large | status: pending | LangGraph Store provides persistent KV/structured memory across conversations. gludd has per-run checkpoints but no cross-conversation recall. **Gap: agents forget everything between sessions.** | category: enhancement
+- [ ] **AG.6 — Agent role/skill metadata formalization** | priority: high | effort: small | status: pending | CrewAI's Role-Goal-Backstory triad. gludd agents defined by unstructured prompt text only. **Gap: no machine-readable agent capability description for auto-selection.** | category: enhancement
+
+### MEDIUM (delegation + branching + observability)
+
+- [ ] **AG.7 — Agent-to-agent delegation/handoff tools** | priority: medium | effort: medium | status: pending | Strands Swarm handoff, CrewAI delegation tool, AutoGen dynamic speaker selection. gludd agents cannot delegate to peers. **Gap: no inter-agent handoff capability.** | category: enhancement
+- [ ] **AG.8 — Checkpoint branching for A/B testing** | priority: medium | effort: medium | status: pending | LangGraph checkpoint branching enables forking execution paths and comparing outcomes. gludd has linear execution only. **Gap: cannot A/B test agent strategies.** | category: enhancement
+- [ ] **AG.9 — Named single-purpose passes (deterministic orchestration)** | priority: medium | effort: medium | status: pending | Strands Penta pattern: every AI call is a named pass with its own prompt/schema/cache; no agent chooses what to run next. gludd subagents are free-form. **Gap: no deterministic multi-pass pipeline pattern.** | category: enhancement
+- [ ] **AG.10 — Fine-grained budget envelopes (node-level)** | priority: medium | effort: medium | status: pending | Strands Loom: per-invocation cost tracking. LangGraph: node-level budget caps. gludd has coarse job-level budgets only. **Gap: cannot cap spend at sub-task granularity.** | category: enhancement
+- [ ] **AG.11 — Map-reduce fan-out within graph** | priority: medium | effort: medium | status: pending | LangGraph Send API: parallel branch execution within a single StateGraph run. gludd fans out via separate subprocesses, losing graph-native state sharing. **Gap: no graph-native parallelism.** | category: enhancement
+- [ ] **AG.12 — Code execution sandbox as primitive** | priority: medium | effort: medium | status: pending | AutoGen's Docker sandbox: code execution is conversational, results feed back inline. gludd has make-only bash with no sandbox. **Gap: agents cannot generate and test code in isolation mid-conversation.** | category: enhancement
+
+### LOW (paradigm-different + optimization)
+
+- [ ] **AG.13 — Conversation-driven orchestration** | priority: low | effort: large | status: pending | AutoGen's chat-as-control-flow paradigm differs fundamentally from gludd's dispatch model. Worth monitoring but not adopting wholesale. | category: research
+- [ ] **AG.14 — DSPy-style prompt optimization** | priority: low | effort: large | status: pending | Programmatic prompt optimization via gradient descent over eval metrics. Gludd prompts are hand-written. | category: research
+- [ ] **AG.15 — Reflexion / self-reflective agent loop** | priority: low | effort: medium | status: pending | Agents store self-reflections in episodic memory for future improvement. Gludd has review but not looped self-improvement. | category: enhancement
+- [ ] **AG.16 — External benchmark integration (SWE-bench, Tau-Bench)** | priority: low | effort: medium | status: pending | Standardized benchmarks for agent comparison. gludd has internal eval harness only. | category: enhancement

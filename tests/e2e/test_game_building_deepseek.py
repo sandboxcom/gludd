@@ -467,7 +467,9 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               distance_traveled) starts at 0 and increments on positive events (row traveled).
             - Game-over detection: when a lose condition triggers (collision with tree or
               rock), `state` transitions to "game_over" and `crashed`/`game_over` (bool) is
-              True. `tick()` after game_over is a no-op.
+              True. After game_over, EVERY subsequent call to `tick()` MUST return immediately
+              without changing ANY mutable state: score, position (skier_x, skier_y), distance,
+              obstacle lists, speed, or any other attribute. A frozen game must never un-freeze.
             - Win detection: when a win condition triggers (reaching course bottom / y >=
               course_h), `state` transitions to "won" and `finished`/`won` (bool) becomes True.
             - `restart()` method: resets ALL state (score=0, game_over=False, won=False,

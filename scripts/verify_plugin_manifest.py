@@ -38,6 +38,10 @@ HOOK_ALIAS: dict[str, str] = {
 
 PLUGIN_FILE_RE = re.compile(r"\.opencode/(?:plugin|plugins)/[\w-]+\.ts")
 
+UTILITY_FILES = {
+    ".opencode/plugin/hot_reload.ts",
+}
+
 
 def _read_json(path: Path) -> dict:
     try:
@@ -65,7 +69,9 @@ def disk_plugins() -> set[str]:
     for d in SEARCH_DIRS:
         if d.is_dir():
             for f in d.glob("*.ts"):
-                found.add(str(f.relative_to(WORKSPACE)))
+                rel = str(f.relative_to(WORKSPACE))
+                if rel not in UTILITY_FILES:
+                    found.add(rel)
     return found
 
 
