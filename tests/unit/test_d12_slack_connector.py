@@ -64,7 +64,11 @@ ENV = {"SLACK_BOT_TOKEN": "xoxb-secret-token"}
 
 def _mk(config=None, get_resp=None, post_resp=None, env=None):
     t = FakeTransport(get_resp=get_resp, post_resp=post_resp)
-    s = SlackSource(config or {"base_url": BASE_URL, "token_env": "SLACK_BOT_TOKEN", "channel_id": "C123"}, transport=t, env=env if env is not None else dict(ENV))
+    s = SlackSource(
+        config or {"base_url": BASE_URL, "token_env": "SLACK_BOT_TOKEN", "channel_id": "C123"},
+        transport=t,
+        env=env if env is not None else dict(ENV),
+    )
     return s, t
 
 
@@ -277,7 +281,13 @@ def test_read_channel_history_mixed_messages():
         "ok": True,
         "messages": [
             {"type": "message", "user": "U1", "text": "normal", "ts": "1749717000.000100"},
-            {"type": "message", "subtype": "bot_message", "user": "UBOT", "text": "bot says hi", "ts": "1749717060.000200"},
+            {
+                "type": "message",
+                "subtype": "bot_message",
+                "user": "UBOT",
+                "text": "bot says hi",
+                "ts": "1749717060.000200",
+            },
             {"type": "message", "user": "U3", "text": "", "ts": "0.0"},
         ],
     }

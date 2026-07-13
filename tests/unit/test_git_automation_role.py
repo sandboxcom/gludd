@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 import yaml
 
-ROLE_ROOT = Path(__file__).resolve().parent.parent.parent / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles" / "git_automation"
+ROLE_ROOT = (
+    Path(__file__).resolve().parent.parent.parent
+    / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles" / "git_automation"
+)
 
 
 class TestGitAutomationRoleStructure:
@@ -95,7 +99,7 @@ class TestTaskFilesAreValidYaml:
 class TestMainYmlImportsAllSubTasks:
     """Verify main.yml includes all six sub-task files."""
 
-    REQUIRED_INCLUDES = {
+    REQUIRED_INCLUDES: ClassVar[set[str]] = {
         "clone.yml",
         "commit.yml",
         "push.yml",
@@ -148,7 +152,7 @@ class TestMetaRoleInfo:
 class TestDefaultsHaveRequiredParams:
     """Verify defaults/main.yml has the expected parameter namespace."""
 
-    REQUIRED_DEFAULTS = [
+    REQUIRED_DEFAULTS: ClassVar[list[str]] = [
         "git_op",
         "repo_path",
         "clone_url",
@@ -209,7 +213,7 @@ class TestTaskFilesReferenceCorrectVariables:
 class TestRoleHasNoForbiddenPatterns:
     """Verify role tasks don't use forbidden patterns per AGENTS.md."""
 
-    FORBIDDEN = [
+    FORBIDDEN: ClassVar[list[tuple[str, str | None]]] = [
         ("force", "push.yml"),
         ("force-push", "push.yml"),
         ("no-verify", None),

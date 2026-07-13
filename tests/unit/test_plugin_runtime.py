@@ -125,10 +125,14 @@ def test_make_target_exists():
     assert "check-plugin-runtime:" in content, "Missing check-plugin-runtime target"
     assert "check_plugin_runtime.py" in content, "Missing script reference in Makefile"
 
-    gate_dep_line = next(l for l in content.split("\n") if l.startswith("gate:"))
+    gate_dep_line = next(line for line in content.split("\n") if line.startswith("gate:"))
     assert "check-plugin-runtime" in gate_dep_line, "check-plugin-runtime not in gate deps"
 
-    gate_lite_dep_line = next(l for l in content.split("\n") if l.lstrip().startswith("gate-lite:") and not l.lstrip().startswith("#"))
+    gate_lite_dep_line = next(
+        line
+        for line in content.split("\n")
+        if line.lstrip().startswith("gate-lite:") and not line.lstrip().startswith("#")
+    )
     assert "check-plugin-runtime" in gate_lite_dep_line, (
         f"check-plugin-runtime not in gate-lite deps: {gate_lite_dep_line}"
     )

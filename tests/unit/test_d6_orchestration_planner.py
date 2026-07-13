@@ -27,6 +27,8 @@ import ast
 import sys
 from pathlib import Path
 
+import pytest
+
 SRC_DIR = Path(__file__).resolve().parents[2] / "src" / "general_ludd"
 
 

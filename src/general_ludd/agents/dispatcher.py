@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -506,7 +506,7 @@ class AgentDispatcher:
     async def resume_project(
         self,
         project_id: str,
-        rehydrated_snapshots: list[object],
+        rehydrated_snapshots: Sequence[object],
     ) -> list[AgentTask]:
         """Re-enqueue tasks rehydrated from pause-saved snapshots.
 

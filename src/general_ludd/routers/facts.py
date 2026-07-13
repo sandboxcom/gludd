@@ -38,6 +38,7 @@ from general_ludd.db.repository import (
     TaskReturnRepository,
     TodoRepository,
 )
+from general_ludd.routers._util import get_session_factory as _get_session_factory
 from general_ludd.routers.accounting import _build_accountant as _build_accounting_accountant
 from general_ludd.routers.coordination import _coordination_facet
 
@@ -63,9 +64,6 @@ def _resolve_trace_project_id(request: Any, query_project_id: str | None) -> str
     if scope is not None:
         return scope
     return query_project_id
-
-
-from general_ludd.routers._util import get_session_factory as _get_session_factory
 
 
 def _models_facet(app: FastAPI) -> dict[str, object]:

@@ -13,7 +13,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.memory.cross_conversation import CrossConversationStore
 
@@ -53,11 +53,12 @@ class ConversationMeta:
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> ConversationMeta:
+        ended_at_raw = data.get("ended_at")
         return ConversationMeta(
             conversation_id=str(data.get("conversation_id", "")),
             agent_id=str(data.get("agent_id", "")),
             started_at=float(data.get("started_at", 0)),
-            ended_at=float(data.get("ended_at")) if data.get("ended_at") is not None else None,
+            ended_at=float(ended_at_raw) if ended_at_raw is not None else None,
             status=str(data.get("status", "active")),
             tags=list(data.get("tags", [])),
             summary=str(data.get("summary", "")),
@@ -324,7 +325,7 @@ class CrossConversationMemory:
         raw = self._store.get(conversation_id, namespace=NAMESPACE_SUMMARIES)
         if raw is None:
             return None
-        return raw["value"].get("text")
+        return cast(str, raw["value"].get("text"))
 
     def search_summaries(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         results = self._store.search(
