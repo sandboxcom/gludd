@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import threading
@@ -1172,7 +1173,7 @@ class ModelGateway:
             response=response,
         )
 
-    def call_model_with_retry(
+    async def call_model_with_retry(
         self,
         profile_id: str,
         messages: list[dict[str, str]],
@@ -1202,8 +1203,6 @@ class ModelGateway:
         out of ``**kwargs`` (never forwarded to the provider constructor).
         See docs/audit/FAILOVER_GAPS.md (correlation-id-propagation).
         """
-        import time as _time
-
         import httpx
 
         profile = self._profiles.get(profile_id)
@@ -1277,15 +1276,15 @@ class ModelGateway:
 
         _attempt_counter: list[int] = [0]
         _last_exc: list[BaseException | None] = [None]
-        # Cumulative-backoff cap: _time.sleep is synchronous and blocks the
-        # calling thread. With overload_max_retries=10 and
-        # overload_max_backoff=120s the worst-case cumulative sleep is 10x120s =
-        # 1200s (~20 minutes) on a single call — effectively a DoS of the thread
-        # pool. We track total wall-clock time spent sleeping and stop sleeping
-        # once the cap is exceeded, letting the retry exhaust naturally (tenacity
-        # continues retrying, but immediately rather than waiting). The cap is
-        # intentionally generous (300s = 5 minutes) so that legitimate overload
-        # back-pressure is still respected for the first few retries.
+        # Cumulative-backoff cap: backoff sleep now uses asyncio.sleep so the
+        # event loop is not blocked during retry waits. With overload_max_retries=10
+        # and overload_max_backoff=120s the worst-case cumulative sleep is 10x120s =
+        # 1200s (~20 minutes) of retries. We track total wall-clock time spent
+        # sleeping and stop sleeping once the cap is exceeded, letting the retry
+        # exhaust naturally (tenacity continues retrying, but immediately rather
+        # than waiting). The cap is intentionally generous (300s = 5 minutes) so
+        # that legitimate overload back-pressure is still respected for the first
+        # few retries.
         _MAX_CUMULATIVE_SLEEP_S: float = 300.0
         _cumulative_sleep_s: list[float] = [0.0]
 
@@ -1327,7 +1326,7 @@ class ModelGateway:
             decision = policy.decide(kind, _attempt_counter[0])
             return bool(decision.should_retry)
 
-        def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
+        async def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
             """Perform policy-computed backoff sleep between retry attempts.
 
             DOUBLE-COUNT FIX: this callback used to also record a TimeoutEvent on
@@ -1368,7 +1367,7 @@ class ModelGateway:
                         )
                     else:
                         actual_sleep = min(wait_s, remaining_budget)
-                        _time.sleep(actual_sleep)
+                        await asyncio.sleep(actual_sleep)
                         _cumulative_sleep_s[0] += actual_sleep
 
         # Overload kinds (PROVIDER_ERROR, RATE_LIMITED) use the higher retry cap
@@ -1376,7 +1375,7 @@ class ModelGateway:
         # exhaust the overload budget.
         _exhausted = False
         try:
-            for attempt in tenacity.Retrying(
+            async for attempt in tenacity.AsyncRetrying(
                 retry=tenacity.retry_if_exception(_is_retryable),
                 wait=tenacity.wait_none(),
                 stop=tenacity.stop_after_attempt(policy._overload_max_retries),
@@ -1386,7 +1385,8 @@ class ModelGateway:
                 with attempt:
                     _attempt_counter[0] = attempt.retry_state.attempt_number
                     try:
-                        result = self.call_model(
+                        result = await asyncio.to_thread(
+                            self.call_model,
                             profile_id, messages,
                             _skip_health_check=True,
                             **kwargs,
@@ -1423,7 +1423,8 @@ class ModelGateway:
         # just one hop), and records success/failure for the ones it attempts
         # (Fix 3).
         fallback_ids = list(profile.fallback_profiles)
-        result, last_fb_exc, attempts = self._walk_fallbacks(
+        result, last_fb_exc, attempts = await asyncio.to_thread(
+            self._walk_fallbacks,
             fallback_ids, messages,
             from_profile_id=profile_id,
             from_error=_last_exc[0],

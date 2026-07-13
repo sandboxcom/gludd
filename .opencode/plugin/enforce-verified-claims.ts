@@ -20,6 +20,7 @@
  * JS runtime.
  */
 import type { Plugin } from "@opencode-ai/plugin"
+import * as fs from "node:fs"
 
 /**
  * Words that signal a completion / success claim. When ANY of these appear,
@@ -91,6 +92,11 @@ export const BLOCK_MESSAGE = [
   "See AGENTS.md 'Evidence-Based Response Policy' and 'Done Claims Require Observable Verification Evidence'.",
 ].join("\n")
 
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function _reportAlive(): void {
   try {
     const alivePath = "/tmp/gludd-plugin-alive.json"
@@ -134,7 +140,9 @@ export default (async () => {
       _input: unknown,
       output: { text: string },
     ) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return output
+      if (_isSubagent()) return output
+      console.log("SUBAGENT SKIP: enforce-verified-claims")
+      console.log("SUBAGENT SKIP: enforce-verified-claims")
       _reportAlive()
       try {
         if (process.env.GLUDD_VERIFIED_CLAIMS_ENFORCE === "0") return

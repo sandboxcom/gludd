@@ -69,13 +69,14 @@ _SKIP_REASON = (
 _DS_BASE_URL = "https://api.deepseek.com/v1"
 _E2E_TARGET_GAME = os.environ.get("E2E_TARGET_GAME", "").strip().lower()
 
+_KEY_SENTINEL = object()
+_KEY_CACHE: str | None | object = _KEY_SENTINEL
 _GATEWAY_CACHE: dict[str, Any] = {}
-_KEY_CACHE: str | None | object = object()  # sentinel for unset
 
 
 def _get_deepseek_key() -> str | None:
     global _KEY_CACHE
-    if _KEY_CACHE is object:  # unset sentinel
+    if _KEY_CACHE is _KEY_SENTINEL:
         _KEY_CACHE = _load_deepseek_key()
     return cast(str | None, _KEY_CACHE)
 

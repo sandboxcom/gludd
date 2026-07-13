@@ -70,3 +70,9 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
     return defaults
   }
 }
+
+
+function _isSubagent(): boolean {
+  if (process.env.OPENCODE_SUBAGENT === "1") return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}

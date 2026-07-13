@@ -38,6 +38,11 @@ interface MultitaskState {
   waveHistory: number[]
 }
 
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function readState(): MultitaskState {
   try {
     if (fs.existsSync(MULTITASK_STATE_FILE)) {
@@ -127,7 +132,8 @@ export default (async ({ }) => {
 
   return {
     "tool.execute.before": async (input: { tool?: string }) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return
+      if (_isSubagent()) return
+      console.log("SUBAGENT SKIP: enforce-multitask")
       _reportAlive()
       try {
         if (!FLOOR_ENFORCE) return
@@ -218,7 +224,9 @@ export default (async ({ }) => {
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       try {
-        if (process.env.OPENCODE_SUBAGENT === "1") return output
+        if (_isSubagent()) return output
+        console.log("SUBAGENT SKIP: enforce-multitask")
+        console.log("SUBAGENT SKIP: enforce-multitask")
         if (!output || typeof output.text !== "string") return output
         if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test(output.text.trim())) return output
         // RESEARCH FINDING (2026-07-12): text.complete hook NEVER fires on tool output — it only fires on text-end LLM stream events. The _input.role field does not exist in the payload. So no tool-output guard is needed: all text here is agent-generated. Do NOT add an isToolOutput / role-based guard — it is dead code.

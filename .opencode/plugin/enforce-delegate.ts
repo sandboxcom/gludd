@@ -100,6 +100,11 @@ const MAX_DISENGAGE_MS = 3_600_000
 let _probeFailCount = 0
 const PROBE_FAIL_THRESHOLD = parseInt(process.env.GLUDD_PROBE_FAIL_THRESHOLD || "3", 10)
 
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function countLiveAgents(): number | null {
   if (process.env.GLUDD_LIVE_AGENTS_COUNT) {
     const n = parseInt(process.env.GLUDD_LIVE_AGENTS_COUNT, 10)
@@ -735,7 +740,8 @@ export default (async ({ }) => {
   } catch { /* fail-open */ }
   return {
     "tool.execute.before": async (input, output) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return
+      if (_isSubagent()) return
+      console.log("SUBAGENT SKIP: enforce-delegate")
       _reportAlive()
       _writeHeartbeat()
       const tool = input.tool

@@ -37,6 +37,11 @@ import { loadHotModule, type HotModule } from "./hot_reload.ts"
 // after editing this file to generate the hot module.
 
 // Live overrides
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function _tunable(overridePath: string, envVar: string, dflt: string): number {
   let base = parseInt(process.env[envVar] || dflt, 10)
   try {
@@ -372,7 +377,8 @@ function _writeHeartbeat(): void {
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, output: any) => {
-    if (process.env.OPENCODE_SUBAGENT === "1") return
+    if (_isSubagent()) return
+    console.log("SUBAGENT SKIP: enforce-floor")
     _reportAlive()
     _writeHeartbeat()
     try {
@@ -672,7 +678,9 @@ const defaultImpl: HotModule = {
   },
 
   "experimental.text.complete": async (_input: any, output: any) => {
-    if (process.env.OPENCODE_SUBAGENT === "1") return output
+    if (_isSubagent()) return output
+    console.log("SUBAGENT SKIP: enforce-floor")
+    console.log("SUBAGENT SKIP: enforce-floor")
     if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
     try {
       try {

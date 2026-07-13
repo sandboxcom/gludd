@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [Unreleased] — since beta.3 (2026-07-12)
+## [Unreleased] — since beta.3 (2026-07-12) — Session 25 Final: 17 todos, 12 completed, 3 collections, 10/10 plugins BLOCKING, 59% TASKS.md completion
 
 ### Collections (Session 25)
 

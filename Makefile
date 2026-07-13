@@ -335,7 +335,7 @@ ruff-audit:
 	@$(UV) run python scripts/ruff_plugins/return_type_checker.py
 
 typecheck:
-	@$(UV) run mypy src
+	@$(UV) run mypy -p general_ludd
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \
@@ -3456,6 +3456,12 @@ hot-reload-status:
 hot-reload-clean:
 	@rm -f /tmp/gludd-hot-*.js
 	@echo "Hot-reload modules removed"
+
+fix-subagent-detection:
+	@$(UV) run python3 scripts/fix_subagent_detection.py
+
+check-hot-reload-fresh:
+	@$(UV) run python3 scripts/check_hot_reload_fresh.py
 
 # --- Restart opencode for plugin changes to take effect ---
 # TypeScript plugin changes are compiled once at opencode startup — edits to

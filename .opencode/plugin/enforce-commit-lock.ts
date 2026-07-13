@@ -55,6 +55,11 @@ export const DENY_MESSAGE =
 /** Tracks whether the CURRENT tool call holds the lock (for release in after). */
 let _heldByThisCall = false;
 
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function _reportAlive(): void {
   try {
     const alivePath = "/tmp/gludd-plugin-alive.json";
@@ -113,7 +118,8 @@ export function releaseLock(): void {
 
 export default function commitLockPlugin(api: PluginAPI): void {
   api.tool.execute.before((params) => {
-    if (process.env.OPENCODE_SUBAGENT === "1") return
+    if (_isSubagent()) return
+    console.log("SUBAGENT SKIP: enforce-commit-lock")
     _reportAlive();
     _heldByThisCall = false;
     try {

@@ -115,6 +115,28 @@ Runtime verification via `make test-hook-runtime` (52 functional tests across 8 
 
 **Note:** Enforcement plugin changes take effect on opencode restart. During a session where plugin source was edited, behavioral enforcement may lag until restart.
 
+### Subagent Enforcement Isolation
+
+Enforcement plugins MUST NOT interfere with subagent tool calls or output. Subagents operate in a delegated context — the orchestrator manages enforcement, not the subagent.
+
+**How isolation works:**
+
+1. **Env var detection**: Plugins check `process.env.OPENCODE_SUBAGENT === "1"` at the top of every hook. When true, the hook returns early (allow all).
+
+2. **File-based fallback**: If the env var is not set by the opencode framework, plugins check for `/tmp/gludd-subagent-${process.pid}.json` as a fallback detection mechanism.
+
+3. **Hot module isolation**: Hot-reload modules at `/tmp/gludd-hot-enforce-*.js` MUST include the subagent guard at the top of every exported hook function. Broken hot modules (ReferenceError) are automatically caught by `loadHotModule()` and the compiled-in `defaultImpl` (with guards) is used instead.
+
+4. **Verification**: `make test-hook-runtime` includes tests that verify subagent context skips enforcement. `make verify-plugin-manifest` checks that every plugin has the subagent guard.
+
+5. **When enforcement leaks into subagents**:
+   - Check `/tmp/gludd-hot-enforce-*.js` — stale/broken hot modules can bypass compiled-in guards
+   - Run `make hot-reload-plugins` to rebuild hot modules with current guards
+   - Run `make reload-enforcement` to reset enforcement state files
+   - Check `make verify-enforcement` for any advisory-only plugins
+
+**Known limitation**: If `OPENCODE_SUBAGENT` env var is not set by the opencode framework and the file-based fallback fails, enforcement WILL fire inside subagents. This is a framework-level gap — the file-based fallback is a workaround, not a fix for the missing env var.
+
 ### Plugin Tuning Without Restart (State-File Pattern)
 
 OpenCode loads plugins at startup only — there is no hot-reload API. To change enforcement behavior mid-session without restarting, use the state-file pattern:

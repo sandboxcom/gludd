@@ -5,8 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- **2026-07-12** — Session 25 FINAL (Waves 1-13). On `development` branch, HEAD `d9b080a0`. All 13 waves completed and pushed.
-- **2026-07-12** — Session 25. On `development` branch, HEAD `89e93cbc` (Waves 11-12 pushed). Hot-reload proxy pattern on all 13 enforcement plugins, CI pipeline discipline tooling (ci-busy-check, ci-safe-push, deploy-and-forget), Phase S fixes (S.5-S.12, 6 fixes, 118+ new tests), H.5 humangate checkpointer (12 tests), functional hook test harness (68 runtime tests across 8 plugins).
+- **2026-07-12** — Session 25 CLOSED. On `development` branch, HEAD `d9b080a0`. All 13 Waves completed: 17 todo items tracked, 12 completed. 3 collections (XML:9 roles, Web:6 roles, Web Server:8 roles). Enforcement: 10/10 plugins BLOCKING, hot-reload proxy functional, 68 runtime tests. Phase S/H/C/D fixes landed. AG evaluation framework design doc created. ~1300+ new tests across collections + enforcement + phase fixes. 125 of 214 TASKS.md items completed (59%).
 - 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 - **Wave 35 — Collection Split + Documentation:** TASKS.md Phase R expanded to 18 items. Collection FQCNs updated: `general_ludd.agent.{ssl_cert,hsm_operations,audit_framework,sql_injection,command_injection,prompt_injection}` → `general_ludd.security.*`. `docs/SECURITY_ROLES.md` + `docs/SSL_CERT_SYSTEM.md` FQCN references updated. Two new docs created: `docs/NETWORKING_SYSTEM.md` (networking role, 7 modes, ScapyAdapter, tool matrix, dissector templates) and `docs/BUSINESS_RESEARCH_SYSTEM.md` (entity_research role, 6 research capabilities, SearX monitoring, entity graph). README.md restructured from single collection section to 4 collection sub-sections (`general_ludd.agent`, `general_ludd.security`, `general_ludd.business`, `general_ludd.networking`) with FQCN tables and doc cross-references.
 - **SSL cert system docs** — `docs/SSL_CERT_SYSTEM.md` created: architecture overview, 2 Ansible role specifications, 4 data file formats, 5 Python module APIs, 6-standard compliance matrix, security considerations. TASKS.md F.6 ticked, CHANGELOG entry added.
@@ -143,30 +142,27 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Known Gaps
 
-1. **e2e game pipeline broken** — gap analysis (Wave 9) found 2 CRITICAL findings: game_over flag mismatch, missing lifecycle steps.
+1. **e2e game pipeline broken** — gap analysis (Wave 9) found 2 CRITICAL findings: game_over flag mismatch, missing lifecycle steps. Both FIXED in Waves 9-10.
 2. **CI RED on `development`** — run 29213743760. Must be fixed before development→master merge.
 3. **`hot_reloader.py` SyntaxError** — C.8 tests pass but reloader module has parse error.
-4. **development → master merge pending** — development is 35+ commits ahead; gate must be green before merging.
+4. **development → master merge pending** — development is 35+ commits ahead of master; gate must be green before merging.
 5. **No release tag cut** — next version tag not yet created; blocked on gate green + merge.
 6. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used; `make gate-lite` is the local approximation.
 7. **Connector gaps** — no WebSocket or reconnect logic (feature requests, not blocking).
-8. **~~enforce-floor.ts hard-coded ON~~** — FIXED Wave 11: `GLUDD_FLOOR_ENFORCE` env var added.
-9. **~~text.complete dedup across 6 plugins~~** — FIXED Wave 11: dedup guards added to enforce-floor, enforce-stop, enforce-multitask, enforce-delegate, enforce-deadline, enforce-enhancement-ratio.
-10. **~~No integration hook tests~~** — FIXED Wave 11: `scripts/test_hook_runtime.py` with 52 runtime tests across 8 plugins, `make test-hook-runtime` wired into gate.
-11. **~~No hot-reload for plugin changes~~** — FIXED Wave 12: hot-reload proxy pattern for 3 plugins via `/tmp/gludd-hot-*.js` files; `make hot-reload-plugins` target.
-12. **~~2 test_hook_runtime failures~~** — FIXED Wave 12: 68 runtime tests pass.
-13. **Hot-reload requires manual `make hot-reload-plugins` invocation** — hot modules must be built before enforcement fixes take effect at runtime. Proxy plugins fall back to bundled code if hot files absent.
-14. **Enforcement may fire in subagent context** — `OPENCODE_SUBAGENT=1` guard added but some edge cases remain under investigation.
-15. **Tetris score remains flaky** — nondeterministic scoring in game e2e tests.
+8. **Hot-reload requires manual `make hot-reload-plugins` invocation** — hot modules must be built before enforcement fixes take effect at runtime. Proxy plugins fall back to bundled code if hot files absent.
+9. **Enforcement may fire in subagent context** — `OPENCODE_SUBAGENT=1` guard added + file-based fallback (`/tmp/gludd-subagent-${pid}.json`) implemented. Some edge cases remain under investigation.
+10. **Tetris score remains flaky** — nondeterministic scoring in game e2e tests.
+11. **OPENCODE_SUBAGENT env var unconfirmed in subagent context** — the env-var guard relies on the opencode framework setting `OPENCODE_SUBAGENT=1` for subagents. If the framework doesn't set it, file-based fallback detection (`/tmp/gludd-subagent-${pid}.json`) provides a workaround. Not yet confirmed working end-to-end.
+12. **AG evaluation framework not yet implemented** — design doc created but Phase AG items (AG.1-AG.16) remain pending.
 
 ## Next Steps
 
-1. [ ] **Restart opencode or run `make hot-reload-plugins` + `make reload-enforcement`** — to activate enforcement fixes at runtime.
-2. [ ] **Verify enforcement blocks at runtime** — test that hot-reloaded plugins actually deny violations.
-3. [ ] **Continue Phase AG items** — 16 items from Amazon Strands/CrewAI/AutoGen/LangGraph gap analysis.
+1. [ ] **Verify OPENCODE_SUBAGENT env var in subagent context** — confirm whether the opencode framework sets this env var for dispatched subagents. The file-based fallback (`/tmp/gludd-subagent-${pid}.json`) works as backup.
+2. [ ] **Continue Phase AG items** — AG.1-AG.16: agent evaluation framework, lifecycle hooks, hierarchical task decomposition, tool permission scoping, cross-conversation memory, and 11 more items.
+3. [ ] **Fix CI RED on development** — run 29213743760 must be green before merge.
 4. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
 5. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
-6. [ ] **Cut release tag** — after merge to master, run `make release-cut`.
+6. [ ] **Cut beta.2 release tag** — after merge to master, run `make release-cut TAG=v0.1.0-beta.2`.
 
 ## Current Gate Status (2026-07-12)
 <!-- gate:begin -->
