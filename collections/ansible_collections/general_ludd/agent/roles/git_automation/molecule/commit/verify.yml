@@ -1,0 +1,34 @@
+---
+- name: "Verify — git_automation commit succeeded"
+  hosts: localhost
+  gather_facts: false
+  vars:
+    test_dir: "/tmp/molecule-git-commit-test"
+    test_message: "molecule test commit"
+
+  tasks:
+    - name: "Assert commit result fact is set"
+      ansible.builtin.assert:
+        that:
+          - git_automation_commit_result is defined
+          - git_automation_commit_result.success | bool
+          - git_automation_commit_result.sha | length == 40
+        fail_msg: "git_automation_commit_result not set or commit failed"
+
+    - name: "Assert commit exists in git log"
+      ansible.builtin.command:
+        cmd: "git log --oneline -1"
+        chdir: "{{ test_dir }}"
+      register: _log
+
+    - name: "Verify commit message and SHA match"
+      ansible.builtin.assert:
+        that:
+          - _log.stdout is search(git_automation_commit_result.sha[:7])
+          - _log.stdout is search(test_message)
+        fail_msg: "Commit not found in git log — expected SHA {{ git_automation_commit_result.sha[:7] }} and message '{{ test_message }}'"
+
+    - name: "Clean up test directory"
+      ansible.builtin.file:
+        path: "{{ test_dir }}"
+        state: absent

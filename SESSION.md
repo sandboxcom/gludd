@@ -6,6 +6,51 @@
 
 ---
 
+## SESSION 26 — 2026-07-12/13 (CURRENT)
+
+### HEAD + Branch State
+
+- **HEAD: `fdb40722`** on `development` branch
+- **Remote: DIVERGED** — local `fdb40722` vs remote `bde4d1c0` (10 unpushed commits)
+- **CI: NO RUN** for `fdb40722`
+- **Working tree: DIRTY** — TASKS.md modified, molecule directory untracked
+- **TASKS.md: 51 open (down from 80), 76% complete** — 166 of 217 items ticked
+
+### Key Deliverables (commits `5a480209` → `fdb40722`)
+
+| Category | Items | Commit(s) |
+|----------|-------|-----------|
+| **git_automation role** | 5 git operations delegated (init, clone, add, commit, push), 8 C.17 tests, 20 D.14 CLI tests, 36 role structure tests | `fdb40722` |
+| **AG items landed** | AG.2 lifecycle hooks (38 tests), AG.3 task decomposer (29 tests), AG.4 tool permissions (30 tests), AG.5 cross-convo memory (51 tests), AG.7 delegation design doc, AG.10/AG.11 test extensions, AG.12 design doc | `3aec400b`, `76c554e2`, `887675db` |
+| **H fixes** | H.3 ticked, H.4 verified, H.11 deny-list drift test (6), H.21 webhook rebind (17 tests) | `b5d8ab9b`, `3aec400b`, `76c554e2`, `887675db` |
+| **C completions** | C.8, C.12, C.16, C.17, C.21, C.24 — 10 Phase C items ticked in `b5d8ab9b`; C.17 git-automation tests (8) in `fdb40722`; C.21 alpha4 leftovers (21 tests) in `76c554e2` | `b5d8ab9b`, `76c554e2`, `fdb40722` |
+| **Plugin syntax checker** | `scripts/check_plugin_syntax.py` — runs `node --check` on all `.opencode/plugin/*.ts`; wired into gate + gate-lite; 2 test files (7 tests) | `a43504d4`, `e280674b`, `b5d8ab9b` |
+| **enforce-stop fix** | Syntax error from stale working copy corrected; plugin now loads at runtime | `a43504d4` |
+| **Cache corruption recovery** | OS crash corrupted `~/.cache/opencode`; `make restore-opencode` restores from `.opencode.orig/` backup | `5a480209` |
+| **Other** | E.5 shared.ts refactor (57 tests), E.9 skip-smell (7 tests), D.13 security_backlog wires (36 tests), enforce-floor shared refactor, S.2/S.17/S.18 verified, pre-commit hook fixes, .gitignore .opencode.orig | `def5fbbd`, `190f535e`, `887675db`, `76c554e2` |
+
+### Test totals (this session)
+- **AG tests**: AG.2 (38) + AG.3 (29) + AG.4 (30) + AG.5 (51) + AG.10/AG.11 (~20) = ~168
+- **Phase tests**: D.14 (20) + D.13 (36) + H.21 (17) + H.11 (6) + C.21 (21) + C.17 (8) = ~108
+- **Tooling tests**: enforce-stop syntax (5) + plugin TS syntax (2) + plugin runtime (6) = ~13
+- **Other**: E.5 (57) + E.9 (7) + role structure (36) = ~100
+- **Total: ~400 new tests**
+
+### Next Steps (Prioritized)
+
+1. [ ] **Push development to remote** — 10 unpushed commits; `make push-dev-nv GLUDD_FORCE_PUSH=1`
+2. [ ] **Run gate-lite** — validate current state
+3. [ ] **Fix CI RED on development** — pending CI run
+4. [ ] **development → master merge** — after gate green
+5. [ ] **Continue Phase AG** — AG.8, AG.9, AG.13-AG.16 remain
+6. [ ] **Resolve S.13 (DB FK)** — migration adding FKs
+7. [ ] **Fix hot_reloader.py SyntaxError** (C.8)
+
+### Last Updated
+- **2026-07-13 — Session 26.** On `development` branch, HEAD `fdb40722`. 10 commits since `887675db`. AG.2-AG.5 + AG.7/AG.10/AG.11/AG.12 landed (~168 tests). git_automation ansible role (5 ops). Plugin TS syntax checker. enforce-stop syntax fix. opencode cache corruption recovery. H.3/H.4/H.11/H.21 fixed. 10 Phase C items completed. ~400 new tests. 51 open items (76% complete). 10 unpushed commits.
+
+---
+
 ## SESSION 25 CLOSURE — 2026-07-12 (FINAL)
 
 ### 1. HEAD + Branch State

@@ -1,0 +1,272 @@
+---
+- name: Verify — git_automation role structure and YAML integrity
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    role_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/agent/roles/git_automation"
+    task_files:
+      - main.yml
+      - clone.yml
+      - commit.yml
+      - push.yml
+      - merge.yml
+      - branch.yml
+      - worktree.yml
+    sub_task_files:
+      - clone.yml
+      - commit.yml
+      - push.yml
+      - merge.yml
+      - branch.yml
+      - worktree.yml
+    required_dirs:
+      - tasks
+      - defaults
+      - meta
+    required_defaults:
+      - git_op
+      - repo_path
+      - clone_url
+      - target_dir
+      - git_clone_timeout
+      - commit_message
+      - gate_cmd
+      - push_branch
+      - push_remote
+      - push_args
+      - merge_source
+      - merge_target
+      - merge_strategy
+      - branch_op
+      - branch_name
+      - worktree_op
+      - worktree_branch
+      - worktree_path_param
+      - git_retry_count
+    required_meta_fields:
+      - role_name
+      - author
+      - description
+      - license
+      - min_ansible_version
+
+  tasks:
+    # ── 1. Directory and file existence ──────────────────────────────────
+
+    - name: "1a. Assert role root directory exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}"
+      register: _role_stat
+      failed_when: not _role_stat.stat.exists
+
+    - name: "1b. Assert required subdirectories exist"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/{{ item }}"
+      register: _subdirs
+      loop: "{{ required_dirs }}"
+      failed_when: not _subdirs.results | map(attribute='stat.exists') | list is all
+
+    - name: "1c. Assert required task files exist"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/tasks/{{ item }}"
+      register: _task_files
+      loop: "{{ task_files }}"
+      failed_when: not _task_files.results | map(attribute='stat.exists') | list is all
+
+    - name: "1d. Assert defaults/main.yml exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/defaults/main.yml"
+      register: _defaults_stat
+      failed_when: not _defaults_stat.stat.exists
+
+    - name: "1e. Assert meta/main.yml exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/meta/main.yml"
+      register: _meta_stat
+      failed_when: not _meta_stat.stat.exists
+
+    # ── 2. YAML validity ─────────────────────────────────────────────────
+
+    - name: "2a. Slurp task files"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/{{ item }}"
+      register: _slurped_tasks
+      loop: "{{ task_files }}"
+
+    - name: "2b. Assert task file YAML parses as list with >=1 item"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_tasks.results | selectattr('item', 'eq', item) | first).content | b64decode | from_yaml is iterable }}"
+          - "{{ ((_slurped_tasks.results | selectattr('item', 'eq', item) | first).content | b64decode | from_yaml) | length >= 1 }}"
+        fail_msg: "{{ item }} must parse as a non-empty list of tasks"
+      loop: "{{ task_files }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "2c. Assert defaults/main.yml parses as dict"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/defaults/main.yml"
+      register: _slurped_defaults
+
+    - name: "2d. Validate defaults YAML structure"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_defaults.content | b64decode | from_yaml) is mapping }}"
+        fail_msg: "defaults/main.yml must parse as a dict"
+
+    - name: "2e. Assert meta/main.yml parses as dict"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/meta/main.yml"
+      register: _slurped_meta
+
+    - name: "2f. Validate meta YAML structure"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_meta.content | b64decode | from_yaml) is mapping }}"
+        fail_msg: "meta/main.yml must parse as a dict"
+
+    # ── 3. main.yml includes all sub-tasks ───────────────────────────────
+
+    - name: "3a. Read main.yml content"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/main.yml"
+      register: _main_slurp
+
+    - name: "3b. Parse main.yml as YAML list"
+      ansible.builtin.set_fact:
+        _main_tasks: "{{ _main_slurp.content | b64decode | from_yaml }}"
+
+    - name: "3c. Extract include_tasks references"
+      ansible.builtin.set_fact:
+        _included: "{{ _main_tasks | selectattr('ansible.builtin.include_tasks', 'defined') | map(attribute='ansible.builtin.include_tasks') | list }}"
+
+    - name: "3d. Assert all six sub-task files are included"
+      ansible.builtin.assert:
+        that:
+          - "'clone.yml' in _included"
+          - "'commit.yml' in _included"
+          - "'push.yml' in _included"
+          - "'merge.yml' in _included"
+          - "'branch.yml' in _included"
+          - "'worktree.yml' in _included"
+        fail_msg: "main.yml missing include_tasks for one or more sub-task files. Found: {{ _included }}"
+
+    # ── 4. Meta galaxy_info fields ───────────────────────────────────────
+
+    - name: "4a. Parse meta/main.yml"
+      ansible.builtin.set_fact:
+        _meta_doc: "{{ _slurped_meta.content | b64decode | from_yaml }}"
+
+    - name: "4b. Assert galaxy_info.role_name is git_automation"
+      ansible.builtin.assert:
+        that:
+          - _meta_doc.galaxy_info.role_name == 'git_automation'
+        fail_msg: "meta galaxy_info.role_name must be 'git_automation', got {{ _meta_doc.galaxy_info.role_name | default('(missing)') }}"
+
+    - name: "4c. Assert galaxy_info has required fields"
+      ansible.builtin.assert:
+        that:
+          - _meta_doc.galaxy_info['{{ item }}'] is defined
+        fail_msg: "meta galaxy_info missing field: {{ item }}"
+      loop: "{{ required_meta_fields }}"
+      loop_control:
+        label: "galaxy_info.{{ item }}"
+
+    # ── 5. Defaults completeness ─────────────────────────────────────────
+
+    - name: "5a. Parse defaults/main.yml"
+      ansible.builtin.set_fact:
+        _defaults: "{{ _slurped_defaults.content | b64decode | from_yaml }}"
+
+    - name: "5b. Assert all required default keys exist"
+      ansible.builtin.assert:
+        that:
+          - "'{{ item }}' in _defaults"
+        fail_msg: "defaults/main.yml missing key: {{ item }}"
+      loop: "{{ required_defaults }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "5c. Assert safe defaults"
+      ansible.builtin.assert:
+        that:
+          - _defaults.fail_on_push_error | bool == false
+          - _defaults.clone_url == ""
+          - _defaults.push_remote == "origin"
+        fail_msg: "Unsafe defaults: fail_on_push_error={{ _defaults.fail_on_push_error }}, clone_url='{{ _defaults.clone_url }}', push_remote='{{ _defaults.push_remote }}'"
+
+    # ── 6. Task file variable references ─────────────────────────────────
+
+    - name: "6a. Slurp individual task files for variable checks"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/{{ item.file }}"
+      register: _var_slurps
+      loop:
+        - { file: "clone.yml", vars: ["clone_url", "target_dir", "git_clone_timeout"] }
+        - { file: "commit.yml", vars: ["repo_path", "commit_message", "gate_cmd"] }
+        - { file: "push.yml", vars: ["repo_path", "push_branch", "push_remote"] }
+        - { file: "merge.yml", vars: ["repo_path", "merge_source", "merge_target", "merge_strategy"] }
+        - { file: "branch.yml", vars: ["repo_path", "branch_op", "branch_name"] }
+        - { file: "worktree.yml", vars: ["repo_path", "worktree_op", "worktree_branch", "worktree_path_param"] }
+      loop_control:
+        label: "{{ item.file }}"
+
+    - name: "6b. Assert expected variable references exist in each task file"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_var_slurps.results | selectattr('item.file', 'eq', item.0.file) | first).content | b64decode is search(item.1) }}"
+        fail_msg: "{{ item.0.file }} missing variable reference: {{ item.1 }}"
+      loop: "{{ _var_slurps.results | subelements('item.vars') }}"
+      loop_control:
+        label: "{{ item.0.item.file }} :: {{ item.1 }}"
+
+    # ── 7. Forbidden patterns ────────────────────────────────────────────
+
+    - name: "7a. Slurp push.yml for force-push check"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/push.yml"
+      register: _push_slurp
+
+    - name: "7b. Assert push.yml rejects force-push"
+      ansible.builtin.assert:
+        that:
+          - >-
+            not (_push_slurp.content | b64decode | regex_search('force-push', ignorecase=true))
+            or (_push_slurp.content | b64decode is search("'force'"))
+        fail_msg: "push.yml may contain force-push command"
+
+    - name: "7c. Slurp all task files for --no-verify check"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/{{ item }}"
+      register: _no_verify_slurps
+      loop: "{{ task_files }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "7d. Assert no task file contains --no-verify"
+      ansible.builtin.assert:
+        that:
+          - "{{ item.content | b64decode is not search('--no-verify') }}"
+        fail_msg: "{{ item.item }} contains --no-verify, which bypasses pre-commit hooks"
+      loop: "{{ _no_verify_slurps.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: "7e. Slurp non-worktree role files for force-cmd check"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/{{ item }}"
+      register: _force_cmd_slurps
+      loop: "{{ task_files | difference(['worktree.yml']) }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "7f. Assert non-worktree files contain no force-push command"
+      ansible.builtin.assert:
+        that:
+          - >-
+            not (item.content | b64decode | regex_search('\\bforce\\b.*push', ignorecase=true))
+        fail_msg: "{{ item.item }} contains a force-push command"
+      loop: "{{ _force_cmd_slurps.results }}"
+      loop_control:
+        label: "{{ item.item }}"

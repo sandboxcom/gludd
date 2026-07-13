@@ -1,0 +1,63 @@
+---
+- name: Converge — merge feature branch into target
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo_path: "/tmp/gludd-molecule-merge-repo"
+    feature_branch: "molecule/feature-merge-test"
+    target_branch: "main"
+    role_tasks_dir: "{{ playbook_dir }}/../../tasks"
+
+  tasks:
+    - name: Create throwaway git repo with initial commit
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          mkdir -p "{{ repo_path }}"
+          cd "{{ repo_path }}"
+          git init -q -b main
+          git config user.email "mock@molecule.local"
+          git config user.name "Molecule Merge Test"
+          git config commit.gpgsign false
+          echo "seed" > README.md
+          git add README.md
+          git commit -q -m "initial commit on main"
+      changed_when: true
+      register: _repo_init
+
+    - name: Create feature branch via branch.yml
+      ansible.builtin.include_tasks: "{{ role_tasks_dir }}/branch.yml"
+      vars:
+        repo_path: "{{ repo_path }}"
+        branch_op: create
+        branch_name: "{{ feature_branch }}"
+
+    - name: Add change on feature branch
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          cd "{{ repo_path }}"
+          git checkout {{ feature_branch | quote }}
+          echo "feature work" > feature.txt
+          git add feature.txt
+          git commit -q -m "feature: add feature.txt on feature branch"
+      changed_when: true
+
+    - name: Merge feature branch into target via merge.yml
+      ansible.builtin.include_tasks: "{{ role_tasks_dir }}/merge.yml"
+      vars:
+        repo_path: "{{ repo_path }}"
+        merge_source: "{{ feature_branch }}"
+        merge_target: "{{ target_branch }}"
+        merge_strategy: "ff"
+
+    - name: Persist merge result for verify
+      ansible.builtin.copy:
+        content: "{{ git_automation_merge_result | to_nice_json }}"
+        dest: "/tmp/gludd-molecule-merge-result.json"
+        mode: "0644"
+
+    - name: Show merge result
+      ansible.builtin.debug:
+        var: git_automation_merge_result

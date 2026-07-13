@@ -925,6 +925,187 @@ console.log(JSON.stringify({{allAllowed: r1 === undefined && r2 === undefined &&
     assert result["allAllowed"] == True
 
 
+# ── enforce-floor.ts  —  runtime tests: text.complete, message-shape, grace, subagent, disengage ──
+
+
+def test_floor_text_complete_blocks_on_zero_dispatches():
+    """text.complete replaces prose with FLOOR BREACH when streak > MAX_STREAK (0 dispatches).
+
+    After MAX_STREAK+1 non-dispatch calls with open work, text.complete must replace the
+    outgoing text with the FLOOR BREACH directive — proof that the plugin blocks prose
+    when the subagent pool is drained to zero.
+    """
+    tasks_path = f"/tmp/gludd-test-tasks-floor-tc-{os.getpid()}.md"
+    todowrite_path = f"/tmp/gludd-todowrite-state-floor-tc-{os.getpid()}.json"
+    session_state = f"/tmp/gludd-session-start-fake-tc-{os.getpid()}.json"
+    streak_file = f"/tmp/gludd-tool-streak-tc-{os.getpid()}.json"
+    _clean_state_files(tasks_path, todowrite_path, session_state, streak_file)
+    with open(tasks_path, "w") as f:
+        f.write("- [ ] floor text-complete test task 1\n- [ ] floor text-complete test task 2\n")
+    with open(todowrite_path, "w") as f:
+        json.dump([{"status": "pending", "content": "test task"}], f)
+    with open(session_state, "w") as f:
+        json.dump({}, f)
+
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
+const plugin = await mod.default({{}})
+// 3 non-dispatch calls to build streak = 3 > MAX_STREAK = 2
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+// text.complete must detect streak > MAX and replace output
+const output = await plugin['experimental.text.complete'](undefined, {{text: 'hello from test'}})
+const finalText = (output && output.text) ? output.text : ''
+const blocked = finalText.includes('FLOOR BREACH')
+const originalGone = !finalText.includes('hello from test')
+console.log(JSON.stringify({{blocked, originalGone}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_TASKS_MD": tasks_path,
+        "GLUDD_TODOWRITE_STATE": todowrite_path,
+        "GLUDD_SESSION_STATE": session_state,
+        "GLUDD_STREAK_FILE": streak_file,
+    })
+    assert result["blocked"] == True, f"Expected FLOOR BREACH in text.complete output, got: {result}"
+    assert result["originalGone"] == True, f"Original text must be replaced: {result}"
+    _clean_state_files(tasks_path, todowrite_path, session_state, streak_file)
+
+
+def test_floor_message_shape_one_dispatch_denied():
+    """After 1 dispatch in prev message, next non-dispatch call is denied.
+
+    The message-shape rule (AGENTS.md) requires ≥5 dispatches per wave.
+    A single dispatch followed by an inline tool call triggers the
+    _prevMessageDispatchCount 1-4 block.
+    """
+    tasks_path = f"/tmp/gludd-test-tasks-floor-1d-{os.getpid()}.md"
+    todowrite_path = f"/tmp/gludd-todowrite-state-floor-1d-{os.getpid()}.json"
+    session_state = f"/tmp/gludd-session-start-fake-1d-{os.getpid()}.json"
+    streak_file = f"/tmp/gludd-tool-streak-1d-{os.getpid()}.json"
+    _clean_state_files(tasks_path, todowrite_path, session_state, streak_file)
+    with open(tasks_path, "w") as f:
+        f.write("- [ ] message-shape test task\n")
+    with open(todowrite_path, "w") as f:
+        json.dump([{"status": "pending", "content": "test task"}], f)
+    with open(session_state, "w") as f:
+        json.dump({}, f)
+
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
+const plugin = await mod.default({{}})
+// 1 dispatch in "previous message"
+await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+// text.complete transitions _prevMessageDispatchCount = 1
+await plugin['experimental.text.complete'](undefined, {{text: 'intermediate'}})
+// Non-dispatch call — must be denied as MESSAGE-SHAPE VIOLATION
+const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+const deny = result?.permissionDecision === 'deny'
+const hasMsgShape = typeof result?.message === 'string' && result.message.includes('MESSAGE-SHAPE')
+console.log(JSON.stringify({{deny, hasMsgShape}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_TASKS_MD": tasks_path,
+        "GLUDD_TODOWRITE_STATE": todowrite_path,
+        "GLUDD_SESSION_STATE": session_state,
+        "GLUDD_STREAK_FILE": streak_file,
+    })
+    assert result["deny"] == True, f"Expected deny for 1-dispatch message shape, got: {result}"
+    assert result["hasMsgShape"] == True, f"Expected MESSAGE-SHAPE in deny message: {result}"
+    _clean_state_files(tasks_path, todowrite_path, session_state, streak_file)
+
+
+def test_floor_result_grace_denies_non_dispatch():
+    """After result detection in text.complete, non-dispatch tools are denied during grace.
+
+    When text.complete detects result markers (e.g. "task result"), it sets
+    _resultProcessingGrace = RESULT_GRACE_CALLS (2). The next non-dispatch,
+    non-read call must be denied with DISPATCH GAP.
+    """
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
+const plugin = await mod.default({{}})
+// Inject result-marker text to trigger grace period
+await plugin['experimental.text.complete'](undefined, {{text: 'task result: test agent completed'}})
+// Non-dispatch non-read tool must be denied
+const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+const deny = result?.permissionDecision === 'deny'
+const hasGrace = typeof result?.message === 'string' && result.message.includes('DISPATCH GAP')
+console.log(JSON.stringify({{deny, hasGrace}}))
+"""
+    result = _run_ts(code)
+    assert result["deny"] == True, f"Expected DISPATCH GAP deny, got: {result}"
+    assert result["hasGrace"] == True, f"Expected DISPATCH GAP in deny message: {result}"
+
+
+def test_floor_text_complete_subagent_skip():
+    """text.complete returns output unmodified when OPENCODE_SUBAGENT=1.
+
+    The subagent guard in text.complete must short-circuit the hook so
+    subagent output is never intercepted or rewritten by the floor enforcer.
+    """
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
+const plugin = await mod.default({{}})
+const output = await plugin['experimental.text.complete'](undefined, {{text: 'subagent output text'}})
+const textPreserved = !!(output && output.text === 'subagent output text')
+console.log(JSON.stringify({{textPreserved}}))
+"""
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["textPreserved"] == True, f"Subagent text must pass through unmodified: {result}"
+
+
+def test_floor_disengage_allows_after_streak_breach():
+    """Disengage signal allows non-dispatch calls after streak exceeds MAX_STREAK.
+
+    The disengage escape hatch (written by `make disengage-enforcement`) must
+    allow a non-dispatch call that would otherwise be blocked. The test builds
+    streak to MAX_STREAK (2), then writes the disengage file, then makes a 3rd
+    call — which must be allowed.
+    """
+    tasks_path = f"/tmp/gludd-test-tasks-floor-dis-{os.getpid()}.md"
+    todowrite_path = f"/tmp/gludd-todowrite-state-floor-dis-{os.getpid()}.json"
+    session_state = f"/tmp/gludd-session-start-fake-dis-{os.getpid()}.json"
+    streak_file = f"/tmp/gludd-tool-streak-dis-{os.getpid()}.json"
+    disengage_path = f"/tmp/gludd-watchdog-disengage-test-{os.getpid()}.json"
+    _clean_state_files(tasks_path, todowrite_path, session_state, streak_file, disengage_path)
+    with open(tasks_path, "w") as f:
+        f.write("- [ ] disengage test task\n")
+    with open(todowrite_path, "w") as f:
+        json.dump([{"status": "pending", "content": "disengage test task"}], f)
+    with open(session_state, "w") as f:
+        json.dump({}, f)
+
+    code = f"""\
+const fs = await import('node:fs')
+const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
+const plugin = await mod.default({{}})
+// 2 non-dispatch calls — streak = 2 (at MAX_STREAK, still allowed)
+const r1 = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+const r2 = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+// Write disengage signal file with future timestamp
+fs.writeFileSync('{disengage_path}', JSON.stringify({{disengage_until: Date.now() + 300_000}}))
+// 3rd non-dispatch — streak would be 3 > MAX_STREAK, but disengage allows it
+const r3 = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify({{
+    r1_ok: r1 === undefined || r1 === null,
+    r2_ok: r2 === undefined || r2 === null,
+    r3_ok: r3 === undefined || r3 === null,
+}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_TASKS_MD": tasks_path,
+        "GLUDD_TODOWRITE_STATE": todowrite_path,
+        "GLUDD_SESSION_STATE": session_state,
+        "GLUDD_STREAK_FILE": streak_file,
+        "GLUDD_DISENGAGE_PATH": disengage_path,
+    })
+    assert result["r1_ok"] == True, f"Call 1 (streak 0→1) must be allowed: {result}"
+    assert result["r2_ok"] == True, f"Call 2 (streak 1→2) must be allowed: {result}"
+    assert result["r3_ok"] == True, f"Disengage must allow call 3 despite streak=2: {result}"
+    _clean_state_files(tasks_path, todowrite_path, session_state, streak_file, disengage_path)
+
+
 # ---------------------------------------------------------------------------
 # enforce-multitask.ts  —  dispatch enforcement
 # ---------------------------------------------------------------------------

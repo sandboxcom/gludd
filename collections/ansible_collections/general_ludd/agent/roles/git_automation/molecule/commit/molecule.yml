@@ -1,0 +1,36 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: delegated
+platforms:
+  - name: localhost
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      gathering: explicit
+      fact_caching: memory
+      any_errors_fatal: true
+  inventory:
+    hosts:
+      localhost:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+verifier:
+  name: ansible
+scenario:
+  name: commit
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

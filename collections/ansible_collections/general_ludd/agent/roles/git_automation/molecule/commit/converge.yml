@@ -1,0 +1,57 @@
+---
+- name: "Converge — git_automation commit operation"
+  hosts: localhost
+  gather_facts: false
+  vars:
+    test_dir: "/tmp/molecule-git-commit-test"
+    test_message: "molecule test commit"
+
+  tasks:
+    - name: "Clean up any prior test directory"
+      ansible.builtin.file:
+        path: "{{ test_dir }}"
+        state: absent
+
+    - name: "Create test directory"
+      ansible.builtin.file:
+        path: "{{ test_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: "Initialize git repository"
+      ansible.builtin.command:
+        cmd: git init
+        chdir: "{{ test_dir }}"
+
+    - name: "Configure git user for test"
+      ansible.builtin.command:
+        cmd: "git config {{ item.key }} {{ item.value }}"
+        chdir: "{{ test_dir }}"
+      loop:
+        - { key: "user.email", value: "test@example.com" }
+        - { key: "user.name", value: "Molecule Test" }
+
+    - name: "Create initial file and first commit (so HEAD exists)"
+      ansible.builtin.copy:
+        dest: "{{ test_dir }}/initial.txt"
+        content: "base content\n"
+        mode: "0644"
+
+    - name: "Stage and commit initial file"
+      ansible.builtin.command:
+        cmd: "git add -A && git commit -m 'initial commit'"
+        chdir: "{{ test_dir }}"
+
+    - name: "Create file to commit via the role"
+      ansible.builtin.copy:
+        dest: "{{ test_dir }}/feature.txt"
+        content: "feature content\n"
+        mode: "0644"
+
+    - name: "Include commit task from git_automation role"
+      ansible.builtin.include_role:
+        name: git_automation
+        tasks_from: commit.yml
+      vars:
+        repo_path: "{{ test_dir }}"
+        commit_message: "{{ test_message }}"
