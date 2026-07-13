@@ -277,6 +277,7 @@ Three possible root causes — NEVER default to "provider limitation":
 
 A task may be called complete ONLY when:
 - `make gate` is fully green (lint 0, typecheck ≤ baseline, collect 0 errors, tests pass)
+- `make check-node-v26-compat` passes (plugin code is compatible with `--experimental-strip-types`)
 - `TASKS.md` has the item ticked with evidence (gate target + summary + commit hash)
 - `make test-count` shows 0 collection errors
 
@@ -1014,6 +1015,60 @@ shared (`CLAUDE_AGENT_FLOOR`, `GLUDD_FORCE_DELEGATE`, `GLUDD_NO_WAIT_ENFORCE`,
 Coverage tests: `tests/unit/test_opencode_plugin_ports.py` (per-plugin static
 checks), `tests/unit/test_guardrails.py` (3-layer existence checks),
 `scripts/test_*_hook.py` (behavioral harness tests for the shell layer).
+
+## CRITICAL: Node v26 `--experimental-strip-types` Compatibility (Plugin Code)
+
+**All `.opencode/plugin/*.ts` and `.opencode/plugins/*.ts` files MUST be
+parseable by Node v26's native TypeScript stripping.** The
+`--experimental-strip-types` flag enables Node to run `.ts` files directly
+but it is a syntax-level transform only (no type checking, no enum/namespace
+support). Certain patterns that are valid in tsc/babel cause parse errors
+under `--experimental-strip-types`.
+
+### Known-incompatible patterns (each is a parse error)
+
+1. **`try {` nested inside `catch {` — FORBIDDEN.** The pattern
+   `catch { try {` or `catch (e) { try {` produces
+   `ERR_INVALID_TYPESCRIPT_SYNTAX: Expected a semicolon`. The lexer
+   misparses `try` after a bare `catch` block's opening brace. **Use a
+   bare `catch {}` block with NO inner try-catch.** Restructure so the
+   try-catch is in a helper function called from the catch block, or
+   flatten the control flow so the recovery logic runs outside the catch.
+
+2. **Type-annotated catch variables** (e.g. `catch (e: TypeError)`) —
+   type annotations inside parameter lists of catch clauses may cause
+   parse errors. Use untyped `catch (e)` or bare `catch {}` and cast
+   or narrow the error inside the block via `typeof`/`instanceof` checks.
+
+3. **Enums, namespaces, `export =`, `import =`** — these TypeScript-only
+   constructs are not supported. Use `const` objects or plain interfaces.
+
+### Compatible patterns (always safe)
+
+- Bare `catch {}` (no inner `try`, no type annotation on catch variable)
+- `catch (e)` with untyped parameter, then `typeof e === "string"` checks
+- ES module syntax (`import`/`export` with `type` keyword stripped)
+- Interfaces, type aliases, `satisfies`, `as` casts — all in type space
+  and stripped before execution
+
+### Enforcement
+
+- **Script:** `scripts/check_node_v26_compat.py` — scans `.ts` files under
+  `.opencode/` for forbidden patterns (`catch { try`, `catch (e) { try`,
+  `catch (e:`, `enum `, `namespace `). Exits 0 on clean; exits 1 with file
+  + line references on violations.
+- **Make target:** `make check-node-v26-compat` — runs the script; wired
+  as a gate requirement in [[Completion = Green Gate + TASKS.md Evidence]].
+- **Plugin (future):** a `tool.execute.before` matcher in `enforce-node-v26.ts`
+  will deny edits that introduce forbidden patterns into plugin files.
+
+### Why this matters
+
+The enforcement plugins in `.opencode/plugin/` are loaded by opencode's Node
+runtime. If opencode uses Node v26 with `--experimental-strip-types`, a
+single incompatible plugin file causes ALL plugins to fail to load —
+collapsing the entire enforcement layer. A parse error in one plugin is a
+policy gap in every plugin.
 
 ## CRITICAL: "Fix" Means Repair, Never Disable
 

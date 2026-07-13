@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 26 — 4 OPEN items across 3 active phases (A:2, D:1, W:1). H=100% complete. S=100% complete.** 222 items (218 completed, 4 pending = 98.2%). Ticked this session: A.6 (coverage 70→85), C.23 (DB cred leak 5 connectors, 21 tests), D.20 (metric.py + METRIC_AND_BIBLIOGRAPHY.md + ParetoRouter), E.5 (shared.ts + restore-opencode + integrity checker + verify-opencode-backup, partial remaining). **New runtime tests added: enforce-clean-tree (14), enforce-commit-lock (8), watchdog (5).**
+**Last consolidated: 2026-07-13 Session 28 — 3 OPEN items across 2 active phases (A:2, D:1). W=100% complete. H=100% complete. S=100% complete.** 222 items (219 completed, 3 pending = 98.6%). Ticked this session: W.26 (enforce-stop.ts Node v26 compat, commits c732b4cc + b53ab7fb). Dirty tree: enforce-stop.ts, Makefile, new test_opencode_node_v26_compat.py.
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -9,7 +9,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 2 | 6 | 67% |
-| W | Enforcement/Plugin hardening | 1 | 26 | 96% |
+| W | Enforcement/Plugin hardening | 0 | 26 | 100% |
 | C | Security/Correctness | 0 | 27 | 100% |
 | D | Feature Completeness | 1 | 22 | 95% |
 | X | XML Collection | 0 | 11 | 100% |
@@ -24,7 +24,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | S | Post-Ship | 0 | 21 | 100% |
 | LA | Log Prompt Evaluator | 0 | 3 | 100% |
 | AG | Agent Framework Research | 0 | 16 | 100% |
-| **Total** | | **4** | **222** | **98%** |
+| **Total** | | **3** | **222** | **99%** |
 
 ---
 
@@ -61,7 +61,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] W.23 — enforce-clean-tree.ts dirty dispatch fix + 14 runtime tests | priority: medium | effort: medium | status: completed | evidence: 14 runtime tests pass (test_hook_runtime.py), dirty dispatch edge case fixed, session 26
 - [x] W.24 — enforce-commit-lock.ts 8 runtime tests | priority: medium | effort: small | status: completed | evidence: 8 runtime tests pass (test_hook_runtime.py), session 26
 - [x] W.25 — watchdog.ts 5 runtime tests | priority: medium | effort: small | status: completed | evidence: 5 runtime tests pass (test_hook_runtime.py), session 26
-- [ ] W.26 — Fix enforce-stop.ts Node v26 compat (RegExp/string method breakage on newer Node runtime) | priority: high | effort: small | status: pending
+- [x] W.26 — Fix enforce-stop.ts Node v26 compat (ERR_INVALID_TYPESCRIPT_SYNTAX at line 1445 — `try {` after `} catch (e) {` block rejected by Node v26 TS parser) | priority: high | effort: small | status: completed | evidence: commits c732b4cc (adds `satisfies Plugin` type annotation for --experimental-strip-types compat) + b53ab7fb (ending pattern matches enforce-floor.ts — `if (isSubagent` block structure). 107/107 runtime tests pass (was 99/8). New test: tests/unit/test_opencode_node_v26_compat.py
 
 ---
 
