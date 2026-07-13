@@ -21,33 +21,15 @@
  *
  * Default ON. Fail-open: any throw/exception → allow (don't wedge the editor).
  */
-import { execSync } from "child_process";
-import * as fs from "fs";
-import type { PluginAPI } from "@opencode/plugin";
+import type { Plugin } from "@opencode-ai/plugin";
+import { execSync } from "node:child_process";
+import { isSubagent, reportAlive } from "./shared.ts";
 
 /** Tools that represent subagent dispatch (not bash/read/edit). */
 export const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as readonly string[];
 
 /** Prefix for the deny message (extracted for test assertions). */
 export const DENY_MESSAGE_PREFIX = "DIRTY TREE";
-
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
-
-function _reportAlive(): void {
-  try {
-    const alivePath = "/tmp/gludd-plugin-alive.json";
-    const alive = fs.existsSync(alivePath)
-      ? (JSON.parse(fs.readFileSync(alivePath, "utf8")) as Record<string, unknown>)
-      : {};
-    alive["enforce-clean-tree"] = { last_seen: Date.now() };
-    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8");
-  } catch {
-    // fail-open
-  }
-}
 
 /**
  * Returns the git porcelain status output, or empty string on error.
@@ -89,11 +71,11 @@ export function buildDenyMessage(count: number): string {
   );
 }
 
-export default function cleanTreePlugin(api: PluginAPI): void {
+export default function cleanTreePlugin(api: Plugin): void {
   api.tool.execute.before((params) => {
-    if (_isSubagent()) return
+    if (isSubagent()) return
     console.log("SUBAGENT SKIP: enforce-clean-tree")
-    _reportAlive();
+    reportAlive("enforce-clean-tree");
     try {
       if (process.env.GLUDD_CLEAN_TREE_ENFORCE === "0") return;
 

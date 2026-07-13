@@ -1,4 +1,5 @@
 import * as fs from "node:fs"
+import { isSubagent } from "./shared.ts"
 
 // hot_reload.ts — thin proxy utility that lets enforcement plugins delegate to
 // dynamically-loaded hot modules on every hook invocation.
@@ -72,7 +73,3 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
 }
 
 
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}

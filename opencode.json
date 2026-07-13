@@ -2,8 +2,8 @@
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "bash": {
-      "make *": "allow",
-      "*": "deny"
+      "*": "deny",
+      "make *": "allow"
     },
     "doom_loop": "deny"
   },
@@ -11,7 +11,6 @@
     "./.opencode/plugin/enforce-make.ts",
     "./.opencode/plugin/enforce-floor.ts",
     "./.opencode/plugin/enforce-delegate.ts",
-    "./.opencode/plugin/enforce-stop.ts",
     "./.opencode/plugin/enforce-session-start.ts",
     "./.opencode/plugin/enforce-deadline.ts",
     "./.opencode/plugin/enforce-deletion-gate.ts",
@@ -22,6 +21,7 @@
     "./.opencode/plugin/enforce-verified-claims.ts",
     "./.opencode/plugin/enforce-multitask.ts",
     "./.opencode/plugin/enforce-enhancement-ratio.ts",
+    "./.opencode/plugin/enforce-stop.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }

@@ -212,6 +212,8 @@ help:
 	@echo "  disk                  Print disk usage + gludd footprint"
 	@echo ""
 	@echo "  --- Recovery ---"
+	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
+	@echo "  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)"
 	@echo "  restore-opencode      Restore .opencode/ from .opencode.orig/ + clear corrupt cache"
 	@echo ""
 	@echo "  --- Other ---"
@@ -412,10 +414,19 @@ collect-check:
 collect-check-e2e-live:
 	@$(UV) run python -m pytest tests/e2e/ tests/live/ --collect-only -q 2>&1 | tail -5
 
+check-plugin-imports:
+	@$(UV) run python3 scripts/check_plugin_imports.py
+
 check-plugin-syntax:
 	@$(UV) run python3 scripts/check_plugin_syntax.py
 
-gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax
+check-plugin-runtime:
+	@$(UV) run python3 scripts/check_plugin_runtime.py
+
+check-opencode-ready:
+	@$(UV) run python3 scripts/check_opencode_ready.py
+
+gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -491,7 +502,7 @@ gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plu
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: check-subagent-guards check-skills-frontmatter check-coverage-gaps check-plugin-syntax
+gate-lite: check-subagent-guards check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
@@ -1478,6 +1489,14 @@ deploy-and-forget: ci-busy-check
 # Read-only. Use this to decide whether to dispatch real work or check CI.
 ci-cooldown-status:
 	@$(PYTHON) scripts/ci_check_cooldown.py status $(CI_CHECK_COOLDOWN_SEC)
+
+# ci-observability: single-page summary of CI pipeline health.
+# Reads CI state files from /tmp (watchdog cache, cooldown state, push history,
+# orchestrator state) and prints: last push time, CI verdict, cooldown remaining,
+# push rate, warnings. Exits 0 if CI is healthy, 1 if CI is RED.
+# Accepts optional BRANCH= (default: master).
+ci-observability:
+	@$(PYTHON) scripts/ci_observability.py $(or $(BRANCH),master)
 
 # Consolidated, read-only state report for pre-claim verification. Prints the
 # working tree (CLEAN/DIRTY), HEAD identity + branch, remote sync state
@@ -2737,6 +2756,9 @@ check-coverage-gaps:
 check-coverage-gaps-json:
 	@$(UV) run python scripts/check_coverage_gaps.py --json
 
+check-coverage-missing:
+	@$(UV) run python scripts/check_coverage_missing.py
+
 # --- Test quality gate: lint checks (F401/I001/F841/B010) + naming convention + newline ---
 # Runs against staged test files only (git diff --cached).
 check-test-quality:
@@ -3852,6 +3874,28 @@ networking-healthcheck:
 	@$(UV) run python -c "from general_ludd.networking import scapy_adapter; print('scapy_adapter import OK')" 2>/dev/null && \
 		echo "networking healthcheck: OK" || \
 		echo "networking module not found (skipping healthcheck)"
+
+# Backup .opencode/ to .opencode.orig/ (excludes node_modules/)
+# Run this before a long session so restore-opencode has a recent fallback.
+backup-opencode:
+	@echo "Backing up .opencode/ -> .opencode.orig/ (excluding node_modules/) ..."
+	@rsync -a --delete --exclude='node_modules/' --exclude='node_modules' .opencode/ .opencode.orig/
+	@touch .opencode.orig
+	@echo "  backup timestamp: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	@echo ".opencode/ backed up successfully."
+
+# Check that .opencode.orig/ backup is fresh (<24h older than .opencode/)
+check-opencode-backup:
+	@if [ ! -d .opencode.orig ]; then \
+		echo "  WARNING: .opencode.orig/ does not exist. Run 'make backup-opencode' to create it."; \
+		exit 1; \
+	fi
+	@BACKUP_AGE=$$(find .opencode.orig -maxdepth 0 -newer .opencode -print | wc -l | tr -d ' '); \
+	if [ "$$BACKUP_AGE" = "0" ]; then \
+		echo "  WARNING: .opencode.orig/ is older than .opencode/. Run 'make backup-opencode' to refresh."; \
+		exit 1; \
+	fi
+	@echo "  .opencode.orig/ backup is fresh."
 
 # Restore .opencode/ from .opencode.orig/ and clear corrupt cache after OS crash
 # Per https://opencode.ai/docs/troubleshooting: corrupted ~/.cache/opencode

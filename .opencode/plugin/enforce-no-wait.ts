@@ -32,26 +32,9 @@
  * (Subagents inherit the plugin; the workaround is `for i in range(N): sleep(1)`
  * inside the Task prompt, not a shell-level `sleep && make`.)
  */
-import * as fs from "fs";
-import type { PluginAPI } from "@opencode/plugin";
-
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
-
-function _reportAlive() {
-  try {
-    const alivePath = "/tmp/gludd-plugin-alive.json";
-    const alive = fs.existsSync(alivePath)
-      ? JSON.parse(fs.readFileSync(alivePath, "utf8"))
-      : {};
-    alive["enforce-no-wait"] = { last_seen: Date.now() };
-    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8");
-  } catch {
-    // fail-open
-  }
-}
+import * as fs from "node:fs";
+import type { Plugin } from "@opencode-ai/plugin";
+import { isSubagent, reportAlive } from "./shared.ts";
 
 export const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bsleep\s+\d+\s*&&\s*make\b/,
@@ -113,11 +96,11 @@ function _extractDispatchText(params: unknown): string {
   return parts.join("\n");
 }
 
-export default function noWaitPlugin(api: PluginAPI): void {
+export default function noWaitPlugin(api: Plugin): void {
   api.tool.execute.before((params) => {
-    if (_isSubagent()) return
+    if (isSubagent()) return
     console.log("SUBAGENT SKIP: enforce-no-wait")
-    _reportAlive();
+    reportAlive("enforce-no-wait");
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
 

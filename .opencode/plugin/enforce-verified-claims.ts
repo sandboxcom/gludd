@@ -20,7 +20,7 @@
  * JS runtime.
  */
 import type { Plugin } from "@opencode-ai/plugin"
-import * as fs from "node:fs"
+import { isSubagent, reportAlive } from "./shared.ts"
 
 /**
  * Words that signal a completion / success claim. When ANY of these appear,
@@ -92,23 +92,6 @@ export const BLOCK_MESSAGE = [
   "See AGENTS.md 'Evidence-Based Response Policy' and 'Done Claims Require Observable Verification Evidence'.",
 ].join("\n")
 
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
-
-function _reportAlive(): void {
-  try {
-    const alivePath = "/tmp/gludd-plugin-alive.json"
-    let alive: Record<string, unknown> = {}
-    if (fs.existsSync(alivePath)) {
-      try { alive = JSON.parse(fs.readFileSync(alivePath, "utf8")) } catch {}
-    }
-    alive["enforce-verified-claims"] = { last_seen: Date.now() }
-    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8")
-  } catch {}
-}
-
 /**
  * Does `text` contain a done-word? Case-insensitive, word-boundary aware.
  * In-progress phrases (NOT_DONE_PHRASES) are scrubbed first so "working on"
@@ -139,10 +122,10 @@ export default (async () => {
       _input: unknown,
       output: { text: string },
     ) => {
-      if (_isSubagent()) return output
+      if (isSubagent()) return output
       console.log("SUBAGENT SKIP: enforce-verified-claims")
       console.log("SUBAGENT SKIP: enforce-verified-claims")
-      _reportAlive()
+      reportAlive("enforce-verified-claims")
       try {
         if (process.env.GLUDD_VERIFIED_CLAIMS_ENFORCE === "0") return
         if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output

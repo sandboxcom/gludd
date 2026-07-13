@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import { loadHotModule, type HotModule } from "./hot_reload.ts"
+import { isSubagent, reportAlive } from "./shared.ts"
 
 // enforce-enhancement-ratio.ts — per-wave enhancement/fix dispatch ratio enforcement.
 //
@@ -66,11 +67,6 @@ interface RatioState {
   lastTs: number
 }
 
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
-
 function _freshState(): RatioState {
   return { wave: [], session_enhancements: 0, session_fixes: 0, session_unknown: 0, wave_count_since_last_warn: 0, early_warned: false, lastPid: process.pid, lastTs: 0 }
 }
@@ -134,13 +130,6 @@ function isDispatchTool(tool: string): boolean {
   return tool === "task" || tool === "agent" || tool === "workflow"
 }
 
-function _reportAlive(): void {
-  try {
-    const alivePath = "/tmp/gludd-plugin-heartbeat-enforce-enhancement-ratio.json"
-    fs.writeFileSync(alivePath, JSON.stringify({ ts: Date.now(), pid: process.pid }), "utf8")
-  } catch {}
-}
-
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
@@ -153,9 +142,9 @@ let _lastHookOutputHash = ""
 
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, _output: any) => {
-    if (_isSubagent()) return
+    if (isSubagent()) return
     console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
-    _reportAlive()
+    reportAlive("enforce-enhancement-ratio")
     if (!ENABLED) return
 
     const tool = input.tool
@@ -192,8 +181,8 @@ const defaultImpl: HotModule = {
     } catch { /* fail open */ }
   },
 
-  "text.complete": async (output: any) => {
-    if (_isSubagent()) return output
+    "text.complete": async (output: any) => {
+    if (isSubagent()) return output
     console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
     console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
     if (!ENABLED) return output
@@ -268,7 +257,7 @@ const defaultImpl: HotModule = {
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input: any, _output: any) => {
-      if (_isSubagent()) return;
+      if (isSubagent()) return;
       console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
       const impl = loadHotModule("enhancement-ratio", defaultImpl)
       const fn = impl["tool.execute.before"]

@@ -11,6 +11,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { isSubagent, reportAlive } from "./shared.ts"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "10", 10)
@@ -36,11 +37,6 @@ interface MultitaskState {
   lastTs: number
   lastToolCallTs: number
   waveHistory: number[]
-}
-
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
 }
 
 function readState(): MultitaskState {
@@ -101,15 +97,6 @@ function spawnGateRefresh(): void {
   } catch { /* fire-and-forget */ }
 }
 
-function _reportAlive(): void {
-  try {
-    const alivePath = "/tmp/gludd-plugin-alive.json"
-    const alive = fs.existsSync(alivePath) ? JSON.parse(fs.readFileSync(alivePath, "utf8")) : {}
-    alive["enforce-multitask"] = { last_seen: Date.now() }
-    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8")
-  } catch { /* fail-open */ }
-}
-
 let _state: MultitaskState = (() => {
   const s = readState()
   s.zeroStreak = 0
@@ -132,9 +119,9 @@ export default (async ({ }) => {
 
   return {
     "tool.execute.before": async (input: { tool?: string }) => {
-      if (_isSubagent()) return
+      if (isSubagent()) return
       console.log("SUBAGENT SKIP: enforce-multitask")
-      _reportAlive()
+      reportAlive("enforce-multitask")
       try {
         if (!FLOOR_ENFORCE) return
         const tool = (input?.tool ?? "") as string
@@ -224,7 +211,7 @@ export default (async ({ }) => {
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       try {
-        if (_isSubagent()) return output
+        if (isSubagent()) return output
         console.log("SUBAGENT SKIP: enforce-multitask")
         console.log("SUBAGENT SKIP: enforce-multitask")
         if (!output || typeof output.text !== "string") return output

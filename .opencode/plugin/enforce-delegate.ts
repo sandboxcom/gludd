@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { isSubagent, reportAlive, isDisengaged } from "./shared.ts"
 
 // enforce-delegate.ts — opencode-native port of the Claude orchestration hooks
 // that govern SUBAGENT DISPATCH and MAIN-THREAD DELEGATION discipline.
@@ -78,9 +79,6 @@ const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1
 const WORKTREE_CAP = parseInt(process.env.GLUDD_WORKTREE_CAP || "6", 10)
 const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
 
-const DISENGAGE_FILE = "/tmp/gludd-watchdog-disengage.json"
-const MAX_DISENGAGE_MS = 3_600_000
-
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -99,11 +97,6 @@ const MAX_DISENGAGE_MS = 3_600_000
 // successful probe. The threshold is logged loudly when breached.
 let _probeFailCount = 0
 const PROBE_FAIL_THRESHOLD = parseInt(process.env.GLUDD_PROBE_FAIL_THRESHOLD || "3", 10)
-
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
 
 function countLiveAgents(): number | null {
   if (process.env.GLUDD_LIVE_AGENTS_COUNT) {
@@ -143,20 +136,6 @@ function countLiveAgents(): number | null {
   } catch (e) {
     return recordFailure("exec threw: " + String(e).substring(0, 120))
   }
-}
-
-function isDisengaged(): boolean {
-  try {
-    if (fs.existsSync(DISENGAGE_FILE)) {
-      const d = JSON.parse(fs.readFileSync(DISENGAGE_FILE, "utf8"))
-      if (d.disengage_until) {
-        const now = Date.now()
-        const effective = Math.min(d.disengage_until, now + MAX_DISENGAGE_MS)
-        if (effective > now) return true
-      }
-    }
-  } catch {}
-  return false
 }
 
 // ============================================================================
@@ -708,15 +687,6 @@ function mainthreadBudgetAfter(tool: string): void {
 // ============================================================================
 // PLUGIN
 // ============================================================================
-function _reportAlive(): void {
-  try {
-    const alive: Record<string, any> = {}
-    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["enforce-delegate"] = { last_seen: Date.now() }
-    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
-  } catch {}
-}
-
 // Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
 // fires. Fail-open. Distinct from the shared alive.json.
 function _writeHeartbeat(): void {
@@ -740,9 +710,9 @@ export default (async ({ }) => {
   } catch { /* fail-open */ }
   return {
     "tool.execute.before": async (input, output) => {
-      if (_isSubagent()) return
+      if (isSubagent()) return
       console.log("SUBAGENT SKIP: enforce-delegate")
-      _reportAlive()
+      reportAlive("enforce-delegate")
       _writeHeartbeat()
       const tool = input.tool
       const args = output?.args
