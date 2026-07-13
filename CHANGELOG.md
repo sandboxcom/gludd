@@ -2,15 +2,24 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [Unreleased] — since beta.3 (2026-07-13) — Session 29: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening
+## [Unreleased] — since beta.3 (2026-07-13) — Session 29: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening, e2e test surge
 
-### Session 29 (2026-07-13) — Enforcement Plugin Node v26 Compatibility Fixes
+### Session 29 (2026-07-13) — Enforcement Plugin Node v26 Compatibility + E2E Test Surge
 
-**Enforcement plugin fixes:**
-- enforce-clean-tree.ts: `require()` → `import` fix for Node v26 `--experimental-strip-types` compat, plus 7 new runtime tests (9d4e60da)
+**Hot-reload proxy hardening (all 14 plugins):**
+- All 14 enforcement plugins converted to hot-reload proxy pattern — 13/13 hot modules built and deployed via `make hot-reload-plugins`
+- enforce-clean-tree.ts: `execSync` fix (`import { execSync }` instead of `require('child_process').execSync`) + proxy conversion to hot-reload (a68de353)
 - enforce-stop.ts: deduplication refactor using shared.ts helpers, removing 185 lines of redundant logic (ad2f32fb)
-- Hot-reload proxy pattern extended to enforce-clean-tree.ts — now all 14 plugins support `/tmp/gludd-hot-*.js` proxies (a68de353)
-- `require()` audit checker added to `tests/unit/test_opencode_node_v26_compat.py` — catches Node v26 syntax errors before they land
+- build_hot_modules.js: extraction fix — hot module build script corrected to properly extract and wrap all 14 plugin exports
+- Zero `require()` anti-pattern calls in all plugin files — `make check-node-v26-compat` passes 2/2 (plugin files + hot modules)
+
+**Enforcement e2e test surge:**
+- 204 enforcement e2e tests across 12 test files covering: floor, delegate, stop, deadline, no-wait, session-start, clean-tree, verified-claims, no-suppressions, enhancement-ratio, deletion-gate, and watchdog plugins
+- Functional hook runtime tests expanded — actual plugin hooks invoked via `node -e` with constructed arguments
+
+**Fixes:**
+- Ratchet conftest hook (E.5): conftest.py hook recalculates ratchet baseline after plugin edits, preventing stale-gate false negatives
+- Watchdog `env_disable` flake fix: `GLUDD_WATCHDOG_ENABLE=0` now reliably suppresses watchdog restart instead of racing with the daemon start
 
 ### Session 25 (2026-07-12) — Enforcement Infrastructure + 4 Collections + Phase S/H/C/D/E/AG Fixes
 

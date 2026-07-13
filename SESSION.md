@@ -10,32 +10,37 @@
 
 ### HEAD + Branch State
 
-- **HEAD: `23b915b6`** on `development` branch
+- **HEAD: `1a225981`** on `development` branch
 - **Working tree: CLEAN**
 - **Runtime tests: 114 pass / 0 fail**
 - **check-node-v26-compat: 2/2 PASS** — 0 `require()` calls remain in any plugin
 - **Hot modules: 13/13 built** — all 14 plugins proxy-converted + hot-reload capable
-- **E2E tests: 130+ tests across 9 files** (45 new in `23b915b6`: enforce-no-wait + enforce-no-suppressions e2e verification)
+- **E2E tests: 204 across 10 files** (+17 new in `1a225981`: commit-lock + watchdog e2e, watchdog flake fix, no-suppressions env disable path)
 - **ratchet.yml: 0 entries** — no tracked known-failing tests
+- **Enforcement plugins: 10/10 BLOCKING** — zero advisory-only
+- **CI: PENDING** — development branch not yet pushed to remote
 
-### Key Deliverables (commits `ad2f32fb` → `23b915b6`)
+### Key Deliverables (commits `ad2f32fb` → `1a225981`)
 
 | Category | Items | Commit(s) |
 |----------|-------|-----------|
 | **require()→import sweep** | All `require()` calls converted to `import` across all 14 enforcement plugins. check-node-v26-compat 2/2 PASS. | `006d4a8f`, `a3a6a237` |
 | **13/13 hot-module proxies** | All plugins now have hot-reload proxy; zero remaining conversions. `build_hot_modules` proxy extraction bug fixed. | `006d4a8f`, `cc133b2e` |
-| **E2E enforcement tests** | 130+ e2e tests across 9 files (56 in `cc133b2e`, 6 files in `a3a6a237`, 45 in `23b915b6`) | `006d4a8f`, `cc133b2e`, `a3a6a237`, `23b915b6` |
-| **Watchdog disengage fix** | `enforce-stop.ts` watchdog disengage escape fix | `23b915b6` |
+| **E2E enforcement tests** | 204 e2e tests across 10 files (56 in `cc133b2e`, 85 in `a3a6a237`, 45 in `23b915b6`, 17 in `1a225981`) | `006d4a8f`, `cc133b2e`, `a3a6a237`, `23b915b6`, `1a225981` |
+| **E.5 ratchet conftest hook** | conftest hook installed for ratchet threshold enforcement | `1a225981` |
+| **Watchdog disengage + flake fix** | `enforce-stop.ts` watchdog disengage escape fix; watchdog flake fix | `23b915b6`, `1a225981` |
+| **no-suppressions env disable** | env-var disable path tested for enforce-no-suppressions | `1a225981` |
 | **TASKS.md archive** | Archived completed Phase D/AG items; D.19 docs expanded | `cc133b2e` |
 | **Gate-lite fixes** | Stale assertion drift resolved | `cc133b2e` |
 | **enforce-clean-tree fix** | execSync fix + hot-reload proxy + require() audit checker | `9d4e60da`, `a68de353` |
 | **enforce-stop dedup** | Deduplicated using shared.ts helpers | `ad2f32fb` |
 | **restore-opencode git fallback** | Added git HEAD fallback to restore-opencode; `.opencode.orig` backup | `ad2f32fb` |
 
-### Commits This Session (7 on development)
+### Commits This Session (8 on development)
 
 | Hash | Message |
 |------|---------|
+| `1a225981` | enhancement: E.5 ratchet conftest hook, 17 new e2e tests (commit-lock+watchdog), watchdog flake fix, no-suppressions env disable |
 | `23b915b6` | enhancement: stop watchdog disengage fix, 45 new e2e tests (no-wait+no-suppressions), verification suite green |
 | `a3a6a237` | enhancement: enforce-multitask require() fix, 85+ e2e tests (6 new files), check-node-v26-compat 2/2 PASS |
 | `cc133b2e` | enhancement: 3 final proxy conversions (13/13), 56 e2e tests, TASKS.md archive, D.19 expansion, gate-lite fixes |
@@ -48,21 +53,21 @@ Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`
 
 ### Known Gaps
 
-1. **CI PENDING** — no CI run for current development HEAD `23b915b6`
-2. **A.3 push** — 7 unpushed commits on development. Push to remote pending.
+1. **CI PENDING** — no CI run for current development HEAD `1a225981`. Push to remote required first.
+2. **A.3 push** — 8 unpushed commits on development. Push to remote pending.
 3. **A.4 release** — v0.1.0-beta.2 not yet cut. Blocked on CI green + development→master merge.
-4. **development → master merge** — pending gate-lite green + CI green + push
-5. **E.5 ratchet** — ratchet.yml is empty (0 tracked failures) but explicit threshold lowering not yet done
+4. **development → master merge** — pending CI green after push
+5. **E.5 ratchet conftest hook** — hook installed; explicit threshold lowering may need follow-up verification
 
 ### Next Steps (Prioritized)
 
-1. [ ] **A.3 push development to remote** — 7 unpushed commits
-2. [ ] **development → master merge** — after CI green
-3. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after merge + CI green
-4. [ ] **E.5 ratchet threshold** — complete explicit threshold lowering now that ratchet is empty
+1. [ ] **A.3 push development to remote** — 8 unpushed commits
+2. [ ] **Wait for CI green** — `make ci-verdict-safe BRANCH=development` after push
+3. [ ] **development → master merge** — after CI green
+4. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after merge + CI green
 
 ### Last Updated
-- **2026-07-13 — Session 29 FINAL.** On `development` branch, HEAD `23b915b6`. Working tree clean. 114/114 runtime tests pass. check-node-v26-compat 2/2 PASS (0 require() calls). 13/13 hot-module proxies built; all 14 plugins proxy-converted + hot-reload capable. 130+ e2e tests across 9 files. 7 commits landed (ad2f32fb..23b915b6). ratchet.yml: 0 entries. A.3 push + A.4 release pending.
+- **2026-07-13 — Session 29 FINAL.** On `development` branch, HEAD `1a225981`. Working tree clean. 114/114 runtime tests pass. check-node-v26-compat 2/2 PASS (0 require() calls). 13/13 hot-module proxies built; all 14 plugins proxy-converted + hot-reload capable. 204 e2e tests across 10 files. 10/10 enforcement plugins BLOCKING. 8 commits landed (ad2f32fb..1a225981). ratchet.yml: 0 entries. CI pending — push to remote needed first. A.3 push + A.4 release pending.
 
 ---
 
