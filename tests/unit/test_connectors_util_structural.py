@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from general_ludd.connectors._util import parse_timestamp, validate_base_url
 
 

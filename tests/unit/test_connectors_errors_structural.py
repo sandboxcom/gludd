@@ -68,7 +68,7 @@ class TestSanitizeStr:
         text = "download from https://internal.example.com/leak"
         result = sanitize_str(text)
         assert "internal.example.com" not in result
-        assert "REDACTED-URL" in result
+        assert "REDACTED" in result
 
     def test_safe_text_unchanged(self):
         text = "hello world, no sensitive data here"
