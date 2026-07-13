@@ -48,7 +48,7 @@ class TestBuildYmlNoFailUnderZeroWorkaround:
         content = Path(".github/workflows/build.yml").read_text()
         assert "--cov-fail-under=0" not in content, (
             "build.yml still contains --cov-fail-under=0 workaround on test shards; "
-            "see A.6 — workaround must be removed now that fail_under=70 is the target"
+            "see A.6 — workaround must be removed now that fail_under=85 is the target"
         )
 
     def test_coverage_report_step_no_longer_nongating(self) -> None:
