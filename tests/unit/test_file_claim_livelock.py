@@ -13,8 +13,9 @@ backoff makes this structurally impossible.
 
 from __future__ import annotations
 
+import asyncio
 import threading
-from typing import ClassVar
+from typing import Any, ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -514,3 +515,125 @@ class TestLivelockStructurallyImpossible:
             assert "b.py" in registry.all_claims()
 
             registry.release("agent-B")
+
+
+# ---------------------------------------------------------------------------
+# Integration: concurrent async commit paths do not livelock
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentCommitNoLivelock:
+    """Two async coroutines concurrently attempt to commit overlapping files
+    via the event loop's _try_commit_completed_work. Verifies that exactly
+    one wins, the other detects a conflict cleanly, and the system reaches a
+    stable state — no livelock."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_commits_one_wins_one_defers(self) -> None:
+        """Two coroutines fire _try_commit_completed_work concurrently on
+        overlapping files. One wins (commits), the other raises
+        _FileClaimConflict without committing. No livelock — the registry
+        is stable after both coroutines settle."""
+        registry = FileClaimRegistry()
+        loop = EventLoop(file_claim_registry=registry)
+
+        _FakeGit.files_by_repo = {
+            "/wt/A": ["src/shared.py", "src/a.py"],
+            "/wt/B": ["src/shared.py", "src/b.py"],
+        }
+
+        async def commit_a() -> None:
+            await loop._try_commit_completed_work(_todo("T-A", "/wt/A"))
+
+        async def commit_b() -> None:
+            await loop._try_commit_completed_work(_todo("T-B", "/wt/B"))
+
+        failures: list[Exception] = []
+        successes: list[str] = []
+
+        async def try_commit(coro: Any, label: str) -> None:
+            try:
+                await coro
+                successes.append(label)
+            except _FileClaimConflict:
+                failures.append(_FileClaimConflict("conflict"))
+            except Exception as exc:
+                failures.append(exc)
+
+        with patch(_GIT, _FakeGit):
+            await asyncio.gather(
+                try_commit(commit_a(), "A"),
+                try_commit(commit_b(), "B"),
+            )
+
+        # Exactly one commit succeeds; the other gets a clean conflict.
+        assert len(successes) == 1, f"Expected 1 success, got {successes}"
+        assert len(failures) == 1, f"Expected 1 conflict failure, got {failures!r}"
+        assert len(_FakeGit.commits) == 1
+        # No stale claims after both coroutines settle.
+        assert registry.all_claims() == {}
+
+    @pytest.mark.asyncio
+    async def test_concurrent_retry_after_release(self) -> None:
+        """Concurrent commits with overlap: winner commits, loser defers,
+        then after winner releases, loser retries and succeeds."""
+        registry = FileClaimRegistry()
+        loop = EventLoop(file_claim_registry=registry)
+
+        _FakeGit.files_by_repo = {
+            "/wt/A": ["src/shared.py"],
+            "/wt/B": ["src/shared.py"],
+        }
+
+        async def commit_a() -> None:
+            await loop._try_commit_completed_work(_todo("T-A", "/wt/A"))
+
+        async def commit_b() -> None:
+            await loop._try_commit_completed_work(_todo("T-B", "/wt/B"))
+
+        with patch(_GIT, _FakeGit):
+            results = await asyncio.gather(
+                commit_a(), commit_b(), return_exceptions=True,
+            )
+
+        # One success, one _FileClaimConflict.
+        exceptions = [r for r in results if isinstance(r, BaseException)]
+        assert len(exceptions) == 1
+        assert isinstance(exceptions[0], _FileClaimConflict)
+        assert len(_FakeGit.commits) == 1
+        # Registry is clean after both settle.
+        assert registry.all_claims() == {}
+
+        # Now retry the deferred commit — it should succeed immediately.
+        _FakeGit.commits.clear()
+        with patch(_GIT, _FakeGit):
+            await loop._try_commit_completed_work(_todo("T-B", "/wt/B"))
+
+        assert len(_FakeGit.commits) == 1
+        assert registry.all_claims() == {}
+
+    @pytest.mark.asyncio
+    async def test_concurrent_disjoint_no_false_conflict(self) -> None:
+        """Two concurrent commits on disjoint files both succeed — no false
+        serialization when files don't actually overlap."""
+        registry = FileClaimRegistry()
+        loop = EventLoop(file_claim_registry=registry)
+
+        _FakeGit.files_by_repo = {
+            "/wt/A": ["src/feature_a.py"],
+            "/wt/B": ["src/feature_b.py"],
+        }
+
+        async def commit(label: str, worktree: str) -> None:
+            await loop._try_commit_completed_work(
+                _todo(f"T-{label}", worktree)
+            )
+
+        with patch(_GIT, _FakeGit):
+            await asyncio.gather(
+                commit("A", "/wt/A"),
+                commit("B", "/wt/B"),
+            )
+
+        assert len(_FakeGit.commits) == 2
+        assert registry.all_claims() == {}

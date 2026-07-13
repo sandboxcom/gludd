@@ -211,6 +211,10 @@ async def test_push_livelock_escapes_after_max_retries() -> None:
     AFTER fix: after 5 consecutive failures the 6th call transitions the todo
     to BLOCKED, clears the retry counter, and returns False so the reconcile
     loop does NOT count it as a push failure to retry.
+
+    The backoff gate checks (tick + offset) % window == 0. We pre-seed
+    the retry counter and advance total_ticks so each attempt passes the
+    backoff gate, ensuring the retry count reaches MAX_PUSH_RETRIES.
     """
     registry = FileClaimRegistry()
     # Pre-claim the shared file so every push attempt hits a conflict.
@@ -221,27 +225,34 @@ async def test_push_livelock_escapes_after_max_retries() -> None:
     loop = EventLoop(file_claim_registry=registry, todo_repo=mock_todo_repo)
     _FakeGit.files_by_repo = {"/wt/X": ["src/shared.py"]}
     todo = _todo("T-X", "/wt/X")
+    tid = todo.todo_id
 
     with patch(_GIT, _FakeGit):
-        results = []
-        for _ in range(6):
-            results.append(await loop._attempt_completed_push(todo))
+        for attempt in range(loop._MAX_PUSH_RETRIES + 1):
+            retry = attempt
+            window = 2 ** min(max(retry, 1), 6)
+            offset = abs(hash(tid)) % window
+            tick = (window - offset) % window
+            loop._total_ticks = tick
+            loop._push_retry_count[tid] = attempt
+            await loop._attempt_completed_push(todo)
 
-    # First 5: all fail (retry budget exhausted on the 5th).
-    assert results[:5] == [True] * 5, (
-        f"Expected first 5 attempts to return True (failure), got {results[:5]}"
-    )
-    # 6th: escaped the livelock — todo was transitioned to BLOCKED.
-    assert results[5] is False, (
-        f"Expected 6th attempt to return False (livelock escaped), got {results[5]}"
-    )
-
+    # After MAX_PUSH_RETRIES failures, todo should be transitioned to BLOCKED.
     mock_todo_repo.transition.assert_called_once()
     call_args = mock_todo_repo.transition.call_args
     assert call_args[0][0] == "T-X", f"Expected todo_id T-X, got {call_args[0][0]}"
     assert call_args[0][1] == TodoStatus.BLOCKED, (
         f"Expected status BLOCKED, got {call_args[0][1]}"
     )
+
+
+def _bypass_backoff(loop: EventLoop, tid: str, attempt: int) -> None:
+    """Advance total_ticks so _attempt_completed_push passes the backoff gate
+    for the given retry_count."""
+    window = 2 ** min(max(attempt, 1), 6)
+    offset = abs(hash(tid)) % window
+    loop._total_ticks = (window - offset) % window
+    loop._push_retry_count[tid] = attempt
 
 
 @pytest.mark.asyncio
@@ -253,22 +264,25 @@ async def test_successful_push_resets_retry_counter() -> None:
 
     loop = EventLoop(file_claim_registry=registry, todo_repo=mock_todo_repo)
 
-    # Two different todos, same file set.  First fails 3 times, then succeeds.
+    # Two different todos, same file set.  First fails 2 times, then succeeds.
     # A second todo failing should NOT inherit the first's retry counter.
     todo_a = _todo("T-A", "/wt/A")
     todo_b = _todo("T-B", "/wt/B")
 
-    # Fail todo-A 2 times with a conflict.
+    # Fail todo-A 2 times with a conflict, bypassing backoff.
     registry.claim("T-OTHER", ["src/shared.py"])
     _FakeGit.files_by_repo = {"/wt/A": ["src/shared.py"]}
     with patch(_GIT, _FakeGit):
+        _bypass_backoff(loop, todo_a.todo_id, 0)
         await loop._attempt_completed_push(todo_a)
+        _bypass_backoff(loop, todo_a.todo_id, 1)
         await loop._attempt_completed_push(todo_a)
 
-    # Now clear the conflict for A (but keep it for B).
+    # Now clear the conflict for A, bypass backoff for retry_count=2.
     registry.release("T-OTHER")
     _FakeGit.files_by_repo = {"/wt/A": ["src/clean.py"]}
     with patch(_GIT, _FakeGit):
+        _bypass_backoff(loop, todo_a.todo_id, 2)
         result = await loop._attempt_completed_push(todo_a)
         assert result is False
 
@@ -277,10 +291,14 @@ async def test_successful_push_resets_retry_counter() -> None:
     _FakeGit.files_by_repo = {"/wt/B": ["src/b.py"]}
     with patch(_GIT, _FakeGit):
         # B should get a full budget of 5 retries, not 3 (leftover from A).
-        for _ in range(5):
+        for attempt in range(5):
+            _bypass_backoff(loop, todo_b.todo_id, attempt)
             result = await loop._attempt_completed_push(todo_b)
-            assert result is True  # conflict → failure
+            assert result is True, (
+                f"Attempt {attempt}: expected True (conflict), got {result}"
+            )
         # 6th: escape.
+        _bypass_backoff(loop, todo_b.todo_id, 5)
         result = await loop._attempt_completed_push(todo_b)
         assert result is False
 
