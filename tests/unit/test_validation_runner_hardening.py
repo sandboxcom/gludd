@@ -238,5 +238,3 @@ class TestWorktreePathConfinement:
         _args, kwargs = mock_run.call_args
         assert kwargs.get("cwd") == runner.worktree_path
         assert runner.worktree_path.startswith(str(base.resolve()))
-
-
