@@ -27,12 +27,31 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = PROJECT_ROOT / "src" / "general_ludd"
 TESTS_DIR = PROJECT_ROOT / "tests" / "unit"
+DEFAULT_BASELINE = "config/coverage_gaps_baseline.json"
+
+
+def _load_baseline(baseline_path: Path) -> set[str]:
+    if not baseline_path.is_file():
+        return set()
+    try:
+        data = json.loads(baseline_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return set()
+    return set(data.get("allowed_gaps", []))
+
+
+def _generate_baseline(gap_modules: list[str], baseline_path: Path) -> int:
+    baseline_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"allowed_gaps": sorted(gap_modules)}
+    baseline_path.write_text(json.dumps(payload, indent=2) + "\n")
+    return len(gap_modules)
 
 
 def _walk_source_modules() -> list[Path]:
@@ -157,7 +176,10 @@ def _check_module(src_file: Path) -> dict:
 
 def main(argv: list[str]) -> int:
     as_json = "--json" in argv
+    generate_baseline = "--generate-baseline" in argv
     threshold = 1
+    baseline_path: Path | None = None
+    baseline_provided = False
 
     for arg in argv:
         if arg.startswith("--threshold="):
@@ -166,6 +188,13 @@ def main(argv: list[str]) -> int:
             except ValueError:
                 print(f"ERROR: invalid threshold: {arg}", file=sys.stderr)
                 return 2
+        elif arg.startswith("--baseline="):
+            raw = arg.split("=", 1)[1]
+            baseline_path = PROJECT_ROOT / raw
+            baseline_provided = True
+        elif arg == "--baseline":
+            baseline_path = PROJECT_ROOT / DEFAULT_BASELINE
+            baseline_provided = True
 
     modules = _walk_source_modules()
     results = [_check_module(m) for m in modules]
@@ -175,6 +204,21 @@ def main(argv: list[str]) -> int:
 
     below_threshold = [r for r in ok_results if r["test_count"] < threshold]
 
+    if generate_baseline:
+        if baseline_path is None:
+            baseline_path = PROJECT_ROOT / DEFAULT_BASELINE
+        gap_modules = [r["module"] for r in gap_results]
+        count = _generate_baseline(gap_modules, baseline_path)
+        print(f"Baseline written: {baseline_path} ({count} allowed gaps)")
+        return 0
+
+    allowed_gaps: set[str] = set()
+    new_gap_results: list[dict] = list(gap_results)
+
+    if baseline_provided and baseline_path is not None:
+        allowed_gaps = _load_baseline(baseline_path)
+        new_gap_results = [r for r in gap_results if r["module"] not in allowed_gaps]
+
     summary = {
         "total_modules": len(results),
         "ok": len(ok_results),
@@ -183,9 +227,11 @@ def main(argv: list[str]) -> int:
         "stub": sum(1 for r in results if r["status"] == "STUB"),
         "no_import": sum(1 for r in results if r["status"] == "NO_IMPORT"),
         "threshold": threshold,
+        "allowed_gaps": len(allowed_gaps),
+        "new_gaps": len(new_gap_results),
     }
 
-    has_gaps = len(gap_results) > 0 or len(below_threshold) > 0
+    has_gaps = len(new_gap_results) > 0 or len(below_threshold) > 0
 
     if as_json:
         output = {"summary": summary, "results": results, "exit_code": 1 if has_gaps else 0}
@@ -197,13 +243,17 @@ def main(argv: list[str]) -> int:
     print(f"  UNTESTED:      {summary['untested']}")
     print(f"  STUB:          {summary['stub']}")
     print(f"  NO_IMPORT:     {summary['no_import']}")
+    if allowed_gaps:
+        print(f"  ALLOWED GAPS:  {summary['allowed_gaps']}")
+    if summary["new_gaps"] != len(gap_results):
+        print(f"  NEW GAPS:      {summary['new_gaps']}")
     if below_threshold:
         print(f"  BELOW THRESHOLD ({threshold}): {len(below_threshold)}")
     print()
 
-    if gap_results:
-        print(f"--- GAPS ({len(gap_results)}) ---")
-        for r in gap_results:
+    if new_gap_results:
+        print(f"--- GAPS ({len(new_gap_results)}) ---")
+        for r in new_gap_results:
             path = r["module"]
             status = r["status"]
             test = r.get("test_file") or "(none)"
@@ -217,7 +267,10 @@ def main(argv: list[str]) -> int:
         print()
 
     if has_gaps:
-        print(f"FAIL: {len(gap_results)} gap(s), {len(below_threshold)} below threshold")
+        if allowed_gaps:
+            print(f"FAIL: {len(new_gap_results)} new gap(s) (excluded {len(allowed_gaps)} allowed), {len(below_threshold)} below threshold")
+        else:
+            print(f"FAIL: {len(new_gap_results)} gap(s), {len(below_threshold)} below threshold")
         return 1
 
     print("PASS: all modules have test coverage")
