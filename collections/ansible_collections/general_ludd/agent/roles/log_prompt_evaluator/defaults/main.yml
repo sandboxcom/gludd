@@ -1,0 +1,33 @@
+---
+# log_prompt_evaluator defaults — REPORT-ONLY prompt quality analysis
+
+# ---- Log / input sources -------------------------------------------------
+log_source: "/tmp/gludd-plugin-loaded.log"
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# ---- Analysis scope ------------------------------------------------------
+analysis_type: "all"
+#   all              — run every analysis module
+#   prompt_quality   — score prompts on conciseness, specificity, clarity
+#   cot_efficiency   — analyse CoT reasoning depth, tool selection, iterations
+#   context_usage    — measure context utilisation, detect wasted context
+#   ab_comparison    — compare two prompt variants (A/B)
+
+# ---- Thresholds ----------------------------------------------------------
+min_context_tokens: 100
+max_recommendations: 10
+verbose_score_threshold: 0.6          # 0.0-1.0 — prompts scoring below this get flagged
+waste_pattern_threshold: 0.3          # fraction of prompts exhibiting waste before flagging
+
+# ---- A/B test mode -------------------------------------------------------
+ab_test_mode: false
+variant_a_source: ""                  # log/transcript path for variant A
+variant_b_source: ""                  # log/transcript path for variant B
+
+# ---- Output --------------------------------------------------------------
+output_format: "json"                 # json, markdown, text
+artifact_dir: "/tmp/gludd-prompt-evaluator"
+
+# ---- Destructive ops guard — report-only ---------------------------------
+enable_git_push: false

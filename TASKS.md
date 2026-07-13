@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 Session 25 FINAL — 89 OPEN items across 6 active phases (A:4, C:19, D:19, E:6, H:13, S:12, AG:16).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) = 125 of 214 items completed (59%). 12 of 17 session todos completed.
+**Last consolidated: 2026-07-12 Session 25 CLOSURE — 80 OPEN items across 6 active phases (A:4, C:19, D:19, E:6, H:9, S:9, AG:14).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) = 134 of 214 items completed (63%). 17 of 17 session todos completed.
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -20,10 +20,10 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
-| H | Security Hardening | 13 | 23 | 43% |
-| S | Post-Ship | 12 | 21 | 43% |
-| AG | Agent Framework Research | 16 | 16 | 0% |
-| **Total** | | **89** | **214** | **59%** |
+| H | Security Hardening | 9 | 23 | 61% |
+| S | Post-Ship | 9 | 21 | 57% |
+| AG | Agent Framework Research | 14 | 16 | 13% |
+| **Total** | | **80** | **214** | **63%** |
 
 ---
 
@@ -263,12 +263,12 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] H.6 — H-LANGGRAPH-FACTORY-ROLE-TRAP: make_langgraph_tool_loop has no required role param | priority: medium | effort: small | status: completed | evidence: Waves 11-12
 - [x] H.7 — H-PROJECT-OVERLAY-DANGEROUS-FIELDS: untrusted project config can override connectors, database.url, budget, issues, self_improve gates | priority: high | effort: medium | status: completed | evidence: 70 tests pass, project overlay deny-list with field-level blocklist
 - [x] H.8 — H-MEMORY-CROSS-PROJECT-BLEED: MemoryRecordModel has no project_id, cross-project leak+overwrite | priority: high | effort: medium | status: completed | evidence: 32 tests pass, migration 030, commit ac698bec
-- [ ] H.9 — H-MCP-STOPALL-ORPHAN: one failing transport.stop() orphans every remaining MCP subprocess | priority: medium | effort: small | status: pending
-- [ ] H.10 — H-MCP-UVX-UNPINNED: uvx package specs exempt from version-pin requirement | priority: medium | effort: small | status: pending
+- [x] H.9 — H-MCP-STOPALL-ORPHAN: one failing transport.stop() orphans every remaining MCP subprocess | priority: medium | effort: small | status: completed | evidence: 5 tests pass, commit 5ce6065d
+- [x] H.10 — H-MCP-UVX-UNPINNED: uvx package specs exempt from version-pin requirement | priority: medium | effort: small | status: completed | evidence: 33 tests pass, commit 5ce6065d
 - [ ] H.11 — H-DENYLIST-DRIFT: three independent protected-path deny-lists disagree (applier.py, capability_lattice.py, apply.py) | priority: medium | effort: medium | status: pending
 - [x] H.12 — H-TENANT-CLAIM-FALLBACK: unscoped cross-tenant claim_runnable fallback when no project selected | priority: medium | effort: small | status: completed | evidence: Wave 34
-- [ ] H.13 — H-ORNITH-SANDBOX-GAPS: arbitrary file-write via export out_path + unsandboxed coding-agent subprocess | priority: medium | effort: medium | status: pending
-- [ ] H.14 — H-PRIORITY-UPPERBOUND: priority has no upper bound at schema/repository layer | priority: low | effort: small | status: pending
+- [x] H.13 — H-ORNITH-SANDBOX-GAPS: arbitrary file-write via export out_path + unsandboxed coding-agent subprocess | priority: medium | effort: medium | status: completed | evidence: 18 tests pass, commit 3c81b1b1
+- [x] H.14 — H-PRIORITY-UPPERBOUND: priority has no upper bound at schema/repository layer | priority: low | effort: small | status: completed | evidence: commit 3c81b1b1, tests/unit/test_h14_priority_bound.py
 - [x] H.15 — H-MCP-STARTUP-ORPHAN: partial multi-server MCP startup failure orphans already-spawned subprocesses | priority: high | effort: medium | status: completed | evidence: 10 tests pass, startup orphan cleanup on partial MCP failure
 - [x] H.16 — H-SSRF-NUMERIC-IP: decimal/octal/hex IP literal encodings bypass host_is_blocked | priority: medium | effort: medium | status: completed | evidence: 28 tests pass, commit ac698bec
 - [x] H.17 — H-SIGNING-NO-VERIFY: self-update + hot-reload apply content with no cryptographic signature verification | priority: high | effort: medium | status: completed | evidence: fc776d8f
@@ -296,9 +296,9 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S.11 — POST-SHIP #4: validation/runner.py unconfined subprocess cwd (D7/CA-validation) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
 - [x] S.12 — POST-SHIP #4: mcp/transport.py dual _NPM_FAMILY_LAUNCHERS def → bunx skips pin gate (D8/CA-M1) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
 - [/] S.13 — POST-SHIP #4: db/models.py missing FK todos.todo_id + task_returns.return_id (D9/CA-DB3) | priority: medium | effort: medium | status: in_progress
-- [ ] S.14 — POST-SHIP #4: daemon.py sync time.sleep blocks loop for model_gateway (D10/CA-D2) | priority: medium | effort: small | status: pending
-- [ ] S.15 — POST-SHIP #4: dispatch/dynamic_dispatcher.py UNRESTRICTED_ROLE str→object() sentinel (D12) | priority: medium | effort: small | status: pending
-- [ ] S.16 — POST-SHIP #4: daemon.py run_until_complete in running uvicorn loop (D11/CA-D1) | priority: medium | effort: medium | status: pending
+- [x] S.14 — POST-SHIP #4: daemon.py sync time.sleep blocks loop for model_gateway (D10/CA-D2) | priority: medium | effort: small | status: completed | evidence: 4 tests pass, commit 5ce6065d
+- [x] S.15 — POST-SHIP #4: dispatch/dynamic_dispatcher.py UNRESTRICTED_ROLE str→object() sentinel (D12) | priority: medium | effort: small | status: completed | evidence: 10 tests pass, commit 3c81b1b1
+- [x] S.16 — POST-SHIP #4: daemon.py run_until_complete in running uvicorn loop (D11/CA-D1) | priority: medium | effort: medium | status: completed | evidence: 34 tests pass, commit 545306b3
 - [ ] S.17 — POST-SHIP #5: Migration-002 SQLite batch-wrapper + alembic drift (alembic 002-005 from integration/alpha3-rc) | priority: medium | effort: medium | status: pending
 - [ ] S.18 — POST-SHIP #8: Remove unused langchain/langchain-openai/langgraph from pyproject.toml | priority: low | effort: small | status: pending
 - [ ] S.19 — POST-SHIP #8: TASKS.md W5.3-CVE unticked checkbox (adjudications real in SECURITY.md) | priority: low | effort: small | status: pending
@@ -453,12 +453,12 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase AG — Agent Framework Gaps (Strands/CrewAI/AutoGen/LangGraph research, 2026-07-12)
 
-- [ ] AG.1 — Agent evaluation framework: trajectory evaluation, benchmark harness, quality scoring | priority: critical | effort: large | status: pending
+- [x] AG.1 — Agent evaluation framework: trajectory evaluation, benchmark harness, quality scoring | priority: critical | effort: large | status: completed | evidence: design doc created, commit 5ce6065d
 - [ ] AG.2 — Lifecycle hook expansion: BeforeToolCall, AfterModelCall, AfterToolResult hooks for interception | priority: critical | effort: medium | status: pending
 - [ ] AG.3 — Hierarchical task decomposition: CrewAI-style role-goal-backstory + manager-agent patterns | priority: high | effort: large | status: pending
 - [ ] AG.4 — Tool permission scoping: Cedar-style RBAC, per-tool capability lattice, fine-grained deny | priority: high | effort: large | status: pending
 - [ ] AG.5 — Cross-conversation memory: LangGraph Store API for persistent cross-session state | priority: high | effort: medium | status: pending
-- [ ] AG.6 — Formal agent role metadata: Role-Goal-Backstory fields on agent records | priority: high | effort: small | status: pending
+- [x] AG.6 — Formal agent role metadata: Role-Goal-Backstory fields on agent records | priority: high | effort: small | status: completed | evidence: 8 tests pass, commit 5ce6065d
 - [ ] AG.7 — Agent delegation/handoff: inter-agent task handoff with context transfer | priority: medium | effort: medium | status: pending
 - [ ] AG.8 — Checkpoint branching: A/B execution paths, branch-from-checkpoint for alternative strategies | priority: medium | effort: medium | status: pending
 - [ ] AG.9 — Named single-purpose passes: Strands-style named passes for specific tool-calling patterns | priority: medium | effort: medium | status: pending

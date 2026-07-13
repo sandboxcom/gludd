@@ -8,7 +8,9 @@ sources, classification, and chronic grouping.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -20,8 +22,13 @@ from sqlalchemy.pool import StaticPool
 from general_ludd.db.models import Base, HumanTodoModel, TodoEventModel, TodoModel
 from general_ludd.db.repository import HumanTodoRepository, TodoRepository
 from general_ludd.remediation.blocker_detector import (
+    BLOCKER_KINDS,
+    REMEDIATION_KINDS,
+    BlockedTask,
     BlockerDetector,
     RemediationConfig,
+    _classify_blocker,
+    _safe_datetime,
 )
 from general_ludd.schemas.todo import TodoStatus
 
@@ -352,3 +359,124 @@ class TestSuggestedRemediation:
         ]
         assert findings, "expected permission escalation to surface after 4h"
         assert findings[0].suggested_remediation == "schedule_retry"
+
+
+class TestRemediationConfig:
+    def test_defaults_are_conservative(self):
+        cfg = RemediationConfig()
+        assert cfg.human_input_block_hours == 24
+        assert cfg.permission_escalation_block_hours == 4
+        assert cfg.max_requeues_before_chronic == 3
+        assert cfg.chronic_lookback_days == 7
+        assert cfg.min_chronic_incidents == 5
+        assert cfg.retry_delay_hours == 4
+
+    def test_frozen_prevents_mutation(self):
+        cfg = RemediationConfig(human_input_block_hours=12)
+        with pytest.raises(FrozenInstanceError):
+            cfg.human_input_block_hours = 8
+
+    def test_custom_values(self):
+        cfg = RemediationConfig(
+            human_input_block_hours=48,
+            permission_escalation_block_hours=2,
+            max_requeues_before_chronic=5,
+        )
+        assert cfg.human_input_block_hours == 48
+        assert cfg.permission_escalation_block_hours == 2
+        assert cfg.max_requeues_before_chronic == 5
+
+
+class TestSafeDatetime:
+    def test_aware_datetime_passthrough(self):
+        dt = datetime(2026, 1, 1, tzinfo=UTC)
+        result = _safe_datetime(dt)
+        assert result == dt
+        assert result.tzinfo is not None
+
+    def test_naive_datetime_assumes_utc(self):
+        dt = datetime(2026, 1, 1)
+        result = _safe_datetime(dt)
+        assert result == datetime(2026, 1, 1, tzinfo=UTC)
+
+    def test_non_datetime_returns_none(self):
+        assert _safe_datetime("not a datetime") is None
+        assert _safe_datetime(12345) is None
+        assert _safe_datetime(None) is None
+
+
+class TestClassifyBlocker:
+    def test_permission_escalation_category(self):
+        ht = MagicMock()
+        ht.category = "permission_escalation"
+        kind, rem = _classify_blocker(ht, is_chronic_requeue=False)
+        assert kind == "permission_escalation"
+        assert rem == "schedule_retry"
+
+    def test_input_request_category(self):
+        ht = MagicMock()
+        ht.category = "input_request"
+        kind, rem = _classify_blocker(ht, is_chronic_requeue=False)
+        assert kind == "human_input"
+        assert rem == "file_human_todo"
+
+    def test_decision_category_treated_as_human_input(self):
+        ht = MagicMock()
+        ht.category = "decision"
+        kind, rem = _classify_blocker(ht, is_chronic_requeue=False)
+        assert kind == "human_input"
+        assert rem == "file_human_todo"
+
+    def test_no_human_todo_with_chronic_requeue(self):
+        kind, rem = _classify_blocker(None, is_chronic_requeue=True)
+        assert kind == "resource_contention"
+        assert rem == "dispatch_agent"
+
+    def test_no_human_todo_and_no_chronic_fallback(self):
+        kind, rem = _classify_blocker(None, is_chronic_requeue=False)
+        assert kind == "unknown"
+        assert rem == "no_action"
+
+
+class TestBlockedTaskDataclass:
+    def test_defaults(self):
+        bt = BlockedTask(
+            todo_id="t1",
+            project_id="p1",
+            blocked_at=datetime(2026, 1, 1, tzinfo=UTC),
+            blocked_duration_seconds=3600,
+            blocker_kind="human_input",
+            blocker_summary="test",
+            suggested_remediation="file_human_todo",
+        )
+        assert bt.linked_human_todo_id is None
+        assert bt.task_type == ""
+
+    def test_full_fields(self):
+        bt = BlockedTask(
+            todo_id="t2",
+            project_id=None,
+            blocked_at=datetime(2026, 1, 1, tzinfo=UTC),
+            blocked_duration_seconds=7200,
+            blocker_kind="permission_escalation",
+            blocker_summary="needs approval",
+            suggested_remediation="schedule_retry",
+            linked_human_todo_id="ht-1",
+            task_type="deploy",
+        )
+        assert bt.linked_human_todo_id == "ht-1"
+        assert bt.task_type == "deploy"
+
+
+class TestConstants:
+    def test_blocker_kinds(self):
+        assert "human_input" in BLOCKER_KINDS
+        assert "permission_escalation" in BLOCKER_KINDS
+        assert "resource_contention" in BLOCKER_KINDS
+        assert "unknown" in BLOCKER_KINDS
+
+    def test_remediation_kinds(self):
+        assert "dispatch_agent" in REMEDIATION_KINDS
+        assert "schedule_retry" in REMEDIATION_KINDS
+        assert "file_human_todo" in REMEDIATION_KINDS
+        assert "no_action" in REMEDIATION_KINDS

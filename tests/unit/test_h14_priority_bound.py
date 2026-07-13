@@ -105,3 +105,26 @@ class TestRepoPriorityDefault:
         data: dict = {"title": "x"}
         TodoRepository._validate_create_data(data)
         assert "priority" not in data
+
+
+class TestDbModelPriorityConstraint:
+    """H.14: TodoModel.priority has a DB-level CheckConstraint."""
+
+    def test_check_constraint_exists(self):
+        from general_ludd.db.models import TodoModel
+
+        table = TodoModel.__table__
+        constraints = [c.name for c in table.constraints if isinstance(c, __import__("sqlalchemy").CheckConstraint)]
+        assert "ck_todos_priority_range" in constraints
+
+    def test_check_constraint_bounds(self):
+        from general_ludd.db.models import TodoModel
+
+        constraint = None
+        for c in TodoModel.__table__.constraints:
+            if getattr(c, "name", "") == "ck_todos_priority_range":
+                constraint = c
+        assert constraint is not None
+        sql_text = constraint.sqltext.text if hasattr(constraint, "sqltext") else str(constraint)
+        assert "priority >= 0" in sql_text.lower()
+        assert "priority <= 1000" in sql_text.lower()

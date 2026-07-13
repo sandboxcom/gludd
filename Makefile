@@ -76,7 +76,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     search-coverage-agentconfig \
     git-index git-search git-stats \
     searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
-    disk-guard disk-check disk \
+    disk-guard disk-check check-disk disk \
      networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
      networking-healthcheck \
      install-bats test-install check-subagent-guards verify-plugin-manifest \
@@ -208,6 +208,7 @@ help:
 	@echo "  --- Disk ---"
 	@echo "  disk-guard            Check disk usage + clean caches if above threshold (default 95%)"
 	@echo "  disk-check            Check disk usage only, exit 1 if above threshold"
+	@echo "  check-disk            Pre-commit check: fails if /tmp/gludd-* >100MB or disk >90%"
 	@echo "  disk                  Print disk usage + gludd footprint"
 	@echo ""
 	@echo "  --- Other ---"
@@ -408,7 +409,7 @@ collect-check:
 collect-check-e2e-live:
 	@$(UV) run python -m pytest tests/e2e/ tests/live/ --collect-only -q 2>&1 | tail -5
 
-gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter
+gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -433,6 +434,9 @@ gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plu
 	@echo "=== GATE PHASE: verify-enforcement ==="
 	@printf "verify-enforcement " >> .gate-status
 	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@echo "=== GATE PHASE: coverage-gaps ==="
+	@printf "coverage-gaps " >> .gate-status
+	@$(MAKE) --no-print-directory check-coverage-gaps > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
 	@echo "=== GATE PHASE: typecheck ==="
 	@printf "typecheck " >> .gate-status
 	@TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
@@ -481,7 +485,7 @@ gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plu
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: check-subagent-guards check-skills-frontmatter
+gate-lite: check-subagent-guards check-skills-frontmatter check-coverage-gaps
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
@@ -497,6 +501,12 @@ gate-lite: check-subagent-guards check-skills-frontmatter
 	@echo "=== GATE-LITE PHASE: dead-code ==="
 	@printf "dead-code " >> .gate-lite-status
 	@$(MAKE) --no-print-directory check-dead-code-quiet > /dev/null 2>&1 && echo "PASS 0" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
+	@echo "=== GATE-LITE PHASE: tdd-compliance ==="
+	@printf "tdd-compliance " >> .gate-lite-status
+	@$(MAKE) --no-print-directory check-tdd-compliance > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
+	@echo "=== GATE-LITE PHASE: coverage-gaps ==="
+	@printf "coverage-gaps " >> .gate-lite-status
+	@$(MAKE) --no-print-directory check-coverage-gaps > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
 	@echo "=== GATE-LITE PHASE: typecheck ==="
 	@printf "typecheck " >> .gate-lite-status
 	@TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
@@ -805,6 +815,7 @@ molecule-test-shard:
 clean-tmp:
 	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
 	@rm -rf /private/tmp/gludd-iso-* /private/tmp/pytest-of-* 2>/dev/null || true
+	@$(UV) run python3 scripts/clean_tmp.py
 	@echo "clean-tmp done"
 
 # Disk guard — checks disk usage % and cleans caches (pip, uv, pytest, mypy,
@@ -815,6 +826,10 @@ disk-guard:
 
 disk-check:
 	@bash scripts/disk-guard.sh check
+
+# Pre-commit disk check: fail if /tmp/gludd-* >100MB or disk >90%.
+check-disk:
+	@uv run python scripts/check_disk_usage.py
 
 # Disk headroom check — run BEFORE any heavy op (gate, agent dispatch) so we
 # never silently refill the volume. Prints % used + free on the data volume.
@@ -2704,6 +2719,18 @@ check-dead-code-quiet:
 check-test-env-writes:
 	@$(UV) run python scripts/check_test_env_writes.py tests
 
+# --- TDD compliance: new/modified source files require corresponding tests ---
+# Blocks commit if source files in src/general_ludd/ lack test files with imports + test_* functions.
+check-tdd-compliance:
+	@$(UV) run python scripts/check_tdd_compliance.py
+
+# --- Coverage gaps: flag modules with missing/stub/no-import test files ---
+check-coverage-gaps:
+	@$(UV) run python scripts/check_coverage_gaps.py
+
+check-coverage-gaps-json:
+	@$(UV) run python scripts/check_coverage_gaps.py --json
+
 # --- Test quality gate: lint checks (F401/I001/F841/B010) + naming convention + newline ---
 # Runs against staged test files only (git diff --cached).
 check-test-quality:
@@ -3498,7 +3525,8 @@ disengage-enforcement:
 # enforcement changes take effect without an opencode restart.
 reload-enforcement:
 	@echo "=== RELOAD ENFORCEMENT STATE ==="
-	@FLOOR="$${CLAUDE_AGENT_FLOOR:-7}"; \
+	@$(MAKE) --no-print-directory clean-tmp
+	@FLOOR="$${CLAUDE_AGENT_FLOOR:-10}"; \
 	echo "$${FLOOR}" > /tmp/gludd-floor-override; \
 	echo "  /tmp/gludd-floor-override          → $${FLOOR}"
 	@$(UV) run python3 -c 'import json,time; json.dump({"count":0,"ts":int(time.time()*1000)},open("/tmp/gludd-tool-streak.json","w"))'

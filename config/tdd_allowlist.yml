@@ -1,0 +1,16 @@
+# TDD Compliance Allowlist
+# Each entry must have a documented reason. "Don't need tests" is not a reason.
+# Structural exclusions (__init__.py, .pyi, __pycache__, typing/protocol stubs)
+# are handled in code and do not need entries here.
+allowlist:
+  - path: "src/general_ludd/db/models.py"
+    reason: "SQLAlchemy ORM model definitions — tested indirectly via repository integration tests and migration tests"
+
+  - path: "src/general_ludd/ornith/training_repo.py"
+    reason: "Thin ORM repository wrapping TrainingData model — tested indirectly via training_data integration tests"
+
+  - path: "src/general_ludd/security/security_backlog.py"
+    reason: "Configuration-driven backlog scanner — tested indirectly via security integration tests"
+
+  - path: "src/general_ludd/ansible/paths.py"
+    reason: "Pure path resolution utility — tested indirectly via ansible runner integration tests"

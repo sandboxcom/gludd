@@ -278,6 +278,9 @@ class TodoModel(Base):
         # (e.g. list_due_scheduled, claim variants filtering on queue) benefit
         # from this covering index that matches WHERE + time sort.
         Index("ix_todos_status_queue_scheduled", "status", "queue", "scheduled_at"),
+        # H.14: priority bounded at DB level so direct SQL writes can't bypass
+        # the application-layer clamping in TodoRepository._validate_create_data.
+        CheckConstraint("priority >= 0 AND priority <= 1000", name="ck_todos_priority_range"),
     )
 
     __mapper_args__: ClassVar[dict[str, Any]] = {"version_id_col": version}

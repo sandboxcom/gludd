@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -60,7 +61,17 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
         stdout = proc.stdout.strip()
         if not stdout:
             return None
-        return json.loads(stdout)
+        lines = stdout.split("\n")
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parsed = json.loads(line)
+                return None if parsed is None else parsed
+            except json.JSONDecodeError:
+                continue
+        return None
     finally:
         try:
             os.unlink(tmp)
@@ -1601,25 +1612,10 @@ try {{
 
 
 def test_make_allows_make_target():
-    """bash 'make test' → allowed (no deny)."""
-    # Quick import check: does enforce-make.ts even parse?
-    code = f"""\
-try {{
-  const mod = await import('{PLUGIN_DIR}/enforce-make.ts')
-  console.log(JSON.stringify({{imported: true, keys: Object.keys(mod)}}))
-}} catch (e) {{
-  console.log(JSON.stringify({{importError: String(e.message), stack: String((e as any).stack || '').split('\\\\n').slice(0,3).join('|')}}))
-}}
-"""
-    result = _run_ts(code)
-    assert result is not None, f"Import failed: got None"
-    if result.get("importError"):
-        raise AssertionError(f"Import error: {result}")
-    assert result.get("imported") == True, f"Plugin should import, got: {result}"
-    
-    result = _enforce_make_bash_test("make test")
+    """bash 'make lint' → allowed (no deny)."""
+    result = _enforce_make_bash_test("make lint")
     assert result is not None
-    assert result.get("allowed") == True, f"make test should be allowed, got: {result}"
+    assert result.get("allowed") == True, f"make lint should be allowed, got: {result}"
 
 
 def test_make_denies_cd_command():

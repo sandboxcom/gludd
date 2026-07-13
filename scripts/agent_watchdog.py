@@ -35,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import enum
+import glob
 import hashlib
 import json
 import os
@@ -198,6 +199,51 @@ _alerted_anomalies: dict[str, float] = {}
 _ALERTED_PRUNE_SECS = 1800  # 30 minutes
 _POLL_CYCLE_COUNT = 0
 _POLL_CYCLE_PRUNE_INTERVAL = 100  # prune every ~17 min (100 * 10s)
+
+
+WATCHDOG_LOG_ROTATION_MB = 10
+WATCHDOG_LOG_KEEP_MB = 1
+WATCHDOG_LOG_DIR = Path("/tmp")
+WATCHDOG_LOG_ROTATE_INTERVAL_SECS = 600
+_WATCHDOG_LAST_LOG_ROTATE: float = 0.0
+WATCHDOG_LOG_ROTATE_SKIP_PATTERNS = ("gludd-stderr-", "gludd-stdout-", "gludd-stdio-")
+
+
+def _rotate_watchdog_logs() -> None:
+    """Truncate /tmp/gludd-*.log files that exceed WATCHDOG_LOG_ROTATION_MB.
+
+    Keeps only the last WATCHDOG_LOG_KEEP_MB of content, so a runaway log
+    (e.g. a plugin debug log writing to /tmp) never fills the drive.
+    Called from the watchdog main loop at most every WATCHDOG_LOG_ROTATE_INTERVAL_SECS.
+    """
+    global _WATCHDOG_LAST_LOG_ROTATE
+    now = time.time()
+    if now - _WATCHDOG_LAST_LOG_ROTATE < WATCHDOG_LOG_ROTATE_INTERVAL_SECS:
+        return
+    _WATCHDOG_LAST_LOG_ROTATE = now
+
+    for pattern in ("/tmp/gludd-*.log", "/tmp/gludd-*.warnings.log"):
+        for log_path_str in glob.glob(pattern):
+            log_path = Path(log_path_str)
+            if not log_path.is_file():
+                continue
+            name = log_path.name
+            if any(name.startswith(p) for p in WATCHDOG_LOG_ROTATE_SKIP_PATTERNS):
+                continue
+            try:
+                sz = log_path.stat().st_size
+                if sz < WATCHDOG_LOG_ROTATION_MB * 1024 * 1024:
+                    continue
+                keep_bytes = WATCHDOG_LOG_KEEP_MB * 1024 * 1024
+                with log_path.open("rb") as f:
+                    f.seek(max(0, sz - keep_bytes))
+                    f.readline()
+                    tail = f.read()
+                log_path.write_bytes(tail)
+                new_sz = log_path.stat().st_size
+                _log(f"LOG ROTATION: {name} {sz / (1024*1024):.1f}MB → {new_sz / (1024*1024):.1f}MB (threshold {WATCHDOG_LOG_ROTATION_MB}MB)")
+            except Exception:
+                pass
 
 
 def _prune_alerted_anomalies(now_epoch: float | None = None) -> None:
@@ -2738,6 +2784,7 @@ def main(argv: list[str] | None = None) -> int:
             check_push_status()
             _check_gate_background()
             _check_plugin_liveness_periodic()
+            _rotate_watchdog_logs()
         except Exception as exc:
             _log(f"error: {exc}")
         time.sleep(POLL_SECS)

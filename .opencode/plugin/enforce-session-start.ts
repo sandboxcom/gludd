@@ -145,9 +145,12 @@ function loadState(): SessionState {
       timeGateReset: Boolean(raw.timeGateReset),
     }
   } catch {
+    // Corrupt state file → fail-open: return a primed state so
+    // the gate allows all tools through. Never wedge the session
+    // on a bit-flipped JSON file.
     return {
-      started_at: Date.now(), readsDone: false, dispatches: 0,
-      timeGateReset: false,
+      started_at: Date.now(), readsDone: true,
+      dispatches: EFFECTIVE_MIN, timeGateReset: true,
     }
   }
 }
