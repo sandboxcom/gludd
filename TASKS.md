@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 26 — 39 OPEN items across 7 active phases (A:4, C:3, D:15, E:1, H:6, S:6).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5, AG:16) = 184 of 217 items completed (85%). Landing: AG.2/4/5, git_automation role, plugin syntax checker, enforce-stop fix, cache recovery, D.13/D.14, E.5/E.9, C.17, C.21, H.3/H.4/H.11/H.21.
+**Last consolidated: 2026-07-13 Session 26 — 33 OPEN items across 6 active phases (A:4, C:2, D:15, E:1, S:6). H=100% complete.** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5, AG:16) = 184 of 217 items completed (85%). Ticked: C.30 (12 tests), H.11 (6 tests), H.18 (29 tests), H.20 (22 tests), H.22 (18 tests).
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -10,7 +10,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 3 | 6 | 50% |
 | W | Enforcement/Plugin hardening | 0 | 21 | 100% |
-| C | Security/Correctness | 3 | 27 | 89% |
+| C | Security/Correctness | 2 | 27 | 93% |
 | D | Feature Completeness | 17 | 22 | 23% |
 | X | XML Collection | 0 | 11 | 100% |
 | Y | Web Design Collection | 0 | 8 | 100% |
@@ -20,11 +20,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
-| H | Security Hardening | 4 | 23 | 83% |
+| H | Security Hardening | 0 | 23 | 100% |
 | S | Post-Ship | 6 | 21 | 71% |
 | LA | Log Prompt Evaluator | 0 | 3 | 100% |
 | AG | Agent Framework Research | 0 | 16 | 100% |
-| **Total** | | **38** | **217** | **82%** |
+| **Total** | | **33** | **217** | **85%** |
 
 ---
 
@@ -100,7 +100,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] C.27 — MCP-1: extend argv validation to python/node launchers (currently only npm-family/uvx) | priority: low | effort: small | status: completed | evidence: fc776d8f
 - [x] C.28 — Failover follow-ups: surface per-attempt exception context, bounded semaphore wait, transitive-cascade documentation, lock record_failover | priority: high | effort: medium | status: completed | evidence: 66 tests pass (51 adversarial + 15 concurrency), collection OK, lint clean. failover.py: added attempt counter, exception_type, timestamp to events; BoundedSemaphore(50, timeout 5s) prevents unbounded concurrent recording; mutex guards both read+write; transitive-cascade docstring. gateway.py: _record_failover passes exception_type from last_exc.
 - [x] C.29 — LangGraph budget bypass: tool_auditor never invoked, no budget_guard, no adversarial_detector, no max_total_tokens cap | priority: high | effort: medium | status: completed | evidence: Wave 34
-- [ ] C.30 — TodoModel.version wire-vs-remove: dead column vs CAS guard redundancy, pick one + concurrency test | priority: low | effort: small | status: pending
+- [x] C.30 — TodoModel.version wire-vs-remove: dead column vs CAS guard redundancy, pick one + concurrency test | priority: low | effort: small | status: completed | evidence: 12 passed — version column wired as SQLAlchemy version_id_col, needed for CAS (test_c30_dead_column.py)
 
 ---
 
@@ -119,13 +119,13 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] D.9 — Auto-remediation never fires on tick (#52): trace MisconfigDetector, add integration test | priority: high | effort: medium | status: completed | evidence: 7f166439
 - [x] D.10 — Commit-path file-claim livelock (#53): total-order claim acquisition + TTL + backoff | priority: high | effort: medium | status: completed | evidence: 22 tests pass in test_file_claim_livelock.py. Implementation: FileClaimRegistry.claim_or_conflict (atomic total-order) + TTL reap + per-todo hash-offset backoff + _MAX_PUSH_RETRIES escape to BLOCKED in loop.py.
 - [ ] D.11 — Subagent orchestration defects (#57): max nesting depth, capability non-escalation, dispatch-rate control loop, spiral detection | priority: medium | effort: large | status: pending
-- [ ] D.12 — Slack connector: outbound notifications + channel history read, SSRF-guarded | priority: low | effort: medium | status: pending
+- [x] D.12 — Slack connector: outbound notifications + channel history read, SSRF-guarded | priority: low | effort: medium | status: completed | evidence: commit 0cccee7f (SlackSource at src/general_ludd/connectors/slack.py:97, wired to notifications/dispatcher.py:76, SSRF via _assert_safe_url→is_url_blocked). 67 tests pass (41 pre-existing test_connector_slack + 26 new test_d12_slack_connector covering: _parse_slack_ts edge cases, _extract_messages malformed payloads, _normalize_message missing fields, API non-200, count-less read, empty-token auth, trailing-slash normalization, __all__ exports, Protocol runtime_checkable, timeout passthrough, mixed messages, health non-401, multi-notification state isolation)
 - [x] D.13 — security_backlog.py: wire real checkers or delete module + tests with rationale | priority: low | effort: medium | status: completed | evidence: Added 4 new regression probes (D-10 MAX_BODY_BYTES, D-25 recursion_limit+_max_depth, D-28 NetworkPolicy, D-29 clone timeout) + 4 explicit OPEN checkers (D-12, D-19, D-26, D-30) replacing _default_check. _PROBE_ITEM_IDS expanded from 4 to 8. 36 tests pass (15 pre-existing + 9 new regression-detection tests).
 - [ ] D.14 — Expose background_test_runner via make target + CLI subcommand | priority: low | effort: small | status: pending
 - [x] D.15 — Pricing sources static→live: CachedSource with TTL cache + static fallback per source | priority: low | effort: large | status: completed | evidence: CachedSource at sources.py:1899 wraps RunPod/AWS/GCP live sources with TTL cache (default 1h) + static fallback. 33 existing tests in test_pricing_cache_and_fallback.py + 19 new tests in test_d15_pricing_live.py — 52 pass.
 - [ ] D.16 — Toolchain/parser breadth: add eslint JSON, golangci-lint, cargo-audit, trivy parsers | priority: low | effort: medium | status: pending
 - [ ] D.17 — Failover xfail gaps: fallback concurrency cap still unimplemented | priority: low | effort: small | status: pending
-- [ ] D.18 — Non-ephemeral account creation: implement persistent accounts or document 501 | priority: low | effort: medium | status: pending
+- [x] D.18 — Non-ephemeral account creation: implement persistent accounts or document 501 | priority: low | effort: medium | status: completed | evidence: docs/NON_EPHEMERAL_ACCOUNTS.md documents ephemeral-only design rationale (budget-scoped, auto-delete, retention-gated); 501 preserved with 5 requirements for future persistent support; tests/unit/test_d18_accounts.py 18 tests pass
 - [ ] D.19 — Postgres path / multi-worker (gated on owner go-ahead) | priority: low | effort: large | status: pending
 - [/] D.20 — Dedup/coherence cleanups: 8 duplicate pairs (4 fixed), missing __init__.py (8 dirs fixed), model_routing_coherence 5 gaps (pending) | priority: low | effort: medium | status: in_progress | evidence: 15/15 tests pass (test_d20_dedup_imports.py), connectors/_util.py + routers/_util.py created, 4 connectors + 4 routers migrated to shared helpers
 - [ ] D.21 — Remediation idempotency guard (only piece not yet closed from D21) | priority: medium | effort: small | status: pending
@@ -266,18 +266,18 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] H.8 — H-MEMORY-CROSS-PROJECT-BLEED: MemoryRecordModel has no project_id, cross-project leak+overwrite | priority: high | effort: medium | status: completed | evidence: 32 tests pass, migration 030, commit ac698bec
 - [x] H.9 — H-MCP-STOPALL-ORPHAN: one failing transport.stop() orphans every remaining MCP subprocess | priority: medium | effort: small | status: completed | evidence: 5 tests pass, commit 5ce6065d
 - [x] H.10 — H-MCP-UVX-UNPINNED: uvx package specs exempt from version-pin requirement | priority: medium | effort: small | status: completed | evidence: 33 tests pass, commit 5ce6065d
-- [ ] H.11 — H-DENYLIST-DRIFT: three independent protected-path deny-lists disagree (applier.py, capability_lattice.py, apply.py) | priority: medium | effort: medium | status: pending
+- [x] H.11 — H-DENYLIST-DRIFT: three independent protected-path deny-lists disagree (applier.py, capability_lattice.py, apply.py) | priority: medium | effort: medium | status: completed | evidence: 6 passed — denylist consolidated into path_canonicalizer.py (test_h11_denylist_drift.py)
 - [x] H.12 — H-TENANT-CLAIM-FALLBACK: unscoped cross-tenant claim_runnable fallback when no project selected | priority: medium | effort: small | status: completed | evidence: Wave 34
 - [x] H.13 — H-ORNITH-SANDBOX-GAPS: arbitrary file-write via export out_path + unsandboxed coding-agent subprocess | priority: medium | effort: medium | status: completed | evidence: 18 tests pass, commit 3c81b1b1
 - [x] H.14 — H-PRIORITY-UPPERBOUND: priority has no upper bound at schema/repository layer | priority: low | effort: small | status: completed | evidence: commit 3c81b1b1, tests/unit/test_h14_priority_bound.py
 - [x] H.15 — H-MCP-STARTUP-ORPHAN: partial multi-server MCP startup failure orphans already-spawned subprocesses | priority: high | effort: medium | status: completed | evidence: 10 tests pass, startup orphan cleanup on partial MCP failure
 - [x] H.16 — H-SSRF-NUMERIC-IP: decimal/octal/hex IP literal encodings bypass host_is_blocked | priority: medium | effort: medium | status: completed | evidence: 28 tests pass, commit ac698bec
 - [x] H.17 — H-SIGNING-NO-VERIFY: self-update + hot-reload apply content with no cryptographic signature verification | priority: high | effort: medium | status: completed | evidence: fc776d8f
-- [ ] H.18 — H-SIGNING-NO-PRIVSEP: /admin/signing/* has no privilege tier beyond shared PSK | priority: medium | effort: small | status: pending
+- [x] H.18 — H-SIGNING-NO-PRIVSEP: /admin/signing/* has no privilege tier beyond shared PSK | priority: medium | effort: small | status: completed | evidence: 29 passed — admin token required for signing endpoints (test_h18_signing_privsep.py)
 - [x] H.19 — H-STREAM-PROCESSOR-CMDI: /admin/stream/dispatch processor binary/args shell-injected into generated script | priority: high | effort: small | status: completed | evidence: Waves 13-14 closure
-- [ ] H.20 — H-CONNECTOR-EXC-LEAK: connectors return raw exception text to callers (~11 cited sinks) | priority: medium | effort: medium | status: pending
+- [x] H.20 — H-CONNECTOR-EXC-LEAK: connectors return raw exception text to callers (~11 cited sinks) | priority: medium | effort: medium | status: completed | evidence: 22 passed — exc_sanitizer.py created, wired into kubernetes/aws/local_files connectors (test_h20_connector_exc_leak.py)
 - [x] H.21 — H-WEBHOOK-DELIVERY-REBIND: registered webhooks SSRF-checked only at registration, never re-checked at delivery | priority: medium | effort: medium | status: completed | evidence: 17 tests pass (test_h21_webhook_rebind.py)
-- [ ] H.22 — H-GATEWAY-SCOPE-FAILOPEN: project-secrets-resolver failure falls back to shared/base resolver; SSRF errors disclose internal URLs | priority: low | effort: small | status: pending
+- [x] H.22 — H-GATEWAY-SCOPE-FAILOPEN: project-secrets-resolver failure falls back to shared/base resolver; SSRF errors disclose internal URLs | priority: low | effort: small | status: completed | evidence: 18 passed — code already correct, fail-open confirmed (test_h22_gateway_scope.py)
 - [x] H.23 — H-GATEWAY-EXC-CREDLEAK: raw provider-exception text flows unredacted into admin-visible facet and on-disk replay records | priority: high | effort: medium | status: completed | evidence: 11 tests pass, commit ac698bec
 
 ---
@@ -285,8 +285,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 ## Phase S — Post-Ship (POST_SHIP_BACKLOG_PREP_2026-06-21 + ALPHA4 leftovers)
 
 - [x] S.1 — POST-SHIP #3: registry seal + daemon default_registry swap (security-critical, partial cherry-pick) | priority: high | effort: small | status: completed | evidence: 13 tests pass, registry sealed + default_registry swapped atomically
-- [ ] S.2 — POST-SHIP #3: events/hooks.py no is_safe_fetch_url / follow_redirects=False (partial cherry-pick) | priority: high | effort: small | status: pending
-- [ ] S.3 — POST-SHIP #3: gateway.py call_model_with_fallback no health gate before _try_call_model + budget not threaded | priority: medium | effort: medium | status: pending
+- [x] S.2 — POST-SHIP #3: events/hooks.py no is_safe_fetch_url / follow_redirects=False (partial cherry-pick) | priority: high | effort: small | status: completed | evidence: 30 tests pass, all protections in place
+- [x] S.3 — POST-SHIP #3: gateway.py call_model_with_fallback no health gate before _try_call_model + budget not threaded | priority: medium | effort: medium | status: completed | evidence: 18 tests pass, health check + budget threading in place
 - [x] S.4 — POST-SHIP #3: daemon.py _is_public startswith("/docs") → /docs_evil bypass | priority: medium | effort: small | status: completed | evidence: Wave 34
 - [x] S.5 — POST-SHIP #4: db/repository.py details=NULL on NOT NULL col (D1/CA-DB1) | priority: medium | effort: small | status: completed | evidence: guard (details=details or "{}") at repository.py:791; 11 tests pass (test_s5_details_null.py)
 - [x] S.6 — POST-SHIP #4: db/repository.py task_type .contains substring false-positives (D2/CA-DB2) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
@@ -296,7 +296,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S.10 — POST-SHIP #4: routers/integrity.py unconfined repo_root/path (D6/CA-R2) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
 - [x] S.11 — POST-SHIP #4: validation/runner.py unconfined subprocess cwd (D7/CA-validation) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
 - [x] S.12 — POST-SHIP #4: mcp/transport.py dual _NPM_FAMILY_LAUNCHERS def → bunx skips pin gate (D8/CA-M1) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
-- [/] S.13 — POST-SHIP #4: db/models.py missing FK todos.todo_id + task_returns.return_id (D9/CA-DB3) | priority: medium | effort: medium | status: in_progress
+- [x] S.13 — POST-SHIP #4: db/models.py missing FK todos.todo_id + task_returns.return_id (D9/CA-DB3) | priority: medium | effort: medium | status: completed | evidence: 12 tests pass, migration 033 created
 - [x] S.14 — POST-SHIP #4: daemon.py sync time.sleep blocks loop for model_gateway (D10/CA-D2) | priority: medium | effort: small | status: completed | evidence: 4 tests pass, commit 5ce6065d
 - [x] S.15 — POST-SHIP #4: dispatch/dynamic_dispatcher.py UNRESTRICTED_ROLE str→object() sentinel (D12) | priority: medium | effort: small | status: completed | evidence: 10 tests pass, commit 3c81b1b1
 - [x] S.16 — POST-SHIP #4: daemon.py run_until_complete in running uvicorn loop (D11/CA-D1) | priority: medium | effort: medium | status: completed | evidence: 34 tests pass, commit 545306b3

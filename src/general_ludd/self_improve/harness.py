@@ -363,52 +363,19 @@ class SelfImprovementHarness:
     ) -> dict[str, Any]:
         """Commit a self-improvement change in the project workspace and hot-reload.
 
-        This is the routing point that keeps self-improvement OFF the daemon's
-        running source tree: the change is committed inside the registered
-        project's workspace clone, then the running daemon is hot-reloaded from
-        those committed bytes. Flow:
-
-          1. capture ``changed_files()`` BEFORE the commit (the reload set)
-          2. ``GitAutomation.commit_and_push`` lands the change locally
-          3. ``reloader.reload_changed_modules`` swaps the live modules
-          4. (optional) ``SelfUpdateAppliedEvent`` published on ``event_bus``
-
-        Returns a dict with ``commit_sha``, ``changed_files``, ``reload_success``,
-        and ``reloaded_modules``.
+        Delegates to ``SelfApply.apply`` — kept for backward compatibility.
         """
-        from general_ludd.events.types import SelfUpdateAppliedEvent
-        from general_ludd.git_automation.repo import GitAutomation
+        from general_ludd.self_improve.apply import SelfApply
 
-        git = GitAutomation(repo_path=workspace_repo_dir)
-        changed = git.changed_files()
-        commit_sha = git.commit_and_push(message)
-
-        reload_result = reloader.reload_changed_modules(
-            repo_dir=workspace_repo_dir,
-            changed_paths=changed,
+        applier = SelfApply()
+        return applier.apply(
+            workspace_repo_dir=workspace_repo_dir,
+            message=message,
+            reloader=reloader,
             health_check=health_check,
             role=role,
+            event_bus=event_bus,
         )
-        reloaded = (
-            reload_result.details.get("reloaded_modules", [])
-            + reload_result.details.get("added_modules", [])
-            if hasattr(reload_result, "details")
-            else []
-        )
-
-        if event_bus is not None:
-            event_bus.publish(
-                SelfUpdateAppliedEvent(
-                    commit_sha=commit_sha, reloaded_modules=list(reloaded)
-                )
-            )
-
-        return {
-            "commit_sha": commit_sha,
-            "changed_files": changed,
-            "reload_success": reload_result.success,
-            "reloaded_modules": reloaded,
-        }
 
     def write_config_value(
         self,
