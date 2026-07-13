@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [Unreleased] — since beta.3 (2026-07-13) — Session 29: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening, e2e test surge
+## [Unreleased] — since beta.3 (2026-07-13) — Session 29: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening, e2e test surge, opencode 1.17.9 compat
 
 ### Session 29 (2026-07-13) — Enforcement Plugin Node v26 Compatibility + E2E Test Surge
 
@@ -16,6 +16,12 @@ All notable changes to this project are documented here. Format follows [Keep a 
 **Enforcement e2e test surge:**
 - 204 enforcement e2e tests across 12 test files covering: floor, delegate, stop, deadline, no-wait, session-start, clean-tree, verified-claims, no-suppressions, enhancement-ratio, deletion-gate, and watchdog plugins
 - Functional hook runtime tests expanded — actual plugin hooks invoked via `node -e` with constructed arguments
+
+**Opencode 1.17.9 compatibility (29fe19f0):**
+- Moved shared.ts and hot_reload.ts from `.opencode/plugin/` to `.opencode/lib/` — opencode 1.17.9 no longer treats `.opencode/plugin/` directories as auto-registered plugins
+- Removed `event:` and `session.idle:` hooks from all 14 enforcement plugins — these hook types were dropped in 1.17.9
+- Fixed async export pattern: `async function name() { ... }` replaced with `const name = async () => { ... }` to prevent parse errors under `--experimental-strip-types`
+- Updated all plugin imports from `./shared.ts` → `../lib/shared.ts` (14 files touched, 48 insertions, 101 deletions)
 
 **Fixes:**
 - Ratchet conftest hook (E.5): conftest.py hook recalculates ratchet baseline after plugin edits, preventing stale-gate false negatives

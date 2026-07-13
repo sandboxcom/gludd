@@ -10,7 +10,7 @@
 
 ### HEAD + Branch State
 
-- **HEAD: `1a225981`** on `development` branch
+- **HEAD: `29fe19f0`** on `development` branch
 - **Working tree: CLEAN**
 - **Runtime tests: 114 pass / 0 fail**
 - **check-node-v26-compat: 2/2 PASS** — 0 `require()` calls remain in any plugin
@@ -35,6 +35,7 @@
 | **enforce-clean-tree fix** | execSync fix + hot-reload proxy + require() audit checker | `9d4e60da`, `a68de353` |
 | **enforce-stop dedup** | Deduplicated using shared.ts helpers | `ad2f32fb` |
 | **restore-opencode git fallback** | Added git HEAD fallback to restore-opencode; `.opencode.orig` backup | `ad2f32fb` |
+| **opencode 1.17.9 compat** | Moved shared.ts/hot_reload.ts to `.opencode/lib/`; removed event + session.idle hooks (removed in 1.17.9); fixed async export pattern across 14 plugins | `29fe19f0` |
 
 ### Commits This Session (8 on development)
 
@@ -48,6 +49,12 @@
 | `a68de353` | enhancement: clean-tree hot-reload proxy + require() audit checker + D.19 docs + SESSION29 |
 | `9d4e60da` | fix: enforce-clean-tree require→import execSync, 7 new tests, TASKS.md header counts |
 | `ad2f32fb` | refactor: enforce-stop.ts dedup using shared.ts helpers, add restore-opencode git fallback, backup-opencode docs |
+
+### Commits Since Session 29 Closure (1 on development)
+
+| Hash | Message |
+|------|---------|
+| `29fe19f0` | fix: opencode 1.17.9 compat — move shared/hot_reload out of plugin dir, remove event/session.idle hooks, fix async exports, update imports |
 
 Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`, `167e6db2`, `b53ab7fb`, `c732b4cc`, `d1637e33` — Node v26 compat fixes).
 
