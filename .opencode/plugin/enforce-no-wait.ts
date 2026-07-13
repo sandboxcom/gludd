@@ -90,7 +90,6 @@ function _extractDispatchText(params: unknown): string {
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     if (isSubagent()) return;
-    console.log("SUBAGENT SKIP: enforce-no-wait");
     reportAlive("enforce-no-wait");
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
@@ -136,7 +135,6 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return;
-      console.log("SUBAGENT SKIP: enforce-no-wait");
       const impl = loadHotModule("enforce-no-wait", defaultImpl);
       const fn = impl["tool.execute.before"];
       return fn ? await fn(input, output) : undefined;

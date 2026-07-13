@@ -349,7 +349,7 @@ function detectStopPattern(text: string): boolean {
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
       const _sub = isSubagent()
-      if (_sub) { console.log("SUBAGENT SKIP: enforce-make tool.execute.before"); return }
+      if (_sub) { return }
       reportAlive("enforce-make")
 
       // BUG #16 fix: track tool calls and dispatches for text.complete bypass
@@ -359,8 +359,25 @@ const defaultImpl: HotModule = {
       }
 
       if (input.tool === "bash") {
-        const command = (input as any)?.args?.command ?? ""
-        const trimmed = typeof command === "string" ? command.trim() : ""
+        let command = ""
+        try {
+          const outCmd = (output as any)?.args?.command
+          if (typeof outCmd === "string" && outCmd) command = outCmd.trim()
+        } catch (_) {}
+        if (!command) {
+          try {
+            const inCmd = (input as any)?.args?.command
+            if (typeof inCmd === "string" && inCmd) command = inCmd.trim()
+          } catch (_) {}
+        }
+        if (!command) {
+          try {
+            const inCmd = (input as any)?.command
+            if (typeof inCmd === "string" && inCmd) command = inCmd.trim()
+          } catch (_) {}
+        }
+        if (!command) return
+        const trimmed = command
 
         if (MAKE_ENFORCE) {
           if (trimmed && SHELL_META_CHARS.test(trimmed)) {
@@ -843,7 +860,7 @@ const defaultImpl: HotModule = {
 
     "tool.execute.after": async (input, output) => {
       if (input.tool === "bash") {
-        const command: string = output?.args?.command ?? ""
+        const command: string = (output as any)?.args?.command ?? (input as any)?.args?.command ?? ""
         if (
           typeof command === "string" &&
           (command.includes("make test") || command.includes("make qa") || command.includes("make validate"))
@@ -871,8 +888,6 @@ const defaultImpl: HotModule = {
 
     "experimental.chat.system.transform": async (_input, output) => {
       if (isSubagent()) return output
-      console.log("SUBAGENT SKIP: enforce-make")
-      console.log("SUBAGENT SKIP: enforce-make")
       // --- BASH-AVAILABILITY CHECK (2026-07-03) -------------------------------
       // Reads SESSION.md for the "CRITICAL: bash tool unavailable" banner.
       // If present, injects a prominent warning at the VERY TOP of the system
@@ -960,8 +975,6 @@ const defaultImpl: HotModule = {
     // --- Per-chunk state-based block (port of enforce-stop.ts text.complete) ---
     "experimental.text.complete": async (_input, output) => {
       if (isSubagent()) return output
-      console.log("SUBAGENT SKIP: enforce-make")
-      console.log("SUBAGENT SKIP: enforce-make")
       if (typeof output?.text !== "string") return output
 
       if (_bashPolicyNudge) {
@@ -1084,7 +1097,6 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return
-      console.log("SUBAGENT SKIP: enforce-make")
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined

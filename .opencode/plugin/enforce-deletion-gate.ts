@@ -91,7 +91,6 @@ function getDeletionReason(): string | undefined {
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     if (isSubagent()) return;
-    console.log("SUBAGENT SKIP: enforce-deletion-gate");
     reportAlive("enforce-deletion-gate");
 
     if (process.env.GLUDD_DELETION_GATE_ENFORCE === "0") return;
@@ -110,6 +109,7 @@ const defaultImpl: HotModule = {
       const newLines = countLines(args.new_string);
       linesRemoved = Math.max(0, oldLines - newLines);
     } else if (input.tool === "write") {
+      if (!input.args) return;
       const args = input.args as { file_path: string; content: string };
       filePath = args.file_path;
       const existingLines = await readExistingFileLines(filePath);
@@ -145,7 +145,6 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return;
-      console.log("SUBAGENT SKIP: enforce-deletion-gate");
       const impl = loadHotModule("enforce-deletion-gate", defaultImpl);
       const fn = impl["tool.execute.before"];
       return fn ? await fn(input, output) : undefined;

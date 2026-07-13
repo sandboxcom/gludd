@@ -116,7 +116,6 @@ let _state: MultitaskState = (() => {
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
     if (isSubagent()) return
-    console.log("SUBAGENT SKIP: enforce-multitask")
     reportAlive("enforce-multitask")
     try {
       if (!FLOOR_ENFORCE) return
@@ -203,8 +202,6 @@ const defaultImpl: HotModule = {
   "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
     try {
       if (isSubagent()) return output
-      console.log("SUBAGENT SKIP: enforce-multitask")
-      console.log("SUBAGENT SKIP: enforce-multitask")
       if (!output || typeof output.text !== "string") return output
       if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test(output.text.trim())) return output
       if (hasResultMarker(output.text)) {
@@ -295,7 +292,6 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input: { tool?: string }) => {
       if (isSubagent()) return
-      console.log("SUBAGENT SKIP: enforce-multitask")
       const impl = loadHotModule("multitask", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input) : undefined

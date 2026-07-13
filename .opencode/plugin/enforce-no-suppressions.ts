@@ -72,7 +72,6 @@ export function shouldAllowEdit(
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     if (isSubagent()) return;
-    console.log("SUBAGENT SKIP: enforce-no-suppressions");
     reportAlive("enforce-no-suppressions");
     if (process.env.GLUDD_NO_SUPPRESSIONS_ENFORCE === "0") return;
     if (input?.tool !== "edit" && input?.tool !== "write") {
@@ -112,7 +111,6 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return;
-      console.log("SUBAGENT SKIP: enforce-no-suppressions");
       const impl = loadHotModule("enforce-no-suppressions", defaultImpl);
       const fn = impl["tool.execute.before"];
       return fn ? await fn(input, output) : undefined;

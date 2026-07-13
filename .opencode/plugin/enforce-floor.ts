@@ -281,7 +281,6 @@ const floorTurnState: { accumulatedText: string } = { accumulatedText: "" }
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, output: any) => {
     if (isSubagent()) return
-    console.log("SUBAGENT SKIP: enforce-floor")
     reportAlive("enforce-floor")
     writeHeartbeat("enforce-floor")
 
@@ -545,7 +544,6 @@ const defaultImpl: HotModule = {
 
   "experimental.text.complete": async (_input: any, output: any) => {
     if (isSubagent()) return output
-    console.log("SUBAGENT SKIP: enforce-floor")
     if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
     try {
       try {

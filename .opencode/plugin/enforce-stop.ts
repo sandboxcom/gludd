@@ -556,7 +556,6 @@ const defaultImpl: HotModule = {
 
   "tool.execute.before": async (input: any, output: any) => {
     if (isSubagent()) return
-    console.log("SUBAGENT SKIP: enforce-stop")
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
 
@@ -737,7 +736,6 @@ const defaultImpl: HotModule = {
 
   "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
-    console.log("SUBAGENT SKIP: enforce-stop")
     const unchecked = countTasksMdUnchecked()
     const ratchetCount = ratchetHasEntries()
     const bugsOpen = bugsMdHasOpenIncidents()
@@ -796,7 +794,6 @@ const defaultImpl: HotModule = {
 
   "experimental.text.complete": async (_input: any, output: any) => {
     if (isSubagent()) return output
-    console.log("SUBAGENT SKIP: enforce-stop")
     if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
 
     const cPath = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "/tmp/gludd-stop-text-complete-count.json"
@@ -1069,7 +1066,7 @@ const defaultImpl: HotModule = {
         }
       }
 
-      if (!watchdogDisengage && (hasLocalWork || ciVerdictPendingOrRed) && !isSubagentFinalReport) {
+      if (!watchdogDisengage && (hasLocalWork || ciVerdictPendingOrRed) && !isSubagentFinalReport && turnState.dispatchCount === 0 && !turnState.toolCallMade) {
         logFalseDoneBlock(turnState.accumulatedText, "hasLocalWork-text-only")
         output.text = [
           "HARD STOP — STATE-BASED BLOCK: local work pending.",

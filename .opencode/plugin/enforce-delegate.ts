@@ -693,7 +693,6 @@ function _writeHeartbeat(): void {
 export const defaultImpl = {
   "tool.execute.before": async (input, output) => {
     if (isSubagent()) return
-    console.log("SUBAGENT SKIP: enforce-delegate")
     reportAlive("enforce-delegate")
     _writeHeartbeat()
     const tool = input.tool
@@ -741,7 +740,6 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return
-      console.log("SUBAGENT SKIP: enforce-delegate")
       const impl = loadHotModule("delegate", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined

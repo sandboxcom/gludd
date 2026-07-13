@@ -82,7 +82,6 @@ export function buildDenyMessage(count: number): string {
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     if (isSubagent()) return;
-    console.log("SUBAGENT SKIP: enforce-clean-tree");
     reportAlive("enforce-clean-tree");
     try {
       if (process.env.GLUDD_CLEAN_TREE_ENFORCE === "0") return;
@@ -111,7 +110,6 @@ export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return;
-      console.log("SUBAGENT SKIP: enforce-clean-tree");
       const impl = loadHotModule("clean-tree", defaultImpl);
       const fn = impl["tool.execute.before"];
       return fn ? await fn(input, output) : undefined;

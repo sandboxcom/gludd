@@ -158,7 +158,6 @@ function isDispatchTool(tool: string): boolean {
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, output: any) => {
     if (isSubagent()) return
-    console.log("SUBAGENT SKIP: enforce-deadline")
     reportAlive("enforce-deadline")
     if (!DEADLINE_ENABLED) return
     const tool = input.tool
@@ -233,7 +232,6 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
       if (isSubagent()) return;
-      console.log("SUBAGENT SKIP: enforce-deadline")
       const impl = loadHotModule("deadline", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined

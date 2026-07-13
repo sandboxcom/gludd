@@ -149,7 +149,6 @@ export default (() => {
   return {
     "experimental.text.complete": async (input: unknown, output: { text: string }) => {
       if (isSubagent()) return output
-      console.log("SUBAGENT SKIP: enforce-verified-claims")
       reportAlive("enforce-verified-claims")
       const impl = loadHotModule("verified-claims", defaultImpl)
       const fn = impl["experimental.text.complete"]
