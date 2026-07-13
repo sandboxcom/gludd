@@ -7,7 +7,7 @@ for full isolation.
 Targets under test (Makefile ~L3878-3911):
   - backup-opencode: rsync .opencode/ -> .opencode.orig/ (excl node_modules)
   - check-opencode-backup: exits 1 if missing or stale
-  - restore-opencode: cp from .opencode.orig/ -> .opencode/, clear ~/.cache/opencode
+  - restore-opencode: rsync .opencode.orig/ -> .opencode/ + clear ~/.cache/opencode
 """
 
 from __future__ import annotations
@@ -171,9 +171,27 @@ class TestCheckOpencodeBackup:
 
 
 class TestRestoreOpencode:
-    """Verify restore-opencode copies from .opencode.orig/ -> .opencode/ and clears cache."""
+    """Verify restore-opencode mirrors .opencode.orig/ -> .opencode/ and clears cache."""
 
-    def test_restores_files_from_backup(self):
+    @staticmethod
+    def _rsync_restore(opencode: Path, backup: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["rsync", "-a", "--delete",
+             "--exclude=node_modules/", "--exclude=node_modules",
+             str(backup) + "/", str(opencode) + "/"],
+            check=True,
+        )
+
+    @staticmethod
+    def _rsync_backup(opencode: Path, backup: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["rsync", "-a", "--delete",
+             "--exclude=node_modules/", "--exclude=node_modules",
+             str(opencode) + "/", str(backup) + "/"],
+            check=True,
+        )
+
+    def test_restores_complete_tree_from_backup(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             opencode = root / ".opencode"
@@ -182,21 +200,116 @@ class TestRestoreOpencode:
             backup.mkdir(parents=True)
 
             (backup / "plugin").mkdir(parents=True)
-            (backup / "plugin" / "restored.ts").write_text("// restored content")
+            (backup / "plugin" / "enforce-floor.ts").write_text("// floor")
+            (backup / "plugin" / "shared.ts").write_text("// shared")
+            (backup / "plugins").mkdir(parents=True)
+            (backup / "plugins" / "watchdog.ts").write_text("// watchdog")
+            (backup / "skills").mkdir(parents=True)
+            (backup / "skills" / "guardrail-pattern").mkdir(parents=True)
+            (backup / "skills" / "guardrail-pattern" / "SKILL.md").write_text("# skill")
+            (backup / "agent").mkdir(parents=True)
+            (backup / "agent" / "web-update.md").write_text("# agent")
+            (backup / "skill").mkdir(parents=True)
+            (backup / "skill" / "deep-spec").mkdir(parents=True)
+            (backup / "skill" / "deep-spec" / "SKILL.md").write_text("# deep-spec")
             (backup / "opencode.json").write_text('{"key": "value"}')
+            (backup / ".gitignore").write_text("node_modules/")
+            (backup / "plugin-hashes.json").write_text('{"hashes": {}}')
 
-            subprocess.run(
-                ["cp", "-R", str(backup / "plugin"), str(opencode / "plugin")],
-                check=True,
-            )
-            subprocess.run(
-                ["cp", "-R", str(backup / "opencode.json"), str(opencode / "opencode.json")],
-                check=True,
-            )
+            self._rsync_restore(opencode, backup)
 
-            assert (opencode / "plugin" / "restored.ts").exists()
-            assert (opencode / "plugin" / "restored.ts").read_text() == "// restored content"
+            assert (opencode / "plugin" / "enforce-floor.ts").read_text() == "// floor"
+            assert (opencode / "plugin" / "shared.ts").read_text() == "// shared"
+            assert (opencode / "plugins" / "watchdog.ts").read_text() == "// watchdog"
+            assert (opencode / "skills" / "guardrail-pattern" / "SKILL.md").read_text() == "# skill"
+            assert (opencode / "agent" / "web-update.md").read_text() == "# agent"
+            assert (opencode / "skill" / "deep-spec" / "SKILL.md").read_text() == "# deep-spec"
             assert (opencode / "opencode.json").read_text() == '{"key": "value"}'
+            assert (opencode / ".gitignore").read_text() == "node_modules/"
+            assert (opencode / "plugin-hashes.json").read_text() == '{"hashes": {}}'
+
+    def test_restore_unknown_subdirectory_survives(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            opencode = root / ".opencode"
+            backup = root / ".opencode.orig"
+            opencode.mkdir(parents=True)
+            backup.mkdir(parents=True)
+
+            (backup / "mcp_servers").mkdir(parents=True)
+            (backup / "mcp_servers" / "config.json").write_text('{"servers": []}')
+            (backup / "plugin").mkdir(parents=True)
+            (backup / "plugin" / "enforce-floor.ts").write_text("// floor")
+
+            self._rsync_restore(opencode, backup)
+
+            assert (opencode / "mcp_servers" / "config.json").read_text() == '{"servers": []}'
+            assert (opencode / "plugin" / "enforce-floor.ts").read_text() == "// floor"
+
+    def test_restore_removes_stale_files_from_opencode(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            opencode = root / ".opencode"
+            backup = root / ".opencode.orig"
+            opencode.mkdir(parents=True)
+            backup.mkdir(parents=True)
+
+            (backup / "plugin").mkdir(parents=True)
+            (backup / "plugin" / "current.ts").write_text("// current")
+
+            (opencode / "plugin").mkdir(parents=True, exist_ok=True)
+            (opencode / "plugin" / "current.ts").write_text("// current")
+            (opencode / "plugin" / "stale.ts").write_text("// stale, should be removed")
+            (opencode / "stale_root.json").write_text('{"gone": true}')
+
+            self._rsync_restore(opencode, backup)
+
+            assert (opencode / "plugin" / "current.ts").exists()
+            assert not (opencode / "plugin" / "stale.ts").exists(), "stale files should be removed by --delete"
+            assert not (opencode / "stale_root.json").exists(), "stale root files should be removed by --delete"
+
+    def test_roundtrip_backup_then_restore_is_identical(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            orig = root / ".opencode"
+            backup = root / ".opencode.orig"
+            restored = root / "restored" / ".opencode"
+            orig.mkdir(parents=True)
+            backup.mkdir(parents=True)
+            restored.mkdir(parents=True)
+
+            (orig / "plugin").mkdir(parents=True)
+            (orig / "plugin" / "enforce-floor.ts").write_text("// floor v2")
+            (orig / "plugin" / "shared.ts").write_text("// shared")
+            (orig / "plugins").mkdir(parents=True)
+            (orig / "plugins" / "watchdog.ts").write_text("// watchdog")
+            (orig / "skills").mkdir(parents=True)
+            (orig / "skills" / "type-safety").mkdir(parents=True)
+            (orig / "skills" / "type-safety" / "SKILL.md").write_text("# types")
+            (orig / ".gitignore").write_text("node_modules/")
+            (orig / "opencode.json").write_text('{"version": 2}')
+            (orig / "plugin-hashes.json").write_text('{"hashes": {"enforce-floor": "abc"}}')
+
+            self._rsync_backup(orig, backup)
+            self._rsync_restore(restored, backup)
+
+            def _readable_tree(d: Path, prefix: str = "") -> set:
+                result = set()
+                for p in d.rglob("*"):
+                    if p.is_file():
+                        rel = p.relative_to(d)
+                        result.add(f"{rel}:{p.read_text()}")
+                return result
+
+            orig_tree = _readable_tree(orig)
+            restored_tree = _readable_tree(restored)
+
+            missing_in_restored = orig_tree - restored_tree
+            extra_in_restored = restored_tree - orig_tree
+
+            assert not missing_in_restored, f"files missing from restore: {missing_in_restored}"
+            assert not extra_in_restored, f"unexpected files in restore: {extra_in_restored}"
+            assert orig_tree == restored_tree, "round-trip backup→restore must produce identical tree"
 
     def test_clears_opencode_cache(self):
         with tempfile.TemporaryDirectory() as td:
@@ -208,7 +321,7 @@ class TestRestoreOpencode:
 
             assert not cache.exists()
 
-    def test_restore_with_dotfiles(self):
+    def test_restore_excludes_node_modules(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             opencode = root / ".opencode"
@@ -216,23 +329,25 @@ class TestRestoreOpencode:
             opencode.mkdir(parents=True)
             backup.mkdir(parents=True)
 
-            (backup / ".gitignore").write_text("node_modules/")
-
-            subprocess.run(
-                ["cp", str(backup / ".gitignore"), str(opencode / ".gitignore")],
-                check=True,
-            )
-
-            assert (opencode / ".gitignore").read_text() == "node_modules/"
-
-    def test_restore_removes_node_modules(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            opencode = root / ".opencode"
-            opencode.mkdir(parents=True)
             (opencode / "node_modules").mkdir(parents=True)
             (opencode / "node_modules" / "dep.js").write_text("// dep")
+            (opencode / "plugin").mkdir(parents=True)
+            (opencode / "plugin" / "enforce-floor.ts").write_text("// floor")
 
-            subprocess.run(["rm", "-rf", str(opencode / "node_modules")], check=True)
+            self._rsync_backup(opencode, backup)
 
-            assert not (opencode / "node_modules").exists()
+            assert not (backup / "node_modules").exists()
+            assert (backup / "plugin" / "enforce-floor.ts").read_text() == "// floor"
+
+    def test_restore_without_backup_dir_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            backup = root / ".opencode.orig"
+            assert not backup.exists()
+
+            proc = subprocess.run(
+                ["sh", "-c", 'if [ ! -d "$1" ]; then echo "ERROR: no backup" >&2; exit 1; fi', "_", str(backup)],
+                capture_output=True,
+            )
+            assert proc.returncode != 0
+            assert b"no backup" in proc.stderr

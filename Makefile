@@ -1498,6 +1498,12 @@ ci-cooldown-status:
 ci-observability:
 	@$(PYTHON) scripts/ci_observability.py $(or $(BRANCH),master)
 
+# ci-dashboard: one-shot compact CI run listing. Prints one line per recent run
+# with status, conclusion, branch, age, and SHA. No polling — pure read-once.
+# Usage: make ci-dashboard [LIMIT=10] [BRANCH=development]
+ci-dashboard: _require-gh
+	@$(PYTHON) scripts/ci_dashboard.py --limit $(or $(LIMIT),5) $(if $(BRANCH),--branch $(BRANCH),)
+
 # Consolidated, read-only state report for pre-claim verification. Prints the
 # working tree (CLEAN/DIRTY), HEAD identity + branch, remote sync state
 # (SYNCED/DIVERGED/UNREACHABLE with unpushed commits), recent commits, and the
@@ -3902,10 +3908,13 @@ check-opencode-backup:
 # causes opencode to refuse to start. This target restores and cleans.
 restore-opencode:
 	@echo "Restoring .opencode/ from .opencode.orig/ ..."
-	@cp -vR .opencode.orig/* .opencode/ 2>/dev/null
-	@cp -vR .opencode.orig/.gitignore .opencode/ 2>/dev/null || true
+	@if [ ! -d .opencode.orig ]; then \
+		echo "ERROR: .opencode.orig/ does not exist. Nothing to restore from."; \
+		echo "  If .opencode/ is currently working, run 'make backup-opencode' first."; \
+		exit 1; \
+	fi
+	@rsync -a --delete --exclude='node_modules/' --exclude='node_modules' .opencode.orig/ .opencode/
+	@echo "  .opencode/ restored from .opencode.orig/"
 	@echo "Clearing corrupted opencode cache ..."
-	@rm -rf ~/.cache/opencode 2>/dev/null && echo "  ~/.cache/opencode cleared" || echo "  ~/.cache/opencode not found or could not clear"
-	@echo "Clearing .opencode/node_modules for clean reinstall ..."
-	@rm -rf .opencode/node_modules 2>/dev/null && echo "  .opencode/node_modules cleared" || echo "  .opencode/node_modules not found"
+	@rm -rf ~/.cache/opencode && echo "  ~/.cache/opencode cleared"
 	@echo ".opencode/ restored. Restart opencode for changes to take effect."
