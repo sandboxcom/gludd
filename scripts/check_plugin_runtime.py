@@ -8,7 +8,7 @@ PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 
 DANGEROUS_IMPORTS = [
-    (re.compile(r"^\s*import\s+.*child_process", re.MULTILINE), "import child_process"),
+    (re.compile(r'''import\s+.*from\s+["']child_process["']''', re.MULTILINE), "bare 'child_process' import (use 'node:child_process')"),
     (re.compile(r'''import\s+.*from\s+["']fs["']''', re.MULTILINE), "bare 'fs' import (use 'node:fs')"),
     (re.compile(r'''from\s+["']@opencode/plugin["']''', re.MULTILINE), "wrong package '@opencode/plugin' (use '@opencode-ai/plugin')"),
 ]
