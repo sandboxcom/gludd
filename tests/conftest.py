@@ -55,9 +55,55 @@ for _path in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
 importlib.import_module("general_ludd.routing_roles")
 
 
+def _parse_ratchet_entries() -> dict[str, str]:
+    """Parse config/ratchet.yml into {node_id: reason} map.
+
+    Supports two formats:
+    * Single-line: ``node_id: reason`` — e.g. ``tests/unit/test_foo.py::test_bar: known flaky``
+    * YAML key-li: ``key:\n  detail\n  ...`` — first line is the node_id,
+      subsequent indented lines become the reason.
+
+    Blank lines and ``#``-comment lines are skipped.
+    """
+    ratchet_path = _REPO_ROOT / "config" / "ratchet.yml"
+    if not ratchet_path.exists():
+        return {}
+    entries: dict[str, str] = {}
+    lines = ratchet_path.read_text().splitlines()
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        i += 1
+        if not stripped or stripped.startswith("#"):
+            continue
+        # YAML key with multiline value: "key:" followed by indented lines
+        if not stripped.endswith(": ") and stripped.endswith(":") and len(stripped) > 1:
+            node_id = stripped[:-1].strip()
+            reason_parts: list[str] = []
+            while i < len(lines):
+                sub = lines[i].rstrip()
+                if not sub or sub.startswith("#"):
+                    i += 1
+                    continue
+                if not sub.startswith(" ") and not sub.startswith("\t"):
+                    break
+                reason_parts.append(sub.strip())
+                i += 1
+            reason = " ".join(reason_parts) if reason_parts else "ratchet entry"
+            entries[node_id] = reason
+            continue
+        # Single-line: "node_id: reason" or "node_id::*"
+        if "::" in stripped or ": " in stripped:
+            parts = stripped.split(": ", 1)
+            node_id = parts[0].strip()
+            reason = parts[1].strip() if len(parts) > 1 else "ratchet entry"
+            entries[node_id] = reason
+    return entries
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Serialize every hook-liveness test that shares HARDCODED_TMP_PATHS onto a
-    single xdist worker.
+    single xdist worker, AND apply ratchet strict-xfail markers.
 
     The ``hook_plugin_env`` fixture (tests/unit/_hook_fixtures.py) drives the
     real Node plugins, which write un-namespaced, env-override-free
@@ -72,10 +118,32 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     ``test_port_8000_occupied.py``'s ``xdist_group("port_8000")``). Tests that
     only use the ``tmp_path``-redirected env-var state files are unaffected and
     stay fully parallel.
+
+    **Ratchet strict-xfail:** config/ratchet.yml tracks known test failures.
+    Each entry is a ``node_id: reason`` pair.  At collection time, matching
+    tests are marked ``pytest.mark.xfail(strict=True, reason=...)`` — meaning:
+    * if the test FAILS → xfail (expected), suite stays green
+    * if the test PASSES → XPASS (unexpected), suite turns RED
+
+    This is the ratchet: a test that starts passing forces the operator to
+    remove its ratchet.yml entry AND lift the xfail marker.  A red suite
+    with a ratchet entry is "OK" (known failure); a green suite with a
+    ratchet entry is a bug (the entry should have been removed already).
     """
+    # 1. xdist group pinning
     for item in items:
         if "hook_plugin_env" in getattr(item, "fixturenames", ()):
             item.add_marker(pytest.mark.xdist_group(name="hook-hardcoded-tmp"))
+
+    # 2. Ratchet strict-xfail markers
+    entries = _parse_ratchet_entries()
+    if not entries:
+        return
+    for item in items:
+        if item.nodeid in entries:
+            item.add_marker(
+                pytest.mark.xfail(strict=True, reason=entries[item.nodeid])
+            )
 
 
 @pytest.fixture(autouse=True)

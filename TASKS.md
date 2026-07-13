@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 28 — 4 OPEN items across 3 active phases (A:2, D:1, E:1). 222 items (218 completed, 4 pending = 98.2%). 13 completed phases archived below.** Ticked this session: W.26 (enforce-stop.ts Node v26 compat, commits c732b4cc + b53ab7fb). E.5 progress: ad2f32fb (enforce-stop.ts dedup via shared.ts helpers).
+**Last consolidated: 2026-07-13 Session 29 — 4 OPEN items across 3 active phases (A:2, D:1, E:1). 223 items (219 completed, 4 pending = 98.2%). 13 completed phases archived below.** Ticked this session: E.14 (45 enforcement e2e tests, commit 23b915b6). E.5 progress: ad2f32fb (enforce-stop.ts dedup via shared.ts helpers); ratchet.yml empty (0 tracked failures, threshold effectively zero).
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -10,10 +10,10 @@ Each line ticked when `make gate` is green and evidence is pasted.
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 2 | 6 | 67% |
 | D | Feature Completeness | 1 | 22 | 95% |
-| E | Quality/Coverage | 1 | 13 | 92% |
-| **Total Active** | | **4** | **41** | **90%** |
+| E | Quality/Coverage | 1 | 14 | 93% |
+| **Total Active** | | **4** | **42** | **90%** |
 | *Archived* | *13 phases* | *0* | *181* | *100%* |
-| **Grand Total** | | **4** | **222** | **98%** |
+| **Grand Total** | | **4** | **223** | **98%** |
 
 ---
 
@@ -69,7 +69,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] E.2 — e2e audit closure: ~40 src modules with zero e2e coverage, add top-5 riskiest | priority: medium | effort: large | status: completed | evidence: 150 new e2e tests (50 auth + 19 sts + 39 adversarial_detector + 28 dispatcher + 14 ipc), all passing
 - [x] E.3 — Lint/type config gaps: mypy excludes security/sandboxes, tests/ never type-checked, no .pre-commit-config.yaml | priority: medium | effort: medium | status: completed | evidence: 7492bf50; .pre-commit-config.yaml added; mypy now covers tests/
 - [x] E.4 — noqa guardrail 3-layer fix: edit-time hook + behavior-pin test + AGENTS.md rule | priority: medium | effort: medium | status: completed | evidence: all 3 layers verified complete. L1: enforce-no-suppressions.ts. L2: 54/54 + 25/25 tests pass. L3: AGENTS.md section present.
-- [ ] E.5 — Plugin leanness: refactor enforce-*.ts toward shared helpers, ratchet threshold down | priority: low | effort: medium | status: in_progress | evidence: PROGRESS — shared.ts helpers extracted, enforce-floor.ts deduplicated, enforce-delegate.ts deduplicated, enforce-multitask.ts deduplicated, enforce-stop.ts deduplicated (commit ad2f32fb). REMAINING: ratchet threshold not lowered.
+- [ ] E.5 — Plugin leanness: refactor enforce-*.ts toward shared helpers, ratchet threshold down | priority: low | effort: medium | status: in_progress | evidence: PROGRESS — shared.ts helpers extracted, enforce-floor.ts deduplicated, enforce-delegate.ts deduplicated, enforce-multitask.ts deduplicated, enforce-stop.ts deduplicated (commit ad2f32fb). config/ratchet.yml has 0 entries (threshold effectively at zero). REMAINING: explicit ratchet threshold lowering still pending.
 - [x] E.6 — Audit-doc re-triage: re-triage BACKLOG_FINDINGS + NEW_FINDINGS_TRIAGE against current master | priority: medium | effort: medium | status: completed | evidence: 20 tests pass + doc
 - [x] E.7 — Zero-test modules: write unit suites for cli_payment.py, self_update/router.py, renderers/cache.py, event_loop/benchmark.py, renderers/executor.py | priority: high | effort: medium | status: completed | evidence: test_self_update_router_class.py 44 tests, test_renderers_executor.py 5 tests
 - [x] E.8 — Router HTTP layer thin: 9 routers touched only by generic registration smoke test, write endpoint-level tests | priority: medium | effort: large | status: completed | evidence: 202 endpoint-level tests across 9 routers
@@ -78,6 +78,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: completed | evidence: Wave 34
 - [x] E.12 — Event-loop/repository perf batch: N+1 queries, missing composite index, full-table scans, per-lease N+1, no retention for task_returns/task_decisions | priority: low | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: completed | evidence: 10 tests pass, verified all nag texts guarded by OPENCODE_SUBAGENT
+- [x] E.14 — Enforcement e2e tests: no-wait + no-suppressions plugin verification | priority: low | effort: small | status: completed | evidence: 45 e2e tests across test_no_wait_e2e.py + test_no_suppressions_e2e.py, commit 23b915b6
 
 ---
 
