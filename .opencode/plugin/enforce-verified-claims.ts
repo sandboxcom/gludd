@@ -149,6 +149,7 @@ const defaultImpl: HotModule = {
 export default (() => {
   return {
     "experimental.text.complete": async (input: unknown, output: { text: string }) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
       reportAlive("enforce-verified-claims")
       const impl = loadHotModule("verified-claims", defaultImpl)

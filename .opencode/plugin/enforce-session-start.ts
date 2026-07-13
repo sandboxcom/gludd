@@ -224,6 +224,7 @@ const defaultImpl: HotModule = {
     _input: unknown,
     output: unknown,
   ) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return output
     try {
       const state = loadState()
@@ -380,6 +381,7 @@ export default (({ }) => {
       _input: unknown,
       output: unknown,
     ) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-session-start", defaultImpl)
       const fn = impl["experimental.chat.system.transform"] || impl["system.transform"]
@@ -390,6 +392,7 @@ export default (({ }) => {
       input: { tool?: string } & Record<string, unknown>,
       _output: unknown,
     ) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return
       const impl = loadHotModule("enforce-session-start", defaultImpl)
       const fn = impl["tool.execute.before"]

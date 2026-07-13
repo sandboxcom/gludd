@@ -531,6 +531,7 @@ const defaultImpl: HotModule = {
   },
 
   "session.idle": async (..._args: any[]) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     // opencode ≥1.17.9 may call this with changed semantics.
     // No-op: state tracking is handled by tool.execute.before + text.complete hooks.

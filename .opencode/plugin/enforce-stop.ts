@@ -741,6 +741,7 @@ const defaultImpl: HotModule = {
   },
 
   "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return output
     const unchecked = countTasksMdUnchecked()
     const ratchetCount = ratchetHasEntries()
@@ -1131,18 +1132,21 @@ export default (({ }) => {
   } catch { /* fail-open */ }
   return {
     "tool.execute.before": async (input: any, output: any) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
     },
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["experimental.chat.system.transform"]
       return fn ? await fn(_input, output) : output
     },
     "experimental.text.complete": async (_input: any, output: any) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["experimental.text.complete"]

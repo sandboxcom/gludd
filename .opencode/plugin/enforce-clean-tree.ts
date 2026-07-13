@@ -110,6 +110,7 @@ const defaultImpl: HotModule = {
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return;
       const impl = loadHotModule("clean-tree", defaultImpl);
       const fn = impl["tool.execute.before"];

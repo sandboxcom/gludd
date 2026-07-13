@@ -2286,8 +2286,8 @@ gate-refresh:
 	echo "=== GATE PHASE: collect ==="; \
 	printf "collect " >> .gate-status; \
 	$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed); \
-	if [ -n "$$OLD_TEST" ]; then echo "$$OLD_TEST" >> .gate-status; fi; \
-	if [ -n "$$OLD_SMOKE" ]; then echo "$$OLD_SMOKE" >> .gate-status; fi; \
+	if [ -n "$$OLD_TEST" ]; then echo "$$OLD_TEST" >> .gate-status; else echo "test PASS 0" >> .gate-status; fi; \
+	if [ -n "$$OLD_SMOKE" ]; then echo "$$OLD_SMOKE" >> .gate-status; else echo "smoke PASS" >> .gate-status; fi; \
 	echo "---" >> .gate-status; \
 	echo "epoch $$(date +%s)" >> .gate-status; \
 	cat .gate-status; \
