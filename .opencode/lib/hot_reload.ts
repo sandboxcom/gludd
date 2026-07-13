@@ -1,4 +1,5 @@
 import * as fs from "node:fs"
+import { createRequire } from "node:module"
 import { isSubagent } from "./shared.ts"
 
 // hot_reload.ts — thin proxy utility that lets enforcement plugins delegate to
@@ -61,15 +62,12 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
     if (hotCache[name] && hotCache[name].mtime === mtime) {
       return hotCache[name].module
     }
-    const code = fs.readFileSync(hotPath, "utf-8")
-    // Use Function constructor instead of eval/require — cleaner scope, no
-    // side effects on the module cache, works in bundler sandboxes.
-    const mod = new Function("exports", code + "\nreturn exports;")({})
-    hotCache[name] = { mtime, module: mod as HotModule }
-    return mod as HotModule
+    const _require = createRequire(import.meta.url)
+    try { delete _require.cache[_require.resolve(hotPath)] } catch {}
+    const mod = _require(hotPath) as HotModule
+    hotCache[name] = { mtime, module: mod }
+    return mod
   } catch {
     return defaults
   }
 }
-
-
