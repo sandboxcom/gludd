@@ -149,7 +149,7 @@ class PauseController:
         self._store.save([r.model_dump() for r in candidate.values()])
 
     # ------------------------------------------------------------------
-    # SLICE 3b — agent quiescing
+    # D.7.3 — quiesce at dispatcher seam + rehydrating resume
     # ------------------------------------------------------------------
 
     async def quiesce_project(
@@ -158,11 +158,10 @@ class PauseController:
         dispatcher: AgentDispatcher | None = None,
         hibernation: HibernationController | None = None,
     ) -> tuple[list[HibernationHandle], str, list[str]]:
-        """Dehydrate in-flight agents for *project_id* before pausing.
+        """Quiesce in-flight agents at the dispatcher boundary before pausing.
 
-        Iterates the dispatcher's active tasks filterable to this project.
-        Each task is converted to a :class:`AgentEnvironmentSnapshot` and
-        dehydrated through *hibernation* if its policy warrants it.
+        Two-phase: (1) drain/cancel in-flight tasks via the dispatcher,
+        (2) dehydrate their state via hibernation for later resume.
 
         Returns a 3-tuple ``(handles, status, errors)`` where *status* is
         ``"clean"`` when all tasks quiesce without error, or ``"degraded"``
@@ -176,23 +175,96 @@ class PauseController:
             return [], "clean", []
         from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
 
+        await dispatcher.quiesce_project(project_id)
+
         tasks = await dispatcher.get_active_tasks_for_project(project_id)
         handles: list[HibernationHandle] = []
+        errors: list[str] = []
         for task in tasks:
-            snap = AgentEnvironmentSnapshot(
-                task_id=task.task_id,
-                agent_name=task.agent_name,
-                parent_task_id=task.parent_task_id,
-                invoker_name=task.invoker_name,
-                scratch={
-                    "description": getattr(task, "description", ""),
-                    "prompt": getattr(task, "prompt", ""),
-                    "project_id": project_id,
-                },
-            )
-            handle = await hibernation._store.dehydrate_async(snap)
-            handles.append(handle)
-        return handles, "clean", []
+            try:
+                snap = AgentEnvironmentSnapshot(
+                    task_id=task.task_id,
+                    agent_name=task.agent_name,
+                    parent_task_id=task.parent_task_id,
+                    invoker_name=task.invoker_name,
+                    scratch={
+                        "description": getattr(task, "description", ""),
+                        "prompt": getattr(task, "prompt", ""),
+                        "project_id": project_id,
+                    },
+                )
+                handle = await hibernation._store.dehydrate_async(snap)
+                handles.append(handle)
+            except Exception as exc:
+                errors.append(f"{task.task_id}: {exc}")
+        status = "clean" if not errors else "degraded"
+        return handles, status, errors
+
+    async def resume_rehydrate(
+        self,
+        kind: PauseKind,
+        target_id: str,
+        dispatcher: AgentDispatcher | None = None,
+        hibernation: HibernationController | None = None,
+    ) -> tuple[list[object], str, list[str]]:
+        """Rehydrate paused agents and re-enqueue them after resume.
+
+        Reads the pause record for ``(kind, target_id)``, rehydrates every
+        saved handle, and re-enqueues the resulting tasks via the dispatcher.
+
+        Returns a 3-tuple ``(snapshots, status, errors)``.
+        """
+        record = self.get(kind, target_id)
+        if record is None:
+            return [], "clean", []
+        if dispatcher is None or hibernation is None:
+            return [], "clean", []
+        from general_ludd.agents.hibernation import (
+            AgentEnvironmentSnapshot,
+            HibernationHandle,
+        )
+
+        snapshots: list[AgentEnvironmentSnapshot] = []
+        errors: list[str] = []
+        for raw_handle in record.agent_handles:
+            try:
+                if isinstance(raw_handle, dict):
+                    handle = HibernationHandle.model_validate(raw_handle)
+                else:
+                    continue
+                snap = await hibernation._store.hydrate_async(handle)
+                snapshots.append(snap)
+            except Exception as exc:
+                errors.append(f"rehydrate {getattr(raw_handle, 'task_id', '?')}: {exc}")
+        if snapshots:
+            await dispatcher.resume_project(target_id, snapshots)
+        status = "clean" if not errors else "degraded"
+        return list(snapshots), status, errors
+
+    def _record_quiesce(
+        self,
+        kind: PauseKind,
+        target_id: str,
+        handles: list["HibernationHandle"],
+        status: str,
+        errors: list[str],
+    ) -> None:
+        """Update an existing pause record with quiesce results.
+
+        Acquires the lock, persists the updated record set, and rebinds RAM.
+        Used after ``quiesce_project`` to attach dehydrated handles to the
+        pause record so they survive a restart.
+        """
+        key = (kind, target_id)
+        with self._lock:
+            record = self._records.get(key)
+            if record is None:
+                return
+            record.quiesce_status = status
+            record.quiesce_errors = errors
+            record.agent_handles = [h.model_dump() for h in handles]
+            candidate = dict(self._records)
+            self._persist(candidate)
 
     # ------------------------------------------------------------------
     # Public API

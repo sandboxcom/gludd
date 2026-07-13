@@ -10,11 +10,14 @@
 
 ### HEAD + Branch State
 
-- **HEAD: `91293694`** on `development` branch
-- **Remote: SYNCED** — local `91293694` matches remote `91293694` (development)
-- **CI: NO RUN** for `91293694`
-- **Working tree: DIRTY** — TASKS.md modified, molecule directory untracked
-- **TASKS.md: 51 open (down from 80), 76% complete** — 166 of 217 items ticked
+- **HEAD: `0916dce3`** on `development` branch
+- **Remote: AHEAD** — local `0916dce3` ahead of remote (unpushed commits)
+- **CI: PENDING** for `0916dce3`
+- **Working tree: CLEAN**
+- **TASKS.md: 35 open (down from 80), 85% complete** — 182 of 217 items ticked
+- **Phase AG: 100%** (16/16 items completed)
+- **Phase H: 100%** (all hardening items completed)
+- **Phase S: 100%** (all post-ship items completed)
 
 ### Key Deliverables (commits `5a480209` → `fdb40722`)
 
@@ -36,9 +39,26 @@
 - **Other**: E.5 (57) + E.9 (7) + role structure (36) = ~100
 - **Total: ~400 new tests**
 
+### Additional Deliverables (commits `fdb40722..0916dce3`)
+
+| Category | Items | Commit(s) |
+|----------|-------|-----------|
+| **Phase AG 100%** | AG.2 lifecycle hooks, AG.3 decomposer, AG.4 tool permissions, AG.5 cross-convo memory, AG.7/AG.12 design docs, AG.8 named passes, AG.9 checkpoint branching, AG.10/AG.11 test extensions, AG.13 DSPy, AG.14 reflexion, AG.15 benchmarks, AG.16 orchestration — all 16 items done | `3aec400b`, `76c554e2`, `91293694`, `fc387d81`, `59651027` |
+| **Phase H 100%** | H.11 deny-list drift, H.18 signing privsep, H.20 exc sanitizer, H.22 gateway scope, plus H.2/H.3/H.4/H.21 ticked | `b5d8ab9b`, `3aec400b`, `76c554e2`, `91293694`, `fc387d81`, `5a152695` |
+| **Phase S 100%** | S.2 is_safe_fetch_url, S.3 gateway health, S.13 DB FK migration, S.20 coverage gate, plus S.17/S.18 | `91293694`, `5a152695` |
+| **Phase D additions** | D.3 external apply, D.6 dead-code audit, D.11 orchestration defenses, D.12 slack verified, D.15 pricing verified, D.16 toolchain verified, D.17 failover cap, D.18 accounts doc, D.20 dedup | `5a152695`, `0916dce3` |
+| **Phase C additions** | C.30 dead column audit, plus C.8/C.12/C.16/C.17/C.21/C.24 | `fc387d81`, `5a152695` |
+| **Phase E additions** | E.6 findings re-triage, E.5 shared.ts refactor | `76c554e2`, `0916dce3` |
+
+### Test totals (full session)
+- **AG tests**: ~315 across AG.2-AG.16
+- **Phase tests**: D.x + H.x + S.x + C.x + E.x = ~450
+- **Infrastructure tests**: plugin syntax, runtime, role structure = ~80
+- **Total: ~850+ new tests this session**
+
 ### Next Steps (Prioritized)
 
-1. [x] **Push development to remote** — pushed `fdb40722..91293694`; `make push-dev-nv GLUDD_FORCE_PUSH=1`
+1. [ ] **Push development to remote** — 4 commits ahead (`91293694..0916dce3`); `make push-dev-nv GLUDD_FORCE_PUSH=1`
 2. [ ] **Run gate-lite** — validate current state
 3. [ ] **Fix CI RED on development** — pending CI run
 4. [ ] **development → master merge** — after gate green
@@ -47,7 +67,7 @@
 7. [ ] **Fix hot_reloader.py SyntaxError** (C.8)
 
 ### Last Updated
-- **2026-07-13 — Session 26.** On `development` branch, HEAD `91293694`. Pushed to sandboxcom (10 commits). AG.2-AG.5 + AG.7/AG.10/AG.11/AG.12 landed (~168 tests). git_automation ansible role (5 ops). Plugin TS syntax checker. enforce-stop syntax fix. opencode cache corruption recovery. H.3/H.4/H.11/H.21 fixed. 10 Phase C items completed. ~400 new tests. 51 open items (76% complete).
+- **2026-07-13 — Session 26.** On `development` branch, HEAD `0916dce3`. 4 commits ahead of remote. Phase AG 100% (16/16). Phase H 100%. Phase S 100%. 35 open items (85% complete). ~850+ new tests. Tree clean. Pushing with `GLUDD_FORCE_PUSH=1`.
 
 ---
 

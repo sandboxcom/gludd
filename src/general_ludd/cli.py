@@ -568,6 +568,40 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     leaderboard_parser.add_argument("--daemon-url", default="http://localhost:8000")
     leaderboard_parser.set_defaults(func=_cmd_leaderboard)
 
+    pause_parser = sub.add_parser("pause", help="Pause a project or model")
+    pause_parser.set_defaults(func=None)
+    pause_sub = pause_parser.add_subparsers(dest="pause_command")
+
+    pause_list = pause_sub.add_parser("list", help="List paused entities")
+    pause_list.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_list.set_defaults(func=_cmd_pause_list)
+
+    pause_project = pause_sub.add_parser("project", help="Pause a project")
+    pause_project.add_argument("target_id", help="Project ID to pause")
+    pause_project.add_argument("--reason", default="", help="Reason for pausing")
+    pause_project.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_project.set_defaults(func=_cmd_pause_project)
+
+    pause_model = pause_sub.add_parser("model", help="Pause a model")
+    pause_model.add_argument("target_id", help="Model ID to pause")
+    pause_model.add_argument("--reason", default="", help="Reason for pausing")
+    pause_model.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_model.set_defaults(func=_cmd_pause_model)
+
+    resume_parser = sub.add_parser("resume", help="Resume a paused project or model")
+    resume_parser.set_defaults(func=None)
+    resume_sub = resume_parser.add_subparsers(dest="resume_command")
+
+    resume_project = resume_sub.add_parser("project", help="Resume a project")
+    resume_project.add_argument("target_id", help="Project ID to resume")
+    resume_project.add_argument("--daemon-url", default="http://localhost:8000")
+    resume_project.set_defaults(func=_cmd_resume_project)
+
+    resume_model = resume_sub.add_parser("model", help="Resume a model")
+    resume_model.add_argument("target_id", help="Model ID to resume")
+    resume_model.add_argument("--daemon-url", default="http://localhost:8000")
+    resume_model.set_defaults(func=_cmd_resume_model)
+
     help_p = sub.add_parser("help", help="Show full manual")
     help_p.set_defaults(func=_cmd_help)
 
@@ -1040,6 +1074,8 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "searx": searx_parser,
         "test-bg": testbg_parser,
         "test": test_parser,
+        "pause": pause_parser,
+        "resume": resume_parser,
     }
 
     return parser, subcommand_map
@@ -1597,6 +1633,61 @@ def _cmd_version(args: argparse.Namespace) -> None:
 
 def _cmd_health(args: argparse.Namespace) -> None:
     data = _http_call("GET", f"{args.daemon_url}/healthz", timeout=10.0)
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
+def _cmd_pause_list(args: argparse.Namespace) -> None:
+    data = _http_call("GET", f"{args.daemon_url}/api/pause", timeout=10.0)
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
+def _cmd_pause_project(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/pause/project",
+        json={"target_id": args.target_id, "reason": args.reason},
+        timeout=10.0,
+    )
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
+def _cmd_pause_model(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/pause/model",
+        json={"target_id": args.target_id, "reason": args.reason},
+        timeout=10.0,
+    )
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
+def _cmd_resume_project(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/resume/project",
+        json={"target_id": args.target_id},
+        timeout=10.0,
+    )
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
+def _cmd_resume_model(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/resume/model",
+        json={"target_id": args.target_id},
+        timeout=10.0,
+    )
     if data is None:
         return
     print(json.dumps(data, indent=2))
