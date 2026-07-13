@@ -286,6 +286,7 @@ export default (({ }) => {
 
   return {
     "tool.execute.before": async (input: { tool?: string }) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return
       const impl = loadHotModule("multitask", defaultImpl)
       const fn = impl["tool.execute.before"]

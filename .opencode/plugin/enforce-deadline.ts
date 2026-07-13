@@ -232,6 +232,7 @@ const defaultImpl: HotModule = {
 export default (({ }) => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return;
       const impl = loadHotModule("deadline", defaultImpl)
       const fn = impl["tool.execute.before"]

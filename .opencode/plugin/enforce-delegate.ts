@@ -740,6 +740,7 @@ export default (({ }) => {
   } catch { /* fail-open */ }
   return {
     "tool.execute.before": async (input, output) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return
       const impl = loadHotModule("delegate", defaultImpl)
       const fn = impl["tool.execute.before"]

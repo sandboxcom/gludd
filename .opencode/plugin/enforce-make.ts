@@ -882,6 +882,7 @@ const defaultImpl: HotModule = {
       },
 
       "experimental.chat.system.transform": async (_input, output) => {
+        // process.env.OPENCODE_SUBAGENT guard
         if (isSubagent()) return output
         // --- BASH-AVAILABILITY CHECK (2026-07-03) -------------------------------
         // Reads SESSION.md for the "CRITICAL: bash tool unavailable" banner.
@@ -1004,6 +1005,7 @@ const defaultImpl: HotModule = {
 export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["tool.execute.before"]
@@ -1017,6 +1019,7 @@ export default (({ }) => {
     },
 
     "experimental.chat.system.transform": async (_input, output) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["experimental.chat.system.transform"] || impl["system.transform"]
@@ -1024,6 +1027,7 @@ export default (({ }) => {
     },
 
     "experimental.text.complete": async (_input, output) => {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["experimental.text.complete"] || impl["text.complete"]
