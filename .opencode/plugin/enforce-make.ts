@@ -1,7 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { execSync } from "node:child_process"
 import { isSubagent, reportAlive } from "./shared.ts"
+import { loadHotModule, type HotModule } from "./hot_reload.ts"
 
 const BASH_POLICY_HEADER = "BLOCKED: Direct bash commands are not allowed in this project.\n"
 const BASH_POLICY_RULE = "Rule: You MUST only run `make <target>` commands.\n"
@@ -142,13 +144,11 @@ const ALLOWED_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
 // pgrep for a running pytest. FAIL-OPEN on any error (can't probe -> allow).
 function isGateAlreadyRunning(): boolean {
   try {
-    const { execSync } = require("node:child_process")
-    const fsLocal = require("node:fs")
     const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
     const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
     // Signal A: basetemp exists + fresh mtime.
     try {
-      const st = fsLocal.statSync(BASETEMP)
+      const st = fs.statSync(BASETEMP)
       const ageSec = (Date.now() - st.mtimeMs) / 1000
       if (ageSec < STALE_SECS) return true
     } catch {}
@@ -343,9 +343,11 @@ function detectStopPattern(text: string): boolean {
   return false
 }
 
-export default (async ({ }) => {
-  return {
-    "tool.execute.before": async (input, output) => {
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+const defaultImpl: HotModule = {
+  "tool.execute.before": async (input, output) => {
       const _sub = isSubagent()
       if (_sub) { console.log("SUBAGENT SKIP: enforce-make tool.execute.before"); return }
       reportAlive("enforce-make")
@@ -1073,5 +1075,45 @@ export default (async ({ }) => {
     },
 
     // (response.transform migrated to text.complete above, 2026-07-01)
+  }
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
+export default (async ({ }) => {
+  return {
+    "tool.execute.before": async (input, output) => {
+      if (isSubagent()) return
+      console.log("SUBAGENT SKIP: enforce-make")
+      const impl = loadHotModule("enforce-make", defaultImpl)
+      const fn = impl["tool.execute.before"]
+      return fn ? await fn(input, output) : undefined
+    },
+
+    "tool.execute.after": async (input, output) => {
+      const impl = loadHotModule("enforce-make", defaultImpl)
+      const fn = impl["tool.execute.after"]
+      return fn ? await fn(input, output) : undefined
+    },
+
+    "session.idle": async () => {
+      const impl = loadHotModule("enforce-make", defaultImpl)
+      const fn = impl["session.idle"]
+      return fn ? await fn() : undefined
+    },
+
+    "experimental.chat.system.transform": async (_input, output) => {
+      if (isSubagent()) return output
+      const impl = loadHotModule("enforce-make", defaultImpl)
+      const fn = impl["experimental.chat.system.transform"] || impl["system.transform"]
+      return fn ? await fn(_input, output) : output
+    },
+
+    "experimental.text.complete": async (_input, output) => {
+      if (isSubagent()) return output
+      const impl = loadHotModule("enforce-make", defaultImpl)
+      const fn = impl["experimental.text.complete"] || impl["text.complete"]
+      return fn ? await fn(_input, output) : output
+    },
   }
 }) satisfies Plugin

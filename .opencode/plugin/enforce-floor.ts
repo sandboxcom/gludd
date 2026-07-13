@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "./hot_reload.ts"
+import { execSync } from "node:child_process"
 import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat } from "./shared.ts"
 
 // Floor+ceiling enforcement guardrail (separate from enforce-make.ts so a bug
@@ -145,7 +146,6 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
       }
     } catch { /* ignore */ }
     try {
-      const { execSync } = require("node:child_process")
       if (options?.isCommitTool) {
         const unstaged = execSync("git diff --name-only", {
           cwd: process.cwd(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],

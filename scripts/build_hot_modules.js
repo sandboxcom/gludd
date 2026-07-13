@@ -75,54 +75,47 @@ function extractDefaultImplMethods(content) {
   const implMatch = content.match(/defaultImpl\s*=\s*\{/);
   if (!implMatch) return methods;
 
-  const startIdx = implMatch.index + implMatch[0].length;
+  const objStart = implMatch.index + implMatch[0].length;
 
-  let depth = 1;
-  let pos = startIdx;
-  let currentMethod = "";
-  let currentBody = "";
-  let inMethod = false;
-  let braceDepth = 0;
-  let parenDepth = 0;
+  // Find the end of defaultImpl by locating the next structural marker
+  // (the "PROXY" comment or "export default" that always follows defaultImpl)
+  const afterDefault = content.substring(objStart);
+  const proxyMarker = afterDefault.search(/(?:PROXY|export default)\b/);
+  if (proxyMarker < 0) return methods;
 
-  for (; pos < content.length; pos++) {
-    const ch = content[pos];
+  // Walk backward from the proxy marker to find the closing }; of defaultImpl
+  let objEnd = objStart + proxyMarker;
+  while (objEnd > objStart && content[objEnd] !== "}") objEnd--;
+  if (objEnd <= objStart) return methods;
 
-    if (!inMethod) {
-      const slice = content.slice(pos, pos + 80);
-      const methodMatch = slice.match(/^(\s*)"([^"]+)"(\s*[:=])/);
-      if (methodMatch) {
-        const methodName = methodMatch[2];
-        currentMethod = methodName;
-        inMethod = true;
-        currentBody = "";
-        braceDepth = 0;
-        parenDepth = 0;
-        let methodStart = pos + methodMatch[0].length;
+  // Extract methods from within the defaultImpl body using positional
+  // boundaries instead of brace counting (which fails on {} in strings)
+  const bodySlice = content.substring(objStart, objEnd);
+  const methodRegex = /^(\s*)"([^"]+)"(\s*[:=])/gm;
+  const methodPositions = [];
+  let match;
+  while ((match = methodRegex.exec(bodySlice)) !== null) {
+    methodPositions.push({ name: match[2], pos: match.index + match[0].length });
+  }
 
-        while (methodStart < content.length && content[methodStart] !== "{") methodStart++;
-        if (content[methodStart] === "{") {
-          pos = methodStart;
-          braceDepth = 1;
-          currentBody = "{";
-        }
-        continue;
-      }
+  for (let i = 0; i < methodPositions.length; i++) {
+    const { name, pos } = methodPositions[i];
+    const nextPos = (i + 1 < methodPositions.length) ? methodPositions[i + 1].pos : bodySlice.length;
+
+    // Find => to locate arrow function body (skip past type annotation remnants)
+    const arrowIdx = bodySlice.indexOf("=>", pos);
+    let braceIdx = -1;
+    if (arrowIdx >= 0 && arrowIdx < nextPos) {
+      braceIdx = bodySlice.indexOf("{", arrowIdx + 2);
     }
-
-    if (inMethod) {
-      currentBody += ch;
-      if (ch === "{") braceDepth++;
-      else if (ch === "}") {
-        braceDepth--;
-        if (braceDepth === 0) {
-          methods[currentMethod] = currentBody;
-          currentMethod = "";
-          currentBody = "";
-          inMethod = false;
-        }
-      }
+    if (braceIdx < 0 || braceIdx >= nextPos) {
+      braceIdx = bodySlice.indexOf("{", pos);
     }
+    if (braceIdx < 0 || braceIdx >= nextPos) continue;
+
+    let body = bodySlice.substring(braceIdx, nextPos);
+    body = body.replace(/,\s*$/, "").trimEnd();
+    methods[name] = body;
   }
 
   return methods;
@@ -162,6 +155,32 @@ function buildPlugin(name) {
   out += `// Generated ${new Date().toISOString()}\n`;
   out += `// Overrides compiled-in defaultImpl hooks.  Edit ${name}.ts, run make hot-reload-plugins,\n`;
   out += `// and the next hook invocation picks up changes without restart.\n\n`;
+
+  // Inject shared utility stubs — hot modules are eval'd via new Function()
+  // in a bare sandbox, so functions imported from shared.ts must be provided inline.
+  out += `// === shared utility stubs (sandbox context) ===\n`;
+  out += `var _fs = require("node:fs");\n`;
+  out += `var _path = require("node:path");\n`;
+  out += `function isSubagent() {\n`;
+  out += `  if (process.env.OPENCODE_SUBAGENT === "1") return true;\n`;
+  out += `  try { return _fs.existsSync("/tmp/gludd-subagent-" + process.pid + ".json"); } catch (e) { return false; }\n`;
+  out += `}\n`;
+  out += `function reportAlive(pluginName) {\n`;
+  out += `  try {\n`;
+  out += `    var p = process.env.GLUDD_ALIVE_PATH || "/tmp/gludd-plugin-alive.json";\n`;
+  out += `    var a = {}; try { if (_fs.existsSync(p)) a = JSON.parse(_fs.readFileSync(p, "utf8")); } catch (e) {}\n`;
+  out += `    a[pluginName] = { last_seen: Date.now() };\n`;
+  out += `    _fs.writeFileSync(p, JSON.stringify(a), "utf8");\n`;
+  out += `  } catch (e) {}\n`;
+  out += `}\n`;
+  out += `function writeHeartbeat(pluginName) {\n`;
+  out += `  try {\n`;
+  out += `    _fs.writeFileSync("/tmp/gludd-plugin-heartbeat-" + pluginName + ".json",\n`;
+  out += `      JSON.stringify({ plugin: pluginName, ts: Date.now(), pid: process.pid }), "utf8");\n`;
+  out += `  } catch (e) {}\n`;
+  out += `}\n`;
+  out += `var execSync = (function() { var c = require("node:child_process"); return c.execSync; })();\n`;
+  out += `// === end shared stubs ===\n\n`;
 
   for (const [hookName, body] of Object.entries(methods)) {
     const fnBody = body.trim();
