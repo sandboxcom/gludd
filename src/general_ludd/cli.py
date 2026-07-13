@@ -920,7 +920,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     searx_config.set_defaults(func=_cmd_searx)
 
     # `gludd service` — service discovery and catalog browsing.
-    from general_ludd.cli.service_commands import add_service_subparser
+    from general_ludd.cli_service_commands import add_service_subparser
 
     add_service_subparser(sub)
     sub.choices["service"]

@@ -1,13 +1,23 @@
-"""Git automation module for repository management."""
+"""Git automation module for repository management.
+
+git subprocess calls can route through ansible-runner (invoking the
+``general_ludd.agent.git_automation`` role) instead of ``subprocess.run``
+directly.  SSRF validation and path-safety checks ALWAYS run in Python
+(hard-gated BEFORE ansible is invoked).
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 import subprocess
+import tempfile
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from general_ludd.git_automation.locking import git_repo_lock
@@ -23,6 +33,25 @@ from general_ludd.git_automation.types import (
 from general_ludd.security.ssrf import resolved_host_is_blocked
 
 logger = logging.getLogger(__name__)
+
+# ── ansible-runner availability ──────────────────────────────────────────────
+try:
+    import ansible_runner  # type: ignore[import]
+    _HAS_ANSIBLE_RUNNER = True
+except ImportError:
+    ansible_runner = None  # type: ignore[assignment]
+    _HAS_ANSIBLE_RUNNER = False
+
+# Path to the role directory relative to this project root.  We resolve it at
+# import time so the role is discoverable regardless of CWD.
+_ROLE_DIR = (
+    Path(__file__).resolve().parent.parent.parent.parent
+    / "collections" / "ansible_collections" / "general_ludd" / "agent"
+    / "roles" / "git_automation"
+)
+_COLLECTIONS_ROOT = (
+    Path(__file__).resolve().parent.parent.parent.parent / "collections"
+)
 
 # Bound EVERY git subprocess so a slow/unreachable remote or a credential prompt
 # can never hang the caller forever (the daemon awaits commit/push inside a tick).
@@ -219,6 +248,81 @@ class GitAutomation:
                     ),
                 ) from exc
 
+    # ── ansible-runner delegation ────────────────────────────────────────
+
+    _COLLECTIONS_ROOT: Path | None = None
+
+    def _invoke_role(self, op: str, **extravars: Any) -> dict[str, Any]:
+        """Run the ``general_ludd.agent.git_automation`` role via ansible-runner.
+
+        This is the ansible-delegation path: the Python class retains SSRF
+        validation + path-safety checks (hard-gated), but delegates the actual
+        ``git`` subprocess calls to the ansible role's task files.
+
+        Returns the full ansible-runner result dict so callers can inspect
+        ``status``, ``rc``, and ``events``.  Falls back to a failed-dict if
+        ansible-runner is not installed.
+        """
+        if not _HAS_ANSIBLE_RUNNER:
+            return {"status": "failed", "rc": 1, "error": "ansible-runner not installed"}
+
+        role_path = _ROLE_DIR
+        if not role_path.is_dir():
+            return {"status": "failed", "rc": 1, "error": f"role directory not found: {role_path}"}
+
+        extravars.setdefault("repo_path", self.repo_path)
+        extravars.setdefault("git_op", op)
+        extravars["ansible_connection"] = "local"
+
+        playbook = [
+            {
+                "hosts": "localhost",
+                "gather_facts": False,
+                "tasks": [
+                    {
+                        "name": f"Invoke git_automation role ({op})",
+                        "ansible.builtin.include_role": {
+                            "name": str(role_path),
+                            "apply": {"delegate_to": "localhost"},
+                        },
+                    },
+                ],
+            }
+        ]
+        playbook_yaml = (
+            "["
+            + ",".join(json.dumps(p) for p in playbook)
+            + "]"
+        )
+
+        with tempfile.TemporaryDirectory(prefix="gludd-git-role-") as tmpdir:
+            private_dir = Path(tmpdir)
+            playbook_file = private_dir / "playbook.yml"
+            playbook_file.write_text(playbook_yaml, encoding="utf-8")
+            inventory_file = private_dir / "inventory"
+            inventory_file.write_text("localhost ansible_connection=local\n", encoding="utf-8")
+            env_dir = private_dir / "env"
+            env_dir.mkdir()
+            (env_dir / "extravars").write_text(
+                json.dumps(extravars), encoding="utf-8"
+            )
+
+            try:
+                runner_obj = ansible_runner.run(
+                    private_data_dir=str(private_dir),
+                    playbook=str(playbook_file),
+                    inventory=str(inventory_file),
+                    envvars={"ANSIBLE_COLLECTIONS_PATH": str(_COLLECTIONS_ROOT)},
+                    quiet=True,
+                )
+            except Exception as exc:
+                return {"status": "failed", "rc": 1, "error": f"ansible-runner error: {exc}"}
+
+            rc = int(getattr(runner_obj, "rc", 1) or 0)
+            raw_status = getattr(runner_obj, "status", None)
+            status = str(raw_status).strip() if raw_status else "failed"
+            return {"status": status, "rc": rc, "events": []}
+
     def init_repo(self, path: str | None = None) -> InitResult:
         target = path or self.repo_path
         git_dir = os.path.join(target, ".git")
@@ -257,8 +361,17 @@ class GitAutomation:
         except Exception:
             return "unknown"
 
-    def create_branch(self, name: str) -> str:
+    def create_branch(self, name: str, *, use_ansible: bool = False) -> str:
         _reject_leading_dash(name, kind="branch name")
+        if use_ansible:
+            result = self._invoke_role(
+                "branch", branch_op="create", branch_name=name,
+            )
+            if result.get("status") != "successful":
+                raise ValueError(
+                    f"failed to create branch {name!r}: {result.get('error', 'ansible-runner error')}"
+                )
+            return name
         existing = [
             line.strip()
             for line in self._run_git("branch", "--format=%(refname:short)")
@@ -272,7 +385,25 @@ class GitAutomation:
         self._run_git("checkout", "-b", name, "--")
         return name
 
-    def commit(self, message: str) -> str:
+    def commit(self, message: str, *, use_ansible: bool = False) -> str:
+        """Stage all changes and commit; return the new commit SHA.
+
+        When ``use_ansible=True``, delegates to the ``git_automation`` ansible
+        role instead of running ``git`` via subprocess directly.
+        """
+        if use_ansible:
+            result = self._invoke_role(
+                "commit", commit_message=message,
+            )
+            if result.get("status") != "successful":
+                raise subprocess.CalledProcessError(
+                    returncode=result.get("rc", 1),
+                    cmd=["ansible_runner", "git_automation", "commit"],
+                    output="",
+                    stderr=result.get("error", "commit failed via ansible-runner"),
+                )
+            sha_result = self._run_git("rev-parse", "HEAD")
+            return sha_result.stdout.strip()
         self._run_git("add", "-A")
         self._run_git("commit", "-m", message)
         result = self._run_git("rev-parse", "HEAD")
@@ -286,11 +417,15 @@ class GitAutomation:
         self._run_git("tag", tag)
         return tag
 
-    def push(self, remote: str = "origin", branch: str = "main") -> bool:
+    def push(self, remote: str = "origin", branch: str = "main", *, use_ansible: bool = False) -> bool:
         _reject_leading_dash(remote, kind="remote name")
         _reject_leading_dash(branch, kind="branch name")
+        if use_ansible:
+            result = self._invoke_role(
+                "push", push_remote=remote, push_branch=branch,
+            )
+            return result.get("status") == "successful"
         try:
-            # `--` separates the remote/refspec positionals from any options.
             self._run_git("push", remote, "--", branch)
             return True
         except subprocess.CalledProcessError:
@@ -407,6 +542,7 @@ class GitAutomation:
         timeout: float = 120.0,
         *,
         allow_local: bool = True,
+        use_ansible: bool = False,
     ) -> CloneResult:
         """Clone ``url`` into ``target_dir``.
 
@@ -429,7 +565,7 @@ class GitAutomation:
           * ``-o``/``ProxyCommand`` in ssh URLs (ssh executes the proxy command).
           * ``file://`` when ``allow_local=False``.
         """
-        # --- pre-flight safety checks (fail BEFORE forking subprocess) ---
+        # --- pre-flight safety checks (fail BEFORE any execution) ---
         try:
             _reject_clone_url(url, allow_local=allow_local)
         except ValueError as exc:
@@ -440,6 +576,20 @@ class GitAutomation:
                 message=str(exc),
             )
 
+        # --- ansible-runner delegation path ---
+        if use_ansible:
+            result = self._invoke_role(
+                "clone", clone_url=url, target_dir=target_dir,
+                git_clone_timeout=int(timeout),
+            )
+            return CloneResult(
+                path=os.path.abspath(target_dir),
+                url=url,
+                success=result.get("status") == "successful",
+                message=result.get("error", ""),
+            )
+
+        # --- subprocess path (default) ---
         target = os.path.abspath(target_dir)
         if os.path.isdir(os.path.join(target, ".git")):
             return CloneResult(
@@ -590,11 +740,24 @@ class GitAutomation:
             )
         return worktrees
 
-    def merge_branch(self, repo_path: str, source: str, target: str, strategy: str = "ff") -> MergeResult:
+    def merge_branch(
+        self, repo_path: str, source: str, target: str,
+        strategy: str = "ff", *, use_ansible: bool = False,
+    ) -> MergeResult:
         _reject_leading_dash(source, kind="merge source ref")
         _reject_leading_dash(target, kind="merge target ref")
-        # Hold the per-repo lock for the ENTIRE sequence so another process
-        # cannot interleave between checkout and merge (#63, C.17).
+
+        if use_ansible:
+            result = self._invoke_role(
+                "merge", merge_source=source, merge_target=target,
+                merge_strategy=strategy, repo_path=repo_path,
+            )
+            return MergeResult(
+                success=result.get("status") == "successful",
+                strategy=strategy,
+                message=result.get("error", ""),
+            )
+
         with git_repo_lock(repo_path):
             # `git checkout <branch> --` ends option parsing with `--` AFTER the
             # branch (the only checkout form that both switches branches and is

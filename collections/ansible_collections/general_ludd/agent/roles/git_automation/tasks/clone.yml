@@ -1,0 +1,44 @@
+---
+# clone.yml — clone repository with SSRF validation pre-flight done in Python
+# (reject_unsafe_repo_url / _reject_clone_url run BEFORE this task file).
+# This task file only runs `git clone` with the pre-validated URL.
+
+- name: "Assert clone_url is set"
+  ansible.builtin.assert:
+    that:
+      - clone_url | string | length > 0
+      - target_dir | string | length > 0
+    fail_msg: "clone_url and target_dir are required for clone operation"
+
+- name: "Check if target already contains a git checkout"
+  ansible.builtin.stat:
+    path: "{{ target_dir }}/.git"
+  register: _clone_existing
+
+- name: "End play — checkout already present (idempotent)"
+  ansible.builtin.meta: end_play
+  when: _clone_existing.stat.isdir | default(false) | bool
+
+- name: "Ensure parent directory exists"
+  ansible.builtin.file:
+    path: "{{ target_dir | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: "Clone repository"
+  ansible.builtin.command:
+    cmd: "git clone -- {{ clone_url | quote }} {{ target_dir | quote }}"
+    creates: "{{ target_dir }}/.git"
+  register: _clone_result
+  environment:
+    GIT_TERMINAL_PROMPT: "0"
+    GIT_ASKPASS: "echo"
+  timeout: "{{ git_clone_timeout | default(120) }}"
+
+- name: "Set clone result fact"
+  ansible.builtin.set_fact:
+    git_automation_clone_result:
+      path: "{{ target_dir }}"
+      url: "{{ clone_url }}"
+      success: "{{ _clone_result is not defined or _clone_result.rc | default(0) == 0 }}"
+      message: "{{ _clone_result.stderr | default('') if _clone_result.rc | default(0) != 0 else 'clone succeeded' }}"

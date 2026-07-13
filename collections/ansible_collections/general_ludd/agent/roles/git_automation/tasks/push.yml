@@ -1,0 +1,40 @@
+---
+# push.yml — push with branch protection and force-push rejection
+
+- name: "Assert push parameters"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - push_branch | string | length > 0
+    fail_msg: "repo_path and push_branch are required for push operation"
+
+- name: "Reject force-push options"
+  ansible.builtin.assert:
+    that:
+      - "'-f' not in push_args | default([])"
+      - "'force' not in push_args | default([]) | join(' ')"
+      - "'force-with-lease' not in push_args | default([]) | join(' ')"
+    fail_msg: "Force-push is forbidden — use standard push only"
+
+- name: "Push to remote"
+  ansible.builtin.command:
+    cmd: "git push {{ push_remote | default('origin') | quote }} -- {{ push_branch | quote }}"
+    chdir: "{{ repo_path }}"
+  register: _push_result
+  failed_when: false
+  timeout: "{{ git_push_timeout | default(60) }}"
+
+- name: "Set push result fact"
+  ansible.builtin.set_fact:
+    git_automation_push_result:
+      success: "{{ _push_result.rc | default(1) == 0 }}"
+      remote: "{{ push_remote | default('origin') }}"
+      branch: "{{ push_branch }}"
+      message: "{{ _push_result.stderr | default('') }}"
+
+- name: "Fail on push failure when fail_on_push_error is true"
+  ansible.builtin.fail:
+    msg: "Push failed: {{ _push_result.stderr | default('') }}"
+  when:
+    - _push_result.rc | default(1) != 0
+    - fail_on_push_error | default(false) | bool

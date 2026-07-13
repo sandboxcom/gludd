@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: git_automation
+  author: Agentic Harness Agent
+  description: >
+    Git control-plane operations (clone, commit, push, merge, branch, worktree)
+    as pure ansible tasks. SSRF validation and path-safety checks are done in
+    Python (general_ludd.git_automation.repo) BEFORE invoking this role.
+    Idempotent where git is (clone skips when checkout exists; commit skips
+    when tree is clean; worktree create skips when path exists).
+    SAFE-BY-DEFAULT: fail_on_push_error=false, force-push is rejected,
+    leading-dash refs are blocked, worktree path traversal is blocked.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

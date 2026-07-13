@@ -1,0 +1,82 @@
+---
+# branch.yml — create, delete, and list branches
+
+- name: "Assert parameters for branch operation"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - branch_op | string | length > 0
+    fail_msg: "repo_path and branch_op are required"
+
+- name: "List branches"
+  when: branch_op == 'list'
+  block:
+    - name: "Get all branches"
+      ansible.builtin.command:
+        cmd: git branch --format='%(refname:short)'
+        chdir: "{{ repo_path }}"
+      register: _branch_list
+      changed_when: false
+
+    - name: "Set branch list result"
+      ansible.builtin.set_fact:
+        git_automation_branch_result:
+          op: list
+          branches: "{{ _branch_list.stdout_lines | default([]) }}"
+
+- name: "Create branch"
+  when: branch_op == 'create'
+  block:
+    - name: "Assert branch name provided"
+      ansible.builtin.assert:
+        that:
+          - branch_name | string | length > 0
+          - not branch_name.startswith('-')
+        fail_msg: "branch_name must be set and not start with '-'"
+
+    - name: "Check if branch already exists"
+      ansible.builtin.command:
+        cmd: "git branch --format='%(refname:short)'"
+        chdir: "{{ repo_path }}"
+      register: _branch_check
+      changed_when: false
+
+    - name: "End play — branch already exists"
+      ansible.builtin.meta: end_play
+      when: branch_name in (_branch_check.stdout_lines | default([]))
+
+    - name: "Create and switch to branch"
+      ansible.builtin.command:
+        cmd: "git checkout -b {{ branch_name | quote }} --"
+        chdir: "{{ repo_path }}"
+
+    - name: "Set branch create result"
+      ansible.builtin.set_fact:
+        git_automation_branch_result:
+          op: create
+          name: "{{ branch_name }}"
+          created: true
+
+- name: "Delete branch"
+  when: branch_op == 'delete'
+  block:
+    - name: "Assert branch name provided"
+      ansible.builtin.assert:
+        that:
+          - branch_name | string | length > 0
+          - not branch_name.startswith('-')
+        fail_msg: "branch_name must be set and not start with '-'"
+
+    - name: "Delete branch"
+      ansible.builtin.command:
+        cmd: "git branch -D {{ branch_name | quote }}"
+        chdir: "{{ repo_path }}"
+      register: _branch_delete
+      failed_when: false
+
+    - name: "Set branch delete result"
+      ansible.builtin.set_fact:
+        git_automation_branch_result:
+          op: delete
+          name: "{{ branch_name }}"
+          deleted: "{{ _branch_delete.rc | default(1) == 0 }}"
