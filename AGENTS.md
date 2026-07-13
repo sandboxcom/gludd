@@ -1693,7 +1693,10 @@ Run `make help` for the full categorized list (~100 targets). Key targets below.
 - `make clean-tmp` - Clean /tmp/gludd-* files
 
 ### Recovery / Other
-- `make restore-opencode` - Restore .opencode/ from .opencode.orig/
+- `make backup-opencode` - Snapshot .opencode/ -> .opencode.orig/ (run before long sessions)
+- `make check-opencode-backup` - Warn if .opencode.orig/ is stale (>24h older than .opencode/)
+- `make verify-opencode-backup` - Verify backup is current (file listing + shared.ts export parity)
+- `make restore-opencode` - Restore .opencode/ (from .opencode.orig/ first, git HEAD fallback) + clear cache
 - `make smoke` - Quick daemon boot health check
 - `make gated-merge` - Guarded multi-branch merge with manifest
 - `make git-index` - Index git log into SQLite (.gludd/git_history.db)

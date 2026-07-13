@@ -1,5 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { isSubagent, isDisengaged as isWatchdogDisengaged, reportAlive, writeHeartbeat, isDispatchTool, isReadTool, readSharedStreak, writeSharedStreak, updateSharedStreak, type SharedStreakState, SHARED_STREAK_FILE } from "./shared.ts"
 
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "7", 10)
 const STOP_ENFORCE = process.env.GLUDD_STOP_ENFORCE !== "0"
@@ -17,75 +18,10 @@ const TEXT_ONLY_STATE_FILE = process.env.GLUDD_TEXT_ONLY_STATE_FILE || "/tmp/glu
 const WAVE_RESULT_THRESHOLD = 3
 
 // ── SHARED STREAK STATE (P3: cross-call grinding detection) ────────────────
-// Shared between enforce-floor.ts and enforce-stop.ts so EITHER plugin can
-// catch main-thread grinding (serial read/edit/bash with no dispatch). The
-// dedup window prevents double-counting when both plugins fire on the same
-// tool.execute.before event.
-const SHARED_STREAK_FILE = process.env.GLUDD_STREAK_FILE || "/tmp/gludd-tool-streak.json"
-const STREAK_PLUGIN_NAME = "enforce-stop"
-const STREAK_DEDUP_WINDOW_MS = 500
+// Imported from shared.ts: readSharedStreak, writeSharedStreak, updateSharedStreak,
+// SharedStreakState, isReadTool, isDispatchTool, SHARED_STREAK_FILE.
 const DELEGATE_FIRST_THRESHOLD = 8
 const GRINDING_HARD_DENY_THRESHOLD = 12
-
-interface SharedStreakState {
-  streak: number
-  lastDispatchTs: number
-  readStreak: number
-  editStreak: number
-  lastUpdateTs: number
-  lastWriter: string
-  pid: number
-}
-
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
-
-function readSharedStreak(): SharedStreakState {
-  try {
-    if (fs.existsSync(SHARED_STREAK_FILE)) {
-      const raw = JSON.parse(fs.readFileSync(SHARED_STREAK_FILE, "utf8"))
-      const now = Date.now()
-      const lastTs = typeof raw.lastUpdateTs === "number" ? raw.lastUpdateTs : 0
-      const STALE_MS = 60_000
-      if (lastTs > 0 && now - lastTs > STALE_MS) {
-        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "stale-reset", pid: process.pid }
-        try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
-        return zeroed
-      }
-      // PID-based cross-session guard: if the stored pid exists and does not
-      // match process.pid, the file was written by a DIFFERENT opencode session.
-      // Reset to 0 — each session owns its own streak; cross-session pollution
-      // is the bug this check prevents.
-      const storedPid = typeof raw.pid === "number" ? raw.pid : 0
-      if (storedPid > 0 && storedPid !== process.pid) {
-        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "pid-reset", pid: process.pid }
-        try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
-        return zeroed
-      }
-      return {
-        streak: typeof raw.streak === "number" ? raw.streak : 0,
-        lastDispatchTs: typeof raw.lastDispatchTs === "number" ? raw.lastDispatchTs : 0,
-        readStreak: typeof raw.readStreak === "number" ? raw.readStreak : 0,
-        editStreak: typeof raw.editStreak === "number" ? raw.editStreak : 0,
-        lastUpdateTs: lastTs,
-        lastWriter: typeof raw.lastWriter === "string" ? raw.lastWriter : "",
-        pid: storedPid || process.pid,
-      }
-    }
-  } catch {}
-  return { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: 0, lastWriter: "", pid: 0 }
-}
-
-function writeSharedStreak(s: SharedStreakState): void {
-  s.pid = process.pid
-  try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(s), "utf8") } catch {}
-}
-
-function isStreakReadTool(toolName: string): boolean {
-  return toolName === "read" || toolName === "grep" || toolName === "glob"
-}
 
 const WATCHDOG_CONTINUE_FILE = "/tmp/gludd-continue.txt"
 
@@ -115,32 +51,7 @@ function readWatchdogContinue(): string | null {
   return null
 }
 
-// Update the shared streak for a tool call. Dedupes if the other plugin
-// already counted this exact call (within DEDUP_WINDOW_MS). Returns the
-// updated state so the caller can check thresholds.
-function updateSharedStreak(tool: string): SharedStreakState {
-  const s = readSharedStreak()
-  const now = Date.now()
-  const isDispatch = tool === "task" || tool === "agent" || tool === "workflow"
-  const isRead = isStreakReadTool(tool)
-  const alreadyCounted = (now - s.lastUpdateTs) < STREAK_DEDUP_WINDOW_MS
-    && s.lastWriter !== STREAK_PLUGIN_NAME
-    && s.lastWriter !== ""
-  if (isDispatch) {
-    s.streak = 0
-    s.readStreak = 0
-    s.editStreak = 0
-    s.lastDispatchTs = now
-  } else if (!alreadyCounted) {
-    s.streak++
-    if (isRead) s.readStreak++
-    else s.editStreak++
-  }
-  s.lastUpdateTs = now
-  s.lastWriter = STREAK_PLUGIN_NAME
-  writeSharedStreak(s)
-  return s
-}
+// updateSharedStreak imported from shared.ts
 
 interface StopStateCache {
   ts: number
@@ -442,8 +353,6 @@ const QA_RESPONSE_PATTERNS = /\b(?:completed in this session|was done since the 
 
 // ── DISPATCH TRACKING ─────────────────────────────────────────────────────
 
-const DISPATCH_TOOLS = new Set(["task", "agent", "workflow"])
-
 // ── STATE FUNCTIONS ────────────────────────────────────────────────────────
 
 function readSharedState(): StopStateCache | null {
@@ -666,23 +575,7 @@ function textHasResultMarkers(text: string): { found: boolean; count: number } {
   return { found: count > 0, count }
 }
 
-function _reportAlive(): void {
-  try {
-    const alive: Record<string, any> = {}
-    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["enforce-stop"] = { last_seen: Date.now() }
-    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
-  } catch {}
-}
-
-// Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
-// fires. Fail-open. Distinct from the shared alive.json.
-function _writeHeartbeat(): void {
-  try {
-    const hb = JSON.stringify({ plugin: "enforce-stop", ts: Date.now(), pid: process.pid })
-    fs.writeFileSync("/tmp/gludd-plugin-heartbeat-enforce-stop.json", hb)
-  } catch { /* fail-open */ }
-}
+// reportAlive + writeHeartbeat imported from shared.ts
 
 export default (async () => {
   spawnGateRefresh()
@@ -716,16 +609,7 @@ export default (async () => {
           const healthScore = computeHealthScore()
 
           // Item 15: read watchdog disengage signal
-          let watchdogDisengage = false
-          try {
-            const wsPath = "/tmp/gludd-watchdog-disengage.json"
-            if (fs.existsSync(wsPath)) {
-              const ws = JSON.parse(fs.readFileSync(wsPath, "utf8"))
-              if (ws.disengage_until && ws.disengage_until > Date.now()) {
-                watchdogDisengage = true
-              }
-            }
-          } catch {}
+          const watchdogDisengage = isWatchdogDisengaged()
 
           const state = {
             ts: Date.now(),
@@ -748,10 +632,10 @@ export default (async () => {
     },
 
     "tool.execute.before": async (input: any, output: any) => {
-      if (_isSubagent()) return
+      if (isSubagent()) return
       console.log("SUBAGENT SKIP: enforce-stop")
-      _reportAlive()
-      _writeHeartbeat()
+      reportAlive("enforce-stop")
+      writeHeartbeat("enforce-stop")
 
       // ── LAYER 2: PERSISTENT STOP-BLOCK FLAG ────────────────────────────
       // text.complete writes this flag when a stop-pattern is detected with
@@ -759,8 +643,8 @@ export default (async () => {
       // non-dispatch tool call, forcing the agent to dispatch subagents.
       const persistBlock = readPersistBlock()
       if (persistBlock.blocked) {
-        const isDispatchTool = DISPATCH_TOOLS.has(input.tool)
-        if (isDispatchTool) {
+        const isDispatch = isDispatchTool(input.tool)
+        if (isDispatch) {
           clearPersistBlock()
         } else {
           // Track block
@@ -813,7 +697,7 @@ export default (async () => {
 
         turnState.toolCallMade = true
 
-        if (DISPATCH_TOOLS.has(input.tool)) {
+        if (isDispatchTool(input.tool)) {
           turnState.dispatchCount++
         }
 
@@ -821,7 +705,7 @@ export default (async () => {
         // consecutive non-dispatch calls (reads + edits + bash) so grinding
         // detection works even when enforce-floor.ts's in-memory streak is
         // out of sync or its hook fails open.
-        const streakState = updateSharedStreak(input.tool)
+        const streakState = updateSharedStreak(input.tool, "enforce-stop")
 
         if (input.tool === "question") {
           // Track block
@@ -864,20 +748,7 @@ export default (async () => {
             // can proceed. Fixes: disengage-enforcement was only respected in
             // session.idle, not tool.execute.before — the operator could run
             // "make disengage-enforcement" and still be blocked on every commit.
-            let disengaged = false
-            try {
-              const disPath = "/tmp/gludd-watchdog-disengage.json"
-              if (fs.existsSync(disPath)) {
-                const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
-                if (d.disengage_until) {
-                  // BUG #23 fix: clamp disengage to max 1 hour from now
-                  const now = Date.now()
-                  const MAX_DISENGAGE = now + 3_600_000
-                  const effective = Math.min(d.disengage_until, MAX_DISENGAGE)
-                  if (effective > now) disengaged = true
-                }
-              }
-            } catch {}
+            const disengaged = isWatchdogDisengaged()
             if (!disengaged && (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending)) {
               // Track block
               try {
@@ -910,23 +781,11 @@ export default (async () => {
         // consecutive non-dispatch calls, deny mutations to force delegation.
         // Reads are NEVER denied (the agent needs them to prepare the next
         // dispatch wave); dispatch tools are never denied; questions handled above.
-        const isMutationTool = !DISPATCH_TOOLS.has(input.tool)
-          && !isStreakReadTool(input.tool)
+        const isMutationTool = !isDispatchTool(input.tool)
+          && !isReadTool(input.tool)
           && input.tool !== "question"
         if (isMutationTool) {
-          let grindingDisengaged = false
-          try {
-            const disPath = "/tmp/gludd-watchdog-disengage.json"
-            if (fs.existsSync(disPath)) {
-              const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
-              if (d.disengage_until) {
-                const now = Date.now()
-                const MAX_DISENGAGE = now + 3_600_000
-                const effective = Math.min(d.disengage_until, MAX_DISENGAGE)
-                if (effective > now) grindingDisengaged = true
-              }
-            }
-          } catch {}
+          const grindingDisengaged = isWatchdogDisengaged()
           if (!grindingDisengaged) {
             if (streakState.streak > GRINDING_HARD_DENY_THRESHOLD) {
               try {
@@ -980,8 +839,7 @@ export default (async () => {
     },
 
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
-      if (_isSubagent()) return output
-      console.log("SUBAGENT SKIP: enforce-stop")
+      if (isSubagent()) return output
       console.log("SUBAGENT SKIP: enforce-stop")
       const unchecked = countTasksMdUnchecked()
       const ratchetCount = ratchetHasEntries()
@@ -1040,8 +898,7 @@ export default (async () => {
     },
 
     "experimental.text.complete": async (_input, output) => {
-      if (_isSubagent()) return output
-      console.log("SUBAGENT SKIP: enforce-stop")
+      if (isSubagent()) return output
       console.log("SUBAGENT SKIP: enforce-stop")
       if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
 
@@ -1087,7 +944,7 @@ export default (async () => {
         const postResultsState = readPostResultsState()
         const isTextOnlyThisTurn1 = !turnState.toolCallMade && turnState.dispatchCount === 0
         if ((postResultsState.lastTurnHadResults || postResultsState.lastTurnHadWave) && isTextOnlyThisTurn1) {
-          updateSharedStreak("text-only")
+          updateSharedStreak("text-only", "enforce-stop")
           logFalseDoneBlock(text, "after-results-text-only")
           recordBlock("after-results-text-only")
           output.text = [
@@ -1117,20 +974,8 @@ export default (async () => {
         turnState.accumulatedText += text
 
         /* Item 15: check watchdog disengage signal */
-        /* BUG #23 fix: clamp disengage to max 1 hour from now */
-        let watchdogDisengage = false
-        try {
-          const wsPath = "/tmp/gludd-watchdog-disengage.json"
-          if (fs.existsSync(wsPath)) {
-            const ws = JSON.parse(fs.readFileSync(wsPath, "utf8"))
-            if (ws.disengage_until) {
-              const now = Date.now()
-              const MAX_DISENGAGE = now + 3_600_000
-              const effective = Math.min(ws.disengage_until, MAX_DISENGAGE)
-              if (effective > now) watchdogDisengage = true
-            }
-          }
-        } catch {}
+        /* BUG #23 fix: clamp disengage to max 1 hour from now — handled by shared.ts */
+        const watchdogDisengage = isWatchdogDisengaged()
 
         let cache: StopStateCache | null = readSharedState()
 
