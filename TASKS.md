@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 28 — 3 OPEN items across 2 active phases (A:2, D:1). W=100% complete. H=100% complete. S=100% complete.** 222 items (219 completed, 3 pending = 98.6%). Ticked this session: W.26 (enforce-stop.ts Node v26 compat, commits c732b4cc + b53ab7fb). Dirty tree: enforce-stop.ts, Makefile, new test_opencode_node_v26_compat.py.
+**Last consolidated: 2026-07-13 Session 28 — 4 OPEN items across 3 active phases (A:2, D:1, E:1). W=100% complete. H=100% complete. S=100% complete.** 222 items (218 completed, 4 pending = 98.2%). Ticked this session: W.26 (enforce-stop.ts Node v26 compat, commits c732b4cc + b53ab7fb). E.5 progress: ad2f32fb (enforce-stop.ts dedup via shared.ts helpers). Dirty tree: enforce-stop.ts, Makefile, new test_opencode_node_v26_compat.py.
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -16,7 +16,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | Y | Web Design Collection | 0 | 8 | 100% |
 | Z | E2E Game Gaps | 0 | 7 | 100% |
 | W1 | Web Server Collection | 0 | 10 | 100% |
-| E | Quality/Coverage | 0 | 13 | 100% |
+| E | Quality/Coverage | 1 | 13 | 92% |
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
@@ -24,7 +24,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | S | Post-Ship | 0 | 21 | 100% |
 | LA | Log Prompt Evaluator | 0 | 3 | 100% |
 | AG | Agent Framework Research | 0 | 16 | 100% |
-| **Total** | | **3** | **222** | **99%** |
+| **Total** | | **4** | **222** | **98%** |
 
 ---
 
@@ -67,7 +67,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase A — CI Green + Release (STABILIZATION_PLAN §WP-A)
 
-- [x] A.1 — Reconcile in-flight fix wave: verify which CI fixes landed on HEAD | priority: high | effort: small | status: completed | evidence: HEAD 58e07399 on development, 10 unpushed commits (58e07399→722ca36c), CI NO RUN for HEAD, A.2 caplog/logging/lint fixes on HEAD, A.3 push pending, A.4-A.6 still pending
+- [x] A.1 — Reconcile in-flight fix wave: verify which CI fixes landed on HEAD | priority: high | effort: small | status: completed | evidence: HEAD 58e07399 on development, 10 unpushed commits (58e07399→722ca36c), CI NO RUN for HEAD, A.2 caplog/logging/lint fixes on HEAD, remaining Phase A items (push, release, shard matrix) still pending
 - [x] A.2 — Fix remaining CI failure clusters (slurm billing, connectors_base caplog, PSK caplog, tokenizer, MCPToolRegistry, structured_task_spec) | priority: high | effort: medium | status: completed | evidence: caplog .message→.getMessage() fixes in 2 files, all clusters resolved
 - [ ] A.3 — Push 10 unpushed commits (58e07399→722ca36c), wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: pending
 - [ ] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: pending
@@ -203,7 +203,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] E.2 — e2e audit closure: ~40 src modules with zero e2e coverage, add top-5 riskiest | priority: medium | effort: large | status: completed | evidence: 150 new e2e tests (50 auth + 19 sts + 39 adversarial_detector + 28 dispatcher + 14 ipc), all passing. Files: test_e2e_security_auth.py, test_e2e_security_sts.py, test_e2e_adversarial_detector.py, test_e2e_dispatcher.py, test_e2e_ipc.py
 - [x] E.3 — Lint/type config gaps: mypy excludes security/sandboxes, tests/ never type-checked, no .pre-commit-config.yaml | priority: medium | effort: medium | status: completed | evidence: 7492bf50; .pre-commit-config.yaml added (detect-secrets + ruff + mypy + trailing-whitespace); mypy now covers tests/ via [[tool.mypy]] overrides; lint fixes across 20+ src files; git-log config hook end
 - [x] E.4 — noqa guardrail 3-layer fix: edit-time hook + behavior-pin test + AGENTS.md rule | priority: medium | effort: medium | status: completed | evidence: 2026-07-12 — all 3 layers verified complete. L1: enforce-no-suppressions.ts exports 5 patterns, 2 allowlist paths, permissionDecision:deny, fail-open, subagent guard. L2: 54/54 test_e4_noqa_guardrail.py + 25/25 test_no_suppression_comments_plugin.py pass. L3: AGENTS.md "CRITICAL: No Lint-Suppression Comments" section present with all 9 required elements. Runtime tests in test_hook_runtime.py: 4 tests.
-- [ ] E.5 — Plugin leanness: refactor enforce-*.ts toward shared helpers, ratchet threshold down | priority: low | effort: medium | status: in_progress | evidence: PARTIAL — shared.ts helpers extracted (isDispatchTool, isReadTool, writeHeartbeat, isSubagent, etc.), enforce-floor.ts deduplicated, enforce-delegate.ts deduplicated, enforce-multitask.ts deduplicated, enforce-stop.ts partially refactored. restore-opencode fix: `make restore-opencode` copies .opencode.orig/ back. .opencode integrity checker: `make verify-opencode-backup` guard (checks backup exists + is in sync). REMAINING: enforce-stop.ts still has local copies of some functions, ratchet threshold not lowered.
+- [ ] E.5 — Plugin leanness: refactor enforce-*.ts toward shared helpers, ratchet threshold down | priority: low | effort: medium | status: in_progress | evidence: PROGRESS — shared.ts helpers extracted (isDispatchTool, isReadTool, writeHeartbeat, isSubagent, etc.), enforce-floor.ts deduplicated, enforce-delegate.ts deduplicated, enforce-multitask.ts deduplicated. enforce-stop.ts deduplicated (commit ad2f32fb — refactor using shared.ts helpers). restore-opencode fix: `make restore-opencode` copies .opencode.orig/ back. .opencode integrity checker: `make verify-opencode-backup` guard. REMAINING: ratchet threshold not lowered.
 - [x] E.6 — Audit-doc re-triage: re-triage BACKLOG_FINDINGS + NEW_FINDINGS_TRIAGE against current master | priority: medium | effort: medium | status: completed | evidence: 20 tests pass + doc
 - [x] E.7 — Zero-test modules: write unit suites for cli_payment.py, self_update/router.py, renderers/cache.py, event_loop/benchmark.py, renderers/executor.py | priority: high | effort: medium | status: completed | evidence: test_self_update_router_class.py 44 tests, test_renderers_executor.py 5 tests
 - [x] E.8 — Router HTTP layer thin: 9 routers touched only by generic registration smoke test, write endpoint-level tests | priority: medium | effort: large | status: completed | evidence: 202 endpoint-level tests across 9 routers

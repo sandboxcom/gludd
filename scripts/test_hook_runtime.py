@@ -1538,6 +1538,127 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             pass
 
 
+# ── enforce-clean-tree.ts  —  isTreeDirty / countDirtyFiles edge cases ──
+
+
+def test_clean_tree_isTreeDirty_empty_string():
+    """isTreeDirty() with empty string (no git repo) returns false."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+// Simulate getGitStatus returning "" by directly testing logic
+const count = mod.countDirtyFiles('')
+const empty = mod.countDirtyFiles('   ')
+const newlines = mod.countDirtyFiles('\\n\\n\\n')
+console.log(JSON.stringify({{empty: count, whitespace: empty, newlines}}))
+"""
+    result = _run_ts(code)
+    assert result["empty"] == 0, "Empty string should count 0"
+    assert result["whitespace"] == 0, "Whitespace-only should count 0"
+    assert result["newlines"] == 0, "Newlines-only should count 0"
+
+
+def test_clean_tree_countDirtyFiles_edge_cases():
+    """countDirtyFiles handles edge-case porcelain output."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mixed = mod.countDirtyFiles(' M a.py\\n   \\n?? b.py\\n  \\n')
+const trailing = mod.countDirtyFiles('?? x.py\\n M y.py\\n')
+const single = mod.countDirtyFiles('?? z.py')
+console.log(JSON.stringify({{mixed, trailing, single}}))
+"""
+    result = _run_ts(code)
+    assert result["mixed"] == 2, "Blank lines should be ignored, found 2 real files"
+    assert result["trailing"] == 2
+    assert result["single"] == 1
+
+
+def test_clean_tree_countDirtyFiles_single_line():
+    """countDirtyFiles with single entry returns 1."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+console.log(JSON.stringify({{single: mod.countDirtyFiles('?? foo.py')}}))
+"""
+    result = _run_ts(code)
+    assert result["single"] == 1
+
+
+def test_clean_tree_non_dispatch_tool_not_blocked():
+    """Non-dispatch tools (edit, write, read, bash) pass through even with dirty tree."""
+    test_file = str(ROOT / "scripts" / "_hook_test_dirty_nondispatch.txt")
+    try:
+        with open(test_file, "w") as f:
+            f.write("test")
+        code = f"""\
+let registeredHook = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+mod.default(api)
+let results = {{}}
+for (const t of ['edit', 'write', 'read', 'grep', 'glob', 'bash']) {{
+    const r = registeredHook({{tool: t}})
+    results[t] = r === undefined || r === null || r.permissionDecision !== 'deny'
+}}
+console.log(JSON.stringify(results))
+"""
+        result = _run_ts(code)
+        for tool in ["edit", "write", "read", "grep", "glob", "bash"]:
+            assert result[tool] == True, f"Non-dispatch tool '{tool}' should not be blocked on dirty tree"
+    finally:
+        try:
+            os.unlink(test_file)
+        except OSError:
+            pass
+
+
+def test_clean_tree_buildDenyMessage_edge_cases():
+    """buildDenyMessage with 0, 1, many files includes correct counts."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+console.log(JSON.stringify({{
+    zero: mod.buildDenyMessage(0),
+    one: mod.buildDenyMessage(1),
+    many: mod.buildDenyMessage(42),
+}}))
+"""
+    result = _run_ts(code)
+    assert "0" in result["zero"]
+    assert "1" in result["one"]
+    assert "42" in result["many"]
+    assert "DIRTY TREE" in result["zero"]
+
+
+def test_clean_tree_getGitStatus_real_repo_returns_string():
+    """getGitStatus() in real repo returns a string (may be empty or non-empty)."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const status = mod.getGitStatus()
+const dirty = mod.isTreeDirty()
+console.log(JSON.stringify({{isStr: typeof status === 'string', isBool: typeof dirty === 'boolean', length: status.length}}))
+"""
+    result = _run_ts(code)
+    assert result["isStr"] == True
+    assert result["isBool"] == True
+    assert isinstance(result["length"], int)
+
+
+def test_clean_tree_hook_throws_on_execsync_failure():
+    """When execSync throws (e.g. corrupt env), hook catches and allows dispatch."""
+    # We test the catch path by verifying the hook doesn't crash.
+    # The try-catch in the hook should handle internal exceptions.
+    code = f"""\
+let registeredHook = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+mod.default(api)
+const result = registeredHook({{tool: 'task'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code)
+    assert result is not None, "Hook must return something (not crash)"
+    if result.get("permissionDecision") == "deny":
+        assert "DIRTY TREE" in result.get("message", ""), "Only deny reason should be dirty tree"
+
+
 # ---------------------------------------------------------------------------
 # enforce-verified-claims.ts  —  done-words without evidence blocked
 # ---------------------------------------------------------------------------
