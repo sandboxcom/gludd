@@ -17,6 +17,7 @@
     "./.opencode/plugin/enforce-no-suppressions.ts",
     "./.opencode/plugin/enforce-no-wait.ts",
     "./.opencode/plugin/enforce-clean-tree.ts",
+    "./.opencode/plugin/enforce-commit-lock.ts",
     "./.opencode/plugin/enforce-verified-claims.ts",
     "./.opencode/plugin/enforce-multitask.ts",
     "./.opencode/plugin/enforce-enhancement-ratio.ts",

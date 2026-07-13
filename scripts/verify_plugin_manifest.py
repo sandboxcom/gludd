@@ -156,7 +156,7 @@ def _guard_present(filepath: Path, hook_key: str) -> bool | None:
 
         # Mode 3 — isSubagent() imported from shared.ts; verify shared.ts has guard
         if ISUBAGENT_SHARED_CALL_RE.search(window):
-            shared_path = WORKSPACE / ".opencode" / "plugin" / "shared.ts"
+            shared_path = WORKSPACE / ".opencode" / "lib" / "shared.ts"
             try:
                 shared_src = shared_path.read_text(encoding="utf-8")
                 if GUARD_BALLOT in shared_src:
