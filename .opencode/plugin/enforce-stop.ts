@@ -1038,7 +1038,7 @@ const defaultImpl: HotModule = {
         } catch {}
         const ciIsStale = (Date.now() - ciLastCheck) > STALE_CI_MS
         const ciIsRed = ciStatus !== "SUCCESS" && ciStatus !== "PENDING"
-        if (ciIsRed && !ciIsStale) {
+        if (ciIsRed && !ciIsStale && toBool(penv.GLUDD_STOP_CI_BLOCK)) {
           logFalseDoneBlock(combinedText, "ci-red-text-only")
           recordBlock("ci-red-false-done")
           output.text = [
@@ -1054,7 +1054,7 @@ const defaultImpl: HotModule = {
           writePersistBlock(true, "ci-red-text-only")
           return
         }
-        if (ciStatus === "PENDING" && !ciIsStale) {
+        if (ciStatus === "PENDING" && !ciIsStale && toBool(penv.GLUDD_STOP_CI_BLOCK)) {
           logFalseDoneBlock(combinedText, "ci-pending-text-only")
           recordBlock("ci-pending-false-done")
           output.text = [
