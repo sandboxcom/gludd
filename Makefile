@@ -2148,7 +2148,7 @@ ci-test-1worker:
 
 # Run the EXACT CI gate command sequence under a given python version:
 #   uv sync --python VER  &&  make lint typecheck test-count test smoke
-# This includes coverage (fail_under=70) which plain test-pyver omits.
+# This includes coverage (fail_under=85) which plain test-pyver omits.
 ci-gate-exact:
 	@if [ -z "$(VER)" ]; then echo "Usage: make ci-gate-exact VER=3.11"; exit 1; fi
 	@echo "=== ci-gate-exact $(VER): uv sync ==="
@@ -2159,7 +2159,7 @@ ci-gate-exact:
 	@$(UV) run --python $(VER) mypy -p general_ludd
 	@echo "=== ci-gate-exact $(VER): test-count ==="
 	@$(UV) run --python $(VER) python -m pytest tests/ --co -q 2>&1 | tail -3
-	@echo "=== ci-gate-exact $(VER): test (WITH coverage, fail_under=70) ==="
+	@echo "=== ci-gate-exact $(VER): test (WITH coverage, fail_under=85) ==="
 	@$(UV) run --python $(VER) python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -q 2>&1 | tail -40
 	@echo "=== ci-gate-exact $(VER): DONE (check coverage line above) ==="
 

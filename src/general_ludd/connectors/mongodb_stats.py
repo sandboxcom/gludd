@@ -171,8 +171,11 @@ class MongoDbStatsSource:
             return {"ok": False, "detail": self._driver_error or _DRIVER_UNAVAILABLE}
         try:
             executor("serverStatus")
-        except Exception:
-            logger.warning("mongodb_stats serverStatus probe failed", exc_info=True)
+        except Exception as exc:
+            logger.warning(
+                "mongodb_stats serverStatus probe failed: %s", type(exc).__name__,
+                exc_info=False,
+            )
             return {"ok": False, "detail": "serverStatus failed"}
         return {"ok": True, "detail": "ok"}
 
