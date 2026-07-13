@@ -1,0 +1,134 @@
+---
+# xslt_transformer role — Apply and author XSLT transformations
+#
+# Operations: apply single XSLT, chain multiple XSLTs, output HTML/XML/text
+#
+# Graceful degradation:
+#   - lxml not installed → status=error, error=missing_lxml
+#   - xslt_file or xml_input missing → status=error
+#   - XSLT parse error → status=error, error=xslt_syntax
+#   - Transformation error → status=error, error=transform_failed
+#   - Chained transforms stop at first failure
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - xslt_file | length > 0
+      - xml_input | length > 0
+    fail_msg: "xslt_transformer: xslt_file and xml_input are required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check xml_input exists
+  ansible.builtin.stat:
+    path: "{{ xml_input }}"
+  register: _xt_xml_stat
+
+- name: Check xslt_file(s) exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: _xt_xslt_stats
+  loop: "{{ [xslt_file] if xslt_file is string else xslt_file }}"
+
+- name: Collect file status
+  ansible.builtin.set_fact:
+    _xt_xml_found: "{{ _xt_xml_stat.stat.exists | default(false) }}"
+    _xt_xslt_missing: >-
+      {{
+        _xt_xslt_stats.results
+        | selectattr('stat.exists', 'equalto', false)
+        | map(attribute='item')
+        | list
+      }}
+    _xt_xslt_present: >-
+      {{
+        _xt_xslt_stats.results
+        | selectattr('stat.exists', 'equalto', true)
+        | map(attribute='item')
+        | list
+      }}
+
+- name: Handle missing XML input
+  ansible.builtin.set_fact:
+    _xt_status: "error"
+    _xt_verdict: "missing_xml_input"
+    _xt_errors: "xml_input not found: {{ xml_input }}"
+  when: not _xt_xml_found
+
+- name: Handle missing XSLT files
+  ansible.builtin.set_fact:
+    _xt_status: "error"
+    _xt_verdict: "missing_xslt"
+    _xt_errors: "Missing XSLT files: {{ _xt_xslt_missing | join(', ') }}"
+  when:
+    - _xt_xslt_missing | length > 0
+    - _xt_status is not defined
+
+- name: Execute xslt_transformer Python script
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/xslt_transformer.py
+      --xml "{{ xml_input }}"
+      --xslt {{ _xt_xslt_present | join(' ') }}
+      --output "{{ output_file }}"
+      --format "{{ output_format }}"
+      --params '{{ params | to_json }}'
+  register: _xt_result
+  changed_when: _xt_result.rc == 0
+  failed_when: false
+  when:
+    - _xt_xml_found
+    - _xt_xslt_present | length > 0
+    - _xt_status is not defined
+
+- name: Set result from script output
+  ansible.builtin.set_fact:
+    _xt_status: "ok"
+    _xt_verdict: "transform_complete"
+    _xt_result_obj: "{{ _xt_result.stdout | default('{}') | from_json }}"
+    _xt_errors: ""
+  when:
+    - _xt_result is defined
+    - _xt_result.rc is defined
+    - _xt_result.rc == 0
+
+- name: Set error from script failure
+  ansible.builtin.set_fact:
+    _xt_status: "error"
+    _xt_verdict: "transform_failed"
+    _xt_errors: "{{ _xt_result.stderr | default('Script failed') }}"
+  when:
+    - _xt_result is defined
+    - _xt_result.rc is defined
+    - _xt_result.rc != 0
+
+- name: Write xslt_transformer.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'xslt_transformer',
+        'status': _xt_status | default('error'),
+        'verdict': _xt_verdict | default('unknown'),
+        'xml_input': xml_input,
+        'xslt_files': _xt_xslt_present | default([]),
+        'output_file': output_file,
+        'output_format': output_format,
+        'output_size_bytes': (_xt_result_obj.output_size_bytes | default(0)),
+        'output_lines': (_xt_result_obj.output_lines | default(0)),
+        'chain_length': (_xt_xslt_present | default([])) | length,
+        'params_used': (_xt_result_obj.params_used | default([])),
+        'errors': _xt_errors | default('')
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/xslt_transformer.json"
+    mode: "0644"
+
+- name: Report xslt_transformer completion
+  ansible.builtin.debug:
+    msg: >-
+      xslt_transformer: status={{ _xt_status | default('error') }}
+      verdict={{ _xt_verdict | default('unknown') }}
+      output={{ output_file }}

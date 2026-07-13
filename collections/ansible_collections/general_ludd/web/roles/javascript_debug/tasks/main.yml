@@ -1,0 +1,118 @@
+---
+# javascript_debug role — JS syntax checking, linting, error analysis, source map verification
+#
+# Operations: check_syntax | lint | analyze_errors | verify_source_maps
+#
+# Graceful degradation:
+#   - js_files empty → status=error, error=no_js_files
+#   - eslint not installed + lint op → status=warn, lint=skipped
+#   - .map file missing → status=warn, source_map_verified=false
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - js_files | length > 0
+    fail_msg: "javascript_debug: js_files is required (list of file paths)"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check JS files exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ js_files }}"
+  register: _jd_file_stats
+
+- name: Build existing file list
+  ansible.builtin.set_fact:
+    _jd_existing: "{{ _jd_file_stats.results | selectattr('stat.exists', 'equalto', true) | map(attribute='item') | list }}"
+    _jd_missing: "{{ _jd_file_stats.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item') | list }}"
+
+- name: Handle all files missing
+  ansible.builtin.set_fact:
+    _jd_status: "error"
+    _jd_errors: "All js_files missing: {{ _jd_missing | join(', ') }}"
+    _jd_verdict: "missing_all_inputs"
+  when: _jd_existing | length == 0
+
+- name: Execute js_debug Python script
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/js_debug.py
+      --files '{{ _jd_existing | to_json }}'
+      --operation "{{ operation }}"
+      --output "{{ artifact_dir }}/javascript_debug.json"
+      {% if debug_mode %}--debug{% endif %}
+      {% if check_source_maps %}--source-maps{% endif %}
+      {% if bundle_analyze %}--bundle-analyze{% endif %}
+      {% if operation == 'lint' %}--lint{% endif %}
+  register: _jd_result
+  changed_when: _jd_result.rc == 0
+  failed_when: false
+  when: _jd_existing | length > 0
+
+- name: Parse script output
+  ansible.builtin.set_fact:
+    _jd_parsed: "{{ (_jd_result.stdout | from_json) if _jd_result.rc == 0 else {} }}"
+  when:
+    - _jd_existing | length > 0
+    - _jd_result is defined
+    - _jd_result.rc == 0
+
+- name: Set success result
+  ansible.builtin.set_fact:
+    _jd_status: "ok"
+    _jd_valid_syntax: "{{ _jd_parsed.valid_syntax | default(false) }}"
+    _jd_error_count: "{{ _jd_parsed.error_count | default(0) }}"
+    _jd_warning_count: "{{ _jd_parsed.warning_count | default(0) }}"
+    _jd_errors: "{{ _jd_parsed.errors | default([]) }}"
+    _jd_source_maps_verified: "{{ _jd_parsed.source_maps_verified | default(false) }}"
+    _jd_verdict: "{{ operation }}_complete"
+    _jd_files_analyzed: "{{ _jd_existing | length }}"
+  when:
+    - _jd_existing | length > 0
+    - _jd_result is defined
+    - _jd_result.rc == 0
+
+- name: Set error from script failure
+  ansible.builtin.set_fact:
+    _jd_status: "error"
+    _jd_valid_syntax: false
+    _jd_errors: "{{ _jd_result.stderr | default('unknown error') }}"
+    _jd_verdict: "{{ operation }}_failed"
+  when:
+    - _jd_existing | length > 0
+    - _jd_result is defined
+    - _jd_result.rc is defined
+    - _jd_result.rc != 0
+
+- name: Write javascript_debug.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'javascript_debug',
+        'status': _jd_status,
+        'operation': operation,
+        'files_analyzed': _jd_files_analyzed | default(0),
+        'valid_syntax': _jd_valid_syntax | default(false) | bool,
+        'error_count': _jd_error_count | default(0),
+        'warning_count': _jd_warning_count | default(0),
+        'errors': _jd_errors | default([]),
+        'source_maps_verified': _jd_source_maps_verified | default(false) | bool,
+        'verdict': _jd_verdict,
+        'missing_files': _jd_missing | default([])
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/javascript_debug.json"
+    mode: "0644"
+
+- name: Report javascript_debug completion
+  ansible.builtin.debug:
+    msg: >-
+      javascript_debug: status={{ _jd_status }}
+      operation={{ operation }}
+      files={{ _jd_files_analyzed | default(0) }}
+      errors={{ _jd_error_count | default(0) }}
+      verdict={{ _jd_verdict }}

@@ -126,11 +126,12 @@ class TestHealthReadiness:
         assert "budget_exhausted" in data
         assert data["status"] in {"healthy"}
 
-    def test_readyz_returns_ready(self, health_app):
+    def test_readyz_503_when_not_initialized(self, health_app):
         resp = health_app.get("/readyz")
-        assert resp.status_code == 200
+        assert resp.status_code == 503
         data = resp.json()
-        assert "status" in data
+        assert data["status"] == "not_ready"
+        assert data["reason"] == "daemon_not_initialized"
 
     def test_readyz_degraded_when_flag_set(self, health_app):
         health_app.app.state._degraded = "test-degraded"

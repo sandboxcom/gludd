@@ -14,6 +14,8 @@ open access, and all three probes are public read-only paths anyway.
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -84,18 +86,35 @@ class TestHealthzEndpoint:
 
 class TestReadyzEndpoint:
     @pytest.mark.asyncio
-    async def test_readyz_returns_200_when_not_degraded(self, transport):
-        # The lifespan does not run under a bare ASGITransport, so neither
-        # _degraded nor the event-loop task is set: readiness is "ready" (200).
+    async def test_readyz_503_when_daemon_not_initialized(self, transport):
+        # H.3: bare app (no lifespan, no _event_loop_task) means the daemon
+        # hasn't finished booting — readiness must fail closed (503).
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/readyz")
+            assert resp.status_code == 503
+            data = resp.json()
+            assert data["status"] == "not_ready"
+            assert data["reason"] == "daemon_not_initialized"
+
+    @pytest.mark.asyncio
+    async def test_readyz_reports_ready_body_when_initialized(self, app):
+        # H.3: ready body returned only when _event_loop_task is running.
+        import asyncio
+
+        async def _run_forever() -> None:
+            while True:
+                await asyncio.sleep(3600)
+
+        task = asyncio.create_task(_run_forever())
+        app.state._event_loop_task = task
+        transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/readyz")
             assert resp.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_readyz_reports_ready_body(self, transport):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/readyz")
             assert resp.json() == {"status": "ready"}
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     @pytest.mark.asyncio
     async def test_readyz_503_when_degraded(self, app):

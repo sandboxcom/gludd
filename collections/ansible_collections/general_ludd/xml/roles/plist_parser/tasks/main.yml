@@ -1,0 +1,132 @@
+---
+- name: Validate plist input
+  ansible.builtin.assert:
+    that:
+      - plist_parser_file | length > 0
+    fail_msg: "plist_parser_file is required"
+
+- name: Execute plist parser
+  ansible.builtin.command:
+    argv:
+      - "{{ plist_parser_python }}"
+      - -c
+      - |
+        import json, plistlib, os, sys
+
+        plist_file = {{ plist_parser_file | to_json }}
+        operation = {{ plist_parser_operation | to_json }}
+        key_path = {{ plist_parser_key_path | to_json }}
+        value = {{ plist_parser_value | to_json }}
+        output_format = {{ plist_parser_output_format | to_json }}
+        output_file = {{ plist_parser_output_file | to_json }}
+        artifact_dir = {{ plist_parser_artifact_dir | to_json }}
+
+        os.makedirs(artifact_dir, exist_ok=True)
+
+        # Detect format and read
+        with open(plist_file, "rb") as f:
+            header = f.read(8)
+        is_binary = header.startswith(b"bplist")
+
+        with open(plist_file, "rb") as f:
+            if is_binary:
+                data = plistlib.load(f)
+            else:
+                f.seek(0)
+                data = plistlib.load(f)
+
+        result = {"file": plist_file, "format": "binary" if is_binary else "xml", "operation": operation}
+
+        def navigate(container, path):
+            parts = [p for p in path.split(".") if p]
+            current = container
+            for part in parts:
+                if isinstance(current, dict):
+                    current = current.get(part)
+                elif isinstance(current, list):
+                    try:
+                        idx = int(part)
+                        current = current[idx]
+                    except (ValueError, IndexError):
+                        return None
+                else:
+                    return None
+            return current
+
+        def set_value(container, path, val):
+            parts = [p for p in path.split(".") if p]
+            current = container
+            for part in parts[:-1]:
+                if isinstance(current, dict):
+                    current = current[part]
+                elif isinstance(current, list):
+                    idx = int(part)
+                    current = current[idx]
+            last = parts[-1]
+            if isinstance(current, dict):
+                current[last] = val
+            elif isinstance(current, list):
+                current[int(last)] = val
+
+        if operation == "read":
+            if key_path:
+                result["value"] = navigate(data, key_path)
+                result["key_path"] = key_path
+            else:
+                result["data"] = data
+
+        elif operation == "write":
+            import copy
+            updated = copy.deepcopy(data)
+            set_value(updated, key_path, value)
+            result["key_path"] = key_path
+            result["new_value"] = value
+
+            base = os.path.splitext(os.path.basename(plist_file))[0]
+            if output_format == "binary":
+                out_path = os.path.join(artifact_dir, f"{base}.plist")
+                with open(out_path, "wb") as f:
+                    plistlib.dump(updated, f, fmt=plistlib.FMT_BINARY)
+            else:
+                out_path = os.path.join(artifact_dir, f"{base}.plist")
+                with open(out_path, "wb") as f:
+                    plistlib.dump(updated, f)
+
+            result["output_path"] = out_path
+
+        elif operation == "convert":
+            base = os.path.splitext(os.path.basename(plist_file))[0]
+            if output_format == "binary":
+                out_path = os.path.join(artifact_dir, f"{base}.plist")
+                with open(out_path, "wb") as f:
+                    plistlib.dump(data, f, fmt=plistlib.FMT_BINARY)
+            else:
+                out_path = os.path.join(artifact_dir, f"{base}.plist")
+                with open(out_path, "wb") as f:
+                    plistlib.dump(data, f)
+
+            result["output_path"] = out_path
+            result["converted_to"] = output_format
+
+        # Serialize with type preservation
+        class PlistEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, bytes):
+                    return obj.hex()
+                if isinstance(obj, plistlib.UID):
+                    return str(obj)
+                return str(obj)
+
+        with open(output_file, "w") as f:
+            json.dump(result, f, cls=PlistEncoder, default=str)
+  changed_when: true
+  register: _plist_result
+
+- name: Read plist output
+  ansible.builtin.slurp:
+    src: "{{ plist_parser_output_file }}"
+  register: _plist_output
+
+- name: Set plist result fact
+  ansible.builtin.set_fact:
+    plist_parser_result: "{{ _plist_output.content | b64decode | from_json }}"

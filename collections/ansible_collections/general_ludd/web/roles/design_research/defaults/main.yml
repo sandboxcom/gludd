@@ -1,0 +1,12 @@
+---
+# design_research role defaults
+
+target_url: ""
+operation: "full_audit"
+extract_colors: true
+extract_fonts: true
+extract_spacing: true
+extract_layout: true
+max_depth: 1
+artifact_dir: "/tmp/gludd-web/design_research"
+python_interpreter: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"

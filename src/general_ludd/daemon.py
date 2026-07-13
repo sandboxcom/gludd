@@ -2831,9 +2831,13 @@ def create_daemon_app(
                 status_code=503,
                 content={"status": "degraded", "reason": str(degraded)[:200]},
             )
-        # Check whether the event-loop task has completed/been cancelled
         el_task = getattr(app.state, "_event_loop_task", None)
-        if el_task is not None and el_task.done():
+        if el_task is None:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "reason": "daemon_not_initialized"},
+            )
+        if el_task.done():
             reason = "event_loop_cancelled" if el_task.cancelled() else "event_loop_done"
             return JSONResponse(
                 status_code=503,

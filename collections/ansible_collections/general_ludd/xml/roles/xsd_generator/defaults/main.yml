@@ -1,0 +1,8 @@
+---
+# xsd_generator role defaults
+
+sample_files: []
+output_xsd: "/tmp/gludd-xsd-generator/output.xsd"
+target_namespace: ""
+element_form_default: "qualified"
+artifact_dir: "/tmp/gludd-xsd-generator"

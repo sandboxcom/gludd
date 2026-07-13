@@ -1,0 +1,107 @@
+---
+# design_system role — Design tokens: spacing, color, font, component library
+#
+# Operations: extract | generate | validate
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - design_system_css_source | length > 0
+      - design_system_token_output_format in ['json', 'css', 'scss']
+    fail_msg: "design_system: css_source and valid token_output_format required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir | default('/tmp/gludd-web/design_system') }}"
+    state: directory
+    mode: "0755"
+
+- name: Resolve CSS source
+  ansible.builtin.set_fact:
+    _ds_css_file: >-
+      {{ design_system_css_source if not design_system_css_source.startswith(('http://', 'https://'))
+         else design_system_output_dir + '/source.css' }}
+
+- name: Fetch remote CSS if URL
+  ansible.builtin.uri:
+    url: "{{ design_system_css_source }}"
+    return_content: true
+    timeout: 15
+    status_code: 200
+  register: _ds_fetched
+  failed_when: false
+  when: design_system_css_source.startswith(('http://', 'https://'))
+
+- name: Save fetched CSS
+  ansible.builtin.copy:
+    content: "{{ _ds_fetched.content }}"
+    dest: "{{ design_system_output_dir }}/source.css"
+    mode: "0644"
+  when:
+    - design_system_css_source.startswith(('http://', 'https://'))
+    - _ds_fetched is defined
+    - _ds_fetched.status | default(0) == 200
+
+- name: Execute design_system Python script
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/design_system.py
+      --css-source "{{ _ds_css_file | default(design_system_css_source) }}"
+      --token-output-format "{{ design_system_token_output_format }}"
+      {% if design_system_extract_spacing | bool %}--extract-spacing{% endif %}
+      {% if design_system_extract_colors | bool %}--extract-colors{% endif %}
+      {% if design_system_extract_typography | bool %}--extract-typography{% endif %}
+      {% if design_system_generate_component_tokens | bool %}--generate-component-tokens{% endif %}
+      --output-dir "{{ design_system_output_dir }}"
+  register: _ds_result
+  changed_when: _ds_result.rc == 0
+  failed_when: false
+
+- name: Set result from script output
+  ansible.builtin.set_fact:
+    _ds_status: "ok"
+    _ds_output: "{{ _ds_result.stdout | default('') }}"
+    _ds_verdict: "extract_complete"
+  when:
+    - _ds_result is defined
+    - _ds_result.rc is defined
+    - _ds_result.rc == 0
+
+- name: Set error from script failure
+  ansible.builtin.set_fact:
+    _ds_status: "error"
+    _ds_errors: "{{ _ds_result.stderr | default('unknown error') }}"
+    _ds_verdict: "extract_failed"
+  when:
+    - _ds_result is defined
+    - _ds_result.rc is defined
+    - _ds_result.rc != 0
+
+- name: Write design_system.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'design_system',
+        'status': _ds_status | default('error'),
+        'css_source': design_system_css_source,
+        'token_output_format': design_system_token_output_format,
+        'extractions': {
+          'spacing': design_system_extract_spacing | default(true),
+          'colors': design_system_extract_colors | default(true),
+          'typography': design_system_extract_typography | default(true),
+          'component_tokens': design_system_generate_component_tokens | default(false),
+        },
+        'verdict': _ds_verdict | default('unknown'),
+        'output': _ds_output | default(''),
+        'errors': _ds_errors | default('')
+      } | to_nice_json }}
+    dest: "{{ artifact_dir | default('/tmp/gludd-web/design_system') }}/design_system.json"
+    mode: "0644"
+
+- name: Report design_system completion
+  ansible.builtin.debug:
+    msg: >-
+      design_system: status={{ _ds_status | default('error') }}
+      source={{ design_system_css_source | truncate(80) }}
+      format={{ design_system_token_output_format }}
+      verdict={{ _ds_verdict | default('unknown') }}

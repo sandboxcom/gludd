@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: html_processor
+  namespace: general_ludd
+  author: Agentic Harness Agent
+  description: >
+    HTML parsing and manipulation — extract data via CSS selectors or XPath,
+    modify elements/attributes/text, and clean HTML. Supports tolerant
+    parsing (BeautifulSoup or lxml.html) for HTML5, XHTML, and legacy HTML.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,109 @@
+---
+# xsd_generator role — Generate XSD schemas from XML samples
+#
+# Operations: infer schema from XML instance documents, write .xsd output
+#
+# Graceful degradation:
+#   - sample_files empty → status=error, error=no_samples
+#   - Parse error in any sample → status=error, schema_not_generated
+#   - Single sample, all elements infer xs:string → status=ok (valid but untyped)
+#   - Multi-sample inference merges element types across files
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - sample_files | length > 0
+    fail_msg: "xsd_generator: sample_files is required (list of XML file paths)"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check all sample files exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: _xsd_stat_results
+  loop: "{{ sample_files }}"
+
+- name: Collect missing sample files
+  ansible.builtin.set_fact:
+    _xsd_missing: "{{ _xsd_stat_results.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item') | list }}"
+    _xsd_present: "{{ _xsd_stat_results.results | selectattr('stat.exists', 'equalto', true) | map(attribute='item') | list }}"
+
+- name: Handle entire-sample-set missing
+  ansible.builtin.set_fact:
+    _xsd_status: "error"
+    _xsd_verdict: "no_samples_found"
+    _xsd_errors: "No sample files found. Missing: {{ _xsd_missing | join(', ') }}"
+  when: _xsd_present | length == 0
+
+- name: Note partial-sample missing (non-fatal)
+  ansible.builtin.debug:
+    msg: "xsd_generator: {{ _xsd_missing | length }} sample(s) missing, proceeding with {{ _xsd_present | length }} found"
+  when:
+    - _xsd_missing | length > 0
+    - _xsd_present | length > 0
+
+- name: Execute xsd_generator Python script
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/xsd_generator.py
+      --samples {{ _xsd_present | join(' ') }}
+      --output "{{ output_xsd }}"
+      {% if target_namespace | length > 0 %}--target-namespace "{{ target_namespace }}"{% endif %}
+      --element-form-default "{{ element_form_default }}"
+  register: _xsd_result
+  changed_when: _xsd_result.rc == 0
+  failed_when: false
+  when: _xsd_present | length > 0
+
+- name: Set result from script output
+  ansible.builtin.set_fact:
+    _xsd_status: "ok"
+    _xsd_verdict: "schema_generated"
+    _xsd_result_obj: "{{ _xsd_result.stdout | default('{}') | from_json }}"
+    _xsd_errors: ""
+  when:
+    - _xsd_present | length > 0
+    - _xsd_result is defined
+    - _xsd_result.rc is defined
+    - _xsd_result.rc == 0
+
+- name: Set error from script failure
+  ansible.builtin.set_fact:
+    _xsd_status: "error"
+    _xsd_verdict: "schema_not_generated"
+    _xsd_errors: "{{ _xsd_result.stderr | default('Script failed') }}"
+  when:
+    - _xsd_present | length > 0
+    - _xsd_result is defined
+    - _xsd_result.rc is defined
+    - _xsd_result.rc != 0
+
+- name: Write xsd_generator.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'xsd_generator',
+        'status': _xsd_status,
+        'verdict': _xsd_verdict,
+        'sample_files': _xsd_present,
+        'missing_files': _xsd_missing | default([]),
+        'output_xsd': output_xsd,
+        'target_namespace': target_namespace,
+        'element_form_default': element_form_default,
+        'elements_found': (_xsd_result_obj.elements_found | default(0)),
+        'root_elements': (_xsd_result_obj.root_elements | default([])),
+        'errors': _xsd_errors
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/xsd_generator.json"
+    mode: "0644"
+
+- name: Report xsd_generator completion
+  ansible.builtin.debug:
+    msg: >-
+      xsd_generator: status={{ _xsd_status }}
+      verdict={{ _xsd_verdict }}
+      elements_found={{ _xsd_result_obj.elements_found | default(0) }}

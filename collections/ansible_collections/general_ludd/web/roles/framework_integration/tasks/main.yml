@@ -1,0 +1,77 @@
+---
+# framework_integration role — Modern web frameworks: React, Next.js, HTMX, GraphQL, REST APIs
+#
+# Operations: scaffold | generate | test | analyze
+# Frameworks: react | nextjs | htmx | graphql | rest
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - framework_integration_framework in ['react', 'nextjs', 'htmx', 'graphql', 'rest']
+      - framework_integration_operation in ['scaffold', 'generate', 'test', 'analyze']
+    fail_msg: "framework_integration: valid framework and operation required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir | default('/tmp/gludd-web/framework_integration') }}"
+    state: directory
+    mode: "0755"
+
+- name: Execute framework_integration Python script
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/framework_integration.py
+      --framework "{{ framework_integration_framework }}"
+      --operation "{{ framework_integration_operation }}"
+      --component-name "{{ framework_integration_component_name | default('') }}"
+      --endpoint-url "{{ framework_integration_endpoint_url | default('') }}"
+      --graphql-schema-file "{{ framework_integration_graphql_schema_file | default('') }}"
+      --output-dir "{{ framework_integration_output_dir | default('/tmp/gludd-web/framework_integration') }}"
+  register: _fi_result
+  changed_when: _fi_result.rc == 0
+  failed_when: false
+
+- name: Set result from script output
+  ansible.builtin.set_fact:
+    _fi_status: "ok"
+    _fi_output: "{{ _fi_result.stdout | default('') }}"
+    _fi_verdict: "{{ framework_integration_operation }}_complete"
+  when:
+    - _fi_result is defined
+    - _fi_result.rc is defined
+    - _fi_result.rc == 0
+
+- name: Set error from script failure
+  ansible.builtin.set_fact:
+    _fi_status: "error"
+    _fi_errors: "{{ _fi_result.stderr | default('unknown error') }}"
+    _fi_verdict: "{{ framework_integration_operation }}_failed"
+  when:
+    - _fi_result is defined
+    - _fi_result.rc is defined
+    - _fi_result.rc != 0
+
+- name: Write framework_integration.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'framework_integration',
+        'status': _fi_status | default('error'),
+        'framework': framework_integration_framework,
+        'operation': framework_integration_operation,
+        'component_name': framework_integration_component_name | default(''),
+        'endpoint_url': framework_integration_endpoint_url | default(''),
+        'verdict': _fi_verdict | default('unknown'),
+        'output': _fi_output | default(''),
+        'errors': _fi_errors | default('')
+      } | to_nice_json }}
+    dest: "{{ artifact_dir | default('/tmp/gludd-web/framework_integration') }}/framework_integration.json"
+    mode: "0644"
+
+- name: Report framework_integration completion
+  ansible.builtin.debug:
+    msg: >-
+      framework_integration: status={{ _fi_status | default('error') }}
+      framework={{ framework_integration_framework }}
+      operation={{ framework_integration_operation }}
+      verdict={{ _fi_verdict | default('unknown') }}

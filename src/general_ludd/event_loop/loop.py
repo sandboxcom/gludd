@@ -1084,12 +1084,43 @@ class EventLoop:
             and bool(self.config.get("consensus_review", {}).get("enabled", False))
             and self._consensus_reviewer is not None
         )
+        review_cfg = (
+            self.config.get("review", {}) if isinstance(self.config, dict) else {}
+        )
         if (
             (_has_standard or _has_consensus)
             and self._active_session is not None
             and self._todo_repo is not None
         ):
-            await self._review_in_process(tr)
+            in_process_timeout = float(review_cfg.get("in_process_timeout", 600.0))
+            try:
+                await asyncio.wait_for(
+                    self._review_in_process(tr),
+                    timeout=in_process_timeout,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "In-process review for return %s (job_id=REVIEW-%s) timed out "
+                    "after %.0fs; releasing claim and blocking todo",
+                    tr.return_id,
+                    tr.return_id,
+                    in_process_timeout,
+                )
+                if self._active_session is not None:
+                    with contextlib.suppress(Exception):
+                        tr.status = "created"
+                    if hasattr(tr, "updated_at"):
+                        with contextlib.suppress(Exception):
+                            tr.updated_at = datetime.now(UTC)
+                    with contextlib.suppress(Exception):
+                        await self._active_session.flush()
+                if self._todo_repo is not None:
+                    with contextlib.suppress(Exception):
+                        todo = await self._todo_repo.get_by_id(tr.todo_id)
+                        if todo is not None:
+                            await self._todo_repo.transition(
+                                tr.todo_id, TodoStatus.BLOCKED, todo.version
+                            )
             return
         project_id_val = getattr(tr, "project_id", None)
         if not isinstance(project_id_val, str):

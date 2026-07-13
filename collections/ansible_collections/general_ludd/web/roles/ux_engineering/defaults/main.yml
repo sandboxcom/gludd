@@ -1,0 +1,7 @@
+---
+ux_engineering_target_url_or_file: ""
+ux_engineering_accessibility_standard: "wcag21_aa"
+ux_engineering_check_z_index: true
+ux_engineering_check_visual_hierarchy: true
+ux_engineering_usability_heuristics: false
+ux_engineering_output_dir: "/tmp/gludd-web/ux_engineering"

@@ -1,0 +1,8 @@
+---
+design_system_css_source: ""
+design_system_token_output_format: "json"
+design_system_extract_spacing: true
+design_system_extract_colors: true
+design_system_extract_typography: true
+design_system_generate_component_tokens: false
+design_system_output_dir: "/tmp/gludd-web/design_system"

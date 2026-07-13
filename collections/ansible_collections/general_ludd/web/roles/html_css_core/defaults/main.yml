@@ -1,0 +1,14 @@
+---
+# html_css_core role defaults
+
+html_file: ""
+css_file: ""
+operation: "validate_html"
+validate_w3c: false
+responsive_check: false
+target_breakpoints:
+  - 768
+  - 1024
+  - 1440
+artifact_dir: "/tmp/gludd-web/html_css_core"
+python_interpreter: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"

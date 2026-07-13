@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: framework_integration
+  namespace: general_ludd
+  author: Agentic Harness Agent
+  description: >
+    Modern web framework integration — scaffold React components, generate
+    Next.js pages/routes, create HTMX templates, generate GraphQL queries,
+    and test REST API endpoints.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []
