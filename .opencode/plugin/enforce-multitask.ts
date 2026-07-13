@@ -11,7 +11,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { isSubagent, reportAlive } from "./shared.ts"
+import { isSubagent, reportAlive, isDispatchTool } from "./shared.ts"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "10", 10)
@@ -59,10 +59,6 @@ function readState(): MultitaskState {
 
 function writeState(s: MultitaskState): void {
   try { s.lastTs = Date.now(); fs.writeFileSync(MULTITASK_STATE_FILE, JSON.stringify(s), "utf8") } catch {}
-}
-
-function isDispatchTool(tool: string): boolean {
-  return tool === "task" || tool === "agent" || tool === "workflow"
 }
 
 function hasResultMarker(text: string): boolean {

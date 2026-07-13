@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { isSubagent, reportAlive, isDisengaged } from "./shared.ts"
+import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool } from "./shared.ts"
 
 // enforce-delegate.ts — opencode-native port of the Claude orchestration hooks
 // that govern SUBAGENT DISPATCH and MAIN-THREAD DELEGATION discipline.
@@ -410,8 +410,7 @@ function enforceForceDelegate(
     const command = ((args?.command as string) || "").trim()
     const filePath = ((args?.filePath as string) || "").trim()
 
-    const isAgentOrTask = tool === "task" || tool === "agent" || tool === "workflow"
-    if (isAgentOrTask) {
+    if (isDispatchTool(tool)) {
       saveForceDelegateState({ consecutive_targeted: 0, consecutive_denied: 0 })
       return null
     }
@@ -589,17 +588,9 @@ function saveReadGrindState(count: number, lastDispatchTs: number): void {
   } catch { /* fail open */ }
 }
 
-function isReadTool(tool: string): boolean {
-  return tool === "read" || tool === "grep" || tool === "glob"
-}
-
 function isMainthreadTool(tool: string): boolean {
   // Only mutation tools gated here — investigation tools tracked separately.
   return ["edit", "write", "bash"].includes(tool)
-}
-
-function isDelegateTool(tool: string): boolean {
-  return tool === "task" || tool === "workflow" || tool === "agent"
 }
 
 function mainthreadBudgetBefore(tool: string): string | null {
@@ -670,7 +661,7 @@ function mainthreadBudgetBefore(tool: string): string | null {
 
 function mainthreadBudgetAfter(tool: string): void {
   try {
-    if (isDelegateTool(tool)) {
+    if (isDispatchTool(tool)) {
       writeStreak(0)
       // Reset the read-grind counter + update dispatch timestamp.
       saveReadGrindState(0, Date.now())
@@ -718,7 +709,7 @@ export default (async ({ }) => {
       const args = output?.args
 
       // task/agent/workflow dispatch — model utilization + disk discipline
-      if (tool === "task" || tool === "agent" || tool === "workflow") {
+      if (isDispatchTool(tool)) {
         const modelMsg = enforceModelUtilization(args)
         if (modelMsg) throw new Error(modelMsg)
 

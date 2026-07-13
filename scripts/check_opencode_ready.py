@@ -1,206 +1,330 @@
 #!/usr/bin/env python3
-"""Self-contained smoke test verifying .opencode/ is ready for an opencode restart.
+"""Comprehensive opencode readiness checker — prevents startup failures.
 
-Checks (order matters — fails fast on each phase):
-  1. opencode.json is valid JSON
-  2. All plugin paths declared in opencode.json exist on disk
-  3. node --check on every .ts file (syntax)
-  4. node --experimental-strip-types import on every .ts file (runtime load)
-  5. check_plugin_imports.py (import audit)
-  6. check_plugin_syntax.py (syntax audit)
+Checks ALL of:
+1. Every plugin registered in opencode.json exists on disk
+2. Every .ts file in .opencode/plugin/ has valid JS syntax (node --check)
+3. Every registered plugin has a valid default export
+4. No plugin imports a relative file that doesn't exist
+5. plugin-hashes.json matches actual files on disk
+6. opencode.json has valid JSON syntax
 
-Exits 0 only if ALL phases pass.  Prints a single-page PASS/FAIL summary.
+Usage:
+    python3 scripts/check_opencode_ready.py
+    python3 scripts/check_opencode_ready.py --base .opencode.orig
+
+    When --base is given, ALL file-existence and hash checks use that base
+    dir.  opencode.json is always read from repo root; only plugin-file and
+    manifest paths are remapped.
+
+Env vars:
+    GLUDD_PLUGIN_DIR — override plugin base directory (default: .opencode/)
 """
 
+from __future__ import annotations
+
+import argparse
+import hashlib
 import json
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OPECODE_JSON = ROOT / "opencode.json"
-PLUGIN_DIR = ROOT / ".opencode" / "plugin"
-PLUGINS_DIR = ROOT / ".opencode" / "plugins"
-SCRIPTS = ROOT / "scripts"
+DEFAULT_BASE = ROOT / ".opencode"
 
-RESET = "\033[0m"
-GREEN = "\033[32m"
-RED = "\033[31m"
-YELLOW = "\033[33m"
-BOLD = "\033[1m"
+RELATIVE_IMPORT_RE = re.compile(
+    r"""from\s+["'](\./|\.\./)([^"']+)["']""",
+    re.MULTILINE,
+)
+EXPORT_DEFAULT_RE = re.compile(r"^\s*export\s+default\s+", re.MULTILINE)
 
 
-def _ok(label: str) -> str:
-    return f"  {GREEN}PASS{RESET}  {label}"
+def _resolve_relative(base_dir: Path, prefix: str, spec: str) -> Path:
+    parts = prefix.rstrip("/").split("/")
+    resolved = base_dir
+    for part in parts:
+        if part == "..":
+            resolved = resolved.parent
+        elif part == ".":
+            pass
+    return (resolved / spec).resolve()
 
 
-def _fail(label: str, detail: str = "") -> str:
-    msg = f"  {RED}FAIL{RESET}  {label}"
-    if detail:
-        msg += f"\n        {YELLOW}{detail}{RESET}"
-    return msg
+# ── Check 6: opencode.json valid JSON + extract plugin names ─────────────
 
+def check_opencode_json(base_dir: Path) -> tuple[list[str], list[str]]:
+    """Parse opencode.json from repo root.
 
-def _check_json() -> tuple[bool, str]:
+    Returns ([absolute_paths_under_base], [errors]).
+    When base_dir != DEFAULT_BASE, paths are remapped to the alternate base.
+    """
+    config_path = ROOT / "opencode.json"
+    if not config_path.exists():
+        return [], [f"opencode.json not found at {config_path}"]
     try:
-        data = json.loads(OPECODE_JSON.read_text())
+        config = json.loads(config_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        return False, _fail("opencode.json valid JSON", str(e))
-    return True, _ok("opencode.json valid JSON")
+        return [], [f"opencode.json is invalid JSON: {e}"]
+    plugins_raw = config.get("plugin", [])
+    if not isinstance(plugins_raw, list):
+        return [], ["opencode.json 'plugin' field is not a list"]
+
+    plugin_files = []
+    for p in plugins_raw:
+        if not isinstance(p, str):
+            continue
+        # "./.opencode/plugin/foo.ts" → ".opencode/plugin/foo.ts"
+        rel = p[2:] if p.startswith("./") else p
+        # If using alternate base, swap the prefix
+        if base_dir != DEFAULT_BASE:
+            default_prefix = ".opencode/"
+            if rel.startswith(default_prefix):
+                rel = str(base_dir.relative_to(ROOT)) + "/" + rel[len(default_prefix):]
+        resolved = (ROOT / rel).resolve()
+        plugin_files.append(str(resolved))
+    return plugin_files, []
 
 
-def _check_plugin_paths() -> tuple[bool, str]:
+# ── Check 1: Registered plugins exist on disk ───────────────────────────
+
+def check_plugins_exist(plugin_files: list[str]) -> list[str]:
+    errors = []
+    for pf in plugin_files:
+        if not Path(pf).exists():
+            errors.append(f"MISSING: {Path(pf).name} (registered in opencode.json, not on disk)")
+    return errors
+
+
+# ── Check 2: JS syntax via node --check ─────────────────────────────────
+
+def check_ts_syntax(plugin_dir: Path, plugins_dir: Path) -> list[str]:
+    errors = []
+    for d in (plugin_dir, plugins_dir):
+        if not d.exists():
+            continue
+        for f in sorted(d.glob("*.ts")):
+            result = subprocess.run(
+                ["node", "--check", str(f)],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                stderr = result.stderr.strip()[:400]
+                errors.append(f"SYNTAX ERROR: {f.name} — {stderr}")
+    return errors
+
+
+# ── Check 3: Default exports on registered plugins ──────────────────────
+
+def check_default_exports(
+    plugin_dir: Path,
+    plugins_dir: Path,
+    registered_names: set[str],
+) -> list[str]:
+    errors = []
+    for d in (plugin_dir, plugins_dir):
+        if not d.exists():
+            continue
+        for f in sorted(d.glob("*.ts")):
+            if f.name not in registered_names:
+                continue
+            content = f.read_text(encoding="utf-8")
+            if not EXPORT_DEFAULT_RE.search(content):
+                errors.append(f"NO EXPORT DEFAULT: {f.name} (registered plugin, no default export)")
+    return errors
+
+
+# ── Check 4: Relative imports resolve to existing files ─────────────────
+
+def check_imports_resolve(plugin_dir: Path, plugins_dir: Path) -> list[str]:
+    errors = []
+    for d in (plugin_dir, plugins_dir):
+        if not d.exists():
+            continue
+        for f in sorted(d.glob("*.ts")):
+            content = f.read_text(encoding="utf-8")
+            for match in RELATIVE_IMPORT_RE.finditer(content):
+                prefix = match.group(1)
+                spec = match.group(2)
+                resolved = _resolve_relative(f.parent, prefix, spec)
+                if not resolved.exists():
+                    errors.append(
+                        f"IMPORT NOT FOUND: {f.name} imports '{prefix}{spec}' "
+                        f"— {resolved.name} does not exist"
+                    )
+    return errors
+
+
+# ── Check 5: plugin-hashes.json matches actual files ────────────────────
+
+def compute_hashes(plugin_dir: Path, plugins_dir: Path) -> dict[str, str]:
+    current: dict[str, str] = {}
+    for d, prefix in ((plugin_dir, ""), (plugins_dir, "plugins/")):
+        if not d.exists():
+            continue
+        for f in sorted(d.glob("*.ts")):
+            try:
+                key = f"{prefix}{f.name}"
+                current[key] = hashlib.sha256(f.read_bytes()).hexdigest()
+            except OSError:
+                continue
+    return current
+
+
+def check_hashes(plugin_dir: Path, plugins_dir: Path, base_dir: Path) -> list[str]:
+    errors = []
+    hashes_path = base_dir / "plugin-hashes.json"
+    current = compute_hashes(plugin_dir, plugins_dir)
+
+    if not current:
+        return []
+
+    if not hashes_path.exists():
+        errors.append(f"HASHES MISSING: plugin-hashes.json not found at {hashes_path}")
+        return errors
+
     try:
-        data = json.loads(OPECODE_JSON.read_text())
-    except json.JSONDecodeError:
-        return False, _fail("plugin paths exist", "json parse failed — skipping")
+        stored = json.loads(hashes_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        errors.append(f"HASHES INVALID JSON: {e}")
+        return errors
 
-    plugins = data.get("plugin", [])
-    if not plugins:
-        return True, _ok("plugin paths exist (0 declared)")
+    if not isinstance(stored, dict):
+        errors.append(f"HASHES INVALID: content is not a dict")
+        return errors
 
-    missing = []
-    for p in plugins:
-        resolved = (ROOT / p).resolve()
-        if not resolved.exists():
-            missing.append(p)
-    if missing:
-        return False, _fail(
-            "plugin paths exist",
-            f"{len(missing)} declared path(s) missing:\n        " + "\n        ".join(missing),
-        )
-    return True, _ok(f"plugin paths exist ({len(plugins)} declared)")
-
-
-def _get_registered_plugins() -> set[str]:
-    if not OPECODE_JSON.exists():
-        return set()
-    try:
-        data = json.loads(OPECODE_JSON.read_text())
-    except json.JSONDecodeError:
-        return set()
-    return {p for p in data.get("plugin", [])}
-
-
-def _collect_ts_files() -> list[Path]:
-    registered = _get_registered_plugins()
-    files = []
-    for d in (PLUGIN_DIR, PLUGINS_DIR):
-        if d.exists():
-            for f in sorted(d.glob("*.ts")):
-                rel = "./" + f.relative_to(ROOT).as_posix()
-                if rel in registered:
-                    files.append(f)
-    return files
-
-
-def _check_syntax() -> tuple[bool, str]:
-    errors = 0
-    lines = []
-    for f in _collect_ts_files():
-        result = subprocess.run(
-            ["node", "--check", str(f)],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode != 0:
-            errors += 1
-            lines.append(f"    {f.name}: {result.stderr.strip()[:200]}")
-    if errors:
-        return False, _fail(
-            f"node --check syntax ({errors} error(s))",
-            "\n".join(lines),
-        )
-    return True, _ok(f"node --check syntax ({len(_collect_ts_files())} files)")
-
-
-def _check_runtime_load() -> tuple[bool, str]:
-    all_ts = _collect_ts_files()
-    errors = 0
-    lines = []
-    for f in all_ts:
-        rel = f.relative_to(ROOT).as_posix()
-        script = "import('./" + rel.replace("'", "\\'") + "')"
-        result = subprocess.run(
-            ["node", "--experimental-strip-types", "-e", script],
-            capture_output=True, text=True, timeout=30,
-            cwd=str(ROOT),
-        )
-        if result.returncode != 0:
-            errors += 1
-            output = (result.stderr or result.stdout).strip()
-            lines.append(f"    {f.name}: {output[:200]}")
-    if errors:
-        return False, _fail(
-            f"node --experimental-strip-types runtime load ({errors} error(s))",
-            "\n".join(lines),
-        )
-    return True, _ok(f"node --experimental-strip-types runtime load ({len(all_ts)} files)")
-
-
-def _run_script(name: str) -> tuple[bool, str]:
-    script = SCRIPTS / name
-    if not script.exists():
-        return False, _fail(name, f"script not found: {script}")
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        capture_output=True, text=True, timeout=60,
+    new_files = sorted(set(current) - set(stored))
+    removed_files = sorted(set(stored) - set(current))
+    changed_files = sorted(
+        f for f in (set(current) & set(stored)) if current[f] != stored[f]
     )
-    if result.returncode != 0:
-        return False, _fail(
-            name,
-            result.stdout.strip()[-300:] or result.stderr.strip()[-300:],
+
+    for nf in new_files:
+        errors.append(f"HASHES UNTRACKED: {nf} on disk but not in manifest")
+    for rf in removed_files:
+        errors.append(f"HASHES STALE: {rf} in manifest but not on disk")
+    for cf in changed_files:
+        errors.append(f"HASHES MISMATCH: {cf} content differs from manifest")
+
+    return errors
+
+
+# ── Bonus: non-fatal warnings about known issues ────────────────────────
+
+def bonus_checks(plugin_dir: Path) -> list[str]:
+    warnings: list[str] = []
+
+    stop_file = plugin_dir / "enforce-stop.ts"
+    if stop_file.exists():
+        content = stop_file.read_text(encoding="utf-8")
+        imports_shared = (
+            "from \"./shared.ts\"" in content
+            or "from './shared.ts'" in content
         )
-    return True, _ok(name)
+        has_inline = "_isSubagent" in content and "_reportAlive" in content
+        if not imports_shared and has_inline:
+            warnings.append(
+                "WARNING: enforce-stop.ts has inline _isSubagent/_reportAlive "
+                "(pre-refactoring remnant — should import from shared.ts)"
+            )
+
+    dg_file = plugin_dir / "enforce-deletion-gate.ts"
+    if dg_file.exists():
+        content = dg_file.read_text(encoding="utf-8")
+        if "@opencode/core" in content and "@opencode-ai/plugin" not in content:
+            lines_with_core = [
+                line.strip() for line in content.splitlines()
+                if "@opencode/core" in line and not line.strip().startswith("//")
+            ]
+            if lines_with_core:
+                warnings.append(
+                    "WARNING: enforce-deletion-gate.ts imports from @opencode/core "
+                    "(all other plugins use @opencode-ai/plugin)"
+                )
+
+    known = {
+        "enforce-clean-tree.ts", "enforce-commit-lock.ts", "enforce-deadline.ts",
+        "enforce-delegate.ts", "enforce-deletion-gate.ts", "enforce-enhancement-ratio.ts",
+        "enforce-floor.ts", "enforce-make.ts", "enforce-multitask.ts",
+        "enforce-no-suppressions.ts", "enforce-no-wait.ts", "enforce-session-start.ts",
+        "enforce-stop.ts", "enforce-verified-claims.ts", "hot_reload.ts", "shared.ts",
+    }
+    for f in sorted(plugin_dir.glob("*.ts")):
+        if f.name not in known:
+            warnings.append(f"WARNING: unknown plugin file: {f.name} (not in known set)")
+
+    return warnings
 
 
-def _check_backup() -> tuple[bool, str]:
-    orig = ROOT / ".opencode.orig"
-    current = ROOT / ".opencode"
-    if not current.is_dir():
-        return True, _ok("backup fresh (no .opencode/ to back up)")
-    if not orig.is_dir():
-        return False, _fail(
-            "backup fresh",
-            ".opencode.orig/ does not exist — run 'make backup-opencode'",
-        )
-    current_mtime = current.stat().st_mtime
-    orig_mtime = orig.stat().st_mtime
-    if orig_mtime < current_mtime:
-        return False, _fail(
-            "backup fresh",
-            ".opencode.orig/ is older than .opencode/ — run 'make backup-opencode'",
-        )
-    return True, _ok("backup fresh")
+# ── Main ────────────────────────────────────────────────────────────────
 
+def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
 
-def main() -> int:
-    print(f"\n{BOLD}=== opencode restart readiness check ==={RESET}\n")
+    parser = argparse.ArgumentParser(description="Check opencode readiness")
+    parser.add_argument(
+        "--base",
+        default=None,
+        help=f"Plugin base directory (default: {DEFAULT_BASE})",
+    )
+    args = parser.parse_args(argv)
 
-    backup_ok, backup_msg = _check_backup()
-    checks: list[tuple[str, tuple[bool, str]]] = [
-        ("json", _check_json()),
-        ("paths", _check_plugin_paths()),
-        ("syntax", _check_syntax()),
-        ("runtime", _check_runtime_load()),
-        ("imports", _run_script("check_plugin_imports.py")),
-        ("syntax-audit", _run_script("check_plugin_syntax.py")),
-        ("backup", (backup_ok, backup_msg)),
-    ]
+    base_dir = Path(args.base).resolve() if args.base else DEFAULT_BASE.resolve()
+    plugin_dir = base_dir / "plugin"
+    plugins_dir = base_dir / "plugins"
 
-    all_pass = True
-    for _name, (ok, output) in checks:
-        print(output)
-        if not ok:
-            all_pass = False
+    all_errors: list[str] = []
+    all_warnings: list[str] = []
 
-    print()
-    if all_pass:
-        print(f"  {GREEN}{BOLD}=== ALL CHECKS PASSED ==={RESET}  .opencode/ is ready for restart.\n")
-        return 0
-    else:
-        print(f"  {RED}{BOLD}=== CHECKS FAILED ==={RESET}  Fix errors above before restarting opencode.\n")
+    # Check 6: Valid opencode.json + extract registered plugins (paths remapped to base_dir)
+    plugin_files, json_errors = check_opencode_json(base_dir)
+    all_errors.extend(json_errors)
+
+    registered_names = {Path(pf).name for pf in plugin_files}
+
+    # Check 1: Registered plugins exist on disk (under base_dir)
+    if plugin_files and not json_errors:
+        all_errors.extend(check_plugins_exist(plugin_files))
+
+    # Check 2: JS syntax
+    all_errors.extend(check_ts_syntax(plugin_dir, plugins_dir))
+
+    # Check 3: Default exports
+    all_errors.extend(check_default_exports(plugin_dir, plugins_dir, registered_names))
+
+    # Check 4: Imports resolve
+    all_errors.extend(check_imports_resolve(plugin_dir, plugins_dir))
+
+    # Check 5: Hash manifest
+    all_errors.extend(check_hashes(plugin_dir, plugins_dir, base_dir))
+
+    # Bonus warnings
+    all_warnings.extend(bonus_checks(plugin_dir))
+
+    # Report
+    label = f"base={base_dir.relative_to(ROOT) if str(base_dir).startswith(str(ROOT)) else base_dir}"
+    if all_errors:
+        print(f"\nOPENDCODE READINESS CHECK: FAILED ({len(all_errors)} errors) [{label}]")
+        for e in all_errors:
+            print(f"  ERROR: {e}")
+        if all_warnings:
+            print(f"\n  ({len(all_warnings)} warnings)")
+            for w in all_warnings:
+                print(f"  ! {w}")
         return 1
+
+    if all_warnings:
+        print(f"OPENDCODE READINESS CHECK: PASSED ({len(all_warnings)} warnings) [{label}]")
+        for w in all_warnings:
+            print(f"  ! {w}")
+        return 0
+
+    print(f"OPENDCODE READINESS CHECK: ALL PASSED [{label}]")
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

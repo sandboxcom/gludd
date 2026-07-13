@@ -26,6 +26,8 @@ SUBAGENT_GUARD_RE = re.compile(
     r'process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"'
 )
 
+ISUBAGENT_CALL_RE = re.compile(r'\b(isSubagent|_isSubagent)\(\)')
+
 BLANK_LINE_RE = re.compile(r"^\s*$")
 COMMENT_LINE_RE = re.compile(r"^\s*(//|/\*|\*)\s")
 
@@ -60,7 +62,7 @@ def _extract_first_substantive_lines(lines, start_from, count=10):
 def _check_guard_in_lines(substantive_lines):
     """Return True if the subagent guard pattern is found in the lines."""
     for line in substantive_lines:
-        if SUBAGENT_GUARD_RE.search(line):
+        if SUBAGENT_GUARD_RE.search(line) or ISUBAGENT_CALL_RE.search(line):
             return True
     return False
 
