@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
-import { loadHotModule, type HotModule } from "./hot_reload"
+import { loadHotModule, type HotModule } from "./hot_reload.ts"
 
 // enforce-deadline.ts — subagent task wall-clock timeout enforcement.
 //
@@ -240,8 +240,9 @@ export default (async ({ }) => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
       if (process.env.OPENCODE_SUBAGENT === "1") return;
-      const impl = loadHotModule("deadline", defaultImpl);
-      return impl.toolExecuteBefore(input, output);
+      const impl = loadHotModule("deadline", defaultImpl)
+      const fn = impl["tool.execute.before"]
+      return fn ? await fn(input, output) : undefined
     },
 
     "tool.execute.after": async (input: any, _output: any) => {

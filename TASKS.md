@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 — 117 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:6, W1:10, E:6, H:14, S:13).**
+**Last consolidated: 2026-07-12 Waves 11-12 FINAL — 111 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:0, W1:10, E:6, H:14, S:13).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -9,7 +9,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 4 | 6 | 33% |
-| W | Enforcement/Plugin hardening | 6 | 21 | 71% |
+| W | Enforcement/Plugin hardening | 0 | 21 | 100% |
 | C | Security/Correctness | 19 | 27 | 30% |
 | D | Feature Completeness | 19 | 22 | 14% |
 | X | XML Collection | 11 | 11 | 0% |
@@ -22,7 +22,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | G | AGENTS.md Codification | 0 | 5 | 100% |
 | H | Security Hardening | 14 | 23 | 39% |
 | S | Post-Ship | 13 | 21 | 38% |
-| **Total** | | **117** | **198** | **41%** |
+| **Total** | | **111** | **198** | **44%** |
 
 ---
 
@@ -49,12 +49,12 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] W.13 — Add AGENTS.md CRITICAL section: Self-Test Quality — Structural vs Behavioral | priority: high | effort: small | status: completed | evidence: 2026-07-12 — section added
 - [x] W.14 — Add `make reload-enforcement` target (resets all enforcement state files to pick up env var changes) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
 - [x] W.15 — Add runtime tests for enforce-no-wait.ts + enforce-deletion-gate.ts in test_hook_runtime.py | priority: medium | effort: medium | status: completed | evidence: 2026-07-12 waves 11-12
-- [ ] W.16 — Plugin hot-reload proxy pattern: convert all enforcement plugins to thin wrappers that delegate to /tmp/gludd-hot-*.js hot modules | priority: high | effort: medium | status: pending
-- [ ] W.17 — `make hot-reload-plugins` target: compile .ts plugin source to standalone JS hot modules | priority: high | effort: medium | status: pending
+- [x] W.16 — Plugin hot-reload proxy pattern: convert all enforcement plugins to thin wrappers that delegate to /tmp/gludd-hot-*.js hot modules | priority: high | effort: medium | status: completed | evidence: Waves 11-12 final — hot-reload proxy pattern on all 13 enforcement plugins, `make hot-reload-plugins` target
+- [x] W.17 — `make hot-reload-plugins` target: compile .ts plugin source to standalone JS hot modules | priority: high | effort: medium | status: completed | evidence: Waves 11-12 final — `make hot-reload-plugins` + `scripts/build_hot_modules.js`
 - [x] W.18 — CI pipeline discipline: ci-busy-check, ci-safe-push, deploy-and-forget targets | priority: high | effort: small | status: completed | evidence: scripts/ci_push_guard.py + tests/unit/test_ci_push_guard.py (11 tests passed), Makefile ci-busy-check/ci-safe-push/pre-push-check/push-guarded targets, push-dev gates on ci-busy-check, deploy-and-forget supports BRANCH=, ci_push_guard fail-open on gh unavailable
-- [ ] W.19 — Convert enforce-deadline.ts to hot-reload proxy pattern | priority: high | effort: small | status: pending
-- [ ] W.20 — Convert enforce-enhancement-ratio.ts to hot-reload proxy pattern | priority: high | effort: small | status: pending
-- [ ] W.21 — Convert enforce-floor.ts to hot-reload proxy pattern | priority: high | effort: small | status: pending
+- [x] W.19 — Convert enforce-deadline.ts to hot-reload proxy pattern | priority: high | effort: small | status: completed | evidence: Waves 11-12 final — all 13 enforcement plugins use hot-reload proxy pattern
+- [x] W.20 — Convert enforce-enhancement-ratio.ts to hot-reload proxy pattern | priority: high | effort: small | status: completed | evidence: Waves 11-12 final — all 13 enforcement plugins use hot-reload proxy pattern
+- [x] W.21 — Convert enforce-floor.ts to hot-reload proxy pattern | priority: high | effort: small | status: completed | evidence: Waves 11-12 final — all 13 enforcement plugins use hot-reload proxy pattern
 
 ---
 

@@ -383,6 +383,7 @@ class TestCapabilitiesMakeLanggraph:
         caps = AgentCapabilities()
         loop = caps.make_langgraph_tool_loop(
             model_gateway=MagicMock(),
+            role="coder",
             mcp_client=MagicMock(),
             mcp_registry=MagicMock(),
         )

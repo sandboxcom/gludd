@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- **2026-07-12** — Session 25, Waves 11-12 COMPLETED. On `development` branch, HEAD `89e93cbc`. Enforcement infrastructure fully hardened: all 10 plugins now BLOCKING (was 2 advisory-only), hot-reload proxy pattern for 3 plugins (enforce-floor, enforce-multitask, enforce-delegate), `make hot-reload-plugins` target, CI pipeline discipline tooling (ci-busy-check, ci-safe-push, deploy-and-forget), Phase S fixes (S.5-S.12, 6 fixes, 118+ new tests), functional hook test harness (68 runtime tests across 8 plugins). TASKS.md Waves 11-12 items completed.
+- **2026-07-12** — Session 25, Waves 11-12 FINAL. On `development` branch, HEAD `89e93cbc`. Hot-reload proxy pattern on all 13 enforcement plugins (enforce-floor, enforce-multitask, enforce-delegate, enforce-stop, enforce-deadline, enforce-enhancement-ratio, enforce-no-suppressions, enforce-no-wait, enforce-deletion-gate, enforce-session-start, enforce-clean-tree, enforce-verified-claims, watchdog), `make hot-reload-plugins` target, CI pipeline discipline tooling (ci-busy-check, ci-safe-push, deploy-and-forget), Phase S fixes (S.5-S.12, 6 fixes, 118+ new tests), H.5 humangate checkpointer (12 tests), functional hook test harness (68 runtime tests across 8 plugins). All W.16-W.21 hot-reload proxy + build targets completed.
 - **2026-07-12** — Session 25. On `development` branch, HEAD `db50eb0b` (Waves 6-9 pushed). Waves 6-8 landed: XML collection (9 roles, xml_utils.py, 47 tests), web collection (6 roles, web_utils.py 25 funcs, 76 tests), web_server collection (8 roles, web_server_utils.py, docs). Wave 9: e2e game test gap analysis — 2 CRITICAL, 1 HIGH, 2 MEDIUM findings.
 - 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 - **Wave 35 — Collection Split + Documentation:** TASKS.md Phase R expanded to 18 items. Collection FQCNs updated: `general_ludd.agent.{ssl_cert,hsm_operations,audit_framework,sql_injection,command_injection,prompt_injection}` → `general_ludd.security.*`. `docs/SECURITY_ROLES.md` + `docs/SSL_CERT_SYSTEM.md` FQCN references updated. Two new docs created: `docs/NETWORKING_SYSTEM.md` (networking role, 7 modes, ScapyAdapter, tool matrix, dissector templates) and `docs/BUSINESS_RESEARCH_SYSTEM.md` (entity_research role, 6 research capabilities, SearX monitoring, entity graph). README.md restructured from single collection section to 4 collection sub-sections (`general_ludd.agent`, `general_ludd.security`, `general_ludd.business`, `general_ludd.networking`) with FQCN tables and doc cross-references.
@@ -138,8 +138,9 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 10. **~~No integration hook tests~~** — FIXED Wave 11: `scripts/test_hook_runtime.py` with 52 runtime tests across 8 plugins, `make test-hook-runtime` wired into gate.
 11. **~~No hot-reload for plugin changes~~** — FIXED Wave 12: hot-reload proxy pattern for 3 plugins via `/tmp/gludd-hot-*.js` files; `make hot-reload-plugins` target.
 12. **~~2 test_hook_runtime failures~~** — FIXED Wave 12: 68 runtime tests pass.
-13. **Hot-reload requires `/tmp/gludd-hot-*.js` files to exist** — proxy plugins fall back to bundled code if hot files absent.
+13. **Hot-reload requires manual `make hot-reload-plugins` invocation** — hot modules must be built before enforcement fixes take effect at runtime. Proxy plugins fall back to bundled code if hot files absent.
 14. **CI pending on development** — pushed; awaiting CI verdict.
+15. **build_hot_modules.js may have residual brace-depth issues** — the build script uses regex-based JS parsing which may not handle deeply nested braces correctly in edge cases. Monitor for runtime errors after hot-reload.
 
 ## Next Steps
 
@@ -147,13 +148,12 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 2. [x] **Add `GLUDD_FLOOR_ENFORCE` env var to enforce-floor.ts** — DONE Wave 11.
 3. [x] **Commit + push** — `make ship-commit MSG='...'` + `make batch-push` for Waves 10-12 enforcement fixes. DONE `89e93cbc`.
 4. [x] **Activate hot-reload plugins** — `make hot-reload-plugins` deploys proxy code; no restart needed.
-5. [ ] **Verify enforcement blocks at runtime** — test that hot-reloaded plugins actually deny violations.
-6. [ ] **Fix e2e game gaps** — resolve game_over flag mismatch and missing lifecycle steps from Wave 9 gap analysis.
-7. [ ] **Re-run e2e game tests** — `make test TESTFILE=tests/e2e/` to verify fixes.
-8. [ ] **Fix `hot_reloader.py` SyntaxError** — parse/fix the error in `src/general_ludd/ornith/hot_reloader.py`.
-9. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
-10. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
-11. [ ] **Cut release tag** — after merge to master, run `make release-cut`.
+5. [ ] **Restart opencode or run `make hot-reload-plugins` + `make reload-enforcement`** — to activate enforcement fixes at runtime.
+6. [ ] **Verify enforcement blocks at runtime** — test that hot-reloaded plugins actually deny violations.
+7. [ ] **Fix e2e game gaps** — resolve game_over flag mismatch and missing lifecycle steps from Wave 9 gap analysis.
+8. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
+9. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
+10. [ ] **Cut release tag** — after merge to master, run `make release-cut`.
 
 ## Current Gate Status (2026-07-12)
 <!-- gate:begin -->
