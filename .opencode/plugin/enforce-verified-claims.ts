@@ -18,8 +18,14 @@
  * The matcher is exported as named constants + a `shouldBlock` function so
  * tests/unit/test_verified_claims_plugin.py can pin the behavior without a
  * JS runtime.
+ *
+ * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
+ * check /tmp/gludd-hot-verified-claims.js on every invocation.  If present
+ * and newer than cached, the hot module's hook overrides the compiled-in
+ * default.  Run `make hot-reload-plugins` after editing this file.
  */
 import type { Plugin } from "@opencode-ai/plugin"
+import { loadHotModule, type HotModule } from "./hot_reload.ts"
 import { isSubagent, reportAlive } from "./shared.ts"
 
 /**
@@ -116,27 +122,38 @@ export const shouldBlock = (text: string): boolean => {
   return !hasEvidence
 }
 
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+const defaultImpl: HotModule = {
+  "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
+    try {
+      if (isSubagent()) return output
+      if (process.env.GLUDD_VERIFIED_CLAIMS_ENFORCE === "0") return
+      if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
+      const text = output?.text ?? ""
+      if (shouldBlock(text)) {
+        output.text = BLOCK_MESSAGE
+      }
+    } catch {
+      // Fail-open: a broken hook must never wedge the editor or swallow
+      // the agent's real output. Leave the text untouched.
+    }
+  },
+}
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
 export default (async () => {
   return {
-    "experimental.text.complete": async (
-      _input: unknown,
-      output: { text: string },
-    ) => {
+    "experimental.text.complete": async (input: unknown, output: { text: string }) => {
       if (isSubagent()) return output
       console.log("SUBAGENT SKIP: enforce-verified-claims")
-      console.log("SUBAGENT SKIP: enforce-verified-claims")
       reportAlive("enforce-verified-claims")
-      try {
-        if (process.env.GLUDD_VERIFIED_CLAIMS_ENFORCE === "0") return
-        if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
-        const text = output?.text ?? ""
-        if (shouldBlock(text)) {
-          output.text = BLOCK_MESSAGE
-        }
-      } catch {
-        // Fail-open: a broken hook must never wedge the editor or swallow
-        // the agent's real output. Leave the text untouched.
-      }
+      const impl = loadHotModule("verified-claims", defaultImpl)
+      const fn = impl["experimental.text.complete"]
+      return fn ? await fn(input, output) : output
     },
   }
 }) satisfies Plugin

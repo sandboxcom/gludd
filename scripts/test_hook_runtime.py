@@ -1808,36 +1808,24 @@ def test_deletion_under_threshold_allowed():
     """Edit removing 1 line (below default threshold of 5) → allowed."""
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
-const plugin = mod.default
-const hook = plugin.hooks['tool.execute.before']
-let result
-try {{
-    const r = await hook({{tool: 'edit', args: {{file_path: '/tmp/nonexistent.txt', old_string: 'one line', new_string: ''}}}})
-    console.log(JSON.stringify(r ?? {{allowed: true}}))
-}} catch (e) {{
-    console.log(JSON.stringify({{permissionDecision: 'deny', message: e.message}}))
-}}
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{file_path: '/tmp/nonexistent.txt', old_string: 'one line', new_string: ''}}}}, undefined)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
     assert result is None or result.get("allowed") == True, f"Expected allowed for 1-line deletion, got: {result}"
 
 
 def test_deletion_over_threshold_blocked():
-    """Edit removing 10 lines (above default threshold of 5) → denied (throws Error)."""
+    """Edit removing 10 lines (above default threshold of 5) → denied."""
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
-const plugin = mod.default
-const hook = plugin.hooks['tool.execute.before']
-let result
-try {{
-    const r = await hook({{tool: 'edit', args: {{file_path: '/tmp/nonexistent2.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}})
-    console.log(JSON.stringify(r ?? {{allowed: true}}))
-}} catch (e) {{
-    console.log(JSON.stringify({{permissionDecision: 'deny', message: e.message}}))
-}}
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{file_path: '/tmp/nonexistent2.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}}, undefined)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
-    assert result is not None, "Expected deny object (thrown Error)"
+    assert result is not None, "Expected deny object"
     assert result.get("permissionDecision") == "deny", f"Expected deny for 10-line deletion, got: {result}"
     assert "exceeds threshold" in result.get("message", ""), f"Message missing threshold mention: {result}"
 
@@ -1846,15 +1834,9 @@ def test_deletion_subagent_guard():
     """OPENCODE_SUBAGENT=1 → deletion allowed even above threshold."""
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
-const plugin = mod.default
-const hook = plugin.hooks['tool.execute.before']
-let result
-try {{
-    const r = await hook({{tool: 'edit', args: {{file_path: '/tmp/nonexistent3.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}})
-    console.log(JSON.stringify(r ?? {{allowed: true}}))
-}} catch (e) {{
-    console.log(JSON.stringify({{permissionDecision: 'deny', message: e.message}}))
-}}
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{file_path: '/tmp/nonexistent3.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}}, undefined)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
     assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny", f"Subagent should bypass deletion gate, got: {result}"
@@ -1864,15 +1846,9 @@ def test_deletion_env_disabled():
     """GLUDD_DELETION_GATE_THRESHOLD=0 → deletion allowed above threshold."""
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
-const plugin = mod.default
-const hook = plugin.hooks['tool.execute.before']
-let result
-try {{
-    const r = await hook({{tool: 'edit', args: {{file_path: '/tmp/nonexistent4.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}})
-    console.log(JSON.stringify(r ?? {{allowed: true}}))
-}} catch (e) {{
-    console.log(JSON.stringify({{permissionDecision: 'deny', message: e.message}}))
-}}
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{file_path: '/tmp/nonexistent4.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}}, undefined)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_DELETION_GATE_THRESHOLD": "0"})
     assert result is None or result.get("allowed") == True, f"Expected allowed when threshold=0, got: {result}"

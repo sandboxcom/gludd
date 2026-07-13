@@ -54,6 +54,13 @@ def _extract_exports(content: str) -> set[str]:
     return names
 
 
+def _clean_import_name(name: str) -> str:
+    """Strip 'type ' prefix from import names (TypeScript type-only imports)."""
+    if name.startswith("type "):
+        return name[len("type "):]
+    return name
+
+
 def _extract_imports(content: str) -> set[str]:
     """Extract named imports from './shared' in a TypeScript source string."""
     names: set[str] = set()
@@ -61,11 +68,10 @@ def _extract_imports(content: str) -> set[str]:
     for m in IMPORT_RE.finditer(content):
         for name in m.group(1).split(","):
             n = name.strip()
-            # handle "foo as bar"
             if " as " in n:
                 n = n.split(" as ")[0].strip()
             if n:
-                names.add(n)
+                names.add(_clean_import_name(n))
     # Multi-line: import { ... } from "./shared"
     multi = re.finditer(
         r"""import\s*\{([^}]+)\}\s*from\s+["']\./shared(?:\.ts)?["']""",
@@ -80,7 +86,7 @@ def _extract_imports(content: str) -> set[str]:
                 if " as " in n:
                     n = n.split(" as ")[0].strip()
                 if n:
-                    names.add(n)
+                    names.add(_clean_import_name(n))
     return names
 
 

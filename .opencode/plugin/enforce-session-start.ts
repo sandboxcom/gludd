@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive } from "./shared.ts"
+import { loadHotModule, type HotModule } from "./hot_reload.ts"
 
 // enforce-session-start.ts — guarantees the FIRST actions of every session are:
 //   1. LOCATE work: read TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md
@@ -22,6 +23,10 @@ import { isSubagent, reportAlive } from "./shared.ts"
 //
 // FAIL-OPEN: every hook is wrapped in try/catch that returns the original
 // output/undefined. A plugin bug never wedges the session.
+//
+// HOT-RELOAD: implements the proxy pattern from hot_reload.ts. Hook functions
+// check /tmp/gludd-hot-enforce-session-start.js on every invocation. Run
+// `make hot-reload-plugins` after editing this file.
 
 // --- Config -----------------------------------------------------------------
 
@@ -202,10 +207,8 @@ function isTaskFileRead(tool: string, input: unknown): boolean {
   }
 }
 
-// --- Plugin -----------------------------------------------------------------
+// --- Heartbeat helper -------------------------------------------------------
 
-// Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
-// fires. Fail-open. Distinct from the shared alive.json.
 function _writeHeartbeat(): void {
   try {
     const hb = JSON.stringify({ plugin: "enforce-session-start", ts: Date.now(), pid: process.pid })
@@ -213,9 +216,155 @@ function _writeHeartbeat(): void {
   } catch { /* fail-open */ }
 }
 
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+const defaultImpl: HotModule = {
+  "experimental.chat.system.transform": async (
+    _input: unknown,
+    output: unknown,
+  ) => {
+    if (isSubagent()) return output
+    try {
+      const state = loadState()
+      if (typeof output === "string") {
+        const sessionAgeMs = Date.now() - state.started_at
+        const tasksStaleMs = TASKS_STALE_MINUTES * 60_000
+        const needsTasksNag = sessionAgeMs > tasksStaleMs && _lastTasksReadMtime === 0
+        const tasksNagText = needsTasksNag
+          ? [
+              "",
+              "══════════════════════════════════════════════════════════════",
+              "⛔  RULE 7: Read TASKS.md for current work — STALE SESSION",
+              "══════════════════════════════════════════════════════════════",
+              "",
+              `Session active for ${Math.round(sessionAgeMs / 60_000)} minutes.`,
+              "TASKS.md has NOT been read recently.",
+              "",
+              "Before generating any status claim or completion report:",
+              "  1. Read TASKS.md — what items are unchecked?",
+              "  2. Read BUGS.md — are there open incidents?",
+              "  3. Update them before claiming anything is done.",
+              "",
+              "See AGENTS.md Mechanical Contract rule 7.",
+              "",
+            ].join("\n")
+          : ""
+        const directive = tasksNagText + SESSION_START_DIRECTIVE
+        return directive + "\n\n" + output
+      }
+      return output
+    } catch {
+      return output
+    }
+  },
+
+  "tool.execute.before": async (
+    input: { tool?: string } & Record<string, unknown>,
+    _output: unknown,
+  ) => {
+    if (isSubagent()) return
+    reportAlive("enforce-session-start")
+    _writeHeartbeat()
+    let denyMessage: string | null = null
+    try {
+      const tool = String((input as { tool?: string }).tool ?? "")
+
+      if (sessionPrimed === true) return
+
+      const state = loadState()
+
+      if (isDispatchTool(tool)) {
+        state.dispatches += 1
+        if (!state.timeGateReset) {
+          state.timeGateReset = true
+        }
+        saveState(state)
+        updatePrimedLatch(state)
+        return
+      }
+
+      if (isTaskFileRead(tool, input)) {
+        if (!state.readsDone) {
+          state.readsDone = true
+          saveState(state)
+        }
+        try {
+          const blob = JSON.stringify(input ?? {}).toLowerCase()
+          if (blob.includes("tasks.md")) {
+            const tasksPath = path.join(process.cwd(), "TASKS.md")
+            _lastTasksReadMtime = fs.statSync(tasksPath).mtimeMs
+          }
+        } catch { /* ignore */ }
+        updatePrimedLatch(state)
+        return
+      }
+
+      if (isReadTool(tool)) {
+        updatePrimedLatch(state)
+        return
+      }
+
+      if (!state.timeGateReset && state.dispatches === 0) {
+        const elapsedSecs = (Date.now() - state.started_at) / 1000
+        if (elapsedSecs >= HARD_DENY_SECS) {
+          const msg = (
+            `⛔ TIME GATE: ${Math.round(elapsedSecs)}s elapsed with 0 ` +
+            `dispatches. Non-dispatch mutations DENIED. Dispatch >= ` +
+            `${EFFECTIVE_MIN} parallel subagents NOW.`
+          )
+          console.warn(msg)
+          if (ENFORCE) {
+            denyMessage = msg
+          }
+        } else if (elapsedSecs >= DISPATCH_NOW_SECS) {
+          const now = Date.now()
+          if (now - _lastTimeGateWarningTs > 30_000) {
+            _lastTimeGateWarningTs = now
+            console.warn(
+              `⛔ DISPATCH NOW: ${Math.round(elapsedSecs)}s elapsed, ` +
+              `0 dispatches. Hard deny at ${HARD_DENY_SECS}s. ` +
+              `Dispatch >= ${EFFECTIVE_MIN} parallel subagents immediately.`
+            )
+          }
+        }
+      }
+
+      if (updatePrimedLatch(state)) return
+
+      if (sessionIsFresh(state)) {
+        const msg = [
+          `[SESSION START PROTOCOL] readsDone=${state.readsDone},`,
+          `${state.dispatches}/${EFFECTIVE_MIN} dispatches so far.`,
+          `Locate work (TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md)`,
+          `then dispatch >= ${EFFECTIVE_MIN} parallel task/agent subagents`,
+          `BEFORE inline mutations. Reads and dispatches are allowed; this`,
+          `${tool} call is premature.`,
+        ].join(" ")
+        console.warn(msg)
+        if (ENFORCE) {
+          denyMessage = (
+            "SESSION START PROTOCOL: readsDone=" + state.readsDone +
+            ", " + state.dispatches + "/" + EFFECTIVE_MIN + " dispatches. " +
+            "Locate work then dispatch >= " + EFFECTIVE_MIN + " parallel " +
+            "subagents before doing inline mutations. Reads and dispatches " +
+            "are allowed. Set GLUDD_SESSION_START_ENFORCE=0 to make this " +
+            "advisory."
+          )
+        }
+      }
+    } catch {
+      // fail open — never wedge the session on a plugin bug
+    }
+    if (denyMessage) throw new Error(denyMessage)
+  },
+}
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
 export default (async ({ }) => {
-  // LOADED self-check: proves opencode invoked the factory (registered, not
-  // merely present on disk). Appended to the shared log.
+  // LOADED self-check: proves opencode invoked the factory
   try {
     fs.appendFileSync(
       "/tmp/gludd-plugin-loaded.log",
@@ -226,168 +375,25 @@ export default (async ({ }) => {
     )
   } catch { /* fail-open */ }
   return {
-    // Inject the SESSION START PROTOCOL banner at the top of the system prompt.
     "experimental.chat.system.transform": async (
       _input: unknown,
       output: unknown,
     ) => {
       if (isSubagent()) return output
-      console.log("SUBAGENT SKIP: enforce-session-start")
-      console.log("SUBAGENT SKIP: enforce-session-start")
-      try {
-        // Initialize per-session state so the tool.execute.before gate knows
-        // this is a fresh session.
-        const state = loadState()
-        if (typeof output === "string") {
-          // Gap 8: Mechanical Contract rule 7 — TASKS.md staleness nag.
-          // If the session has been active for >5 minutes and TASKS.md
-          // hasn't been read recently, inject a directive to re-read it.
-          const sessionAgeMs = Date.now() - state.started_at
-          const tasksStaleMs = TASKS_STALE_MINUTES * 60_000
-          const needsTasksNag = sessionAgeMs > tasksStaleMs && _lastTasksReadMtime === 0
-          const tasksNagText = needsTasksNag
-            ? [
-                "",
-                "══════════════════════════════════════════════════════════════",
-                "⛔  RULE 7: Read TASKS.md for current work — STALE SESSION",
-                "══════════════════════════════════════════════════════════════",
-                "",
-                `Session active for ${Math.round(sessionAgeMs / 60_000)} minutes.`,
-                "TASKS.md has NOT been read recently.",
-                "",
-                "Before generating any status claim or completion report:",
-                "  1. Read TASKS.md — what items are unchecked?",
-                "  2. Read BUGS.md — are there open incidents?",
-                "  3. Update them before claiming anything is done.",
-                "",
-                "See AGENTS.md Mechanical Contract rule 7.",
-                "",
-              ].join("\n")
-            : ""
-          const directive = tasksNagText + SESSION_START_DIRECTIVE
-          return directive + "\n\n" + output
-        }
-        return output
-      } catch {
-        return output
-      }
+      const impl = loadHotModule("enforce-session-start", defaultImpl)
+      const fn = impl["experimental.chat.system.transform"] || impl["system.transform"]
+      return fn ? await fn(_input, output) : output
     },
 
-    // Track reads + dispatches; gate premature mutations in a fresh session.
     "tool.execute.before": async (
       input: { tool?: string } & Record<string, unknown>,
       _output: unknown,
     ) => {
       if (isSubagent()) return
       console.log("SUBAGENT SKIP: enforce-session-start")
-      reportAlive("enforce-session-start")
-      _writeHeartbeat()
-      let denyMessage: string | null = null
-      try {
-        const tool = String((input as { tool?: string }).tool ?? "")
-
-        // Fix B: once this instance has observed the primed condition, the
-        // gate has done its job — skip ALL state-file I/O for every
-        // subsequent tool call. This is what stops the gate from policing
-        // every subagent's `make` call after the orchestrator's turn-1 duty.
-        if (sessionPrimed === true) return
-
-        const state = loadState()
-
-        // Count + record dispatches — they are what we want more of.
-        // First dispatch resets the time gate.
-        if (isDispatchTool(tool)) {
-          state.dispatches += 1
-          if (!state.timeGateReset) {
-            state.timeGateReset = true
-          }
-          saveState(state)
-          updatePrimedLatch(state)
-          return
-        }
-
-        // Reads of task-tracking files mark the "located work" flag.
-        if (isTaskFileRead(tool, input)) {
-          if (!state.readsDone) {
-            state.readsDone = true
-            saveState(state)
-          }
-          // Gap 8: record TASKS.md read mtime for staleness check
-          try {
-            const blob = JSON.stringify(input ?? {}).toLowerCase()
-            if (blob.includes("tasks.md")) {
-              const tasksPath = path.join(process.cwd(), "TASKS.md")
-              _lastTasksReadMtime = fs.statSync(tasksPath).mtimeMs
-            }
-          } catch { /* ignore */ }
-          updatePrimedLatch(state)
-          return
-        }
-
-        // Other reads are always allowed (the protocol WANTS investigation).
-        if (isReadTool(tool)) {
-          updatePrimedLatch(state)
-          return
-        }
-
-        // ⏱ Time-based dispatch gate — fires when dispatches remain at 0
-        // past configurable deadlines (60s warn, 120s deny). Resets on
-        // first successful dispatch (timeGateReset flag).
-        if (!state.timeGateReset && state.dispatches === 0) {
-          const elapsedSecs = (Date.now() - state.started_at) / 1000
-          if (elapsedSecs >= HARD_DENY_SECS) {
-            const msg = (
-              `⛔ TIME GATE: ${Math.round(elapsedSecs)}s elapsed with 0 ` +
-              `dispatches. Non-dispatch mutations DENIED. Dispatch >= ` +
-              `${EFFECTIVE_MIN} parallel subagents NOW.`
-            )
-            console.warn(msg)
-            if (ENFORCE) {
-              denyMessage = msg
-            }
-          } else if (elapsedSecs >= DISPATCH_NOW_SECS) {
-            const now = Date.now()
-            if (now - _lastTimeGateWarningTs > 30_000) {
-              _lastTimeGateWarningTs = now
-              console.warn(
-                `⛔ DISPATCH NOW: ${Math.round(elapsedSecs)}s elapsed, ` +
-                `0 dispatches. Hard deny at ${HARD_DENY_SECS}s. ` +
-                `Dispatch >= ${EFFECTIVE_MIN} parallel subagents immediately.`
-              )
-            }
-          }
-        }
-
-        // For any other tool (edit/write/bash/etc.) in a fresh, unprimed
-        // session: emit a loud reminder, and in ENFORCE mode hard-deny.
-        // If already primed (race-free check below), latch and allow.
-        if (updatePrimedLatch(state)) return
-
-        if (sessionIsFresh(state)) {
-          const msg = [
-            `[SESSION START PROTOCOL] readsDone=${state.readsDone},`,
-            `${state.dispatches}/${EFFECTIVE_MIN} dispatches so far.`,
-            `Locate work (TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md)`,
-            `then dispatch >= ${EFFECTIVE_MIN} parallel task/agent subagents`,
-            `BEFORE inline mutations. Reads and dispatches are allowed; this`,
-            `${tool} call is premature.`,
-          ].join(" ")
-          console.warn(msg)
-          if (ENFORCE) {
-            denyMessage = (
-              "SESSION START PROTOCOL: readsDone=" + state.readsDone +
-              ", " + state.dispatches + "/" + EFFECTIVE_MIN + " dispatches. " +
-              "Locate work then dispatch >= " + EFFECTIVE_MIN + " parallel " +
-              "subagents before doing inline mutations. Reads and dispatches " +
-              "are allowed. Set GLUDD_SESSION_START_ENFORCE=0 to make this " +
-              "advisory."
-            )
-          }
-        }
-      } catch {
-        // fail open — never wedge the session on a plugin bug
-      }
-      if (denyMessage) throw new Error(denyMessage)
+      const impl = loadHotModule("enforce-session-start", defaultImpl)
+      const fn = impl["tool.execute.before"]
+      return fn ? await fn(input, _output) : undefined
     },
   }
-}) as Plugin
+}) satisfies Plugin
