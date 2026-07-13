@@ -417,6 +417,9 @@ export default (async ({ }) => {
           }
         }
 
+        const m = trimmed.match(/^make\s+(\S+)/)
+        const lrTarget = m ? m[1] : ""
+
         // --- Long-running foreground command guard ----------------------------
         // Blocks `make gate` (~40 min), `make test-unit` (~27 min), bare
         // `make test`, `make qa`, `make test-e2e`, and `make validate` from
@@ -427,8 +430,6 @@ export default (async ({ }) => {
         // NOT blocked: make lint, make typecheck, make test-count,
         // make collect-check, and targeted runs (TESTFILE= / NO_XDIST=1).
         {
-          const m = trimmed.match(/^make\s+(\S+)/)
-          const lrTarget = m ? m[1] : ""
           const isGate = lrTarget === "gate"
           const isTestUnit = lrTarget === "test-unit"
           const isBareTest =
@@ -848,7 +849,8 @@ export default (async ({ }) => {
             }
           }
         }
-      },
+      }
+    },
 
     "tool.execute.after": async (input, output) => {
       if (input.tool === "bash") {

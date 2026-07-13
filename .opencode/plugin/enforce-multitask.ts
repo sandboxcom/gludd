@@ -13,8 +13,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
-export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "7", 10)
-export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES || "3", 10)
+export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "10", 10)
+export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES || "5", 10)
 export const MAX_ZERO_STREAK = 2
 export const WAVE_HISTORY_SIZE = 10
 const MAX_DISENGAGE_MS = 3_600_000
@@ -183,14 +183,14 @@ export default (async ({ }) => {
 
         // PER-MESSAGE DISPATCH ENFORCEMENT: non-dispatch tools blocked if
         // current message has <7 dispatches AND pending work exists.
-        if (!disengaged && hasPendingWork() && _state.thisMessageDispatches < 7) {
+        if (!disengaged && hasPendingWork() && _state.thisMessageDispatches < MIN_DISPATCHES) {
           const lt = tool.toLowerCase()
           if (lt === "edit" || lt === "write" || lt === "bash") {
             return {
               permissionDecision: "deny" as const,
               message: [
                 "INSUFFICIENT DISPATCHES: only " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
-                "Must dispatch \u22657 subagents when work exists. Add dispatches and resend.",
+                "Must dispatch \u2265" + String(MIN_DISPATCHES) + " subagents when work exists. Add dispatches and resend.",
                 "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
                 "Run 'make disengage-enforcement' to bypass.",
               ].join("\n"),
@@ -269,10 +269,10 @@ export default (async ({ }) => {
           }
         } catch {}
 
-        if (!disengagedText && _state.prevMessageDispatches > 2 && _state.prevMessageDispatches < 7 && hasPendingWork()) {
+        if (!disengagedText && _state.prevMessageDispatches > 2 && _state.prevMessageDispatches < MIN_DISPATCHES && hasPendingWork()) {
           return {
             text: [
-              "⛔ MESSAGE BLOCKED: must dispatch ≥7 subagents when work remains.",
+              "⛔ MESSAGE BLOCKED: must dispatch \u2265" + String(MIN_DISPATCHES) + " subagents when work remains.",
               "Instead got " + String(_state.prevMessageDispatches) + " dispatch(es).",
               "Resend with more task/agent/workflow dispatches.",
               "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",

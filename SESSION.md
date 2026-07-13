@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- **2026-07-12** — Session 25 CLOSED. On `development` branch, HEAD `d9b080a0`. All 13 Waves completed: 17 todo items tracked, 12 completed. 3 collections (XML:9 roles, Web:6 roles, Web Server:8 roles). Enforcement: 10/10 plugins BLOCKING, hot-reload proxy functional, 68 runtime tests. Phase S/H/C/D fixes landed. AG evaluation framework design doc created. ~1300+ new tests across collections + enforcement + phase fixes. 125 of 214 TASKS.md items completed (59%).
+- **2026-07-12 — Session 25 CLOSURE (FINAL).** On `development` branch, HEAD `3c81b1b1`. All 13+ Waves completed. 17 session todos tracked, 17 completed. 4 collections (XML:9 roles, Web:6 roles, Web Server:8 roles, Security:6+ roles). Enforcement: 10/10 plugins BLOCKING, hot-reload proxy on 13 plugins, 68+ runtime tests, enforce-make.ts syntax fix landed. TDD compliance guardrail (scripts/check_tdd_compliance.py). Floor 7→10 restored. Phase S/H/C/D/AG fixes landed. Agent evaluation framework design doc + AG.6 agent roles. Coverage audit tooling. Disk cleanup (agent-cleanup-many). 125 of 214 TASKS.md items completed (59%). ~1400+ new tests across collections + enforcement + phase fixes.
 - 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 - **Wave 35 — Collection Split + Documentation:** TASKS.md Phase R expanded to 18 items. Collection FQCNs updated: `general_ludd.agent.{ssl_cert,hsm_operations,audit_framework,sql_injection,command_injection,prompt_injection}` → `general_ludd.security.*`. `docs/SECURITY_ROLES.md` + `docs/SSL_CERT_SYSTEM.md` FQCN references updated. Two new docs created: `docs/NETWORKING_SYSTEM.md` (networking role, 7 modes, ScapyAdapter, tool matrix, dissector templates) and `docs/BUSINESS_RESEARCH_SYSTEM.md` (entity_research role, 6 research capabilities, SearX monitoring, entity graph). README.md restructured from single collection section to 4 collection sub-sections (`general_ludd.agent`, `general_ludd.security`, `general_ludd.business`, `general_ludd.networking`) with FQCN tables and doc cross-references.
 - **SSL cert system docs** — `docs/SSL_CERT_SYSTEM.md` created: architecture overview, 2 Ansible role specifications, 4 data file formats, 5 Python module APIs, 6-standard compliance matrix, security considerations. TASKS.md F.6 ticked, CHANGELOG entry added.
@@ -149,20 +149,20 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 5. **No release tag cut** — next version tag not yet created; blocked on gate green + merge.
 6. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used; `make gate-lite` is the local approximation.
 7. **Connector gaps** — no WebSocket or reconnect logic (feature requests, not blocking).
-8. **Hot-reload requires manual `make hot-reload-plugins` invocation** — hot modules must be built before enforcement fixes take effect at runtime. Proxy plugins fall back to bundled code if hot files absent.
-9. **Enforcement may fire in subagent context** — `OPENCODE_SUBAGENT=1` guard added + file-based fallback (`/tmp/gludd-subagent-${pid}.json`) implemented. Some edge cases remain under investigation.
+8. **Hot-reload requires manual `make hot-reload-plugins` invocation** — hot modules must be built before enforcement fixes take effect at runtime. Proxy plugins fall back to bundled code if hot files absent. Automating this (auto-build on source change) remains open.
+9. **Enforcement subagent isolation** — OPENCODE_SUBAGENT guard + file-based fallback in place; verify-plugin-manifest recursion fix landed (commit `545306b3`); `_isSubagent` infinite recursion fix landed (commit `5ce6065d`); 21 subagent detection tests added. End-to-end confirmation still pending opencode restart.
 10. **Tetris score remains flaky** — nondeterministic scoring in game e2e tests.
-11. **OPENCODE_SUBAGENT env var unconfirmed in subagent context** — the env-var guard relies on the opencode framework setting `OPENCODE_SUBAGENT=1` for subagents. If the framework doesn't set it, file-based fallback detection (`/tmp/gludd-subagent-${pid}.json`) provides a workaround. Not yet confirmed working end-to-end.
-12. **AG evaluation framework not yet implemented** — design doc created but Phase AG items (AG.1-AG.16) remain pending.
+11. **AG evaluation framework not yet implemented** — design doc created (AG.1), AG.6 agent roles implemented (8 tests). AG.2-AG.5, AG.7-AG.16 remain pending.
 
 ## Next Steps
 
-1. [ ] **Verify OPENCODE_SUBAGENT env var in subagent context** — confirm whether the opencode framework sets this env var for dispatched subagents. The file-based fallback (`/tmp/gludd-subagent-${pid}.json`) works as backup.
-2. [ ] **Continue Phase AG items** — AG.1-AG.16: agent evaluation framework, lifecycle hooks, hierarchical task decomposition, tool permission scoping, cross-conversation memory, and 11 more items.
-3. [ ] **Fix CI RED on development** — run 29213743760 must be green before merge.
-4. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
-5. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
-6. [ ] **Cut beta.2 release tag** — after merge to master, run `make release-cut TAG=v0.1.0-beta.2`.
+1. [ ] **Restart opencode** — to pick up plugin source changes (hot-reload proxies load on startup).
+2. [ ] **Verify enforcement blocks at runtime** — after restart, `make test-hook-runtime` should show all plugins enforcing correctly.
+3. [ ] **Continue Phase AG items** — AG.2-AG.5, AG.7-AG.16: lifecycle hooks, hierarchical task decomposition, tool permission scoping, cross-conversation memory, delegation/handoff, checkpoint branching, named passes, budget envelopes, map-reduce patterns, code sandbox, conversation-driven orchestration, DSPy optimization, reflexion loops, external benchmarks.
+4. [ ] **Fix CI RED on development** — run 29213743760 must be green before merge.
+5. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
+6. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
+7. [ ] **Cut beta.2 release tag** — after merge to master, run `make release-cut TAG=v0.1.0-beta.2`.
 
 ## Current Gate Status (2026-07-12)
 <!-- gate:begin -->

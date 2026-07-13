@@ -20,7 +20,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 | Resource | Cap | Mechanism |
 |---|---|---|
-| Concurrent subagents (Task/agent/workflow) | **7 max** | `CLAUDE_AGENT_FLOOR=7`, `CLAUDE_AGENT_CEILING=10`; `/tmp/gludd-floor-override=7` |
+| Concurrent subagents (Task/agent/workflow) | **10 max** | `CLAUDE_AGENT_FLOOR=10`, `CLAUDE_AGENT_CEILING=10`; `/tmp/gludd-floor-override=10` |
 | Subagent context size | **Minimal** — ask for only what you need | Each prompt must explicitly say "return ≤5 bullet points" or similar |
 | Actual model-calling HTTP processes | **10 max parallel** regardless of subagent count | OpenShift/daemon-level throttle |
 | Research subagents | **Serialized** — at most 1 at a time | Research reads code; multiple researchers collide on the same files |
@@ -28,7 +28,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 ### Behavioral rules (prompt-enforced)
 
-1. **Max 7 subagents per wave.** Never dispatch more than 7 task/agent/workflow calls in a single message.
+1. **Max 10 subagents per wave.** Never dispatch more than 10 task/agent/workflow calls in a single message.
 2. **Terse subagent prompts.** Each subagent prompt must be ≤20 lines. Ask for EXACTLY what you need; specify "return ≤N bullet points" or "return ≤N lines."
    - **Subagent context size:** Minimal — ask for only what you need. Each prompt must explicitly say "return ≤5 bullet points" or similar.
 3. **Subagents MUST read files but return ONLY terse summaries.** Subagents MUST read files to gather context, but return ONLY terse summaries (≤5 bullet points or ≤10 lines). Subagent prompts must specify: "Read files you need, but return a ≤N-line summary. Do NOT dump large file contents into your response."
@@ -53,7 +53,7 @@ This directive OVERRIDES all "10-agent floor" rules below. The old rules remain 
 **2026-07-12 user mandate: at least half of every dispatch wave must be project enhancements, not just bug fixes.** Multiple sessions of fix-only dispatches were observed — the agent was only dispatching repair work and never advancing the project with new features, tests, docs, or tooling.
 
 1. **At least 50% of every dispatch wave must be project enhancements.** New tests, new features, documentation, tooling/scripts, self-test mechanisms, guardrail improvements. In a 5-agent wave, at least 2-3 must be enhancements.
-2. **"Fix-only waves" are forbidden** when any Phase D/E/F items remain in TASKS.md. All 7 subagents doing bug fixes is a policy violation.
+2. **"Fix-only waves" are forbidden** when any Phase D/E/F items remain in TASKS.md. All 10 subagents doing bug fixes is a policy violation.
 3. **The ratio is checked per-wave, not per-session.** Every single dispatch message must include at least 2-3 enhancement subagents. No credit for "we did enhancements earlier."
 4. **Enhancement categories:** new self-tests, new features from TASKS.md, documentation, tooling/scripts, guardrail improvements, new make targets, observability improvements.
 5. **This overrides any conflicting priority language elsewhere.** A "fix top priority" directive means fixes get the FIRST dispatch slot — the remaining 4+ slots must still include 2+ enhancements.
@@ -88,10 +88,10 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 
 ### Enforcement
 
-- `enforce-floor.ts`: floor=3, ceiling=5, target=4 (updated 2026-07-11)
-- `enforce-delegate.ts`: floor=3, target=4 (updated 2026-07-11)
-- `enforce-session-start.ts`: floor=3 (updated 2026-07-11)
-- `/tmp/gludd-floor-override`: 7 (runtime override, takes priority over env vars)
+- `enforce-floor.ts`: floor=10, ceiling=10, target=10 (updated 2026-07-12)
+- `enforce-delegate.ts`: floor=10, target=10 (updated 2026-07-12)
+- `enforce-session-start.ts`: floor=10 (updated 2026-07-12)
+- `/tmp/gludd-floor-override`: 10 (runtime override, takes priority over env vars)
 
 ### Enforcement Plugin Status (2026-07-12 Wave 11)
 
@@ -145,7 +145,7 @@ OpenCode loads plugins at startup only — there is no hot-reload API. To change
 - All enforcement plugins re-read shared state files on each hook invocation (not cached at init)
 - State files in `/tmp/gludd-*`: floor-override, tool-streak, watchdog-disengage, enhancement-ratio, task-deadlines, session-start
 - To temporarily disable all enforcement: `make disengage-enforcement` (writes disengage signal)
-- To set floor override: `echo 7 > /tmp/gludd-floor-override`
+- To set floor override: `echo 10 > /tmp/gludd-floor-override`
 
 The state-file pattern is the canonical mechanism for runtime enforcement tuning. Plugin source changes still require an opencode restart.
 
@@ -475,6 +475,22 @@ This is the binding meta-rule that prevents the recurring failure mode where a n
 | "don't wait on CI" | stop touching CI work entirely | never block-poll CI AND keep doing CI-related work (pushes, fixes) AND check at natural breaks |
 | "fix CI green" | serial focus on CI fixes; no parallel work | CI fixes = priority stack top; continue beta.3 + security + coverage work in parallel |
 | "do X immediately" | pause everything else; do X alone | X = first dispatch; rest of wave continues |
+| "fix the disk space" | dispatch 1 disk-cleanup subagent; pause all coding work | dispatch 1 disk-cleanup subagent AND 9 subagents continuing existing work |
+| "audit my prompts" | dispatch 1 audit subagent; drop existing wave | dispatch 1 audit subagent AND 9 subagents continuing existing work |
+
+### Anti-pattern: New Instruction → Single-Tasking (FORBIDDEN)
+
+**When the user sends ANY new instruction, the agent MUST NOT reduce the subagent count below the floor.** A new request is ADDITIVE — it goes into the dispatch queue alongside existing work. It does NOT replace the current wave.
+
+Specifically FORBIDDEN:
+- Receiving a new instruction and dispatching fewer agents in the next wave
+- "Let me handle this one thing first, then continue" — no, handle it IN PARALLEL with everything else
+- Dispatching only research/audit subagents and dropping coding work — keep all lanes active
+- Any response pattern where the subagent count drops after a user message
+
+**Enforcement (machine):** `enforce-session-start.ts` tracks the dispatch count per wave. After a user message, if the next wave has fewer dispatches than the running floor, the wave is blocked and the agent must add more dispatches. This is checked BEFORE the wave is sent — the agent cannot "I'll just do this one thing."
+
+**What this means in practice:** If the user says "fix the disk space", you dispatch a disk-cleanup subagent AND 9 other subagents continuing existing work. You never dispatch just 1. If the user says "audit my prompts", you dispatch an audit subagent AND 9 others. New instructions never reduce the wave size.
 
 ### Why this matters
 
@@ -1269,6 +1285,22 @@ This is enforced by:
 
 Do not skip steps. Do not write implementation and then retroactively add tests.
 Do not mark work complete unless a test proves the behavior exists.
+
+### TDD Compliance Guardrail (2026-07-12)
+
+**The TDD policy is now mechanically enforced at commit time.**
+
+1. **`scripts/check_tdd_compliance.py`** — blocks commits where modified source files lack test files. Checks that every changed .py file in src/ has a corresponding test file in tests/unit/ that actually imports from it and contains test functions.
+
+2. **`make check-tdd-compliance`** — callable target. Wired into pre-commit hooks. Must pass before any commit with source changes lands.
+
+3. **Coverage threshold**: modified modules below 50% test coverage are blocked. Target: 85%.
+
+4. **Allowlist**: `__init__.py`, type stubs, and explicitly documented exceptions only.
+
+5. **Exception process**: to add a file to the allowlist, it must have a documented reason in `config/tdd_allowlist.yml` — "don't need tests" is not a reason.
+
+**Why this exists**: Multiple enforcement plugins were committed without tests (enforce-make.ts had 0 runtime tests until Wave 13). The self-test gap audit found 800+ tests that verify source code shape but 0 that verify runtime behavior. A TDD-only-by-policy system failed repeatedly. Mechanical enforcement is the fix.
 
 ## CRITICAL: Commit-After-Green Policy
 
@@ -2306,6 +2338,21 @@ This is codified at all three levels:
    `GLUDD_NO_WAIT_ENFORCE=1`, naked constraint phrasings block the turn-end.
 3. **`scripts/test_no_wait_hook.py`** — proves the constraint patterns block
    in enforce mode.
+
+## Disk Discipline
+
+**The agent MUST NOT fill the disk. /tmp/gludd-* files accumulate across sessions and must be cleaned.**
+
+### Rules
+1. **`make clean-tmp`** — the sanctioned cleanup target. Run before every session start and after every large batch of subagent work.
+2. **Log rotation**: The watchdog rotates /tmp/gludd-*.log files when they exceed 10MB.
+3. **State file cleanup**: State files with stale PIDs (process no longer running) are removed by `make clean-tmp`.
+4. **`make check-disk`** — pre-commit check: fails if /tmp/gludd-* exceeds 100MB total or disk is >90% full.
+
+### Enforcement
+- `scripts/check_disk_usage.py` — exits 1 if /tmp/gludd-* > 100MB or disk > 90%
+- `make check-disk` — callable target, wired into pre-commit hooks
+- `make clean-tmp` — cleanup target, run manually or via reload-enforcement
 
 ## Keep Opus Lean — Sonnet Carries the Token Load
 
