@@ -4,6 +4,57 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased] — since beta.3 (2026-07-12) — Session 25 Final: 17 todos, 12 completed, 3 collections, 10/10 plugins BLOCKING, 59% TASKS.md completion
 
+### Session 25 (2026-07-12) — Enforcement Infrastructure + 4 Collections + Phase S/H/C/D/E/AG Fixes
+
+**Enforcement Infrastructure:**
+- All 10 enforcement plugins converted from advisory to BLOCKING
+- Plugin hot-reload proxy pattern — enforcement code changes take effect via `make hot-reload-plugins`
+- Functional hook test harness: 85 runtime tests across 8+ plugins (test_hook_runtime.py)
+- enforce-make.ts: now blocks non-make bash commands + metacharacters with permissionDecision:deny
+- enforce-deadline.ts: now blocks tasks exceeding timeout (was console.warn only)
+- enforce-enhancement-ratio.ts: now blocks fix-only dispatch waves (was advisory)
+- GLUDD_FLOOR_ENFORCE env var escape hatch added to enforce-floor.ts
+- text.complete dedup across 6 competing plugins
+- _isSubagent() infinite recursion fixed in all 14 plugins
+- OPENCODE_SUBAGENT file-based fallback detection added
+- verify-plugin-manifest: now detects _isSubagent recursion bugs (62 checks)
+- verify-enforcement: confirms all 10 plugins BLOCKING
+- CI pipeline discipline: ci-safe-push, ci-busy-check, deploy-and-forget
+- Subagent floor raised 7→10 in all enforcement config
+
+**New Tooling:**
+- coverage-gaps checker: codified audit scanning 570 modules (make check-coverage-gaps)
+- TDD compliance guardrail: pre-commit check for test coverage on modified source files
+- TDD allowlist config: documented exemptions
+- Disk discipline: cleanup target (497MB freed), log rotation in watchdog, pre-commit disk check
+- reload-enforcement / disengage-enforcement / rearm-enforcement / enforcement-status targets
+- e2e enforcement chain test: 30 tests verifying full multi-plugin hook chain
+
+**Collections Created:**
+- general_ludd.xml (9 roles): xml_core, xsd_generator, xslt_transformer, html_processor, soap_handler, saml_processor, docbook_converter, gradle_parser, plist_parser
+- general_ludd.web (6 roles): html_css_core, javascript_debug, design_research, framework_integration, ux_engineering, design_system
+- general_ludd.web_server (8 roles): http_server, ssl_config, cgi_wsgi, logging_middleware, reverse_proxy, forward_proxy, load_balancer, security_hardening
+- log_prompt_evaluator role: analyze agent prompts + CoT, score quality, recommend improvements
+
+**Fixes Applied (34 items across 6 phases):**
+- Phase S: S.5 details NOT NULL, S.6 task_type substring, S.9 applier bypass, S.10 integrity path, S.11 validation cwd, S.12 bunx pin, S.13 DB FK, S.14 daemon sleep async, S.15 dispatch sentinel, S.16 run_until_complete, S.17 migration batch, S.18 unused deps
+- Phase H: H.3 readyz, H.4 langgraph-auditor, H.5 humangate checkpointer, H.6 langgraph-factory, H.9 MCP stopall, H.10 uvx pin, H.13 Ornith sandbox, H.14 priority bound, H.19 stream CMDI
+- Phase C: C.5 integrity store, C.17 git-automation, C.19 cross-tenant traces, C.21 alpha4 leftovers, C.24 daemon network defaults, C.26 async-lifecycle
+- Phase D: D.7.1 pause-resume, D.10 file-claim livelock
+- Phase E: E.4 noqa guardrail 3-layer, E.10 DB session across dispatch
+- Phase AG: AG.1 eval framework design doc, AG.2 lifecycle hook expansion design, AG.6 formal agent role metadata
+
+**Documentation:**
+- docs/XML_COLLECTION.md (975 lines)
+- docs/WEB_COLLECTION.md (1442 lines)
+- docs/WEB_SERVER_COLLECTION.md (1066 lines)
+- docs/LOG_PROMPT_EVALUATOR.md (260 lines)
+- docs/AGENT_EVALUATION_FRAMEWORK.md
+- docs/LIFECYCLE_HOOK_EXPANSION.md
+- AGENTS.md: self-test quality rule, plugin tuning, subagent isolation, disk discipline, priority stacking reinforcement, TDD compliance guardrail
+
+---
+
 ### Collections (Session 25)
 
 - **XML Collection** (`general_ludd.xml`) — 9 Ansible roles for XML/HTML/SOAP/SAML/DocBook/DITA/Gradle/plist/XSD/XSLT processing. Shared `xml_utils.py` module (16 functions: parse, validate, transform, query, diff, canonicalize, schema-generate, namespace-resolve, entity-escape, pretty-print, merge, split, extract, xinclude-resolve, xpointer-eval, catalog-resolve). `docs/XML_COLLECTION.md` (975 lines). 47 unit tests.

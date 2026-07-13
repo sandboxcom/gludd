@@ -67,7 +67,8 @@ def parse_conversation_log(log_path: str | Path) -> list[dict[str, Any]]:
 
 def _try_parse_json(text: str) -> dict[str, Any] | None:
     try:
-        return json.loads(text)
+        result: Any = json.loads(text)
+        return result if isinstance(result, dict) else None
     except (json.JSONDecodeError, TypeError):
         pass
     return None
@@ -578,11 +579,10 @@ def _compute_variant_metrics(conversation: list[dict[str, Any]]) -> dict[str, An
 
 
 def _score_variant(metrics: dict[str, Any]) -> float:
-    return (
-        metrics["task_completion_rate"] * 40.0
-        + (1.0 / max(1, metrics["tokens_per_task"] / 100)) * 30.0
-        + (10.0 - min(10, metrics["total_errors"])) * 3.0
-    )
+    tcr = float(metrics["task_completion_rate"])
+    tpt = float(metrics["tokens_per_task"])
+    te = float(metrics["total_errors"])
+    return tcr * 40.0 + (1.0 / max(1.0, tpt / 100.0)) * 30.0 + (10.0 - min(10.0, te)) * 3.0
 
 
 def generate_report(analyses: list[dict[str, Any]], format: str = "markdown") -> str:
