@@ -39,14 +39,6 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
 
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
-let _bashPolicyNudge = false
-
-// Turn state for text.complete bypass (BUG #16 fix)
-const DISPATCH_TOOLS_MAKE = new Set(["task", "agent", "workflow"])
-const _makeTurnState: { dispatchCount: number; toolCallMade: boolean } = {
-  dispatchCount: 0,
-  toolCallMade: false,
-}
 
 // --- Non-behavioral edit detection ------------------------------------------
 // Returns true when an edit only touches comments (# ...) and/or docstring
@@ -353,12 +345,6 @@ const defaultImpl: HotModule = {
         if (_sub) { return }
         reportAlive("enforce-make")
 
-        // BUG #16 fix: track tool calls and dispatches for text.complete bypass
-        _makeTurnState.toolCallMade = true
-        if (DISPATCH_TOOLS_MAKE.has(input.tool)) {
-          _makeTurnState.dispatchCount++
-        }
-
         if (input.tool === "bash") {
           let command = ""
           const oc = (output as any)?.args?.command
@@ -372,12 +358,11 @@ const defaultImpl: HotModule = {
             if (typeof dc === "string" && dc.trim()) command = dc.trim()
           }
           if (!command) return
-          const trimmed = command
+          const trimmed = command.replace(/^\$\s*/, "").trim()
 
           if (MAKE_ENFORCE) {
             if (trimmed && SHELL_META_CHARS.test(trimmed)) {
               const matched = trimmed.match(SHELL_META_CHARS)
-              _bashPolicyNudge = true
               throw new Error(
                 formatBashBlockedMessage(
                   trimmed,
@@ -390,7 +375,6 @@ const defaultImpl: HotModule = {
             }
 
             if (!trimmed.startsWith("make ") && trimmed !== "make") {
-              _bashPolicyNudge = true
               throw new Error(formatBashBlockedMessage(trimmed, "Command does not start with 'make'"))
             }
           }
@@ -876,9 +860,6 @@ const defaultImpl: HotModule = {
       "session.idle": async () => {
         _pendingCommitReminder = false
         _pendingPreflightGate = ""
-        _bashPolicyNudge = false
-        _makeTurnState.dispatchCount = 0
-        _makeTurnState.toolCallMade = false
       },
 
       "experimental.chat.system.transform": async (_input, output) => {
@@ -968,35 +949,7 @@ const defaultImpl: HotModule = {
         return output // FORBIDDEN stop patterns enforced by this contract + response.transform hook
       },
 
-      // --- Per-chunk state-based block (port of enforce-stop.ts text.complete) ---
-      "experimental.text.complete": async (_input, output) => {
-        // process.env.OPENCODE_SUBAGENT guard
-        if (isSubagent()) return output
-        if (typeof output?.text !== "string") return output
 
-        if (_bashPolicyNudge) {
-          _bashPolicyNudge = false
-          const BASH_POLICY_NUDGE = [
-            "",
-            "⛔ BASH POLICY NUDGE — NON-MAKE COMMAND BLOCKED",
-            "",
-            "A non-make bash command was attempted and BLOCKED by enforce-make.",
-            "Only `make <target>` commands are permitted. Example: `make test`,",
-            "`make lint`, `make gate-refresh`. All other commands (ls, echo,",
-            "python3, git, cat, which, pwd, whoami, etc.) are FORBIDDEN.",
-            "",
-            "If you need a command:\n  1. Create a Makefile target for it.\n  2. Run `make <target>`.",
-            "See AGENTS.md Bash Command Policy.",
-            BASH_METACHAR_POLICY,
-          ].join("\n")
-          output.text = output.text + "\n" + BASH_POLICY_NUDGE
-          return output
-        }
-
-        return output
-      },
-
-      // (response.transform migrated to text.complete above, 2026-07-01)
     }
 
 // ============================================================================
@@ -1026,12 +979,5 @@ export default (({ }) => {
       return fn ? await fn(_input, output) : output
     },
 
-    "experimental.text.complete": async (_input, output) => {
-      // process.env.OPENCODE_SUBAGENT guard
-      if (isSubagent()) return output
-      const impl = loadHotModule("enforce-make", defaultImpl)
-      const fn = impl["experimental.text.complete"] || impl["text.complete"]
-      return fn ? await fn(_input, output) : output
-    },
   }
 }) satisfies Plugin

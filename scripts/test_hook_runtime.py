@@ -1690,32 +1690,58 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock('everything committed'
     assert result["shouldBlock"] == True, f"Unverified claim should be blocked, got: {result}"
 
 
-def test_verified_claims_env_disabled():
-    """GLUDD_VERIFIED_CLAIMS_ENFORCE=0 → text passes through."""
+def test_verified_claims_commit_unverified_msg_blocked():
+    """Bash commit target with unverified MSG → tool.execute.before denies."""
     code = f"""\
+let registeredBefore = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
-const plugin = await mod.default()
-const output = {{text: 'everything committed'}}
-const result = await plugin['experimental.text.complete'](undefined, output)
-const finalText = result?.text ?? output.text
-console.log(JSON.stringify({{passedThrough: finalText === 'everything committed'}}))
+mod.default(api)
+// MSG contains 'done' (done-word) but no evidence hash
+let result
+try {{
+  result = registeredBefore({{toolName: 'bash', toolInput: {{command: 'make git-commit MSG=all done and fixed'}}}})
+  console.log(JSON.stringify(result ?? {{allowed: true}}))
+}} catch (e) {{
+  console.log(JSON.stringify({{permissionDecision: e instanceof Error ? 'deny' : 'error', message: e instanceof Error ? e.message : String(e)}}))
+}}
 """
-    result = _run_ts(code, env_override={"GLUDD_VERIFIED_CLAIMS_ENFORCE": "0"})
-    assert result["passedThrough"] == True
+    result = _run_ts(code)
+    assert result.get("permissionDecision") == "deny", f"Expected deny for unverified commit MSG, got: {result}"
 
 
-def test_verified_claims_subagent_guard():
-    """OPENCODE_SUBAGENT=1 → skip enforcement."""
+def test_verified_claims_commit_verified_msg_allowed():
+    """Bash commit target with evidence → tool.execute.before allows."""
     code = f"""\
+let registeredBefore = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
-const plugin = await mod.default()
-const output = {{text: 'everything committed'}}
-const result = await plugin['experimental.text.complete'](undefined, output)
-const finalText = result?.text ?? output.text
-console.log(JSON.stringify({{passedThrough: finalText === 'everything committed'}}))
+mod.default(api)
+// MSG contains commit hash (evidence)
+let result
+try {{
+  result = registeredBefore({{toolName: 'bash', toolInput: {{command: 'make ship-commit MSG=fix: done abc12345', MSG: 'fix: done abc12345'}}}})
+  console.log(JSON.stringify({{allowed: result === undefined || result === null}}))
+}} catch (e) {{
+  console.log(JSON.stringify({{permissionDecision: 'deny', message: String(e)}}))
+}}
+"""
+    result = _run_ts(code)
+    assert result.get("allowed") == True, f"Verified commit MSG should be allowed, got: {result}"
+
+
+def test_verified_claims_subagent_skip():
+    """OPENCODE_SUBAGENT=1 → tool.execute.before skips enforcement."""
+    code = f"""\
+let registeredBefore = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
+mod.default(api)
+let result = registeredBefore({{toolName: 'bash', toolInput: {{command: 'make git-commit MSG=done'}}}})
+console.log(JSON.stringify({{allowed: result === undefined || result === null}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result["passedThrough"] == True
+    assert result.get("allowed") == True, f"Subagent should skip, got: {result}"
 
 
 # ---------------------------------------------------------------------------
