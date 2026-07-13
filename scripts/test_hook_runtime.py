@@ -592,20 +592,32 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 def test_delegate_streak_at_threshold_denied():
     """mainthreadBudgetBefore denies when streak >= THRESHOLD and open work exists."""
     sf = _streak_state_file()
-    _clean_state_files(sf)
+    tasks_path = f"/tmp/gludd-test-tasks-delegate-{os.getpid()}.md"
+    _clean_state_files(sf, tasks_path, "/tmp/gludd-watchdog-disengage.json")
     # Write streak state at threshold
     with open(sf, "w") as f:
-        json.dump({"streak": 2, "lastDispatchTs": int(time.time() * 1000), "ts": int(time.time() * 1000)}, f)
+        json.dump({"count": 2, "ts": int(time.time() * 1000)}, f)
+    # Provide open-work signal via TASKS.md so openWorkExists() returns true
+    with open(tasks_path, "w") as f:
+        f.write("- [ ] delegate test task\n")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-delegate.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'edit'}}, {{}})
-console.log(JSON.stringify(result ?? {{allowed: true}}))
+// Catch throw — delegate plugin throws Error on deny, does not return deny object
+let result
+try {{
+  result = await plugin['tool.execute.before']({{tool: 'edit'}}, {{}})
+  console.log(JSON.stringify(result ?? {{allowed: true}}))
+}} catch (e) {{
+  console.log(JSON.stringify({{permissionDecision: "deny", message: e.message}}))
+}}
 """
-    result = _run_ts(code)
-    if result is not None:
-        assert isinstance(result, str) or result.get("permissionDecision") == "deny"
-    _clean_state_files(sf)
+    result = _run_ts(code, env_override={
+        "GLUDD_LIVE_AGENTS_COUNT": "0",
+        "GLUDD_TASKS_MD": tasks_path,
+    })
+    assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+    _clean_state_files(sf, tasks_path)
 
 
 def test_delegate_read_tool_not_counted():
@@ -813,11 +825,23 @@ def test_floor_streak_max_plus_one_denied():
     """After MAX_STREAK+1 non-dispatch calls, the hook DENIES.
 
     MAX_STREAK=2, so call 3 should be denied when open work exists.
+    Must neutralise the session-start window (watchdog writes
+    /tmp/gludd-session-start.json) which would tighten max to 1.
     """
     import time
     tasks_path = f"/tmp/gludd-test-tasks-floor-{os.getpid()}.md"
+    todowrite_path = f"/tmp/gludd-todowrite-state-{os.getpid()}.json"
+    session_state = f"/tmp/gludd-session-start-null-{os.getpid()}.json"
+    _clean_state_files(tasks_path, todowrite_path, session_state,
+                       "/tmp/gludd-watchdog-disengage.json")
     with open(tasks_path, "w") as f:
         f.write("- [ ] floor test task 1\n- [ ] floor test task 2\n")
+    with open(todowrite_path, "w") as f:
+        json.dump([{"status": "pending", "content": "test task"}], f)
+    # Point GLUDD_SESSION_STATE at a non-existent file so
+    # _isInSessionStartWindow() returns false (MAX_STREAK=2, not 1).
+    with open(session_state, "w") as f:
+        json.dump({}, f)
 
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
@@ -835,12 +859,16 @@ console.log(JSON.stringify({{
   'r3_hasMsg': typeof r3?.message === 'string',
 }}))
 """
-    result = _run_ts(code, env_override={"GLUDD_TASKS_MD": tasks_path})
+    result = _run_ts(code, env_override={
+        "GLUDD_TASKS_MD": tasks_path,
+        "GLUDD_TODOWRITE_STATE": todowrite_path,
+        "GLUDD_SESSION_STATE": session_state,
+    })
     assert result["r1"] is None, f"Call 1 should be allowed, got: {result['r1']}"
     assert result["r2"] is None, f"Call 2 should be allowed, got: {result['r2']}"
     assert result["r3_deny"] == True, f"Call 3 should be denied, got: {result}"
     assert result["r3_hasMsg"] == True
-    _clean_state_files(tasks_path)
+    _clean_state_files(tasks_path, todowrite_path, session_state)
 
 
 def test_floor_subagent_env_skip():
@@ -884,6 +912,532 @@ console.log(JSON.stringify({{allAllowed: r1 === undefined && r2 === undefined &&
 """
     result = _run_ts(code)
     assert result["allAllowed"] == True
+
+
+# ---------------------------------------------------------------------------
+# enforce-multitask.ts  —  dispatch enforcement
+# ---------------------------------------------------------------------------
+
+
+def test_multitask_enough_dispatches():
+    """Dispatch tools are always allowed regardless of state."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+const r1 = await plugin['tool.execute.before']({{tool: 'task'}})
+const r2 = await plugin['tool.execute.before']({{tool: 'agent'}})
+const r3 = await plugin['tool.execute.before']({{tool: 'workflow'}})
+console.log(JSON.stringify({{r1_ok: r1 === undefined || r1 === null, r2_ok: r2 === undefined || r2 === null, r3_ok: r3 === undefined || r3 === null}}))
+"""
+    result = _run_ts(code)
+    assert result["r1_ok"] == True
+    assert result["r2_ok"] == True
+    assert result["r3_ok"] == True
+
+
+def test_multitask_single_dispatch_blocked():
+    """1 dispatch in prev message + non-dispatch tool → denied."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'task'}})
+await plugin['experimental.text.complete'](undefined, {{text: 'intermediate'}})
+const result = await plugin['tool.execute.before']({{tool: 'edit'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code)
+    assert result is not None, "Expected deny object, got None (allowed)"
+    assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+    assert "MULTITASKING" in result.get("message", "")
+
+
+def test_multitask_zero_dispatch_text_blocked():
+    """2 zero-dispatch messages → text.complete blocks output."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+const r1 = await plugin['experimental.text.complete'](undefined, {{text: 'msg1'}})
+const output = {{text: 'msg2'}}
+const r2 = await plugin['experimental.text.complete'](undefined, output)
+const finalText = r2?.text ?? output.text
+console.log(JSON.stringify({{blocked: r2 !== null && r2 !== undefined && finalText !== 'msg2', finalText}}))
+"""
+    result = _run_ts(code)
+    assert result["blocked"] == True, f"Expected text.complete to block, got: {result}"
+    assert "DISPATCH" in result.get("finalText", "")
+
+
+def test_multitask_subagent_guard():
+    """OPENCODE_SUBAGENT=1 skips enforcement."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'edit'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+
+
+def test_multitask_env_disabled():
+    """GLUDD_MULTITASK_FLOOR_ENFORCE=0 disables enforcement."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'edit'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_MULTITASK_FLOOR_ENFORCE": "0"})
+    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+
+
+# ---------------------------------------------------------------------------
+# enforce-stop.ts  —  text.complete block for pending work + stop patterns
+# ---------------------------------------------------------------------------
+
+
+def test_stop_pending_work_text_blanked():
+    """Actual runtime test: hasLocalWork() true → text blanked (no subagent guard)."""
+    state_file = os.path.join("/tmp", f"test-stop-state-{os.getpid()}.json")
+    _clean_state_files("/tmp/gludd-block-counter.json")
+    with open(state_file, "w") as f:
+        json.dump({
+            "ts": int(time.time() * 1000),
+            "ratchetEntries": 3,
+            "tasksMdUnchecked": True,
+            "gateStatusRed": False,
+            "repoPending": False,
+            "hasLocalWork": True,
+            "hasPendingWork": True,
+            "ciVerdictPendingOrRed": False,
+            "healthScore": 30,
+        }, f)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+const output = {{text: 'Done. All tasks complete.'}}
+const result = await plugin['experimental.text.complete'](undefined, output)
+const finalText = result?.text ?? output.text
+const blocked = finalText !== 'Done. All tasks complete.'
+console.log(JSON.stringify({{blocked, finalText: finalText.slice(0, 200)}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_STOP_STATE_FILE": state_file,
+    })
+    assert result["blocked"] == True, f"Expected text to be blanked, got: {result}"
+    _clean_state_files(state_file)
+
+
+def test_stop_no_pending_work():
+    """No local work → text passes through unmodified."""
+    state_file = os.path.join("/tmp", f"test-stop-clean-{os.getpid()}.json")
+    with open(state_file, "w") as f:
+        json.dump({
+            "ts": int(time.time() * 1000),
+            "ratchetEntries": 0,
+            "tasksMdUnchecked": False,
+            "gateStatusRed": False,
+            "repoPending": False,
+            "hasLocalWork": False,
+            "hasPendingWork": False,
+            "ciVerdictPendingOrRed": False,
+            "healthScore": 100,
+        }, f)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+const output = {{text: 'All good, no pending work.'}}
+const result = await plugin['experimental.text.complete'](undefined, output)
+const finalText = result?.text ?? output.text
+console.log(JSON.stringify({{passedThrough: finalText === 'All good, no pending work.'}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_STOP_STATE_FILE": state_file})
+    assert result["passedThrough"] == True, f"Expected text to pass through, got: {result}"
+    _clean_state_files(state_file)
+
+
+def test_stop_env_disabled():
+    """GLUDD_STOP_ENFORCE=0 disables text.complete enforcement."""
+    state_file = os.path.join("/tmp", f"test-stop-disable-{os.getpid()}.json")
+    with open(state_file, "w") as f:
+        json.dump({
+            "ts": int(time.time() * 1000),
+            "ratchetEntries": 5,
+            "tasksMdUnchecked": True,
+            "gateStatusRed": False,
+            "repoPending": False,
+            "hasLocalWork": True,
+            "hasPendingWork": True,
+            "ciVerdictPendingOrRed": False,
+            "healthScore": 20,
+        }, f)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+const output = {{text: 'Done.'}}
+const result = await plugin['experimental.text.complete'](undefined, output)
+const finalText = result?.text ?? output.text
+console.log(JSON.stringify({{passedThrough: finalText === 'Done.'}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_STOP_STATE_FILE": state_file,
+        "GLUDD_STOP_ENFORCE": "0",
+    })
+    assert result["passedThrough"] == True, f"Expected text to pass through when disabled, got: {result}"
+    _clean_state_files(state_file)
+
+
+def test_stop_corrupt_state():
+    """Corrupt state file → fail-open: hook returns without crashing."""
+    state_file = os.path.join("/tmp", f"test-stop-corrupt-{os.getpid()}.json")
+    with open(state_file, "w") as f:
+        f.write("not valid json {{{[[[")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+const output = {{text: 'corrupt state test text'}}
+const result = await plugin['experimental.text.complete'](undefined, output)
+const finalText = result?.text ?? output.text
+console.log(JSON.stringify({{returned: true, isString: typeof finalText === 'string'}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_STOP_STATE_FILE": state_file})
+    assert result["returned"] == True, "Hook must return without crashing (fail-open)"
+    assert result["isString"] == True, "Output must be a string (no throw, no crash)"
+    _clean_state_files(state_file)
+
+
+# ---------------------------------------------------------------------------
+# enforce-clean-tree.ts  —  dispatch-time dirty tree enforcement
+# ---------------------------------------------------------------------------
+
+
+def test_clean_tree_dispatch_allowed():
+    """Dispatch with clean tree → allowed (hook returns undefined/void)."""
+    code = f"""\
+let registeredHook = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+mod.default(api)
+const result = registeredHook({{tool: 'task'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    # Can't guarantee tree is clean, so accept null or allow
+    result = _run_ts(code)
+    if result is not None and result.get("permissionDecision") == "deny":
+        assert "DIRTY TREE" in result.get("message", ""), "If denied, must be dirty tree"
+
+
+def test_clean_tree_dirty_dispatch_blocked():
+    """Dirty tree + dispatch → returns {{permissionDecision: 'deny'}}."""
+    test_file = str(ROOT / "scripts" / "_hook_test_dirty_runtime.txt")
+    try:
+        with open(test_file, "w") as f:
+            f.write("test dirty file for runtime hook test")
+        code = f"""\
+let registeredHook = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+mod.default(api)
+const result = registeredHook({{tool: 'task'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code)
+        assert result is not None, "Expected deny object, got None"
+        assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+        assert "DIRTY TREE" in result.get("message", "")
+    finally:
+        try:
+            os.unlink(test_file)
+        except OSError:
+            pass
+
+
+def test_clean_tree_env_disabled():
+    """GLUDD_CLEAN_TREE_ENFORCE=0 → dispatch allowed even with dirty tree."""
+    test_file = str(ROOT / "scripts" / "_hook_test_dirty_disabled.txt")
+    try:
+        with open(test_file, "w") as f:
+            f.write("test")
+        code = f"""\
+let registeredHook = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+mod.default(api)
+const result = registeredHook({{tool: 'task'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"GLUDD_CLEAN_TREE_ENFORCE": "0"})
+        assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+    finally:
+        try:
+            os.unlink(test_file)
+        except OSError:
+            pass
+
+
+def test_clean_tree_subagent_guard():
+    """OPENCODE_SUBAGENT=1 → skip enforcement."""
+    test_file = str(ROOT / "scripts" / "_hook_test_dirty_subagent.txt")
+    try:
+        with open(test_file, "w") as f:
+            f.write("test")
+        code = f"""\
+let registeredHook = null
+const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
+const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+mod.default(api)
+const result = registeredHook({{tool: 'task'}})
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+        assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+    finally:
+        try:
+            os.unlink(test_file)
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# enforce-verified-claims.ts  —  done-words without evidence blocked
+# ---------------------------------------------------------------------------
+
+
+def test_verified_claim_with_evidence():
+    """Text contains 'commit' + hash → passed through (evidence present)."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
+console.log(JSON.stringify({{shouldBlock: mod.shouldBlock('commit abc12345')}}))
+"""
+    result = _run_ts(code)
+    assert result["shouldBlock"] == False, f"Commit hash should be evidence, got: {result}"
+
+
+def test_verified_claim_no_evidence_blocked():
+    """Text contains 'committed' but no hash → text.complete blocks."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
+console.log(JSON.stringify({{shouldBlock: mod.shouldBlock('everything committed')}}))
+"""
+    result = _run_ts(code)
+    assert result["shouldBlock"] == True, f"Unverified claim should be blocked, got: {result}"
+
+
+def test_verified_claims_env_disabled():
+    """GLUDD_VERIFIED_CLAIMS_ENFORCE=0 → text passes through."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
+const plugin = await mod.default()
+const output = {{text: 'everything committed'}}
+const result = await plugin['experimental.text.complete'](undefined, output)
+const finalText = result?.text ?? output.text
+console.log(JSON.stringify({{passedThrough: finalText === 'everything committed'}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_VERIFIED_CLAIMS_ENFORCE": "0"})
+    assert result["passedThrough"] == True
+
+
+def test_verified_claims_subagent_guard():
+    """OPENCODE_SUBAGENT=1 → skip enforcement."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
+const plugin = await mod.default()
+const output = {{text: 'everything committed'}}
+const result = await plugin['experimental.text.complete'](undefined, output)
+const finalText = result?.text ?? output.text
+console.log(JSON.stringify({{passedThrough: finalText === 'everything committed'}}))
+"""
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["passedThrough"] == True
+
+
+# ---------------------------------------------------------------------------
+# enforce-no-suppressions.ts  —  lint-suppression comment block
+# ---------------------------------------------------------------------------
+
+
+def test_no_suppression_plain_comment():
+    """Plain # comment → allowed."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-suppressions.ts')
+console.log(JSON.stringify({{
+    isSuppression: mod.isSuppressionComment('# regular comment'),
+    allowEdit: mod.shouldAllowEdit('src/foo.py', '# regular comment'),
+}}))
+"""
+    result = _run_ts(code)
+    assert result["isSuppression"] == False
+    assert result["allowEdit"]["allow"] == True
+
+
+def test_no_suppression_noqa_blocked():
+    """Text contains '# noqa' → isSuppressionComment returns true."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-suppressions.ts')
+console.log(JSON.stringify({{
+    isSuppression: mod.isSuppressionComment('# noqa'),
+    verdict: mod.shouldAllowEdit('src/foo.py', '# noqa'),
+}}))
+"""
+    result = _run_ts(code)
+    assert result["isSuppression"] == True
+    assert result["verdict"]["allow"] == False
+    assert "forbidden" in result["verdict"].get("reason", "")
+
+
+def test_no_suppression_type_ignore_blocked():
+    """Text contains '# type: ignore' → isSuppressionComment returns true."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-suppressions.ts')
+console.log(JSON.stringify({{
+    isSuppression: mod.isSuppressionComment('# type: ignore'),
+    verdict: mod.shouldAllowEdit('src/bar.py', '# type: ignore'),
+}}))
+"""
+    result = _run_ts(code)
+    assert result["isSuppression"] == True
+    assert result["verdict"]["allow"] == False
+
+
+def test_no_suppression_allowlisted_file():
+    """Editing fix_not_disable.py → allowed even with # noqa."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-suppressions.ts')
+console.log(JSON.stringify({{
+    isAllowed: mod.isAllowlistedPath('src/general_ludd/security/fix_not_disable.py'),
+    verdict: mod.shouldAllowEdit('src/general_ludd/security/fix_not_disable.py', '# noqa'),
+}}))
+"""
+    result = _run_ts(code)
+    assert result["isAllowed"] == True
+    assert result["verdict"]["allow"] == True
+
+
+# ---------------------------------------------------------------------------
+# enforce-no-wait.ts  —  main-thread sleep/tail denial + CI-poll dispatch block
+# ---------------------------------------------------------------------------
+
+
+def test_no_wait_sleep_blocked():
+    """Bash call with 'sleep 60&&' pattern → denied by WAIT_PATTERNS."""
+    code = _pluginapi_code(
+        "enforce-no-wait.ts",
+        "registeredHook({tool: 'bash', command: 'sleep 60&& make gate-status-check'})",
+    )
+    result = _run_ts(code)
+    assert result is not None, "Expected deny object, got None"
+    assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+    assert "forbidden" in result.get("message", "").lower()
+
+
+def test_no_wait_gate_tail_blocked():
+    """Bash call with 'gate-tail' pattern → denied by WAIT_PATTERNS."""
+    code = _pluginapi_code(
+        "enforce-no-wait.ts",
+        "registeredHook({tool: 'bash', command: 'make gate-tail'})",
+    )
+    result = _run_ts(code)
+    assert result is not None, "Expected deny object, got None"
+    assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+
+
+def test_no_wait_subagent_bypass():
+    """OPENCODE_SUBAGENT=1 → bash call allowed."""
+    code = _pluginapi_code(
+        "enforce-no-wait.ts",
+        "registeredHook({tool: 'bash', command: 'sleep 60&& make gate-status-check'})",
+    )
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+
+
+def test_no_wait_env_disabled():
+    """GLUDD_NO_WAIT_ENFORCE=0 → bash call allowed."""
+    code = _pluginapi_code(
+        "enforce-no-wait.ts",
+        "registeredHook({tool: 'bash', command: 'make gate-tail'})",
+    )
+    result = _run_ts(code, env_override={"GLUDD_NO_WAIT_ENFORCE": "0"})
+    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+
+
+# ---------------------------------------------------------------------------
+# enforce-deletion-gate.ts  —  deletion threshold via hook throw
+# ---------------------------------------------------------------------------
+
+
+def test_deletion_under_threshold_allowed():
+    """Edit removing 1 line (below default threshold of 5) → allowed."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
+const plugin = mod.default
+const hook = plugin.hooks['tool.execute.before']
+let result
+try {{
+    const r = await hook({{tool: 'edit', args: {{file_path: '/tmp/nonexistent.txt', old_string: 'one line', new_string: ''}}}})
+    console.log(JSON.stringify(r ?? {{allowed: true}}))
+}} catch (e) {{
+    console.log(JSON.stringify({{permissionDecision: 'deny', message: e.message}}))
+}}
+"""
+    result = _run_ts(code)
+    assert result is None or result.get("allowed") == True, f"Expected allowed for 1-line deletion, got: {result}"
+
+
+def test_deletion_over_threshold_blocked():
+    """Edit removing 10 lines (above default threshold of 5) → denied (throws Error)."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
+const plugin = mod.default
+const hook = plugin.hooks['tool.execute.before']
+let result
+try {{
+    const r = await hook({{tool: 'edit', args: {{file_path: '/tmp/nonexistent2.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}})
+    console.log(JSON.stringify(r ?? {{allowed: true}}))
+}} catch (e) {{
+    console.log(JSON.stringify({{permissionDecision: 'deny', message: e.message}}))
+}}
+"""
+    result = _run_ts(code)
+    assert result is not None, "Expected deny object (thrown Error)"
+    assert result.get("permissionDecision") == "deny", f"Expected deny for 10-line deletion, got: {result}"
+    assert "exceeds threshold" in result.get("message", ""), f"Message missing threshold mention: {result}"
+
+
+def test_deletion_subagent_guard():
+    """OPENCODE_SUBAGENT=1 → deletion allowed even above threshold."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
+const plugin = mod.default
+const hook = plugin.hooks['tool.execute.before']
+let result
+try {{
+    const r = await hook({{tool: 'edit', args: {{file_path: '/tmp/nonexistent3.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}})
+    console.log(JSON.stringify(r ?? {{allowed: true}}))
+}} catch (e) {{
+    console.log(JSON.stringify({{permissionDecision: 'deny', message: e.message}}))
+}}
+"""
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny", f"Subagent should bypass deletion gate, got: {result}"
+
+
+def test_deletion_env_disabled():
+    """GLUDD_DELETION_GATE_THRESHOLD=0 → deletion allowed above threshold."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
+const plugin = mod.default
+const hook = plugin.hooks['tool.execute.before']
+let result
+try {{
+    const r = await hook({{tool: 'edit', args: {{file_path: '/tmp/nonexistent4.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}})
+    console.log(JSON.stringify(r ?? {{allowed: true}}))
+}} catch (e) {{
+    console.log(JSON.stringify({{permissionDecision: 'deny', message: e.message}}))
+}}
+"""
+    result = _run_ts(code, env_override={"GLUDD_DELETION_GATE_THRESHOLD": "0"})
+    assert result is None or result.get("allowed") == True, f"Expected allowed when threshold=0, got: {result}"
 
 
 # ---------------------------------------------------------------------------

@@ -101,6 +101,10 @@ let _probeFailCount = 0
 const PROBE_FAIL_THRESHOLD = parseInt(process.env.GLUDD_PROBE_FAIL_THRESHOLD || "3", 10)
 
 function countLiveAgents(): number | null {
+  if (process.env.GLUDD_LIVE_AGENTS_COUNT) {
+    const n = parseInt(process.env.GLUDD_LIVE_AGENTS_COUNT, 10)
+    if (!Number.isNaN(n)) return n
+  }
   const recordFailure = (reason: string): number | null => {
     _probeFailCount += 1
     if (_probeFailCount >= PROBE_FAIL_THRESHOLD) {

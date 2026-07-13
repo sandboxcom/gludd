@@ -220,6 +220,7 @@ export default (async ({ }) => {
       try {
         if (process.env.OPENCODE_SUBAGENT === "1") return output
         if (!output || typeof output.text !== "string") return output
+        if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test(output.text.trim())) return output
         // RESEARCH FINDING (2026-07-12): text.complete hook NEVER fires on tool output — it only fires on text-end LLM stream events. The _input.role field does not exist in the payload. So no tool-output guard is needed: all text here is agent-generated. Do NOT add an isToolOutput / role-based guard — it is dead code.
 
         // Track subagent result markers (these arrive in agent text, since

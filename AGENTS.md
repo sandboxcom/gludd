@@ -93,6 +93,40 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 - `enforce-session-start.ts`: floor=3 (updated 2026-07-11)
 - `/tmp/gludd-floor-override`: 7 (runtime override, takes priority over env vars)
 
+### Enforcement Plugin Status (2026-07-12 Wave 11)
+
+After converting enforce-deadline.ts and enforce-enhancement-ratio.ts from advisory to blocking:
+
+| Plugin | Status | Blocks via | Disable via |
+|--------|--------|-----------|-------------|
+| enforce-floor.ts | **BLOCKING** | tool.execute.before + text.complete | GLUDD_FLOOR_ENFORCE=0 |
+| enforce-delegate.ts | **BLOCKING** | tool.execute.before | GLUDD_MAINTHREAD_STREAK_ENFORCE=0 |
+| enforce-multitask.ts | **BLOCKING** | tool.execute.before + text.complete | GLUDD_MULTITASK_FLOOR_ENFORCE=0 |
+| enforce-stop.ts | **BLOCKING** | tool.execute.before + text.complete | GLUDD_STOP_ENFORCE=0 |
+| enforce-deadline.ts | **BLOCKING** | tool.execute.before | GLUDD_TASK_DEADLINE_BLOCK=0 |
+| enforce-enhancement-ratio.ts | **BLOCKING** | tool.execute.before + text.complete | GLUDD_ENHANCEMENT_RATIO_BLOCK=0 |
+| enforce-clean-tree.ts | **BLOCKING** | tool.execute.before | GLUDD_CLEAN_TREE_ENFORCE=0 |
+| enforce-verified-claims.ts | **BLOCKING** | text.complete | GLUDD_VERIFIED_CLAIMS_ENFORCE=0 |
+| enforce-no-suppressions.ts | **BLOCKING** | tool.execute.before | (hard-coded ON) |
+| enforce-session-start.ts | **BLOCKING** | tool.execute.before | GLUDD_SESSION_START_ENFORCE=0 |
+
+All 10 enforcement plugins are now BLOCKING. Zero advisory-only plugins remain.
+Runtime verification via `make test-hook-runtime` (52 functional tests across 8 plugins).
+
+**Note:** Enforcement plugin changes take effect on opencode restart. During a session where plugin source was edited, behavioral enforcement may lag until restart.
+
+### Plugin Tuning Without Restart (State-File Pattern)
+
+OpenCode loads plugins at startup only — there is no hot-reload API. To change enforcement behavior mid-session without restarting, use the state-file pattern:
+
+- `make reload-enforcement` — resets all enforcement state files to pick up env var changes
+- All enforcement plugins re-read shared state files on each hook invocation (not cached at init)
+- State files in `/tmp/gludd-*`: floor-override, tool-streak, watchdog-disengage, enhancement-ratio, task-deadlines, session-start
+- To temporarily disable all enforcement: `make disengage-enforcement` (writes disengage signal)
+- To set floor override: `echo 7 > /tmp/gludd-floor-override`
+
+The state-file pattern is the canonical mechanism for runtime enforcement tuning. Plugin source changes still require an opencode restart.
+
 ## Mechanical Contract (READ FIRST — numbered priority)
 
 1. **Only `make <target>`.** Never bare commands, no metacharacters (`|`, `;`, `&&`, `$()`).

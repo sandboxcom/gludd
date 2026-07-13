@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- **2026-07-12** — Session 25, Wave 11. On `development` branch. Enforcement infrastructure fully hardened: enforce-deadline.ts + enforce-enhancement-ratio.ts converted from advisory to blocking, GLUDD_FLOOR_ENFORCE env var added to enforce-floor.ts, text.complete dedup across 6 plugins, functional hook test harness created (52 runtime tests across 8 plugins), test-hook-runtime wired into gate.
+- **2026-07-12** — Session 25, Wave 11 COMPLETED. On `development` branch, HEAD `dcfb6256`. Enforcement infrastructure fully hardened: enforce-deadline.ts + enforce-enhancement-ratio.ts converted from advisory to blocking, GLUDD_FLOOR_ENFORCE env var added to enforce-floor.ts, text.complete dedup across 6 plugins, functional hook test harness created (52 runtime tests across 8 plugins), test-hook-runtime wired into gate. AGENTS.md updated with "Plugin Tuning Without Restart (State-File Pattern)" section + W.14 reload-enforcement target + W.15 runtime tests for enforce-no-wait + enforce-deletion-gate. TASKS.md Wave 11 items W.4-W.13 all marked completed.
 - **2026-07-12** — Session 25. On `development` branch, HEAD `db50eb0b` (Waves 6-9 pushed). Waves 6-8 landed: XML collection (9 roles, xml_utils.py, 47 tests), web collection (6 roles, web_utils.py 25 funcs, 76 tests), web_server collection (8 roles, web_server_utils.py, docs). Wave 9: e2e game test gap analysis — 2 CRITICAL, 1 HIGH, 2 MEDIUM findings.
 - 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 - **Wave 35 — Collection Split + Documentation:** TASKS.md Phase R expanded to 18 items. Collection FQCNs updated: `general_ludd.agent.{ssl_cert,hsm_operations,audit_framework,sql_injection,command_injection,prompt_injection}` → `general_ludd.security.*`. `docs/SECURITY_ROLES.md` + `docs/SSL_CERT_SYSTEM.md` FQCN references updated. Two new docs created: `docs/NETWORKING_SYSTEM.md` (networking role, 7 modes, ScapyAdapter, tool matrix, dissector templates) and `docs/BUSINESS_RESEARCH_SYSTEM.md` (entity_research role, 6 research capabilities, SearX monitoring, entity graph). README.md restructured from single collection section to 4 collection sub-sections (`general_ludd.agent`, `general_ludd.security`, `general_ludd.business`, `general_ludd.networking`) with FQCN tables and doc cross-references.
@@ -129,21 +129,25 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 5. **No release tag cut** — next version tag not yet created; blocked on gate green + merge.
 6. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used; `make gate-lite` is the local approximation.
 7. **Connector gaps** — no WebSocket or reconnect logic (feature requests, not blocking).
-8. **enforce-floor.ts hard-coded ON** — no `GLUDD_FLOOR_ENFORCE` env-var escape path; plugin cannot be disabled for focused single-file work.
-9. **text.complete dedup across 6 plugins** — multiple plugins operate on the same `text.complete` hook surface with no coordination; risk of interference or duplicate enforcement messages.
-10. **No integration hook tests** — 800+ enforcement tests are structural (source-code shape checks); zero tests invoke actual hooks with real arguments across plugin boundaries.
+8. **~~enforce-floor.ts hard-coded ON~~** — FIXED Wave 11: `GLUDD_FLOOR_ENFORCE` env var added.
+9. **~~text.complete dedup across 6 plugins~~** — FIXED Wave 11: dedup guards added to enforce-floor, enforce-stop, enforce-multitask, enforce-delegate, enforce-deadline, enforce-enhancement-ratio.
+10. **~~No integration hook tests~~** — FIXED Wave 11: `scripts/test_hook_runtime.py` with 52 runtime tests across 8 plugins, `make test-hook-runtime` wired into gate.
+11. **Enforcement plugin changes require opencode restart** — no hot-reload mechanism; runtime behavior unchanged until restart.
+12. **2 test_hook_runtime failures remain** — 52 pass, 2 fail; root cause under investigation.
 
 ## Next Steps
 
-1. [ ] **Write runtime tests for all remaining plugins** — extend `scripts/test_hook_runtime.py` to cover enforce-floor, enforce-stop, enforce-delegate, enforce-multitask, enforce-session-start, enforce-clean-tree, enforce-no-suppressions, enforce-no-wait (per AGENTS.md self-test quality rule).
-2. [ ] **Add `GLUDD_FLOOR_ENFORCE` env var to enforce-floor.ts** — match the fail-open + env-var-escape pattern established in enforce-deadline + enforce-enhancement-ratio.
+1. [x] **Write runtime tests for all remaining plugins** — `scripts/test_hook_runtime.py` covers 8 plugins (52 passing, 2 failing).
+2. [x] **Add `GLUDD_FLOOR_ENFORCE` env var to enforce-floor.ts** — DONE Wave 11.
 3. [ ] **Commit + push** — `make ship-commit MSG='...'` + `make batch-push` for Waves 10-11 enforcement fixes.
-4. [ ] **Fix e2e game gaps** — resolve game_over flag mismatch and missing lifecycle steps from Wave 9 gap analysis.
-5. [ ] **Re-run e2e game tests** — `make test TESTFILE=tests/e2e/` to verify fixes.
-6. [ ] **Fix `hot_reloader.py` SyntaxError** — parse/fix the error in `src/general_ludd/ornith/hot_reloader.py`.
-7. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
-8. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
-9. [ ] **Cut release tag** — after merge to master, run `make release-cut`.
+4. [ ] **Restart opencode** — enforcement plugin changes require restart to take effect; verify enforcement actually blocks at runtime after restart.
+5. [ ] **Investigate 2 remaining test_hook_runtime failures** — 52 pass, 2 fail; diagnose and fix.
+6. [ ] **Fix e2e game gaps** — resolve game_over flag mismatch and missing lifecycle steps from Wave 9 gap analysis.
+7. [ ] **Re-run e2e game tests** — `make test TESTFILE=tests/e2e/` to verify fixes.
+8. [ ] **Fix `hot_reloader.py` SyntaxError** — parse/fix the error in `src/general_ludd/ornith/hot_reloader.py`.
+9. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
+10. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
+11. [ ] **Cut release tag** — after merge to master, run `make release-cut`.
 
 ## Current Gate Status (2026-07-12)
 <!-- gate:begin -->

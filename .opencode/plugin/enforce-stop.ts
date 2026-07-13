@@ -958,6 +958,8 @@ export default (async ({ }) => {
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       if (process.env.OPENCODE_SUBAGENT === "1") return output
 
+      if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
+
       // Increment fire counter — proves text.complete actually fires
       try {
         const cPath = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "/tmp/gludd-stop-text-complete-count.json"

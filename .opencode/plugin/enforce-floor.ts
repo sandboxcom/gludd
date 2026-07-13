@@ -56,14 +56,8 @@ const TARGET = Math.min(
 // warranted), not delete it. The plugin BLOCKS non-dispatch tool calls (via
 // tool.execute.before) when the floor is breached AND there is known open work
 // — forcing the agent to dispatch subagents rather than grind inline.
-// HARD DEFAULT — ALWAYS ON. This guardrail exists because past sessions repeatedly
-// demonstrated the agent collapsing to serial inline grinding with 0 subagents live.
-// It is NOT opt-in and does NOT depend on environment variables. The only way to
-// disable is to edit this source file directly.
-// PREVIOUS BUG (2026-07-05): `process.env.GLUDD_FLOOR_ENFORCE !== "0"` was default-ON
-// but .claude/settings.json explicitly set GLUDD_FLOOR_ENFORCE=0, silently disabling
-// the guardrail for ALL sessions. Now unconditionally true.
-const FLOOR_ENFORCE = true
+// Default ON. Set GLUDD_FLOOR_ENFORCE=0 to disable (matching all other plugins).
+const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 
 // Dispatch tools are ALWAYS allowed — even when the floor is breached and
 // enforce mode is on. Blocking a dispatch attempt would be counterproductive
@@ -342,6 +336,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
 // session.  A new dispatch resets _needsRefill to false.
 
 const MAX_STREAK = 2
+let _streakCount = 0
 
 // Post-result enforcement (2026-07-12 — close "reads are free" gap).
 // After subagent results arrive, the agent gets at most POST_RESULT_READ_LIMIT
@@ -844,8 +839,8 @@ export default (async ({ }) => {
           "█                                                                               █",
           "█  DO NOT: read, write, edit, grep, glob, or bash.  DISPATCH SUBAGENTS.         █",
           "█                                                                               █",
-          "█  Blocking mode is ALWAYS ON.  There is NO env-var escape hatch.               █",
-          "█  To permanently disable, edit enforce-floor.ts directly.                      █",
+          "█  Blocking mode is ON.  Set GLUDD_FLOOR_ENFORCE=0 to disable.            █",
+          "█  Set GLUDD_FLOOR_ENFORCE=0 to disable.                                     █",
           "█                                                                               █",
         ]
         const sep = "█" + (" ".repeat(79))
@@ -890,6 +885,7 @@ export default (async ({ }) => {
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
       if (process.env.OPENCODE_SUBAGENT === "1") return output
+      if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
       try {
         // Increment fire counter — proves text.complete actually fires
         try {

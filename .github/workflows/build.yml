@@ -108,6 +108,25 @@ jobs:
         env:
           GLUDD_PSK: ""
 
+      - name: Enforcement hook runtime tests
+        # Invokes actual TypeScript plugin hooks via node --experimental-strip-types
+        # and verifies runtime behavior. Catches regressions where plugin source
+        # was changed but structural-only tests didn't detect the breakage.
+        run: |
+          make test-hook-runtime
+        env:
+          GLUDD_PSK: ""
+
+      - name: Verify enforcement plugins blocking
+        # Verifies all 10 enforcement plugins are structurally in BLOCKING mode
+        # (not advisory-only). Scans each plugin source for deny/throw patterns
+        # and checks no GLUDD_*_ENFORCE=0 env vars are set. CI goes red if any
+        # plugin is weakened — structural prevention of advisory-only regression.
+        run: |
+          make verify-enforcement
+        env:
+          GLUDD_PSK: ""
+
       - name: Check status table current (fast)
         if: startsWith(github.ref, 'refs/tags/v')
         # Verify README.md status table matches docs/features.yml generation.
