@@ -370,7 +370,7 @@ const defaultImpl: HotModule = {
           const repoMode: "commit" | "push" | undefined =
             COMMIT_TARGET_RE.test(command) ? "commit" :
             PUSH_TARGET_RE.test(command) ? "push" : undefined
-          const repoPending = repoHasPendingWork(es)
+          const repoPending = repoHasPendingWork(es, repoMode)
           const disengaged = isWatchdogDisengaged()
           if (!disengaged && (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending)) {
             try {
