@@ -462,8 +462,7 @@ const defaultImpl: HotModule = {
     const bugsOpen = bugsMdHasOpenIncidents()
     const gateRed = gateStatusIsRed()
     const ciBad = ciIsPendingOrRed()
-    const { execSync: es } = require("node:child_process") as { execSync: typeof import("node:child_process").execSync }
-    const repoPending = repoHasPendingWork(es)
+    const repoPending = repoHasPendingWork(execSync)
     const hasWork = unchecked > 0 || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending
 
     if (typeof output === "string") {
