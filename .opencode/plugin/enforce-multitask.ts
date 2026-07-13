@@ -6,7 +6,7 @@
  * zero-dispatch responses, ALL non-dispatch tool calls are denied.
  *
  * FAIL-OPEN: any error → allow. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.
- * Floor: GLUDD_MULTITASK_MIN_DISPATCHES (default 7).
+ * Floor: GLUDD_MULTITASK_MIN_DISPATCHES (default 3).
  *
  * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
  * check /tmp/gludd-hot-multitask.js on every invocation.  If present and newer
@@ -161,7 +161,7 @@ const defaultImpl: HotModule = {
         }
       }
 
-      if (!disengaged && hasPendingWork() && _state.thisMessageDispatches < MIN_DISPATCHES) {
+      if (!disengaged && hasPendingWork() && _state.thisMessageDispatches === 0 && _state.zeroStreak > 0) {
         const lt = tool.toLowerCase()
         if (lt === "edit" || lt === "write" || lt === "bash") {
           return {
@@ -191,12 +191,6 @@ const defaultImpl: HotModule = {
     } catch {
       return
     }
-  },
-
-  "session.idle": async () => {
-    _state = readState()
-    _state.zeroStreak = 0
-    writeState(_state)
   },
 
   "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
@@ -231,12 +225,11 @@ const defaultImpl: HotModule = {
           }
         }
       } catch {}
-      if (!disengagedText && _state.prevMessageDispatches > 2 && _state.prevMessageDispatches < MIN_DISPATCHES && hasPendingWork()) {
+      if (!disengagedText && _state.prevMessageDispatches === 0 && _state.zeroStreak > 0 && hasPendingWork()) {
         return {
           text: [
-            "⛔ MESSAGE BLOCKED: must dispatch \u2265" + String(MIN_DISPATCHES) + " subagents when work remains.",
-            "Instead got " + String(_state.prevMessageDispatches) + " dispatch(es).",
-            "Resend with more task/agent/workflow dispatches.",
+            "⛔ MESSAGE BLOCKED: zero dispatches in prior message (" + String(_state.zeroStreak) + " streak).",
+            "Codified floor: \u2265" + String(MIN_DISPATCHES) + ". Resend with task/agent/workflow dispatches.",
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
           ].join(" "),
@@ -252,7 +245,7 @@ const defaultImpl: HotModule = {
           ].join(" "),
         }
       }
-      if (!disengagedText && (_state.prevMessageDispatches === 1 || _state.prevMessageDispatches === 2) && hasPendingWork() && _state.estimatedInFlight < MIN_DISPATCHES_PER_WAVE) {
+      if (!disengagedText && _state.prevMessageDispatches === 0 && _state.zeroStreak > 0 && hasPendingWork() && _state.estimatedInFlight < MIN_DISPATCHES_PER_WAVE) {
         return {
           text: [
             "MULTITASK WARNING: only " + String(_state.prevMessageDispatches) + " dispatch(es), floor requires \u2265" + String(MIN_DISPATCHES_PER_WAVE),

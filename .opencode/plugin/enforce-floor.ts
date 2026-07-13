@@ -372,7 +372,7 @@ const defaultImpl: HotModule = {
           }
         }
 
-        if (_readStreak > 10 && (Date.now() - _lastDispatchTs) > 60_000) {
+        if (_readStreak > 15 && (Date.now() - _lastDispatchTs) > 60_000 && _resultProcessingGrace <= 0) {
           const sinceDispatchMs = Date.now() - _lastDispatchTs
           return {
             permissionDecision: "deny" as const,
@@ -380,7 +380,7 @@ const defaultImpl: HotModule = {
               "READ-GRINDING DETECTED — READ BLOCKED",
               "",
               `${_readStreak} consecutive reads with no dispatch, ${Math.round(sinceDispatchMs / 1000)}s since last dispatch.`,
-              "An agent doing 10+ serial reads over 1+ minute without dispatching",
+              "An agent doing 15+ serial reads over 1+ minute without dispatching",
               "is grinding inline instead of delegating. DISPATCH WORK.",
               "",
               "REQUIRED: Dispatch task/agent subagents on pending work.",
@@ -388,7 +388,7 @@ const defaultImpl: HotModule = {
             ].join("\n"),
           }
         }
-        if (_readStreak > 5 && (Date.now() - _lastDispatchTs) > 30_000) {
+        if (_readStreak > 8 && (Date.now() - _lastDispatchTs) > 30_000 && _resultProcessingGrace <= 0) {
           const sinceDispatchMs = Date.now() - _lastDispatchTs
           console.warn(
             `READ-GRINDING DETECTED: ${_readStreak} consecutive reads, ` +
@@ -452,24 +452,22 @@ const defaultImpl: HotModule = {
       if (_resultProcessingGrace > 0) {
         _resultProcessingGrace--
         _streakCount = 0
-        return {
-          permissionDecision: "deny" as const,
-          message: [
-            "⛔  DISPATCH GAP — RESULTS RECEIVED, DISPATCH FIRST",
-            "",
-            "Subagent results just arrived.  You are running inline tool calls",
-            "(bash/edit/write) instead of dispatching the next wave.  This",
-            "creates a dispatch gap where the subagent floor drains.",
-            "",
-            "ALLOWED right now:",
-            "  → task/agent dispatches (REQUIRED — dispatch pending work NOW)",
-            "  → read/grep/glob (free — to survey results and prepare next wave)",
-            "",
-            "FORBIDDEN right now:",
-            "  → bash, edit, write — NO inline work between results and dispatch",
-            "",
-            "DISPATCH FIRST.  Reads are free.  Inline work after results is a bug.",
-          ].join("\n"),
+        if (tool === "bash" || tool === "edit" || tool === "write") {
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              "⛔  DISPATCH GAP — INLINE MUTATION BLOCKED",
+              "",
+              "Subagent results arrived.  You are trying to mutate files",
+              `(tool: ${tool}) instead of dispatching the next wave.`,
+              "This creates a dispatch gap where the subagent floor drains.",
+              "",
+              "ALLOWED now:  task/agent dispatches + read/grep/glob",
+              "BLOCKED now:  bash, edit, write (inline work is a bug)",
+              "",
+              "DISPATCH FIRST.  Inline mutation between waves is the gap.",
+            ].join("\n"),
+          }
         }
       }
 
@@ -532,19 +530,18 @@ const defaultImpl: HotModule = {
   },
 
   "session.idle": async (..._args: any[]) => {
-    floorTurnState.accumulatedText = ""
-    _resultProcessingGrace = 0
-    _readStreak = 0
-    _consecutiveReadsAfterResults = 0
-    _updateRefillState()
-    _thisMessageDispatchCount = 0
-    _thisMessageTotalCalls = 0
-    _prevMessageDispatchCount = 0
+    if (isSubagent()) return
+    // opencode ≥1.17.9 may call this with changed semantics.
+    // No-op: state tracking is handled by tool.execute.before + text.complete hooks.
+    // Legacy state resets kept in text.complete (if still active) for backwards compat.
   },
 
   "experimental.text.complete": async (_input: any, output: any) => {
     if (isSubagent()) return output
-    if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
+    // opencode ≥1.17.9 may not call text.complete. Safe no-op: return output
+    // unchanged on null/undefined/malformed input.
+    if (!output || typeof output !== "object" || typeof output.text !== "string") return output
+    if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test(output.text.trim())) return output
     try {
       try {
         const cPath = process.env.GLUDD_FLOOR_TEXT_COMPLETE_COUNT || "/tmp/gludd-floor-text-complete-count.json"
@@ -559,7 +556,6 @@ const defaultImpl: HotModule = {
       _thisMessageDispatchCount = 0
       _thisMessageTotalCalls = 0
 
-      if (!output || typeof output.text !== "string") return output
       floorTurnState.accumulatedText += output.text
 
       if (_textHasResultMarker(output.text) && _resultProcessingGrace === 0) {

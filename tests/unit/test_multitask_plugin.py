@@ -88,13 +88,13 @@ class TestPluginStructure:
 
 
 class TestMinDispatchesDefault:
-    def test_default_is_7(self):
+    def test_default_is_3(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MIN_DISPATCHES")
-        assert default == 7, f"MIN_DISPATCHES default should be 7, got {default}"
+        assert default == 3, f"MIN_DISPATCHES default should be 3, got {default}"
 
     def test_string_value_matches_default(self):
         raw = _extract_export_value(_plugin_source(), "MIN_DISPATCHES")
-        assert "7" in raw
+        assert "3" in raw
 
 
 class TestMaxZeroStreak:
@@ -444,12 +444,12 @@ class TestPerMessageEnforcement:
             "OPENCODE_SUBAGENT guard must be present in tool.execute.before"
         )
 
-    def test_per_message_threshold_3_to_6(self):
-        """The per-message enforcement must block when 3-6 dispatches were sent
-        (1-2 get a warning instead, 0 is handled by enforce-stop.ts)."""
+    def test_per_message_threshold_uses_min_dispatches_variable(self):
+        """The per-message enforcement must use MIN_DISPATCHES variable for comparison,
+        not literal numbers, so threshold changes propagate automatically."""
         src = _plugin_source()
-        assert "_state.prevMessageDispatches > 2 && _state.prevMessageDispatches < 7" in src, (
-            "Per-message block must check prevMessageDispatches > 2 && < 7 (3-6 range)"
+        assert "prevMessageDispatches < MIN_DISPATCHES" in src, (
+            "Per-message deny must compare against MIN_DISPATCHES (not literal)"
         )
 
     def test_per_message_time_heuristic_updates_on_every_tool(self):

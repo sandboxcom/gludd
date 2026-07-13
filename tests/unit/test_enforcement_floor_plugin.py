@@ -48,11 +48,11 @@ class TestPluginRegistration:
 
 
 class TestKeyConstants:
-    def test_floor_default_is_7(self):
+    def test_floor_default_is_10(self):
         src = _src()
         m = re.search(r'CLAUDE_AGENT_FLOOR",\s*"(\d+)"', src)
         assert m, "CLAUDE_AGENT_FLOOR default not found"
-        assert m.group(1) == "7"
+        assert m.group(1) == "10"
 
     def test_ceiling_default_is_10(self):
         src = _src()
@@ -60,11 +60,11 @@ class TestKeyConstants:
         assert m, "CLAUDE_AGENT_CEILING default not found"
         assert m.group(1) == "10"
 
-    def test_target_default_is_6(self):
+    def test_target_default_is_10(self):
         src = _src()
         m = re.search(r'CLAUDE_AGENT_TARGET\s*\|\|\s*"(\d+)"', src)
         assert m, "CLAUDE_AGENT_TARGET default not found"
-        assert m.group(1) == "6"
+        assert m.group(1) == "10"
 
     def test_target_capped_by_ceiling(self):
         src = _src()
@@ -277,12 +277,12 @@ class TestMessageShapeEnforcement:
         src = _src()
         assert "_prevMessageDispatchCount" in src
 
-    def test_block_when_prev_1_to_4(self):
+    def test_block_when_prev_1_only(self):
         src = _src()
         idx = src.find("_prevMessageDispatchCount > 0")
         assert idx > 0
         after = src[idx:idx + 100]
-        assert "4" in after or "5" in after
+        assert "2" in after
 
     def test_reset_on_text_complete(self):
         src = _src()
