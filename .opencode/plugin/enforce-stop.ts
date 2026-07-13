@@ -1058,7 +1058,8 @@ export default (async ({ }) => {
       // Item 18: env var gates — disable enforcement entirely
       if (!STOP_ENFORCE || !NO_WAIT_ENFORCE) return
 
-  try {
+      }
+      try {
     const text = output.text
     if (!text || text.trim().length === 0) return
 
