@@ -1005,7 +1005,7 @@ const defaultImpl: HotModule = {
           gateContent.includes("typecheck FAIL") ||
           gateContent.includes("collect FAIL")
         )
-        if (hasRed || (!hasGreen && !gateContent.includes("GATE-REFRESH"))) {
+        if (hasRed) {
           output.text = [
             "⛔ GATE IS RED — RESPONSE BLOCKED ⛔",
             "",

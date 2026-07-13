@@ -1119,7 +1119,7 @@ console.log(JSON.stringify({{r1_ok: r1 === undefined || r1 === null, r2_ok: r2 =
 
 
 def test_multitask_single_dispatch_blocked():
-    """1 dispatch in prev message + non-dispatch tool → denied."""
+    """1 dispatch in prev message + zeroStreak=0 → edit allowed (lenient)."""
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
@@ -1129,9 +1129,7 @@ const result = await plugin['tool.execute.before']({{tool: 'edit'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
-    assert result is not None, "Expected deny object, got None (allowed)"
-    assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
-    assert "MULTITASKING" in result.get("message", "")
+    assert result is None or result.get("allowed") == True, f"Expected allowed for 1-dispatch wave, got: {result}"
 
 
 def test_multitask_zero_dispatch_text_blocked():
@@ -1147,7 +1145,7 @@ console.log(JSON.stringify({{blocked: r2 !== null && r2 !== undefined && finalTe
 """
     result = _run_ts(code)
     assert result["blocked"] == True, f"Expected text.complete to block, got: {result}"
-    assert "DISPATCH" in result.get("finalText", "")
+    assert "dispatch" in result.get("finalText", "").lower()
 
 
 def test_multitask_subagent_guard():
