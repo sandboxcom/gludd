@@ -23,8 +23,8 @@ def _run_plugin(
     env_override: dict | None = None,
     cwd: str | None = None,
     timeout: int = 15,
-) -> tuple[int, str, str]:
-    """Write TS to temp file, run via node, return (exitcode, stdout, stderr)."""
+) -> dict | None:
+    """Write TS to temp file, run via node, return last JSON line of stdout."""
     global _ts_counter
     _ts_counter += 1
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"delgate_e2e_{_ts_counter}_"))
@@ -39,20 +39,27 @@ def _run_plugin(
             capture_output=True, text=True, timeout=timeout,
             cwd=cwd or str(ROOT), env=env,
         )
-        return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+        if proc.returncode != 0:
+            raise AssertionError(
+                f"Node exit {proc.returncode}:\nstderr: {proc.stderr[:800]}\nstdout: {proc.stdout[:400]}"
+            )
+        stdout = proc.stdout.strip()
+        if not stdout:
+            return None
+        for line in reversed(stdout.split("\n")):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+        return None
     finally:
         try:
             tmp.unlink()
         except OSError:
             pass
-
-
-def _import_line() -> str:
-    return (
-        "const mod = await import('" + str(PLUGIN_PATH) + "');\n"
-        "const plugin = mod.default;\n"
-        "const hook = plugin.hooks['tool.execute.before'];\n"
-    )
 
 
 def _init_git_repo(path: Path) -> None:
@@ -70,29 +77,6 @@ def _setup_test_file(path: Path, lines: int = 10) -> Path:
     return f
 
 
-# ─── DEBUG: inspect module shape ────────────────────────────────────────────
-
-
-def test_zzz_debug_module_shape(tmp_path):
-    repo = tmp_path / "debug"
-    repo.mkdir()
-    code = (
-        "const mod = await import('" + str(PLUGIN_PATH) + "');\n"
-        "const d = mod.default;\n"
-        "console.log('typeof default:', typeof d);\n"
-        "console.log('keys:', JSON.stringify(Object.keys(d || {})));\n"
-        "console.log('has hooks:', !!d?.hooks);\n"
-        "if (d?.hooks) {\n"
-        "  console.log('hook keys:', JSON.stringify(Object.keys(d.hooks)));\n"
-        "  console.log('hook type:', typeof d.hooks['tool.execute.before']);\n"
-        "}\n"
-    )
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    print(f"DEBUG stdout: {stdout}")
-    print(f"DEBUG stderr: {stderr}")
-    assert ret == 0, f"exit {ret}\nstderr: {stderr}"
-
-
 # ─── Under threshold → allowed ──────────────────────────────────────────────
 
 
@@ -102,12 +86,18 @@ def test_edit_under_threshold_allowed(tmp_path):
     _init_git_repo(repo)
     _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        "  tool: 'edit',\n  args: { file_path: 'test.txt', old_string: 'line 1\\nline 2', new_string: '' }\n" \
-        "}, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    assert ret == 0, f"Expected exit 0, got {ret}\nstderr: {stderr}"
-    assert "OK" in stdout
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{file_path: 'test.txt', old_string: 'line 1\\nline 2', new_string: ''}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(repo))
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Small edit should be allowed, got: {result}"
+    )
 
 
 def test_write_under_threshold_allowed(tmp_path):
@@ -116,12 +106,18 @@ def test_write_under_threshold_allowed(tmp_path):
     _init_git_repo(repo)
     f = _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        f"  tool: 'write',\n  args: {{ file_path: '{f}', content: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5' }}\n" \
-        "}, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    assert ret == 0, f"Expected exit 0, got {ret}\nstderr: {stderr}"
-    assert "OK" in stdout
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'write', args: {{file_path: '{f}', content: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\n'}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(repo))
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Small write should be allowed, got: {result}"
+    )
 
 
 # ─── Over threshold without DELETION_REASON → blocked ───────────────────────
@@ -133,16 +129,22 @@ def test_edit_over_threshold_no_reason_blocked(tmp_path):
     _init_git_repo(repo)
     _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        "  tool: 'edit',\n  args: { file_path: 'test.txt', " \
-        "old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7', new_string: '' }\n" \
-        "}, undefined);\nconsole.log('SHOULD_NOT_REACH');"
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    assert ret != 0, f"Expected non-zero exit for blocked deletion, got {ret}"
-    assert "SHOULD_NOT_REACH" not in stdout
-    assert "BASH BLOCKED" in stderr or "exceeds threshold" in stderr, (
-        f"Expected block message in stderr, got: {stderr[:500]}"
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{file_path: 'test.txt',
+    old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7',
+    new_string: ''}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(repo))
+    assert result is not None, "Expected deny result for large deletion"
+    assert result.get("permissionDecision") == "deny", (
+        f"Expected deny, got: {result}"
     )
+    assert "exceeds threshold" in result.get("message", "")
 
 
 def test_write_over_threshold_no_reason_blocked(tmp_path):
@@ -151,13 +153,18 @@ def test_write_over_threshold_no_reason_blocked(tmp_path):
     _init_git_repo(repo)
     f = _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        f"  tool: 'write',\n  args: {{ file_path: '{f}', content: 'only one line' }}\n" \
-        "}, undefined);\nconsole.log('SHOULD_NOT_REACH');"
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    assert ret != 0, f"Expected non-zero exit for blocked write, got {ret}"
-    assert "SHOULD_NOT_REACH" not in stdout
-    assert "exceeds threshold" in stderr or "BASH BLOCKED" in stderr, stderr[:500]
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'write', args: {{file_path: '{f}', content: 'only one line'}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(repo))
+    assert result is not None, "Expected deny result for large write"
+    assert result.get("permissionDecision") == "deny"
+    assert "exceeds threshold" in result.get("message", "")
 
 
 # ─── Over threshold WITH DELETION_REASON → allowed + audit log ──────────────
@@ -169,15 +176,22 @@ def test_edit_over_threshold_with_reason_allowed(tmp_path):
     _init_git_repo(repo)
     _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        "  tool: 'edit',\n  args: { file_path: 'test.txt', " \
-        "old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7', new_string: '' }\n" \
-        "}, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{file_path: 'test.txt',
+    old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7',
+    new_string: ''}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
         code, env_override={"DELETION_REASON": "refactoring dead code"}, cwd=str(repo)
     )
-    assert ret == 0, f"Expected exit 0 with reason, got {ret}\nstderr: {stderr}"
-    assert "OK" in stdout
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Deletion with reason should be allowed, got: {result}"
+    )
     audit_log = repo / ".deletion-audit.log"
     assert audit_log.exists(), "Expected .deletion-audit.log to be created"
     log_content = audit_log.read_text()
@@ -191,14 +205,20 @@ def test_write_over_threshold_with_reason_allowed(tmp_path):
     _init_git_repo(repo)
     f = _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        f"  tool: 'write',\n  args: {{ file_path: '{f}', content: 'one line' }}\n" \
-        "}, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'write', args: {{file_path: '{f}', content: 'one line'}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
         code, env_override={"DELETION_REASON": "rewrite module"}, cwd=str(repo)
     )
-    assert ret == 0, f"Expected exit 0 with reason, got {ret}\nstderr: {stderr}"
-    assert "OK" in stdout
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Write with reason should be allowed, got: {result}"
+    )
 
 
 # ─── Subagent guard ─────────────────────────────────────────────────────────
@@ -210,15 +230,22 @@ def test_subagent_skips_deletion_gate(tmp_path):
     _init_git_repo(repo)
     _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        "  tool: 'edit',\n  args: { file_path: 'test.txt', " \
-        "old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7', new_string: '' }\n" \
-        "}, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{file_path: 'test.txt',
+    old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7',
+    new_string: ''}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
         code, env_override={"OPENCODE_SUBAGENT": "1"}, cwd=str(repo)
     )
-    assert ret == 0, f"Subagent should skip check, got exit {ret}\nstderr: {stderr}"
-    assert "OK" in stdout
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Subagent should skip gate, got: {result}"
+    )
 
 
 # ─── Threshold = 0 disables gate ────────────────────────────────────────────
@@ -230,15 +257,22 @@ def test_threshold_zero_disables_gate(tmp_path):
     _init_git_repo(repo)
     _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        "  tool: 'edit',\n  args: { file_path: 'test.txt', " \
-        "old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7', new_string: '' }\n" \
-        "}, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{file_path: 'test.txt',
+    old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7',
+    new_string: ''}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
         code, env_override={"GLUDD_DELETION_GATE_THRESHOLD": "0"}, cwd=str(repo)
     )
-    assert ret == 0, f"Threshold 0 should disable gate, got exit {ret}\nstderr: {stderr}"
-    assert "OK" in stdout
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Threshold 0 should disable gate, got: {result}"
+    )
 
 
 # ─── Non-edit/write tools → allowed ─────────────────────────────────────────
@@ -249,10 +283,18 @@ def test_read_tool_never_blocked(tmp_path):
     repo.mkdir()
     _init_git_repo(repo)
 
-    code = _import_line() + "\nawait hook({ tool: 'read', args: {} }, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    assert ret == 0, f"Read tool should always be allowed, got {ret}\nstderr: {stderr}"
-    assert "OK" in stdout
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'read', args: {{}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(repo))
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Read tool should always be allowed, got: {result}"
+    )
 
 
 def test_bash_tool_never_blocked(tmp_path):
@@ -260,10 +302,18 @@ def test_bash_tool_never_blocked(tmp_path):
     repo.mkdir()
     _init_git_repo(repo)
 
-    code = _import_line() + "\nawait hook({ tool: 'bash', args: {} }, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    assert ret == 0, f"Bash tool should always be allowed, got {ret}\nstderr: {stderr}"
-    assert "OK" in stdout
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(repo))
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Bash tool should always be allowed, got: {result}"
+    )
 
 
 def test_task_tool_never_blocked(tmp_path):
@@ -271,10 +321,18 @@ def test_task_tool_never_blocked(tmp_path):
     repo.mkdir()
     _init_git_repo(repo)
 
-    code = _import_line() + "\nawait hook({ tool: 'task', args: {} }, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    assert ret == 0, f"Task tool should always be allowed, got {ret}\nstderr: {stderr}"
-    assert "OK" in stdout
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(repo))
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Task tool should always be allowed, got: {result}"
+    )
 
 
 # ─── Custom threshold ───────────────────────────────────────────────────────
@@ -286,22 +344,37 @@ def test_custom_threshold_respected(tmp_path):
     _init_git_repo(repo)
     _setup_test_file(repo, 10)
 
-    code_under = _import_line() + "\nawait hook({\n" \
-        "  tool: 'edit',\n  args: { file_path: 'test.txt', old_string: 'line 1\\nline 2', new_string: '' }\n" \
-        "}, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(
+    code_under = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{file_path: 'test.txt',
+    old_string: 'line 1\\nline 2', new_string: ''}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
         code_under, env_override={"GLUDD_DELETION_GATE_THRESHOLD": "3"}, cwd=str(repo)
     )
-    assert ret == 0, f"2 lines under threshold of 3 should be allowed, got {ret}\nstderr: {stderr}"
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"2 lines under threshold 3 should be allowed, got: {result}"
+    )
 
-    code_over = _import_line() + "\nawait hook({\n" \
-        "  tool: 'edit',\n  args: { file_path: 'test.txt', " \
-        "old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5', new_string: '' }\n" \
-        "}, undefined);\nconsole.log('SHOULD_NOT_REACH');"
-    ret2, stdout2, stderr2 = _run_plugin(
+    code_over = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{file_path: 'test.txt',
+    old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5',
+    new_string: ''}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result2 = _run_plugin(
         code_over, env_override={"GLUDD_DELETION_GATE_THRESHOLD": "3"}, cwd=str(repo)
     )
-    assert ret2 != 0, f"5 lines over threshold of 3 should be blocked, got {ret2}"
+    assert result2 is not None, "Expected deny result over threshold 3"
+    assert result2.get("permissionDecision") == "deny"
 
 
 # ─── Threshold negative → gate disabled ─────────────────────────────────────
@@ -313,14 +386,22 @@ def test_negative_threshold_disables_gate(tmp_path):
     _init_git_repo(repo)
     _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        "  tool: 'edit',\n  args: { file_path: 'test.txt', " \
-        "old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7', new_string: '' }\n" \
-        "}, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{file_path: 'test.txt',
+    old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7',
+    new_string: ''}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
         code, env_override={"GLUDD_DELETION_GATE_THRESHOLD": "-1"}, cwd=str(repo)
     )
-    assert ret == 0, f"Negative threshold should disable gate, got {ret}\nstderr: {stderr}"
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Negative threshold should disable gate, got: {result}"
+    )
 
 
 # ─── Empty DELETION_REASON still blocks ─────────────────────────────────────
@@ -332,14 +413,21 @@ def test_empty_deletion_reason_still_blocks(tmp_path):
     _init_git_repo(repo)
     _setup_test_file(repo, 10)
 
-    code = _import_line() + "\nawait hook({\n" \
-        "  tool: 'edit',\n  args: { file_path: 'test.txt', " \
-        "old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7', new_string: '' }\n" \
-        "}, undefined);\nconsole.log('SHOULD_NOT_REACH');"
-    ret, stdout, stderr = _run_plugin(
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{file_path: 'test.txt',
+    old_string: 'line 1\\nline 2\\nline 3\\nline 4\\nline 5\\nline 6\\nline 7',
+    new_string: ''}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
         code, env_override={"DELETION_REASON": ""}, cwd=str(repo)
     )
-    assert ret != 0, f"Empty reason should still block, got {ret}"
+    assert result is not None, "Expected deny for empty reason"
+    assert result.get("permissionDecision") == "deny"
 
 
 # ─── Fail-open: missing file in write → allowed ─────────────────────────────
@@ -350,11 +438,18 @@ def test_write_to_nonexistent_file_fails_open(tmp_path):
     repo.mkdir()
     _init_git_repo(repo)
 
-    code = _import_line() + "\nawait hook({\n" \
-        "  tool: 'write',\n  args: { file_path: 'nonexistent.txt', content: 'new content' }\n" \
-        "}, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    assert ret == 0, f"Write to missing file should fail-open, got {ret}\nstderr: {stderr}"
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'write', args: {{file_path: 'nonexistent.txt', content: 'new content'}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(repo))
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Write to missing file should fail-open, got: {result}"
+    )
 
 
 # ─── No args → allowed ──────────────────────────────────────────────────────
@@ -365,6 +460,15 @@ def test_missing_args_fails_open(tmp_path):
     repo.mkdir()
     _init_git_repo(repo)
 
-    code = _import_line() + "\nawait hook({ tool: 'edit' }, undefined);\nconsole.log('OK');"
-    ret, stdout, stderr = _run_plugin(code, cwd=str(repo))
-    assert ret == 0, f"Missing args should fail-open, got {ret}\nstderr: {stderr}"
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'edit'}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(repo))
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Missing args should fail-open, got: {result}"
+    )
