@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 29 — 1 OPEN item (A.4 release cut). 224 items (223 completed, 1 pending = 99.6%). 10 commits on development (ad2f32fb..0b9cbb04). enforce-make + build_hot_modules dirty.**
+**Last consolidated: 2026-07-13 Session 30 — 1 OPEN item (A.4 release cut). 231 items (230 completed, 1 pending = 99.6%). CI green pending for A.4 release. Recent commits: 581dbfc (session-start read-only bypass), ae811203 (enforce-make fixes), 0da7a71 (audit script + 121 tests), f4242c05 (coverage baseline + verified-claims tests).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -12,8 +12,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | D | Feature Completeness | 0 | 22 | 100% |
 | E | Quality/Coverage | 0 | 15 | 100% |
 | **Total Active** | | **1** | **43** | **98%** |
-| *Archived* | *14 phases* | *0* | *181* | *100%* |
-| **Grand Total** | | **1** | **224** | **99.6%** |
+| *Archived* | *14 phases* | *0* | *188* | *100%* |
+| **Grand Total** | | **1** | **231** | **99.6%** |
 
 ---
 

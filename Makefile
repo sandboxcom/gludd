@@ -2783,10 +2783,13 @@ check-tdd-compliance:
 
 # --- Coverage gaps: flag modules with missing/stub/no-import test files ---
 check-coverage-gaps:
-	@$(UV) run python scripts/check_coverage_gaps.py
+	@$(UV) run python scripts/check_coverage_gaps.py --baseline
 
 check-coverage-gaps-json:
-	@$(UV) run python scripts/check_coverage_gaps.py --json
+	@$(UV) run python scripts/check_coverage_gaps.py --baseline --json
+
+generate-coverage-gaps-baseline:
+	@$(UV) run python scripts/check_coverage_gaps.py --generate-baseline
 
 check-coverage-missing:
 	@$(UV) run python scripts/check_coverage_missing.py
