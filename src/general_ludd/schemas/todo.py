@@ -112,8 +112,10 @@ def validate_transition(current: TodoStatus, target: TodoStatus) -> bool:
     return target in VALID_TRANSITIONS.get(current, set())
 
 
+_TODO_MAX_PRIORITY: int = 1000
+
+
 class Todo(BaseModel):
-    _MAX_PRIORITY: int = 1000
 
     todo_id: str = Field(default_factory=lambda: f"TODO-{uuid4().hex[:8].upper()}")
     title: str
@@ -188,8 +190,8 @@ class Todo(BaseModel):
     def _priority_range(cls, v: int) -> int:
         if v < 0:
             raise ValueError("priority must be non-negative")
-        if v > cls._MAX_PRIORITY:
-            raise ValueError(f"priority must not exceed {cls._MAX_PRIORITY}")
+        if v > _TODO_MAX_PRIORITY:
+            raise ValueError(f"priority must not exceed {_TODO_MAX_PRIORITY}")
         return v
 
     @field_validator("version")

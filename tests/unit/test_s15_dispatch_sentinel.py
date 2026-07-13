@@ -72,7 +72,7 @@ class TestUnrestrictedRoleGate:
     async def test_real_sentinel_bypasses_privileged_kinds(self):
         """The actual object() sentinel bypasses the gate for all privileged kinds."""
         for kind in ("role", "mcp", "skill", "collection"):
-            handler_kw = {f"{kind}_handler": lambda n, a: f"{kind}:{n}"}
+            handler_kw = {f"{kind}_handler": lambda n, a, k=kind: f"{k}:{n}"}
             d = DynamicDispatcher(
                 **handler_kw,  # type: ignore[arg-type]
                 role=UNRESTRICTED_ROLE,
@@ -105,7 +105,7 @@ class TestUnrestrictedRoleGate:
     async def test_none_role_denied_privileged_kinds(self):
         """A None role must deny all privileged kinds."""
         for kind in ("role", "collection", "mcp", "skill"):
-            handler_kw = {f"{kind}_handler": lambda n, a: f"{kind}:{n}"}
+            handler_kw = {f"{kind}_handler": lambda n, a, k=kind: f"{k}:{n}"}
             d = DynamicDispatcher(
                 **handler_kw,  # type: ignore[arg-type]
                 role=None,
@@ -120,7 +120,7 @@ class TestUnrestrictedRoleGate:
     async def test_sentinel_identity_not_equality(self):
         """Prove the comparison uses ``is`` (identity), not ``==`` (equality)."""
         assert (UNRESTRICTED_ROLE is UNRESTRICTED_ROLE) is True
-        assert (UNRESTRICTED_ROLE == object()) is False
+        assert (object() == UNRESTRICTED_ROLE) is False
 
     @pytest.mark.asyncio
     async def test_unregistered_handler_still_fails_under_sentinel(self):

@@ -1578,6 +1578,120 @@ try {{
 
 
 # ---------------------------------------------------------------------------
+# enforce-make.ts  —  bash command enforcement (non-make + metachar blocking)
+# ---------------------------------------------------------------------------
+
+
+def _enforce_make_bash_test(command: str, env_override: dict | None = None) -> dict:
+    """Run a bash command through enforce-make.ts tool.execute.before.
+    Returns {allowed: true} or {permissionDecision: 'deny', message: '...'}.
+    """
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-make.ts')
+const plugin = await mod.default({{}})
+try {{
+  const result = await plugin['tool.execute.before'](
+    {{tool: 'bash', args: {{command: {json.dumps(command)}}}}}, undefined)
+  console.log(JSON.stringify({{allowed: true}}))
+}} catch (e) {{
+  console.log(JSON.stringify({{permissionDecision: 'deny', message: String(e.message)}}))
+}}
+"""
+    return _run_ts(code, env_override=env_override)
+
+
+def test_make_allows_make_target():
+    """bash 'make test' → allowed (no deny)."""
+    # Quick import check: does enforce-make.ts even parse?
+    code = f"""\
+try {{
+  const mod = await import('{PLUGIN_DIR}/enforce-make.ts')
+  console.log(JSON.stringify({{imported: true, keys: Object.keys(mod)}}))
+}} catch (e) {{
+  console.log(JSON.stringify({{importError: String(e.message), stack: String((e as any).stack || '').split('\\\\n').slice(0,3).join('|')}}))
+}}
+"""
+    result = _run_ts(code)
+    assert result is not None, f"Import failed: got None"
+    if result.get("importError"):
+        raise AssertionError(f"Import error: {result}")
+    assert result.get("imported") == True, f"Plugin should import, got: {result}"
+    
+    result = _enforce_make_bash_test("make test")
+    assert result is not None
+    assert result.get("allowed") == True, f"make test should be allowed, got: {result}"
+
+
+def test_make_denies_cd_command():
+    """bash 'cd /tmp' → permissionDecision: 'deny'."""
+    result = _enforce_make_bash_test("cd /tmp")
+    assert result is not None
+    assert result.get("permissionDecision") == "deny", f"cd should be denied, got: {result}"
+    assert "does not start with 'make'" in result.get("message", "").lower()
+
+
+def test_make_denies_python():
+    """bash 'python script.py' → deny."""
+    result = _enforce_make_bash_test("python script.py")
+    assert result.get("permissionDecision") == "deny", f"python should be denied, got: {result}"
+
+
+def test_make_denies_pip():
+    """bash 'pip install x' → deny."""
+    result = _enforce_make_bash_test("pip install x")
+    assert result.get("permissionDecision") == "deny", f"pip should be denied, got: {result}"
+
+
+def test_make_denies_git():
+    """bash 'git status' → deny."""
+    result = _enforce_make_bash_test("git status")
+    assert result.get("permissionDecision") == "deny", f"git should be denied, got: {result}"
+
+
+def test_make_denies_metachar_pipe():
+    """bash 'make test | grep' → deny (pipe not allowed)."""
+    result = _enforce_make_bash_test("make test | grep")
+    assert result.get("permissionDecision") == "deny", f"pipe should be denied, got: {result}"
+    assert "metacharacter" in result.get("message", "").lower()
+
+
+def test_make_denies_metachar_semicolon():
+    """bash 'make test; make lint' → deny."""
+    result = _enforce_make_bash_test("make test; make lint")
+    assert result.get("permissionDecision") == "deny", f"; should be denied, got: {result}"
+
+
+def test_make_denies_metachar_and():
+    """bash 'make test && make lint' → deny."""
+    result = _enforce_make_bash_test("make test && make lint")
+    assert result.get("permissionDecision") == "deny", f"&& should be denied, got: {result}"
+
+
+def test_make_denies_metachar_dollar():
+    """bash 'make $(cat file)' → deny."""
+    result = _enforce_make_bash_test("make $(cat file)")
+    assert result.get("permissionDecision") == "deny", f"$() should be denied, got: {result}"
+
+
+def test_make_denies_redirect():
+    """bash 'make test > file' → deny (redirect involves metachar)."""
+    result = _enforce_make_bash_test("make test > file")
+    assert result.get("permissionDecision") == "deny", f"> redirect should be denied, got: {result}"
+
+
+def test_make_subagent_guard():
+    """OPENCODE_SUBAGENT=1 → allowed (skip)."""
+    result = _enforce_make_bash_test("cd /tmp", env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result.get("allowed") == True, f"Subagent should bypass enforcement, got: {result}"
+
+
+def test_make_disengage_escape():
+    """GLUDD_MAKE_ENFORCE=0 → allowed (disengage)."""
+    result = _enforce_make_bash_test("cd /tmp", env_override={"GLUDD_MAKE_ENFORCE": "0"})
+    assert result.get("allowed") == True, f"MAKE_ENFORCE=0 should disengage, got: {result}"
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
