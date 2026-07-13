@@ -560,6 +560,7 @@ const defaultImpl: HotModule = {
   },
 
   "tool.execute.before": async (input: any, output: any) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
@@ -798,6 +799,7 @@ const defaultImpl: HotModule = {
   },
 
   "experimental.text.complete": async (_input: any, output: any) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return output
     if (textHasResultMarkers(output?.text ?? "").found) return output
     if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output

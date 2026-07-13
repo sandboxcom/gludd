@@ -128,6 +128,7 @@ export const shouldBlock = (text: string): boolean => {
 const defaultImpl: HotModule = {
   "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
     try {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
       if (process.env.GLUDD_VERIFIED_CLAIMS_ENFORCE === "0") return
       if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output

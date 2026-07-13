@@ -101,6 +101,7 @@ export function releaseLock(): void {
 
 export default function commitLockPlugin(api: Plugin): void {
   api.tool.execute.before((params) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     reportAlive("enforce-commit-lock");
     _heldByThisCall = false;

@@ -115,6 +115,7 @@ let _state: MultitaskState = (() => {
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     reportAlive("enforce-multitask")
     try {
@@ -195,6 +196,7 @@ const defaultImpl: HotModule = {
 
   "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
     try {
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
       if (!output || typeof output.text !== "string") return output
       if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test(output.text.trim())) return output

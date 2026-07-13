@@ -71,6 +71,7 @@ export function shouldAllowEdit(
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return;
     reportAlive("enforce-no-suppressions");
     if (process.env.GLUDD_NO_SUPPRESSIONS_ENFORCE === "0") return;

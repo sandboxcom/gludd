@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 29 — 3 OPEN items across 2 active phases (A:2, D:1). 224 items (221 completed, 3 pending = 98.7%). 10 commits on development (ad2f32fb..2b1b9d3e). enforce-make + build_hot_modules dirty.**
+**Last consolidated: 2026-07-13 Session 29 — 1 OPEN item (A.4 release cut). 224 items (223 completed, 1 pending = 99.6%). 10 commits on development (ad2f32fb..0b9cbb04). enforce-make + build_hot_modules dirty.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -8,12 +8,12 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
-| A | CI Green + Release | 2 | 6 | 67% |
-| D | Feature Completeness | 1 | 22 | 95% |
+| A | CI Green + Release | 1 | 6 | 83% |
+| D | Feature Completeness | 0 | 22 | 100% |
 | E | Quality/Coverage | 0 | 15 | 100% |
-| **Total Active** | | **3** | **43** | **93%** |
+| **Total Active** | | **1** | **43** | **98%** |
 | *Archived* | *14 phases* | *0* | *181* | *100%* |
-| **Grand Total** | | **3** | **224** | **99%** |
+| **Grand Total** | | **1** | **224** | **99.6%** |
 
 ---
 
@@ -27,7 +27,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [x] A.1 — Reconcile in-flight fix wave: verify which CI fixes landed on HEAD | priority: high | effort: small | status: completed | evidence: HEAD 58e07399 on development, 10 unpushed commits (58e07399→722ca36c), CI NO RUN for HEAD, A.2 caplog/logging/lint fixes on HEAD, remaining Phase A items (push, release, shard matrix) still pending
 - [x] A.2 — Fix remaining CI failure clusters (slurm billing, connectors_base caplog, PSK caplog, tokenizer, MCPToolRegistry, structured_task_spec) | priority: high | effort: medium | status: completed | evidence: caplog .message→.getMessage() fixes in 2 files, all clusters resolved
-- [x] A.3 — Push development commits (a1fa7935 tip), wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: in_progress | evidence: pushing now with enforce-stop fix + D.19 codification
+- [x] A.3 — Push development commits (a1fa7935 tip), wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: completed | evidence: development pushed (a1fa7935→0b9cbb04), gate green at a1fa7935, enforce-stop + D.19 codified at 60a72988
 - [ ] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: pending
 - [x] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: completed | evidence: build.yml lines 186-244 — 6 shards (unit-1a, unit-1b, unit-1d, unit-2, unit-3, other) already split with path exclusions; unit-1a→1a+1d split completed 2026-07-09 per inline comment
 - [x] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: completed | evidence: fail_under 70→85 in pyproject.toml, commit 5a04fffb (metric module + lint-fix sweep), gate green

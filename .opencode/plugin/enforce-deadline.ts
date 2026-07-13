@@ -157,6 +157,7 @@ function isDispatchTool(tool: string): boolean {
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, output: any) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     reportAlive("enforce-deadline")
     if (!DEADLINE_ENABLED) return
