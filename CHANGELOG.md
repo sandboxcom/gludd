@@ -4,6 +4,38 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased] — since beta.3 (2026-07-12)
 
+### Collections (Session 25)
+
+- **XML Collection** (`general_ludd.xml`) — 9 Ansible roles for XML/HTML/SOAP/SAML/DocBook/DITA/Gradle/plist/XSD/XSLT processing. Shared `xml_utils.py` module (16 functions: parse, validate, transform, query, diff, canonicalize, schema-generate, namespace-resolve, entity-escape, pretty-print, merge, split, extract, xinclude-resolve, xpointer-eval, catalog-resolve). `docs/XML_COLLECTION.md` (975 lines). 47 unit tests.
+- **Web Design Collection** (`general_ludd.web`) — 6 Ansible roles: `html_css_core` (HTML5/CSS3/responsive), `javascript_debug` (JS debugging/error handling/bundle analysis), `design_research` (extract colors/fonts/spacing/layout from websites), `framework_integration` (React/Next.js/HTMX/GraphQL/REST), `ux_engineering` (WCAG accessibility, Nielsen usability, z-axis stacking), `design_system` (spacing/color/typography tokens). Shared `web_utils.py` module (25 functions). `docs/WEB_COLLECTION.md` (1442 lines). 76 unit tests.
+- **Web Server Collection** (`general_ludd.web_server`) — 8 Ansible roles: `http_server`, `ssl_config`, `cgi_wsgi`, `logging_middleware`, `reverse_proxy`, `forward_proxy`, `load_balancer`, `security_hardening`. Shared `web_server_utils.py` module. `docs/WEB_SERVER_COLLECTION.md`.
+
+### Enforcement (Waves 10-12)
+
+- **All 10 enforcement plugins now BLOCKING** — enforce-deadline and enforce-enhancement-ratio converted from advisory to blocking; zero advisory-only plugins remain.
+- **Hot-reload proxy pattern** — all 13 plugins (enforce-floor, enforce-multitask, enforce-delegate, enforce-stop, enforce-deadline, enforce-enhancement-ratio, enforce-no-suppressions, enforce-no-wait, enforce-deletion-gate, enforce-session-start, enforce-clean-tree, enforce-verified-claims, watchdog) support hot-reload via `/tmp/gludd-hot-*.js` proxy files. `make hot-reload-plugins` target builds and deploys without opencode restart.
+- **Functional hook test harness** — `scripts/test_hook_runtime.py` invokes actual plugin hooks via `node -e` with constructed arguments (68 runtime tests across 8 plugins).
+- **Enforcement management targets** — `make reload-enforcement`, `make disengage-enforcement`, `make enforcement-status`, `make check-enhancement-ratio`.
+- **CI pipeline discipline** — `make ci-safe-push` (cooldown-gated push), `make deploy-and-forget` (push + record timestamp), `make ci-busy-check` (detect in-flight CI runs before push).
+
+### Phases (C, D, H, S)
+
+- **Phase H**: H.3 readyz endpoint, H.4 langgraph-auditor, H.5 humangate checkpointer (12 tests), H.6 langgraph-factory role (41 tests)
+- **Phase C**: C.5 integrity store daemon wiring, C.17 git-automation, C.19 cross-tenant isolation, C.21 alpha4 prep, C.26 async-lifecycle patterns
+- **Phase D**: D.7.1 pause-resume persistence (34 tests), D.10 file-claim integration
+- **Phase S**: S.5-S.12 (6 fixes, 118+ new tests)
+- **Phase AG** (research): 16 items from Amazon Strands, CrewAI, AutoGen, LangGraph gap analysis added to TASKS.md
+
+### E2E / Game
+
+- Z.1-Z.7 game gap fixes: CRITICAL daemon pipeline fixed, game_over flag resolved
+
+### Documentation
+
+- `docs/XML_COLLECTION.md`, `docs/WEB_COLLECTION.md`, `docs/WEB_SERVER_COLLECTION.md`
+- README.md restructured with 4 collection sub-sections (`agent`, `security`, `business`, `networking`, `xml`, `web`, `web_server`)
+- SESSION.md and CHANGELOG.md updated for session 25 closure
+
 ### Documentation
 - **Collection split documentation** — FQCN references updated across all docs to reflect domain-based collection split: security roles moved from `general_ludd.agent.*` to `general_ludd.security.*`. README restructured with 4 collection sub-sections (`agent`, `security`, `business`, `networking`).
 - **SSL Certificate Management System** — comprehensive reference doc covering architecture, Ansible roles (`ssl_cert`, `hsm_operations`), Python module APIs (`certificate.py`, `asn1.py`, `algorithms.py`, `hsm.py`, `compliance.py`, `pin.py`), 6-standard compliance matrix, and security considerations. `docs/SSL_CERT_SYSTEM.md`.

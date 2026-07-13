@@ -295,7 +295,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S.10 — POST-SHIP #4: routers/integrity.py unconfined repo_root/path (D6/CA-R2) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
 - [x] S.11 — POST-SHIP #4: validation/runner.py unconfined subprocess cwd (D7/CA-validation) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
 - [x] S.12 — POST-SHIP #4: mcp/transport.py dual _NPM_FAMILY_LAUNCHERS def → bunx skips pin gate (D8/CA-M1) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
-- [ ] S.13 — POST-SHIP #4: db/models.py missing FK todos.todo_id + task_returns.return_id (D9/CA-DB3) | priority: medium | effort: medium | status: pending
+- [/] S.13 — POST-SHIP #4: db/models.py missing FK todos.todo_id + task_returns.return_id (D9/CA-DB3) | priority: medium | effort: medium | status: in_progress
 - [ ] S.14 — POST-SHIP #4: daemon.py sync time.sleep blocks loop for model_gateway (D10/CA-D2) | priority: medium | effort: small | status: pending
 - [ ] S.15 — POST-SHIP #4: dispatch/dynamic_dispatcher.py UNRESTRICTED_ROLE str→object() sentinel (D12) | priority: medium | effort: small | status: pending
 - [ ] S.16 — POST-SHIP #4: daemon.py run_until_complete in running uvicorn loop (D11/CA-D1) | priority: medium | effort: medium | status: pending

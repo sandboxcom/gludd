@@ -199,7 +199,11 @@ class TodoModel(Base):
     resource_profile: Mapped[str] = mapped_column(String(32), nullable=False, default="low_resource")
     estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     actual_cost_accrued: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    parent_todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    parent_todo_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("todos.todo_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     child_todo_ids: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     acceptance_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
     definition_of_done: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -370,7 +374,11 @@ class TaskDecisionModel(Base):
         nullable=True,
         index=True,
     )
-    matched_todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    matched_todo_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("todos.todo_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     evidence_refs: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
