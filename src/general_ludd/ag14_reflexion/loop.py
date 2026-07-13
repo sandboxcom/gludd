@@ -103,7 +103,7 @@ class ReflexionLoop:
         if max_retries < 0:
             raise ValueError(f"max_retries must be >= 0, got {max_retries}")
         if not 0.0 <= score_threshold <= 1.0:
-            raise ValueError(f"score_threshold must be 0.0–1.0, got {score_threshold}")
+            raise ValueError(f"score_threshold must be 0.0-1.0, got {score_threshold}")
 
         self._actor = actor
         self._evaluator = evaluator
