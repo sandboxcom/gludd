@@ -354,7 +354,7 @@ def _check_lifecycle_score_starts_zero(instance: object) -> str | None:
 
 
 def _check_lifecycle_score_increments(
-    instance: object, n_ticks: int = 20,
+    instance: object, n_ticks: int = 20, game_id: str | None = None,
 ) -> str | None:
     """Check 4: over n_ticks, score increases at least once OR the game
     ends.  If neither, fail.  Skipped if no score attribute or no tick
@@ -369,6 +369,26 @@ def _check_lifecycle_score_increments(
     initial_score = score_found[1]
     if isinstance(initial_score, bool) or not isinstance(initial_score, (int, float)):
         return None  # malformed score — covered by check 3
+
+    if game_id is not None:
+        strategy = _SCORE_INCREMENT_DISPATCH.get(game_id)
+        if strategy is not None:
+            skip_reason = strategy(instance)
+            if skip_reason is not None:
+                return f"score_increment strategy: {skip_reason}"
+            new_score_found = _find_attr(instance, _SCORE_ATTR_NAMES)
+            if new_score_found is not None:
+                new_score = new_score_found[1]
+                if (
+                    isinstance(new_score, (int, float))
+                    and not isinstance(new_score, bool)
+                    and new_score > initial_score
+                ):
+                    return None
+            return (
+                f"score did not increment after game-specific strategy "
+                f"(initial={initial_score})"
+            )
 
     ticked_any = False
     for _ in range(n_ticks):

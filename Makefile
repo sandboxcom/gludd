@@ -61,6 +61,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
         check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
+        rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
         verify-release-artifact git-tag-rm release-cut release-recut release-create \
         verify-feature-claims audit-coverage gate-audit coverage-json \
@@ -3507,6 +3508,27 @@ reload-enforcement:
 	@rm -f /tmp/gludd-task-deadlines.json /tmp/gludd-task-stale.json
 	@echo "  /tmp/gludd-task-deadlines.json     → removed"
 	@echo "=== RELOAD COMPLETE — plugins will re-read state on next hook call ==="
+
+# --- Re-arm enforcement — remove disengage signal so plugins resume blocking ---
+rearm-enforcement:
+	@if [ -f /tmp/gludd-watchdog-disengage.json ]; then \
+		rm -f /tmp/gludd-watchdog-disengage.json \
+		&& echo "REARMED: /tmp/gludd-watchdog-disengage.json removed — enforcement plugins will resume blocking."; \
+	else \
+		echo "REARMED (no-op): no disengage signal found — enforcement already active."; \
+	fi
+
+# --- Enforcement status — print current enforcement state ---
+enforcement-status:
+	@echo "=== ENFORCEMENT STATUS ==="
+	@echo -n "  floor-override:          "; [ -f /tmp/gludd-floor-override ] && cat /tmp/gludd-floor-override || echo "(none — using default)"
+	@echo -n "  tool-streak:             "; [ -f /tmp/gludd-tool-streak.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-tool-streak.json")); print(f"count={d.get(\"count\",0)}")' || echo "(none)"
+	@echo -n "  mainthread-streak:       "; [ -f /tmp/gludd-mainthread-streak.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-mainthread-streak.json")); print(f"streak={d.get(\"streak\",0)}")' || echo "(none)"
+	@echo -n "  disengaged:              "; [ -f /tmp/gludd-watchdog-disengage.json ] && echo "YES" || echo "NO"
+	@echo -n "  enhancement-ratio:       "; [ -f /tmp/gludd-enhancement-ratio.json ] && echo "active (wave tracked)" || echo "(none — wave cleared)"
+	@echo -n "  session-start:           "; [ -f /tmp/gludd-session-start.json ] && echo "active" || echo "(none — window reset)"
+	@echo -n "  task-deadlines:          "; [ -f /tmp/gludd-task-deadlines.json ] && echo "active" || echo "(none)"
+	@echo "=== ENFORCEMENT STATUS COMPLETE ==="
 
 # Static coverage audit: match source → test imports (no pytest run).
 #   make static-coverage [THRESHOLD=85]

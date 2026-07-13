@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
-import { loadHotModule, type HotModule } from "./hot_reload"
+import { loadHotModule, type HotModule } from "./hot_reload.ts"
 
 // enforce-enhancement-ratio.ts — per-wave enhancement/fix dispatch ratio enforcement.
 //

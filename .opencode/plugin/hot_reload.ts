@@ -22,7 +22,7 @@ import * as fs from "node:fs"
 //
 // USAGE (in each enforcement plugin):
 //
-//   import { loadHotModule, type HotModule } from "./hot_reload"
+//   import { loadHotModule, type HotModule } from "./hot_reload.ts"
 //
 //   const defaultImpl: HotModule = {
 //     "tool.execute.before": async (input, output) => { ... },

@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { loadHotModule, type HotModule } from "./hot_reload"
+import { loadHotModule, type HotModule } from "./hot_reload.ts"
 
 // Floor+ceiling enforcement guardrail (separate from enforce-make.ts so a bug
 // here can NEVER break the make-only enforcement). FAIL-OPEN: any error -> do
