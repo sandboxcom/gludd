@@ -16,6 +16,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { spawn } from "node:child_process"
 import { loadHotModule, type HotModule } from "./hot_reload.ts"
 import { isSubagent, reportAlive, isDispatchTool } from "./shared.ts"
 
@@ -89,7 +90,6 @@ function spawnGateRefresh(): void {
     if (!fs.existsSync(gatePath)) return
     const stat = fs.statSync(gatePath)
     if ((Date.now() - stat.mtimeMs) <= 300_000) return
-    const { spawn } = require("node:child_process")
     const child = spawn("make", ["gate-refresh"], {
       cwd: process.cwd(),
       detached: true,

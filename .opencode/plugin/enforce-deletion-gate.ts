@@ -71,9 +71,9 @@ async function appendAuditLog(entry: DeletionAuditEntry): Promise<void> {
 
 function getDeletionThreshold(): number {
   const envThreshold = process.env.GLUDD_DELETION_GATE_THRESHOLD;
-  if (envThreshold !== undefined) {
+    if (envThreshold !== undefined) {
     const parsed = parseInt(envThreshold, 10);
-    if (!Number.isNaN(parsed) && parsed >= 0) {
+    if (!Number.isNaN(parsed)) {
       return parsed;
     }
   }
@@ -103,6 +103,7 @@ const defaultImpl: HotModule = {
     let linesRemoved = 0;
 
     if (input.tool === "edit") {
+      if (!input.args) return;
       const args = input.args as { file_path: string; old_string: string; new_string: string };
       filePath = args.file_path;
       const oldLines = countLines(args.old_string);
