@@ -69,7 +69,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         deck deck-serve deck-preview deck-data deck-honesty \
         sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
         sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
-    script-count test-hooks-live test-hook-runtime \
+    script-count strip-enforce-stop test-hooks-live test-hook-runtime \
     verify-enforcement \
     ci-view ci-rerun ci-trigger ci-active ci-job-log \
     ci-busy-check ci-safe-push pre-push-check push-guarded \
@@ -727,6 +727,13 @@ test-guardrails:
 # Skips cleanly (not fails) when node < 22.6 / absent.
 test-hooks-live:
 	@$(UV) run python -m pytest -m hook_live -v
+
+# Strip TypeScript syntax from enforce-stop.ts for Node v26 compat.
+# node --experimental-strip-types fails on `as const` in property values
+# and interface blocks inside complex expressions. This target runs a
+# Python script that strips those constructs so the file can be loaded.
+strip-enforce-stop:
+	@$(UV) run python scripts/strip_enforce_stop_ts.py
 
 # Functional hook runtime tests: invokes actual plugin hook functions via
 # node --experimental-strip-types and verifies runtime behavior (deny/allow,
