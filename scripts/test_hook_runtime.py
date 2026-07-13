@@ -212,9 +212,16 @@ def test_clean_tree_hook_dispatch_with_dirty_tree():
 let registeredHook = null
 const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const gs = mod.getGitStatus()
+console.log("GIT_STATUS[" + gs.length + "]=" + JSON.stringify(gs).slice(0,200))
+const dt = mod.isTreeDirty()
+console.log("IS_DIRTY=" + dt)
+const toolName = 'task'
+const isDispatch = mod.DISPATCH_TOOLS.includes(toolName)
+console.log("IS_DISPATCH=" + isDispatch)
 mod.default(api)
 const result = registeredHook({{tool: 'task'}})
-console.log(JSON.stringify(result ?? null))
+console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code)
         # If the tree is dirty, result should be a deny
@@ -1457,12 +1464,21 @@ def test_clean_tree_dirty_dispatch_blocked():
     try:
         with open(test_file, "w") as f:
             f.write("test dirty file for runtime hook test")
+            f.flush()
+            os.fsync(f.fileno())
         code = f"""\
 let registeredHook = null
 const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const gs = mod.getGitStatus()
+console.log("GIT_STATUS[" + gs.length + "]=" + JSON.stringify(gs).slice(0,200))
+const dt = mod.isTreeDirty()
+console.log("IS_DIRTY=" + dt)
+console.log("SUBAGENT=" + process.env.OPENCODE_SUBAGENT)
+console.log("ENFORCE=" + process.env.GLUDD_CLEAN_TREE_ENFORCE)
 mod.default(api)
 const result = registeredHook({{tool: 'task'}})
+console.log("RAW_RESULT=" + JSON.stringify(result))
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code)
