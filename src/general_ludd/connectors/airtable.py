@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any, Protocol, runtime_checkable
-from urllib.parse import urlparse, urlsplit
+from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
@@ -165,7 +165,7 @@ class AirtableSource:
         }
 
     def _normalize(self, record: dict[str, Any]) -> dict[str, Any]:
-        fields = record.get("fields") or {}
+        record.get("fields") or {}
         return {
             "ts": record.get("createdTime"),
             "source": self.name,

@@ -118,7 +118,9 @@ class TestImageCache:
     def test_ensure_present_pulls(self) -> None:
         cache = ImageCache()
         with patch.object(subprocess, "run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(args=["docker", "pull", "alpine:latest"], returncode=0, stdout="image_id\n", stderr="")
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["docker", "pull", "alpine:latest"],
+                returncode=0, stdout="image_id\n", stderr="")
             result = cache.ensure_present("alpine", "latest")
             assert result is True
             assert cache.get("alpine", "latest") is not None
@@ -127,7 +129,9 @@ class TestImageCache:
     def test_ensure_present_pull_fails(self) -> None:
         cache = ImageCache()
         with patch.object(subprocess, "run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(args=["docker", "pull", "missing:latest"], returncode=1, stdout="", stderr="not found")
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["docker", "pull", "missing:latest"],
+                returncode=1, stdout="", stderr="not found")
             result = cache.ensure_present("missing", "latest")
             assert result is False
             assert cache.get("missing", "latest") is None

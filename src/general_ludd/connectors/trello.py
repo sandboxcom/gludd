@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -164,7 +164,7 @@ class TrelloSource:
         elif due_str:
             try:
                 due_dt = datetime.fromisoformat(due_str.replace("Z", "+00:00"))
-                delta = due_dt - datetime.now(timezone.utc)
+                delta = due_dt - datetime.now(UTC)
                 level_or_status = "due_soon" if delta.total_seconds() < 259200 else "open"
             except (ValueError, TypeError):
                 level_or_status = "open"
@@ -223,7 +223,7 @@ class TrelloSource:
         before: str | None = None
 
         for _ in range(max(1, self.max_pages)):
-            params = {**self._auth_params(), "limit": self.page_size}
+            params = {**self._auth_params(), "limit": str(self.page_size)}
             if before:
                 params["before"] = before
 

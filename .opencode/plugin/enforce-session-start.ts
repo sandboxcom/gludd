@@ -218,7 +218,9 @@ const READ_ONLY_MAKE_TARGETS: ReadonlySet<string> = new Set([
 
 function isReadOnlyMakeTarget(tool: string, input: unknown): boolean {
   if (tool !== "bash") return false
-  const cmd: string = (input as Record<string, unknown> | null)?.command as string ?? ""
+  const inp = input as Record<string, unknown> | null
+  const args = inp?.args as Record<string, unknown> | null | undefined
+  const cmd: string = (args?.command as string) ?? (inp?.command as string) ?? ""
   const m = cmd.match(/^make\s+(\S+)/)
   if (!m) return false
   return READ_ONLY_MAKE_TARGETS.has(m[1])
@@ -227,6 +229,10 @@ function isReadOnlyMakeTarget(tool: string, input: unknown): boolean {
 function isTaskFileRead(tool: string, input: unknown): boolean {
   if (!isReadTool(tool)) return false
   try {
+    const inp = input as Record<string, unknown> | null
+    const args = inp?.args as Record<string, unknown> | null | undefined
+    const filePath = (args?.filePath as string) ?? ""
+    if (filePath && TASK_FILES.some(f => filePath.toLowerCase().includes(f.toLowerCase()))) return true
     const blob = JSON.stringify(input ?? {}).toLowerCase()
     return TASK_FILES.some(f => blob.includes(f.toLowerCase()))
   } catch {

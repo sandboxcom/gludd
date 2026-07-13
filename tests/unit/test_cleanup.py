@@ -11,14 +11,20 @@ from general_ludd.sandbox.cleanup import CleanupManager, CleanupRecord
 
 class TestCleanupRecord:
     def test_creation(self) -> None:
-        record = CleanupRecord(resource_type="docker_container", resource_id="abc123", cleaned_at=time.time(), reason="explicit")
+        record = CleanupRecord(
+            resource_type="docker_container", resource_id="abc123",
+            cleaned_at=time.time(), reason="explicit",
+        )
         assert record.resource_type == "docker_container"
         assert record.resource_id == "abc123"
         assert record.reason == "explicit"
         assert record.success is True
 
     def test_failed_record(self) -> None:
-        record = CleanupRecord(resource_type="kubernetes_pod", resource_id="pod-xyz", cleaned_at=time.time(), reason="explicit", success=False)
+        record = CleanupRecord(
+            resource_type="kubernetes_pod", resource_id="pod-xyz",
+            cleaned_at=time.time(), reason="explicit", success=False,
+        )
         assert record.success is False
 
 
@@ -107,7 +113,9 @@ class TestCleanupManager:
     def test_cleanup_kubernetes_resources(self) -> None:
         mgr = CleanupManager()
         with patch.object(subprocess, "run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="pod/a deleted\npod/b deleted\n", stderr="")
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="pod/a deleted\npod/b deleted\n", stderr="",
+            )
             count = mgr.cleanup_kubernetes_resources()
             assert count == 2
 

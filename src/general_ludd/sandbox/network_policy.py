@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+
 @dataclass
 class NetworkPolicy:
     allowed_hosts: list[str] = field(default_factory=list)
@@ -47,7 +48,17 @@ class NetworkPolicy:
         ingress: list[dict[str, Any]] = []
         if self.allow_inbound:
             ingress.append({})
-        return {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy", "metadata": {"name": "gludd-sandbox", "namespace": namespace}, "spec": {"podSelector": {"matchLabels": pod_selector}, "policyTypes": self._policy_types(), "egress": egress if egress else None, "ingress": ingress if ingress else None}}
+        return {
+            "apiVersion": "networking.k8s.io/v1",
+            "kind": "NetworkPolicy",
+            "metadata": {"name": "gludd-sandbox", "namespace": namespace},
+            "spec": {
+                "podSelector": {"matchLabels": pod_selector},
+                "policyTypes": self._policy_types(),
+                "egress": egress if egress else None,
+                "ingress": ingress if ingress else None,
+            },
+        }
 
     def is_isolated(self) -> bool:
         return not self.allow_outbound and not self.allow_inbound

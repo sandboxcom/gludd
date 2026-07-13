@@ -100,13 +100,20 @@ class TestSecurityPolicy:
         assert policy.is_restrictive() is False
 
     def test_custom_policy_fields(self) -> None:
-        policy = SecurityPolicy(capabilities=["NET_BIND_SERVICE"], read_only_root=False, privileged=False, seccomp_profile="custom.json", apparmor_profile="custom-armor", no_new_privileges=True, allow_privilege_escalation=False, hidden_paths=["/secret"])
+        policy = SecurityPolicy(
+            capabilities=["NET_BIND_SERVICE"], read_only_root=False,
+            privileged=False, seccomp_profile="custom.json",
+            apparmor_profile="custom-armor", no_new_privileges=True,
+            allow_privilege_escalation=False, hidden_paths=["/secret"])
         assert policy.hidden_paths == ["/secret"]
         assert policy.read_only_root is False
         assert policy.seccomp_profile == "custom.json"
 
     def test_empty_policy_no_docker_args(self) -> None:
-        policy = SecurityPolicy(read_only_root=False, privileged=False, capabilities=[], read_only_paths=[], writable_paths=[], seccomp_profile="", apparmor_profile="")
+        policy = SecurityPolicy(
+            read_only_root=False, privileged=False,
+            capabilities=[], read_only_paths=[], writable_paths=[],
+            seccomp_profile="", apparmor_profile="")
         args = policy.to_docker_args()
         assert "--read-only" not in args
         assert "--privileged" not in args

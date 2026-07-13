@@ -18,6 +18,7 @@ from general_ludd.ansible.network_policy import (
     PolicyRule,
     scan_playbook_tasks,
 )
+from general_ludd.sandbox.network_policy import NetworkPolicy as SandboxNetworkPolicy
 
 
 def _get_only_github() -> NetworkPolicy:
@@ -199,3 +200,10 @@ def test_scan_playbook_tasks_get_url(tmp_path: object) -> None:
     violations = scan_playbook_tasks(str(playbook), policy)
     assert len(violations) == 1
     assert "evil.example.com" in violations[0]
+
+
+def test_sandbox_network_policy_isolated() -> None:
+    policy = SandboxNetworkPolicy.fully_isolated()
+    assert policy.is_isolated()
+    assert not policy.allow_outbound
+    assert policy.to_docker_args() == ["--network", "none"]
