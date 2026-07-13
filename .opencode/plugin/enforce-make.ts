@@ -864,6 +864,23 @@ const defaultImpl: HotModule = {
         _pendingPreflightGate = ""
       },
 
+      "text.complete": async (_input, output) => {
+        if (isSubagent()) return output
+        if (typeof output !== "string") return output
+        const hasRed = (() => {
+          try {
+            const p = path.join(process.cwd(), ".gate-status")
+            if (fs.existsSync(p)) {
+              const c = fs.readFileSync(p, "utf8")
+              return /FAIL/.test(c)
+            }
+          } catch {}
+          return false
+        })()
+        if (hasRed) return "[GATE RED] Fix failures before committing.\n\n" + output
+        return output
+      },
+
       "experimental.chat.system.transform": async (_input, output) => {
         // process.env.OPENCODE_SUBAGENT guard
         if (isSubagent()) return output
@@ -978,6 +995,13 @@ export default (({ }) => {
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["experimental.chat.system.transform"] || impl["system.transform"]
+      return fn ? await fn(_input, output) : output
+    },
+
+    "text.complete": async (_input, output) => {
+      if (isSubagent()) return output
+      const impl = loadHotModule("enforce-make", defaultImpl)
+      const fn = impl["text.complete"]
       return fn ? await fn(_input, output) : output
     },
 
