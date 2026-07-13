@@ -383,16 +383,8 @@ repro-worker-crash:
 task:
 	@if [ -z "$(CMD)" ]; then echo "Usage: make task CMD='make test-unit'"; exit 1; fi
 	@echo "Running task with $(GLUDD_TASK_TIMEOUT)s timeout: $(CMD)"
-	@python3 -c "import subprocess,sys,signal; \
-p=subprocess.Popen('$(CMD)',shell=True); \
-try: \
-  p.wait($(GLUDD_TASK_TIMEOUT)); \
-except subprocess.TimeoutExpired: \
-  p.send_signal(signal.SIGTERM); \
-  try: p.wait(5); \
-  except: p.kill(); \
-  print('TASK TIMEOUT: killed after $(GLUDD_TASK_TIMEOUT)s',file=sys.stderr); \
-  sys.exit(124)"
+	@printf '%s' "$(CMD)" > /tmp/gludd-task-cmd.txt; \
+	$(UV) run python3 scripts/task_runner.py /tmp/gludd-task-cmd.txt $(GLUDD_TASK_TIMEOUT)
 	@EXIT=$$?; if [ $$EXIT -eq 124 ]; then echo "TASK TIMEOUT: $(CMD) exceeded $(GLUDD_TASK_TIMEOUT)s"; fi; exit $$EXIT
 
 test-count:
@@ -742,6 +734,9 @@ test-hooks-live:
 # tests; these tests MEASURE hook behavior, not source code shape.
 test-hook-runtime:
 	@$(UV) run python scripts/test_hook_runtime.py -v
+
+bisect-ts-parse:
+	@$(PYTHON) scripts/bisect_ts_parse.py
 
 test-db:
 	@$(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
