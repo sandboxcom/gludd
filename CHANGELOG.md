@@ -2,7 +2,15 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [Unreleased] — since beta.3 (2026-07-12) — Session 25 Final: 17 todos, 12 completed, 3 collections, 10/10 plugins BLOCKING, 59% TASKS.md completion
+## [Unreleased] — since beta.3 (2026-07-13) — Session 29: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening
+
+### Session 29 (2026-07-13) — Enforcement Plugin Node v26 Compatibility Fixes
+
+**Enforcement plugin fixes:**
+- enforce-clean-tree.ts: `require()` → `import` fix for Node v26 `--experimental-strip-types` compat, plus 7 new runtime tests (9d4e60da)
+- enforce-stop.ts: deduplication refactor using shared.ts helpers, removing 185 lines of redundant logic (ad2f32fb)
+- Hot-reload proxy pattern extended to enforce-clean-tree.ts — now all 14 plugins support `/tmp/gludd-hot-*.js` proxies (a68de353)
+- `require()` audit checker added to `tests/unit/test_opencode_node_v26_compat.py` — catches Node v26 syntax errors before they land
 
 ### Session 25 (2026-07-12) — Enforcement Infrastructure + 4 Collections + Phase S/H/C/D/E/AG Fixes
 

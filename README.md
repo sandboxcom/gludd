@@ -61,7 +61,7 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.3 — 2026-07-12**
+**Status as of v0.1.0-beta.3 — 2026-07-13**
 
 Version: `v0.1.0-beta.3` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut

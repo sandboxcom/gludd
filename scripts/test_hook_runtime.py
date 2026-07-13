@@ -1750,10 +1750,12 @@ console.log(JSON.stringify({{
 
 def test_no_wait_sleep_blocked():
     """Bash call with 'sleep 60&&' pattern → denied by WAIT_PATTERNS."""
-    code = _pluginapi_code(
-        "enforce-no-wait.ts",
-        "registeredHook({tool: 'bash', command: 'sleep 60&& make gate-status-check'})",
-    )
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'sleep 60&& make gate-status-check'}}, undefined)
+console.log(JSON.stringify(result ?? null))
+"""
     result = _run_ts(code)
     assert result is not None, "Expected deny object, got None"
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
@@ -1762,10 +1764,12 @@ def test_no_wait_sleep_blocked():
 
 def test_no_wait_gate_tail_blocked():
     """Bash call with 'gate-tail' pattern → denied by WAIT_PATTERNS."""
-    code = _pluginapi_code(
-        "enforce-no-wait.ts",
-        "registeredHook({tool: 'bash', command: 'make gate-tail'})",
-    )
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make gate-tail'}}, undefined)
+console.log(JSON.stringify(result ?? null))
+"""
     result = _run_ts(code)
     assert result is not None, "Expected deny object, got None"
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
@@ -1773,20 +1777,24 @@ def test_no_wait_gate_tail_blocked():
 
 def test_no_wait_subagent_bypass():
     """OPENCODE_SUBAGENT=1 → bash call allowed."""
-    code = _pluginapi_code(
-        "enforce-no-wait.ts",
-        "registeredHook({tool: 'bash', command: 'sleep 60&& make gate-status-check'})",
-    )
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'sleep 60&& make gate-status-check'}}, undefined)
+console.log(JSON.stringify(result ?? null))
+"""
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
     assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
 
 
 def test_no_wait_env_disabled():
     """GLUDD_NO_WAIT_ENFORCE=0 → bash call allowed."""
-    code = _pluginapi_code(
-        "enforce-no-wait.ts",
-        "registeredHook({tool: 'bash', command: 'make gate-tail'})",
-    )
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make gate-tail'}}, undefined)
+console.log(JSON.stringify(result ?? null))
+"""
     result = _run_ts(code, env_override={"GLUDD_NO_WAIT_ENFORCE": "0"})
     assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
 

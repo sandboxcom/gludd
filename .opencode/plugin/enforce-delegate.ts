@@ -1,7 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import { execSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool } from "./shared.ts"
+import { loadHotModule, type HotModule } from "./hot_reload.ts"
 
 // enforce-delegate.ts — opencode-native port of the Claude orchestration hooks
 // that govern SUBAGENT DISPATCH and MAIN-THREAD DELEGATION discipline.
@@ -116,7 +118,6 @@ function countLiveAgents(): number | null {
     return null
   }
   try {
-    const { execSync } = require("node:child_process")
     const out = execSync(
       "python3 " + path.join(process.cwd(), "scripts", "agent_liveness.py") + " --count",
       {
@@ -292,7 +293,6 @@ function diskSnapshot(): { freeGb: number, venvCount: number } {
     }
   }
   try {
-    const { execSync } = require("node:child_process")
     const out = execSync(
       `python3 -c "import shutil, pathlib; st = shutil.disk_usage('${process.cwd()}'); ` +
       `wt = pathlib.Path('${process.cwd()}/.claude/worktrees'); ` +
@@ -676,7 +676,7 @@ function mainthreadBudgetAfter(tool: string): void {
 }
 
 // ============================================================================
-// PLUGIN
+// PLUGIN HELPERS
 // ============================================================================
 // Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
 // fires. Fail-open. Distinct from the shared alive.json.
@@ -687,6 +687,45 @@ function _writeHeartbeat(): void {
   } catch { /* fail-open */ }
 }
 
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+export const defaultImpl = {
+  "tool.execute.before": async (input, output) => {
+    if (isSubagent()) return
+    console.log("SUBAGENT SKIP: enforce-delegate")
+    reportAlive("enforce-delegate")
+    _writeHeartbeat()
+    const tool = input.tool
+    const args = output?.args
+
+    // task/agent/workflow dispatch — model utilization + disk discipline
+    if (isDispatchTool(tool)) {
+      const modelMsg = enforceModelUtilization(args)
+      if (modelMsg) throw new Error(modelMsg)
+
+      const diskMsg = enforceDiskDiscipline(args)
+      if (diskMsg) throw new Error(diskMsg)
+    }
+
+    // all tools — force-delegate + mainthread budget
+    // (Each of these is FAIL-OPEN internally; they return null on any error.)
+    const forceMsg = enforceForceDelegate(tool, args)
+    if (forceMsg) throw new Error(forceMsg)
+
+    const budgetMsg = mainthreadBudgetBefore(tool)
+    if (budgetMsg) throw new Error(budgetMsg)
+  },
+
+  "tool.execute.after": async (input, _output) => {
+    // mainthread budget streak counter — never throws
+    mainthreadBudgetAfter(input.tool)
+  },
+}
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
 export default (async ({ }) => {
   // LOADED self-check: proves opencode invoked the factory (registered, not
   // merely present on disk). Appended to the shared log.
@@ -703,32 +742,14 @@ export default (async ({ }) => {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return
       console.log("SUBAGENT SKIP: enforce-delegate")
-      reportAlive("enforce-delegate")
-      _writeHeartbeat()
-      const tool = input.tool
-      const args = output?.args
-
-      // task/agent/workflow dispatch — model utilization + disk discipline
-      if (isDispatchTool(tool)) {
-        const modelMsg = enforceModelUtilization(args)
-        if (modelMsg) throw new Error(modelMsg)
-
-        const diskMsg = enforceDiskDiscipline(args)
-        if (diskMsg) throw new Error(diskMsg)
-      }
-
-      // all tools — force-delegate + mainthread budget
-      // (Each of these is FAIL-OPEN internally; they return null on any error.)
-      const forceMsg = enforceForceDelegate(tool, args)
-      if (forceMsg) throw new Error(forceMsg)
-
-      const budgetMsg = mainthreadBudgetBefore(tool)
-      if (budgetMsg) throw new Error(budgetMsg)
+      const impl = loadHotModule("delegate", defaultImpl)
+      const fn = impl["tool.execute.before"]
+      return fn ? await fn(input, output) : undefined
     },
-
-    "tool.execute.after": async (input, _output) => {
-      // mainthread budget streak counter — never throws
-      mainthreadBudgetAfter(input.tool)
+    "tool.execute.after": async (input, output) => {
+      const impl = loadHotModule("delegate", defaultImpl)
+      const fn = impl["tool.execute.after"]
+      return fn ? await fn(input, output) : undefined
     },
   }
 }) satisfies Plugin
