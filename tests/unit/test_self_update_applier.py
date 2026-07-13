@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from general_ludd.security.path_canonicalizer import PROTECTED_PATH_MARKERS
 from general_ludd.self_update.applier import (
-    PROTECTED_PATH_MARKERS,
     ApplyResult,
     UpdateApplier,
 )
