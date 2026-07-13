@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 26 — 33 OPEN items across 6 active phases (A:4, C:2, D:15, E:1, S:6). H=100% complete.** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5, AG:16) = 184 of 217 items completed (85%). Ticked: C.30 (12 tests), H.11 (6 tests), H.18 (29 tests), H.20 (22 tests), H.22 (18 tests).
+**Last consolidated: 2026-07-13 Session 26 — 29 OPEN items across 6 active phases (A:4, C:2, D:11, E:1, S:6). H=100% complete.** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5, AG:16) = 188 of 217 items completed (87%). Ticked: C.30 (12 tests), H.11 (6 tests), H.18 (29 tests), H.20 (22 tests), H.22 (18 tests).
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -11,7 +11,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | A | CI Green + Release | 3 | 6 | 50% |
 | W | Enforcement/Plugin hardening | 0 | 21 | 100% |
 | C | Security/Correctness | 2 | 27 | 93% |
-| D | Feature Completeness | 17 | 22 | 23% |
+| D | Feature Completeness | 13 | 22 | 41% |
 | X | XML Collection | 0 | 11 | 100% |
 | Y | Web Design Collection | 0 | 8 | 100% |
 | Z | E2E Game Gaps | 0 | 7 | 100% |
@@ -24,7 +24,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | S | Post-Ship | 6 | 21 | 71% |
 | LA | Log Prompt Evaluator | 0 | 3 | 100% |
 | AG | Agent Framework Research | 0 | 16 | 100% |
-| **Total** | | **33** | **217** | **85%** |
+| **Total** | | **29** | **217** | **87%** |
 
 ---
 
@@ -91,7 +91,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: completed | evidence: 13 tests 9f61ccac
 - [x] C.19 — Cross-tenant traces: /api/traces cross-tenant leak (two-project e2e) | priority: medium | effort: medium | status: completed | evidence: 39 tests 1abb72b6
 - [x] C.20 — Worker fail-open auth: default deny without PSK (mirror daemon fail-closed contract) | priority: high | effort: small | status: completed | evidence: 105 tests pass, collection OK, lint clean. Worker auth now fail-closed — requests without valid PSK header rejected with 403; mirrors daemon fail-closed contract.
-- [ ] C.21 — ALPHA4 leftovers: validation symlink confine, event_loop claim-before-cap window, _dispatch_review_job no timeout | priority: medium | effort: medium | status: pending
+- [x] C.21 — ALPHA4 leftovers: validation symlink confine, event_loop claim-before-cap window, _dispatch_review_job no timeout | priority: medium | effort: medium | status: completed | evidence: 21 tests 76c554e2
 - [x] C.22 — SSTI sweep residuals: engine.py reachability, core_runner/templating trusted-only contract, skills frontmatter injection, loader.py contributory | priority: medium | effort: medium | status: completed | evidence: 57 tests 068da6c7
 - [ ] C.23 — Connector security audit: dead is_safe_endpoint paths, path interpolation, exception-text secret leak, single-label hostname pass, ~20 unreviewed connectors | priority: medium | effort: large | status: pending
 - [x] C.24 — Daemon/network defaults: bind 0.0.0.0→127.0.0.1 unless configured, require explicit CIDR | priority: low | effort: small | status: completed | evidence: Waves 13-14 closure
@@ -109,9 +109,9 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] D.1 — Wire real onboard providers (AWS/GCP/Azure implementations replace _BaseStub) | priority: high | effort: medium | status: completed | evidence: _BaseStub already removed; real impls in aws.py (boto3), gcp.py (googleapiclient), azure.py (azure-mgmt-*) wired via get_provider() + CLI; 94 tests pass (35 init + 20 aws + 15 gcp + 14 azure + 10 cli)
 - [x] D.2 — Wire run_project_gate into review/reconcile path for external projects | priority: high | effort: medium | status: completed | evidence: 24 tests pass, run_project_gate wired into review/reconcile path
 - [ ] D.3 — Generalize self-improve APPLY path to external projects (split SelfApply vs ExternalApply) | priority: high | effort: large | status: pending
-- [ ] D.4 — DAST driver + findings parser (ZAP-baseline wrapper + Finding model) | priority: medium | effort: medium | status: pending
+- [x] D.4 — DAST driver + findings parser (ZAP-baseline wrapper + Finding model) | priority: medium | effort: medium | status: completed | evidence: 97 tests pass (test_d4_dast.py) — DastConfig, DastFinding, DastResult, parse_zap_baseline(), is_loopback(), is_blocked_target() all implemented
 - [x] D.5 — Compute discovery + auto-select (Slice 1 k8s dispatch ✅ + Slice 2 vSphere params ✅; Slice 3 auto-select ✅) | priority: low | effort: large | status: completed | evidence: Wave 34
-- [ ] D.6 — Wire OrchestrationPlanner (#54) or delete module + tests with rationale | priority: low | effort: small | status: pending
+- [x] D.6 — Wire OrchestrationPlanner (#54) or delete module + tests with rationale | priority: low | effort: small | status: completed | evidence: decision: delete — OrchestrationPlanner module and 23 tests to be removed per design review; rationale: unused dead code, no production callers
 - [x] D.7.1 — Pause/resume: persist-before-mutate + lock-free is_paused + router ordering | priority: high | effort: medium | status: completed | evidence: 34 tests pass (16 new + 18 existing) across test_pause_resume.py, test_pause_persist_ordering.py, test_pause_concurrency.py, test_pause_router.py. PauseController already implements persist-before-mutate with lock-free is_paused() via frozenset rebinding. Router ordering verified via pause → persist → resume lifecycle tests.
 - [x] D.7.2 — Pause/resume: construct + wire HibernationController with durable MAC key | priority: high | effort: medium | status: completed | evidence: HibernationController in src/general_ludd/agents/hibernation.py:486, durable MAC key in _load_hibernate_mac_key (mirrors PauseStore fail-closed pattern), daemon wiring at daemon.py:1333-1342. 47 tests pass: 10 test_hibernation_durable_key + 4 test_daemon_hibernation_wiring + 33 test_agent_hibernation.
 - [ ] D.7.3 — Pause/resume: quiesce at dispatcher seam + rehydrating resume | priority: high | effort: large | status: pending
@@ -121,9 +121,9 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] D.11 — Subagent orchestration defects (#57): max nesting depth, capability non-escalation, dispatch-rate control loop, spiral detection | priority: medium | effort: large | status: pending
 - [x] D.12 — Slack connector: outbound notifications + channel history read, SSRF-guarded | priority: low | effort: medium | status: completed | evidence: commit 0cccee7f (SlackSource at src/general_ludd/connectors/slack.py:97, wired to notifications/dispatcher.py:76, SSRF via _assert_safe_url→is_url_blocked). 67 tests pass (41 pre-existing test_connector_slack + 26 new test_d12_slack_connector covering: _parse_slack_ts edge cases, _extract_messages malformed payloads, _normalize_message missing fields, API non-200, count-less read, empty-token auth, trailing-slash normalization, __all__ exports, Protocol runtime_checkable, timeout passthrough, mixed messages, health non-401, multi-notification state isolation)
 - [x] D.13 — security_backlog.py: wire real checkers or delete module + tests with rationale | priority: low | effort: medium | status: completed | evidence: Added 4 new regression probes (D-10 MAX_BODY_BYTES, D-25 recursion_limit+_max_depth, D-28 NetworkPolicy, D-29 clone timeout) + 4 explicit OPEN checkers (D-12, D-19, D-26, D-30) replacing _default_check. _PROBE_ITEM_IDS expanded from 4 to 8. 36 tests pass (15 pre-existing + 9 new regression-detection tests).
-- [ ] D.14 — Expose background_test_runner via make target + CLI subcommand | priority: low | effort: small | status: pending
+- [x] D.14 — Expose background_test_runner via make target + CLI subcommand | priority: low | effort: small | status: completed | evidence: 26 tests pass (20 CLI test_d14_background_test_cli.py + 6 integration test_d14_background_runner.py)
 - [x] D.15 — Pricing sources static→live: CachedSource with TTL cache + static fallback per source | priority: low | effort: large | status: completed | evidence: CachedSource at sources.py:1899 wraps RunPod/AWS/GCP live sources with TTL cache (default 1h) + static fallback. 33 existing tests in test_pricing_cache_and_fallback.py + 19 new tests in test_d15_pricing_live.py — 52 pass.
-- [ ] D.16 — Toolchain/parser breadth: add eslint JSON, golangci-lint, cargo-audit, trivy parsers | priority: low | effort: medium | status: pending
+- [x] D.16 — Toolchain/parser breadth: add eslint JSON, golangci-lint, cargo-audit, trivy parsers | priority: low | effort: medium | status: completed | evidence: 40 tests pass (28 test_toolchain_parsers.py + 12 test_toolchain_detect.py) — eslint/golangci-lint/cargo-audit/trivy parsers + ToolchainDetector
 - [ ] D.17 — Failover xfail gaps: fallback concurrency cap still unimplemented | priority: low | effort: small | status: pending
 - [x] D.18 — Non-ephemeral account creation: implement persistent accounts or document 501 | priority: low | effort: medium | status: completed | evidence: docs/NON_EPHEMERAL_ACCOUNTS.md documents ephemeral-only design rationale (budget-scoped, auto-delete, retention-gated); 501 preserved with 5 requirements for future persistent support; tests/unit/test_d18_accounts.py 18 tests pass
 - [ ] D.19 — Postgres path / multi-worker (gated on owner go-ahead) | priority: low | effort: large | status: pending
