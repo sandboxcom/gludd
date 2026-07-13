@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: plist_parser
+  namespace: general_ludd
+  author: Agentic Harness Agent
+  description: >
+    Apple property list (plist) parser — read and write XML and binary plist
+    files using Python plistlib. Navigate nested dicts/arrays via dot-path
+    key notation. Convert between XML and binary format. Preserves data
+    types (date, data, bool, integer).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

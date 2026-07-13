@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: xslt_transformer
+  author: Agentic Harness Agent
+  description: >
+    Apply and author XSLT transformations. Supports single and chained
+    transformations, output formats (HTML, XML, text), and parameter passing.
+    Requires lxml for full XSLT 1.0 support.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

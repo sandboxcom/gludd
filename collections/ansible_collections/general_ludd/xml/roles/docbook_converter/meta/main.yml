@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: docbook_converter
+  namespace: general_ludd
+  author: Agentic Harness Agent
+  description: >
+    DocBook and DITA converter — transform DocBook XML to HTML, PDF, or ePub
+    using pandoc, xmlto, or xsltproc. Handle DITA topics and maps.
+    Apply profiling/conditional content filtering (os, arch, userlevel).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

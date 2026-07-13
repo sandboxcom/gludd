@@ -272,10 +272,17 @@ class LangGraphAgentLoop:
                 **kwargs: Any,
             ) -> str:
                 if _auditor is not None:
-                    _auditor.audit(
+                    verdict = _auditor.audit(
                         _name, kwargs,
                         task_context="langgraph_agent",
                     )
+                    if verdict is not None and not verdict.allowed:
+                        return (
+                            f"Tool error: tool call blocked by auditor: "
+                            f"{verdict.classification}. "
+                            f"{verdict.reason} "
+                            f"Do not retry this call. Use a different approach."
+                        )
                 try:
                     result = await asyncio.wait_for(
                         _client.call_tool(_srv_id, _name, kwargs),

@@ -1,0 +1,10 @@
+---
+# javascript_debug role defaults
+
+js_files: []
+operation: "check_syntax"
+debug_mode: false
+check_source_maps: false
+bundle_analyze: false
+artifact_dir: "/tmp/gludd-web/javascript_debug"
+python_interpreter: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"

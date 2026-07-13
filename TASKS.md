@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 — 81 OPEN items across 6 active phases (A:4, C:19, D:19, E:6, H:15, S:18).**
+**Last consolidated: 2026-07-12 — 100 OPEN items across 8 active phases (A:4, C:19, D:19, X:11, Y:8, E:6, H:15, S:18).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -12,13 +12,15 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | W | Enforcement/Plugin hardening | 0 | 3 | 100% |
 | C | Security/Correctness | 19 | 27 | 30% |
 | D | Feature Completeness | 19 | 22 | 14% |
+| X | XML Collection | 11 | 11 | 0% |
+| Y | Web Design Collection | 8 | 8 | 0% |
 | E | Quality/Coverage | 6 | 13 | 54% |
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
 | H | Security Hardening | 15 | 23 | 35% |
 | S | Post-Ship | 18 | 21 | 14% |
-| **Total** | | **81** | **144** | **44%** |
+| **Total** | | **100** | **163** | **39%** |
 
 ---
 
@@ -106,6 +108,37 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] D.20 — Dedup/coherence cleanups: 8 duplicate pairs, missing __init__.py, model_routing_coherence 5 gaps | priority: low | effort: medium | status: pending
 - [ ] D.21 — Remediation idempotency guard (only piece not yet closed from D21) | priority: medium | effort: small | status: pending
 - [x] D.22 — task_splitter Ansible role: role-only implementation (no Python module, no CLI, no dispatch wiring). Invoke via FQCN `general_ludd.agent.task_splitter`; role calls `gludd_model_call`, parses JSON, writes `task_splitter_result.json` | priority: medium | effort: small | status: completed | evidence: role at collections/ansible_collections/general_ludd/agent/roles/task_splitter/ (tasks/main.yml, defaults/main.yml, meta/main.yml, README.md), docs/TASK_SPLITTER.md
+
+---
+
+## Phase X — XML Collection
+
+- [ ] X.1 — XML collection: create general_ludd.xml collection with roles for XML/HTML/SOAP/SAML/DocBook/Gradle/plist/XSD/XSLT | priority: medium | effort: large | status: in_progress
+- [ ] X.1.1 — xml_core role: XML parsing, XPath, namespaces
+- [ ] X.1.2 — xsd_generator role: infer XSD from XML samples
+- [ ] X.1.3 — xslt_transformer role: apply/author XSLT transformations
+- [ ] X.1.4 — html_processor role: HTML parsing/manipulation
+- [ ] X.1.5 — soap_handler role: SOAP/XML-RPC messaging
+- [ ] X.1.6 — saml_processor role: SAML 2.0 assertion handling
+- [ ] X.1.7 — docbook_converter role: DocBook/DITA conversion
+- [ ] X.1.8 — gradle_parser role: Gradle build file parsing
+- [ ] X.1.9 — plist_parser role: Apple property list handling
+- [ ] X.1.10 — xml_utils.py: shared Python module
+- [ ] X.1.11 — docs/XML_COLLECTION.md: comprehensive documentation
+
+---
+
+## Phase Y — Web Design Collection (2026-07-12)
+
+- [ ] Y.1 — Web design collection: create general_ludd.web collection with 6 roles for HTML/CSS/JS, design research, frameworks, UX/accessibility, design systems | priority: medium | effort: large | status: in_progress
+- [ ] Y.1.1 — html_css_core role: HTML5 authoring, CSS3 styling, responsive design
+- [ ] Y.1.2 — javascript_debug role: JS debugging, error handling, bundle analysis
+- [ ] Y.1.3 — design_research role: extract design tokens from other websites
+- [ ] Y.1.4 — framework_integration role: React, Next.js, HTMX, GraphQL, REST APIs
+- [ ] Y.1.5 — ux_engineering role: accessibility, usability, z-axis, visual hierarchy
+- [ ] Y.1.6 — design_system role: spacing, color, typography, component tokens
+- [ ] Y.1.7 — web_utils.py: shared Python module
+- [ ] Y.1.8 — docs/WEB_COLLECTION.md: comprehensive documentation
 
 ---
 

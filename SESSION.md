@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- **2026-07-12** — Session 25. On `development` branch, HEAD `d69cd60f`. Wave 1 dispatched: 7 subagents, results landing. CI RED (run 29213743760). Dirty tree: hot_reloader SyntaxError, dead-code checker tests WIP.
+- **2026-07-12** — Session 25. On `development` branch, HEAD `dcfb6256` (pushed + VERIFIED). CI pending run 29214853350. Wave 5-6 completed: 4 commits (gate-refresh, gen-status-table, lint fixes, XML collection). XML collection: 9 roles, xml_utils.py (16 functions), docs/XML_COLLECTION.md (975 lines), 47 unit tests. Wave 1 dispatched: 7 subagents, results landing. CI RED (run 29213743760). Dirty tree: hot_reloader SyntaxError, dead-code checker tests WIP.
 - 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 - **Wave 35 — Collection Split + Documentation:** TASKS.md Phase R expanded to 18 items. Collection FQCNs updated: `general_ludd.agent.{ssl_cert,hsm_operations,audit_framework,sql_injection,command_injection,prompt_injection}` → `general_ludd.security.*`. `docs/SECURITY_ROLES.md` + `docs/SSL_CERT_SYSTEM.md` FQCN references updated. Two new docs created: `docs/NETWORKING_SYSTEM.md` (networking role, 7 modes, ScapyAdapter, tool matrix, dissector templates) and `docs/BUSINESS_RESEARCH_SYSTEM.md` (entity_research role, 6 research capabilities, SearX monitoring, entity graph). README.md restructured from single collection section to 4 collection sub-sections (`general_ludd.agent`, `general_ludd.security`, `general_ludd.business`, `general_ludd.networking`) with FQCN tables and doc cross-references.
 - **SSL cert system docs** — `docs/SSL_CERT_SYSTEM.md` created: architecture overview, 2 Ansible role specifications, 4 data file formats, 5 Python module APIs, 6-standard compliance matrix, security considerations. TASKS.md F.6 ticked, CHANGELOG entry added.
@@ -30,6 +30,9 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Current Work
 
+- **HEAD: `dcfb6256`** on `development` branch (2026-07-12). Pushed + VERIFIED.
+- **Wave 6 — XML collection (commit `dcfb6256`):** 9 Ansible roles under `ansible_collections/general_ludd/xml/`, `xml_utils.py` with 16 functions, `docs/XML_COLLECTION.md` (975 lines), 47 unit tests, `push-dev-nv` target added. Development pushed to `dcfb6256`.
+- **Wave 5 — Gate-refresh + lint fixes (commits `f68b1772` + `ece04522`):** gate-refresh target + gen-status-table script + 11 lint fixes across test files.
 - **HEAD: `d69cd60f`** on `development` branch (2026-07-12).
 - **Wave 1 — 7 subagents dispatched (2026-07-12):**
   - **A.3 (push-verify-CI):** tree clean, already pushed. CI RED run 29213743760.
@@ -87,6 +90,9 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 | Hash | Message |
 |------|---------|
+| `dcfb6256` | Wave 6: XML collection — 9 roles, xml_utils.py (16 funcs), docs, 47 tests, push-dev-nv |
+| `ece04522` | Wave 5: gen-status-table script + remaining lint fixes |
+| `f68b1772` | Wave 5: gate-refresh Makefile target + lint fixes |
 | `d15acc10` | fix: test_w3_12_reload.py reload status assertion update |
 | `b1a2b004` | fix: resolve test_gen_status_table.py lint errors |
 | `9e4fa419` | fix: resolve 2 more lint errors (unsorted imports, unused pytest) |
@@ -109,10 +115,11 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Known Gaps
 
-1. **CI RED on `development`** — run 29213743760. Must be fixed before development→master merge.
-2. **`hot_reloader.py` SyntaxError** — C.8 tests pass but reloader module has parse error.
-3. **Dead-code checker tests WIP** — `scripts/check_dead_code.py` exists but test suite incomplete.
-4. **Dirty tree not yet committed** — Wave 1 results + Wave 26-27 work + Wave 33 updates.
+1. **CI pending on `development`** — run 29214853350 (Wave 5-6 push). Must be green before development→master merge.
+2. **CI RED on `development`** — run 29213743760. Must be fixed before development→master merge.
+3. **XML tests not yet run** — Wave 6 XML collection has 47 unit tests that need execution.
+4. **CHANGELOG/README not yet updated** — Wave 5-6 features not yet reflected in docs.
+5. **`hot_reloader.py` SyntaxError** — C.8 tests pass but reloader module has parse error.
 2. **`make gate` not yet run on development** — gate-lite assertion fixes in Wave 25; full gate pending.
 3. **development → master merge pending** — development is 30+ commits ahead; gate must be green before merging.
 4. **CI pending** — commits pushed to sandboxcom/development; CI verdict not yet available.
@@ -123,10 +130,13 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Next Steps
 
-1. [ ] **Commit Wave 1 work** — `make git-add` + `make ship-commit MSG='Wave 1: pause-resume tests + DB session tests + enforce-deadline self-tests + TASKS.md update'`.
-2. [ ] **Fix `hot_reloader.py` SyntaxError** — parse/fix the error in `src/general_ludd/ornith/hot_reloader.py`.
-3. [ ] **Fix dead-code checker tests** — complete test suite for `scripts/check_dead_code.py`.
-4. [ ] **Re-check CI** — `make ci-verdict-safe` after cooldown; CI RED run 29213743760 needs investigation.
+1. [ ] **Run XML tests** — `make test TESTFILE=tests/unit/test_xml_utils.py` to verify Wave 6 XML collection.
+2. [ ] **Commit Wave 6** — `make git-add` + `make ship-commit MSG='Wave 6: XML collection — 9 roles, xml_utils.py, docs, 47 tests, push-dev-nv'`.
+3. [ ] **Update CHANGELOG + README** — reflect Wave 5-6 features.
+4. [ ] **Proceed to remaining Phase H/C tasks** from TASKS.md.
+5. [ ] **Fix `hot_reloader.py` SyntaxError** — parse/fix the error in `src/general_ludd/ornith/hot_reloader.py`.
+6. [ ] **Fix dead-code checker tests** — complete test suite for `scripts/check_dead_code.py`.
+7. [ ] **Re-check CI** — `make ci-verdict-safe` after cooldown; CI RED run 29213743760 needs investigation.
 
 ## Current Gate Status (2026-07-12)
 <!-- gate:begin -->

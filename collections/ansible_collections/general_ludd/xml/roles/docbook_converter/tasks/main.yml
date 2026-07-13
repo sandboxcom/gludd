@@ -1,0 +1,143 @@
+---
+- name: Validate DocBook input
+  ansible.builtin.assert:
+    that:
+      - docbook_converter_input_file | length > 0
+    fail_msg: "docbook_converter_input_file is required"
+
+- name: Determine DocBook format
+  ansible.builtin.set_fact:
+    _docbook_format: >-
+      {{ 'dita' if '.dita' in (docbook_converter_input_file | lower) or '.ditamap' in (docbook_converter_input_file | lower)
+         else 'docbook' }}
+
+- name: Detect available converter tools
+  ansible.builtin.command:
+    argv:
+      - "{{ docbook_converter_python }}"
+      - -c
+      - |
+        import shutil, json, sys
+        tools = {
+            "xsltproc": shutil.which("xsltproc"),
+            "xmlto": shutil.which("xmlto"),
+            "pandoc": shutil.which("pandoc"),
+            "dita": shutil.which("dita"),
+            "fop": shutil.which("fop"),
+        }
+        with open({{ docbook_converter_output_file | to_json }}, "w") as f:
+            json.dump({"tools": tools, "available": [k for k, v in tools.items() if v]}, f)
+  changed_when: true
+  register: _tool_check
+
+- name: Read tool availability
+  ansible.builtin.slurp:
+    src: "{{ docbook_converter_output_file }}"
+  register: _tool_data
+
+- name: Run DocBook conversion
+  ansible.builtin.command:
+    argv:
+      - "{{ docbook_converter_python }}"
+      - -c
+      - |
+        import json, subprocess, sys, os, shutil
+
+        tools = {{ (_tool_data.content | b64decode | from_json).available | to_json }}
+        input_file = {{ docbook_converter_input_file | to_json }}
+        output_format = {{ docbook_converter_output_format | to_json }}
+        profile_attrs = {{ docbook_converter_profile_attrs | to_json }}
+        stylesheet = {{ docbook_converter_stylesheet | to_json }}
+        artifact_dir = {{ docbook_converter_artifact_dir | to_json }}
+        output_file = {{ docbook_converter_output_file | to_json }}
+        doc_format = {{ _docbook_format | to_json }}
+
+        os.makedirs(artifact_dir, exist_ok=True)
+        base = os.path.splitext(os.path.basename(input_file))[0]
+
+        result = {"format": doc_format, "output_format": output_format, "method": None, "output_path": None, "success": False}
+
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(input_file)
+        root = tree.getroot()
+
+        # Apply profiling (removes elements not matching profile_attrs)
+        if profile_attrs:
+            def profile_filter(elem, keep):
+                ns = ""
+                tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                for k, v in profile_attrs.items():
+                    if elem.get(k) == v:
+                        return True
+                if len(elem) == 0:
+                    return True
+                return True
+            # Simple pass: only filter on os/arch/userlevel attrs
+            for elem in root.iter():
+                rm = False
+                for k, v in profile_attrs.items():
+                    if elem.get(k) and elem.get(k) != v:
+                        rm = True
+                        break
+                if rm:
+                    parent_map = {c: p for p in root.iter() for c in p}
+                    if elem in parent_map:
+                        parent_map[elem].remove(elem)
+
+        # Convert using available tools
+        if output_format == "html":
+            if "pandoc" in tools:
+                out_path = os.path.join(artifact_dir, f"{base}.html")
+                subprocess.run([shutil.which("pandoc"), "-f", "docbook", "-t", "html", "-o", out_path, input_file], check=True)
+                result["method"] = "pandoc"
+                result["output_path"] = out_path
+                result["success"] = True
+            elif "xmlto" in tools:
+                out_base = os.path.join(artifact_dir, base)
+                subprocess.run([shutil.which("xmlto"), "html-nochunks", "-o", artifact_dir, input_file], check=True)
+                result["method"] = "xmlto"
+                result["output_path"] = os.path.join(artifact_dir, f"{base}.html")
+                result["success"] = True
+            elif "xsltproc" in tools:
+                out_path = os.path.join(artifact_dir, f"{base}.html")
+                style = stylesheet or "/usr/share/xml/docbook/stylesheet/docbook-xsl/html/docbook.xsl"
+                subprocess.run([shutil.which("xsltproc"), "-o", out_path, style, input_file], check=True)
+                result["method"] = "xsltproc"
+                result["output_path"] = out_path
+                result["success"] = True
+
+        elif output_format == "pdf":
+            if "pandoc" in tools:
+                out_path = os.path.join(artifact_dir, f"{base}.pdf")
+                subprocess.run([shutil.which("pandoc"), "-f", "docbook", "--pdf-engine=xelatex", "-o", out_path, input_file], check=True)
+                result["method"] = "pandoc"
+                result["output_path"] = out_path
+                result["success"] = True
+
+        elif output_format == "epub":
+            if "pandoc" in tools:
+                out_path = os.path.join(artifact_dir, f"{base}.epub")
+                subprocess.run([shutil.which("pandoc"), "-f", "docbook", "-t", "epub", "-o", out_path, input_file], check=True)
+                result["method"] = "pandoc"
+                result["output_path"] = out_path
+                result["success"] = True
+
+        else:
+            # pass-through: return source as-is
+            result["output_path"] = input_file
+            result["success"] = True
+            result["method"] = "passthrough"
+
+        with open(output_file, "w") as f:
+            json.dump(result, f, default=str)
+  changed_when: true
+  register: _conv_result
+
+- name: Read conversion result
+  ansible.builtin.slurp:
+    src: "{{ docbook_converter_output_file }}"
+  register: _conv_output
+
+- name: Set conversion result fact
+  ansible.builtin.set_fact:
+    docbook_converter_result: "{{ _conv_output.content | b64decode | from_json }}"

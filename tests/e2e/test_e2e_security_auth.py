@@ -11,6 +11,7 @@ realistic URL payloads.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 
@@ -100,8 +101,19 @@ class TestPSKAuthHappyPath:
         assert data["status"] in {"healthy", "degraded"}
 
     def test_public_readyz_no_auth_needed(self, daemon_with_psk: TestClient):
+        import asyncio
+
+        async def _run_forever():
+            while True:
+                await asyncio.sleep(3600)
+
+        task = asyncio.create_task(_run_forever())
+        daemon_with_psk.app.state._event_loop_task = task
         resp = daemon_with_psk.get("/readyz")
         assert resp.status_code == 200
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            asyncio.get_event_loop().run_until_complete(task)
 
     def test_public_get_api_status_no_auth(self, daemon_with_psk: TestClient):
         resp = daemon_with_psk.get("/api/status")

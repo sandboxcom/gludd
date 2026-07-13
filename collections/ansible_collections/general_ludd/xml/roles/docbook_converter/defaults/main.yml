@@ -1,0 +1,8 @@
+---
+docbook_converter_input_file: ""
+docbook_converter_output_format: "html"
+docbook_converter_profile_attrs: {}
+docbook_converter_stylesheet: ""
+docbook_converter_output_file: "/tmp/gludd-xml/docbook_converter/output.json"
+docbook_converter_artifact_dir: "/tmp/gludd-xml/docbook_converter"
+docbook_converter_python: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"

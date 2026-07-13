@@ -1,0 +1,168 @@
+---
+- name: Validate Gradle input
+  ansible.builtin.assert:
+    that:
+      - gradle_parser_file | length > 0
+    fail_msg: "gradle_parser_file is required"
+
+- name: Execute Gradle parser
+  ansible.builtin.command:
+    argv:
+      - "{{ gradle_parser_python }}"
+      - -c
+      - |
+        import json, re, os, sys
+
+        gradle_file = {{ gradle_parser_file | to_json }}
+        operation = {{ gradle_parser_operation | to_json }}
+        dep_group = {{ gradle_parser_dep_group | to_json }}
+        dep_name = {{ gradle_parser_dep_name | to_json }}
+        new_version = {{ gradle_parser_new_version | to_json }}
+        dep_configuration = {{ gradle_parser_dep_configuration | to_json }}
+        output_file = {{ gradle_parser_output_file | to_json }}
+        artifact_dir = {{ gradle_parser_artifact_dir | to_json }}
+
+        os.makedirs(artifact_dir, exist_ok=True)
+
+        with open(gradle_file, "r") as f:
+            content = f.read()
+
+        result = {"file": gradle_file, "operation": operation}
+
+        if operation == "list-deps":
+            # Match dependency declarations: implementation/compile/testImplementation/etc
+            dep_pattern = re.compile(
+                r'^\s*(?:test)?(?:implementation|compile(?:Only)?|runtimeOnly|api|annotationProcessor|kapt)\s*[\( ]\s*[\'"]([^\'"]+)[\'"]\s*\)?',
+                re.MULTILINE,
+            )
+            # Match group:name:version triple
+            dep_detail = re.compile(
+                r"([\w\.\-]+):([\w\.\-]+)(?::([\w\.\-\+]+))?"
+            )
+            deps = []
+            for m in dep_pattern.finditer(content):
+                line = m.group(0).strip()
+                decl = m.group(1)
+                detail = dep_detail.match(decl)
+                if detail:
+                    deps.append({
+                        "group": detail.group(1),
+                        "name": detail.group(2),
+                        "version": detail.group(3) or "",
+                        "declaration": line,
+                    })
+            result["dependencies"] = deps
+            result["count"] = len(deps)
+
+            # Plugin extraction
+            plugin_pattern = re.compile(
+                r'(?:id|apply\s+plugin)\s*[\(:[\'"]\s*[\'"]([^\'"]+)[\'"]',
+                re.MULTILINE,
+            )
+            plugins = list(set(plugin_pattern.findall(content)))
+            result["plugins"] = plugins
+
+            # Repositories
+            repo_pattern = re.compile(
+                r'(?:maven|google|jcenter|gradlePluginPortal)\s*\(\s*\)',
+                re.MULTILINE,
+            )
+            repos = list(set(repo_pattern.findall(content)))
+            # Also match url-based repos
+            url_pattern = re.compile(
+                r'(?:maven|ivy)\s*\{\s*url\s+[\'"]([^\'"]+)[\'"]',
+                re.MULTILINE | re.DOTALL,
+            )
+            repos += list(set(url_pattern.findall(content)))
+            result["repositories"] = repos
+
+        elif operation == "update-version":
+            dep_re = re.compile(
+                rf"([\'\"]({re.escape(dep_group)}):({re.escape(dep_name)}):)([\w\.\-\+]+)([\'\"])"
+            )
+            updated = content
+            count = 0
+            for m in dep_re.finditer(content):
+                updated = updated.replace(m.group(0), f"{m.group(1)}{new_version}{m.group(5)}")
+                count += 1
+            result["version_updated"] = count
+            result["old_version"] = dep_re.search(content).group(4) if dep_re.search(content) else None
+            result["new_version"] = new_version
+
+            # Write updated file alongside original
+            base = os.path.basename(gradle_file)
+            out_path = os.path.join(artifact_dir, f"updated_{base}")
+            with open(out_path, "w") as f:
+                f.write(updated)
+            result["updated_file"] = out_path
+
+        elif operation == "add-dep":
+            dep_str = f'{dep_configuration} "{dep_group}:{dep_name}:{new_version}"'
+            # Append after existing dependencies block
+            insertion_point = None
+            for pattern in [
+                r'^dependencies\s*\{',
+                r'^dependencies\s*$',
+            ]:
+                m = re.search(pattern, content, re.MULTILINE)
+                if m:
+                    insertion_point = m.end()
+                    break
+
+            updated = content
+            if insertion_point:
+                lines = content[:insertion_point].split("\n")
+                indent = "    "
+                updated = content[:insertion_point] + f"\n{indent}{dep_str}" + content[insertion_point:]
+            result["dependency_added"] = dep_str
+
+            base = os.path.basename(gradle_file)
+            out_path = os.path.join(artifact_dir, f"updated_{base}")
+            with open(out_path, "w") as f:
+                f.write(updated)
+            result["updated_file"] = out_path
+
+        elif operation == "report":
+            deps_op = json.loads(open(output_file, "w").close() or "{}")
+            # Generate report from list-deps
+            dep_pattern = re.compile(
+                r'^\s*(?:test)?(?:implementation|compile(?:Only)?|runtimeOnly|api|annotationProcessor|kapt)\s*[\( ]\s*[\'"]([^\'"]+)[\'"]\s*\)?',
+                re.MULTILINE,
+            )
+            dep_detail = re.compile(r"([\w\.\-]+):([\w\.\-]+)(?::([\w\.\-\+]+))?")
+            deps = []
+            for m in dep_pattern.finditer(content):
+                detail = dep_detail.match(m.group(1))
+                if detail:
+                    deps.append({
+                        "group": detail.group(1),
+                        "name": detail.group(2),
+                        "version": detail.group(3) or "unspecified",
+                    })
+
+            lines = ["# Gradle Dependency Report", f"# File: {gradle_file}", ""]
+            lines.append(f"| Group | Name | Version |")
+            lines.append("|-------|------|---------|")
+            for d in deps:
+                lines.append(f"| {d['group']} | {d['name']} | {d['version']} |")
+            lines.append(f"\nTotal: {len(deps)} dependencies")
+
+            report_path = os.path.join(artifact_dir, "dependency_report.md")
+            with open(report_path, "w") as f:
+                f.write("\n".join(lines))
+            result["report_path"] = report_path
+            result["dependency_count"] = len(deps)
+
+        with open(output_file, "w") as f:
+            json.dump(result, f, default=str)
+  changed_when: true
+  register: _gradle_result
+
+- name: Read Gradle output
+  ansible.builtin.slurp:
+    src: "{{ gradle_parser_output_file }}"
+  register: _gradle_output
+
+- name: Set Gradle result fact
+  ansible.builtin.set_fact:
+    gradle_parser_result: "{{ _gradle_output.content | b64decode | from_json }}"

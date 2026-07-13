@@ -1,0 +1,142 @@
+---
+- name: Validate SAML input
+  ansible.builtin.assert:
+    that:
+      - saml_processor_file | length > 0 or saml_processor_xml | length > 0
+    fail_msg: "One of saml_processor_file or saml_processor_xml is required"
+
+- name: Resolve SAML source
+  ansible.builtin.set_fact:
+    _saml_source: >-
+      {{ saml_processor_file if saml_processor_file | length > 0
+         else '/tmp/gludd-xml/saml_processor/input.xml' }}
+
+- name: Write inline SAML XML to file
+  ansible.builtin.copy:
+    content: "{{ saml_processor_xml }}"
+    dest: "{{ _saml_source }}"
+  when: saml_processor_xml | length > 0
+
+- name: Execute SAML processor
+  ansible.builtin.command:
+    argv:
+      - "{{ saml_processor_python }}"
+      - -c
+      - |
+        import json, sys, base64, hashlib
+        import xml.etree.ElementTree as ET
+        from datetime import datetime, timezone
+
+        saml_file = {{ _saml_source | to_json }}
+        validate_sig = {{ saml_processor_validate_signature | to_json }}
+        extract_attrs = {{ saml_processor_extract_attributes | to_json }}
+        issuer_filter = {{ saml_processor_issuer | to_json }}
+        output_file = {{ saml_processor_output_file | to_json }}
+
+        SAML_NS = "urn:oasis:names:tc:SAML:2.0:assertion"
+        SAMLP_NS = "urn:oasis:names:tc:SAML:2.0:protocol"
+        DS_NS = "http://www.w3.org/2000/09/xmldsig#"
+        NSMAP = {"saml": SAML_NS, "samlp": SAMLP_NS, "ds": DS_NS}
+
+        with open(saml_file, "r", encoding="utf-8") as f:
+            xml_str = f.read()
+
+        root = ET.fromstring(xml_str)
+
+        def find_elem(parent, tag, ns=None):
+            ns = ns or SAML_NS
+            tag_expr = f"{{{ns}}}{tag}"
+            found = parent.find(tag_expr)
+            if found is None:
+                for child in parent:
+                    found = child.find(tag_expr)
+                    if found is not None:
+                        break
+            if found is None:
+                for child in parent.iter():
+                    if child.tag.endswith(f"}}{tag}") or child.tag == tag:
+                        found = child
+                        break
+            return found
+
+        result = {"file": saml_file, "type": None, "issuer": None, "attributes": {}, "conditions": {}, "nameid": None, "audience": [], "signature_valid": None}
+
+        doc_type_tag = root.tag.split("}")[-1] if "}" in root.tag else root.tag
+
+        assertion = None
+        if doc_type_tag in ("Response",):
+            result["type"] = "Response"
+            result["id"] = root.get("ID", "")
+            result["in_response_to"] = root.get("InResponseTo", "")
+            status = find_elem(root, "StatusCode", SAMLP_NS)
+            if status is not None:
+                result["status"] = status.get("Value") or "unknown"
+            assertion = find_elem(root, "Assertion")
+        elif doc_type_tag in ("AuthnRequest",):
+            result["type"] = "AuthnRequest"
+            result["id"] = root.get("ID", "")
+            result["destination"] = root.get("Destination", "")
+            result["force_authn"] = root.get("ForceAuthn", "false")
+        elif doc_type_tag == "Assertion":
+            result["type"] = "Assertion"
+            assertion = root
+
+        if assertion is not None:
+            result["assertion_id"] = assertion.get("ID")
+
+            issuer_elem = find_elem(assertion, "Issuer")
+            if issuer_elem is not None:
+                result["issuer"] = issuer_elem.text
+
+            subject = find_elem(assertion, "Subject")
+            if subject is not None:
+                nameid = find_elem(subject, "NameID")
+                if nameid is not None:
+                    result["nameid"] = {
+                        "value": nameid.text,
+                        "format": nameid.get("Format", ""),
+                    }
+
+            conditions = find_elem(assertion, "Conditions")
+            if conditions is not None:
+                result["conditions"] = {
+                    "not_before": conditions.get("NotBefore", ""),
+                    "not_on_or_after": conditions.get("NotOnOrAfter", ""),
+                }
+                aud_elem = conditions.find(f"{{{SAML_NS}}}AudienceRestriction")
+                if aud_elem is not None:
+                    auds = aud_elem.findall(f"{{{SAML_NS}}}Audience")
+                    result["audience"] = [a.text for a in auds]
+
+            if extract_attrs:
+                attr_stmt = find_elem(assertion, "AttributeStatement")
+                if attr_stmt is not None:
+                    for attr in attr_stmt.findall(f"{{{SAML_NS}}}Attribute"):
+                        name = attr.get("Name", attr.get("FriendlyName", ""))
+                        vals = [v.text for v in attr.findall(f"{{{SAML_NS}}}AttributeValue") if v.text is not None]
+                        result["attributes"][name] = vals[0] if len(vals) == 1 else vals
+
+            signature = find_elem(assertion, "Signature", DS_NS)
+            if signature is not None:
+                sig_info = signature.find(f"{{{DS_NS}}}SignedInfo")
+                sig_val = signature.find(f"{{{DS_NS}}}SignatureValue")
+                if sig_info is not None and sig_val is not None:
+                    canon_method = sig_info.find(f"{{{DS_NS}}}CanonicalizationMethod")
+                    sig_method = sig_info.find(f"{{{DS_NS}}}SignatureMethod")
+                    result["signature_algorithm"] = sig_method.get("Algorithm") if sig_method is not None else None
+                    result["signature_present"] = True
+                    result["signature_valid"] = "unverified"
+
+        with open(output_file, "w") as f:
+            json.dump(result, f, default=str)
+  changed_when: true
+  register: _saml_result
+
+- name: Read SAML output
+  ansible.builtin.slurp:
+    src: "{{ saml_processor_output_file }}"
+  register: _saml_output
+
+- name: Set SAML result fact
+  ansible.builtin.set_fact:
+    saml_processor_result: "{{ _saml_output.content | b64decode | from_json }}"

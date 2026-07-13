@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: xsd_generator
+  author: Agentic Harness Agent
+  description: >
+    Infer XSD schemas from XML instance documents. Walks element trees across
+    sample files, infers element types from text content (xs:string, xs:integer,
+    xs:boolean, xs:dateTime), and generates schema output with configurable
+    targetNamespace and elementFormDefault.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

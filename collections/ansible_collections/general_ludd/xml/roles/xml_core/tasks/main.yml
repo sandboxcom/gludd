@@ -1,0 +1,98 @@
+---
+# xml_core role — XML parsing, XPath querying, namespace handling
+#
+# Operations: extract | modify | validate
+#
+# Graceful degradation:
+#   - input_file absent → status=error, error=missing_input
+#   - Parse error → status=error, parsed=false, errors[] populated
+#   - XPath returns empty → status=ok, found=false, matches=[]
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - input_file | length > 0
+    fail_msg: "xml_core: input_file is required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check input file exists
+  ansible.builtin.stat:
+    path: "{{ input_file }}"
+  register: _xc_input_stat
+
+- name: Handle missing input file
+  ansible.builtin.set_fact:
+    _xc_status: "error"
+    _xc_parsed: false
+    _xc_errors: ["input_file not found: {{ input_file }}"]
+    _xc_verdict: "missing_input"
+  when: not _xc_input_stat.stat.exists | default(false)
+
+- name: Execute xml_core Python script
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/xml_core.py
+      --input "{{ input_file }}"
+      --operation "{{ operation }}"
+      --output "{{ output_file }}"
+      {% if xpath_query | length > 0 %}--xpath "{{ xpath_query }}"{% endif %}
+      {% if namespaces | length > 0 %}--namespaces '{{ namespaces | to_json }}'{% endif %}
+  register: _xc_result
+  changed_when: _xc_result.rc == 0 and operation in ['extract', 'modify']
+  failed_when: false
+  when: _xc_input_stat.stat.exists | default(false)
+
+- name: Set result from script output
+  ansible.builtin.set_fact:
+    _xc_status: "ok"
+    _xc_parsed: true
+    _xc_xml_output: "{{ _xc_result.stdout | default('') }}"
+    _xc_xml_errors: "{{ _xc_result.stderr | default('') }}"
+    _xc_verdict: "{{ operation }}_complete"
+  when:
+    - _xc_input_stat.stat.exists | default(false)
+    - _xc_result is defined
+    - _xc_result.rc is defined
+    - _xc_result.rc == 0
+
+- name: Set error from script failure
+  ansible.builtin.set_fact:
+    _xc_status: "error"
+    _xc_parsed: false
+    _xc_xml_errors: "{{ _xc_result.stderr | default('unknown error') }}"
+    _xc_verdict: "{{ operation }}_failed"
+  when:
+    - _xc_input_stat.stat.exists | default(false)
+    - _xc_result is defined
+    - _xc_result.rc is defined
+    - _xc_result.rc != 0
+
+- name: Write xml_core.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'xml_core',
+        'status': _xc_status,
+        'operation': operation,
+        'input_file': input_file,
+        'xpath_query': xpath_query,
+        'parsed': _xc_parsed | bool,
+        'verdict': _xc_verdict,
+        'output_file': output_file,
+        'errors': _xc_xml_errors | default('')
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/xml_core.json"
+    mode: "0644"
+
+- name: Report xml_core completion
+  ansible.builtin.debug:
+    msg: >-
+      xml_core: status={{ _xc_status }}
+      operation={{ operation }}
+      parsed={{ _xc_parsed | bool }}
+      verdict={{ _xc_verdict }}

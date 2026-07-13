@@ -1,0 +1,20 @@
+---
+html_processor_url: ""
+html_processor_file: ""
+html_processor_css_selector: ""
+html_processor_xpath_query: ""
+html_processor_operation: "extract"
+html_processor_use_lxml: false
+html_processor_namespaces: {}
+html_processor_attribute: ""
+html_processor_new_value: ""
+html_processor_output_file: "/tmp/gludd-xml/html_processor/output.json"
+html_processor_cleaner_opts:
+  scripts: true
+  javascript: true
+  comments: true
+  style: false
+  links: false
+  meta: false
+  remove_unknown_tags: false
+html_processor_python: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"

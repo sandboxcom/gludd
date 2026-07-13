@@ -1,0 +1,27 @@
+---
+namespace: general_ludd
+name: web
+version: 0.1.0
+readme: README.md
+authors:
+  - Agentic Harness Agent
+description: >
+  Web development and design research collection — HTML5/CSS3 authoring,
+  responsive design validation, JavaScript debugging and error analysis,
+  and design research via website analysis.
+license: MIT
+license_file: ""
+tags:
+  - web
+  - html
+  - css
+  - javascript
+  - design
+  - responsive
+  - debugging
+dependencies: {}
+repository: ""
+documentation: ""
+homepage: ""
+issues: ""
+build_ignore: []

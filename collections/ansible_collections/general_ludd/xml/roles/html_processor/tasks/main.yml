@@ -1,0 +1,116 @@
+---
+- name: Resolve input source
+  ansible.builtin.set_fact:
+    html_source: >-
+      {{ html_processor_url if html_processor_url | length > 0
+         else html_processor_file }}
+
+- name: Validate input source
+  ansible.builtin.assert:
+    that:
+      - html_source | length > 0
+    fail_msg: "One of html_processor_url or html_processor_file is required"
+  when: html_processor_operation in ['extract', 'modify', 'clean']
+
+- name: Execute HTML processing
+  ansible.builtin.command:
+    argv:
+      - "{{ html_processor_python }}"
+      - -c
+      - |
+        import json, sys
+        {% if html_processor_use_lxml %}
+        from lxml import html as lhtml, etree
+        {% else %}
+        from bs4 import BeautifulSoup
+        {% endif %}
+
+        source = {{ html_source | to_json }}
+        operation = {{ html_processor_operation | to_json }}
+        css_selector = {{ html_processor_css_selector | to_json }}
+        xpath_query = {{ html_processor_xpath_query | to_json }}
+        attr_name = {{ html_processor_attribute | to_json }}
+        new_value = {{ html_processor_new_value | to_json }}
+        namespaces = {{ html_processor_namespaces | to_json }}
+        output_file = {{ html_processor_output_file | to_json }}
+
+        {% if html_processor_use_lxml %}
+        if source.startswith(('http://', 'https://')):
+            import urllib.request
+            content = urllib.request.urlopen(source).read()
+        else:
+            with open(source, 'rb') as f:
+                content = f.read()
+        doc = lhtml.fromstring(content)
+        if operation == 'extract':
+            if css_selector:
+                results = doc.cssselect(css_selector)
+            elif xpath_query:
+                results = doc.xpath(xpath_query, namespaces=namespaces)
+            else:
+                results = [doc]
+            output = [etree.tostring(r, encoding='unicode', method='html') if hasattr(r, 'tag') else str(r) for r in results]
+        elif operation == 'modify':
+            elements = doc.cssselect(css_selector) if css_selector else doc.xpath(xpath_query, namespaces=namespaces)
+            for el in elements:
+                if attr_name:
+                    el.set(attr_name, new_value)
+                else:
+                    el.text = new_value
+            output = etree.tostring(doc, encoding='unicode', method='html')
+        elif operation == 'clean':
+            from lxml.html.clean import Cleaner
+            cleaner = Cleaner(**{{ html_processor_cleaner_opts | to_json }})
+            output = cleaner.clean_html(etree.tostring(doc, encoding='unicode'))
+        else:
+            output = None
+        {% else %}
+        if source.startswith(('http://', 'https://')):
+            import urllib.request
+            content = urllib.request.urlopen(source).read()
+        else:
+            with open(source, 'r', encoding='utf-8') as f:
+                content = f.read()
+        soup = BeautifulSoup(content, 'html.parser')
+        if operation == 'extract':
+            if css_selector:
+                results = soup.select(css_selector)
+            elif xpath_query:
+                results = [soup]
+            else:
+                results = [soup]
+            output = [str(r) for r in results]
+        elif operation == 'modify':
+            elements = soup.select(css_selector) if css_selector else [soup]
+            for el in elements:
+                if attr_name:
+                    el[attr_name] = new_value
+                else:
+                    el.string = new_value
+            output = str(soup)
+        elif operation == 'clean':
+            output = soup.get_text(separator='\n', strip=True)
+        else:
+            output = None
+        {% endif %}
+
+        result = {"operation": operation, "match_count": len(results) if isinstance(output, list) else 1, "output": output}
+        with open(output_file, 'w') as f:
+            if isinstance(result, dict):
+                json.dump(result, f, default=str)
+            else:
+                json.dump({"output": result}, f, default=str)
+  changed_when: true
+  register: _html_result
+  when: html_processor_operation in ['extract', 'modify', 'clean']
+
+- name: Read processing result
+  ansible.builtin.slurp:
+    src: "{{ html_processor_output_file }}"
+  register: _html_output
+  when: html_processor_operation in ['extract', 'modify', 'clean']
+
+- name: Set parsed output fact
+  ansible.builtin.set_fact:
+    html_processor_result: "{{ _html_output.content | b64decode | from_json }}"
+  when: html_processor_operation in ['extract', 'modify', 'clean']

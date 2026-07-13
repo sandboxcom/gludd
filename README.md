@@ -451,6 +451,30 @@ and Wireshark Lua dissector templates for protocol analysis.
 
 See `docs/NETWORKING_SYSTEM.md` for the full reference.
 
+### `general_ludd.xml` — XML Collection
+
+Install via `collections/ansible_collections/general_ludd/xml/`. Nine roles covering the
+full XML document lifecycle: parsing, XPath querying, namespace handling, XSD schema
+generation, XSLT transformations, and format-specific manipulation (HTML, SOAP, SAML,
+DocBook, DITA, Gradle, plist).
+
+**FQCN prefix:** `general_ludd.xml.`
+
+| Role | Description |
+|---|---|
+| `xml_core` | XML parsing, XPath querying, namespace handling |
+| `xsd_generator` | XSD schema generation from XML samples |
+| `xslt_transformer` | XSLT transformations |
+| `html_processor` | HTML parsing and manipulation |
+| `soap_handler` | SOAP and XML-RPC messaging |
+| `saml_processor` | SAML 2.0 assertion handling |
+| `docbook_converter` | DocBook/DITA conversion |
+| `gradle_parser` | Gradle build file parsing |
+| `plist_parser` | Apple property list (plist) handling |
+
+Includes a shared Python module `xml_utils.py` (16 functions) for common XML operations.
+See `docs/XML_COLLECTION.md` for the full reference.
+
 The actual role count can be verified with: `make collection-roles`
 
 ## Testing

@@ -1,0 +1,7 @@
+---
+framework_integration_framework: "react"
+framework_integration_operation: "scaffold"
+framework_integration_component_name: ""
+framework_integration_endpoint_url: ""
+framework_integration_graphql_schema_file: ""
+framework_integration_output_dir: "/tmp/gludd-web/framework_integration"

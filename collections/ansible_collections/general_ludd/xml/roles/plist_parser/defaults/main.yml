@@ -1,0 +1,9 @@
+---
+plist_parser_file: ""
+plist_parser_operation: "read"
+plist_parser_key_path: ""
+plist_parser_value: ""
+plist_parser_output_format: "xml"
+plist_parser_output_file: "/tmp/gludd-xml/plist_parser/output.json"
+plist_parser_artifact_dir: "/tmp/gludd-xml/plist_parser"
+plist_parser_python: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"
