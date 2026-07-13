@@ -31,11 +31,19 @@ class ProcessExecutor:
         self.timeout = timeout
         self.max_output_bytes = max_output_bytes
 
-    def execute(self, command: str, workdir: str | None = None, limits: ProcessLimits | None = None, env: dict[str, str] | None = None) -> ProcessResult:
+    def execute(
+        self, command: str, workdir: str | None = None,
+        limits: ProcessLimits | None = None, env: dict[str, str] | None = None,
+    ) -> ProcessResult:
         preexec_fn = None
         if limits is not None:
-            preexec_fn = lambda: self._apply_limits(limits)
-        proc = subprocess.Popen(shlex.split(command), cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, preexec_fn=preexec_fn, env={**os.environ, **(env or {})})
+            def preexec_fn() -> None:
+                self._apply_limits(limits)
+        proc = subprocess.Popen(
+            shlex.split(command), cwd=workdir,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            preexec_fn=preexec_fn, env={**os.environ, **(env or {})},
+        )
         try:
             stdout, stderr = proc.communicate(timeout=self.timeout)
             was_killed = False
@@ -46,7 +54,11 @@ class ProcessExecutor:
             except subprocess.TimeoutExpired:
                 return ProcessResult(returncode=-1, stdout="", stderr="", pid=proc.pid or 0, was_killed=True)
             was_killed = True
-        return ProcessResult(returncode=proc.returncode if proc.returncode is not None else -1, stdout=stdout or "", stderr=stderr or "", pid=proc.pid or 0, was_killed=was_killed)
+        return ProcessResult(
+            returncode=proc.returncode if proc.returncode is not None else -1,
+            stdout=stdout or "", stderr=stderr or "",
+            pid=proc.pid or 0, was_killed=was_killed,
+        )
 
     @staticmethod
     def _apply_limits(limits: ProcessLimits) -> None:

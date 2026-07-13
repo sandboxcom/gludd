@@ -40,7 +40,11 @@ class SecurityPolicy:
         return args
 
     def to_kubernetes_context(self) -> dict[str, Any]:
-        sec_context: dict[str, Any] = {"allowPrivilegeEscalation": self.allow_privilege_escalation, "privileged": self.privileged, "readOnlyRootFilesystem": self.read_only_root}
+        sec_context: dict[str, Any] = {
+            "allowPrivilegeEscalation": self.allow_privilege_escalation,
+            "privileged": self.privileged,
+            "readOnlyRootFilesystem": self.read_only_root,
+        }
         if self.capabilities:
             sec_context["capabilities"] = {"add": self.capabilities}
         if self.seccomp_profile:
@@ -48,7 +52,13 @@ class SecurityPolicy:
         return sec_context
 
     def is_restrictive(self) -> bool:
-        return (not self.privileged and self.no_new_privileges and not self.allow_privilege_escalation and self.read_only_root and len(self.capabilities) == 0)
+        return (
+            not self.privileged
+            and self.no_new_privileges
+            and not self.allow_privilege_escalation
+            and self.read_only_root
+            and len(self.capabilities) == 0
+        )
 
     @classmethod
     def minimal(cls) -> SecurityPolicy:
@@ -56,4 +66,7 @@ class SecurityPolicy:
 
     @classmethod
     def default_docker(cls) -> SecurityPolicy:
-        return cls(capabilities=[], read_only_root=True, privileged=False, no_new_privileges=True, allow_privilege_escalation=False)
+        return cls(
+            capabilities=[], read_only_root=True, privileged=False,
+            no_new_privileges=True, allow_privilege_escalation=False,
+        )

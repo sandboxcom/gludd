@@ -21,7 +21,11 @@ class TestKubernetesPodConfig:
         assert config.labels == {}
 
     def test_custom_values(self) -> None:
-        config = KubernetesPodConfig(image="python:3.11", command="python -c 'print(1)'", namespace="sandbox", pod_name="test-pod", environment={"KEY": "val"}, memory_limit="1Gi", cpu_limit="1000m", labels={"team": "ai"})
+        config = KubernetesPodConfig(
+            image="python:3.11", command="python -c 'print(1)'",
+            namespace="sandbox", pod_name="test-pod",
+            environment={"KEY": "val"}, memory_limit="1Gi",
+            cpu_limit="1000m", labels={"team": "ai"})
         assert config.image == "python:3.11"
         assert config.namespace == "sandbox"
         assert config.pod_name == "test-pod"

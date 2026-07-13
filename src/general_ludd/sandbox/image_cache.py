@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+
 @dataclass
 class CachedImage:
     name: str
@@ -36,9 +37,16 @@ class ImageCache:
         key = f"{name}:{tag}"
         return self._images.get(key)
 
-    def put(self, image_id: str, name: str, tag: str = "latest", size_bytes: int = 0, pulled_at: float | None = None) -> CachedImage:
+    def put(
+        self, image_id: str, name: str, tag: str = "latest",
+        size_bytes: int = 0, pulled_at: float | None = None,
+    ) -> CachedImage:
         key = f"{name}:{tag}"
-        entry = CachedImage(name=name, tag=tag, image_id=image_id, pulled_at=pulled_at if pulled_at is not None else time.time(), size_bytes=size_bytes)
+        entry = CachedImage(
+            name=name, tag=tag, image_id=image_id,
+            pulled_at=pulled_at if pulled_at is not None else time.time(),
+            size_bytes=size_bytes,
+        )
         self._images[key] = entry
         return entry
 

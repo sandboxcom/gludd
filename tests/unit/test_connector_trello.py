@@ -5,11 +5,12 @@ All HTTP is mocked through an injected fake transport — no network access.
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 
 import pytest
 
-from general_ludd.connectors.trello import TrelloSource, TRELLO_BASE_URL
+from general_ludd.connectors.trello import TRELLO_BASE_URL, TrelloSource
 
 BOARD_ID = "board-uuid-abc"
 KEY_ENV = "TRELLO_KEY"
@@ -266,9 +267,9 @@ def test_closed_card_status(creds: dict[str, str]) -> None:
 
 
 def test_due_soon_status(creds: dict[str, str]) -> None:
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    tomorrow = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    tomorrow = (datetime.now(UTC) + timedelta(hours=24)).isoformat()
     card = dict(CANNED_CARDS[0], due=tomorrow, closed=False)
     transport = RecordingTransport([FakeResponse(200, [card])])
     rows = _src(transport).query()

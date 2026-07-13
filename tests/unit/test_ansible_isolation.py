@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from general_ludd.ansible.isolation import (
-    ProcessIsolationConfig,
     _SHELL_MODULES,
     _WRITE_MODULES,
+    ProcessIsolationConfig,
 )
 
 

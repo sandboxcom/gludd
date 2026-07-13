@@ -125,7 +125,12 @@ class TestResourceLimits:
         assert limits.exceed_timeout(60) is False
 
     def test_all_limits_set(self) -> None:
-        limits = ResourceLimits(cpu_shares=4096, cpu_quota=100_000, cpu_period=100_000, memory_bytes=1_000_000_000, memory_swap_bytes=2_000_000_000, disk_bytes=10_000_000_000, pids_limit=256, timeout_seconds=600)
+        limits = ResourceLimits(
+            cpu_shares=4096, cpu_quota=100_000, cpu_period=100_000,
+            memory_bytes=1_000_000_000, memory_swap_bytes=2_000_000_000,
+            disk_bytes=10_000_000_000, pids_limit=256,
+            timeout_seconds=600,
+        )
         assert limits.memory_bytes == 1_000_000_000
         assert limits.disk_bytes == 10_000_000_000
         assert limits.pids_limit == 256

@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from general_ludd.connectors.linear import LinearSource, LINEAR_GRAPHQL_URL
+from general_ludd.connectors.linear import LINEAR_GRAPHQL_URL, LinearSource
 
 TEAM_ID = "team-uuid-abc"
 TOKEN_ENV = "LINEAR_TEST_TOKEN"

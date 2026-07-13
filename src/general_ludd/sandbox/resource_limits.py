@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+
 @dataclass
 class ResourceLimits:
     cpu_shares: int | None = None

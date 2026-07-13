@@ -18,7 +18,10 @@ class TestProcessLimits:
         assert limits.max_processes is None
 
     def test_all_set(self) -> None:
-        limits = ProcessLimits(memory_mb=512, cpu_seconds=30, max_file_size=1_000_000, max_open_files=256, max_processes=64)
+        limits = ProcessLimits(
+            memory_mb=512, cpu_seconds=30, max_file_size=1_000_000,
+            max_open_files=256, max_processes=64,
+        )
         assert limits.memory_mb == 512
         assert limits.cpu_seconds == 30
         assert limits.max_file_size == 1_000_000
@@ -138,7 +141,10 @@ class TestProcessExecutor:
 
     def test_apply_limits_all_fields(self) -> None:
         import resource
-        limits = ProcessLimits(memory_mb=256, cpu_seconds=30, max_file_size=1_000_000, max_open_files=128, max_processes=32)
+        limits = ProcessLimits(
+            memory_mb=256, cpu_seconds=30, max_file_size=1_000_000,
+            max_open_files=128, max_processes=32,
+        )
         with patch.object(resource, "setrlimit") as mock_setrlimit:
             ProcessExecutor._apply_limits(limits)
             assert mock_setrlimit.call_count == 5

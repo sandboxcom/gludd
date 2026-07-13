@@ -48,7 +48,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 try:
-    import yaml  # type: ignore[import-untyped]
+    import yaml
 except ImportError:
     print("ERROR: PyYAML not installed — run: uv sync", file=sys.stderr)
     sys.exit(1)

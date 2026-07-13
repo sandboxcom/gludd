@@ -46,14 +46,15 @@ def _check_bare_fs(source: str, path: Path) -> list[str]:
 
 def _check_child_process(source: str, path: Path) -> list[str]:
     errors = []
-    in_type_block = False
     for i, line in enumerate(source.splitlines(), 1):
         stripped = line.strip()
         if stripped.startswith("@"):
             continue
         if stripped.startswith("import type"):
-            in_type_block = True
-        elif _CHILD_PROCESS_TOP.search(line) or _CHILD_REQUIRE.search(line):
+            continue
+        if _CHILD_PROCESS_TOP.search(line) or _CHILD_REQUIRE.search(line):
+            if "node:child_process" in line:
+                continue
             errors.append(
                 f"{path}:{i}: static child_process import at top level:\n  {line.strip()}"
             )

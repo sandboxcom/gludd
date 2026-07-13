@@ -39,10 +39,16 @@ class DockerExecutor:
         cmd = self._build_command(config)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=self.timeout)
         container_id = result.stdout.strip().split("\n")[-1] if result.stdout else ""
-        return DockerResult(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr, container_id=container_id)
+        return DockerResult(
+            returncode=result.returncode, stdout=result.stdout,
+            stderr=result.stderr, container_id=container_id,
+        )
 
     def execute_in_container(self, container_id: str, command: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["docker", "exec", container_id] + command.split(), capture_output=True, text=True, timeout=self.timeout)
+        return subprocess.run(
+            ["docker", "exec", container_id, *command.split()],
+            capture_output=True, text=True, timeout=self.timeout,
+        )
 
     def stop_container(self, container_id: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["docker", "stop", container_id], capture_output=True, text=True, timeout=30)

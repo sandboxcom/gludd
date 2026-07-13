@@ -334,7 +334,7 @@ def _validate_with_registry(tool_defs: list[dict[str, Any]]) -> None:
     """
     try:
         sys.path.insert(0, str(ROOT / "src"))
-        from general_ludd.mcp.registry import MCPTool  # type: ignore[import-untyped]
+        from general_ludd.mcp.registry import MCPTool
     except Exception:
         return
     for td in tool_defs:

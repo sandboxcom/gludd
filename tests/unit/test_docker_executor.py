@@ -19,7 +19,11 @@ class TestDockerContainerConfig:
         assert config.network_mode == "none"
 
     def test_custom_values(self) -> None:
-        config = DockerContainerConfig(image="python:3.11", command="python -c 'print(1)'", workdir="/app", environment={"KEY": "val"}, memory_bytes=512_000_000, cpu_shares=512)
+        config = DockerContainerConfig(
+            image="python:3.11", command="python -c 'print(1)'",
+            workdir="/app", environment={"KEY": "val"},
+            memory_bytes=512_000_000, cpu_shares=512,
+        )
         assert config.image == "python:3.11"
         assert config.workdir == "/app"
         assert config.environment["KEY"] == "val"
@@ -89,7 +93,9 @@ class TestDockerExecutor:
     def test_pull_image(self) -> None:
         executor = DockerExecutor(timeout=30)
         with patch.object(subprocess, "run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(args=["docker", "pull", "alpine"], returncode=0, stdout="ok", stderr="")
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["docker", "pull", "alpine"], returncode=0, stdout="ok", stderr="",
+            )
             result = executor.pull_image("alpine")
             mock_run.assert_called_once_with(["docker", "pull", "alpine"], capture_output=True, text=True, timeout=30)
             assert result.returncode == 0
@@ -98,7 +104,8 @@ class TestDockerExecutor:
         executor = DockerExecutor(timeout=10)
         config = DockerContainerConfig(image="alpine", command="echo test")
         with patch.object(subprocess, "run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(args=["docker", "run"], returncode=0, stdout="container123\n", stderr="")
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["docker", "run"], returncode=0, stdout="container123\n", stderr="")
             result = executor.execute(config)
             assert result.returncode == 0
             assert result.container_id == "container123"
@@ -106,7 +113,8 @@ class TestDockerExecutor:
     def test_stop_container(self) -> None:
         executor = DockerExecutor()
         with patch.object(subprocess, "run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(args=["docker", "stop", "abc"], returncode=0, stdout="", stderr="")
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["docker", "stop", "abc"], returncode=0, stdout="", stderr="")
             result = executor.stop_container("abc")
             mock_run.assert_called_once_with(["docker", "stop", "abc"], capture_output=True, text=True, timeout=30)
             assert result.returncode == 0
@@ -114,7 +122,8 @@ class TestDockerExecutor:
     def test_remove_container(self) -> None:
         executor = DockerExecutor()
         with patch.object(subprocess, "run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(args=["docker", "rm", "-f", "abc"], returncode=0, stdout="", stderr="")
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["docker", "rm", "-f", "abc"], returncode=0, stdout="", stderr="")
             result = executor.remove_container("abc")
             assert result.returncode == 0
 

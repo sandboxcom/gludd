@@ -156,7 +156,7 @@ class NotionSource:
         }
 
     def _normalize(self, record: dict[str, Any]) -> dict[str, Any]:
-        properties = record.get("properties") or {}
+        record.get("properties") or {}
         created = record.get("created_time", "")
         last_edited = record.get("last_edited_time", "")
         return {
