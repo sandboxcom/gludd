@@ -356,7 +356,12 @@ function gateStatusIsRed(): boolean {
     const content = fs.readFileSync(gatePath, "utf8")
     for (const line of content.split("\n")) {
       if (line.startsWith("===")) continue
-      if (/FAIL/.test(line)) return true
+      // Only check known gate-phase lines; ignore CI, logs, and other non-phase content.
+      // Known phases: lint, typecheck, collect, test, smoke, env-writes, dead-code,
+      // hook-runtime, verify-enforcement, coverage-gaps. Each formatted as "name PASS|FAIL N".
+      if (/^(lint |typecheck |collect |test |smoke |env-writes |dead-code |hook-runtime |verify-enforcement |coverage-gaps )/.test(line)) {
+        if (/FAIL/.test(line)) return true
+      }
     }
     return false
   } catch { return false }
@@ -794,6 +799,7 @@ const defaultImpl: HotModule = {
 
   "experimental.text.complete": async (_input: any, output: any) => {
     if (isSubagent()) return output
+    if (textHasResultMarkers(output?.text ?? "").found) return output
     if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
 
     const cPath = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "/tmp/gludd-stop-text-complete-count.json"

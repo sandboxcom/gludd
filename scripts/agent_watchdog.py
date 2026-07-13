@@ -2379,26 +2379,27 @@ def check_and_reset() -> dict:
     has_pending_work = tasks_unchecked or ratchet_count > 0 or gate_red or ci_pending
     has_any_work = has_pending_work or ci_pending
 
-    # ── Gate-status injection: when CI is pending/red and .gate-status is otherwise
-    #     clean, write a CI-FAIL line. The enforce-stop.ts plugin reads .gate-status
-    #     to compute hasLocalWork. Without this, text-only responses pass through
-    #     unblocked when CI is the only pending work.
+    # ── CI-status injection: when CI is pending/red, write to .ci-status.
+    #     The enforce-stop.ts plugin reads BOTH .gate-status (for local checks)
+    #     and .ci-status (for CI status). Writes to .gate-status directly were
+    #     destructive — they overwrote lint/typecheck/test PASS lines with just
+    #     "CI FAIL pending → GATE: FAILED", causing enforce-stop to blank ALL
+    #     text including subagent task_results. The separation fixes that.
     #
     #     ONLY inject when a concrete run_id exists (a real CI run for a pushed
     #     commit). When run_id is None, ci-verdict found NO run for the local
     #     HEAD — the commit hasn't been pushed yet, so there is no CI work to
     #     wait on. Injecting in that case creates a chicken-and-egg: the commit
     #     can never land (gate red) and CI can never start (no push). ──
-    if ci_pending and ci_run_id is not None and not gate_red:
+    if ci_pending and ci_run_id is not None:
         try:
-            gs = Path(_GATE_STATUS)
-            gs.parent.mkdir(parents=True, exist_ok=True)
-            gs.write_text(
-                f"=== GATE {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} ===\n"
+            ci_status = Path(".ci-status")
+            ci_status.parent.mkdir(parents=True, exist_ok=True)
+            ci_status.write_text(
+                f"=== CI {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} ===\n"
                 f"CI FAIL pending (run {ci_run_id})\n"
-                f"=== GATE: FAILED ===\n"
+                f"suggested_action: wait_for_ci\n"
             )
-            gate_red = True
             has_pending_work = True
         except Exception:
             pass
