@@ -169,6 +169,7 @@ class TestPauseResumeHandlers:
 
     def test_pause_list_handles_connection_error(self):
         from unittest.mock import patch as mock_patch
+
         import httpx
 
         with mock_patch("httpx.get", side_effect=httpx.ConnectError("refused")):

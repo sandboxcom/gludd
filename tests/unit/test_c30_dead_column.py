@@ -25,7 +25,7 @@ be a comment-only change to models.py since the column schema is unchanged.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import Column, Integer, inspect
+from sqlalchemy import Integer, inspect
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
@@ -33,7 +33,6 @@ from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base, TodoModel
 from general_ludd.db.repository import TodoRepository
-
 
 # ---------------------------------------------------------------------------
 # helpers

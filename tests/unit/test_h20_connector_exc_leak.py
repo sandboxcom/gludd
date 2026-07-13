@@ -10,9 +10,6 @@ Verifies that:
 
 from __future__ import annotations
 
-import os
-import re
-
 import pytest
 
 # ── exc_sanitizer module shape ──────────────────────────────────────────
@@ -20,7 +17,7 @@ import pytest
 
 def test_exc_sanitizer_module_exists() -> None:
     """C20-GATE: module can be imported cleanly."""
-    from general_ludd.connectors import exc_sanitizer  # noqa: F811
+    from general_ludd.connectors import exc_sanitizer
 
     assert exc_sanitizer is not None
 

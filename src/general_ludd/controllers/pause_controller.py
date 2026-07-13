@@ -245,7 +245,7 @@ class PauseController:
         self,
         kind: PauseKind,
         target_id: str,
-        handles: list["HibernationHandle"],
+        handles: list[HibernationHandle],
         status: str,
         errors: list[str],
     ) -> None:

@@ -1,13 +1,14 @@
 """Integration tests for .opencode/.opencode.orig backup/recovery system.
 
-Tests the backup-opencode, check-opencode-backup, and restore-opencode
-make targets via their underlying shell commands, using temp directories
-for full isolation.
+Tests the backup-opencode, check-opencode-backup, restore-opencode, and
+verify-opencode-backup make targets via their underlying shell commands,
+using temp directories for full isolation.
 
-Targets under test (Makefile ~L3878-3911):
+Targets under test (Makefile ~L3878-3918):
   - backup-opencode: rsync .opencode/ -> .opencode.orig/ (excl node_modules)
   - check-opencode-backup: exits 1 if missing or stale
   - restore-opencode: rsync .opencode.orig/ -> .opencode/ + clear ~/.cache/opencode
+  - verify-opencode-backup: checks file existence + shared.ts export parity
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+
+from scripts.verify_opencode_backup import _extract_exports, verify
 
 
 def _mtime(path: Path) -> float:
@@ -73,7 +76,7 @@ class TestBackupOpencode:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             opencode = root / ".opencode"
-            plugin = opencode / "plugin"
+            opencode / "plugin"
             (opencode / "plugin").mkdir(parents=True)
             (opencode / "plugin" / "a.ts").write_text("a")
             (opencode / "plugin" / "b.ts").write_text("b")
@@ -351,3 +354,140 @@ class TestRestoreOpencode:
             )
             assert proc.returncode != 0
             assert b"no backup" in proc.stderr
+
+
+class TestExtractExports:
+    """Unit tests for _extract_exports helper."""
+
+    def test_extracts_function_export(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ts", delete=False) as f:
+            f.write("export function hello() { return 1 }\nexport const FOO = 42\n")
+            f.flush()
+            exports = _extract_exports(Path(f.name))
+        assert exports == {"hello", "FOO"}
+
+    def test_extracts_interface_and_type_exports(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ts", delete=False) as f:
+            f.write("export interface DisengageOpts { maxMs?: number }\n")
+            f.write("export type ToolName = 'read' | 'edit'\n")
+            f.write("export class Widget {}\n")
+            f.flush()
+            exports = _extract_exports(Path(f.name))
+        assert exports == {"DisengageOpts", "ToolName", "Widget"}
+
+    def test_ignores_non_exported_declarations(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ts", delete=False) as f:
+            f.write("function internal() {}\n")
+            f.write("const FOO = 1\n")
+            f.write("export function external() {}\n")
+            f.flush()
+            exports = _extract_exports(Path(f.name))
+        assert exports == {"external"}
+
+
+class TestVerifyOpencodeBackup:
+    """Verify-opencode-backup: content-level staleness detection."""
+
+    def test_clean_backup_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            opencode = root / ".opencode"
+            backup = root / ".opencode.orig"
+            for d in [opencode / "plugin", backup / "plugin"]:
+                d.mkdir(parents=True)
+            shared_content = (
+                "export function isSubagent(): boolean { return false }\n"
+                "export const FOO = 42\n"
+            )
+            (opencode / "plugin" / "shared.ts").write_text(shared_content)
+            (opencode / "plugin" / "enforce-floor.ts").write_text("// floor")
+            (backup / "plugin" / "shared.ts").write_text(shared_content)
+            (backup / "plugin" / "enforce-floor.ts").write_text("// floor")
+
+            ok, msgs = verify(opencode, backup)
+            assert ok, f"expected clean backup to pass, got: {msgs}"
+
+    def test_missing_plugin_file_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            opencode = root / ".opencode"
+            backup = root / ".opencode.orig"
+            for d in [opencode / "plugin", backup / "plugin"]:
+                d.mkdir(parents=True)
+            (opencode / "plugin" / "shared.ts").write_text("export function x() {}\n")
+            (opencode / "plugin" / "enforce-floor.ts").write_text("// floor")
+            (backup / "plugin" / "shared.ts").write_text("export function x() {}\n")
+            # enforce-floor.ts missing from backup
+
+            ok, msgs = verify(opencode, backup)
+            assert not ok
+            assert any("enforce-floor.ts" in m for m in msgs)
+            assert any("MISSING" in m for m in msgs)
+
+    def test_missing_shared_ts_export_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            opencode = root / ".opencode"
+            backup = root / ".opencode.orig"
+            for d in [opencode / "plugin", backup / "plugin"]:
+                d.mkdir(parents=True)
+            (opencode / "plugin" / "shared.ts").write_text(
+                "export function isSubagent(): boolean { return false }\n"
+                "export function newFeature(): void {}\n"
+            )
+            (backup / "plugin" / "shared.ts").write_text(
+                "export function isSubagent(): boolean { return false }\n"
+            )
+
+            ok, msgs = verify(opencode, backup)
+            assert not ok
+            assert any("newFeature" in m for m in msgs)
+            assert any("MISSING EXPORT" in m for m in msgs)
+
+    def test_extra_backup_export_is_note_not_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            opencode = root / ".opencode"
+            backup = root / ".opencode.orig"
+            for d in [opencode / "plugin", backup / "plugin"]:
+                d.mkdir(parents=True)
+            (opencode / "plugin" / "shared.ts").write_text(
+                "export function isSubagent(): boolean { return false }\n"
+            )
+            (backup / "plugin" / "shared.ts").write_text(
+                "export function isSubagent(): boolean { return false }\n"
+                "export function removedFunc(): void {}\n"
+            )
+
+            ok, msgs = verify(opencode, backup)
+            assert ok, "extra export in backup should not fail verification"
+            assert any("removedFunc" in m for m in msgs)
+            assert any("NOTE" in m for m in msgs)
+
+    def test_missing_backup_dir_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            opencode = root / ".opencode"
+            opencode.mkdir(parents=True)
+            (opencode / "plugin").mkdir(parents=True)
+            (opencode / "plugin" / "shared.ts").write_text("export function x() {}\n")
+
+            ok, msgs = verify(opencode, root / ".opencode.orig")
+            assert not ok
+            assert any("does not exist" in m for m in msgs)
+
+    def test_node_modules_excluded_from_file_check(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            opencode = root / ".opencode"
+            backup = root / ".opencode.orig"
+            for d in [opencode / "plugin", backup / "plugin"]:
+                d.mkdir(parents=True)
+            (opencode / "plugin" / "node_modules").mkdir(parents=True)
+            (opencode / "plugin" / "node_modules" / "dep.ts").write_text("// dep")
+            (opencode / "plugin" / "shared.ts").write_text("export function x() {}\n")
+            (backup / "plugin" / "shared.ts").write_text("export function x() {}\n")
+            # backup has no node_modules but that's fine — skip it
+
+            ok, msgs = verify(opencode, backup)
+            assert ok, f"node_modules should be excluded, got: {msgs}"

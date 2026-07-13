@@ -11,8 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -147,7 +146,7 @@ async def test_pause_controller_quiesce_degraded_on_hydration_failure(fake_dispa
     bad_hibernation._store = bad_store
 
     pc = PauseController()
-    handles, status, errors = await pc.quiesce_project(
+    _handles, status, errors = await pc.quiesce_project(
         "proj-x", dispatcher=fake_dispatcher, hibernation=bad_hibernation
     )
 
@@ -161,7 +160,7 @@ async def test_pause_controller_quiesce_no_active_tasks(fake_dispatcher, fake_hi
     from general_ludd.controllers.pause_controller import PauseController
 
     pc = PauseController()
-    handles, status, errors = await pc.quiesce_project(
+    handles, status, _errors = await pc.quiesce_project(
         "proj-x", dispatcher=fake_dispatcher, hibernation=fake_hibernation_store
     )
 
@@ -211,7 +210,7 @@ async def test_resume_rehydrate_no_record():
     from general_ludd.controllers.pause_controller import PauseController
 
     pc = PauseController()
-    snaps, status, errors = await pc.resume_rehydrate("project", "nope", None, None)
+    snaps, status, _errors = await pc.resume_rehydrate("project", "nope", None, None)
     assert snaps == []
     assert status == "clean"
 
@@ -223,7 +222,7 @@ async def test_resume_rehydrate_no_subsystems():
 
     pc = PauseController(store=PauseStore())
     pc.pause("project", "proj-x")
-    snaps, status, errors = await pc.resume_rehydrate("project", "proj-x", None, None)
+    snaps, status, _errors = await pc.resume_rehydrate("project", "proj-x", None, None)
     assert snaps == []
     assert status == "clean"
 
@@ -249,7 +248,7 @@ async def test_resume_rehydrate_restores_and_re_enqueues(fake_dispatcher, fake_h
         quiesce_status="clean",
     )
 
-    snaps, status, errors = await pc.resume_rehydrate(
+    snaps, status, _errors = await pc.resume_rehydrate(
         "project",
         "proj-x",
         dispatcher=fake_dispatcher,
@@ -292,7 +291,7 @@ async def test_resume_rehydrate_multiple_handles(fake_dispatcher, fake_hibernati
         quiesce_status="clean",
     )
 
-    snaps, status, errors = await pc.resume_rehydrate(
+    snaps, status, _errors = await pc.resume_rehydrate(
         "project", "proj-x",
         dispatcher=fake_dispatcher,
         hibernation=fake_hibernation_store,
@@ -327,7 +326,7 @@ async def test_resume_rehydrate_degraded_on_hydration_failure(fake_dispatcher, t
 
     pc2 = PauseController(store=PauseStore(base_dir=str(tmp_path / "ps")))
 
-    snaps, status, errors = await pc2.resume_rehydrate(
+    _snaps, status, errors = await pc2.resume_rehydrate(
         "project", "proj-x",
         dispatcher=fake_dispatcher,
         hibernation=fake_hibernation_store,

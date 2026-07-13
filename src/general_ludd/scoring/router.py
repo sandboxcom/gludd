@@ -13,6 +13,7 @@ from general_ludd.schemas.benchmark import (
     RoutingDecision,
     TaskType,
 )
+from general_ludd.scoring.metric import MetricConfig, compute_w_dollar
 from general_ludd.scoring.pareto import ParetoRouter
 from general_ludd.scoring.task_embeddings import TaskEmbeddingStore
 
@@ -671,6 +672,15 @@ class AdaptiveRouter:
         cost = candidate.avg_cost_usd
         cost_norm = (cost / max_cost) if (max_cost > 0 and math.isfinite(cost)) else 0.0
         return weights.quality * quality - weights.cost * cost_norm
+
+    @staticmethod
+    def _w_dollar_score(
+        composite_score: float,
+        median_dollars_per_mtok: float,
+        config: MetricConfig | None = None,
+    ) -> float:
+        """Cost-adjusted score using the W$ formula (D.20)."""
+        return compute_w_dollar(composite_score, median_dollars_per_mtok, config=config)
 
     def _apply_quantization_penalty(self, candidate: RoutingCandidate) -> float:
         score = candidate.composite_score

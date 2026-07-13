@@ -8,11 +8,8 @@ the implicit agent task lifecycle (registered -> dispatched -> completed/failed/
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
-import pytest
-
-from general_ludd.agents.dispatcher import AgentDispatcher, AgentTaskResult
+from general_ludd.agents.dispatcher import AgentDispatcher
 from general_ludd.agents.hibernation import (
     AgentEnvironmentSnapshot,
     HibernationController,
@@ -26,7 +23,6 @@ from general_ludd.agents.task_decomposer import (
     TaskDecomposer,
 )
 from general_ludd.agents.types import AgentConfig, AgentPermission, AgentTask, AgentType
-
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -72,7 +68,7 @@ def _minimal_registry() -> AgentRegistry:
     return registry
 
 
-def _dummy_executor(output: str = "ok") -> "callable":
+def _dummy_executor(output: str = "ok") -> callable:
     async def _exec(task: AgentTask) -> str:
         return output
 

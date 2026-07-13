@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import textwrap
-import threading
 
 import httpx
 import pytest
@@ -16,7 +14,6 @@ from general_ludd.events.hooks import (
     _ensure_safe_webhook_url,
     is_safe_fetch_url,
 )
-
 
 # ── is_safe_fetch_url: literal-host SSRF gate ──────────────────────────
 
@@ -183,12 +180,10 @@ class FakeResponse(httpx.Response):
 @pytest.mark.asyncio
 async def test_do_post_async_calls_client_post() -> None:
     """Verify _do_post_async can POST without raising."""
-    import general_ludd.events.hooks as hmod
 
     hs = HookSystem()
-    hook_id = hs.register_webhook("test.event", "https://example.com/hook")
+    hs.register_webhook("test.event", "https://example.com/hook")
 
-    body = {"event": "test.event", "payload": {}}
     config = hs.list_hooks()[0].webhook_config
     assert config is not None
 
@@ -261,7 +256,7 @@ def test_concurrent_webhook_deduplication() -> None:
 def test_pending_webhooks_tracked_on_fire() -> None:
     """_fire_webhook must add the coroutine future to _pending_webhooks."""
     hs = HookSystem()
-    hook_id = hs.register_webhook("evt", "https://example.com/a")
+    hs.register_webhook("evt", "https://example.com/a")
 
     # Simulate fire() with a running event loop so ensure_future path is taken
     async def _fire_and_check():

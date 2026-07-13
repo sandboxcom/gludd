@@ -10,12 +10,10 @@ Verifies:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
 from general_ludd.account.ephemeral import (
@@ -23,7 +21,6 @@ from general_ludd.account.ephemeral import (
     EphemeralAccountManager,
 )
 from general_ludd.account.lifecycle_policy import PolicyConfig
-
 
 # ---------------------------------------------------------------------------
 # Fake backend (so tests never shell out to aws/gcloud/az CLIs)

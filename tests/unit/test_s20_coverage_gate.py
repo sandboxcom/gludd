@@ -34,8 +34,8 @@ class TestRunGateIncludesCoverageFlags:
     def test_run_gate_sh_includes_cov_fail_under(self) -> None:
         """S.20 core fix: --cov-fail-under enforces coverage floor via exit code."""
         content = Path("scripts/run_gate.sh").read_text()
-        assert "--cov-fail-under=70" in content, (
-            "run_gate.sh missing --cov-fail-under=70 flag; coverage floor never binds"
+        assert "--cov-fail-under=85" in content, (
+            "run_gate.sh missing --cov-fail-under=85 flag; coverage floor never binds"
         )
 
     def test_cov_fail_under_comes_before_basetemp(self) -> None:
@@ -59,8 +59,8 @@ class TestRunGateIncludesCoverageFlags:
         with open("pyproject.toml", "rb") as f:
             config = tomllib.load(f)
         fail_under = config["tool"]["coverage"]["report"]["fail_under"]
-        assert fail_under == 70, (
-            f"Expected fail_under=70, got {fail_under}"
+        assert fail_under == 85, (
+            f"Expected fail_under=85, got {fail_under}"
         )
 
     def test_fail_under_consistency(self) -> None:

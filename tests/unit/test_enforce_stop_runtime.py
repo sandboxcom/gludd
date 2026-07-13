@@ -12,6 +12,7 @@ Tests:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from pathlib import Path
@@ -57,10 +58,8 @@ def _invoke_text_complete(
     stdout_raw = result.stdout.strip()
     parsed = None
     if stdout_raw:
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             parsed = json.loads(stdout_raw)
-        except json.JSONDecodeError:
-            pass
     return parsed, stdout_raw, result.stderr, result.returncode
 
 
@@ -77,7 +76,7 @@ def _read_persist_block(env: HookEnv) -> dict | None:
 
 def test_stop_text_complete_subagent_guard_skips_enforcement(hook_plugin_env: HookEnv):
     """OPENCODE_SUBAGENT=1: text.complete returns the original output unchanged."""
-    parsed, raw, stderr, rc = _invoke_text_complete(
+    parsed, _raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "Results are in. All done. No further work needed.",
         env_overrides={"OPENCODE_SUBAGENT": "1"},
@@ -101,7 +100,7 @@ def test_stop_text_complete_subagent_guard_skips_enforcement(hook_plugin_env: Ho
 
 def test_stop_text_complete_env_disable_bypasses_enforcement(hook_plugin_env: HookEnv):
     """GLUDD_STOP_ENFORCE=0: text.complete returns undefined (allows text through)."""
-    parsed, raw, stderr, rc = _invoke_text_complete(
+    parsed, _raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "All done. Everything is complete.",
         env_overrides={"GLUDD_STOP_ENFORCE": "0"},
@@ -121,7 +120,7 @@ def test_stop_text_complete_corrupt_state_does_not_crash(hook_plugin_env: HookEn
     state_path = hook_plugin_env.state_path("GLUDD_STOP_STATE_FILE")
     state_path.write_text("{{{ not valid json [[[broken")
 
-    parsed, raw, stderr, rc = _invoke_text_complete(
+    _parsed, _raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "All done. No more work.",
     )
@@ -145,7 +144,7 @@ def test_stop_text_complete_false_done_all_done_blocked(hook_plugin_env: HookEnv
     fires regardless of pending-work state. It writes a persist block file and
     replaces output.text with a FALSE-DONE CLAIM BLOCKED message.
     """
-    parsed, raw, stderr, rc = _invoke_text_complete(
+    _parsed, raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "All done.",
     )
@@ -175,7 +174,7 @@ def test_stop_text_complete_false_done_with_evidence_passes(hook_plugin_env: Hoo
         "commit abc1234 — 42 tests passed."
     )
     assert len(text_with_evidence) < 500, "test setup: text must be <500 chars"
-    parsed, raw, stderr, rc = _invoke_text_complete(
+    _parsed, raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         text_with_evidence,
     )
@@ -211,7 +210,7 @@ def test_stop_text_complete_qa_response_pattern_blocked(hook_plugin_env: HookEnv
         "healthScore": 70,
     }))
 
-    parsed, raw, stderr, rc = _invoke_text_complete(
+    _parsed, raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "Here is a summary of what was completed in this session:\n"
         "- Fixed bug A\n- Added feature B\n"
@@ -241,7 +240,7 @@ def test_stop_text_complete_disengage_allows_through(hook_plugin_env: HookEnv):
         "disengageUntil": int(time.time() * 1000) + 300_000,
     }))
 
-    parsed, raw, stderr, rc = _invoke_text_complete(
+    _parsed, _raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "All done. Everything is complete.",
     )
@@ -267,7 +266,7 @@ def test_stop_text_complete_disengage_past_expired(hook_plugin_env: HookEnv):
         "disengageUntil": int(time.time() * 1000) - 300_000,
     }))
 
-    parsed, raw, stderr, rc = _invoke_text_complete(
+    _parsed, raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "All done.",
     )

@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import ast
 import pathlib
-from typing import Any
-
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -150,15 +148,14 @@ def test_self_improve_gate_no_auto_queue() -> None:
                     if isinstance(call.func, ast.Name) and call.func.id == "GateDecision":
                         # Check keyword: initial_status=TodoStatus.APPROVAL_REQUIRED.value
                         for kw in call.keywords:
-                            if kw.arg == "initial_status":
-                                if (
-                                    isinstance(kw.value, ast.Attribute)
-                                    and isinstance(kw.value.value, ast.Attribute)
-                                    and isinstance(kw.value.value.value, ast.Name)
-                                    and kw.value.value.value.id == "TodoStatus"
-                                    and kw.value.value.attr == "APPROVAL_REQUIRED"
-                                ):
-                                    always_approval_required = True
+                            if kw.arg == "initial_status" and (
+                                isinstance(kw.value, ast.Attribute)
+                                and isinstance(kw.value.value, ast.Attribute)
+                                and isinstance(kw.value.value.value, ast.Name)
+                                and kw.value.value.value.id == "TodoStatus"
+                                and kw.value.value.attr == "APPROVAL_REQUIRED"
+                            ):
+                                always_approval_required = True
     assert evaluate_found, "evaluate() method must exist in SelfImproveGate"
     assert always_approval_required, (
         "evaluate() must return APPROVAL_REQUIRED — auto_queue is removed"

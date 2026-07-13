@@ -17,10 +17,10 @@ from general_ludd.connectors._errors import (
 )
 
 __all__ = [
-    "sanitize_exc_message",
-    "sanitize_str",
     "sanitize_exc_for_health",
     "sanitize_exc_for_query",
+    "sanitize_exc_message",
+    "sanitize_str",
 ]
 
 

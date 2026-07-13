@@ -190,17 +190,26 @@ class MysqlStatsSource:
         """Report connectivity health. Never raises."""
         try:
             executor = self._get_executor()
-        except RuntimeError:
-            logger.warning("mysql_stats executor unavailable", exc_info=True)
+        except RuntimeError as exc:
+            logger.warning(
+                "mysql_stats executor unavailable: %s", type(exc).__name__,
+                exc_info=False,
+            )
             return {"ok": False, "detail": "executor unavailable"}
-        except Exception:  # health must never raise
-            logger.warning("mysql_stats executor init failed", exc_info=True)
+        except Exception as exc:  # health must never raise
+            logger.warning(
+                "mysql_stats executor init failed: %s", type(exc).__name__,
+                exc_info=False,
+            )
             return {"ok": False, "detail": "executor init failed"}
 
         try:
             executor("SELECT 1")
-        except Exception:  # health must never raise
-            logger.warning("mysql_stats probe failed", exc_info=True)
+        except Exception as exc:  # health must never raise
+            logger.warning(
+                "mysql_stats probe failed: %s", type(exc).__name__,
+                exc_info=False,
+            )
             return {"ok": False, "detail": "probe failed"}
         return {"ok": True, "detail": "mysql reachable"}
 

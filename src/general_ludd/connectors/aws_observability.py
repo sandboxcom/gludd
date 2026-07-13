@@ -239,8 +239,8 @@ class AwsObservabilitySource:
         """
         try:
             self._client("cloudwatch")
-        except ImportError as exc:
-            return {"ok": False, "detail": f"boto3 unavailable"}
+        except ImportError:
+            return {"ok": False, "detail": "boto3 unavailable"}
         except Exception as exc:  # health must never raise
             return {"ok": False, "detail": sanitize_exc_for_health(exc)}
         return {"ok": True, "detail": f"client factory ready (region={self.region})"}

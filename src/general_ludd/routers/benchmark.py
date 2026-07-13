@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from fastapi import FastAPI, HTTPException
+
 from general_ludd.db.repository import BenchmarkRepository, PromptProfileRepository
 from general_ludd.routers._util import get_session_factory as _get_session_factory
 from general_ludd.scoring.router import AdaptiveRouter

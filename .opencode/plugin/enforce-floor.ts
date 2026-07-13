@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "./hot_reload.ts"
-import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH } from "./shared.ts"
+import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat } from "./shared.ts"
 
 // Floor+ceiling enforcement guardrail (separate from enforce-make.ts so a bug
 // here can NEVER break the make-only enforcement). FAIL-OPEN: any error -> do
@@ -57,81 +57,8 @@ const TARGET = Math.min(
 
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 
-// ── SHARED STREAK STATE (P3: cross-call grinding detection) ────────────────
-const SHARED_STREAK_FILE = process.env.GLUDD_STREAK_FILE || "/tmp/gludd-tool-streak.json"
+// ── SHARED STREAK STATE ─── imported from shared.ts ────────────────────────────
 const STREAK_PLUGIN_NAME = "enforce-floor"
-const STREAK_DEDUP_WINDOW_MS = 500
-
-interface SharedStreakState {
-  streak: number
-  lastDispatchTs: number
-  readStreak: number
-  editStreak: number
-  lastUpdateTs: number
-  lastWriter: string
-  pid: number
-}
-
-function readSharedStreak(): SharedStreakState {
-  try {
-    if (fs.existsSync(SHARED_STREAK_FILE)) {
-      const raw = JSON.parse(fs.readFileSync(SHARED_STREAK_FILE, "utf8"))
-      const now = Date.now()
-      const lastTs = typeof raw.lastUpdateTs === "number" ? raw.lastUpdateTs : 0
-      const STALE_MS = 60_000
-      if (lastTs > 0 && now - lastTs > STALE_MS) {
-        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "stale-reset", pid: process.pid }
-        try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
-        return zeroed
-      }
-      const storedPid = typeof raw.pid === "number" ? raw.pid : 0
-      if (storedPid > 0 && storedPid !== process.pid) {
-        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "pid-reset", pid: process.pid }
-        try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
-        return zeroed
-      }
-      return {
-        streak: typeof raw.streak === "number" ? raw.streak : 0,
-        lastDispatchTs: typeof raw.lastDispatchTs === "number" ? raw.lastDispatchTs : 0,
-        readStreak: typeof raw.readStreak === "number" ? raw.readStreak : 0,
-        editStreak: typeof raw.editStreak === "number" ? raw.editStreak : 0,
-        lastUpdateTs: lastTs,
-        lastWriter: typeof raw.lastWriter === "string" ? raw.lastWriter : "",
-        pid: storedPid || process.pid,
-      }
-    }
-  } catch {}
-  return { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: 0, lastWriter: "", pid: 0 }
-}
-
-function writeSharedStreak(s: SharedStreakState): void {
-  s.pid = process.pid
-  try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(s), "utf8") } catch {}
-}
-
-function updateSharedStreak(tool: string): SharedStreakState {
-  const s = readSharedStreak()
-  const now = Date.now()
-  const isDispatch = isDispatchTool(tool)
-  const isRead = isReadTool(tool)
-  const alreadyCounted = (now - s.lastUpdateTs) < STREAK_DEDUP_WINDOW_MS
-    && s.lastWriter !== STREAK_PLUGIN_NAME
-    && s.lastWriter !== ""
-  if (isDispatch) {
-    s.streak = 0
-    s.readStreak = 0
-    s.editStreak = 0
-    s.lastDispatchTs = now
-  } else if (!alreadyCounted) {
-    s.streak++
-    if (isRead) s.readStreak++
-    else s.editStreak++
-  }
-  s.lastUpdateTs = now
-  s.lastWriter = STREAK_PLUGIN_NAME
-  writeSharedStreak(s)
-  return s
-}
 
 function isCommitBashCommand(cmd: string): boolean {
   return /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/.test(cmd)
@@ -346,14 +273,7 @@ function _buildDispatchCommands(): DispatchCommand[] {
 
 const floorTurnState: { accumulatedText: string } = { accumulatedText: "" }
 
-// reportAlive imported from shared.ts (writes to ALIVE_PATH)
-
-function _writeHeartbeat(): void {
-  try {
-    const hb = JSON.stringify({ plugin: "enforce-floor", ts: Date.now(), pid: process.pid })
-    fs.writeFileSync("/tmp/gludd-plugin-heartbeat-enforce-floor.json", hb)
-  } catch { /* fail-open */ }
-}
+// reportAlive + writeHeartbeat imported from shared.ts
 
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
@@ -363,7 +283,8 @@ const defaultImpl: HotModule = {
     if (isSubagent()) return
     console.log("SUBAGENT SKIP: enforce-floor")
     reportAlive("enforce-floor")
-    _writeHeartbeat()
+    writeHeartbeat("enforce-floor")
+
     try {
       if (!FLOOR_ENFORCE) return
       const tool = (input?.tool ?? "") as string
@@ -374,7 +295,7 @@ const defaultImpl: HotModule = {
         return
       }
 
-      updateSharedStreak(tool)
+      updateSharedStreak(tool, STREAK_PLUGIN_NAME)
 
       if (isDispatchTool(tool)) {
         _streakCount = 0
