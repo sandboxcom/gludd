@@ -3846,3 +3846,16 @@ networking-healthcheck:
 	@$(UV) run python -c "from general_ludd.networking import scapy_adapter; print('scapy_adapter import OK')" 2>/dev/null && \
 		echo "networking healthcheck: OK" || \
 		echo "networking module not found (skipping healthcheck)"
+
+# Restore .opencode/ from .opencode.orig/ and clear corrupt cache after OS crash
+# Per https://opencode.ai/docs/troubleshooting: corrupted ~/.cache/opencode
+# causes opencode to refuse to start. This target restores and cleans.
+restore-opencode:
+	@echo "Restoring .opencode/ from .opencode.orig/ ..."
+	@cp -vR .opencode.orig/* .opencode/ 2>/dev/null
+	@cp -vR .opencode.orig/.gitignore .opencode/ 2>/dev/null || true
+	@echo "Clearing corrupted opencode cache ..."
+	@rm -rf ~/.cache/opencode 2>/dev/null && echo "  ~/.cache/opencode cleared" || echo "  ~/.cache/opencode not found or could not clear"
+	@echo "Clearing .opencode/node_modules for clean reinstall ..."
+	@rm -rf .opencode/node_modules 2>/dev/null && echo "  .opencode/node_modules cleared" || echo "  .opencode/node_modules not found"
+	@echo ".opencode/ restored. Restart opencode for changes to take effect."

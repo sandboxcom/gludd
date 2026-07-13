@@ -1058,9 +1058,8 @@ export default (async ({ }) => {
       // Item 18: env var gates — disable enforcement entirely
       if (!STOP_ENFORCE || !NO_WAIT_ENFORCE) return
 
-      }
       try {
-    const text = output.text
+        const text = output.text
     if (!text || text.trim().length === 0) return
 
     // BUG #12 fix: check disengaged state first — legitimate admin override
