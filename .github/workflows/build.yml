@@ -108,16 +108,25 @@ jobs:
         env:
           GLUDD_PSK: ""
 
-      - name: Enforcement hook runtime tests
-        # Invokes actual TypeScript plugin hooks via node --experimental-strip-types
-        # and verifies runtime behavior. Catches regressions where plugin source
-        # was changed but structural-only tests didn't detect the breakage.
+      - name: Build hot-reload modules
+        # Auto-build hot-reload JS modules from current plugin .ts source so CI
+        # always tests with the freshest plugin code.  Ensures enforcement
+        # runtime tests exercise hot-module paths, not stale pre-built artifacts.
         run: |
-          make test-hook-runtime
+          make hot-reload-plugins
         env:
           GLUDD_PSK: ""
 
-      - name: Verify enforcement plugins blocking
+      - name: Verify hot-reload modules fresh
+        # Fails if any /tmp/gludd-hot-*.js is stale (older than its .ts source)
+        # or contains non-stripped TS artifacts.  Forces a make hot-reload-plugins
+        # before the gate can pass — no stale enforcement modules in CI.
+        run: |
+          make check-hot-reload-fresh
+        env:
+          GLUDD_PSK: ""
+
+      - name: Enforcement hook runtime tests
         # Verifies all 10 enforcement plugins are structurally in BLOCKING mode
         # (not advisory-only). Scans each plugin source for deny/throw patterns
         # and checks no GLUDD_*_ENFORCE=0 env vars are set. CI goes red if any

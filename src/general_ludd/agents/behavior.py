@@ -34,6 +34,9 @@ class GuardrailConfig(BaseModel):
 
 
 class AgentBehavior(BaseModel):
+    role: str | None = None
+    goal: str | None = None
+    backstory: str | None = None
     completion_policy: str = "complete_all"
     self_directed_work: bool = True
     tdd_enforced: bool = True

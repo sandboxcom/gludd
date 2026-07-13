@@ -129,10 +129,18 @@ class MCPClient:
         self._transports[server_id] = _BuiltinTransport(handler)
 
     async def stop_all(self) -> None:
-        for transport in self._transports.values():
-            await transport.stop()
+        failures: list[str] = []
+        for server_id, transport in self._transports.items():
+            try:
+                await transport.stop()
+            except Exception as exc:
+                failures.append(f"{server_id}: {exc}")
         self._transports.clear()
         self._started_pids.clear()
+        if failures:
+            raise MCPTransportError(
+                f"Failed to stop {len(failures)} transport(s): {'; '.join(failures)}"
+            )
 
     async def list_tools(self, server_id: str | None = None) -> list[MCPTool]:
         return self._registry.list_tools(server_id)

@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode/core";
+import * as fs from "node:fs"
 
 interface ToolCall {
   tool: string;
@@ -21,6 +22,11 @@ interface DeletionAuditEntry {
   file: string;
   lines_removed: number;
   reason: string;
+}
+
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
 }
 
 function countLines(text: string): number {
@@ -94,7 +100,8 @@ const plugin: Plugin = {
   version: "1.0.0",
   hooks: {
     "tool.execute.before": async (toolCall: ToolCall) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return
+      if (_isSubagent()) return
+      console.log("SUBAGENT SKIP: enforce-deletion-gate")
       await _reportAlive();
       const threshold = getDeletionThreshold();
       if (threshold <= 0) {

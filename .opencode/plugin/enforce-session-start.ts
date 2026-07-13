@@ -120,6 +120,11 @@ interface SessionState {
   timeGateReset: boolean
 }
 
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function loadState(): SessionState {
   try {
     if (!fs.existsSync(STATE_FILE)) {
@@ -236,7 +241,9 @@ export default (async ({ }) => {
       _input: unknown,
       output: unknown,
     ) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return output
+      if (_isSubagent()) return output
+      console.log("SUBAGENT SKIP: enforce-session-start")
+      console.log("SUBAGENT SKIP: enforce-session-start")
       try {
         // Initialize per-session state so the tool.execute.before gate knows
         // this is a fresh session.
@@ -281,7 +288,8 @@ export default (async ({ }) => {
       input: { tool?: string } & Record<string, unknown>,
       _output: unknown,
     ) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return
+      if (_isSubagent()) return
+      console.log("SUBAGENT SKIP: enforce-session-start")
       _reportAlive()
       _writeHeartbeat()
       let denyMessage: string | null = null

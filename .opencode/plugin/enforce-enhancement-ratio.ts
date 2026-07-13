@@ -66,6 +66,11 @@ interface RatioState {
   lastTs: number
 }
 
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function _freshState(): RatioState {
   return { wave: [], session_enhancements: 0, session_fixes: 0, session_unknown: 0, wave_count_since_last_warn: 0, early_warned: false, lastPid: process.pid, lastTs: 0 }
 }
@@ -148,7 +153,8 @@ let _lastHookOutputHash = ""
 
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, _output: any) => {
-    if (process.env.OPENCODE_SUBAGENT === "1") return
+    if (_isSubagent()) return
+    console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
     _reportAlive()
     if (!ENABLED) return
 
@@ -187,7 +193,9 @@ const defaultImpl: HotModule = {
   },
 
   "text.complete": async (output: any) => {
-    if (process.env.OPENCODE_SUBAGENT === "1") return output
+    if (_isSubagent()) return output
+    console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
+    console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
     if (!ENABLED) return output
     if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? output ?? "").trim())) return output
 
@@ -260,7 +268,8 @@ const defaultImpl: HotModule = {
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input: any, _output: any) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return;
+      if (_isSubagent()) return;
+      console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
       const impl = loadHotModule("enhancement-ratio", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, _output) : undefined

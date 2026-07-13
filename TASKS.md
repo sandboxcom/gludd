@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 Waves 11-12 + Agent Framework Research — 125 OPEN items across 11 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:0, W1:10, E:6, H:13, S:12, AG:16).**
+**Last consolidated: 2026-07-12 Session 25 FINAL — 89 OPEN items across 6 active phases (A:4, C:19, D:19, E:6, H:13, S:12, AG:16).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) = 125 of 214 items completed (59%). 12 of 17 session todos completed.
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -12,10 +12,10 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | W | Enforcement/Plugin hardening | 0 | 21 | 100% |
 | C | Security/Correctness | 19 | 27 | 30% |
 | D | Feature Completeness | 19 | 22 | 14% |
-| X | XML Collection | 11 | 11 | 0% |
-| Y | Web Design Collection | 8 | 8 | 0% |
-| Z | E2E Game Gaps | 7 | 7 | 0% |
-| W1 | Web Server Collection | 10 | 10 | 0% |
+| X | XML Collection | 0 | 11 | 100% |
+| Y | Web Design Collection | 0 | 8 | 100% |
+| Z | E2E Game Gaps | 0 | 7 | 100% |
+| W1 | Web Server Collection | 0 | 10 | 100% |
 | E | Quality/Coverage | 6 | 13 | 54% |
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
@@ -23,7 +23,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | H | Security Hardening | 13 | 23 | 43% |
 | S | Post-Ship | 12 | 21 | 43% |
 | AG | Agent Framework Research | 16 | 16 | 0% |
-| **Total** | | **125** | **214** | **42%** |
+| **Total** | | **89** | **214** | **59%** |
 
 ---
 
@@ -134,32 +134,32 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase X — XML Collection
 
-- [ ] X.1 — XML collection: create general_ludd.xml collection with roles for XML/HTML/SOAP/SAML/DocBook/Gradle/plist/XSD/XSLT | priority: medium | effort: large | status: in_progress
-- [ ] X.1.1 — xml_core role: XML parsing, XPath, namespaces
-- [ ] X.1.2 — xsd_generator role: infer XSD from XML samples
-- [ ] X.1.3 — xslt_transformer role: apply/author XSLT transformations
-- [ ] X.1.4 — html_processor role: HTML parsing/manipulation
-- [ ] X.1.5 — soap_handler role: SOAP/XML-RPC messaging
-- [ ] X.1.6 — saml_processor role: SAML 2.0 assertion handling
-- [ ] X.1.7 — docbook_converter role: DocBook/DITA conversion
-- [ ] X.1.8 — gradle_parser role: Gradle build file parsing
-- [ ] X.1.9 — plist_parser role: Apple property list handling
-- [ ] X.1.10 — xml_utils.py: shared Python module
-- [ ] X.1.11 — docs/XML_COLLECTION.md: comprehensive documentation
+- [x] X.1 — XML collection: create general_ludd.xml collection with roles for XML/HTML/SOAP/SAML/DocBook/Gradle/plist/XSD/XSLT | priority: medium | effort: large | status: completed | evidence: Wave 6 — 9 roles, xml_utils.py (16 funcs), docs/XML_COLLECTION.md (975 lines), 47 tests
+- [x] X.1.1 — xml_core role: XML parsing, XPath, namespaces
+- [x] X.1.2 — xsd_generator role: infer XSD from XML samples
+- [x] X.1.3 — xslt_transformer role: apply/author XSLT transformations
+- [x] X.1.4 — html_processor role: HTML parsing/manipulation
+- [x] X.1.5 — soap_handler role: SOAP/XML-RPC messaging
+- [x] X.1.6 — saml_processor role: SAML 2.0 assertion handling
+- [x] X.1.7 — docbook_converter role: DocBook/DITA conversion
+- [x] X.1.8 — gradle_parser role: Gradle build file parsing
+- [x] X.1.9 — plist_parser role: Apple property list handling
+- [x] X.1.10 — xml_utils.py: shared Python module
+- [x] X.1.11 — docs/XML_COLLECTION.md: comprehensive documentation
 
 ---
 
 ## Phase Y — Web Design Collection (2026-07-12)
 
-- [ ] Y.1 — Web design collection: create general_ludd.web collection with 6 roles for HTML/CSS/JS, design research, frameworks, UX/accessibility, design systems | priority: medium | effort: large | status: in_progress
-- [ ] Y.1.1 — html_css_core role: HTML5 authoring, CSS3 styling, responsive design
-- [ ] Y.1.2 — javascript_debug role: JS debugging, error handling, bundle analysis
-- [ ] Y.1.3 — design_research role: extract design tokens from other websites
-- [ ] Y.1.4 — framework_integration role: React, Next.js, HTMX, GraphQL, REST APIs
-- [ ] Y.1.5 — ux_engineering role: accessibility, usability, z-axis, visual hierarchy
-- [ ] Y.1.6 — design_system role: spacing, color, typography, component tokens
-- [ ] Y.1.7 — web_utils.py: shared Python module
-- [ ] Y.1.8 — docs/WEB_COLLECTION.md: comprehensive documentation
+- [x] Y.1 — Web design collection: create general_ludd.web collection with 6 roles for HTML/CSS/JS, design research, frameworks, UX/accessibility, design systems | priority: medium | effort: large | status: completed | evidence: Wave 7 — 6 roles, web_utils.py (25 funcs), docs/WEB_COLLECTION.md (1442 lines), 76 tests
+- [x] Y.1.1 — html_css_core role: HTML5 authoring, CSS3 styling, responsive design
+- [x] Y.1.2 — javascript_debug role: JS debugging, error handling, bundle analysis
+- [x] Y.1.3 — design_research role: extract design tokens from other websites
+- [x] Y.1.4 — framework_integration role: React, Next.js, HTMX, GraphQL, REST APIs
+- [x] Y.1.5 — ux_engineering role: accessibility, usability, z-axis, visual hierarchy
+- [x] Y.1.6 — design_system role: spacing, color, typography, component tokens
+- [x] Y.1.7 — web_utils.py: shared Python module
+- [x] Y.1.8 — docs/WEB_COLLECTION.md: comprehensive documentation
 
 ---
 

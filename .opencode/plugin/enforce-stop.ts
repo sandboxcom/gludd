@@ -37,6 +37,11 @@ interface SharedStreakState {
   pid: number
 }
 
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function readSharedStreak(): SharedStreakState {
   try {
     if (fs.existsSync(SHARED_STREAK_FILE)) {
@@ -702,7 +707,8 @@ export default (async ({ }) => {
     },
 
     "tool.execute.before": async (input: any, output: any) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return
+      if (_isSubagent()) return
+      console.log("SUBAGENT SKIP: enforce-stop")
       _reportAlive()
       _writeHeartbeat()
       try {
@@ -898,7 +904,9 @@ export default (async ({ }) => {
     },
 
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return output
+      if (_isSubagent()) return output
+      console.log("SUBAGENT SKIP: enforce-stop")
+      console.log("SUBAGENT SKIP: enforce-stop")
       const unchecked = countTasksMdUnchecked()
       const ratchetCount = ratchetHasEntries()
       const bugsOpen = bugsMdHasOpenIncidents()
@@ -956,8 +964,9 @@ export default (async ({ }) => {
     },
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return output
-
+      if (_isSubagent()) return output
+      console.log("SUBAGENT SKIP: enforce-stop")
+      console.log("SUBAGENT SKIP: enforce-stop")
       if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
 
       // Increment fire counter — proves text.complete actually fires

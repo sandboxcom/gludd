@@ -167,10 +167,10 @@ def _validate_launch_command(cmd: list[str]) -> None:
         _validate_python_node_argv(cmd, launcher)
 
 
-# JS npm-family launchers whose package spec MUST be version-pinned (a mutable
-# dist-tag / range / bare name is a supply-chain substitution risk). uvx
-# (Python) is intentionally excluded — its pinning semantics differ.
+# JS npm-family and uvx launchers whose package spec MUST be version-pinned
+# (a mutable dist-tag / range / bare name is a supply-chain substitution risk).
 # D8: _NPM_FAMILY_LAUNCHERS is defined once at module top (includes bunx).
+# H.10: _UVX_FAMILY_LAUNCHERS uses ==X.Y.Z / @X.Y.Z pin via _is_uvx_version_pinned_spec.
 
 
 def _validate_package_spec(cmd: list[str], launcher: str) -> None:
@@ -211,6 +211,12 @@ def _validate_package_spec(cmd: list[str], launcher: str) -> None:
                 f"MCP package spec {arg!r} for launcher {launcher!r} is not "
                 "version-pinned (bare name, dist-tag, or range). Pin it to a "
                 "concrete version (e.g. pkg@1.2.3) — refused for supply-chain safety."
+            )
+        if launcher in _UVX_FAMILY_LAUNCHERS and not _is_uvx_version_pinned_spec(arg):
+            raise MCPTransportError(
+                f"MCP package spec {arg!r} for launcher {launcher!r} is not "
+                "version-pinned (bare name, range, or glob). Pin it to a "
+                "concrete version (e.g. pkg==1.2.3 or pkg@1.2.3) — refused for supply-chain safety."
             )
 
     i = 0

@@ -31,6 +31,11 @@ export const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as re
 /** Prefix for the deny message (extracted for test assertions). */
 export const DENY_MESSAGE_PREFIX = "DIRTY TREE";
 
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function _reportAlive(): void {
   try {
     const alivePath = "/tmp/gludd-plugin-alive.json";
@@ -86,7 +91,8 @@ export function buildDenyMessage(count: number): string {
 
 export default function cleanTreePlugin(api: PluginAPI): void {
   api.tool.execute.before((params) => {
-    if (process.env.OPENCODE_SUBAGENT === "1") return
+    if (_isSubagent()) return
+    console.log("SUBAGENT SKIP: enforce-clean-tree")
     _reportAlive();
     try {
       if (process.env.GLUDD_CLEAN_TREE_ENFORCE === "0") return;

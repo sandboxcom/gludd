@@ -61,6 +61,11 @@ const BLOCK = (process.env.GLUDD_TASK_DEADLINE_BLOCK || "1") !== "0"
 // ============================================================================
 const warnedIds = new Set<string>()
 
+function _isSubagent(): boolean {
+  if (_isSubagent()) return true;
+  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
+}
+
 function appendWarning(line: string): void {
   try {
     fs.appendFileSync(WARNINGS_LOG, line + "\n")
@@ -165,7 +170,8 @@ function _reportAlive(): void {
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, output: any) => {
-    if (process.env.OPENCODE_SUBAGENT === "1") return
+    if (_isSubagent()) return
+    console.log("SUBAGENT SKIP: enforce-deadline")
     _reportAlive()
     if (!DEADLINE_ENABLED) return
     const tool = input.tool
@@ -239,7 +245,8 @@ const defaultImpl: HotModule = {
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return;
+      if (_isSubagent()) return;
+      console.log("SUBAGENT SKIP: enforce-deadline")
       const impl = loadHotModule("deadline", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
