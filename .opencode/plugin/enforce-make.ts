@@ -347,18 +347,18 @@ const defaultImpl: HotModule = {
 
         if (input.tool === "bash") {
           let command = ""
-          const oc = (output as any)?.args?.command
-          if (typeof oc === "string" && oc.trim()) command = oc.trim()
+          const ic = (input as any)?.args?.command
+          if (typeof ic === "string" && ic.trim()) command = ic.trim()
           if (!command) {
-            const ic = (input as any)?.args?.command
-            if (typeof ic === "string" && ic.trim()) command = ic.trim()
+            const oc = (output as any)?.args?.command
+            if (typeof oc === "string" && oc.trim()) command = oc.trim()
           }
           if (!command) {
             const dc = (input as any)?.command
             if (typeof dc === "string" && dc.trim()) command = dc.trim()
           }
           if (!command) return
-          const trimmed = command.replace(/^\$\s*/, "").trim()
+          const trimmed = command.replace(/^\S*\$\s*/, "").trim()
 
           if (MAKE_ENFORCE) {
             const cmdMatch = trimmed.match(/^(make\s+\S+)/)
@@ -507,7 +507,7 @@ const defaultImpl: HotModule = {
           const targetName = words[0] || ""
           const restArgs = words.slice(1).join(" ")
 
-          const toScan = restArgs
+          const toScan = restArgs.replace(/[A-Za-z_][A-Za-z0-9_]*=('[^']*'|"[^"]*"|\S*)/g, "")
 
           const MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES = [
             "git-status", "git-diff", "git-staged", "git-init", "git-log",
