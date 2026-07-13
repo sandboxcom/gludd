@@ -223,15 +223,15 @@ def test_subagent_skips_check():
     )
 
 
-# ─── Env-disable (not implemented — documents current gap) ───────────────────
+# ─── Env-disable ─────────────────────────────────────────────────────────────
 
 
-def test_env_disable_not_implemented():
-    """Setting a disable env var does NOT bypass the check (no such mechanism)."""
-    code = _write_code("src/fake.py", "# noqa: E501  # blocked regardless")
+def test_env_disable_bypasses_check():
+    """GLUDD_NO_SUPPRESSIONS_ENFORCE=0 skips the suppression check."""
+    code = _write_code("src/fake.py", "# noqa: E501  # should be blocked normally")
     result = _run_plugin(code, env_override={"GLUDD_NO_SUPPRESSIONS_ENFORCE": "0"})
-    assert result is not None and result.get("permissionDecision") == "deny", (
-        f"No env-disable mechanism exists; # noqa must still be blocked, got: {result}"
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"Env-disable should bypass check, got: {result}"
     )
 
 

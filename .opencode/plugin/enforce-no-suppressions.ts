@@ -74,6 +74,7 @@ const defaultImpl: HotModule = {
     if (isSubagent()) return;
     console.log("SUBAGENT SKIP: enforce-no-suppressions");
     reportAlive("enforce-no-suppressions");
+    if (process.env.GLUDD_NO_SUPPRESSIONS_ENFORCE === "0") return;
     if (input?.tool !== "edit" && input?.tool !== "write") {
       return;
     }

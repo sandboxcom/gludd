@@ -2173,9 +2173,13 @@ try {{
 """
     result = _run_ts(code, env_override={"GLUDD_WATCHDOG_ENABLED": "0"})
     assert result["ok"] == True, f"Disabled watchdog should not throw, got: {result}"
-    # reportAlive should NOT have been called
-    assert not os.path.exists(alive_path), \
-        f"Alive file should NOT exist when GLUDD_WATCHDOG_ENABLED=0"
+    # reportAlive should NOT have been called — but the running daemon may have
+    # written to the file concurrently, so check the watchdog key, not file existence
+    if os.path.exists(alive_path):
+        with open(alive_path) as f:
+            alive = json.load(f)
+        assert "watchdog" not in alive, \
+            f"watchdog key should NOT be present when GLUDD_WATCHDOG_ENABLED=0, got: {alive}"
     _clean_state_files(alive_path)
 
 
