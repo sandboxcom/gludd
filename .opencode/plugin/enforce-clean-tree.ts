@@ -22,6 +22,7 @@
  * Default ON. Fail-open: any throw/exception → allow (don't wedge the editor).
  */
 import type { Plugin } from "@opencode-ai/plugin";
+import { execSync } from "node:child_process";
 import { isSubagent, reportAlive } from "./shared.ts";
 
 /** Tools that represent subagent dispatch (not bash/read/edit). */
@@ -37,11 +38,9 @@ export const DENY_MESSAGE_PREFIX = "DIRTY TREE";
  */
 export function getGitStatus(): string {
   try {
-    const { execSync } = require("node:child_process");
     return execSync("git status --porcelain", {
-      encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
+    }).toString().trim();
   } catch {
     return "";
   }
@@ -74,7 +73,7 @@ export function buildDenyMessage(count: number): string {
 export default function cleanTreePlugin(api: Plugin): void {
   api.tool.execute.before((params) => {
     if (isSubagent()) return
-    console.log("SUBAGENT SKIP: enforce-clean-tree")
+    console.log("ENFORCING: enforce-clean-tree")
     reportAlive("enforce-clean-tree");
     try {
       if (process.env.GLUDD_CLEAN_TREE_ENFORCE === "0") return;
