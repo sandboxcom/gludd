@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Waves 13-14 closure — 63 OPEN items across 8 active phases (A:4, C:14, D:17, E:3, H:8, S:6, LA:0, AG:11).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) = 154 of 217 items completed (71%).
+**Last consolidated: 2026-07-13 Phase C S2-verified tick — 53 OPEN items across 8 active phases (A:4, C:3, D:17, E:3, H:8, S:6, LA:0, AG:11).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) + Phase C (24 done) = 164 of 217 items completed (76%).
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -10,7 +10,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 4 | 6 | 33% |
 | W | Enforcement/Plugin hardening | 0 | 21 | 100% |
-| C | Security/Correctness | 14 | 27 | 48% |
+| C | Security/Correctness | 3 | 27 | 89% |
 | D | Feature Completeness | 17 | 22 | 23% |
 | X | XML Collection | 0 | 11 | 100% |
 | Y | Web Design Collection | 0 | 8 | 100% |
@@ -24,7 +24,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | S | Post-Ship | 6 | 21 | 71% |
 | LA | Log Prompt Evaluator | 0 | 3 | 100% |
 | AG | Agent Framework Research | 11 | 16 | 31% |
-| **Total** | | **63** | **217** | **71%** |
+| **Total** | | **53** | **217** | **76%** |
 
 ---
 
@@ -79,24 +79,24 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] C.5 — Integrity store: HMAC canonical-JSON baseline, fail-closed on corrupt store | priority: medium | effort: medium | status: completed | evidence: 33 tests pass (test_integrity_store.py), daemon lifespan wired — IntegrityStore created at startup, verifies config baseline against GL_INTEGRITY_KEY HMAC, fail-closed (logs critical on mismatch)
 - [x] C.6 — Model gateway: strip caller kwargs base_url/api_key, default httpx timeout, redact resolved URL in errors | priority: medium | effort: small | status: completed | evidence: 17 tests pass (TestC6KwargsStripping, TestC6DefaultHttpxTimeout, TestC6UrlRedaction), _redact_url_in_exception in gateway.py
 - [x] C.8 — Hot-reload/worker broadcast: snapshot→swap TOCTOU, unauthenticated worker registration leaks PSK, no concurrency guard, symlink bypass | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure
-- [ ] C.9 — self_update deny-list family: consolidate applier.py + capability_lattice.py + apply.py protected-path lists | priority: medium | effort: medium | status: pending
-- [ ] C.10 — Execution engine: benchmark create_task swallowed, blocking _run_tests on loop, deferred-commit race, _background_tasks never drained | priority: medium | effort: medium | status: pending
-- [ ] C.11 — Event loop: DB session pinned across dispatch gather, shared ThreadPoolExecutor saturation, unbounded gather fan-out | priority: medium | effort: medium | status: pending
+- [x] C.9 — self_update deny-list family: consolidate applier.py + capability_lattice.py + apply.py protected-path lists | priority: medium | effort: medium | status: completed | evidence: 114 tests 561b6070
+- [x] C.10 — Execution engine: benchmark create_task swallowed, blocking _run_tests on loop, deferred-commit race, _background_tasks never drained | priority: medium | effort: medium | status: completed | evidence: 26 tests aa954a96
+- [x] C.11 — Event loop: DB session pinned across dispatch gather, shared ThreadPoolExecutor saturation, unbounded gather fan-out | priority: medium | effort: medium | status: completed | evidence: 68 tests 82aa3469
 - [x] C.12 — Events/hooks: fire() list-mutation-during-iteration, EventBus zero locking, double-invocation of async callbacks | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] C.13 — Self-improve gate bypasses: auto_queue=True bypasses approval, allow_auto_promote backdoor, admin route bypasses gate | priority: high | effort: small | status: completed | evidence: 14 tests pass, lint clean, gate.py 41 lines — auto_queue + allow_auto_promote removed, APPROVAL_REQUIRED always enforced
-- [ ] C.14 — Permissions/capability lattice: deny-list drift, _intersect_constraints widens scope, STS re-delegation escalates TTL | priority: medium | effort: medium | status: pending
-- [ ] C.15 — Tool-call loop: capability lattice bypassed on Phase-2, no per-response tool-call cap, args unvalidated vs input_schema, VariableStore key injection | priority: medium | effort: medium | status: pending
+- [x] C.14 — Permissions/capability lattice: deny-list drift, _intersect_constraints widens scope, STS re-delegation escalates TTL | priority: medium | effort: medium | status: completed | evidence: 165 tests 7e0d9419
+- [x] C.15 — Tool-call loop: capability lattice bypassed on Phase-2, no per-response tool-call cap, args unvalidated vs input_schema, VariableStore key injection | priority: medium | effort: medium | status: completed | evidence: 10+ tests c97bbb33
 - [x] C.16 — Filestore RCE: downloads chmod+executed with no checksum/signature | priority: high | effort: small | status: completed | evidence: Waves 13-14 closure
 - [ ] C.17 — Git automation: merge_branch bypasses per-repo lock, squash path check=False fail-open, branch-name collision | priority: medium | effort: medium | status: pending
-- [ ] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: pending
-- [ ] C.19 — Cross-tenant traces: /api/traces cross-tenant leak (two-project e2e) | priority: medium | effort: medium | status: pending
+- [x] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: completed | evidence: 13 tests 9f61ccac
+- [x] C.19 — Cross-tenant traces: /api/traces cross-tenant leak (two-project e2e) | priority: medium | effort: medium | status: completed | evidence: 39 tests 1abb72b6
 - [x] C.20 — Worker fail-open auth: default deny without PSK (mirror daemon fail-closed contract) | priority: high | effort: small | status: completed | evidence: 105 tests pass, collection OK, lint clean. Worker auth now fail-closed — requests without valid PSK header rejected with 403; mirrors daemon fail-closed contract.
 - [ ] C.21 — ALPHA4 leftovers: validation symlink confine, event_loop claim-before-cap window, _dispatch_review_job no timeout | priority: medium | effort: medium | status: pending
-- [ ] C.22 — SSTI sweep residuals: engine.py reachability, core_runner/templating trusted-only contract, skills frontmatter injection, loader.py contributory | priority: medium | effort: medium | status: pending
+- [x] C.22 — SSTI sweep residuals: engine.py reachability, core_runner/templating trusted-only contract, skills frontmatter injection, loader.py contributory | priority: medium | effort: medium | status: completed | evidence: 57 tests 068da6c7
 - [ ] C.23 — Connector security audit: dead is_safe_endpoint paths, path interpolation, exception-text secret leak, single-label hostname pass, ~20 unreviewed connectors | priority: medium | effort: large | status: pending
 - [x] C.24 — Daemon/network defaults: bind 0.0.0.0→127.0.0.1 unless configured, require explicit CIDR | priority: low | effort: small | status: completed | evidence: Waves 13-14 closure
-- [ ] C.25 — Remediation endpoint idempotency: POST /admin/remediation/remediate lacks idempotency-key | priority: medium | effort: small | status: pending
-- [ ] C.26 — Async/process-lifecycle residuals: production aiosqlite closed-loop guard, silent suppress on pipeline/MCP shutdown, Ornith PIPE drain, zombie reaping (3 sites), _langgraph_call_model silent None, _daemon_state global | priority: medium | effort: medium | status: pending
+- [x] C.25 — Remediation endpoint idempotency: POST /admin/remediation/remediate lacks idempotency-key | priority: medium | effort: small | status: completed | evidence: 4 tests 85e1035c
+- [x] C.26 — Async/process-lifecycle residuals: production aiosqlite closed-loop guard, silent suppress on pipeline/MCP shutdown, Ornith PIPE drain, zombie reaping (3 sites), _langgraph_call_model silent None, _daemon_state global | priority: medium | effort: medium | status: completed | evidence: 16 tests 82049354
 - [x] C.27 — MCP-1: extend argv validation to python/node launchers (currently only npm-family/uvx) | priority: low | effort: small | status: completed | evidence: fc776d8f
 - [x] C.28 — Failover follow-ups: surface per-attempt exception context, bounded semaphore wait, transitive-cascade documentation, lock record_failover | priority: high | effort: medium | status: completed | evidence: 66 tests pass (51 adversarial + 15 concurrency), collection OK, lint clean. failover.py: added attempt counter, exception_type, timestamp to events; BoundedSemaphore(50, timeout 5s) prevents unbounded concurrent recording; mutex guards both read+write; transitive-cascade docstring. gateway.py: _record_failover passes exception_type from last_exc.
 - [x] C.29 — LangGraph budget bypass: tool_auditor never invoked, no budget_guard, no adversarial_detector, no max_total_tokens cap | priority: high | effort: medium | status: completed | evidence: Wave 34
