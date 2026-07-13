@@ -4,16 +4,28 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from general_ludd.config.model_routing import ModelRoutingConfig
+
+_WORLD_OPEN_HOSTS = frozenset({"0.0.0.0", "::"})
 
 
 class NetworkConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8000
     allowed_cidr: list[str] = []
+
+    @model_validator(mode="after")
+    def _require_cidr_for_world_open(self) -> NetworkConfig:
+        if self.host in _WORLD_OPEN_HOSTS and not self.allowed_cidr:
+            raise ValueError(
+                f"Host {self.host!r} binds to all interfaces. "
+                f"Set allowed_cidr to an explicit allowlist "
+                f"(e.g. ['10.0.0.0/8']) or use 127.0.0.1 for loopback-only."
+            )
+        return self
 
 
 class ObservabilityConfig(BaseModel):

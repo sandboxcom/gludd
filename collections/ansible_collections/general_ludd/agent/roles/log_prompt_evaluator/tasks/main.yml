@@ -1,0 +1,229 @@
+---
+# log_prompt_evaluator — analyse agent prompts from logs.
+#
+# Pipeline:
+#   1. Gather log source files
+#   2. Run prompt_evaluator.py (parse logs → classify → score → recommend)
+#   3. Write JSON + markdown artifacts
+#   4. Report summary
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Find log files matching log_source glob
+  ansible.builtin.find:
+    paths: "{{ log_source | dirname }}"
+    patterns: "{{ log_source | basename }}"
+    recurse: false
+  register: _lpe_found_files
+
+- name: Slurp each log file
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  register: _lpe_slurped
+  loop: "{{ _lpe_found_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: _lpe_found_files.files | length > 0
+
+- name: Decode log content
+  ansible.builtin.set_fact:
+    _lpe_log_contents: >-
+      {{
+        _lpe_slurped.results
+        | map(attribute='content')
+        | map('b64decode')
+        | list
+      }}
+  when: _lpe_slurped is defined and _lpe_slurped.results is defined
+
+- name: Initialize empty log contents
+  ansible.builtin.set_fact:
+    _lpe_log_contents: []
+  when: _lpe_log_contents is not defined
+
+- name: Write log content to temp file for Python parsing
+  ansible.builtin.copy:
+    content: "{{ _lpe_log_contents | join('\n---LOG_BOUNDARY---\n') }}"
+    dest: "{{ artifact_dir }}/_parsed_logs.txt"
+    mode: "0644"
+  when: _lpe_log_contents | length > 0
+
+- name: Run prompt evaluator — parse + classify
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/prompt_evaluator.py
+      --input "{{ artifact_dir }}/_parsed_logs.txt"
+      --analysis-type "{{ analysis_type }}"
+      --output "{{ artifact_dir }}/prompt_evaluation.json"
+      --min-context-tokens {{ min_context_tokens }}
+      --max-recommendations {{ max_recommendations }}
+      --output-format json
+      {% if ab_test_mode %}
+      --ab-variant-a "{{ variant_a_source }}"
+      --ab-variant-b "{{ variant_b_source }}"
+      {% endif %}
+  register: _lpe_result
+  changed_when: false
+  when: _lpe_log_contents | length > 0
+
+- name: Read evaluation JSON
+  ansible.builtin.slurp:
+    src: "{{ artifact_dir }}/prompt_evaluation.json"
+  register: _lpe_json
+  when: _lpe_result is defined and not _lpe_result.failed
+
+- name: Parse evaluation data
+  ansible.builtin.set_fact:
+    _lpe_eval: "{{ _lpe_json.content | b64decode | from_json }}"
+  when: _lpe_json is defined and _lpe_json.content is defined
+
+- name: Set empty evaluation
+  ansible.builtin.set_fact:
+    _lpe_eval:
+      total_prompts: 0
+      prompt_types: {}
+      quality_scores: {}
+      waste_patterns: []
+      recommendations: []
+      ab_comparison: {}
+  when: _lpe_eval is not defined
+
+# ── Quality score summary ──────────────────────────────────────────────────────
+
+- name: Build quality summary facts
+  ansible.builtin.set_fact:
+    _lpe_avg_conciseness: "{{ _lpe_eval.quality_scores.avg_conciseness | default(0) }}"
+    _lpe_avg_specificity: "{{ _lpe_eval.quality_scores.avg_specificity | default(0) }}"
+    _lpe_avg_context_use: "{{ _lpe_eval.quality_scores.avg_context_utilization | default(0) }}"
+    _lpe_avg_output_quality: "{{ _lpe_eval.quality_scores.avg_output_quality | default(0) }}"
+    _lpe_low_quality_count: "{{ _lpe_eval.quality_scores.low_quality_count | default(0) }}"
+
+- name: Build waste pattern summary
+  ansible.builtin.set_fact:
+    _lpe_top_waste_patterns: >-
+      {{
+        (_lpe_eval.waste_patterns | default([]))
+        | sort(attribute='frequency', reverse=true)
+        | map(attribute='pattern')
+        | list
+        [:max_recommendations | int]
+      }}
+    _lpe_total_waste_instances: >-
+      {{
+        (_lpe_eval.waste_patterns | default([]))
+        | map(attribute='frequency')
+        | sum
+      }}
+
+# ── A/B comparison summary ─────────────────────────────────────────────────────
+
+- name: Extract A/B verdict
+  ansible.builtin.set_fact:
+    _lpe_ab_winner: "{{ _lpe_eval.ab_comparison.winner | default('none') }}"
+    _lpe_ab_a_score: "{{ _lpe_eval.ab_comparison.variant_a_score | default(0) }}"
+    _lpe_ab_b_score: "{{ _lpe_eval.ab_comparison.variant_b_score | default(0) }}"
+  when: ab_test_mode | bool
+
+# ── Generate recommendations display ────────────────────────────────────────────
+
+- name: Build top recommendations
+  ansible.builtin.set_fact:
+    _lpe_top_recs: >-
+      {{
+        _lpe_eval.recommendations | default([])
+        [:max_recommendations | int]
+      }}
+
+# ── Write artifacts ────────────────────────────────────────────────────────────
+
+- name: Write markdown evaluation report
+  ansible.builtin.copy:
+    content: |
+      # Prompt Evaluation Report
+
+      **Analysis type:** {{ analysis_type }}
+      **Log source:** `{{ log_source }}`
+      **Total prompts analysed:** {{ _lpe_eval.total_prompts | default(0) }}
+
+      ## Quality Scores
+
+      | Metric | Average |
+      |--------|---------|
+      | Conciseness | {{ _lpe_avg_conciseness | round(3) }} |
+      | Specificity | {{ _lpe_avg_specificity | round(3) }} |
+      | Context Utilisation | {{ _lpe_avg_context_use | round(3) }} |
+      | Output Quality | {{ _lpe_avg_output_quality | round(3) }} |
+
+      **Prompts below quality threshold ({{ verbose_score_threshold }}):** {{ _lpe_low_quality_count }}
+
+      ## Prompt Type Distribution
+
+      {% if _lpe_eval.prompt_types | default({}) | length > 0 %}
+      | Type | Count |
+      |------|-------|
+      {% for ptype, count in _lpe_eval.prompt_types.items() %}
+      | {{ ptype }} | {{ count }} |
+      {% endfor %}
+      {% else %}
+      *No prompt type data available.*
+      {% endif %}
+
+      ## Waste Patterns
+
+      {% if _lpe_top_waste_patterns | length > 0 %}
+      Total waste instances: {{ _lpe_total_waste_instances }}
+
+      {% for wp in _lpe_eval.waste_patterns %}
+      - **{{ wp.pattern }}** ({{ wp.frequency }} occurrences)
+        Description: {{ wp.description }}
+        {% if wp.examples %}
+        Examples:
+        {% for ex in wp.examples %}
+          - "{{ ex }}"
+        {% endfor %}
+        {% endif %}
+      {% endfor %}
+      {% else %}
+      *No waste patterns detected.*
+      {% endif %}
+
+      ## Recommendations
+
+      {% if _lpe_top_recs | length > 0 %}
+      {% for rec in _lpe_top_recs %}
+      {{ loop.index }}. {{ rec }}
+      {% endfor %}
+      {% else %}
+      *No recommendations generated.*
+      {% endif %}
+
+      {% if ab_test_mode %}
+      ## A/B Comparison
+
+      **Winner:** {{ _lpe_ab_winner }}
+      **Variant A score:** {{ _lpe_ab_a_score | round(3) }}
+      **Variant B score:** {{ _lpe_ab_b_score | round(3) }}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.log_prompt_evaluator — report-only, no repo mutations.*
+    dest: "{{ artifact_dir }}/prompt_evaluation.md"
+    mode: "0644"
+
+- name: Report prompt evaluation completion
+  ansible.builtin.debug:
+    msg: >-
+      Prompt evaluation complete:
+      prompts={{ _lpe_eval.total_prompts | default(0) }}
+      low_quality={{ _lpe_low_quality_count }}
+      waste_patterns={{ _lpe_top_waste_patterns | length }}
+      recommendations={{ _lpe_top_recs | length }}
+      {% if ab_test_mode %}
+      ab_winner={{ _lpe_ab_winner }}
+      {% endif %}

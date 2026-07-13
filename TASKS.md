@@ -22,8 +22,9 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | G | AGENTS.md Codification | 0 | 5 | 100% |
 | H | Security Hardening | 9 | 23 | 61% |
 | S | Post-Ship | 9 | 21 | 57% |
+| LA | Log Prompt Evaluator | 2 | 3 | 33% |
 | AG | Agent Framework Research | 14 | 16 | 13% |
-| **Total** | | **80** | **214** | **63%** |
+| **Total** | | **82** | **217** | **62%** |
 
 ---
 
@@ -449,6 +450,13 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] **log_analyzer role** — Ansible role for log analysis. | evidence: Wave 34
 - [x] **game SearX e2e tests** — end-to-end tests for SearX game integration. | evidence: Wave 34
 - [x] **enforce-multitask min-dispatch** — fix for enforce-multitask.ts min-dispatch threshold. | evidence: Wave 34
+
+
+## Phase LA — Log Prompt Evaluator (2026-07-12)
+
+- [ ] LA.1 — Log prompt evaluator role: analyze agent prompts + CoT from logs, score quality, recommend improvements, A/B comparison | priority: medium | effort: medium | status: in_progress
+- [ ] LA.2 — prompt_evaluator.py Python module: parse_conversation_log, classify_prompt, measure_efficiency, detect_context_waste, analyze_cot, recommend_improvements, ab_compare | priority: medium | effort: medium | status: in_progress
+- [ ] LA.3 — docs/LOG_PROMPT_EVALUATOR.md: documentation | priority: low | effort: small | status: completed | evidence: docs/LOG_PROMPT_EVALUATOR.md created 2026-07-12, covers overview, metrics, usage, recommendations, CI integration
 
 
 ## Phase AG — Agent Framework Gaps (Strands/CrewAI/AutoGen/LangGraph research, 2026-07-12)
