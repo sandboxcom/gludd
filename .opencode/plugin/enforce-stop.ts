@@ -593,8 +593,8 @@ export default (async ({ }) => {
     )
   } catch { /* fail-open */ }
   return {
-    event: async ({ event }: { event: { type: string } }) => {
-      if (event.type === "session.idle") {
+    event: async (_event: any) => {
+      if (_event.type === "session.idle") {
         try {
         turnState.accumulatedText = ""
         turnState.toolCallMade = false
@@ -933,7 +933,7 @@ export default (async ({ }) => {
       return output
     },
 
-    "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
+    "experimental.text.complete": async (_input: unknown, output: any) => {
       if (isSubagent()) return output
       console.log("SUBAGENT SKIP: enforce-stop")
       console.log("SUBAGENT SKIP: enforce-stop")
@@ -954,10 +954,10 @@ export default (async ({ }) => {
 
       try {
         const text = output.text
-    if (!text || text.trim().length === 0) return
+        if (!text || text.trim().length === 0) return
 
-    // BUG #12 fix: check disengaged state first — legitimate admin override
-    if (isBlockCounterDisengaged()) return
+        // BUG #12 fix: check disengaged state first — legitimate admin override
+        if (isBlockCounterDisengaged()) return
 
     // RESEARCH FINDING (2026-07-12): text.complete hook NEVER fires on tool output — it only fires on text-end LLM stream events. All text here is agent-generated. Do NOT add an isToolOutput / role-based guard — it is dead code.
 
