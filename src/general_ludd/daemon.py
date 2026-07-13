@@ -954,11 +954,23 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             if net.host in ("0.0.0.0", "::"):
                 logger.warning(
                     "Network host is set to %r — daemon is binding to all interfaces. "
-                    "Set to 127.0.0.1 for loopback-only. Restrict further with "
-                    "network.allowed_cidr.",
+                    "allowed_cidr=%s. Restrict to minimal CIDR set.",
                     net.host,
+                    net.allowed_cidr,
                 )
-            app.state._allowed_cidr = list(net.allowed_cidr) if net.allowed_cidr else []
+                app.state._allowed_cidr = list(net.allowed_cidr)
+            elif net.host in ("127.0.0.1", "localhost", "::1") and not net.allowed_cidr:
+                _loopback_cidrs = ["127.0.0.0/8", "::1/128"]
+                app.state._allowed_cidr = _loopback_cidrs
+                logger.info(
+                    "Network host is %r — auto-enforcing loopback CIDRs %s",
+                    net.host,
+                    _loopback_cidrs,
+                )
+            else:
+                app.state._allowed_cidr = (
+                    list(net.allowed_cidr) if net.allowed_cidr else []
+                )
             app.state._network_host = net.host
             app.state._network_port = net.port
         if uc and hasattr(uc, "database"):

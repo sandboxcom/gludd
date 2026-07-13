@@ -46,6 +46,8 @@ _FORBIDDEN_SHELL_CHARS: frozenset[str] = frozenset(
     "`$();|&<>!\n\r'\"\\\0"
 )
 
+_ARG_FORBIDDEN_CHARS: frozenset[str] = frozenset("`$();|&!<>\n\r\0")
+
 
 def _parse_processor_args(raw: str) -> list[str]:
     if not raw.strip():
@@ -65,6 +67,11 @@ def _parse_processor_args(raw: str) -> list[str]:
             raise ValueError(
                 "processor arg contains newline/carriage-return"
             )
+        for ch in token:
+            if ch in _ARG_FORBIDDEN_CHARS:
+                raise ValueError(
+                    f"processor arg {token!r} contains forbidden shell character {ch!r}"
+                )
     return tokens
 
 
@@ -170,15 +177,21 @@ class RoleCloner:
     ) -> Path:
         binary = processor.get("binary", kind)
         extra_args_raw = processor.get("args", "")
-        if not _SAFE_BINARY_RE.match(str(binary)):
+        binary_str = str(binary)
+        if not _SAFE_BINARY_RE.match(binary_str):
             raise ValueError(
                 f"processor binary {binary!r} contains unsafe characters; "
                 f"expected [a-zA-Z0-9_./-]+"
             )
+        if binary_str.startswith("-"):
+            raise ValueError(
+                f"processor binary {binary!r} starts with '-'; "
+                f"leading-dash may be interpreted as an exec flag"
+            )
         extra_args_list = _parse_processor_args(str(extra_args_raw))
-        quoted_binary = shlex.quote(str(binary))
-        safe_args = shlex.join(extra_args_list)
         out_path = clone_path / "process-chunk.sh"
+        quoted_binary = shlex.quote(binary_str)
+        quoted_args = [shlex.quote(a) for a in extra_args_list]
         lines = [
             "#!/usr/bin/env bash",
             f"# Auto-generated {kind} chunk processor.",
@@ -187,8 +200,13 @@ class RoleCloner:
             'if [ -z "${CHUNK_PATH:-}" ]; then',
             '  CHUNK_PATH="$1"',
             'fi',
-            f'exec {quoted_binary} {safe_args} "$CHUNK_PATH"',
+            f"PROCESSOR_BINARY={quoted_binary}",
         ]
+        if quoted_args:
+            lines.append(f"PROCESSOR_ARGS=({' '.join(quoted_args)})")
+        else:
+            lines.append("PROCESSOR_ARGS=()")
+        lines.append('exec "${PROCESSOR_BINARY}" "${PROCESSOR_ARGS[@]}" -- "$CHUNK_PATH"')
         out_path.write_text("\n".join(lines) + "\n")
         out_path.chmod(0o755)
         return out_path

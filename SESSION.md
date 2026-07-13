@@ -4,8 +4,120 @@
 > SESSION.md is derived from gate output, not the other way around.
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
+---
+
+## SESSION 25 CLOSURE — 2026-07-12 (FINAL)
+
+### 1. HEAD + Branch State
+
+- **HEAD: `3c81b1b1`** on `development` branch
+- **Remote: DIVERGED** — local `3c81b1b1` vs remote `bde4d1c0d45b` (10 unpushed commits)
+- **CI: NO RUN** for `3c81b1b1`
+- **Working tree: DIRTY** — 29 files (4 plugin edits, 4 new scripts, 6 new test files, log_analysis init, SESSION.md/TASKS.md/AGENTS.md/Makefile/plugin edits, pre-commit config, db models, agent_watchdog, test_hook_runtime, tdd_allowlist, log_prompt_evaluator role)
+- **Release: NOT CUT** — next tag v0.1.0-beta.2 blocked on CI green + merge
+- **TASKS.md: 134/214 completed (63%)** — 80 open items across Phases A(4), C(19), D(19), E(6), H(9), S(9), AG(14)
+
+### 2. Waves Completed (1 → 13+)
+
+| Wave | Key Deliverables | Evidence |
+|------|-----------------|----------|
+| **W1** | A.3 push-verify, D.7.1 pause-resume (34 tests), E.10 DB session tests (7), enforce-deadline self-tests (92), C.8 hot-reload WIP, dead-code checker script | HEAD `abf60765` |
+| **W2-W4** | Collection scaffolding: XML (W6), Web (W7), Web Server (W10) | commits `dcfb6256`, wave7, wave10 |
+| **W5** | gen-status-table script, gate-refresh Makefile target, lint fixes | commits `f68b1772`, `ece04522` |
+| **W6** | XML collection — 9 roles, xml_utils.py (16 funcs), docs, 47 tests | commit `dcfb6256` |
+| **W7** | Web collection — 6 roles, web_utils.py (25 funcs), docs, 76 tests | wave7 commit |
+| **W8** | C.5 integrity store daemon wiring, D.10 file-claim integration, H.6 langgraph factory role (41 tests), CI discipline + enforcement reload tests | commit `d9b080a0` |
+| **W9-W10** | Phase Z (E2E game gaps fixed — Z.1-Z.7 all resolved), Web Server collection (8 roles, docs) | commits wave9, wave10 |
+| **W11-W12** | Hot-reload proxy on 13 plugins, CI discipline tests (29), enforcement reload tests (13), W.4-W.5 blocking mode (deadline + enhancement-ratio), W.6-W.15 runtime test harness, W.16 hot-reload pattern, W.17-W.21 proxy conversion, Phase S/H fixes (S.5-S.12, H.3-H.6), C.17 git-automation, C.19 cross-tenant, C.21 alpha4, C.24 daemon defaults, C.26 async-lifecycle, verify-enforcement, test-hook-runtime wired into gate | commits `af351a2c`, `d9b080a0` |
+| **W13** | enforce-make.ts syntax fix + runtime tests (12), verify-plugin-manifest recursion fix (62 checks), S.16 run_until_complete (34 tests), _isSubagent infinite recursion fix, fs imports fix, mypy + gate targets fix, subagent detection tests (21), AG.6 agent roles (8), H.9 MCP stopall (5), H.10 uvx pin (33), S.14 daemon sleep async (4), AG.1 eval framework design doc | commits `545306b3`, `5ce6065d` |
+| **W14** | commit remaining dirty tree work — ornith sandbox tests, dispatch sentinel tests, enforcement e2e, enforcement plugin fixes | commit `d6a2751c` |
+| **W15 (final)** | H.13 Ornith sandbox (18 tests), H.14 priority upperbound, S.15 dispatch sentinel (10 tests), e2e enforcement chain test (30 tests), AGENTS.md metachar/forbidden command updates, coverage audit, TDD compliance guardrail, floor 7→10 restoration | commit `3c81b1b1` |
+
+### 3. Collections Created
+
+| # | Collection | Roles | Shared Module | Tests | Docs |
+|---|-----------|-------|---------------|-------|------|
+| 1 | **XML** (`general_ludd.xml`) | 9 (xml_core, xsd_generator, xslt_transformer, html_processor, soap_handler, saml_processor, docbook_converter, gradle_parser, plist_parser) | `xml_utils.py` (16 funcs) | 47 | `docs/XML_COLLECTION.md` (975 lines) |
+| 2 | **Web** (`general_ludd.web`) | 6 (html_css_core, javascript_debug, design_research, framework_integration, ux_engineering, design_system) | `web_utils.py` (25 funcs) | 76 | `docs/WEB_COLLECTION.md` (1442 lines) |
+| 3 | **Web Server** (`general_ludd.web_server`) | 8 (http_server, ssl_config, cgi_wsgi, logging_middleware, reverse_proxy, forward_proxy, load_balancer, security_hardening) | `web_server_utils.py` | — | `docs/WEB_SERVER_COLLECTION.md` |
+| 4 | **Security** (`general_ludd.security`) | 6+ (ssl_cert, hsm_operations, audit_framework, sql_injection, command_injection, prompt_injection) | — | — | `docs/SECURITY_ROLES.md`, `docs/SSL_CERT_SYSTEM.md` |
+
+**Also scaffolded:** `log_prompt_evaluator` role (under agent collection) + `src/general_ludd/log_analysis/__init__.py` (Log Analysis module — dirty tree, not yet committed).
+
+### 4. Enforcement Infrastructure State
+
+| Category | Detail |
+|----------|--------|
+| **Plugins** | 10/10 BLOCKING (zero advisory-only). enforce-floor, enforce-delegate, enforce-multitask, enforce-stop, enforce-deadline, enforce-enhancement-ratio, enforce-clean-tree, enforce-verified-claims, enforce-no-suppressions, enforce-session-start |
+| **Hot-reload** | Proxy pattern on all 13 plugins (compile → `/tmp/gludd-hot-enforce-*.js`). `make hot-reload-plugins` builds hot modules. Proxy falls back to bundled code if hot files absent. |
+| **Runtime tests** | 85 functional tests across 10 plugins via `scripts/test_hook_runtime.py` + `make test-hook-runtime`. Wired into gate. |
+| **Self-tests** | ~800+ structural tests across all enforcement plugin test files, plus 85 runtime hook invocation tests. |
+| **State management** | `make reload-enforcement` resets all state files. `make disengage-enforcement` writes emergency escape signal. |
+| **Subagent isolation** | OPENCODE_SUBAGENT guard + file-based fallback on all plugins. 21 subagent detection tests. verify-plugin-manifest recursion fix landed. |
+
+### 5. Phase Fixes Applied
+
+| Phase | Items Fixed | Count |
+|-------|------------|-------|
+| **S (Post-Ship)** | S.5 (details NULL), S.6 (task_type .contains), S.7 (semaphore atomic), S.8 (getattr unvalidated), S.9 (substring bypass), S.10 (unconfined path), S.11 (subprocess cwd), S.12 (dual _NPM_FAMILY), S.14 (time.sleep block), S.15 (dispatch sentinel), S.16 (run_until_complete), S.17 (migration batch-wrap), S.18 (unused deps removal) | 13 fixed |
+| **H (Hardening)** | H.3 (readyz), H.4 (langgraph-auditor), H.5 (humangate checkpointer), H.6 (langgraph-factory role), H.9 (MCP stopall), H.10 (uvx pin), H.13 (Ornith sandbox), H.14 (priority upperbound), H.19 (stream processor CMDI) | 9 fixed |
+| **C (Correctness)** | C.5 (integrity store wiring), C.17 (git-automation), C.19 (cross-tenant), C.21 (alpha4 leftovers), C.24 (daemon defaults), C.26 (async-lifecycle) | 6 fixed |
+| **D (Features)** | D.7.1 (pause-resume, 34 tests), D.10 (file-claim integration, 22 tests) | 2 fixed |
+| **E (Quality)** | E.4 (noqa guardrail 3-layer), E.10 (DB session tests) | 2 fixed |
+| **AG (Agent Framework)** | AG.1 (eval framework design doc), AG.6 (agent roles, 8 tests) | 2 fixed |
+
+**Total: 34 Phase fixes applied across S/H/C/D/E/AG phases.**
+
+### 6. New Tooling Created
+
+| Tool | Purpose | Path |
+|------|---------|------|
+| **coverage-gaps checker** | Auto-detect test coverage gaps across codebase | `scripts/check_coverage_gaps.py` |
+| **TDD compliance guardrail** | Block commits where modified source files lack tests (mechanical enforcement) | `scripts/check_tdd_compliance.py`, `make check-tdd-compliance`, `config/tdd_allowlist.yml` |
+| **disk discipline** | /tmp/gludd-* cleanup, disk usage checking, log rotation | `scripts/check_disk_usage.py`, `scripts/clean_tmp.py`, `make check-disk`, `make clean-tmp` |
+| **CI pipeline discipline** | busy-check, safe-push, deploy-and-forget, push-guarded targets | `scripts/ci_push_guard.py`, `scripts/ci_check_cooldown.py`, `make ci-busy-check`, `make ci-safe-push`, `make deploy-and-forget`, `make pre-push-check` |
+| **verify-enforcement** | Runtime verification that all enforcement plugins are blocking | `make verify-enforcement` |
+| **test-hook-runtime** | Functional hook test harness — invokes actual plugin hooks via node -e | `scripts/test_hook_runtime.py`, `make test-hook-runtime` |
+| **check-task-ledger** | Mechanical task ledger validation: unique IDs, no re-dispatches | `scripts/validate_task_ledger.py`, `make check-task-ledger` |
+| **check-enhancement-ratio** | Diagnostic: current wave ratio + session aggregate counters | `make check-enhancement-ratio` |
+| **gen-status-table** | Auto-generate TASKS.md pending items summary table | `scripts/gen_status_table.py`, `make gen-status-table` |
+| **dead-code checker** | Detect classes with zero non-test imports | `scripts/check_dead_code.py` |
+| **hot-reload-plugins** | Compile plugin TS source to standalone JS hot modules | `scripts/build_hot_modules.js`, `make hot-reload-plugins` |
+| **MCP tool reference generator** | Auto-generate MCP tool reference docs from source | `scripts/gen_mcp_tool_reference_md.py`, `make gen-mcp-tool-ref` |
+
+### 7. Known Remaining Gaps
+
+1. **CI RED on development** — run 29213743760. Must be green before development→master merge.
+2. **29 dirty files** — uncommitted changes spanning plugins, scripts, tests, models, config, SESSION.md, TASKS.md. Must commit before dispatch.
+3. **10 unpushed commits** — `development` branch has 10 commits not on remote. Must push after tree clean.
+4. **No release tag cut** — v0.1.0-beta.2 blocked on CI green + development→master merge.
+5. **`hot_reloader.py` SyntaxError** — C.8 tests pass but reloader module has parse error.
+6. **Full local test suite OOM** — under 8-worker xdist. CI-as-gate for full suite; `make gate-lite` is local approximation.
+7. **AG evaluation framework not implemented** — AG.1 design doc + AG.6 roles done. AG.2-AG.5, AG.7-AG.16 remain (14 items).
+8. **80 open TASKS.md items** — across Phases A(4), C(19), D(19), E(6), H(9), S(9), AG(14).
+9. **S.13 (DB FK migration) in_progress** — missing FKs on todos.todo_id + task_returns.return_id.
+10. **Tetris score flaky** — nondeterministic scoring in game e2e tests.
+11. **Enforcement subagent isolation** — end-to-end runtime confirmation still pending opencode restart.
+12. **Hot-reload requires manual invocation** — `make hot-reload-plugins` not yet auto-built on source change.
+
+### 8. Next Steps (Prioritized)
+
+1. [ ] **Commit dirty tree** — 29 files; ship-commit with message covering log_analysis module, plugin fixes, new test files, scripts, config, docs updates.
+2. [ ] **Push development to remote** — `make push-dev` after tree clean.
+3. [ ] **Run gate-lite** — validate current state.
+4. [ ] **Fix CI RED on development** — run 29213743760 must be green.
+5. [ ] **Restart opencode** — to pick up plugin source changes (hot-reload proxies load on startup).
+6. [ ] **Verify enforcement at runtime** — `make test-hook-runtime` after restart.
+7. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
+8. [ ] **Cut beta.2 release** — `make release-cut TAG=v0.1.0-beta.2`.
+9. [ ] **Continue Phase AG** — AG.2-AG.5, AG.7-AG.16: lifecycle hooks, hierarchical decomposition, tool scoping, cross-conversation memory, delegation, checkpoint branching, named passes, budget envelopes, map-reduce, code sandbox, conversation-driven orchestration, DSPy optimization, reflexion loops, external benchmarks.
+10. [ ] **Resolve S.13 (DB FK)** — complete migration adding FKs on todos.todo_id + task_returns.return_id.
+11. [ ] **Fix `hot_reloader.py` SyntaxError** (C.8).
+
+---
+
 ## Last Updated
-- **2026-07-12 — Session 25 CLOSURE (FINAL).** On `development` branch, HEAD `3c81b1b1`. All 13+ Waves completed. 17 session todos tracked, 17 completed. 4 collections (XML:9 roles, Web:6 roles, Web Server:8 roles, Security:6+ roles). Enforcement: 10/10 plugins BLOCKING, hot-reload proxy on 13 plugins, 68+ runtime tests, enforce-make.ts syntax fix landed. TDD compliance guardrail (scripts/check_tdd_compliance.py). Floor 7→10 restored. Phase S/H/C/D/AG fixes landed. Agent evaluation framework design doc + AG.6 agent roles. Coverage audit tooling. Disk cleanup (agent-cleanup-many). 125 of 214 TASKS.md items completed (59%). ~1400+ new tests across collections + enforcement + phase fixes.
+- **2026-07-12 — Session 25 CLOSURE (FINAL).** On `development` branch, HEAD `3c81b1b1`. All 13+ Waves completed. 17 session todos tracked, 17 completed. 4 collections (XML:9 roles, Web:6 roles, Web Server:8 roles, Security:6+ roles). Enforcement: 10/10 plugins BLOCKING, hot-reload proxy on 13 plugins, 85 runtime tests, enforce-make.ts syntax fix landed. TDD compliance guardrail (scripts/check_tdd_compliance.py). Floor 7→10 restored. Phase S/H/C/D/AG fixes: 34 items across 6 phases. Agent evaluation framework design doc + AG.6 agent roles. Coverage audit tooling. Disk cleanup (agent-cleanup-many). CI pipeline discipline. 134 of 214 TASKS.md items completed (63%). 29 dirty files to commit. 10 unpushed commits. ~1400+ new tests across collections + enforcement + phase fixes.
 - 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 - **Wave 35 — Collection Split + Documentation:** TASKS.md Phase R expanded to 18 items. Collection FQCNs updated: `general_ludd.agent.{ssl_cert,hsm_operations,audit_framework,sql_injection,command_injection,prompt_injection}` → `general_ludd.security.*`. `docs/SECURITY_ROLES.md` + `docs/SSL_CERT_SYSTEM.md` FQCN references updated. Two new docs created: `docs/NETWORKING_SYSTEM.md` (networking role, 7 modes, ScapyAdapter, tool matrix, dissector templates) and `docs/BUSINESS_RESEARCH_SYSTEM.md` (entity_research role, 6 research capabilities, SearX monitoring, entity graph). README.md restructured from single collection section to 4 collection sub-sections (`general_ludd.agent`, `general_ludd.security`, `general_ludd.business`, `general_ludd.networking`) with FQCN tables and doc cross-references.
 - **SSL cert system docs** — `docs/SSL_CERT_SYSTEM.md` created: architecture overview, 2 Ansible role specifications, 4 data file formats, 5 Python module APIs, 6-standard compliance matrix, security considerations. TASKS.md F.6 ticked, CHANGELOG entry added.
