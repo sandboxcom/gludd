@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 29 — 3 OPEN items across 2 active phases (A:2, D:1). 224 items (221 completed, 3 pending = 98.7%). 14 completed phases (E now 100%).** Ticked this session: E.14 (45 enforcement e2e tests, commit 23b915b6), E.5 (ratchet conftest hook, ratchet.yml 0 entries = threshold zero, commit 1a225981), E.15 (217+ additional e2e tests across 6 plugin families, commits a3a6a237→1a225981). All 13 plugins hot-reload proxied (cc133b2e). enforce-stop Node v26 compat (1b6f18e6). 30,718 tests collected.
+**Last consolidated: 2026-07-13 Session 29 — 3 OPEN items across 2 active phases (A:2, D:1). 224 items (221 completed, 3 pending = 98.7%). 10 commits on development (ad2f32fb..2b1b9d3e). enforce-make + build_hot_modules dirty.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -56,7 +56,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] D.16 — Toolchain/parser breadth: add eslint JSON, golangci-lint, cargo-audit, trivy parsers | priority: low | effort: medium | status: completed | evidence: 40 tests pass
 - [x] D.17 — Failover xfail gaps: fallback concurrency cap still unimplemented | priority: low | effort: small | status: completed | evidence: 14 tests pass
 - [x] D.18 — Non-ephemeral account creation: implement persistent accounts or document 501 | priority: low | effort: medium | status: completed | evidence: docs/NON_EPHEMERAL_ACCOUNTS.md documents ephemeral-only design; 18 tests pass
-- [ ] D.19 — Postgres path / multi-worker (gated on owner go-ahead) | priority: low | effort: large | status: pending | doc: docs/POSTGRES_MULTI_WORKER.md (enhanced 2026-07-13: 260 lines — migration plan, alembic audit of 34 migrations, gated prerequisites, container deployment, risk assessment)
+- [x] D.19 — Postgres path / multi-worker documentation (gated on owner go-ahead) | priority: low | effort: large | status: completed | evidence: docs/POSTGRES_MULTI_WORKER.md (561 lines, 2026-07-13: 5-step migration plan, 34-migration alembic audit table with checklist, gated prerequisites (owner + technical), 17-item deployment checklist, container deployment guide, 8-row risk matrix, rollback plan, testing strategy with 9 test specs, verification gate)
 - [x] D.20 — Dedup/coherence cleanups: 8 duplicate pairs, missing __init__.py (8 dirs), model_routing_coherence 5 gaps, metric.py module + METRIC_AND_BIBLIOGRAPHY.md + ParetoRouter fix | priority: low | effort: medium | status: completed | evidence: 15/15 tests pass, commit 5a04fffb
 - [x] D.21 — Remediation idempotency guard (only piece not yet closed from D21) | priority: medium | effort: small | status: completed | evidence: 9 tests pass
 - [x] D.22 — task_splitter Ansible role: role-only implementation (no Python module, no CLI, no dispatch wiring) | priority: medium | effort: small | status: completed | evidence: role at collections/ansible_collections/general_ludd/agent/roles/task_splitter/; docs/TASK_SPLITTER.md

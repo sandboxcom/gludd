@@ -10,8 +10,8 @@
 
 ### HEAD + Branch State
 
-- **HEAD: `29fe19f0`** on `development` branch
-- **Working tree: CLEAN**
+- **HEAD: `2b1b9d3e`** on `development` branch
+- **Working tree: DIRTY** — enforce-make.ts, build_hot_modules.js modified
 - **Runtime tests: 114 pass / 0 fail**
 - **check-node-v26-compat: 2/2 PASS** — 0 `require()` calls remain in any plugin
 - **Hot modules: 13/13 built** — all 14 plugins proxy-converted + hot-reload capable
@@ -37,10 +37,12 @@
 | **restore-opencode git fallback** | Added git HEAD fallback to restore-opencode; `.opencode.orig` backup | `ad2f32fb` |
 | **opencode 1.17.9 compat** | Moved shared.ts/hot_reload.ts to `.opencode/lib/`; removed event + session.idle hooks (removed in 1.17.9); fixed async export pattern across 14 plugins | `29fe19f0` |
 
-### Commits This Session (8 on development)
+### Commits This Session (10 on development)
 
 | Hash | Message |
 |------|---------|
+| `2b1b9d3e` | fix: enforce-make bash command access pattern, enforce-stop state-block narrow guard, 1.17.9 compat imports |
+| `ffb49045` | docs: SESSION+CHANGELOG update for opencode 1.17.9 compatibility fix |
 | `1a225981` | enhancement: E.5 ratchet conftest hook, 17 new e2e tests (commit-lock+watchdog), watchdog flake fix, no-suppressions env disable |
 | `23b915b6` | enhancement: stop watchdog disengage fix, 45 new e2e tests (no-wait+no-suppressions), verification suite green |
 | `a3a6a237` | enhancement: enforce-multitask require() fix, 85+ e2e tests (6 new files), check-node-v26-compat 2/2 PASS |
@@ -50,31 +52,34 @@
 | `9d4e60da` | fix: enforce-clean-tree require→import execSync, 7 new tests, TASKS.md header counts |
 | `ad2f32fb` | refactor: enforce-stop.ts dedup using shared.ts helpers, add restore-opencode git fallback, backup-opencode docs |
 
-### Commits Since Session 29 Closure (1 on development)
+### Commits Since Session 29 Closure (2 on development)
 
 | Hash | Message |
 |------|---------|
-| `29fe19f0` | fix: opencode 1.17.9 compat — move shared/hot_reload out of plugin dir, remove event/session.idle hooks, fix async exports, update imports |
+| `2b1b9d3e` | fix: enforce-make bash command access pattern, enforce-stop state-block narrow guard, 1.17.9 compat imports |
+| `ffb49045` | docs: SESSION+CHANGELOG update for opencode 1.17.9 compatibility fix — originally thought to be the closure commit |
 
 Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`, `167e6db2`, `b53ab7fb`, `c732b4cc`, `d1637e33` — Node v26 compat fixes).
 
 ### Known Gaps
 
-1. **CI PENDING** — no CI run for current development HEAD `1a225981`. Push to remote required first.
-2. **A.3 push** — 8 unpushed commits on development. Push to remote pending.
+1. **CI PENDING** — no CI run for current development HEAD `2b1b9d3e`. Push to remote required first.
+2. **A.3 push** — 10 unpushed commits on development. Push to remote pending.
 3. **A.4 release** — v0.1.0-beta.2 not yet cut. Blocked on CI green + development→master merge.
 4. **development → master merge** — pending CI green after push
-5. **E.5 ratchet conftest hook** — hook installed; explicit threshold lowering may need follow-up verification
+5. **Dirty working tree** — enforce-make.ts + build_hot_modules.js modified (enforcement plugin fixes)
+6. **E.5 ratchet conftest hook** — hook installed; explicit threshold lowering may need follow-up verification
 
 ### Next Steps (Prioritized)
 
-1. [ ] **A.3 push development to remote** — 8 unpushed commits
-2. [ ] **Wait for CI green** — `make ci-verdict-safe BRANCH=development` after push
-3. [ ] **development → master merge** — after CI green
-4. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after merge + CI green
+1. [ ] **Commit dirty tree** — enforce-make.ts + build_hot_modules.js (enforcement plugin fixes)
+2. [ ] **A.3 push development to remote** — 10 unpushed commits
+3. [ ] **Wait for CI green** — `make ci-verdict-safe BRANCH=development` after push
+4. [ ] **development → master merge** — after CI green
+5. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after merge + CI green
 
 ### Last Updated
-- **2026-07-13 — Session 29 FINAL.** On `development` branch, HEAD `1a225981`. Working tree clean. 114/114 runtime tests pass. check-node-v26-compat 2/2 PASS (0 require() calls). 13/13 hot-module proxies built; all 14 plugins proxy-converted + hot-reload capable. 204 e2e tests across 10 files. 10/10 enforcement plugins BLOCKING. 8 commits landed (ad2f32fb..1a225981). ratchet.yml: 0 entries. CI pending — push to remote needed first. A.3 push + A.4 release pending.
+- **2026-07-13 — Session 29 continuation.** On `development` branch, HEAD `2b1b9d3e`. Working tree DIRTY (enforce-make.ts, build_hot_modules.js). 114/114 runtime tests pass. check-node-v26-compat 2/2 PASS (0 require() calls). 13/13 hot-module proxies built; all 14 plugins proxy-converted + hot-reload capable. 204 e2e tests across 10 files. 10/10 enforcement plugins BLOCKING. 10 commits landed (ad2f32fb..2b1b9d3e). ratchet.yml: 0 entries. CI pending — push to remote needed first. A.3 push + A.4 release pending.
 
 ---
 
