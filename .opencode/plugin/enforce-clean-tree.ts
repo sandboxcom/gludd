@@ -81,6 +81,7 @@ export function buildDenyMessage(count: number): string {
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return;
     reportAlive("enforce-clean-tree");
     try {

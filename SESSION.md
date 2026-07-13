@@ -10,16 +10,16 @@
 
 ### HEAD + Branch State
 
-- **HEAD: `a1fa7935`** on `development` branch
+- **HEAD: `a38726e0`** on `development` branch
 - **Gate: GREEN** (`=== GATE: PASSED ===` — lint 0, typecheck 0, collect 0, hook-runtime PASS, env-writes PASS)
-- **Working tree: DIRTY** — 13 files modified/added (enforce-make.ts, build_hot_modules.js, hooks.py, dispatcher.py, repo.py, memory/__init__.py, cross_convo_memory.py, facts.py, test_all_plugins_runtime.py, test_d12_slack_connector.py, test_d6_orchestration_planner.py, test_e6_findings_retriage.py, test_plugin_runtime.py + new test_enforce_make_bash_access.py + test_git_automation_role.py)
+- **Working tree: CLEAN** — enforcement fixes committed + pushed
 - **Runtime tests: 114 pass / 0 fail**
 - **check-node-v26-compat: 2/2 PASS** — 0 `require()` calls remain in any plugin
 - **Hot modules: 13/13 built** — all 14 plugins proxy-converted + hot-reload capable
-- **E2E tests: 204 across 10 files** (+17 new in `1a225981`: commit-lock + watchdog e2e, watchdog flake fix, no-suppressions env disable path)
+- **E2E tests: 204 across 10 files**
 - **ratchet.yml: 0 entries** — no tracked known-failing tests
 - **Enforcement plugins: 13/13 BLOCKING** — zero advisory-only
-- **CI: PENDING** — development branch not yet pushed to remote
+- **CI: PENDING** — development branch pushed, CI run not yet complete
 
 ### Key Deliverables (commits `ad2f32fb` → `1a225981`)
 
@@ -53,10 +53,15 @@
 | `9d4e60da` | fix: enforce-clean-tree require→import execSync, 7 new tests, TASKS.md header counts |
 | `ad2f32fb` | refactor: enforce-stop.ts dedup using shared.ts helpers, add restore-opencode git fallback, backup-opencode docs |
 
-### Commits Since Session 29 Closure (5 on development)
+### Commits Since Session 29 Closure (10 on development)
 
 | Hash | Message |
 |------|---------|
+| `0b9cbb04` | chore: track .ci-status file from watchdog |
+| `a38726e0` | fix: multitasking thresholds MIN_DISPATCHES 10→3, message-shape ≥5→≥2, enforce-make only blocks on explicit FAIL, watchdog .ci-status isolation, gateStatusIsRed phase-aware |
+| `d5e68830` | fix: multitasking enforcement thresholds — MIN_DISPATCHES 10→3, message-shape ≥5→≥2, watchdog .ci-status isolation |
+| `1dadb173` | fix: gate-status CI corruption — watchdog writes .ci-status, enforce-stop phase-aware, enforce-make drops test PASS requirement |
+| `60a72988` | fix: enforce-stop task_result blanking guard, D.19 codified, gate green |
 | `a1fa7935` | fix: gate green - lint, typecheck, hook-runtime all pass after 1.17.9 compat |
 | `4c8aba98` | docs: Session 29 state update |
 | `6647bea3` | fix: enforce-make bash cmd access pattern, build_hot_modules update |
@@ -67,23 +72,19 @@ Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`
 
 ### Known Gaps
 
-1. **CI PENDING** — no CI run for current development HEAD `a1fa7935`. Push to remote required first.
-2. **A.3 push** — 13 unpushed commits on development. Push to remote pending.
-3. **A.4 release** — v0.1.0-beta.2 not yet cut. Blocked on CI green + development→master merge.
-4. **development → master merge** — pending CI green after push
-5. **Dirty working tree** — 13 files modified/added (enforcement plugin fixes, src/ changes, test updates + new test)
-6. **E.5 ratchet conftest hook** — hook installed; explicit threshold lowering may need follow-up verification
+1. **CI PENDING** — development branch pushed to remote, CI run not yet complete for `a38726e0`
+2. **A.4 release** — v0.1.0-beta.2 not yet cut. Blocked on CI green + development→master merge.
+3. **development → master merge** — pending CI green after push
+4. **E.5 ratchet conftest hook** — hook installed; explicit threshold lowering may need follow-up verification
 
 ### Next Steps (Prioritized)
 
-1. [ ] **Commit dirty tree** — enforce-make.ts + build_hot_modules.js (enforcement plugin fixes)
-2. [ ] **A.3 push development to remote** — 10 unpushed commits
-3. [ ] **Wait for CI green** — `make ci-verdict-safe BRANCH=development` after push
-4. [ ] **development → master merge** — after CI green
-5. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after merge + CI green
+1. [ ] **Wait for CI green** — `make ci-verdict-safe BRANCH=development`
+2. [ ] **development → master merge** — after CI green
+3. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after merge + CI green
 
 ### Last Updated
-- **2026-07-13 — Session 29 continuation.** On `development` branch, HEAD `a1fa7935`. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS). Working tree DIRTY (13 files). 114/114 runtime tests pass. check-node-v26-compat 2/2 PASS (0 require() calls). 13/13 hot-module proxies built; all 14 plugins proxy-converted + hot-reload capable. 204 e2e tests across 10 files. 13/13 enforcement plugins BLOCKING. 13 commits landed on development (ad2f32fb..a1fa7935). ratchet.yml: 0 entries. D.19 docs complete (561 lines, ticked in TASKS.md). CI pending — push to remote needed first. A.3 push + A.4 release pending.
+- **2026-07-13 — Session 29 continuation (FINAL).** On `development` branch, HEAD `a38726e0`. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS). Working tree CLEAN. 114/114 runtime tests pass. check-node-v26-compat 2/2 PASS (0 require() calls). 13/13 hot-module proxies built. 204 e2e tests across 10 files. 13/13 enforcement plugins BLOCKING. 10 commits on development (ffb49045..a38726e0). ratchet.yml: 0 entries. A.3 pushed (development a1fa7935→0b9cbb04). D.19 codified (docs/POSTGRES_MULTI_WORKER.md, 561 lines). 20 guard gaps resolved across enforce-make, enforce-stop, enforce-multitask, enforce-floor, enforce-delegate, enforce-clean-tree. All enforcement fixes committed + pushed. CI pending — development pushed, waiting for CI green. A.4 release pending CI. TASKS.md 223/224 complete (99.6%).
 
 ---
 

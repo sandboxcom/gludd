@@ -263,6 +263,7 @@ const defaultImpl: HotModule = {
     input: { tool?: string } & Record<string, unknown>,
     _output: unknown,
   ) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     reportAlive("enforce-session-start")
     _writeHeartbeat()

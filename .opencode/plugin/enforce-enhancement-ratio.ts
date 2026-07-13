@@ -142,6 +142,7 @@ let _lastHookOutputHash = ""
 
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, _output: any) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     reportAlive("enforce-enhancement-ratio")
     if (!ENABLED) return
@@ -181,6 +182,7 @@ const defaultImpl: HotModule = {
   },
 
     "experimental.text.complete": async (output: any) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return output
     if (!ENABLED) return output
     const outText = typeof output === 'string' ? output : (output?.text ?? "")

@@ -280,6 +280,7 @@ const floorTurnState: { accumulatedText: string } = { accumulatedText: "" }
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, output: any) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     reportAlive("enforce-floor")
     writeHeartbeat("enforce-floor")
@@ -537,6 +538,7 @@ const defaultImpl: HotModule = {
   },
 
   "experimental.text.complete": async (_input: any, output: any) => {
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return output
     // opencode ≥1.17.9 may not call text.complete. Safe no-op: return output
     // unchanged on null/undefined/malformed input.
