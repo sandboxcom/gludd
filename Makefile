@@ -435,7 +435,7 @@ gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plu
 	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
 	@echo "=== GATE PHASE: typecheck ==="
 	@printf "typecheck " >> .gate-status
-	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
+	@TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
 	@echo "=== GATE PHASE: collect ==="
@@ -499,7 +499,7 @@ gate-lite: check-subagent-guards check-skills-frontmatter
 	@$(MAKE) --no-print-directory check-dead-code-quiet > /dev/null 2>&1 && echo "PASS 0" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
 	@echo "=== GATE-LITE PHASE: typecheck ==="
 	@printf "typecheck " >> .gate-lite-status
-	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
+	@TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-lite-status; else echo "FAIL $$TC_ERRS" >> .gate-lite-status && touch .gate-lite-failed; fi
 	@echo "=== GATE-LITE PHASE: collect ==="
@@ -1787,7 +1787,7 @@ test-hang-debug:
 lint-all:
 	@$(UV) run ruff check src tests collections scripts alembic tools molecule
 typecheck-all:
-	@$(UV) run mypy src scripts tools
+	@$(UV) run mypy -p general_ludd scripts tools
 
 # Scoped mypy on explicit files (bypasses tree-wide blockers like graylog.py).
 # Mirrors pyproject.toml [tool.mypy] strict config (picked up automatically).
@@ -2075,7 +2075,7 @@ test-pyver:
 	@echo "=== test-pyver $(VER): ruff ==="
 	@$(UV) run --python $(VER) ruff check src tests
 	@echo "=== test-pyver $(VER): mypy ==="
-	@$(UV) run --python $(VER) mypy src
+	@$(UV) run --python $(VER) mypy -p general_ludd
 	@echo "=== test-pyver $(VER): collect ==="
 	@$(UV) run --python $(VER) python -m pytest tests/ --co -q > /tmp/gludd-pyver-collect-$(VER).txt 2>&1; \
 		EXIT=$$?; if [ $$EXIT -ne 0 ]; then echo "COLLECTION ERRORS under $(VER):"; tail -20 /tmp/gludd-pyver-collect-$(VER).txt; exit 1; fi; \
@@ -2106,7 +2106,7 @@ ci-gate-exact:
 	@echo "=== ci-gate-exact $(VER): lint ==="
 	@$(UV) run --python $(VER) ruff check src tests
 	@echo "=== ci-gate-exact $(VER): typecheck ==="
-	@$(UV) run --python $(VER) mypy src
+	@$(UV) run --python $(VER) mypy -p general_ludd
 	@echo "=== ci-gate-exact $(VER): test-count ==="
 	@$(UV) run --python $(VER) python -m pytest tests/ --co -q 2>&1 | tail -3
 	@echo "=== ci-gate-exact $(VER): test (WITH coverage, fail_under=70) ==="
@@ -2218,7 +2218,7 @@ gate-refresh:
 	$(MAKE) --no-print-directory test-hook-runtime > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed); \
 	echo "=== GATE PHASE: typecheck ==="; \
 	printf "typecheck " >> .gate-status; \
-	TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
+	TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi; \
 	echo "=== GATE PHASE: collect ==="; \
@@ -2918,7 +2918,7 @@ qa: lint typecheck test healthcheck
 	@echo "QA gate passed."
 
 validate: lint ansible-syntax healthcheck check-plugin-liveness
-	@ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); ERRS=$${ERRS:-0}; \
+	@ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); ERRS=$${ERRS:-0}; \
 	if [ "$$ERRS" -le "$(MYPY_MAX)" ]; then echo "typecheck: OK ($$ERRS errors, baseline $(MYPY_MAX))"; else echo "typecheck: FAIL ($$ERRS errors > baseline $(MYPY_MAX))"; exit 1; fi
 	@$(UV) run python -m pytest tests/ $(_XD) -q > /tmp/gludd-validate.txt 2>&1; EXIT=$$?; \
 	if [ $$EXIT -eq 0 ]; then echo "test: PASS"; else echo "test: FAIL (non-zero exit)"; exit 1; fi

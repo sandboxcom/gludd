@@ -193,6 +193,7 @@ class ModelProfile(BaseModel):
     latency_class: str | None = None
     quality_class: str | None = None
     fallback_profiles: list[str] = Field(default_factory=list)
+    max_failover_retries: int = 3
     probe_enabled: bool = False
     # Anti-thundering-herd cap (test 13a / docs/audit/FAILOVER_GAPS.md
     # fallback-concurrency-limit): bounds how many callers may be in-flight to
@@ -1213,6 +1214,7 @@ class ModelGateway:
         policy = TimeoutRetryPolicy(
             max_retries=max_retries,
             base_backoff_seconds=base_backoff_seconds,
+            failover_after_retries=profile.max_failover_retries,
         )
 
         # If primary is already unhealthy, skip straight to fallbacks. Each

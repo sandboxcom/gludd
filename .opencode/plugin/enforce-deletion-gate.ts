@@ -25,7 +25,7 @@ interface DeletionAuditEntry {
 }
 
 function _isSubagent(): boolean {
-  if (_isSubagent()) return true;
+  if (process.env.OPENCODE_SUBAGENT === "1") return true;
   try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
 }
 

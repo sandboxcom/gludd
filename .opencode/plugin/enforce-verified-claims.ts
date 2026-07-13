@@ -93,14 +93,13 @@ export const BLOCK_MESSAGE = [
 ].join("\n")
 
 function _isSubagent(): boolean {
-  if (_isSubagent()) return true;
+  if (process.env.OPENCODE_SUBAGENT === "1") return true;
   try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
 }
 
 function _reportAlive(): void {
   try {
     const alivePath = "/tmp/gludd-plugin-alive.json"
-    const fs = require("node:fs")
     let alive: Record<string, unknown> = {}
     if (fs.existsSync(alivePath)) {
       try { alive = JSON.parse(fs.readFileSync(alivePath, "utf8")) } catch {}
