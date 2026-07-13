@@ -2,9 +2,7 @@
 and text-based structural analysis."""
 
 import subprocess
-import sys
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-stop.ts"

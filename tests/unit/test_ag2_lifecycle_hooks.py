@@ -12,7 +12,6 @@ Coverage: all 8 hook event names across 5 domains.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import threading
 from unittest.mock import patch
@@ -21,13 +20,10 @@ import pytest
 
 from general_ludd.ag2_lifecycle import (
     DenyError,
-    HookHandler,
     LifecycleHookSystem,
     dispatch_chain,
 )
 from general_ludd.ag2_lifecycle.hooks import (
-    ChainResult,
-    DispatchResult,
     SubagentGuard,
 )
 from general_ludd.ag2_lifecycle.types import (
@@ -35,6 +31,7 @@ from general_ludd.ag2_lifecycle.types import (
     AgentThinkAfterOutput,
     AgentThinkBeforeInput,
     AgentThinkBeforeOutput,
+    DispatcherInfo,
     HumanEscalationBeforeInput,
     HumanEscalationBeforeOutput,
     ModelCallAfterInput,
@@ -49,9 +46,7 @@ from general_ludd.ag2_lifecycle.types import (
     TaskDispatchBeforeInput,
     TaskDispatchBeforeOutput,
     TaskInfo,
-    DispatcherInfo,
 )
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -129,7 +124,7 @@ async def test_model_call_before_allow() -> None:
     system = LifecycleHookSystem()
     system.register("model.call.before", _allow_handler)
     input = ModelCallBeforeInput(model="sonnet")
-    output, result = await system.dispatch_model_call_before(input)
+    _output, result = await system.dispatch_model_call_before(input)
     assert result.allowed
     assert not result.skipped
     assert len(result.chain_results) == 1
@@ -144,7 +139,7 @@ async def test_task_dispatch_before_allow() -> None:
         task=TaskInfo(description="test task", model="sonnet"),
         dispatcher=DispatcherInfo(current_task_count=5, floor=10, ceiling=16),
     )
-    output, result = await system.dispatch_task_dispatch_before(input)
+    _output, result = await system.dispatch_task_dispatch_before(input)
     assert result.allowed
 
 
@@ -155,7 +150,7 @@ async def test_deny_error_blocks_operation() -> None:
     system = LifecycleHookSystem()
     system.register("human.escalation.before", _deny_handler)
     input = HumanEscalationBeforeInput()
-    output, result = await system.dispatch_human_escalation_before(input)
+    _output, result = await system.dispatch_human_escalation_before(input)
     assert not result.allowed
     assert len(result.chain_results) == 1
     assert result.chain_results[0].outcome == "deny"
@@ -186,7 +181,7 @@ async def test_output_mutation_visible_in_result() -> None:
 
     system.register("model.call.before", set_skip)
     input = ModelCallBeforeInput(model="deepseek")
-    output, result = await system.dispatch_model_call_before(input)
+    output, _result = await system.dispatch_model_call_before(input)
     assert output.skip is True
 
 
@@ -211,7 +206,7 @@ async def test_chain_executes_in_registration_order() -> None:
     system.register("task.complete.after", handler_3)
 
     input = TaskCompleteAfterInput()
-    output, result = await system.dispatch_task_complete_after(input)
+    _output, result = await system.dispatch_task_complete_after(input)
     assert result.allowed
     assert order == [1, 2, 3]
     assert len(result.chain_results) == 3
@@ -237,7 +232,7 @@ async def test_deny_short_circuits_chain() -> None:
     system.register("session.compact.before", handler_3)
 
     input = SessionCompactBeforeInput()
-    output, result = await system.dispatch_session_compact_before(input)
+    _output, result = await system.dispatch_session_compact_before(input)
     assert not result.allowed
     assert order == [1], "handler_3 must not execute after denial"
     assert result.chain_results[1].outcome == "deny"
@@ -263,7 +258,7 @@ async def test_chain_output_progressive_mutation() -> None:
         task=TaskInfo(model="haiku"),
         dispatcher=DispatcherInfo(),
     )
-    output, result = await system.dispatch_task_dispatch_before(input)
+    output, _result = await system.dispatch_task_dispatch_before(input)
     assert output.model == "sonnet"
     assert output.skip is True
 
@@ -275,7 +270,7 @@ async def test_crash_handler_fail_open() -> None:
     system = LifecycleHookSystem()
     system.register("agent.think.before", _crash_handler)
     input = AgentThinkBeforeInput()
-    output, result = await system.dispatch_agent_think_before(input)
+    _output, result = await system.dispatch_agent_think_before(input)
     assert result.allowed, "crash must not block operation (fail-open)"
     assert result.chain_results[0].outcome == "fail_open"
 
@@ -295,7 +290,7 @@ async def test_crash_then_allow_chain_continues() -> None:
     system.register("agent.think.after", ok)
 
     input = AgentThinkAfterInput()
-    output, result = await system.dispatch_agent_think_after(input)
+    _output, result = await system.dispatch_agent_think_after(input)
     assert result.allowed
     assert order == [2], "second handler must execute after crash (fail-open)"
 
@@ -315,14 +310,14 @@ async def test_subagent_skips_all_enforcement() -> None:
 
     with patch.object(SubagentGuard, "is_subagent", return_value=True):
         input = ModelCallBeforeInput(model="sonnet")
-        output, result = await system.dispatch_model_call_before(input)
+        _output, result = await system.dispatch_model_call_before(input)
         assert result.allowed
         assert result.skipped, "subagent must skip enforcement"
 
         input2 = TaskDispatchBeforeInput(
             task=TaskInfo(), dispatcher=DispatcherInfo()
         )
-        output2, result2 = await system.dispatch_task_dispatch_before(input2)
+        _output2, result2 = await system.dispatch_task_dispatch_before(input2)
         assert result2.allowed
         assert result2.skipped
 
@@ -339,18 +334,15 @@ def test_subagent_guard_env_var() -> None:
     guard = SubagentGuard()
     with patch.dict(os.environ, {"OPENCODE_SUBAGENT": "1"}):
         assert guard.is_subagent()
-    with patch.dict(os.environ, {}, clear=True):
-        with patch("os.path.exists", return_value=False):
-            assert not guard.is_subagent()
+    with patch.dict(os.environ, {}, clear=True), patch("os.path.exists", return_value=False):
+        assert not guard.is_subagent()
 
 
 def test_subagent_guard_file_fallback() -> None:
     guard = SubagentGuard()
-    pid = os.getpid()
-    marker = f"/tmp/gludd-subagent-{pid}.json"
-    with patch.dict(os.environ, {}, clear=True):
-        with patch("os.path.exists", return_value=True):
-            assert guard.is_subagent()
+    os.getpid()
+    with patch.dict(os.environ, {}, clear=True), patch("os.path.exists", return_value=True):
+        assert guard.is_subagent()
 
 
 # ── 10. Recursion guard (depth > 2) ────────────────────────────────────────────
@@ -373,7 +365,7 @@ async def test_recursion_guard_prevents_infinite_loop() -> None:
 
     system.register("model.call.before", reentrant)
     input = ModelCallBeforeInput(model="test")
-    output, result = await system.dispatch_model_call_before(input)
+    _output, result = await system.dispatch_model_call_before(input)
     assert result.allowed
     assert depths == [1, 2], f"depths should be [1,2] (depth-3 denied before handler runs) got {depths}"
 
@@ -412,7 +404,7 @@ async def test_budget_exhausted_denies_call() -> None:
     system.register("model.call.before", budget_guard)
 
     input = ModelCallBeforeInput(model="opus")
-    output, result = await system.dispatch_model_call_before(input)
+    _output, result = await system.dispatch_model_call_before(input)
     assert not result.allowed
 
 
@@ -426,7 +418,7 @@ async def test_task_dispatch_skip() -> None:
         task=TaskInfo(description="duplicate task"),
         dispatcher=DispatcherInfo(),
     )
-    output, result = await system.dispatch_task_dispatch_before(input)
+    output, _result = await system.dispatch_task_dispatch_before(input)
     assert output.skip is True
 
 
@@ -512,7 +504,7 @@ async def test_unregister_removes_handler() -> None:
     system.unregister("model.call.before", handler)
 
     input = ModelCallBeforeInput(model="sonnet")
-    output, result = await system.dispatch_model_call_before(input)
+    _output, result = await system.dispatch_model_call_before(input)
     assert result.allowed
     assert len(result.chain_results) == 1
 
@@ -588,7 +580,7 @@ def test_deny_error_default_permission_decision() -> None:
 # ── 19. Complex type round-trips ───────────────────────────────────────────────
 
 def test_model_call_before_input_fields_settable() -> None:
-    from general_ludd.ag2_lifecycle.types import Message, ToolDef, ModelCallBudget
+    from general_ludd.ag2_lifecycle.types import Message, ModelCallBudget, ToolDef
 
     input = ModelCallBeforeInput(
         model="deepseek-v4-pro",

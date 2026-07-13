@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from general_ludd.security.path_canonicalizer import CANONICAL_DENY_MARKERS
-from general_ludd.self_update.applier import PROTECTED_PATH_MARKERS
 from general_ludd.security.capability_lattice import (
     PROTECTED_FILE_STEMS,
     PROTECTED_PATH_SEGMENTS,
     PROTECTED_PATH_SUBSTRINGS,
 )
+from general_ludd.security.path_canonicalizer import CANONICAL_DENY_MARKERS
+from general_ludd.self_update.applier import PROTECTED_PATH_MARKERS
 from general_ludd.self_update.apply import (
     _HARD_DENY_SEGMENTS,
     _HARD_DENY_SUBSTRINGS,
@@ -30,10 +30,8 @@ def _marker_matches_canonical(marker: str, canonical: frozenset[str]) -> bool:
     if "/" not in lowered:
         return False
     # /module_utils/capability_policy → remove leading slash only
-    unl = lowered.lstrip("/")
-    if unm in canonical:
-        return True
-    return False
+    lowered.lstrip("/")
+    return unm in canonical
 
 
 def test_applier_protected_path_markers_are_subset_of_canonical():

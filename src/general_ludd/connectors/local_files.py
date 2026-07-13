@@ -42,6 +42,8 @@ import os
 import re
 from typing import Any
 
+from general_ludd.connectors.exc_sanitizer import sanitize_exc_for_health
+
 # Fields consumed into canonical slots, by canonical name -> candidate keys.
 _TS_KEYS = ("ts", "time", "@timestamp")
 _LEVEL_KEYS = ("level", "severity")
@@ -148,7 +150,7 @@ class JsonlLogSource:
                 "missing": missing,
             }
         except Exception as exc:  # pragma: no cover - defensive: health never raises
-            return {"healthy": False, "name": self.name, "kind": self.KIND, "error": str(exc)}
+            return {"healthy": False, "name": self.name, "kind": self.KIND, "error": sanitize_exc_for_health(exc)}
 
     # -- query ----------------------------------------------------------- #
 
@@ -277,7 +279,7 @@ class SyslogGrepSource:
                 "path": self._path,
             }
         except Exception as exc:  # pragma: no cover - defensive: health never raises
-            return {"healthy": False, "name": self.name, "kind": self.KIND, "error": str(exc)}
+            return {"healthy": False, "name": self.name, "kind": self.KIND, "error": sanitize_exc_for_health(exc)}
 
     # -- query ----------------------------------------------------------- #
 

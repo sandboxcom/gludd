@@ -12,7 +12,12 @@ Mirrors Stanford AutoMemory concepts:
 
 from general_ludd.memory.consolidation import MemoryConsolidator
 from general_ludd.memory.cross_conversation import CrossConversationStore
-from general_ludd.memory.cross_convo_memory import CrossConversationMemory, ConversationMeta, ConversationContext, WorkingMemoryItem
+from general_ludd.memory.cross_convo_memory import (
+    ConversationContext,
+    ConversationMeta,
+    CrossConversationMemory,
+    WorkingMemoryItem,
+)
 from general_ludd.memory.cross_task import CrossTaskLearner
 from general_ludd.memory.episodic import EpisodicMemoryRecorder
 from general_ludd.memory.local import LocalAgentMemory, MemoryRecord

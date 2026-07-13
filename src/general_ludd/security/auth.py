@@ -119,6 +119,19 @@ def verify_psk(presented: str, expected: str) -> bool:
     return hmac.compare_digest(presented, expected)
 
 
+def _load_admin_token(env: Mapping[str, str] | None = None) -> str:
+    source = env if env is not None else os.environ
+    return (source.get("GLUDD_ADMIN_TOKEN", "") or "").strip()
+
+
+def check_admin_token(header_value: str, expected: str | None = None) -> bool:
+    if expected is None:
+        expected = _load_admin_token()
+    if not header_value or not expected:
+        return False
+    return hmac.compare_digest(header_value.strip(), expected)
+
+
 def require_auth_env(env: Mapping[str, str] | None = None) -> bool:
     """Return whether GLUDD_REQUIRE_AUTH requests a fail-closed posture."""
     source = env if env is not None else os.environ

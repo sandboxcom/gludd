@@ -32,6 +32,8 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Protocol, TypedDict, cast, runtime_checkable
 
+from general_ludd.connectors.exc_sanitizer import sanitize_exc_for_health
+
 __all__ = ["AwsObservabilitySource"]
 
 
@@ -238,9 +240,9 @@ class AwsObservabilitySource:
         try:
             self._client("cloudwatch")
         except ImportError as exc:
-            return {"ok": False, "detail": f"boto3 unavailable: {exc}"}
+            return {"ok": False, "detail": f"boto3 unavailable"}
         except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": str(exc)}
+            return {"ok": False, "detail": sanitize_exc_for_health(exc)}
         return {"ok": True, "detail": f"client factory ready (region={self.region})"}
 
     # ----------------------------------------------------------------- #
