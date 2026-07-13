@@ -73,7 +73,7 @@ def test_postgres_health_no_cred_leak(caplog: pytest.LogCaptureFixture) -> None:
     assert "probe failed" in str(result["detail"])
     err = _records_have_credentials(caplog.records)
     assert not err, err
-    err = _records_have_exc_info(caplog.records)
+    err = _records_have_traceback(caplog.text)
     assert not err, err
     err = _records_have_raw_text(caplog.records)
     assert not err, err
@@ -100,7 +100,7 @@ def test_mysql_health_no_cred_leak(caplog: pytest.LogCaptureFixture) -> None:
     assert result["ok"] is False
     err = _records_have_credentials(caplog.records)
     assert not err, err
-    err = _records_have_exc_info(caplog.records)
+    err = _records_have_traceback(caplog.text)
     assert not err, err
     err = _records_have_raw_text(caplog.records)
     assert not err, err
@@ -124,7 +124,7 @@ def test_redis_health_no_cred_leak(caplog: pytest.LogCaptureFixture) -> None:
     assert result["ok"] is False
     err = _records_have_credentials(caplog.records)
     assert not err, err
-    err = _records_have_exc_info(caplog.records)
+    err = _records_have_traceback(caplog.text)
     assert not err, err
     err = _records_have_raw_text(caplog.records)
     assert not err, err
@@ -151,7 +151,7 @@ def test_mongodb_health_no_cred_leak(caplog: pytest.LogCaptureFixture) -> None:
     assert result["ok"] is False
     err = _records_have_credentials(caplog.records)
     assert not err, err
-    err = _records_have_exc_info(caplog.records)
+    err = _records_have_traceback(caplog.text)
     assert not err, err
     err = _records_have_raw_text(caplog.records)
     assert not err, err
@@ -178,7 +178,7 @@ def test_clickhouse_health_no_cred_leak(caplog: pytest.LogCaptureFixture) -> Non
     assert result["ok"] is False
     err = _records_have_credentials(caplog.records)
     assert not err, err
-    err = _records_have_exc_info(caplog.records)
+    err = _records_have_traceback(caplog.text)
     assert not err, err
     err = _records_have_raw_text(caplog.records)
     assert not err, err
