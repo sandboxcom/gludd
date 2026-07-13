@@ -216,6 +216,7 @@ class TestClaimBeforeCapWindow:
 
         with patch.object(loop, "_todo_repo") as mock_repo:
             mock_repo.count_active = AsyncMock(return_value=8)
+            mock_repo.claim_runnable = AsyncMock(return_value=[])
 
             async def _check():
                 await loop._phase_claim_runnable_todos()

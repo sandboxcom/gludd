@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "./hot_reload.ts"
+import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, ALIVE_PATH, DISENGAGE_PATH } from "./shared.ts"
 
 // Floor+ceiling enforcement guardrail (separate from enforce-make.ts so a bug
 // here can NEVER break the make-only enforcement). FAIL-OPEN: any error -> do
@@ -37,10 +38,7 @@ import { loadHotModule, type HotModule } from "./hot_reload.ts"
 // after editing this file to generate the hot module.
 
 // Live overrides
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
+// isSubagent imported from shared.ts
 
 function _tunable(overridePath: string, envVar: string, dflt: string): number {
   let base = parseInt(process.env[envVar] || dflt, 10)
@@ -356,14 +354,7 @@ function _buildDispatchCommands(): DispatchCommand[] {
 
 const floorTurnState: { accumulatedText: string } = { accumulatedText: "" }
 
-function _reportAlive(): void {
-  try {
-    const alive: Record<string, any> = {}
-    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["enforce-floor"] = { last_seen: Date.now() }
-    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
-  } catch {}
-}
+// reportAlive imported from shared.ts (writes to ALIVE_PATH)
 
 function _writeHeartbeat(): void {
   try {
@@ -377,27 +368,15 @@ function _writeHeartbeat(): void {
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, output: any) => {
-    if (_isSubagent()) return
+    if (isSubagent()) return
     console.log("SUBAGENT SKIP: enforce-floor")
-    _reportAlive()
+    reportAlive("enforce-floor")
     _writeHeartbeat()
     try {
       if (!FLOOR_ENFORCE) return
       const tool = (input?.tool ?? "") as string
 
-      let disengagedEarly = false
-      try {
-        const disPath = "/tmp/gludd-watchdog-disengage.json"
-        if (fs.existsSync(disPath)) {
-          const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
-          if (d.disengage_until) {
-            const now = Date.now()
-            const effective = Math.min(d.disengage_until, now + 3_600_000)
-            if (effective > now) disengagedEarly = true
-          }
-        }
-      } catch {}
-      if (disengagedEarly) {
+      if (isDisengaged()) {
         _streakCount = 0
         _readStreak = 0
         return
@@ -534,20 +513,7 @@ const defaultImpl: HotModule = {
         }
       }
 
-      let disengagedForFloor = false
-      try {
-        const disPath = "/tmp/gludd-watchdog-disengage.json"
-        if (fs.existsSync(disPath)) {
-          const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
-          if (d.disengage_until) {
-            const now = Date.now()
-            const MAX_FLOOR_DISENGAGE = now + 3_600_000
-            const effective = Math.min(d.disengage_until, MAX_FLOOR_DISENGAGE)
-            if (effective > now) disengagedForFloor = true
-          }
-        }
-      } catch {}
-      if (disengagedForFloor) {
+      if (isDisengaged()) {
         _streakCount = 0
         return
       }
@@ -595,20 +561,7 @@ const defaultImpl: HotModule = {
         }
       }
 
-      let disengaged = false
-      try {
-        const disPath = "/tmp/gludd-watchdog-disengage.json"
-        if (fs.existsSync(disPath)) {
-          const d = JSON.parse(fs.readFileSync(disPath, "utf8"))
-          if (d.disengage_until) {
-            const now = Date.now()
-            const MAX_FLOOR_DISENGAGE_2 = now + 3_600_000
-            const effective = Math.min(d.disengage_until, MAX_FLOOR_DISENGAGE_2)
-            if (effective > now) disengaged = true
-          }
-        }
-      } catch {}
-      if (disengaged) {
+      if (isDisengaged()) {
         _streakCount = 0
         return
       }
@@ -678,8 +631,7 @@ const defaultImpl: HotModule = {
   },
 
   "experimental.text.complete": async (_input: any, output: any) => {
-    if (_isSubagent()) return output
-    console.log("SUBAGENT SKIP: enforce-floor")
+    if (isSubagent()) return output
     console.log("SUBAGENT SKIP: enforce-floor")
     if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
     try {

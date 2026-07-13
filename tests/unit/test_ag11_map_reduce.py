@@ -245,6 +245,95 @@ class TestMapReducePartialFailure:
         assert failed[0].task_id == "t-2"
 
 
+class TestMapReduceEdgeCases:
+    """AG.11 edge cases: empty list, None output, default timeout, ordering, sync/async."""
+
+    @pytest.mark.asyncio
+    async def test_empty_task_list_returns_empty_results(self):
+        async def handler(payload: Any) -> str:
+            return "should-not-be-called"
+
+        executor = MapReduceExecutor(handler=handler)
+        results = await executor.execute([])
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_none_output_from_handler_becomes_empty_string(self):
+        async def handler(payload: Any) -> str | None:
+            return None
+
+        executor = MapReduceExecutor(handler=handler)
+        task = SubTask(task_id="nil")
+        results = await executor.execute([task])
+
+        assert len(results) == 1
+        assert results[0].status == SubTaskStatus.COMPLETED
+        assert results[0].output == ""
+
+    @pytest.mark.asyncio
+    async def test_default_executor_timeout_kills_slow_tasks(self):
+        async def handler(payload: Any) -> str:
+            if payload == "slow":
+                await asyncio.sleep(1.0)
+                return "never"
+            return f"fast-{payload}"
+
+        executor = MapReduceExecutor(handler=handler, default_timeout=0.05)
+        tasks = [
+            SubTask(task_id="fast", payload="a"),
+            SubTask(task_id="slow", payload="slow"),
+        ]
+        results = await executor.execute(tasks)
+
+        assert len(results) == 2
+        fast = [r for r in results if r.task_id == "fast"]
+        slow = [r for r in results if r.task_id == "slow"]
+        assert fast[0].status == SubTaskStatus.COMPLETED
+        assert slow[0].status == SubTaskStatus.TIMED_OUT
+
+    @pytest.mark.asyncio
+    async def test_result_ordering_preserves_input_order(self):
+        async def handler(payload: Any) -> str:
+            return str(payload)
+
+        tasks = [SubTask(task_id=f"t-{i}", payload=i) for i in range(10)]
+        executor = MapReduceExecutor(handler=handler)
+        results = await executor.execute(tasks)
+
+        assert len(results) == 10
+        for i, r in enumerate(results):
+            assert r.task_id == f"t-{i}"
+            assert r.status == SubTaskStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_mixed_sync_and_async_handlers(self):
+        async def async_handler(payload: Any) -> str:
+            await asyncio.sleep(0.01)
+            return f"async-{payload}"
+
+        def sync_handler(payload: Any) -> str:
+            return f"sync-{payload}"
+
+        class SwitchingExecutor(MapReduceExecutor):
+            def __init__(self) -> None:
+                super().__init__(handler=lambda x: x)
+
+            async def execute(self, tasks: list[SubTask]) -> list[SubTaskResult]:
+                self._handler = async_handler
+                results_async = await super().execute(tasks)
+                self._handler = sync_handler
+                results_sync = await super().execute(tasks)
+                return results_async + results_sync
+
+        tasks = [SubTask(task_id="t", payload="x")]
+        executor = SwitchingExecutor()
+        results = await executor.execute(tasks)
+
+        assert len(results) == 2
+        assert results[0].output == "async-x"
+        assert results[1].output == "sync-x"
+
+
 class TestMapReduceBuilder:
     """AG.11 requirement: Build a LangGraph graph via map_reduce_builder."""
 

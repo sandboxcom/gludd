@@ -449,6 +449,76 @@ class TestThreadSafety:
         assert pe.total_spent() == pytest.approx(expected)
 
 
+class TestBudgetEdgeCases:
+    def test_spend_zero_on_exhausted_envelope(self) -> None:
+        e = BudgetEnvelope("test", limit=10.0)
+        e.try_spend(10.0)
+        result = e.try_spend(0.0)
+        assert result["allowed"] is True
+        assert e.spent == pytest.approx(10.0)
+
+    def test_spend_epsilon_near_limit(self) -> None:
+        e = BudgetEnvelope("test", limit=10.0)
+        e.try_spend(9.999999999)
+        result = e.try_spend(0.000000001)
+        assert result["allowed"] is True
+        assert e.spent == pytest.approx(10.0)
+
+    def test_spend_epsilon_exceeds_limit(self) -> None:
+        e = BudgetEnvelope("test", limit=10.0)
+        e.try_spend(10.0)
+        result = e.try_spend(1e-12)
+        assert result["allowed"] is False
+
+
+class TestBudgetManagerPartialParams:
+    def test_check_all_only_tool_type_blocked(self) -> None:
+        bm = BudgetManager()
+        bm.per_tool.set_limit("bash", 1.0)
+        bm.per_tool.try_spend("bash", 1.0)
+        result = bm.check_all(
+            agent_type=None, task_id=None, tool_type="bash", amount=0.01
+        )
+        assert result.allowed is False
+        assert result.details["layer"] == "tool"
+
+    def test_check_all_all_layers_exhausted_short_circuits(self) -> None:
+        bm = BudgetManager()
+        bm.per_tool.set_limit("bash", 1.0)
+        bm.per_tool.try_spend("bash", 1.0)
+        bm.per_task.set_limit("t1", 1.0)
+        bm.per_task.try_spend("t1", 1.0)
+        bm.per_agent.set_limit("sonnet", 1.0)
+        bm.per_agent.try_spend("sonnet", 1.0)
+        result = bm.check_all(
+            agent_type="sonnet", task_id="t1", tool_type="bash", amount=0.01
+        )
+        assert result.allowed is False
+        assert result.details["layer"] == "tool"
+
+
+class TestBudgetManagerEmptyStatus:
+    def test_get_status_empty_layers(self) -> None:
+        bm = BudgetManager()
+        status = bm.get_status()
+        assert status["agents"] == {}
+        assert status["tasks"] == {}
+        assert status["tools"] == {}
+
+
+class TestPerTaskEnvelopeResetDefault:
+    def test_reset_all_clears_default_created_envelopes(self) -> None:
+        pt = PerTaskEnvelope(default_limit=10.0)
+        pt.try_spend("task-1", 5.0)
+        assert pt.total_spent() == pytest.approx(5.0)
+        pt.reset_all()
+        assert pt.total_spent() == pytest.approx(0.0)
+        result = pt.try_spend("task-1", 6.0)
+        assert result["allowed"] is True
+        result = pt.try_spend("task-1", 5.0)
+        assert result["allowed"] is False
+
+
 class TestBudgetCheckResult:
     def test_dataclass_defaults(self) -> None:
         r = BudgetCheckResult(allowed=True, reason="ok")
