@@ -132,4 +132,3 @@ class TestFireTimeSSRFRecheck:
             and "rejected at fire time" in getattr(r, "message", "")
         ]
         assert error_logs, "Fire-time SSRF check must block mutated URL"
-
