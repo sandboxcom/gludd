@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 — 127 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:10, W1:10, E:6, H:15, S:18).**
+**Last consolidated: 2026-07-12 — 121 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:4, W1:10, E:6, H:15, S:18).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
