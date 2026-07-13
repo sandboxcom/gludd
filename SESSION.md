@@ -5,8 +5,8 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- **2026-07-12** — Session 25, Waves 11-12 FINAL. On `development` branch, HEAD `89e93cbc`. Hot-reload proxy pattern on all 13 enforcement plugins (enforce-floor, enforce-multitask, enforce-delegate, enforce-stop, enforce-deadline, enforce-enhancement-ratio, enforce-no-suppressions, enforce-no-wait, enforce-deletion-gate, enforce-session-start, enforce-clean-tree, enforce-verified-claims, watchdog), `make hot-reload-plugins` target, CI pipeline discipline tooling (ci-busy-check, ci-safe-push, deploy-and-forget), Phase S fixes (S.5-S.12, 6 fixes, 118+ new tests), H.5 humangate checkpointer (12 tests), functional hook test harness (68 runtime tests across 8 plugins). All W.16-W.21 hot-reload proxy + build targets completed.
-- **2026-07-12** — Session 25. On `development` branch, HEAD `db50eb0b` (Waves 6-9 pushed). Waves 6-8 landed: XML collection (9 roles, xml_utils.py, 47 tests), web collection (6 roles, web_utils.py 25 funcs, 76 tests), web_server collection (8 roles, web_server_utils.py, docs). Wave 9: e2e game test gap analysis — 2 CRITICAL, 1 HIGH, 2 MEDIUM findings.
+- **2026-07-12** — Session 25 FINAL (Waves 1-13). On `development` branch, HEAD `d9b080a0`. All 13 waves completed and pushed.
+- **2026-07-12** — Session 25. On `development` branch, HEAD `89e93cbc` (Waves 11-12 pushed). Hot-reload proxy pattern on all 13 enforcement plugins, CI pipeline discipline tooling (ci-busy-check, ci-safe-push, deploy-and-forget), Phase S fixes (S.5-S.12, 6 fixes, 118+ new tests), H.5 humangate checkpointer (12 tests), functional hook test harness (68 runtime tests across 8 plugins).
 - 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 - **Wave 35 — Collection Split + Documentation:** TASKS.md Phase R expanded to 18 items. Collection FQCNs updated: `general_ludd.agent.{ssl_cert,hsm_operations,audit_framework,sql_injection,command_injection,prompt_injection}` → `general_ludd.security.*`. `docs/SECURITY_ROLES.md` + `docs/SSL_CERT_SYSTEM.md` FQCN references updated. Two new docs created: `docs/NETWORKING_SYSTEM.md` (networking role, 7 modes, ScapyAdapter, tool matrix, dissector templates) and `docs/BUSINESS_RESEARCH_SYSTEM.md` (entity_research role, 6 research capabilities, SearX monitoring, entity graph). README.md restructured from single collection section to 4 collection sub-sections (`general_ludd.agent`, `general_ludd.security`, `general_ludd.business`, `general_ludd.networking`) with FQCN tables and doc cross-references.
 - **SSL cert system docs** — `docs/SSL_CERT_SYSTEM.md` created: architecture overview, 2 Ansible role specifications, 4 data file formats, 5 Python module APIs, 6-standard compliance matrix, security considerations. TASKS.md F.6 ticked, CHANGELOG entry added.
@@ -31,20 +31,37 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Current Work
 
-- **HEAD: `89e93cbc`** on `development` branch (2026-07-12). Pushed + VERIFIED.
-- **Waves 10-12 — Enforcement infrastructure + CI discipline (2026-07-12):**
-  - **All 10 enforcement plugins now BLOCKING** (was 2 advisory-only). Zero advisory-only plugins remain.
-  - **Hot-reload proxy pattern** — 3 plugins (enforce-floor, enforce-multitask, enforce-delegate) load enforcement code from `/tmp/gludd-hot-*.js` files. `make hot-reload-plugins` target activates plugin fixes without opencode restart.
-  - **CI pipeline discipline tooling** — `make ci-busy-check`, `make ci-safe-push`, `make ci-wait-background`, `make deploy-and-forget`.
-  - **Phase S fixes (S.5-S.12)** — 6 fixes, 118+ new tests.
-  - **enforce-deadline.ts** — converted from advisory (`console.warn`) to blocking (`permissionDecision: "deny"`); env-var escape path (`GLUDD_DEADLINE_ENFORCE=0`); fail-open on any error.
-  - **enforce-enhancement-ratio.ts** — converted from advisory to blocking; same fail-open + env-var pattern.
-  - **Functional hook test harness** — `scripts/test_hook_runtime.py` invokes actual plugin hooks via `node -e` with constructed arguments and asserts on return values.
-  - **AGENTS.md self-test quality rule** — codified "Self-Test Quality — Structural vs Behavioral" section requiring runtime tests for every enforcement plugin.
-  - **Subagent guard coverage** — all 6 affected plugins now skip enforcement via `OPENCODE_SUBAGENT=1` gate.
-- **Wave 6 — XML collection (commit `dcfb6256`):** 9 Ansible roles under `ansible_collections/general_ludd/xml/`, `xml_utils.py` with 16 functions, `docs/XML_COLLECTION.md` (975 lines), 47 unit tests, `push-dev-nv` target added. Development pushed to `dcfb6256`.
-- **Wave 5 — Gate-refresh + lint fixes (commits `f68b1772` + `ece04522`):** gate-refresh target + gen-status-table script + 11 lint fixes across test files.
-- **HEAD: `d69cd60f`** on `development` branch (2026-07-12).
+- **HEAD: `d9b080a0`** on `development` branch (2026-07-12). Pushed. All Waves 1-13 complete.
+
+### Session 25 Complete — Waves 1-13
+
+**Collections (3 new):**
+- **XML collection** — 9 Ansible roles (`general_ludd.xml.*`), `xml_utils.py` (16 funcs), `docs/XML_COLLECTION.md` (975 lines), 47 unit tests
+- **Web collection** — 6 Ansible roles (`general_ludd.web.*`), `web_utils.py` (25 funcs), `docs/WEB_COLLECTION.md` (1442 lines), 76 unit tests
+- **Web Server collection** — 8 Ansible roles (`general_ludd.web_server.*`), `web_server_utils.py`, `docs/WEB_SERVER_COLLECTION.md`
+
+**Enforcement infrastructure:**
+- All 10 enforcement plugins now BLOCKING (zero advisory-only)
+- Hot-reload proxy pattern on all 13 plugins (`make hot-reload-plugins`)
+- Functional hook test harness (68 runtime tests across 8 plugins)
+- `make reload-enforcement`, `make disengage-enforcement` targets
+- CI pipeline discipline: `ci-safe-push`, `deploy-and-forget`, `ci-busy-check`
+
+**Phase fixes landed:**
+- **Phase S**: S.5-S.12 (6 fixes, 118+ new tests)
+- **Phase H**: H.3 readyz, H.4 langgraph-auditor, H.5 humangate checkpointer (12 tests), H.6 langgraph-factory (41 tests)
+- **Phase C**: C.5 integrity store daemon wiring, C.17 git-automation, C.19 cross-tenant, C.21 alpha4, C.26 async-lifecycle
+- **Phase D**: D.7.1 pause-resume (34 tests), D.10 file-claim integration
+
+**E2E / Game:**
+- Z.1-Z.7 game gaps: CRITICAL daemon pipeline fixed, game_over flag resolved
+
+**Research:**
+- Amazon Strands, CrewAI, AutoGen, LangGraph gap analysis → Phase AG (16 items in TASKS.md)
+
+**Documentation:**
+- `docs/XML_COLLECTION.md`, `docs/WEB_COLLECTION.md`, `docs/WEB_SERVER_COLLECTION.md`
+- README.md restructured with 4 collection sub-sections
 - **Wave 1 — 7 subagents dispatched (2026-07-12):**
   - **A.3 (push-verify-CI):** tree clean, already pushed. CI RED run 29213743760.
   - **D.7.1 (pause-resume tests):** 34 pause-resume tests pass (16 new). Test file clean.
@@ -139,21 +156,17 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 11. **~~No hot-reload for plugin changes~~** — FIXED Wave 12: hot-reload proxy pattern for 3 plugins via `/tmp/gludd-hot-*.js` files; `make hot-reload-plugins` target.
 12. **~~2 test_hook_runtime failures~~** — FIXED Wave 12: 68 runtime tests pass.
 13. **Hot-reload requires manual `make hot-reload-plugins` invocation** — hot modules must be built before enforcement fixes take effect at runtime. Proxy plugins fall back to bundled code if hot files absent.
-14. **CI pending on development** — pushed; awaiting CI verdict.
-15. **build_hot_modules.js may have residual brace-depth issues** — the build script uses regex-based JS parsing which may not handle deeply nested braces correctly in edge cases. Monitor for runtime errors after hot-reload.
+14. **Enforcement may fire in subagent context** — `OPENCODE_SUBAGENT=1` guard added but some edge cases remain under investigation.
+15. **Tetris score remains flaky** — nondeterministic scoring in game e2e tests.
 
 ## Next Steps
 
-1. [x] **Write runtime tests for all remaining plugins** — `scripts/test_hook_runtime.py` covers 8 plugins (52 passing, 2 failing).
-2. [x] **Add `GLUDD_FLOOR_ENFORCE` env var to enforce-floor.ts** — DONE Wave 11.
-3. [x] **Commit + push** — `make ship-commit MSG='...'` + `make batch-push` for Waves 10-12 enforcement fixes. DONE `89e93cbc`.
-4. [x] **Activate hot-reload plugins** — `make hot-reload-plugins` deploys proxy code; no restart needed.
-5. [ ] **Restart opencode or run `make hot-reload-plugins` + `make reload-enforcement`** — to activate enforcement fixes at runtime.
-6. [ ] **Verify enforcement blocks at runtime** — test that hot-reloaded plugins actually deny violations.
-7. [ ] **Fix e2e game gaps** — resolve game_over flag mismatch and missing lifecycle steps from Wave 9 gap analysis.
-8. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
-9. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
-10. [ ] **Cut release tag** — after merge to master, run `make release-cut`.
+1. [ ] **Restart opencode or run `make hot-reload-plugins` + `make reload-enforcement`** — to activate enforcement fixes at runtime.
+2. [ ] **Verify enforcement blocks at runtime** — test that hot-reloaded plugins actually deny violations.
+3. [ ] **Continue Phase AG items** — 16 items from Amazon Strands/CrewAI/AutoGen/LangGraph gap analysis.
+4. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
+5. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
+6. [ ] **Cut release tag** — after merge to master, run `make release-cut`.
 
 ## Current Gate Status (2026-07-12)
 <!-- gate:begin -->
