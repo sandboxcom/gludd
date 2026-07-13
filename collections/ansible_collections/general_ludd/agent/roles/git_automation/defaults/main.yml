@@ -1,0 +1,52 @@
+---
+# git_automation role defaults — timeouts, retry settings, and operational params
+
+# ── Git operation selector ────────────────────────────────────────────────
+# Which sub-task file to execute: clone, commit, push, merge, branch, worktree
+git_op: ""
+
+# ── Repository path ───────────────────────────────────────────────────────
+repo_path: "."
+
+# ── Clone ──────────────────────────────────────────────────────────────────
+clone_url: ""
+target_dir: ""
+git_clone_timeout: 120
+
+# ── Commit ─────────────────────────────────────────────────────────────────
+commit_message: "auto: apply change"
+gate_cmd: []                   # e.g. ["make", "gate"] — runs before commit
+git_gate_timeout: 60
+git_commit_timeout: 60
+
+# ── Push ──────────────────────────────────────────────────────────────────
+push_branch: "master"
+push_remote: "origin"
+push_args: []
+git_push_timeout: 60
+fail_on_push_error: false      # if true, role fails on push error
+
+# ── Merge ──────────────────────────────────────────────────────────────────
+merge_source: ""
+merge_target: ""
+merge_strategy: "ff"           # ff, no-ff, squash
+git_merge_timeout: 60
+
+# ── Branch ─────────────────────────────────────────────────────────────────
+branch_op: ""                  # create, delete, list
+branch_name: ""
+
+# ── Worktree ───────────────────────────────────────────────────────────────
+worktree_op: ""                # create, remove, list
+worktree_branch: ""
+worktree_path_param: ""
+git_worktree_timeout: 120
+
+# ── Retry settings ─────────────────────────────────────────────────────────
+git_retry_count: 3
+git_retry_delay: 5             # seconds between retries
+
+# ── Environment ────────────────────────────────────────────────────────────
+git_non_interactive_env:
+  GIT_TERMINAL_PROMPT: "0"
+  GIT_ASKPASS: "echo"
