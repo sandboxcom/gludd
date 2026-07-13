@@ -17,8 +17,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { spawn } from "node:child_process"
-import { loadHotModule, type HotModule } from "./hot_reload.ts"
-import { isSubagent, reportAlive, isDispatchTool } from "./shared.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { isSubagent, reportAlive, isDispatchTool } from "../lib/shared.ts"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "10", 10)
@@ -283,7 +283,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   spawnGateRefresh()
   try {
     fs.appendFileSync(
@@ -299,12 +299,6 @@ export default (async ({ }) => {
       const impl = loadHotModule("multitask", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input) : undefined
-    },
-
-    "session.idle": async () => {
-      const impl = loadHotModule("multitask", defaultImpl)
-      const fn = impl["session.idle"]
-      return fn ? await fn() : undefined
     },
 
     "experimental.text.complete": async (_input: unknown, output: { text: string }) => {

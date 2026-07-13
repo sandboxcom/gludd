@@ -24,8 +24,8 @@
  */
 import type { Plugin } from "@opencode-ai/plugin";
 import * as fs from "node:fs";
-import { loadHotModule, type HotModule } from "./hot_reload.ts";
-import { isSubagent, reportAlive } from "./shared.ts";
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
+import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 interface DeletionAuditEntry {
   timestamp: string;
@@ -141,7 +141,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return;

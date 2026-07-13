@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
-import { loadHotModule, type HotModule } from "./hot_reload.ts"
-import { isSubagent, reportAlive } from "./shared.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { isSubagent, reportAlive } from "../lib/shared.ts"
 
 // enforce-enhancement-ratio.ts — per-wave enhancement/fix dispatch ratio enforcement.
 //
@@ -181,10 +181,8 @@ const defaultImpl: HotModule = {
     } catch { /* fail open */ }
   },
 
-    "text.complete": async (output: any) => {
+    "experimental.text.complete": async (output: any) => {
     if (isSubagent()) return output
-    console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
-    console.log("SUBAGENT SKIP: enforce-enhancement-ratio")
     if (!ENABLED) return output
     if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? output ?? "").trim())) return output
 
@@ -254,7 +252,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   return {
     "tool.execute.before": async (input: any, _output: any) => {
       if (isSubagent()) return;
@@ -264,9 +262,9 @@ export default (async ({ }) => {
       return fn ? await fn(input, _output) : undefined
     },
 
-    "text.complete": async (output: any) => {
+    "experimental.text.complete": async (output: any) => {
       const impl = loadHotModule("enhancement-ratio", defaultImpl)
-      const fn = impl["text.complete"]
+      const fn = impl["experimental.text.complete"]
       return fn ? await fn(output) : output
     },
   }

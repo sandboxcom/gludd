@@ -1,8 +1,8 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { isSubagent, reportAlive } from "./shared.ts"
-import { loadHotModule, type HotModule } from "./hot_reload.ts"
+import { isSubagent, reportAlive } from "../lib/shared.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
 // enforce-session-start.ts — guarantees the FIRST actions of every session are:
 //   1. LOCATE work: read TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md
@@ -363,7 +363,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   // LOADED self-check: proves opencode invoked the factory
   try {
     fs.appendFileSync(

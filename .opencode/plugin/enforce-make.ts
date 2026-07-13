@@ -2,8 +2,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { execSync } from "node:child_process"
-import { isSubagent, reportAlive } from "./shared.ts"
-import { loadHotModule, type HotModule } from "./hot_reload.ts"
+import { isSubagent, reportAlive } from "../lib/shared.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
 const BASH_POLICY_HEADER = "BLOCKED: Direct bash commands are not allowed in this project.\n"
 const BASH_POLICY_RULE = "Rule: You MUST only run `make <target>` commands.\n"
@@ -1080,7 +1080,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return
@@ -1094,12 +1094,6 @@ export default (async ({ }) => {
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["tool.execute.after"]
       return fn ? await fn(input, output) : undefined
-    },
-
-    "session.idle": async () => {
-      const impl = loadHotModule("enforce-make", defaultImpl)
-      const fn = impl["session.idle"]
-      return fn ? await fn() : undefined
     },
 
     "experimental.chat.system.transform": async (_input, output) => {

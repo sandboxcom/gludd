@@ -25,8 +25,8 @@
  * default.  Run `make hot-reload-plugins` after editing this file.
  */
 import type { Plugin } from "@opencode-ai/plugin"
-import { loadHotModule, type HotModule } from "./hot_reload.ts"
-import { isSubagent, reportAlive } from "./shared.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { isSubagent, reportAlive } from "../lib/shared.ts"
 
 /**
  * Words that signal a completion / success claim. When ANY of these appear,
@@ -145,7 +145,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async () => {
+export default (() => {
   return {
     "experimental.text.complete": async (input: unknown, output: { text: string }) => {
       if (isSubagent()) return output

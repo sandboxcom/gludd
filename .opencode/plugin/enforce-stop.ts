@@ -1,8 +1,8 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { spawn, execSync } from "node:child_process"
-import { isSubagent, isDisengaged as isWatchdogDisengaged, reportAlive, writeHeartbeat, isDispatchTool, isReadTool, readSharedStreak, writeSharedStreak, updateSharedStreak, type SharedStreakState, SHARED_STREAK_FILE } from "./shared.ts"
-import { loadHotModule, type HotModule } from "./hot_reload.ts"
+import { isSubagent, isDisengaged as isWatchdogDisengaged, reportAlive, writeHeartbeat, isDispatchTool, isReadTool, readSharedStreak, writeSharedStreak, updateSharedStreak, type SharedStreakState, SHARED_STREAK_FILE } from "../lib/shared.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "7", 10)
 const STOP_ENFORCE = process.env.GLUDD_STOP_ENFORCE !== "0"
@@ -1113,7 +1113,7 @@ const defaultImpl: HotModule = {
  * and newer than cached, the hot module's hook overrides the compiled-in
  * default.  Run `make hot-reload-plugins` after editing this file.
  */
-export default (async ({ }) => {
+export default (({ }) => {
   spawnGateRefresh()
   try {
     fs.appendFileSync(
@@ -1125,12 +1125,6 @@ export default (async ({ }) => {
     )
   } catch { /* fail-open */ }
   return {
-    event: async (input: any) => {
-      if (isSubagent()) return
-      const impl = loadHotModule("enforce-stop", defaultImpl)
-      const fn = impl["event"]
-      return fn ? await fn(input) : undefined
-    },
     "tool.execute.before": async (input: any, output: any) => {
       if (isSubagent()) return
       const impl = loadHotModule("enforce-stop", defaultImpl)

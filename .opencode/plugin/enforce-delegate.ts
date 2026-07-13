@@ -2,8 +2,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { execSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool } from "./shared.ts"
-import { loadHotModule, type HotModule } from "./hot_reload.ts"
+import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool } from "../lib/shared.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
 // enforce-delegate.ts — opencode-native port of the Claude orchestration hooks
 // that govern SUBAGENT DISPATCH and MAIN-THREAD DELEGATION discipline.
@@ -726,7 +726,7 @@ export const defaultImpl = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   // LOADED self-check: proves opencode invoked the factory (registered, not
   // merely present on disk). Appended to the shared log.
   try {
