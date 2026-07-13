@@ -2791,6 +2791,10 @@ check-coverage-gaps-json:
 check-coverage-missing:
 	@$(UV) run python scripts/check_coverage_missing.py
 
+# --- Audit untested code: plugins with no tests, hooks without test coverage, Python modules without tests ---
+audit-untested-code:
+	@$(UV) run python scripts/audit_untested_code.py
+
 # --- Test quality gate: lint checks (F401/I001/F841/B010) + naming convention + newline ---
 # Runs against staged test files only (git diff --cached).
 check-test-quality:
