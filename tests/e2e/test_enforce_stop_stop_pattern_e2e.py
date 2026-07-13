@@ -13,11 +13,7 @@ test_enforcement_plugin_e2e.py). Covers:
 """
 from __future__ import annotations
 
-import contextlib
-import json
-import os
 import re
-import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -104,8 +100,8 @@ def _pending_work_flags(
 ) -> dict:
     unchecked = len(re.findall(r"^[-*]\s+\[ \]", tasks_content, re.MULTILINE))
     ratchet_count = len([
-        l for l in ratchet_content.split("\n")
-        if l.strip() and not l.strip().startswith("#") and (":" in l or "::" in l)
+        line for line in ratchet_content.split("\n")
+        if line.strip() and not line.strip().startswith("#") and (":" in line or "::" in line)
     ])
     has_work = unchecked > 0 or ratchet_count > 0
     return {"unchecked": unchecked, "ratchet_count": ratchet_count, "has_work": has_work}

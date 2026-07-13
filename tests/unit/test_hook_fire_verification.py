@@ -7,10 +7,10 @@ event — all removed in 1.17.9 or never implemented).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -55,10 +55,8 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmppath)
-        except OSError:
-            pass
 
 
 # ── All known plugin files ──────────────────────────────────────────────────
@@ -112,8 +110,10 @@ def test_plugin_hooks_exported(plugin_file: str):
         code = f"""\
 const hooks = []
 const api = {{
-  tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }}, after(fn) {{ hooks.push('tool.execute.after') }} }} }},
-  experimental: {{ chat: {{ system: {{ transform(fn) {{ hooks.push('experimental.chat.system.transform') }} }} }} }},
+  tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }},
+    after(fn) {{ hooks.push('tool.execute.after') }} }} }},
+  experimental: {{ chat: {{ system: {{ transform(fn) {{
+    hooks.push('experimental.chat.system.transform') }} }} }} }},
 }}
 const mod = await import('{abs_path}')
 mod.default(api)
@@ -147,8 +147,11 @@ def test_plugin_hooks_are_callable(plugin_file: str):
         code = f"""\
 const hooks = []  // [name, isCallable]
 const api = {{
-  tool: {{ execute: {{ before(fn) {{ hooks.push(['tool.execute.before', typeof fn === 'function']) }}, after(fn) {{ hooks.push(['tool.execute.after', typeof fn === 'function']) }} }} }},
-  experimental: {{ chat: {{ system: {{ transform(fn) {{ hooks.push(['experimental.chat.system.transform', typeof fn === 'function']) }} }} }} }},
+  tool: {{ execute: {{ before(fn) {{ hooks.push(
+    ['tool.execute.before', typeof fn === 'function']) }},
+    after(fn) {{ hooks.push(['tool.execute.after', typeof fn === 'function']) }} }} }},
+  experimental: {{ chat: {{ system: {{ transform(fn) {{ hooks.push(
+    ['experimental.chat.system.transform', typeof fn === 'function']) }} }} }} }},
 }}
 const mod = await import('{abs_path}')
 mod.default(api)
@@ -175,7 +178,8 @@ def test_plugin_no_dead_hooks(plugin_file: str):
         code = f"""\
 const hooks = []
 const api = {{
-  tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }}, after(fn) {{ hooks.push('tool.execute.after') }} }} }},
+  tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }},
+    after(fn) {{ hooks.push('tool.execute.after') }} }} }},
   experimental: {{
     text: {{ complete(fn) {{ hooks.push('experimental.text.complete') }} }},
     chat: {{ system: {{ transform(fn) {{ hooks.push('experimental.chat.system.transform') }} }} }},
@@ -215,7 +219,9 @@ def test_all_plugins_export_tool_execute_before():
         if plugin_file in PLUGINAPI_PLUGINS:
             code = f"""\
 const hooks = []
-const api = {{ tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }}, after(fn) {{ hooks.push('tool.execute.after') }} }} }} }}
+        const api = {{ tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }},
+          after(fn) {{ hooks.push('tool.execute.after') }} }} }} }}
+
 const mod = await import('{abs_path}')
 mod.default(api)
 console.log(JSON.stringify({{file: '{plugin_file}', hasBefore: hooks.includes('tool.execute.before')}}))
@@ -250,7 +256,8 @@ def test_hook_fire_verification_table():
                 code = f"""\
 const hooks = []
 const api = {{
-  tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }}, after(fn) {{ hooks.push('tool.execute.after') }} }} }},
+  tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }},
+    after(fn) {{ hooks.push('tool.execute.after') }} }} }},
   experimental: {{
     text: {{ complete(fn) {{ hooks.push('experimental.text.complete') }} }},
     chat: {{ system: {{ transform(fn) {{ hooks.push('experimental.chat.system.transform') }} }} }},
@@ -284,7 +291,10 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
             has_before = "tool.execute.before" in hooks
             is_daemon = plugin_file in DAEMON_PLUGINS
 
-            row_pass = (is_daemon and len(not_callable) == 0) or (has_before and len(dead) == 0 and len(not_callable) == 0)
+            row_pass = (
+                (is_daemon and len(not_callable) == 0)
+                or (has_before and len(dead) == 0 and len(not_callable) == 0)
+            )
             if not row_pass:
                 all_pass = False
 
