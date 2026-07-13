@@ -1425,6 +1425,41 @@ console.log(JSON.stringify({{editAllowed}}))
     _clean_state_files(block_file)
 
 
+def test_stop_task_result_passes_through_gate_red():
+    """Subagent task_result text passes through text.complete even when gate is RED."""
+    state_file = os.path.join("/tmp", f"test-stop-taskresult-{os.getpid()}.json")
+    _clean_state_files(state_file, "/tmp/gludd-post-results-state.json",
+                       "/tmp/gludd-text-only-state.json", "/tmp/gludd-block-counter.json")
+    with open(state_file, "w") as f:
+        json.dump({
+            "ts": int(time.time() * 1000),
+            "ratchetEntries": 0,
+            "tasksMdUnchecked": True,
+            "gateStatusRed": True,
+            "repoPending": True,
+            "hasLocalWork": True,
+            "hasPendingWork": True,
+            "ciVerdictPendingOrRed": False,
+            "healthScore": 20,
+        }, f)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+const output = {{text: 'task result: test agent completed. Fixed 3 files.'}}
+const result = await plugin['experimental.text.complete'](undefined, output)
+const finalText = result?.text ?? output.text
+const passedThrough = finalText === 'task result: test agent completed. Fixed 3 files.'
+console.log(JSON.stringify({{passedThrough}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_STOP_STATE_FILE": state_file,
+    })
+    assert result["passedThrough"] == True, (
+        f"Subagent task_result text MUST pass through even with gate red. Got: {result}"
+    )
+    _clean_state_files(state_file)
+
+
 # ---------------------------------------------------------------------------
 # enforce-clean-tree.ts  —  dispatch-time dirty tree enforcement
 # ---------------------------------------------------------------------------

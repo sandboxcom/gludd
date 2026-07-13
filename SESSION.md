@@ -10,14 +10,15 @@
 
 ### HEAD + Branch State
 
-- **HEAD: `2b1b9d3e`** on `development` branch
-- **Working tree: DIRTY** — enforce-make.ts, build_hot_modules.js modified
+- **HEAD: `a1fa7935`** on `development` branch
+- **Gate: GREEN** (`=== GATE: PASSED ===` — lint 0, typecheck 0, collect 0, hook-runtime PASS, env-writes PASS)
+- **Working tree: DIRTY** — 13 files modified/added (enforce-make.ts, build_hot_modules.js, hooks.py, dispatcher.py, repo.py, memory/__init__.py, cross_convo_memory.py, facts.py, test_all_plugins_runtime.py, test_d12_slack_connector.py, test_d6_orchestration_planner.py, test_e6_findings_retriage.py, test_plugin_runtime.py + new test_enforce_make_bash_access.py + test_git_automation_role.py)
 - **Runtime tests: 114 pass / 0 fail**
 - **check-node-v26-compat: 2/2 PASS** — 0 `require()` calls remain in any plugin
 - **Hot modules: 13/13 built** — all 14 plugins proxy-converted + hot-reload capable
 - **E2E tests: 204 across 10 files** (+17 new in `1a225981`: commit-lock + watchdog e2e, watchdog flake fix, no-suppressions env disable path)
 - **ratchet.yml: 0 entries** — no tracked known-failing tests
-- **Enforcement plugins: 10/10 BLOCKING** — zero advisory-only
+- **Enforcement plugins: 13/13 BLOCKING** — zero advisory-only
 - **CI: PENDING** — development branch not yet pushed to remote
 
 ### Key Deliverables (commits `ad2f32fb` → `1a225981`)
@@ -52,10 +53,13 @@
 | `9d4e60da` | fix: enforce-clean-tree require→import execSync, 7 new tests, TASKS.md header counts |
 | `ad2f32fb` | refactor: enforce-stop.ts dedup using shared.ts helpers, add restore-opencode git fallback, backup-opencode docs |
 
-### Commits Since Session 29 Closure (2 on development)
+### Commits Since Session 29 Closure (5 on development)
 
 | Hash | Message |
 |------|---------|
+| `a1fa7935` | fix: gate green - lint, typecheck, hook-runtime all pass after 1.17.9 compat |
+| `4c8aba98` | docs: Session 29 state update |
+| `6647bea3` | fix: enforce-make bash cmd access pattern, build_hot_modules update |
 | `2b1b9d3e` | fix: enforce-make bash command access pattern, enforce-stop state-block narrow guard, 1.17.9 compat imports |
 | `ffb49045` | docs: SESSION+CHANGELOG update for opencode 1.17.9 compatibility fix — originally thought to be the closure commit |
 
@@ -63,11 +67,11 @@ Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`
 
 ### Known Gaps
 
-1. **CI PENDING** — no CI run for current development HEAD `2b1b9d3e`. Push to remote required first.
-2. **A.3 push** — 10 unpushed commits on development. Push to remote pending.
+1. **CI PENDING** — no CI run for current development HEAD `a1fa7935`. Push to remote required first.
+2. **A.3 push** — 13 unpushed commits on development. Push to remote pending.
 3. **A.4 release** — v0.1.0-beta.2 not yet cut. Blocked on CI green + development→master merge.
 4. **development → master merge** — pending CI green after push
-5. **Dirty working tree** — enforce-make.ts + build_hot_modules.js modified (enforcement plugin fixes)
+5. **Dirty working tree** — 13 files modified/added (enforcement plugin fixes, src/ changes, test updates + new test)
 6. **E.5 ratchet conftest hook** — hook installed; explicit threshold lowering may need follow-up verification
 
 ### Next Steps (Prioritized)
@@ -79,7 +83,7 @@ Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`
 5. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after merge + CI green
 
 ### Last Updated
-- **2026-07-13 — Session 29 continuation.** On `development` branch, HEAD `2b1b9d3e`. Working tree DIRTY (enforce-make.ts, build_hot_modules.js). 114/114 runtime tests pass. check-node-v26-compat 2/2 PASS (0 require() calls). 13/13 hot-module proxies built; all 14 plugins proxy-converted + hot-reload capable. 204 e2e tests across 10 files. 10/10 enforcement plugins BLOCKING. 10 commits landed (ad2f32fb..2b1b9d3e). ratchet.yml: 0 entries. CI pending — push to remote needed first. A.3 push + A.4 release pending.
+- **2026-07-13 — Session 29 continuation.** On `development` branch, HEAD `a1fa7935`. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS). Working tree DIRTY (13 files). 114/114 runtime tests pass. check-node-v26-compat 2/2 PASS (0 require() calls). 13/13 hot-module proxies built; all 14 plugins proxy-converted + hot-reload capable. 204 e2e tests across 10 files. 13/13 enforcement plugins BLOCKING. 13 commits landed on development (ad2f32fb..a1fa7935). ratchet.yml: 0 entries. D.19 docs complete (561 lines, ticked in TASKS.md). CI pending — push to remote needed first. A.3 push + A.4 release pending.
 
 ---
 

@@ -21,8 +21,8 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { isSubagent, reportAlive, isDispatchTool } from "../lib/shared.ts"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
-export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "10", 10)
-export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES || "5", 10)
+export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "3", 10)
+export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES || "3", 10)
 export const MAX_ZERO_STREAK = 2
 export const WAVE_HISTORY_SIZE = 10
 const MAX_DISENGAGE_MS = 3_600_000
@@ -148,7 +148,7 @@ const defaultImpl: HotModule = {
         }
       } catch {}
 
-      if (!disengaged && _state.prevMessageDispatches > 0 && _state.prevMessageDispatches < MIN_DISPATCHES) {
+      if (!disengaged && _state.prevMessageDispatches > 0 && _state.prevMessageDispatches < MIN_DISPATCHES && _state.zeroStreak > 0) {
         return {
           permissionDecision: "deny" as const,
           message: [
