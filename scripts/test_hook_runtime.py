@@ -366,7 +366,7 @@ fs.writeFileSync('{state_file}', JSON.stringify({{
 }}))
 const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
-const output = await plugin['text.complete']({{text: 'hello'}})
+const output = await plugin['experimental.text.complete']({{text: 'hello'}})
 const isString = typeof output === 'string'
 const hasViolation = isString && output.includes('ENHANCEMENT RATIO VIOLATION')
 console.log(JSON.stringify({{isString, hasViolation}}))
@@ -387,8 +387,8 @@ const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'fix bug A'}}}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'enhancement: add docs'}}}}, undefined)
-const output = await plugin['text.complete']({{text: 'hello'}})
-console.log(JSON.stringify({{isModified: output.text !== 'hello'}}))
+    const output = await plugin['experimental.text.complete']({{text: 'hello'}})
+    console.log(JSON.stringify({{isModified: output.text !== 'hello'}}))
 """
     result = _run_ts(code)
     assert result["isModified"] == False
@@ -505,12 +505,12 @@ fs.writeFileSync('{state_file}', JSON.stringify({{
 }}))
 const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
-const output = await plugin['text.complete']({{text: 'hello'}})
-console.log(JSON.stringify({{
-    isBlocked: typeof output === 'string',
-    hasViolation: typeof output === 'string' && output.includes('ENHANCEMENT RATIO VIOLATION'),
-    helloGone: typeof output === 'string' && !output.includes('hello'),
-}}))
+    const output = await plugin['experimental.text.complete']({{text: 'hello'}})
+    console.log(JSON.stringify({{
+        isBlocked: typeof output === 'string',
+        hasViolation: typeof output === 'string' && output.includes('ENHANCEMENT RATIO VIOLATION'),
+        helloGone: typeof output === 'string' && !output.includes('hello'),
+    }}))
 """
     result = _run_ts(code, env_override={"GLUDD_ENHANCEMENT_RATIO_STATE": state_file})
     assert result["isBlocked"] == True, f"Expected string block, got: {result}"
@@ -537,11 +537,11 @@ fs.writeFileSync('{state_file}', JSON.stringify({{
 }}))
 const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
-const output = await plugin['text.complete']({{text: 'hello'}})
-console.log(JSON.stringify({{
-    notBlocked: typeof output !== 'string',
-    textPreserved: typeof output !== 'string' ? (output?.text ?? '') === 'hello' : false,
-}}))
+    const output = await plugin['experimental.text.complete']({{text: 'hello'}})
+    console.log(JSON.stringify({{
+        notBlocked: typeof output !== 'string',
+        textPreserved: typeof output !== 'string' ? (output?.text ?? '') === 'hello' : false,
+    }}))
 """
     result = _run_ts(code, env_override={
         "GLUDD_ENHANCEMENT_RATIO_STATE": state_file,
@@ -561,8 +561,8 @@ const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
 // Only 1 dispatch — wave too small for ratio check
 await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'fix bug A'}}}}, undefined)
-const output = await plugin['text.complete']({{text: 'hello'}})
-console.log(JSON.stringify({{textPreserved: output?.text === 'hello'}}))
+    const output = await plugin['experimental.text.complete']({{text: 'hello'}})
+    console.log(JSON.stringify({{textPreserved: output?.text === 'hello'}}))
 """
     result = _run_ts(code, env_override={"GLUDD_ENHANCEMENT_RATIO_STATE": state_file})
     assert result["textPreserved"] == True, "1-dispatch wave should not trigger ratio check"
@@ -1214,6 +1214,8 @@ console.log(JSON.stringify({{blocked, finalText: finalText.slice(0, 200)}}))
 def test_stop_no_pending_work():
     """No local work → text passes through unmodified."""
     state_file = os.path.join("/tmp", f"test-stop-clean-{os.getpid()}.json")
+    _clean_state_files(state_file, "/tmp/gludd-post-results-state.json",
+                       "/tmp/gludd-text-only-state.json", "/tmp/gludd-block-counter.json")
     with open(state_file, "w") as f:
         json.dump({
             "ts": int(time.time() * 1000),
@@ -1364,7 +1366,9 @@ def test_stop_no_pending_work_allows():
     """No local work pending → no persist block written, edit allowed."""
     state_file = os.path.join("/tmp", f"test-stop-nopending-{os.getpid()}.json")
     block_file = os.path.join("/tmp", f"gludd-persist-stop-block-nopend-{os.getpid()}.json")
-    _clean_state_files(state_file, block_file, "/tmp/gludd-block-counter.json")
+    _clean_state_files(state_file, block_file, "/tmp/gludd-block-counter.json",
+                       "/tmp/gludd-post-results-state.json",
+                       "/tmp/gludd-text-only-state.json")
     with open(state_file, "w") as f:
         json.dump({
             "ts": int(time.time() * 1000),
@@ -2097,31 +2101,21 @@ def test_make_disengage_escape():
 WATCHDOG_PATH = str(ROOT / ".opencode" / "plugins" / "watchdog.ts")
 
 
-def _watchdog_event_code(event_type: str) -> str:
-    """Generate TS code that loads watchdog.ts and calls its event hook."""
-    return f"""\
-const mod = await import('{WATCHDOG_PATH}')
-const plugin = await mod.default({{}})
-let result
-try {{
-    await plugin.event({{ event: {{ type: '{event_type}' }} }})
-    result = {{ ok: true }}
-}} catch (e) {{
-    result = {{ ok: false, error: String(e.message) }}
-}}
-console.log(JSON.stringify(result))
-"""
-
-
-def test_watchdog_event_session_created():
-    """session.created event fires, reportAlive writes to alive file, no crash."""
+def test_watchdog_plugin_loads_report_alive():
+    """watchdog plugin loads, calls reportAlive on init (writes alive file), returns {{}}."""
     alive_path = os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json")
     _clean_state_files(alive_path)
-    code = _watchdog_event_code("session.created")
+    code = f"""\
+const mod = await import('{WATCHDOG_PATH}')
+const plugin = await mod.default({{}})
+const keys = Object.keys(plugin)
+console.log(JSON.stringify({{ ok: true, keys }}))
+"""
     result = _run_ts(code)
-    assert result["ok"] == True, f"session.created should not throw, got: {result}"
-    # Verify reportAlive was called
-    assert os.path.exists(alive_path), f"Alive file {alive_path} should exist after event"
+    assert result["ok"] == True, f"Watchdog plugin load should not throw, got: {result}"
+    assert result["keys"] == [], f"Plugin should return empty object (no hooks), got keys: {result['keys']}"
+    # Verify reportAlive was called on module load
+    assert os.path.exists(alive_path), f"Alive file {alive_path} should exist after plugin load"
     with open(alive_path) as f:
         alive = json.load(f)
     assert "watchdog" in alive, f"watchdog key missing from alive file: {alive}"
@@ -2129,70 +2123,64 @@ def test_watchdog_event_session_created():
     _clean_state_files(alive_path)
 
 
-def test_watchdog_event_session_deleted():
-    """session.deleted event fires, handles missing PID files gracefully."""
-    code = _watchdog_event_code("session.deleted")
+def test_watchdog_plugin_loads_no_error():
+    """Watchdog plugin loads without error even with no event hook surface."""
+    code = f"""\
+const mod = await import('{WATCHDOG_PATH}')
+const plugin = await mod.default({{}})
+console.log(JSON.stringify({{ ok: true, isObject: typeof plugin === 'object' }}))
+"""
     result = _run_ts(code)
-    assert result["ok"] == True, f"session.deleted should not throw, got: {result}"
+    assert result["ok"] == True, f"Watchdog should load without error, got: {result}"
+    assert result["isObject"] == True
 
 
-def test_watchdog_subagent_guard():
-    """OPENCODE_SUBAGENT=1: watchdog still operates (it's infra, NOT enforcement)."""
+def test_watchdog_plugin_subagent_context():
+    """OPENCODE_SUBAGENT=1: watchdog plugin still loads (it's infra, not enforcement)."""
     alive_path = os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json")
     _clean_state_files(alive_path)
     code = f"""\
 const mod = await import('{WATCHDOG_PATH}')
 const plugin = await mod.default({{}})
-try {{
-    await plugin.event({{ event: {{ type: 'session.created' }} }})
-    console.log(JSON.stringify({{ ok: true }}))
-}} catch (e) {{
-    console.log(JSON.stringify({{ ok: false, error: String(e.message) }}))
-}}
+console.log(JSON.stringify({{ ok: true, isObject: typeof plugin === 'object' }}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result["ok"] == True, f"Watchdog should run even in subagent context, got: {result}"
-    # Verify alive file was still written (watchdog is not skipped)
+    assert result["ok"] == True, f"Watchdog should load even in subagent context, got: {result}"
+    # Verify alive file was still written (reportAlive runs on module load)
     assert os.path.exists(alive_path), "Watchdog must report alive even as subagent"
     _clean_state_files(alive_path)
 
 
-def test_watchdog_env_disable():
-    """GLUDD_WATCHDOG_ENABLED=0: event handler returns immediately, no alive write."""
+def test_watchdog_plugin_env_disabled():
+    """GLUDD_WATCHDOG_ENABLED=0: plugin still loads (reportAlive happens on import)."""
     alive_path = os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json")
     _clean_state_files(alive_path)
     code = f"""\
 const mod = await import('{WATCHDOG_PATH}')
 const plugin = await mod.default({{}})
-try {{
-    await plugin.event({{ event: {{ type: 'session.created' }} }})
-    console.log(JSON.stringify({{ ok: true }}))
-}} catch (e) {{
-    console.log(JSON.stringify({{ ok: false, error: String(e.message) }}))
-}}
+console.log(JSON.stringify({{ ok: true }}))
 """
     result = _run_ts(code, env_override={"GLUDD_WATCHDOG_ENABLED": "0"})
-    assert result["ok"] == True, f"Disabled watchdog should not throw, got: {result}"
-    # reportAlive should NOT have been called — but the running daemon may have
-    # written to the file concurrently, so check the watchdog key, not file existence
-    if os.path.exists(alive_path):
-        with open(alive_path) as f:
-            alive = json.load(f)
-        assert "watchdog" not in alive, \
-            f"watchdog key should NOT be present when GLUDD_WATCHDOG_ENABLED=0, got: {alive}"
+    assert result["ok"] == True, f"Disabled watchdog should load without error, got: {result}"
+    # The plugin itself doesn't check GLUDD_WATCHDOG_ENABLED (the daemon does)
+    # reportAlive is called on module load regardless
     _clean_state_files(alive_path)
 
 
-def test_watchdog_fail_open_corrupt_pid_file():
-    """Corrupt PID file on session.deleted does not crash (fail-open)."""
+def test_watchdog_plugin_loads_with_corrupt_pid_file():
+    """Corrupt PID file does not crash watchdog plugin load (fail-open)."""
     pid_file = os.environ.get("GLUDD_WATCHDOG_PID_FILE", ".gate-logs/watchdog.pid")
     os.makedirs(os.path.dirname(pid_file) or ".", exist_ok=True)
     with open(pid_file, "w") as f:
         f.write("not-a-valid-pid-99999999999999999")
     try:
-        code = _watchdog_event_code("session.deleted")
+        code = f"""\
+const mod = await import('{WATCHDOG_PATH}')
+const plugin = await mod.default({{}})
+console.log(JSON.stringify({{ ok: true }}))
+"""
         result = _run_ts(code)
-        assert result["ok"] == True, f"Corrupt PID file must not crash, got: {result}"
+        assert result["ok"] == True, f"Corrupt PID file must not crash plugin load, got: {result}"
     finally:
         _clean_state_files(pid_file)
 
