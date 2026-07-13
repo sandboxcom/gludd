@@ -18,6 +18,7 @@ const BASH_POLICY_FIX = [
 ].join("\n")
 const BASH_POLICY_REF = "See AGENTS.md for existing make targets and the full policy.\n"
 
+const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
 const SHELL_META_CHARS = /[|;&(){}$`\\!]/
 
 function _isSubagent(): boolean {
@@ -372,23 +373,25 @@ export default (async ({ }) => {
         const command = (input as any)?.args?.command ?? ""
         const trimmed = typeof command === "string" ? command.trim() : ""
 
-        if (trimmed && SHELL_META_CHARS.test(trimmed)) {
-          const matched = trimmed.match(SHELL_META_CHARS)
-          _bashPolicyNudge = true
-          throw new Error(
-            formatBashBlockedMessage(
-              trimmed,
-              `Shell metacharacter(s) forbidden: ${matched?.join(", ")}. ` +
-              `Pipes (|), chaining (&&, ||, ;), subshells ($(), ()), backticks (\`), ` +
-              `variable expansion ($), and brace expansion ({}) are not allowed. ` +
-              `Create a Makefile target instead.`
+        if (MAKE_ENFORCE) {
+          if (trimmed && SHELL_META_CHARS.test(trimmed)) {
+            const matched = trimmed.match(SHELL_META_CHARS)
+            _bashPolicyNudge = true
+            throw new Error(
+              formatBashBlockedMessage(
+                trimmed,
+                `Shell metacharacter(s) forbidden: ${matched?.join(", ")}. ` +
+                `Pipes (|), chaining (&&, ||, ;), subshells ($(), ()), backticks (\`), ` +
+                `variable expansion ($), and brace expansion ({}) are not allowed. ` +
+                `Create a Makefile target instead.`
+              )
             )
-          )
-        }
+          }
 
-        if (!trimmed.startsWith("make ") && trimmed !== "make") {
-          _bashPolicyNudge = true
-          throw new Error(formatBashBlockedMessage(trimmed, "Command does not start with 'make'"))
+          if (!trimmed.startsWith("make ") && trimmed !== "make") {
+            _bashPolicyNudge = true
+            throw new Error(formatBashBlockedMessage(trimmed, "Command does not start with 'make'"))
+          }
         }
 
         // --- Gate concurrency guard -----------------------------------------
@@ -497,19 +500,6 @@ export default (async ({ }) => {
           }
         }
 
-        if (SHELL_META_CHARS.test(trimmed)) {
-          const matched = trimmed.match(SHELL_META_CHARS)
-          throw new Error(
-            formatBashBlockedMessage(
-              trimmed,
-              `Shell metacharacter(s) forbidden: ${matched?.join(", ")}. ` +
-              `Pipes (|), chaining (&&, ||, ;), subshells ($(), ()), backticks (\`), ` +
-              `variable expansion ($), and brace expansion ({}) are not allowed. ` +
-              `Create a Makefile target instead.`
-            )
-          )
-        }
-
         // Preflight gate: warn before test-and-commit
         const isCommitTarget = /\bmake\s+test-and-commit\b/.test(trimmed)
         if (isCommitTarget) {
@@ -538,55 +528,57 @@ export default (async ({ }) => {
           "delete-file",
         ]
 
-        if (MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES.includes(targetName)) {
-          // Valid Makefile target that happens to contain a forbidden word in its name
-          // Strip VAR=val assignments before checking for metacharacters
-          const argsStripped = restArgs.replace(/[A-Za-z_][A-Za-z0-9_]*=('[^']*'|"[^"]*"|\S*)/g, "")
-          if (SHELL_META_CHARS.test(argsStripped)) {
-            const matched = argsStripped.match(SHELL_META_CHARS)
-            throw new Error(
-              formatBashBlockedMessage(
-                trimmed,
-                `Shell metacharacter(s) forbidden in make args: ${matched?.join(", ")}. `
-              )
-            )
-          }
-        } else {
-          const invalidPatterns = [
-            /\b2>&1\b/,
-            /\b>\s/,
-            /\b<\s/,
-            /\brg\b/,
-            /\btail\b/,
-            /\bhead\b/,
-            /\bgrep\b/,
-            /\bcat\b/,
-            /\bfind\b/,
-            /\bls\b/,
-            /\bcd\b/,
-            /\bpython\b/,
-            /\bpython3\b/,
-            /\buv\b/,
-            /\bpip\b/,
-            /\bgit\b/,
-            /\brm\b/,
-            /\bcp\b/,
-            /\bmv\b/,
-            /\bwhich\b/,
-            /\bcommand\b/,
-            /\bexport\b/,
-            /\bsource\b/,
-          ]
-          for (const pattern of invalidPatterns) {
-            if (pattern.test(toScan)) {
+        if (MAKE_ENFORCE) {
+          if (MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES.includes(targetName)) {
+            // Valid Makefile target that happens to contain a forbidden word in its name
+            // Strip VAR=val assignments before checking for metacharacters
+            const argsStripped = restArgs.replace(/[A-Za-z_][A-Za-z0-9_]*=('[^']*'|"[^"]*"|\S*)/g, "")
+            if (SHELL_META_CHARS.test(argsStripped)) {
+              const matched = argsStripped.match(SHELL_META_CHARS)
               throw new Error(
                 formatBashBlockedMessage(
                   trimmed,
-                  `Forbidden command/shell builtin detected: ${pattern.source}. ` +
-                  `Only 'make <target> VAR=val' is allowed. ` +
-                  `Create a Makefile target for this operation.`
+                  `Shell metacharacter(s) forbidden in make args: ${matched?.join(", ")}. `
                 )
               )
+            }
+          } else {
+            const invalidPatterns = [
+              /\b2>&1\b/,
+              /\b>\s/,
+              /\b<\s/,
+              /\brg\b/,
+              /\btail\b/,
+              /\bhead\b/,
+              /\bgrep\b/,
+              /\bcat\b/,
+              /\bfind\b/,
+              /\bls\b/,
+              /\bcd\b/,
+              /\bpython\b/,
+              /\bpython3\b/,
+              /\buv\b/,
+              /\bpip\b/,
+              /\bgit\b/,
+              /\brm\b/,
+              /\bcp\b/,
+              /\bmv\b/,
+              /\bwhich\b/,
+              /\bcommand\b/,
+              /\bexport\b/,
+              /\bsource\b/,
+            ]
+            for (const pattern of invalidPatterns) {
+              if (pattern.test(toScan)) {
+                throw new Error(
+                  formatBashBlockedMessage(
+                    trimmed,
+                    `Forbidden command/shell builtin detected: ${pattern.source}. ` +
+                    `Only 'make <target> VAR=val' is allowed. ` +
+                    `Create a Makefile target for this operation.`
+                  )
+                )
+              }
             }
           }
         }

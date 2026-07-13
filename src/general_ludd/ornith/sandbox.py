@@ -8,8 +8,11 @@ is turned on.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
+from types import TracebackType
 
 from general_ludd.security.sanitize import confine_path
 
@@ -56,3 +59,112 @@ def ornith_sandbox_preexec() -> None:
         apply_limits(ORNITH_SANDBOX_MEM_MB, ORNITH_SANDBOX_CPU_S)
     except Exception:
         pass
+
+
+class OrnithSandbox:
+    """Filesystem-isolated temp directory for the ornith coding-agent subprocess.
+
+    The sandbox is a disposable ``tempfile.mkdtemp`` that the coding agent runs
+    inside. All file writes by the agent are confined to this directory because
+    the subprocess CWD is set to it and ``preexec_fn`` ensures the process
+    starts there. Cleanup removes the temp dir and its contents.
+
+    Use as a context manager for automatic teardown, or call ``cleanup()``
+    explicitly.
+    """
+
+    def __init__(self) -> None:
+        self.temp_dir = Path(tempfile.mkdtemp(prefix="ornith-sandbox-"))
+        self._cleaned = False
+
+    def cleanup(self) -> None:
+        if not self._cleaned and self.temp_dir.exists():
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+            self._cleaned = True
+
+    def __enter__(self) -> OrnithSandbox:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.cleanup()
+
+
+def create_ornith_sandbox() -> OrnithSandbox:
+    """Create a filesystem-isolated sandbox for the coding-agent subprocess.
+
+    Returns an :class:`OrnithSandbox` that can be used as a context manager.
+    """
+    return OrnithSandbox()
+
+
+def _sandbox_preexec_fn(
+    mem_mb: int, cpu_s: int, sandbox_dir: str
+) -> None:
+    """Set RLIMITs then chdir into sandbox_dir before exec."""
+    import os as _os
+
+    try:
+        _os.chdir(sandbox_dir)
+    except OSError:
+        pass
+    try:
+        from general_ludd.system.rlimit import apply_limits
+
+        apply_limits(mem_mb, cpu_s)
+    except Exception:
+        pass
+
+
+def ornith_sandboxed_run(
+    cmd: list[str],
+    timeout: int = 300,
+    mem_mb: int | None = None,
+    cpu_s: int | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, object]:
+    """Run *cmd* inside a filesystem-isolated temp-directory sandbox.
+
+    Creates an :class:`OrnithSandbox`, changes the subprocess CWD into it,
+    applies RLIMIT_AS + RLIMIT_CPU caps via ``preexec_fn``, and returns a dict
+    with stdout, stderr, and returncode.
+
+    The sandbox temp dir is cleaned up after the subprocess exits.
+    """
+    effective_mem = mem_mb if mem_mb is not None else ORNITH_SANDBOX_MEM_MB
+    effective_cpu = cpu_s if cpu_s is not None else ORNITH_SANDBOX_CPU_S
+
+    with create_ornith_sandbox() as sandbox:
+        merged_env: dict[str, str] = dict(os.environ)
+        if env:
+            merged_env.update(env)
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(sandbox.temp_dir),
+                env=merged_env,
+                preexec_fn=lambda: _sandbox_preexec_fn(
+                    effective_mem, effective_cpu, str(sandbox.temp_dir)
+                ),
+            )
+            return {
+                "stdout": proc.stdout or "",
+                "stderr": proc.stderr or "",
+                "returncode": proc.returncode,
+            }
+        except subprocess.TimeoutExpired as exc:
+            return {
+                "stdout": exc.stdout or "" if isinstance(exc.stdout, str) else "",
+                "stderr": exc.stderr or "" if isinstance(exc.stderr, str) else "",
+                "returncode": -1,
+            }
+        except FileNotFoundError:
+            return {"stdout": "", "stderr": f"binary not found: {cmd[0]}", "returncode": -1}

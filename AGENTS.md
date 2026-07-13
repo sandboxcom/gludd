@@ -1215,7 +1215,7 @@ not stop the relapse, so it is now ENFORCED by a hook.
 **You MUST only run `make <target>` commands in bash. Never run any other command directly.**
 
 - ALLOWED: `make test`, `make lint`, `make init`, `make sync`, etc.
-- DENIED: `uv run ...`, `python3 ...`, `pip install ...`, `git ...`, `which ...`, `ls ...`, `cat ...`, `find ...`, `rm ...`, or any other direct command.
+- DENIED: `uv ...`, `python3 ...`, `pip ...`, `git ...`, `which ...`, `ls ...`, `cat ...`, `find ...`, `rm ...`, `cp ...`, `mv ...`, `rg ...`, `tail ...`, `head ...`, `command ...`, `export ...`, `source ...`, or any other direct command.
 
 **Shell metacharacters are FORBIDDEN:**
 
@@ -1232,6 +1232,7 @@ not stop the relapse, so it is now ENFORCED by a hook.
 | `2>&1` | Redirect stderr | Chains stderr to stdout |
 | `{}` | Brace expansion | Generates arguments |
 | `!` | History expansion | Accesses previous commands |
+| `\\` | Backslash escape | Escapes special characters, bypasses make-only |
 
 **If you need ANY of these, create a Makefile target.** Make targets ARE allowed to use metacharacters internally.
 
