@@ -430,20 +430,20 @@ const defaultImpl: HotModule = {
         return
       }
 
-      if (_prevMessageDispatchCount > 0 && _prevMessageDispatchCount < 5 && openWorkExists({ isCommitTool: commitToolMode })) {
+      if (_prevMessageDispatchCount > 0 && _prevMessageDispatchCount < 2 && openWorkExists({ isCommitTool: commitToolMode })) {
         return {
           permissionDecision: "deny" as const,
           message: [
-            "⛔ MESSAGE-SHAPE VIOLATION — MUST DISPATCH ≥5 PER WAVE",
+            "⛔ MESSAGE-SHAPE VIOLATION — MUST DISPATCH ≥2 PER WAVE",
             "",
             `Previous message dispatched only ${_prevMessageDispatchCount} subagent(s).`,
-            "The message-shape rule (AGENTS.md) requires ZERO or ≥5 dispatches per",
-            "agent response.  1–4 dispatches is the dribbling anti-pattern.",
+            "The message-shape rule (AGENTS.md) requires ZERO or ≥2 dispatches per",
+            "agent response when work exists.  1 dispatch is the dribbling anti-pattern.",
             "",
-            "Your next message MUST contain ≥5 parallel task/agent dispatches.",
+            "Your next message MUST contain ≥2 parallel task/agent dispatches.",
             "Do not proceed with serial tool calls.  BATCH YOUR DISPATCHES.",
             "",
-            "CORRECT: send one message with 5+ Task tool calls in parallel.",
+            "CORRECT: send one message with 2+ Task tool calls in parallel.",
             "INCORRECT: send one dispatch, wait, send another.",
           ].join("\n"),
         }
