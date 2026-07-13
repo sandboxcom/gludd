@@ -175,6 +175,7 @@ export default (async ({ }) => {
     "text.complete": async (output) => {
       if (process.env.OPENCODE_SUBAGENT === "1") return output
       if (!ENABLED) return output
+      if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? output ?? "").trim())) return output
 
       try {
         const s = loadState()

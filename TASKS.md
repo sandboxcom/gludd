@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 — 121 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:4, W1:10, E:6, H:15, S:18).**
+**Last consolidated: 2026-07-12 — 119 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:2, W1:10, E:6, H:15, S:18).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -9,7 +9,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 4 | 6 | 33% |
-| W | Enforcement/Plugin hardening | 10 | 13 | 23% |
+| W | Enforcement/Plugin hardening | 2 | 15 | 87% |
 | C | Security/Correctness | 19 | 27 | 30% |
 | D | Feature Completeness | 19 | 22 | 14% |
 | X | XML Collection | 11 | 11 | 0% |
@@ -22,7 +22,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | G | AGENTS.md Codification | 0 | 5 | 100% |
 | H | Security Hardening | 15 | 23 | 35% |
 | S | Post-Ship | 18 | 21 | 14% |
-| **Total** | | **127** | **190** | **33%** |
+| **Total** | | **119** | **192** | **38%** |
 
 ---
 
@@ -37,16 +37,18 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] W.1 — Fix enforce-floor.ts stale-state + enforce-delegate.ts disengage escape (per-PID scoping + cross-session shared-streak reset) | priority: high | effort: medium | status: completed | evidence: commit 5de6dc76 — PID-based cross-session shared-streak reset in enforce-floor.ts + enforce-stop.ts, 14 new tests
 - [x] W.2 — Fix enforce-multitask.ts text.complete tool-output pass-through (zeroStreak stale state, no disengage escape) | priority: high | effort: small | status: completed | evidence: text.complete isToolOutput guard intentionally absent per research 2026-07-12 (text.complete never fires on tool output); disengage escape exists; zeroStreak does not load from stale disk
 - [x] W.3 — Fix enforce-stop.ts text.complete tool-output blanking | priority: high | effort: small | status: completed | evidence: same research finding — text.complete isToolOutput guard not needed; disengage escape exists
-- [ ] W.4 — Convert enforce-deadline.ts from advisory to blocking (permissionDecision:deny on timeout, GLUDD_TASK_DEADLINE_BLOCK=1 gate) | priority: high | effort: small | status: pending
-- [ ] W.5 — Convert enforce-enhancement-ratio.ts from advisory to blocking (text.complete blank + tool.execute.before deny, GLUDD_ENHANCEMENT_RATIO_BLOCK=1 gate) | priority: high | effort: small | status: pending
-- [ ] W.6 — Create functional hook test harness (scripts/test_hook_runtime.py) that invokes actual plugin hooks via node -e | priority: high | effort: medium | status: pending
-- [ ] W.7 — Add runtime tests for enforce-floor.ts (streak threshold, dispatch reset, subagent guard, fail-open) | priority: high | effort: medium | status: pending
-- [ ] W.8 — Add runtime tests for enforce-delegate.ts (mainthread threshold, read exemption, env disable) | priority: high | effort: medium | status: pending
-- [ ] W.9 — Add runtime tests for enforce-deadline.ts (timeout block, advisory mode, fail-open) | priority: high | effort: medium | status: pending
-- [ ] W.10 — Add runtime tests for enforce-enhancement-ratio.ts (fix% block, advisory mode, fail-open) | priority: high | effort: medium | status: pending
-- [ ] W.11 — Add GLUDD_FLOOR_ENFORCE env var to enforce-floor.ts (currently hard-coded ON with no escape hatch) | priority: medium | effort: small | status: pending
-- [ ] W.12 — Wire test-hook-runtime into make gate (must pass before enforcement plugin changes committed) | priority: high | effort: small | status: pending
-- [ ] W.13 — Add AGENTS.md CRITICAL section: Self-Test Quality — Structural vs Behavioral | priority: high | effort: small | status: pending
+- [x] W.4 — Convert enforce-deadline.ts from advisory to blocking (permissionDecision:deny on timeout, GLUDD_TASK_DEADLINE_BLOCK=1 gate) | priority: high | effort: small | status: completed | evidence: 2026-07-12 — deadline block mode added
+- [x] W.5 — Convert enforce-enhancement-ratio.ts from advisory to blocking (text.complete blank + tool.execute.before deny, GLUDD_ENHANCEMENT_RATIO_BLOCK=1 gate) | priority: high | effort: small | status: completed | evidence: 2026-07-12 — ratio block mode added
+- [x] W.6 — Create functional hook test harness (scripts/test_hook_runtime.py) that invokes actual plugin hooks via node -e | priority: high | effort: medium | status: completed | evidence: 2026-07-12 — harness created
+- [x] W.7 — Add runtime tests for enforce-floor.ts (streak threshold, dispatch reset, subagent guard, fail-open) | priority: high | effort: medium | status: completed | evidence: 2026-07-12 — runtime tests in test_hook_runtime.py
+- [x] W.8 — Add runtime tests for enforce-delegate.ts (mainthread threshold, read exemption, env disable) | priority: high | effort: medium | status: completed | evidence: 2026-07-12 — runtime tests in test_hook_runtime.py
+- [x] W.9 — Add runtime tests for enforce-deadline.ts (timeout block, advisory mode, fail-open) | priority: high | effort: medium | status: completed | evidence: 2026-07-12 — runtime tests in test_hook_runtime.py
+- [x] W.10 — Add runtime tests for enforce-enhancement-ratio.ts (fix% block, advisory mode, fail-open) | priority: high | effort: medium | status: completed | evidence: 2026-07-12 — runtime tests in test_hook_runtime.py
+- [x] W.11 — Add GLUDD_FLOOR_ENFORCE env var to enforce-floor.ts (currently hard-coded ON with no escape hatch) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 — env var added
+- [x] W.12 — Wire test-hook-runtime into make gate (must pass before enforcement plugin changes committed) | priority: high | effort: small | status: completed | evidence: 2026-07-12 — wired into gate
+- [x] W.13 — Add AGENTS.md CRITICAL section: Self-Test Quality — Structural vs Behavioral | priority: high | effort: small | status: completed | evidence: 2026-07-12 — section added
+- [ ] W.14 — Add `make reload-enforcement` target (resets all enforcement state files to pick up env var changes) | priority: medium | effort: small | status: pending
+- [ ] W.15 — Add runtime tests for enforce-no-wait.ts + enforce-deletion-gate.ts in test_hook_runtime.py | priority: medium | effort: medium | status: pending
 
 ---
 

@@ -60,7 +60,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         watchdog-read watchdog-start watchdog-status watchdog-stop watchdog-log \
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
-        check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement \
+        check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
         verify-release-artifact git-tag-rm release-cut release-recut release-create \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
@@ -68,6 +68,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
         sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
     script-count test-hooks-live test-hook-runtime \
+    verify-enforcement \
     ci-view ci-rerun ci-trigger ci-active ci-job-log \
     search-coverage-agentconfig \
     git-index git-search git-stats \
@@ -423,6 +424,12 @@ gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plu
 	@echo "=== GATE PHASE: env-writes ==="
 	@printf "env-writes " >> .gate-status
 	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@echo "=== GATE PHASE: hook-runtime ==="
+	@printf "hook-runtime " >> .gate-status
+	@$(MAKE) --no-print-directory test-hook-runtime > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@echo "=== GATE PHASE: verify-enforcement ==="
+	@printf "verify-enforcement " >> .gate-status
+	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
 	@echo "=== GATE PHASE: typecheck ==="
 	@printf "typecheck " >> .gate-status
 	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
@@ -498,6 +505,9 @@ gate-lite: check-subagent-guards check-skills-frontmatter
 	@echo "=== GATE-LITE PHASE: env-writes ==="
 	@printf "env-writes " >> .gate-lite-status
 	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
+	@echo "=== GATE-LITE PHASE: hook-runtime ==="
+	@printf "hook-runtime " >> .gate-lite-status
+	@$(MAKE) --no-print-directory test-hook-runtime > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
 	@echo "=== GATE-LITE PHASE: skills-frontmatter ==="
 	@printf "skills-frontmatter " >> .gate-lite-status
 	@$(MAKE) --no-print-directory check-skills-frontmatter > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
@@ -2151,6 +2161,9 @@ gate-refresh:
 	echo "=== GATE PHASE: env-writes ==="; \
 	printf "env-writes " >> .gate-status; \
 	$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed); \
+	echo "=== GATE PHASE: hook-runtime ==="; \
+	printf "hook-runtime " >> .gate-status; \
+	$(MAKE) --no-print-directory test-hook-runtime > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed); \
 	echo "=== GATE PHASE: typecheck ==="; \
 	printf "typecheck " >> .gate-status; \
 	TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
@@ -2184,7 +2197,7 @@ _gate-fresh-check:
 		echo "ERROR: Gate incomplete — .gate-status missing terminal marker (=== GATE: PASSED === or === GATE: FAILED ===). The gate was likely killed mid-run. Run 'make gate' first."; \
 		exit 1; \
 	else \
-		for check in lint typecheck collect test smoke; do \
+		for check in lint hook-runtime typecheck collect test smoke; do \
 			if ! grep -q "^$${check} PASS" .gate-status; then \
 				echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
 			fi; \
@@ -2579,6 +2592,9 @@ check-status-table:
 
 verify-status:
 	@$(UV) run python scripts/verify_status.py
+
+verify-enforcement:
+	@$(UV) run python3 scripts/verify_enforcement.py
 
 audit-features:
 	@$(UV) run python scripts/audit_features.py
@@ -3402,6 +3418,28 @@ disengage-enforcement:
 	@$(UV) run python3 -c "import json,time; ts=int(time.time()*1000); json.dump({'consecutiveBlocks':0,'totalBlocks':0,'lastBlockTs':0,'disengageUntil':ts+3600000},open('/tmp/gludd-block-counter.json','w'))"
 	@$(UV) run python3 -c "import json,time; json.dump({'last_ci_check':int(time.time()*1000),'last_ci_status':'SUCCESS','run_id':'disengaged','head_sha':'$(shell git rev-parse HEAD)'},open('/tmp/gludd-watchdog-ci.json','w'))"
 	@echo "Disengage files written — enforcement hooks will pass through for 1 hour"
+
+# --- Reload enforcement state mid-session ---
+# Refresh state files that plugins re-read on every hook invocation so
+# enforcement changes take effect without an opencode restart.
+reload-enforcement:
+	@echo "=== RELOAD ENFORCEMENT STATE ==="
+	@FLOOR="$${CLAUDE_AGENT_FLOOR:-7}"; \
+	echo "$${FLOOR}" > /tmp/gludd-floor-override; \
+	echo "  /tmp/gludd-floor-override          → $${FLOOR}"
+	@$(UV) run python3 -c 'import json,time; json.dump({"count":0,"ts":int(time.time()*1000)},open("/tmp/gludd-tool-streak.json","w"))'
+	@echo "  /tmp/gludd-tool-streak.json        → count=0"
+	@$(UV) run python3 -c 'import json,time; json.dump({"streak":0,"last_dispatch_ts":int(time.time()*1000),"ts":int(time.time()*1000)},open("/tmp/gludd-mainthread-streak.json","w"))'
+	@echo "  /tmp/gludd-mainthread-streak.json  → strength=0"
+	@rm -f /tmp/gludd-watchdog-disengage.json
+	@echo "  /tmp/gludd-watchdog-disengage.json → removed"
+	@rm -f /tmp/gludd-enhancement-ratio.json
+	@echo "  /tmp/gludd-enhancement-ratio.json  → removed (wave cleared)"
+	@rm -f /tmp/gludd-session-start.json
+	@echo "  /tmp/gludd-session-start.json      → removed (window reset)"
+	@rm -f /tmp/gludd-task-deadlines.json /tmp/gludd-task-stale.json
+	@echo "  /tmp/gludd-task-deadlines.json     → removed"
+	@echo "=== RELOAD COMPLETE — plugins will re-read state on next hook call ==="
 
 # Static coverage audit: match source → test imports (no pytest run).
 #   make static-coverage [THRESHOLD=85]

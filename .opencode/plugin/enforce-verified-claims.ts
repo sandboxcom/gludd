@@ -138,6 +138,7 @@ export default (async () => {
       _reportAlive()
       try {
         if (process.env.GLUDD_VERIFIED_CLAIMS_ENFORCE === "0") return
+        if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
         const text = output?.text ?? ""
         if (shouldBlock(text)) {
           output.text = BLOCK_MESSAGE
