@@ -61,13 +61,26 @@ def _load_deepseek_key() -> str | None:
     return None
 
 
-_DEEPSEEK_KEY = _load_deepseek_key()
 _SKIP_REASON = (
     "DEEPSEEK_API_KEY not set and .deepseek.key not found — "
     "set DEEPSEEK_API_KEY or place key in .deepseek.key to run game-building test"
 )
 
 _DS_BASE_URL = "https://api.deepseek.com/v1"
+_E2E_TARGET_GAME = os.environ.get("E2E_TARGET_GAME", "").strip().lower()
+
+_GATEWAY_CACHE: dict[str, Any] = {}
+_KEY_CACHE: str | None | object = object()  # sentinel for unset
+
+
+def _get_deepseek_key() -> str | None:
+    global _KEY_CACHE
+    if _KEY_CACHE is object:  # unset sentinel
+        _KEY_CACHE = _load_deepseek_key()
+    return cast(str | None, _KEY_CACHE)
+
+
+_DEEPSEEK_KEY = _get_deepseek_key()
 
 
 
@@ -166,9 +179,15 @@ def _init_game_obs(game_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _build_deepseek_gateway() -> Any:
+    if "gateway" in _GATEWAY_CACHE:
+        return _GATEWAY_CACHE["gateway"]
+
     from general_ludd.models.gateway import ModelGateway, ModelProfile
     from general_ludd.models.provider_registry import ProviderRegistry
     from general_ludd.secrets.env import EnvSecretsManager
+
+    key = _get_deepseek_key()
+    assert key, "key must be set before building gateway"
 
     profile = ModelProfile(
         model_profile_id="deepseek_coder",
@@ -194,10 +213,11 @@ def _build_deepseek_gateway() -> Any:
     registry = ProviderRegistry()
     registry.register_provider("openai", "langchain_openai", "ChatOpenAI")
     secrets = EnvSecretsManager()
-    assert _DEEPSEEK_KEY, "key must be set before building gateway"
-    secrets.set("DEEPSEEK_API_KEY", _DEEPSEEK_KEY)
+    secrets.set("DEEPSEEK_API_KEY", key)
     secrets.set("DEEPSEEK_API_BASE", _DS_BASE_URL)
-    return cast(Any, ModelGateway)(profiles=[profile], provider_registry=registry, secrets_manager=secrets)
+    gateway = cast(Any, ModelGateway)(profiles=[profile], provider_registry=registry, secrets_manager=secrets)
+    _GATEWAY_CACHE["gateway"] = gateway
+    return gateway
 
 
 # ---------------------------------------------------------------------------
