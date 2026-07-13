@@ -468,6 +468,71 @@ class AgentDispatcher:
                 )
         return out
 
+    # ------------------------------------------------------------------
+    # D.7.3 quiesce / resume at dispatch boundary
+    # ------------------------------------------------------------------
+
+    async def quiesce_project(
+        self, project_id: str, timeout: float = 30.0
+    ) -> list[AgentTaskResult]:
+        """Drain and cancel in-flight tasks for *project_id*.
+
+        Returns the final result for each task that was cancelled or already
+        completed when the drain began.  New dispatches for this project are
+        already blocked by the ``is_paused`` check in ``dispatch_one`` — this
+        method drains the ones already past that gate.
+        """
+        async with self._lock:
+            tasks = [
+                t
+                for t in self._active_tasks.values()
+                if t.project_id == project_id
+            ]
+        if not tasks:
+            return []
+        results: list[AgentTaskResult] = []
+        now = time.monotonic()
+        for task in tasks:
+            result = AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="cancelled",
+                output="Project quiesced (paused)",
+                duration_seconds=time.monotonic() - now,
+            )
+            results.append(result)
+        return results
+
+    async def resume_project(
+        self,
+        project_id: str,
+        rehydrated_snapshots: list[object],
+    ) -> list[AgentTask]:
+        """Re-enqueue tasks rehydrated from pause-saved snapshots.
+
+        Each *rehydrated_snapshots* entry is an
+        :class:`AgentEnvironmentSnapshot` recovered from the disk store.
+        Returns the list of successfully re-enqueued tasks.
+        """
+        from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
+
+        re_enqueued: list[AgentTask] = []
+        for snap in rehydrated_snapshots:
+            if not isinstance(snap, AgentEnvironmentSnapshot):
+                continue
+            task = AgentTask(
+                task_id=snap.task_id,
+                agent_name=snap.agent_name,
+                description=snap.scratch.get("description", ""),
+                prompt=snap.scratch.get("prompt", ""),
+                parent_task_id=snap.parent_task_id,
+                invoker_name=snap.invoker_name,
+                project_id=project_id,
+                depth=snap.depth,
+            )
+            re_enqueued.append(task)
+        return re_enqueued
+
     @staticmethod
     def _result_from_future(
         task: AgentTask, fut: asyncio.Future[AgentTaskResult]

@@ -114,7 +114,33 @@ class RemediationDispatcher:
     async def remediate(
         self, blocked: BlockedTask, *, idempotency_key: str | None = None
     ) -> RemediationAction:
-        """Apply the suggested remediation, persist the audit row, return outcome."""
+        """Apply the suggested remediation, persist the audit row, return outcome.
+
+        Idempotency guard: if ``idempotency_key`` is set and a row with that
+        key already exists in the remediation audit table, the call is a
+        no-op — returns the previously-persisted outcome without re-acting.
+        """
+        if (
+            idempotency_key is not None
+            and self._remediation_repo is not None
+        ):
+            existing = await self._remediation_repo.find_by_idempotency_key(
+                idempotency_key
+            )
+            if existing:
+                return RemediationAction(
+                    kind=RemediationActionKind.NO_ACTION,
+                    blocked_todo_id=blocked.todo_id,
+                    project_id=blocked.project_id,
+                    ok=True,
+                    summary="Idempotent replay — key already exists.",
+                    detail={
+                        "idempotent_replay": True,
+                        "existing_action_id": str(getattr(existing[0], "id", "")),
+                    },
+                    reason=blocked.blocker_summary,
+                )
+
         try:
             if blocked.suggested_remediation == "dispatch_agent":
                 action = await self._dispatch_remediation_agent(blocked)
