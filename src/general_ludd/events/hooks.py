@@ -22,16 +22,30 @@ class SSRFBlockedError(ValueError):
     """Raised when a webhook URL targets a non-routable or internal address."""
 
 
+def is_safe_fetch_url(url: str) -> bool:
+    """SSRF guard for webhook URLs — http+https literal host deny.
+
+    Returns ``True`` only when the URL is well-formed, uses ``http`` or ``https``
+    scheme, and its LITERAL host is not a loopback / link-local / RFC-1918 /
+    metadata target. Delegates the host/scheme decision to the canonical
+    :func:`general_ludd.security.ssrf.is_url_blocked`. Performs NO DNS resolution
+    and NO network I/O — safe to call on any hot path.
+
+    This is the public SSRF gate for webhooks; ``register_webhook`` and
+    ``_fire_webhook`` both funnel through it so the check can never drift.
+    """
+    if not url or not isinstance(url, str):
+        return False
+    return not is_url_blocked(url, scheme_allowlist=("http", "https"))
+
+
 def _ensure_safe_webhook_url(url: str) -> None:
     """Raise :class:`SSRFBlockedError` if *url* must not be fetched.
 
-    Webhooks allow both http and https (matching the connector policy); the
-    literal host/IP/scheme decision is delegated to the canonical
-    :func:`is_url_blocked`. No DNS / no network — pair with
-    ``follow_redirects=False`` so a 30x to an internal address cannot bypass
-    this registration-time check.
+    Delegates to :func:`is_safe_fetch_url` — the single SSRF decision point for
+    webhooks — so registration-time and fire-time checks can never diverge.
     """
-    if is_url_blocked(url, scheme_allowlist=("http", "https")):
+    if not is_safe_fetch_url(url):
         raise SSRFBlockedError(
             f"Webhook URL rejected by SSRF guard (internal/loopback/link-local/"
             f"metadata or bad scheme): {url!r}"
@@ -255,6 +269,14 @@ class HookSystem:
             workaround, this never consumes a thread-pool thread and cannot
             freeze the event loop.
             """
+            # Defence-in-depth: re-check SSRF at fire time so a URL that was
+            # somehow mutated between registration and delivery cannot reach
+            # an internal address.
+            if not is_safe_fetch_url(config.url):
+                raise SSRFBlockedError(
+                    f"Webhook URL rejected at fire time: {config.url!r}"
+                )
+
             async with httpx.AsyncClient() as client:
                 last_exc: Exception | None = None
                 for attempt in range(retry_count):

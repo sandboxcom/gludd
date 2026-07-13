@@ -67,6 +67,30 @@ class _HealthTrackerProtocol(Protocol):
     def record_event(self, event: object) -> None: ...
 
 
+def _is_healthy_with_timeout(
+    tracker: _HealthTrackerProtocol,
+    profile_id: str,
+    *,
+    timeout: float = 5.0,
+) -> bool:
+    result: list[bool] = [False]
+    exc_info: list[BaseException | None] = [None]
+
+    def _check() -> None:
+        try:
+            result[0] = tracker.is_healthy(profile_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            exc_info[0] = exc
+            result[0] = False
+
+    t = threading.Thread(target=_check, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
+        return False
+    return result[0]
+
+
 class _BudgetGuardProtocol(Protocol):
     def record_spend(self, cost: float) -> None: ...
 
@@ -1524,6 +1548,11 @@ class ModelGateway:
         (cycle-safe: a fallback chain that loops back to an earlier profile,
         including ``from_profile_id`` itself, is not retried).
 
+        S.3: before attempting each fallback, pre-checks the health (with a
+        timeout) AND the budget (via ``check_budget``). Over-budget and
+        unhealthy fallbacks are skipped so the chain can try the next one
+        rather than aborting entirely.
+
         Returns (response, None, attempts) on success, or
         (None, last_exc, attempts) if every reachable profile failed.
         ``attempts`` records, in call order, each profile actually attempted
@@ -1541,6 +1570,9 @@ class ModelGateway:
         queue: list[str] = list(fallback_ids)
         prev_id = from_profile_id
         depth: int = 0
+        # S.3: extract budget params for per-fallback pre-check
+        estimated_cost: float = kwargs.get("estimated_cost", 0.0)
+        budget_remaining: float = kwargs.get("budget_remaining", float("inf"))
         while queue:
             fb_id = queue.pop(0)
             depth += 1
@@ -1549,8 +1581,26 @@ class ModelGateway:
             if fb_id in visited:
                 continue
             visited.add(fb_id)
-            if tracker is not None and not tracker.is_healthy(fb_id):
-                # Circuit open for this fallback: skip without billing/calling.
+            # S.3: health check with timeout (hung tracker = unhealthy)
+            if tracker is not None and not _is_healthy_with_timeout(tracker, fb_id):
+                continue
+            # S.3: budget pre-check before attempting fallback (skip over-budget)
+            if (
+                estimated_cost > 0.0
+                and not math.isinf(estimated_cost)
+                and not self.check_budget(fb_id, estimated_cost, budget_remaining, messages=messages)
+            ):
+                attempts.append({
+                    "profile_id": fb_id,
+                    "reason": (
+                        f"budget exceeded before attempt "
+                        f"(estimated={estimated_cost}, remaining={budget_remaining})"
+                    ),
+                })
+                last_exc = BudgetExceededError(
+                    f"Fallback '{fb_id}' estimated cost {estimated_cost} "
+                    f"exceeds remaining budget {budget_remaining}"
+                )
                 continue
             if prev_id is not None:
                 self._record_failover(
@@ -1562,19 +1612,27 @@ class ModelGateway:
             try:
                 result = self._call_fallback(fb_id, messages, **kwargs)
             except BudgetExceededError:
-                # F-F: a budget rejection on the fallback path MUST propagate.
-                # Previously the bare ``except Exception`` below swallowed it and
-                # continued to the next fallback, spending past the per-profile
-                # budget ceiling. Re-raise (mirrors _try_call_model /
-                # call_model_with_fallback) so the budget gate is enforced.
-                raise
+                # S.3: budget rejection at call time — skip this fallback and try
+                # the next one. The pre-check above should have caught most cases,
+                # but a race (budget consumed between pre-check and call) can still
+                # trigger this. Skipping one is safe; the caller's budget_remaining
+                # hasn't changed for other fallbacks with different pricing.
+                attempts.append({
+                    "profile_id": fb_id,
+                    "reason": "budget exceeded at call time",
+                })
+                last_exc = BudgetExceededError(
+                    f"Fallback '{fb_id}' budget exceeded at call time"
+                )
+                prev_id = fb_id
+                continue
             except SSRFRejectionError:
                 # F-E: an SSRF egress rejection on the fallback path MUST
                 # propagate. _try_call_model already re-raises it, but the bare
                 # ``except Exception`` below would re-swallow it here and continue
                 # to the next fallback, silently routing past the blocked egress.
-                # Re-raise (mirrors BudgetExceededError) so the SSRF guard hard-
-                # stops the chain instead of falling open.
+                # Re-raise so the SSRF guard hard-stops the chain instead of
+                # falling open.
                 raise
             except ModelPausedError:
                 raise

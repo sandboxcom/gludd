@@ -259,6 +259,15 @@ class GitAutomation:
 
     def create_branch(self, name: str) -> str:
         _reject_leading_dash(name, kind="branch name")
+        existing = [
+            line.strip()
+            for line in self._run_git("branch", "--format=%(refname:short)")
+            .stdout.splitlines()
+        ]
+        if any(line == name for line in existing):
+            raise ValueError(
+                f"branch {name!r} already exists; refusing to overwrite"
+            )
         # `--` ends option parsing so the name is unambiguously the new branch.
         self._run_git("checkout", "-b", name, "--")
         return name
@@ -584,54 +593,63 @@ class GitAutomation:
     def merge_branch(self, repo_path: str, source: str, target: str, strategy: str = "ff") -> MergeResult:
         _reject_leading_dash(source, kind="merge source ref")
         _reject_leading_dash(target, kind="merge target ref")
-        # `git checkout <branch> --` ends option parsing with `--` AFTER the
-        # branch (the only checkout form that both switches branches and is
-        # option-safe; `git checkout -- <x>` would treat <x> as a pathspec).
-        # `target` is also already rejected if it leads with `-`.
-        self._run_git("checkout", target, "--", _cwd=repo_path)
-        # Options first, then `--`, then the source ref positional, so a
-        # leading-dash source could never be parsed as a merge option.
-        merge_args = ["merge"]
-        if strategy == "ff":
-            merge_args.append("--ff-only")
-        elif strategy == "no-ff":
-            merge_args.extend(["--no-ff", "-m", f"Merge {source} into {target}"])
-        elif strategy == "squash":
-            merge_args.append("--squash")
-        merge_args.extend(["--", source])
-        result = self._run_git(*merge_args, check=False, _cwd=repo_path)
-        if result.returncode != 0:
-            conflicts = []
-            if "CONFLICT" in result.stdout or "CONFLICT" in result.stderr:
-                conflicts = [source]
-            return MergeResult(success=False, strategy=strategy, message=result.stderr.strip(), conflicts=conflicts)
-        if strategy == "squash":
-            # Fail-closed on squash commit error (finding #12): ``check=True`` makes
+        # Hold the per-repo lock for the ENTIRE sequence so another process
+        # cannot interleave between checkout and merge (#63, C.17).
+        with git_repo_lock(repo_path):
+            # `git checkout <branch> --` ends option parsing with `--` AFTER the
+            # branch (the only checkout form that both switches branches and is
+            # option-safe; `git checkout -- <x>` would treat <x> as a pathspec).
+            # `target` is also already rejected if it leads with `-`.
+            self._run_git("checkout", target, "--", _cwd=repo_path)
+            # Options first, then `--`, then the source ref positional, so a
+            # leading-dash source could never be parsed as a merge option.
+            merge_args = ["merge"]
+            if strategy == "ff":
+                merge_args.append("--ff-only")
+            elif strategy == "no-ff":
+                merge_args.extend(["--no-ff", "-m", f"Merge {source} into {target}"])
+            elif strategy == "squash":
+                merge_args.append("--squash")
+            merge_args.extend(["--", source])
+            # Fail-closed on merge failure (C.17): ``check=True`` makes
             # ``_run_git`` raise ``CalledProcessError`` on a non-zero exit, which we
-            # translate into a failure result. The returncode fallback below catches
-            # the case where the caller mocks ``subprocess.run`` (a mock does not
-            # implement subprocess's check logic), so BOTH the real-execution and
-            # the mocked paths are fail-closed — a failed squash commit can never
-            # surface as ``success=True``.
+            # translate into a failure result — structurally impossible to
+            # accidentally skip the error check and return success=True.
             try:
-                squash_result = self._run_git(
-                    "commit", "-m", f"Merge {source} into {target} (squash)",
-                    check=True, _cwd=repo_path,
-                )
+                result = self._run_git(*merge_args, check=True, _cwd=repo_path)
             except subprocess.CalledProcessError as exc:
+                conflicts = []
+                stderr = (exc.stderr or "").strip()
+                stdout = getattr(exc, "output", "") or ""
+                combined = stderr or stdout
+                if "CONFLICT" in combined:
+                    conflicts = [source]
                 return MergeResult(
                     success=False,
                     strategy=strategy,
-                    message=(exc.stderr or "").strip() or "squash commit failed",
-                    conflicts=[],
+                    message=stderr or str(exc),
+                    conflicts=conflicts,
                 )
-            if squash_result.returncode != 0:
-                return MergeResult(
-                    success=False,
-                    strategy=strategy,
-                    message=(squash_result.stderr or squash_result.stdout).strip(),
-                    conflicts=[],
-                )
+            if strategy == "squash":
+                try:
+                    squash_result = self._run_git(
+                        "commit", "-m", f"Merge {source} into {target} (squash)",
+                        check=True, _cwd=repo_path,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    return MergeResult(
+                        success=False,
+                        strategy=strategy,
+                        message=(exc.stderr or "").strip() or "squash commit failed",
+                        conflicts=[],
+                    )
+                if squash_result.returncode != 0:
+                    return MergeResult(
+                        success=False,
+                        strategy=strategy,
+                        message=(squash_result.stderr or squash_result.stdout).strip(),
+                        conflicts=[],
+                    )
         return MergeResult(success=True, strategy=strategy, message=result.stdout.strip())
 
     def gated_commit(
@@ -702,68 +720,73 @@ class GitAutomation:
         """
         _reject_leading_dash(source, kind="merge source ref")
         _reject_leading_dash(target, kind="merge target ref")
-        try:
-            self._run_git("checkout", target, "--")
-            pre_sha = self._run_git("rev-parse", "HEAD").stdout.strip()
-        except subprocess.CalledProcessError as exc:
-            return GatedCommitResult(
-                success=False,
-                message=f"failed to checkout target {target!r}: {(exc.stderr or '').strip()}",
-            )
-        merge_args = ["merge"]
-        if strategy == "ff":
-            merge_args.append("--ff-only")
-        elif strategy == "no-ff":
-            merge_args.extend(["--no-ff", "-m", f"Merge {source} into {target}"])
-        elif strategy == "squash":
-            merge_args.append("--squash")
-        merge_args.extend(["--", source])
-        merge = self._run_git(*merge_args, check=False)
-        if merge.returncode != 0:
-            # Conflict / non-ff: clean up any in-progress merge and restore HEAD.
-            self._run_git("merge", "--abort", check=False)
-            self._run_git("reset", "--hard", pre_sha, check=False)
-            return GatedCommitResult(
-                success=False,
-                gate_returncode=merge.returncode,
-                message=(merge.stderr or "merge failed").strip(),
-            )
-        if strategy == "squash":
+        # Hold the per-repo lock for the entire sequence (C.17, #63).
+        with git_repo_lock(self.repo_path):
             try:
-                self._run_git("commit", "-m", f"Merge {source} into {target} (squash)", check=True)
+                self._run_git("checkout", target, "--")
+                pre_sha = self._run_git("rev-parse", "HEAD").stdout.strip()
             except subprocess.CalledProcessError as exc:
+                return GatedCommitResult(
+                    success=False,
+                    message=f"failed to checkout target {target!r}: {(exc.stderr or '').strip()}",
+                )
+            merge_args = ["merge"]
+            if strategy == "ff":
+                merge_args.append("--ff-only")
+            elif strategy == "no-ff":
+                merge_args.extend(["--no-ff", "-m", f"Merge {source} into {target}"])
+            elif strategy == "squash":
+                merge_args.append("--squash")
+            merge_args.extend(["--", source])
+            # Fail-closed on merge failure (C.17): check=True so a non-zero
+            # exit always raises — structurally impossible to accidentally skip
+            # the error check and proceed past a failed merge.
+            try:
+                self._run_git(*merge_args, check=True)
+            except subprocess.CalledProcessError as exc:
+                self._run_git("merge", "--abort", check=False)
                 self._run_git("reset", "--hard", pre_sha, check=False)
                 return GatedCommitResult(
                     success=False,
-                    message=(exc.stderr or "").strip() or "squash commit failed (rolled back)",
+                    gate_returncode=exc.returncode,
+                    message=(exc.stderr or "merge failed").strip(),
                 )
-        # The merge is applied (HEAD moved). Gate the merged tree; roll back on fail.
-        try:
-            gate = subprocess.run(
-                gate_cmd,
-                cwd=self.repo_path,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=_GIT_TIMEOUT_SECONDS,
-                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
-            )
-        except subprocess.TimeoutExpired:
-            self._run_git("reset", "--hard", pre_sha, check=False)
+            if strategy == "squash":
+                try:
+                    self._run_git("commit", "-m", f"Merge {source} into {target} (squash)", check=True)
+                except subprocess.CalledProcessError as exc:
+                    self._run_git("reset", "--hard", pre_sha, check=False)
+                    return GatedCommitResult(
+                        success=False,
+                        message=(exc.stderr or "").strip() or "squash commit failed (rolled back)",
+                    )
+            # The merge is applied (HEAD moved). Gate the merged tree; roll back on fail.
+            try:
+                gate = subprocess.run(
+                    gate_cmd,
+                    cwd=self.repo_path,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=_GIT_TIMEOUT_SECONDS,
+                    env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+                )
+            except subprocess.TimeoutExpired:
+                self._run_git("reset", "--hard", pre_sha, check=False)
+                return GatedCommitResult(
+                    success=False, gate_returncode=124, message="gate command timed out (rolled back)"
+                )
+            if gate.returncode != 0:
+                self._run_git("reset", "--hard", pre_sha, check=False)
+                return GatedCommitResult(
+                    success=False,
+                    gate_returncode=gate.returncode,
+                    message=(gate.stderr or gate.stdout or "gate command failed").strip() + " (rolled back)",
+                )
+            sha = self._run_git("rev-parse", "HEAD").stdout.strip()
             return GatedCommitResult(
-                success=False, gate_returncode=124, message="gate command timed out (rolled back)"
+                success=True, commit_sha=sha, gate_returncode=0, message="merged"
             )
-        if gate.returncode != 0:
-            self._run_git("reset", "--hard", pre_sha, check=False)
-            return GatedCommitResult(
-                success=False,
-                gate_returncode=gate.returncode,
-                message=(gate.stderr or gate.stdout or "gate command failed").strip() + " (rolled back)",
-            )
-        sha = self._run_git("rev-parse", "HEAD").stdout.strip()
-        return GatedCommitResult(
-            success=True, commit_sha=sha, gate_returncode=0, message="merged"
-        )
 
     def create_release_tag(self, repo_path: str, fmt: str = "YYYYMMDDHHMMSS") -> str:
         now = datetime.now(tz=UTC)

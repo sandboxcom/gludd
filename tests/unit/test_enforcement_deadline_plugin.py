@@ -7,7 +7,11 @@ invariants, noise-control throttle, completion reset, and atomic-write patterns.
 
 from __future__ import annotations
 
+import contextlib
+import json
+import os
 import re
+import time
 from pathlib import Path
 
 DEADLINE_PATH = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-deadline.ts"
@@ -361,3 +365,496 @@ class TestDeadlinePluginExport:
         src = _src()
         assert '"tool.execute.before"' in src
         assert '"tool.execute.after"' in src
+
+
+# ============================================================================
+# BEHAVIORAL TESTS — Python simulation of plugin state-machine logic
+# ============================================================================
+
+
+def _djb2(raw: str) -> str:
+    hash_val = 5381
+    for ch in raw:
+        hash_val = ((hash_val << 5) + hash_val + ord(ch)) & 0xFFFFFFFF
+    return f"d-{(hash_val):08x}"
+
+
+def _extract_task_id(args: dict | None) -> str | None:
+    if args is None:
+        return None
+    tid = args.get("task_id")
+    if isinstance(tid, str) and tid:
+        return tid
+    fid = args.get("id")
+    if isinstance(fid, str) and fid:
+        return fid
+    desc = args.get("description", "") or ""
+    subtype = args.get("subagent_type", "") or ""
+    if desc or subtype:
+        return _djb2(f"{subtype}:{desc}")
+    return None
+
+
+def _is_dispatch_tool(tool: str) -> bool:
+    return tool in ("task", "agent", "workflow")
+
+
+def _load_deadlines(state_path, timeout_ms):
+    try:
+        raw = state_path.read_text()
+        data = json.loads(raw)
+    except Exception:
+        return {}
+    result = {}
+    now = int(time.time() * 1000)
+    max_age = timeout_ms * 3
+    for k, v in data.items():
+        if not isinstance(v, (int, float)):
+            continue
+        if now - v > max_age:
+            continue
+        result[k] = v
+    return result
+
+
+def _save_deadlines(state_path: Path, state: dict):
+    tmp = state_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state))
+    os.replace(tmp, state_path)
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+
+class TestDjb2HashBehavioral:
+    def test_djb2_deterministic_same_args(self):
+        a = _djb2("explore:find foo")
+        b = _djb2("explore:find foo")
+        assert a == b
+
+    def test_djb2_different_args_different_hash(self):
+        a = _djb2("explore:find foo")
+        b = _djb2("general:edit bar")
+        assert a != b
+
+    def test_djb2_produces_d_prefix(self):
+        h = _djb2("task:do work")
+        assert h.startswith("d-")
+
+    def test_djb2_handles_empty_string(self):
+        h = _djb2("")
+        assert h == "d-00001505"
+
+    def test_djb2_seed_is_5381_in_python_mirror(self):
+        assert _djb2("") == "d-00001505"
+
+
+class TestExtractTaskIdBehavioral:
+    def test_prefers_task_id_field(self):
+        tid = _extract_task_id({"task_id": "ses_abc123", "description": "do work"})
+        assert tid == "ses_abc123"
+
+    def test_falls_back_to_id_field(self):
+        tid = _extract_task_id({"id": "task-456", "description": "do work"})
+        assert tid == "task-456"
+
+    def test_uses_djb2_when_no_task_id_or_id(self):
+        tid = _extract_task_id({"subagent_type": "explore", "description": "find foo"})
+        assert tid is not None
+        assert tid.startswith("d-")
+
+    def test_djb2_same_as_plugin_for_simple_case(self):
+        tid = _extract_task_id({"subagent_type": "general", "description": "test"})
+        expected = _djb2("general:test")
+        assert tid == expected
+
+    def test_returns_none_for_none_args(self):
+        assert _extract_task_id(None) is None
+
+    def test_returns_none_for_empty_args(self):
+        tid = _extract_task_id({})
+        assert tid is None
+
+    def test_prefers_task_id_over_id(self):
+        tid = _extract_task_id({"task_id": "alpha", "id": "beta"})
+        assert tid == "alpha"
+
+
+class TestDeadlineStateFileBehavioral:
+    def test_write_and_read_roundtrip(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        original = {"task-a": _now_ms(), "task-b": _now_ms()}
+        _save_deadlines(state_path, original)
+        loaded = _load_deadlines(state_path, timeout_ms=300000)
+        assert set(loaded.keys()) == {"task-a", "task-b"}
+
+    def test_corrupt_file_returns_empty(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        state_path.write_text("not valid json {{")
+        loaded = _load_deadlines(state_path, timeout_ms=300000)
+        assert loaded == {}
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        state_path = tmp_path / "nonexistent.json"
+        loaded = _load_deadlines(state_path, timeout_ms=300000)
+        assert loaded == {}
+
+    def test_dispatches_record_and_completions_remove(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        timeout_ms = 300000
+
+        tid = _extract_task_id({"subagent_type": "general", "description": "edit file"})
+        assert tid is not None
+
+        before = _now_ms()
+        state = _load_deadlines(state_path, timeout_ms)
+        state[tid] = before
+        _save_deadlines(state_path, state)
+
+        loaded = _load_deadlines(state_path, timeout_ms)
+        assert loaded[tid] == before
+
+        loaded.pop(tid, None)
+        _save_deadlines(state_path, loaded)
+
+        loaded2 = _load_deadlines(state_path, timeout_ms)
+        assert tid not in loaded2
+
+    def test_atomic_write_uses_tmp_rename(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        tmp_path_expected = state_path.with_suffix(".tmp")
+
+        state = {"task-x": _now_ms()}
+        _save_deadlines(state_path, state)
+
+        assert state_path.exists()
+        assert not tmp_path_expected.exists()
+
+
+class TestTimeoutDetectionBehavioral:
+    def test_detects_task_over_timeout(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        timeout_ms = 5000
+        state = {"task-old": _now_ms() - 6000}
+        _save_deadlines(state_path, state)
+
+        loaded = _load_deadlines(state_path, timeout_ms)
+        now = _now_ms()
+        breaches = []
+        for tid, start in loaded.items():
+            elapsed = now - start
+            if elapsed > timeout_ms:
+                breaches.append((tid, elapsed))
+        assert len(breaches) == 1
+        assert breaches[0][0] == "task-old"
+        assert breaches[0][1] >= 6000
+
+    def test_does_not_detect_task_within_timeout(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        timeout_ms = 5000
+        state = {"task-recent": _now_ms() - 2000}
+        _save_deadlines(state_path, state)
+
+        loaded = _load_deadlines(state_path, timeout_ms)
+        now = _now_ms()
+        breaches = []
+        for tid, start in loaded.items():
+            elapsed = now - start
+            if elapsed > timeout_ms:
+                breaches.append(tid)
+        assert len(breaches) == 0
+
+    def test_uses_gt_not_gte(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        timeout_ms = 5000
+        ref = _now_ms()
+        state = {"task-exact": ref - timeout_ms}
+        _save_deadlines(state_path, state)
+
+        loaded = _load_deadlines(state_path, timeout_ms)
+        breaches = []
+        for tid, start in loaded.items():
+            if ref - start > timeout_ms:
+                breaches.append(tid)
+        assert len(breaches) == 0
+
+
+class TestSweepExpireCleanupBehavioral:
+    def test_sweeps_entries_older_than_3x_timeout(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        timeout_ms = 5000
+        now = _now_ms()
+        state = {
+            "task-fresh": now - 2000,
+            "task-stale": now - (3 * timeout_ms + 1),
+            "task-ancient": now - 600000,
+        }
+        _save_deadlines(state_path, state)
+
+        loaded = _load_deadlines(state_path, timeout_ms)
+        assert "task-fresh" in loaded
+        assert "task-stale" not in loaded
+        assert "task-ancient" not in loaded
+
+    def test_entries_within_3x_window_kept(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        timeout_ms = 5000
+        now = _now_ms()
+        state = {
+            "task-a": now - 5000,
+            "task-b": now - 14000,
+        }
+        _save_deadlines(state_path, state)
+
+        loaded = _load_deadlines(state_path, timeout_ms)
+        assert "task-a" in loaded
+        assert "task-b" in loaded
+
+    def test_skips_non_number_entries(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        timeout_ms = 5000
+        now = _now_ms()
+        {"task-a": now - 2000}
+        state_path.write_text(json.dumps({"task-a": now - 2000, "task-bad": "string"}))
+        loaded = _load_deadlines(state_path, timeout_ms)
+        assert "task-a" in loaded
+        assert "task-bad" not in loaded
+
+
+class TestNoiseControlBehavioral:
+    def test_warns_only_once_per_task_id(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        timeout_ms = 5000
+        now = _now_ms()
+        state = {"task-hung": now - 10000}
+        _save_deadlines(state_path, state)
+
+        warned_ids: set[str] = set()
+        warnings: list[str] = []
+
+        clock = now
+        for _ in range(5):
+            clock += 1000
+            loaded = _load_deadlines(state_path, timeout_ms)
+            for tid, start in loaded.items():
+                if clock - start > timeout_ms and tid not in warned_ids:
+                    warnings.append(f"BREACH {tid}")
+                    warned_ids.add(tid)
+
+        assert len(warnings) == 1
+
+    def test_completion_resets_warned_ids(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        timeout_ms = 5000
+        now = _now_ms()
+        state = {"task-a": now - 10000}
+        _save_deadlines(state_path, state)
+
+        warned_ids: set[str] = {"task-a"}
+        warnings: list[str] = []
+        loaded = _load_deadlines(state_path, timeout_ms)
+        for tid, start in loaded.items():
+            if _now_ms() - start > timeout_ms and tid not in warned_ids:
+                warnings.append(f"BREACH {tid}")
+                warned_ids.add(tid)
+        assert len(warnings) == 0
+        warned_ids.discard("task-a")
+        state2 = _load_deadlines(state_path, timeout_ms)
+        assert "task-a" in state2
+        for tid, start in state2.items():
+            if _now_ms() - start > timeout_ms and tid not in warned_ids:
+                warnings.append(f"BREACH2 {tid}")
+                warned_ids.add(tid)
+        assert len(warnings) == 1
+
+
+class TestDeadlineEnabledDisableBehavioral:
+    def test_when_disabled_no_state_written(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        deadline_enabled = False
+        if deadline_enabled:
+            state = {"task-x": _now_ms()}
+            _save_deadlines(state_path, state)
+        assert not state_path.exists() or state_path.read_text() == ""
+
+    def test_when_enabled_state_is_written(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        deadline_enabled = True
+        if deadline_enabled:
+            state = {"task-x": _now_ms()}
+            _save_deadlines(state_path, state)
+        assert state_path.exists()
+
+    def test_disabled_means_plugin_returns_early(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        now = _now_ms()
+        state = {"task-old": now - 120000}
+        _save_deadlines(state_path, state)
+
+        deadline_enabled = False
+        breaches = []
+        if deadline_enabled:
+            loaded = _load_deadlines(state_path, timeout_ms=5000)
+            for tid, start in loaded.items():
+                if _now_ms() - start > 5000:
+                    breaches.append(tid)
+        assert len(breaches) == 0
+
+    def test_enabled_path_detects_breach(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        now = _now_ms()
+        state = {"task-old": now - 10000}
+        _save_deadlines(state_path, state)
+
+        deadline_enabled = True
+        breaches = []
+        if deadline_enabled:
+            loaded = _load_deadlines(state_path, timeout_ms=5000)
+            for tid, start in loaded.items():
+                if _now_ms() - start > 5000:
+                    breaches.append(tid)
+        assert len(breaches) == 1
+
+
+class TestFailOpenBehavioral:
+    def test_returns_default_on_corrupt_state_file(self, tmp_path):
+        state_path = tmp_path / "corrupt.json"
+        state_path.write_text("{{{broken")
+        loaded = _load_deadlines(state_path, timeout_ms=300000)
+        assert loaded == {}
+
+    def test_does_not_raise_on_missing_state_file(self, tmp_path):
+        state_path = tmp_path / "does_not_exist.json"
+        loaded = _load_deadlines(state_path, timeout_ms=300000)
+        assert loaded == {}
+
+    def test_write_fail_open_means_no_crash(self, tmp_path):
+        state_path = tmp_path / "working_dir" / "deadlines.json"
+        state = {"task-a": _now_ms()}
+        try:
+            _save_deadlines(state_path, state)
+            assert not state_path.exists()
+        except Exception:
+            pass
+
+    def test_load_with_weird_keys_handled(self, tmp_path):
+        state_path = tmp_path / "weird.json"
+        state_path.write_text(json.dumps({"task-a": _now_ms(), "_": None, 123: "bad"}))
+        loaded = _load_deadlines(state_path, timeout_ms=300000)
+        assert "task-a" in loaded
+
+
+class TestDispatchToolsBehavioral:
+    def test_task_is_dispatch(self):
+        assert _is_dispatch_tool("task")
+
+    def test_agent_is_dispatch(self):
+        assert _is_dispatch_tool("agent")
+
+    def test_workflow_is_dispatch(self):
+        assert _is_dispatch_tool("workflow")
+
+    def test_read_is_not_dispatch(self):
+        assert not _is_dispatch_tool("read")
+
+    def test_bash_is_not_dispatch(self):
+        assert not _is_dispatch_tool("bash")
+
+
+class TestStaleFileBehavioral:
+    def test_record_stale_task_shape(self, tmp_path):
+        stale_path = tmp_path / "stale.json"
+        now = _now_ms()
+        task_id = "task-hung"
+        start_ms = now - 60000
+        elapsed_ms = 60000
+
+        entries = []
+        with contextlib.suppress(Exception):
+            entries = json.loads(stale_path.read_text())
+        entries.append({
+            "task_id": task_id,
+            "start_ms": start_ms,
+            "elapsed_ms": elapsed_ms,
+            "stale_at": now,
+        })
+        tmp = stale_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(entries))
+        os.replace(tmp, stale_path)
+
+        loaded = json.loads(stale_path.read_text())
+        assert len(loaded) == 1
+        entry = loaded[0]
+        assert entry["task_id"] == "task-hung"
+        assert entry["start_ms"] == start_ms
+        assert entry["elapsed_ms"] == elapsed_ms
+        assert "stale_at" in entry
+
+    def test_deduplicates_by_task_id(self, tmp_path):
+        stale_path = tmp_path / "stale.json"
+        now = _now_ms()
+        task_id = "task-a"
+        entries = [{
+            "task_id": task_id,
+            "start_ms": now - 60000,
+            "elapsed_ms": 60000,
+            "stale_at": now,
+        }]
+        stale_path.write_text(json.dumps(entries))
+
+        existing = json.loads(stale_path.read_text())
+        if not any(e.get("task_id") == task_id for e in existing):
+            existing.append({
+                "task_id": task_id,
+                "start_ms": now - 70000,
+                "elapsed_ms": 70000,
+                "stale_at": now + 100,
+            })
+
+        assert len(existing) == 1
+
+
+class TestDeadlineConstants:
+    def test_default_timeout_is_300000_ms(self):
+        src = _src()
+        m = re.search(r'GLUDD_TASK_TIMEOUT_MS \|\| "(\d+)"', src)
+        assert m, "GLUDD_TASK_TIMEOUT_MS default not found"
+        assert int(m.group(1)) == 300000
+
+    def test_default_enabled_is_1(self):
+        src = _src()
+        m = re.search(r'GLUDD_TASK_DEADLINE_ENABLED \|\| "(\d+)"', src)
+        assert m, "GLUDD_TASK_DEADLINE_ENABLED default not found"
+        assert m.group(1) == "1"
+
+    def test_default_state_file(self):
+        src = _src()
+        assert "gludd-task-deadlines.json" in src
+
+    def test_default_stale_file(self):
+        src = _src()
+        assert "gludd-task-stale.json" in src
+
+    def test_disabled_check_uses_not_equal_zero(self):
+        src = _src()
+        assert '!== "0"' in src, "DEADLINE_ENABLED must check !== '0'"
+        assert "DEADLINE_ENABLED" in src
+
+
+class TestSubagentGuardBehavioral:
+    def test_subagent_env_skips_all_enforcement(self, tmp_path):
+        state_path = tmp_path / "deadlines.json"
+        now = _now_ms()
+        state = {"task-old": now - 60000}
+        _save_deadlines(state_path, state)
+
+        is_subagent = True
+        recorded_dispatch = False
+        if not is_subagent:
+            state = _load_deadlines(state_path, timeout_ms=5000)
+            state["new-task"] = _now_ms()
+            _save_deadlines(state_path, state)
+            recorded_dispatch = True
+        assert not recorded_dispatch

@@ -582,6 +582,8 @@ class MCPStdioClient:
 
     async def stop(self) -> None:
         if self._process is not None and self._process.returncode is None:
+            if self._process.stdin is not None:
+                self._process.stdin.close()
             self._process.terminate()
             # Finding 4: bound the wait() so a process that ignores SIGTERM
             # can't hang stop() forever — escalate to kill() on timeout.

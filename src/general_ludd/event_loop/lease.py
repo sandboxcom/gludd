@@ -12,6 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from general_ludd.db.models import BucketLeaseModel
 
 
+async def acquire_lease(
+    session: AsyncSession,
+    bucket_key: str,
+    holder_id: str,
+    ttl_seconds: int = 300,
+    project_id: str | None = None,
+) -> BucketLeaseModel:
+    return (
+        await acquire_leases_batch(
+            session, [bucket_key], holder_id, ttl_seconds, project_id
+        )
+    )[0]
+
+
 async def acquire_leases_batch(
     session: AsyncSession,
     bucket_keys: list[str],

@@ -417,6 +417,9 @@ gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plu
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
 	fi
+	@echo "=== GATE PHASE: dead-code ==="
+	@printf "dead-code " >> .gate-status
+	@$(MAKE) --no-print-directory check-dead-code-quiet > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
 	@echo "=== GATE PHASE: env-writes ==="
 	@printf "env-writes " >> .gate-status
 	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
@@ -481,6 +484,9 @@ gate-lite: check-subagent-guards check-skills-frontmatter
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-lite-status && touch .gate-lite-failed; \
 	fi
+	@echo "=== GATE-LITE PHASE: dead-code ==="
+	@printf "dead-code " >> .gate-lite-status
+	@$(MAKE) --no-print-directory check-dead-code-quiet > /dev/null 2>&1 && echo "PASS 0" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
 	@echo "=== GATE-LITE PHASE: typecheck ==="
 	@printf "typecheck " >> .gate-lite-status
 	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
@@ -2606,9 +2612,22 @@ check-task-ledger:
 check-dispatch-dedup:
 	@$(UV) run python scripts/check_dispatch_dedup.py
 
+# --- Dead-code detection: flag classes/functions in src/ never imported in production code ---
+check-dead-code:
+	@$(UV) run python scripts/check_dead_code.py
+check-dead-code-json:
+	@$(UV) run python scripts/check_dead_code.py --json
+check-dead-code-quiet:
+	@$(UV) run python scripts/check_dead_code.py --quiet
+
 # --- Test env-write lint: forbid bare os.environ[...] = in tests/ (use monkeypatch.setenv) ---
 check-test-env-writes:
 	@$(UV) run python scripts/check_test_env_writes.py tests
+
+# --- Test quality gate: lint checks (F401/I001/F841/B010) + naming convention + newline ---
+# Runs against staged test files only (git diff --cached).
+check-test-quality:
+	@$(UV) run python scripts/check_test_quality.py
 
 # --- Type strictness: flag `Any` usage in Python annotations (tight types only) ---
 # Scans src/ for Any in return/param/annassign annotations (incl. nested dict[...]/Optional[...]).

@@ -272,19 +272,35 @@ class TestRetryEscapeToBlocked:
 
         registry.claim_or_conflict("blocking-agent", ["src/target.py"])
 
+        escape_called = False
+        tid = todo.todo_id
         for attempt in range(loop._MAX_PUSH_RETRIES + 1):
-            loop._total_ticks = attempt
-            loop._push_retry_count[todo.todo_id] = attempt
+            # Compute a tick that passes the backoff gate for this retry_count.
+            # The backoff checks (tick + offset) % window == 0. We set tick
+            # so it always passes, ensuring the retry proceeds and the escape
+            # is reached after MAX_PUSH_RETRIES failures.
+            retry = attempt
+            window = 2 ** min(max(retry, 1), 6)
+            offset = abs(hash(tid)) % window
+            tick = (window - offset) % window
+            loop._total_ticks = tick
+            loop._push_retry_count[tid] = attempt
             with patch(_GIT, _FakeGit), patch.object(
                 loop, "_escape_push_livelock"
             ) as mock_escape:
                 await loop._attempt_completed_push(todo)
 
-                if attempt > loop._MAX_PUSH_RETRIES:
-                    mock_escape.assert_called_once()
-                    break
-                else:
+                if attempt < loop._MAX_PUSH_RETRIES:
                     mock_escape.assert_not_called()
+
+                if mock_escape.called:
+                    escape_called = True
+                    break
+
+        assert escape_called, (
+            "_escape_push_livelock should have been called after exhausting "
+            f"{loop._MAX_PUSH_RETRIES} push retries"
+        )
 
     @pytest.mark.asyncio
     async def test_blocked_todo_skipped_on_future_ticks(self) -> None:

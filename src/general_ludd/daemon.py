@@ -7,6 +7,7 @@ import contextlib
 import logging
 import os
 import sys
+import threading
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -2260,13 +2261,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await pipeline_controller.stop()
         except Exception:
-            logger.warning("pipeline_controller.stop() failed during shutdown", exc_info=True)
+            logger.warning(
+                "pipeline_controller.stop() failed during shutdown", exc_info=True
+            )
+            raise
     mcp_client_ref = getattr(app.state, "_mcp_client", None)
     if mcp_client_ref is not None:
         try:
             await mcp_client_ref.stop_all()
         except Exception:
-            logger.warning("mcp_client.stop_all() failed during shutdown", exc_info=True)
+            logger.warning(
+                "mcp_client.stop_all() failed during shutdown", exc_info=True
+            )
+            raise
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     if _el is not None:
         _el.stop()
@@ -2376,6 +2383,8 @@ def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:
         app.state._hook_system = HookSystem(event_bus=app.state._event_bus)
     if not hasattr(app.state, "_worker_broadcaster") or app.state._worker_broadcaster is None:
         app.state._worker_broadcaster = WorkerBroadcaster()
+    if not hasattr(app.state, "_reload_lock") or app.state._reload_lock is None:
+        app.state._reload_lock = threading.Lock()
     return {
         "bus": app.state._event_bus,
         "hooks": app.state._hook_system,
@@ -2536,6 +2545,7 @@ def create_daemon_app(
     app.state._event_bus = None
     app.state._hook_system = None
     app.state._worker_broadcaster = None
+    app.state._reload_lock = None
     app.state._db_path_override = _db_path_override
     app.state._config_dir = config_dir
     app.state._templates_dir = templates_dir

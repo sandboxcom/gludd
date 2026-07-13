@@ -82,22 +82,6 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 |---|---|---|
 | D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 0% | **PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
 
-### Ansible Collections & Modules
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| Multi-version ansible collections (versioned `@v1.0` directories) | ✓ 100% | Implemented: versioned collection directories with `@v` namespace support |
-| Module hot-reload rollback system (sys.modules snapshot/restore) | ✓ 100% | Implemented: snapshot/restore on module load failure for atomic rollback |
-| Collection CLI subcommands | ✓ 100% | Implemented: `gludd collection {list,versions,validate}` subcommands |
-| MCP tool reference documentation | ✓ 100% | Implemented: docs covering all MCP protocol tools and usage |
-| task_splitter role (parallel subtask decomposition) | ✓ 100% | Implemented: `general_ludd.agent.task_splitter` role analyzes complex tasks and recommends parallel subtask split for subagent dispatch |
-
-### Testing
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| E2e test suite expansion (150 new e2e tests across 5 modules) | ✓ 100% | Implemented: expanded coverage across ansible, daemon, db, gateway, and worker modules |
-
 ### Orchestration / Agents
 
 | Feature / Task | Verified % | Evidence |
