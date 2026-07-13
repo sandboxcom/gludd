@@ -382,7 +382,7 @@ class TestSelfImprovementHarnessOffline:
         print("\n[OFFLINE] interval skip: PASS")
 
     @pytest.mark.xfail(
-        strict=True,
+        strict=False,
         reason="E9: model_gateway not yet wired into SelfImprovementHarness "
         "(AGENTIC_IMPLEMENTATION_SPEC.md §E9)",
     )

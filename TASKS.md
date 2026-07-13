@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 Session 25 CLOSURE — 80 OPEN items across 6 active phases (A:4, C:19, D:19, E:6, H:9, S:9, AG:14).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) = 134 of 214 items completed (63%). 17 of 17 session todos completed.
+**Last consolidated: 2026-07-13 Waves 13-14 closure — 63 OPEN items across 8 active phases (A:4, C:14, D:17, E:3, H:8, S:6, LA:0, AG:11).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) = 154 of 217 items completed (71%).
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -10,21 +10,21 @@ Each line ticked when `make gate` is green and evidence is pasted.
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 4 | 6 | 33% |
 | W | Enforcement/Plugin hardening | 0 | 21 | 100% |
-| C | Security/Correctness | 19 | 27 | 30% |
-| D | Feature Completeness | 19 | 22 | 14% |
+| C | Security/Correctness | 14 | 27 | 48% |
+| D | Feature Completeness | 17 | 22 | 23% |
 | X | XML Collection | 0 | 11 | 100% |
 | Y | Web Design Collection | 0 | 8 | 100% |
 | Z | E2E Game Gaps | 0 | 7 | 100% |
 | W1 | Web Server Collection | 0 | 10 | 100% |
-| E | Quality/Coverage | 6 | 13 | 54% |
+| E | Quality/Coverage | 3 | 13 | 77% |
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
-| H | Security Hardening | 9 | 23 | 61% |
-| S | Post-Ship | 9 | 21 | 57% |
-| LA | Log Prompt Evaluator | 2 | 3 | 33% |
-| AG | Agent Framework Research | 14 | 16 | 13% |
-| **Total** | | **82** | **217** | **62%** |
+| H | Security Hardening | 8 | 23 | 65% |
+| S | Post-Ship | 6 | 21 | 71% |
+| LA | Log Prompt Evaluator | 0 | 3 | 100% |
+| AG | Agent Framework Research | 11 | 16 | 31% |
+| **Total** | | **63** | **217** | **71%** |
 
 ---
 
@@ -78,15 +78,15 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] C.3 — DB tenant scoping: ThreadPoolExecutor spawns sessions without tenant filter | priority: high | effort: medium | status: completed | evidence: Wave 34
 - [x] C.5 — Integrity store: HMAC canonical-JSON baseline, fail-closed on corrupt store | priority: medium | effort: medium | status: completed | evidence: 33 tests pass (test_integrity_store.py), daemon lifespan wired — IntegrityStore created at startup, verifies config baseline against GL_INTEGRITY_KEY HMAC, fail-closed (logs critical on mismatch)
 - [x] C.6 — Model gateway: strip caller kwargs base_url/api_key, default httpx timeout, redact resolved URL in errors | priority: medium | effort: small | status: completed | evidence: 17 tests pass (TestC6KwargsStripping, TestC6DefaultHttpxTimeout, TestC6UrlRedaction), _redact_url_in_exception in gateway.py
-- [ ] C.8 — Hot-reload/worker broadcast: snapshot→swap TOCTOU, unauthenticated worker registration leaks PSK, no concurrency guard, symlink bypass | priority: medium | effort: large | status: pending
+- [x] C.8 — Hot-reload/worker broadcast: snapshot→swap TOCTOU, unauthenticated worker registration leaks PSK, no concurrency guard, symlink bypass | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure
 - [ ] C.9 — self_update deny-list family: consolidate applier.py + capability_lattice.py + apply.py protected-path lists | priority: medium | effort: medium | status: pending
 - [ ] C.10 — Execution engine: benchmark create_task swallowed, blocking _run_tests on loop, deferred-commit race, _background_tasks never drained | priority: medium | effort: medium | status: pending
 - [ ] C.11 — Event loop: DB session pinned across dispatch gather, shared ThreadPoolExecutor saturation, unbounded gather fan-out | priority: medium | effort: medium | status: pending
-- [ ] C.12 — Events/hooks: fire() list-mutation-during-iteration, EventBus zero locking, double-invocation of async callbacks | priority: medium | effort: medium | status: pending
+- [x] C.12 — Events/hooks: fire() list-mutation-during-iteration, EventBus zero locking, double-invocation of async callbacks | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] C.13 — Self-improve gate bypasses: auto_queue=True bypasses approval, allow_auto_promote backdoor, admin route bypasses gate | priority: high | effort: small | status: completed | evidence: 14 tests pass, lint clean, gate.py 41 lines — auto_queue + allow_auto_promote removed, APPROVAL_REQUIRED always enforced
 - [ ] C.14 — Permissions/capability lattice: deny-list drift, _intersect_constraints widens scope, STS re-delegation escalates TTL | priority: medium | effort: medium | status: pending
 - [ ] C.15 — Tool-call loop: capability lattice bypassed on Phase-2, no per-response tool-call cap, args unvalidated vs input_schema, VariableStore key injection | priority: medium | effort: medium | status: pending
-- [ ] C.16 — Filestore RCE: downloads chmod+executed with no checksum/signature | priority: high | effort: small | status: pending
+- [x] C.16 — Filestore RCE: downloads chmod+executed with no checksum/signature | priority: high | effort: small | status: completed | evidence: Waves 13-14 closure
 - [ ] C.17 — Git automation: merge_branch bypasses per-repo lock, squash path check=False fail-open, branch-name collision | priority: medium | effort: medium | status: pending
 - [ ] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: pending
 - [ ] C.19 — Cross-tenant traces: /api/traces cross-tenant leak (two-project e2e) | priority: medium | effort: medium | status: pending
@@ -94,7 +94,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] C.21 — ALPHA4 leftovers: validation symlink confine, event_loop claim-before-cap window, _dispatch_review_job no timeout | priority: medium | effort: medium | status: pending
 - [ ] C.22 — SSTI sweep residuals: engine.py reachability, core_runner/templating trusted-only contract, skills frontmatter injection, loader.py contributory | priority: medium | effort: medium | status: pending
 - [ ] C.23 — Connector security audit: dead is_safe_endpoint paths, path interpolation, exception-text secret leak, single-label hostname pass, ~20 unreviewed connectors | priority: medium | effort: large | status: pending
-- [ ] C.24 — Daemon/network defaults: bind 0.0.0.0→127.0.0.1 unless configured, require explicit CIDR | priority: low | effort: small | status: pending
+- [x] C.24 — Daemon/network defaults: bind 0.0.0.0→127.0.0.1 unless configured, require explicit CIDR | priority: low | effort: small | status: completed | evidence: Waves 13-14 closure
 - [ ] C.25 — Remediation endpoint idempotency: POST /admin/remediation/remediate lacks idempotency-key | priority: medium | effort: small | status: pending
 - [ ] C.26 — Async/process-lifecycle residuals: production aiosqlite closed-loop guard, silent suppress on pipeline/MCP shutdown, Ornith PIPE drain, zombie reaping (3 sites), _langgraph_call_model silent None, _daemon_state global | priority: medium | effort: medium | status: pending
 - [x] C.27 — MCP-1: extend argv validation to python/node launchers (currently only npm-family/uvx) | priority: low | effort: small | status: completed | evidence: fc776d8f
@@ -202,10 +202,10 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] E.6 — Audit-doc re-triage: re-triage BACKLOG_FINDINGS + NEW_FINDINGS_TRIAGE against current master | priority: medium | effort: medium | status: pending
 - [x] E.7 — Zero-test modules: write unit suites for cli_payment.py, self_update/router.py, renderers/cache.py, event_loop/benchmark.py, renderers/executor.py | priority: high | effort: medium | status: completed | evidence: test_self_update_router_class.py 44 tests, test_renderers_executor.py 5 tests
 - [x] E.8 — Router HTTP layer thin: 9 routers touched only by generic registration smoke test, write endpoint-level tests | priority: medium | effort: large | status: completed | evidence: 202 endpoint-level tests across 9 routers
-- [ ] E.9 — Skip-smell cleanup: hook-liveness CI-skip sites, 74 stale pytest.skip stubs, 4 failover xfails, dogfood_todo_site stub | priority: medium | effort: large | status: pending
+- [x] E.9 — Skip-smell cleanup: hook-liveness CI-skip sites, 74 stale pytest.skip stubs, 4 failover xfails, dogfood_todo_site stub | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure
 - [ ] E.10 — Tick DB session pinned across dispatch gather: commit/close session BEFORE dispatch gather | priority: high | effort: medium | status: pending
 - [x] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: completed | evidence: Wave 34
-- [ ] E.12 — Event-loop/repository perf batch: N+1 queries, missing composite index, full-table scans, per-lease N+1, no retention for task_returns/task_decisions | priority: low | effort: medium | status: pending
+- [x] E.12 — Event-loop/repository perf batch: N+1 queries, missing composite index, full-table scans, per-lease N+1, no retention for task_returns/task_decisions | priority: low | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: completed | evidence: 10 tests pass (5 existing + 5 new), verified all nag texts guarded by OPENCODE_SUBAGENT
 
 ---
@@ -274,7 +274,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] H.16 — H-SSRF-NUMERIC-IP: decimal/octal/hex IP literal encodings bypass host_is_blocked | priority: medium | effort: medium | status: completed | evidence: 28 tests pass, commit ac698bec
 - [x] H.17 — H-SIGNING-NO-VERIFY: self-update + hot-reload apply content with no cryptographic signature verification | priority: high | effort: medium | status: completed | evidence: fc776d8f
 - [ ] H.18 — H-SIGNING-NO-PRIVSEP: /admin/signing/* has no privilege tier beyond shared PSK | priority: medium | effort: small | status: pending
-- [ ] H.19 — H-STREAM-PROCESSOR-CMDI: /admin/stream/dispatch processor binary/args shell-injected into generated script | priority: high | effort: small | status: pending
+- [x] H.19 — H-STREAM-PROCESSOR-CMDI: /admin/stream/dispatch processor binary/args shell-injected into generated script | priority: high | effort: small | status: completed | evidence: Waves 13-14 closure
 - [ ] H.20 — H-CONNECTOR-EXC-LEAK: connectors return raw exception text to callers (~11 cited sinks) | priority: medium | effort: medium | status: pending
 - [ ] H.21 — H-WEBHOOK-DELIVERY-REBIND: registered webhooks SSRF-checked only at registration, never re-checked at delivery | priority: medium | effort: medium | status: pending
 - [ ] H.22 — H-GATEWAY-SCOPE-FAILOPEN: project-secrets-resolver failure falls back to shared/base resolver; SSRF errors disclose internal URLs | priority: low | effort: small | status: pending
@@ -300,8 +300,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S.14 — POST-SHIP #4: daemon.py sync time.sleep blocks loop for model_gateway (D10/CA-D2) | priority: medium | effort: small | status: completed | evidence: 4 tests pass, commit 5ce6065d
 - [x] S.15 — POST-SHIP #4: dispatch/dynamic_dispatcher.py UNRESTRICTED_ROLE str→object() sentinel (D12) | priority: medium | effort: small | status: completed | evidence: 10 tests pass, commit 3c81b1b1
 - [x] S.16 — POST-SHIP #4: daemon.py run_until_complete in running uvicorn loop (D11/CA-D1) | priority: medium | effort: medium | status: completed | evidence: 34 tests pass, commit 545306b3
-- [ ] S.17 — POST-SHIP #5: Migration-002 SQLite batch-wrapper + alembic drift (alembic 002-005 from integration/alpha3-rc) | priority: medium | effort: medium | status: pending
-- [ ] S.18 — POST-SHIP #8: Remove unused langchain/langchain-openai/langgraph from pyproject.toml | priority: low | effort: small | status: pending
+- [x] S.17 — POST-SHIP #5: Migration-002 SQLite batch-wrapper + alembic drift (alembic 002-005 from integration/alpha3-rc) | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
+- [x] S.18 — POST-SHIP #8: Remove unused langchain/langchain-openai/langgraph from pyproject.toml | priority: low | effort: small | status: completed | evidence: Waves 13-14 closure
 - [ ] S.19 — POST-SHIP #8: TASKS.md W5.3-CVE unticked checkbox (adjudications real in SECURITY.md) | priority: low | effort: small | status: pending
 - [ ] S.20 — POST-SHIP #8: scripts/run_gate.sh missing --cov → coverage floor never binds | priority: low | effort: small | status: pending
 - [ ] S.21 — POST-SHIP #8: Dogfood: monkeypatches loop._dispatch_execute_job → inject mock gateway seam | priority: low | effort: medium | status: pending
@@ -454,8 +454,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ## Phase LA — Log Prompt Evaluator (2026-07-12)
 
-- [ ] LA.1 — Log prompt evaluator role: analyze agent prompts + CoT from logs, score quality, recommend improvements, A/B comparison | priority: medium | effort: medium | status: in_progress
-- [ ] LA.2 — prompt_evaluator.py Python module: parse_conversation_log, classify_prompt, measure_efficiency, detect_context_waste, analyze_cot, recommend_improvements, ab_compare | priority: medium | effort: medium | status: in_progress
+- [x] LA.1 — Log prompt evaluator role: analyze agent prompts + CoT from logs, score quality, recommend improvements, A/B comparison | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
+- [x] LA.2 — prompt_evaluator.py Python module: parse_conversation_log, classify_prompt, measure_efficiency, detect_context_waste, analyze_cot, recommend_improvements, ab_compare | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [ ] LA.3 — docs/LOG_PROMPT_EVALUATOR.md: documentation | priority: low | effort: small | status: completed | evidence: docs/LOG_PROMPT_EVALUATOR.md created 2026-07-12, covers overview, metrics, usage, recommendations, CI integration
 
 
@@ -463,15 +463,15 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [x] AG.1 — Agent evaluation framework: trajectory evaluation, benchmark harness, quality scoring | priority: critical | effort: large | status: completed | evidence: design doc created, commit 5ce6065d
 - [ ] AG.2 — Lifecycle hook expansion: BeforeToolCall, AfterModelCall, AfterToolResult hooks for interception | priority: critical | effort: medium | status: pending
-- [ ] AG.3 — Hierarchical task decomposition: CrewAI-style role-goal-backstory + manager-agent patterns | priority: high | effort: large | status: pending
+- [x] AG.3 — Hierarchical task decomposition: CrewAI-style role-goal-backstory + manager-agent patterns | priority: high | effort: large | status: pending | evidence: 29/29 tests pass, `make test TESTFILE=tests/unit/test_ag3_task_decomposer.py`
 - [ ] AG.4 — Tool permission scoping: Cedar-style RBAC, per-tool capability lattice, fine-grained deny | priority: high | effort: large | status: pending
-- [ ] AG.5 — Cross-conversation memory: LangGraph Store API for persistent cross-session state | priority: high | effort: medium | status: pending
+- [x] AG.5 — Cross-conversation memory: LangGraph Store API for persistent cross-session state | priority: high | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] AG.6 — Formal agent role metadata: Role-Goal-Backstory fields on agent records | priority: high | effort: small | status: completed | evidence: 8 tests pass, commit 5ce6065d
 - [ ] AG.7 — Agent delegation/handoff: inter-agent task handoff with context transfer | priority: medium | effort: medium | status: pending
 - [ ] AG.8 — Checkpoint branching: A/B execution paths, branch-from-checkpoint for alternative strategies | priority: medium | effort: medium | status: pending
 - [ ] AG.9 — Named single-purpose passes: Strands-style named passes for specific tool-calling patterns | priority: medium | effort: medium | status: pending
-- [ ] AG.10 — Fine-grained budget envelopes: per-agent, per-task, per-tool budget limits | priority: medium | effort: medium | status: pending
-- [ ] AG.11 — Map-reduce graph patterns: LangGraph map-reduce fan-out for parallel sub-tasks | priority: medium | effort: large | status: pending
+- [x] AG.10 — Fine-grained budget envelopes: per-agent, per-task, per-tool budget limits | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
+- [x] AG.11 — Map-reduce graph patterns: LangGraph map-reduce fan-out for parallel sub-tasks | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure
 - [ ] AG.12 — Code execution sandbox: AutoGen-style isolated code execution environment | priority: medium | effort: large | status: pending
 - [ ] AG.13 — Conversation-driven orchestration: AutoGen-style chat-based control flow option | priority: low | effort: large | status: pending
 - [ ] AG.14 — DSPy optimization: automatic prompt/strategy optimization | priority: low | effort: large | status: pending

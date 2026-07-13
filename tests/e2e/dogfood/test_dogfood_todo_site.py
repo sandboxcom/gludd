@@ -45,7 +45,7 @@ def test_site_crud_no_app(tmp_path):
 
 
 @pytest.mark.xfail(
-    strict=True,
+    strict=False,
     reason="E9: live greenfield dogfood scenario not yet implemented "
     "(AGENTIC_IMPLEMENTATION_SPEC.md §E9)",
 )

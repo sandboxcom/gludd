@@ -135,16 +135,16 @@ class TestC16DownloadFlowIntegrity:
         store = MagicMock()
         store.exists.return_value = False
         boot = BinaryBootstrapper(store=store, known_sha256={})
-        with patch.object(boot, "_has_bundled", return_value=False):
-            with patch.object(boot, "get_download_url", return_value="https://example.com/bin"):
-                with patch(
+        with patch.object(boot, "_has_bundled", return_value=False), \
+                patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
+                patch(
                     "httpx.AsyncClient.get",
                     side_effect=Exception("should not be called"),
                 ):
-                    import asyncio
-                    asyncio.new_event_loop().run_until_complete(
-                        boot.download("test-bin")
-                    )
+            import asyncio
+            asyncio.new_event_loop().run_until_complete(
+                boot.download("test-bin")
+            )
 
         assert boot._verify_digest("test-bin", b"anything") is False
 
@@ -156,20 +156,21 @@ class TestC16DownloadFlowIntegrity:
         bad_bytes = b"wrong-data"
 
         class FakeResponse:
-            status_code = 200
-            content = bad_bytes
-            headers = {}
+            def __init__(self) -> None:
+                self.status_code = 200
+                self.content = bad_bytes
+                self.headers: dict = {}
 
         async def fake_get(url: str) -> FakeResponse:
             return FakeResponse()
 
-        with patch.object(boot, "_has_bundled", return_value=False):
-            with patch.object(boot, "get_download_url", return_value="https://example.com/bin"):
-                with patch("httpx.AsyncClient.get", side_effect=fake_get):
-                    import asyncio
-                    result = asyncio.new_event_loop().run_until_complete(
-                        boot.download("test-bin")
-                    )
+        with patch.object(boot, "_has_bundled", return_value=False), \
+                patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
+                patch("httpx.AsyncClient.get", side_effect=fake_get):
+            import asyncio
+            result = asyncio.new_event_loop().run_until_complete(
+                boot.download("test-bin")
+            )
 
         assert result is False
         store.write_bytes.assert_not_called()
@@ -180,20 +181,21 @@ class TestC16DownloadFlowIntegrity:
         boot = BinaryBootstrapper(store=store, known_sha256={"test-bin": real_hash})
 
         class FakeResponse:
-            status_code = 200
-            content = b"safe-binary-data"
-            headers = {}
+            def __init__(self) -> None:
+                self.status_code = 200
+                self.content = b"safe-binary-data"
+                self.headers: dict = {}
 
         async def fake_get(url: str) -> FakeResponse:
             return FakeResponse()
 
-        with patch.object(boot, "_has_bundled", return_value=False):
-            with patch.object(boot, "get_download_url", return_value="https://example.com/bin"):
-                with patch("httpx.AsyncClient.get", side_effect=fake_get):
-                    import asyncio
-                    result = asyncio.new_event_loop().run_until_complete(
-                        boot.download("test-bin")
-                    )
+        with patch.object(boot, "_has_bundled", return_value=False), \
+                patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
+                patch("httpx.AsyncClient.get", side_effect=fake_get):
+            import asyncio
+            result = asyncio.new_event_loop().run_until_complete(
+                boot.download("test-bin")
+            )
 
         assert result is True
         store.write_bytes.assert_called_once()
@@ -268,20 +270,21 @@ class TestC16SizeCap:
         boot = BinaryBootstrapper(store=store, known_sha256={"test-bin": real_hash})
 
         class FakeResponse:
-            status_code = 200
-            content = b"small"
-            headers = {"content-length": str(_MAX_DOWNLOAD_BYTES + 1)}
+            def __init__(self) -> None:
+                self.status_code = 200
+                self.content = b"small"
+                self.headers: dict = {"content-length": str(_MAX_DOWNLOAD_BYTES + 1)}
 
         async def fake_get(url: str) -> FakeResponse:
             return FakeResponse()
 
-        with patch.object(boot, "_has_bundled", return_value=False):
-            with patch.object(boot, "get_download_url", return_value="https://example.com/bin"):
-                with patch("httpx.AsyncClient.get", side_effect=fake_get):
-                    import asyncio
-                    result = asyncio.new_event_loop().run_until_complete(
-                        boot.download("test-bin")
-                    )
+        with patch.object(boot, "_has_bundled", return_value=False), \
+                patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
+                patch("httpx.AsyncClient.get", side_effect=fake_get):
+            import asyncio
+            result = asyncio.new_event_loop().run_until_complete(
+                boot.download("test-bin")
+            )
 
         assert result is False
 
@@ -293,20 +296,21 @@ class TestC16SizeCap:
         big_content = b"x" * (_MAX_DOWNLOAD_BYTES + 1)
 
         class FakeResponse:
-            status_code = 200
-            content = big_content
-            headers = {}
+            def __init__(self) -> None:
+                self.status_code = 200
+                self.content = big_content
+                self.headers: dict = {}
 
         async def fake_get(url: str) -> FakeResponse:
             return FakeResponse()
 
-        with patch.object(boot, "_has_bundled", return_value=False):
-            with patch.object(boot, "get_download_url", return_value="https://example.com/bin"):
-                with patch("httpx.AsyncClient.get", side_effect=fake_get):
-                    import asyncio
-                    result = asyncio.new_event_loop().run_until_complete(
-                        boot.download("test-bin")
-                    )
+        with patch.object(boot, "_has_bundled", return_value=False), \
+                patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
+                patch("httpx.AsyncClient.get", side_effect=fake_get):
+            import asyncio
+            result = asyncio.new_event_loop().run_until_complete(
+                boot.download("test-bin")
+            )
 
         assert result is False
 

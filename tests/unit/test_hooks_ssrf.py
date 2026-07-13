@@ -71,11 +71,16 @@ class TestFireWebhookNoRedirect:
             async def __aexit__(self, *args):
                 pass
 
+        from general_ludd.security.ssrf import PinnedTarget
+
         hs = HookSystem()
         hs.register_webhook("job.complete", "https://hooks.example.com/notify")
 
 
         with patch(
+            "general_ludd.events.hooks.resolve_and_pin",
+            return_value=PinnedTarget(host="hooks.example.com", ip="203.0.113.1", port=443),
+        ), patch(
             "general_ludd.events.hooks.httpx.AsyncClient",
             return_value=FakeClient(),
         ):

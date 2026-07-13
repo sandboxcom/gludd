@@ -13,7 +13,7 @@ import httpx
 # Canonical SSRF predicate — the SINGLE source of truth shared by every guard
 # in the codebase (auth, sanitize, connectors). Do NOT re-implement blocklists
 # here; delegate so they can never drift apart.
-from general_ludd.security.ssrf import is_url_blocked
+from general_ludd.security.ssrf import is_url_blocked, resolve_and_pin
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +262,19 @@ class HookSystem:
         body = {"event": event_name, "payload": _redact_payload(payload)}
         # Fix C: clamp retry_count so misconfigured values can't cause DoS.
         retry_count = min(max(1, config.retry_count), 5)
+
+        # H.21 — DNS-resolving SSRF re-check at delivery time.
+        # _ensure_safe_webhook_url runs a literal-host check at registration,
+        # but a hostname can be re-bound to an internal IP between registration
+        # and delivery (DNS rebinding). resolve_and_pin performs actual DNS
+        # resolution and vets every resolved address, catching re-binds.
+        from urllib.parse import urlsplit
+
+        _ensure_safe_webhook_url(config.url)
+        parts = urlsplit(config.url)
+        host = parts.hostname
+        if host:
+            resolve_and_pin(host, port=(parts.port or 443), timeout=2.0)
 
         async def _do_post_async() -> None:
             """Retry loop using httpx.AsyncClient for native async I/O.
