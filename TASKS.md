@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Phase C S2-verified tick — 53 OPEN items across 8 active phases (A:4, C:3, D:17, E:3, H:8, S:6, LA:0, AG:11).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) + Phase C (24 done) = 164 of 217 items completed (76%).
+**Last consolidated: 2026-07-13 Phase C S2-verified tick — 51 OPEN items across 8 active phases (A:4, C:3, D:17, E:3, H:6, S:6, LA:0, AG:11).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) + Phase C (24 done) = 166 of 217 items completed (76%).
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -20,11 +20,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
-| H | Security Hardening | 8 | 23 | 65% |
+| H | Security Hardening | 6 | 23 | 74% |
 | S | Post-Ship | 6 | 21 | 71% |
 | LA | Log Prompt Evaluator | 0 | 3 | 100% |
 | AG | Agent Framework Research | 11 | 16 | 31% |
-| **Total** | | **53** | **217** | **76%** |
+| **Total** | | **51** | **217** | **76%** |
 
 ---
 
@@ -113,14 +113,14 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] D.5 — Compute discovery + auto-select (Slice 1 k8s dispatch ✅ + Slice 2 vSphere params ✅; Slice 3 auto-select ✅) | priority: low | effort: large | status: completed | evidence: Wave 34
 - [ ] D.6 — Wire OrchestrationPlanner (#54) or delete module + tests with rationale | priority: low | effort: small | status: pending
 - [x] D.7.1 — Pause/resume: persist-before-mutate + lock-free is_paused + router ordering | priority: high | effort: medium | status: completed | evidence: 34 tests pass (16 new + 18 existing) across test_pause_resume.py, test_pause_persist_ordering.py, test_pause_concurrency.py, test_pause_router.py. PauseController already implements persist-before-mutate with lock-free is_paused() via frozenset rebinding. Router ordering verified via pause → persist → resume lifecycle tests.
-- [ ] D.7.2 — Pause/resume: construct + wire HibernationController with durable MAC key | priority: high | effort: medium | status: pending
+- [x] D.7.2 — Pause/resume: construct + wire HibernationController with durable MAC key | priority: high | effort: medium | status: completed | evidence: HibernationController in src/general_ludd/agents/hibernation.py:486, durable MAC key in _load_hibernate_mac_key (mirrors PauseStore fail-closed pattern), daemon wiring at daemon.py:1333-1342. 47 tests pass: 10 test_hibernation_durable_key + 4 test_daemon_hibernation_wiring + 33 test_agent_hibernation.
 - [ ] D.7.3 — Pause/resume: quiesce at dispatcher seam + rehydrating resume | priority: high | effort: large | status: pending
 - [ ] D.7.4 — Pause/resume: CLI `gludd pause` / `gludd resume` subcommands | priority: low | effort: small | status: pending
 - [x] D.9 — Auto-remediation never fires on tick (#52): trace MisconfigDetector, add integration test | priority: high | effort: medium | status: completed | evidence: 7f166439
 - [x] D.10 — Commit-path file-claim livelock (#53): total-order claim acquisition + TTL + backoff | priority: high | effort: medium | status: completed | evidence: 22 tests pass in test_file_claim_livelock.py. Implementation: FileClaimRegistry.claim_or_conflict (atomic total-order) + TTL reap + per-todo hash-offset backoff + _MAX_PUSH_RETRIES escape to BLOCKED in loop.py.
 - [ ] D.11 — Subagent orchestration defects (#57): max nesting depth, capability non-escalation, dispatch-rate control loop, spiral detection | priority: medium | effort: large | status: pending
 - [ ] D.12 — Slack connector: outbound notifications + channel history read, SSRF-guarded | priority: low | effort: medium | status: pending
-- [ ] D.13 — security_backlog.py: wire real checkers or delete module + tests with rationale | priority: low | effort: medium | status: pending
+- [x] D.13 — security_backlog.py: wire real checkers or delete module + tests with rationale | priority: low | effort: medium | status: completed | evidence: Added 4 new regression probes (D-10 MAX_BODY_BYTES, D-25 recursion_limit+_max_depth, D-28 NetworkPolicy, D-29 clone timeout) + 4 explicit OPEN checkers (D-12, D-19, D-26, D-30) replacing _default_check. _PROBE_ITEM_IDS expanded from 4 to 8. 36 tests pass (15 pre-existing + 9 new regression-detection tests).
 - [ ] D.14 — Expose background_test_runner via make target + CLI subcommand | priority: low | effort: small | status: pending
 - [ ] D.15 — Pricing sources static→live: CachedSource with TTL cache + static fallback per source | priority: low | effort: large | status: pending
 - [ ] D.16 — Toolchain/parser breadth: add eslint JSON, golangci-lint, cargo-audit, trivy parsers | priority: low | effort: medium | status: pending
@@ -258,7 +258,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [x] H.1 — H-STARTUP-NULL-DEPS: infra_tracker, deployment_manager, adaptive_router all None at EventLoop construction (4th instance of construction-order bug class) | priority: high | effort: small | status: completed | evidence: fix already applied in daemon.py:1753-1766 (pre-built before EventLoop constructor); test in tests/unit/test_daemon_startup.py 4 passed
 - [ ] H.2 — H-RELOAD-CONCURRENT: concurrent /admin/reload calls race on shared registries with no lock | priority: medium | effort: medium | status: pending
-- [ ] H.3 — H-READYZ-PREMATURE: /readyz treats "task not yet set" same as "task healthy" | priority: low | effort: small | status: pending
+- [x] H.3 — H-READYZ-PREMATURE: /readyz treats "task not yet set" same as "task healthy" | priority: low | effort: small | status: completed | evidence: 6 tests pass (test_h3_readyz.py)
 - [ ] H.4 — H-LANGGRAPH-AUDITOR-NOOP: tool_auditor stored but never invoked in LangGraphAgentLoop | priority: medium | effort: medium | status: pending
 - [x] H.5 — H-HUMANGATE-NO-CHECKPOINTER: gate graph compiled without checkpointer breaks interrupt/resume | priority: medium | effort: medium | status: completed | evidence: 2026-07-12 waves 11-12
 - [x] H.6 — H-LANGGRAPH-FACTORY-ROLE-TRAP: make_langgraph_tool_loop has no required role param | priority: medium | effort: small | status: completed | evidence: Waves 11-12
@@ -276,7 +276,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] H.18 — H-SIGNING-NO-PRIVSEP: /admin/signing/* has no privilege tier beyond shared PSK | priority: medium | effort: small | status: pending
 - [x] H.19 — H-STREAM-PROCESSOR-CMDI: /admin/stream/dispatch processor binary/args shell-injected into generated script | priority: high | effort: small | status: completed | evidence: Waves 13-14 closure
 - [ ] H.20 — H-CONNECTOR-EXC-LEAK: connectors return raw exception text to callers (~11 cited sinks) | priority: medium | effort: medium | status: pending
-- [ ] H.21 — H-WEBHOOK-DELIVERY-REBIND: registered webhooks SSRF-checked only at registration, never re-checked at delivery | priority: medium | effort: medium | status: pending
+- [x] H.21 — H-WEBHOOK-DELIVERY-REBIND: registered webhooks SSRF-checked only at registration, never re-checked at delivery | priority: medium | effort: medium | status: completed | evidence: 17 tests pass (test_h21_webhook_rebind.py)
 - [ ] H.22 — H-GATEWAY-SCOPE-FAILOPEN: project-secrets-resolver failure falls back to shared/base resolver; SSRF errors disclose internal URLs | priority: low | effort: small | status: pending
 - [x] H.23 — H-GATEWAY-EXC-CREDLEAK: raw provider-exception text flows unredacted into admin-visible facet and on-disk replay records | priority: high | effort: medium | status: completed | evidence: 11 tests pass, commit ac698bec
 
@@ -463,7 +463,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [x] AG.1 — Agent evaluation framework: trajectory evaluation, benchmark harness, quality scoring | priority: critical | effort: large | status: completed | evidence: design doc created, commit 5ce6065d
 - [ ] AG.2 — Lifecycle hook expansion: BeforeToolCall, AfterModelCall, AfterToolResult hooks for interception | priority: critical | effort: medium | status: pending
-- [x] AG.3 — Hierarchical task decomposition: CrewAI-style role-goal-backstory + manager-agent patterns | priority: high | effort: large | status: pending | evidence: 29/29 tests pass, `make test TESTFILE=tests/unit/test_ag3_task_decomposer.py`
+- [x] AG.3 — Hierarchical task decomposition: CrewAI-style role-goal-backstory + manager-agent patterns | priority: high | effort: large | status: done | evidence: 29/29 tests pass, `make test TESTFILE=tests/unit/test_ag3_task_decomposer.py`
 - [ ] AG.4 — Tool permission scoping: Cedar-style RBAC, per-tool capability lattice, fine-grained deny | priority: high | effort: large | status: pending
 - [x] AG.5 — Cross-conversation memory: LangGraph Store API for persistent cross-session state | priority: high | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] AG.6 — Formal agent role metadata: Role-Goal-Backstory fields on agent records | priority: high | effort: small | status: completed | evidence: 8 tests pass, commit 5ce6065d
