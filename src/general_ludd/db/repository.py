@@ -80,6 +80,7 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
 }
 
 _MAX_PRIORITY: int = 1000
+_MIN_PRIORITY: int = 0
 
 
 # Fields that callers are permitted to set via TodoRepository.create().
@@ -229,8 +230,13 @@ class TodoRepository:
                 f"supplied by callers: {sorted(bad_fields)}"
             )
         for key, value in todo_data.items():
-            if key == "priority" and isinstance(value, int) and value > _MAX_PRIORITY:
-                todo_data[key] = _MAX_PRIORITY
+            if key == "priority":
+                if not isinstance(value, int) or isinstance(value, bool):
+                    raise ValueError(f"create() rejected: priority must be an integer, got {type(value).__name__}")
+                if value < _MIN_PRIORITY:
+                    todo_data[key] = _MIN_PRIORITY
+                elif value > _MAX_PRIORITY:
+                    todo_data[key] = _MAX_PRIORITY
             if isinstance(value, str) and len(value.encode()) > cls._MAX_TEXT_BYTES:
                 raise ValueError(
                     f"create() rejected: field '{key}' exceeds the "
