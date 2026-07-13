@@ -106,7 +106,7 @@ def _build_ref_map(
     symbols: list[Symbol], files: list[Path], repo_root: Path
 ) -> dict[str, set[str]]:
     """For each symbol name, find which src files reference it (excluding its own file).
-    
+
     Reads each file ONCE and checks against all symbols, rather than reading all
     files for every symbol.
     """
