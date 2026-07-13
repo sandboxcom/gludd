@@ -127,7 +127,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] D.17 — Failover xfail gaps: fallback concurrency cap still unimplemented | priority: low | effort: small | status: pending
 - [ ] D.18 — Non-ephemeral account creation: implement persistent accounts or document 501 | priority: low | effort: medium | status: pending
 - [ ] D.19 — Postgres path / multi-worker (gated on owner go-ahead) | priority: low | effort: large | status: pending
-- [ ] D.20 — Dedup/coherence cleanups: 8 duplicate pairs, missing __init__.py, model_routing_coherence 5 gaps | priority: low | effort: medium | status: pending
+- [/] D.20 — Dedup/coherence cleanups: 8 duplicate pairs (4 fixed), missing __init__.py (8 dirs fixed), model_routing_coherence 5 gaps (pending) | priority: low | effort: medium | status: in_progress | evidence: 15/15 tests pass (test_d20_dedup_imports.py), connectors/_util.py + routers/_util.py created, 4 connectors + 4 routers migrated to shared helpers
 - [ ] D.21 — Remediation idempotency guard (only piece not yet closed from D21) | priority: medium | effort: small | status: pending
 - [x] D.22 — task_splitter Ansible role: role-only implementation (no Python module, no CLI, no dispatch wiring). Invoke via FQCN `general_ludd.agent.task_splitter`; role calls `gludd_model_call`, parses JSON, writes `task_splitter_result.json` | priority: medium | effort: small | status: completed | evidence: role at collections/ansible_collections/general_ludd/agent/roles/task_splitter/ (tasks/main.yml, defaults/main.yml, meta/main.yml, README.md), docs/TASK_SPLITTER.md
 

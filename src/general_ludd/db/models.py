@@ -901,7 +901,10 @@ class HumanTodoModel(Base):
     # The agent todo whose progress is blocked on this human-todo. NULL when
     # the agent is merely logging a need (no parent todo to block).
     parent_agent_todo_id: Mapped[str | None] = mapped_column(
-        String(32), nullable=True, index=True
+        String(32),
+        ForeignKey("todos.todo_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     session_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)

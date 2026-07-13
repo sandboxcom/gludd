@@ -3,14 +3,9 @@ from __future__ import annotations
 from typing import cast
 
 from fastapi import FastAPI, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from general_ludd.db.repository import BenchmarkRepository, PromptProfileRepository
+from general_ludd.routers._util import get_session_factory as _get_session_factory
 from general_ludd.scoring.router import AdaptiveRouter
-
-
-def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
-    return getattr(app.state, "_session_factory", None)
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:

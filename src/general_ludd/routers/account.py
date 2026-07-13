@@ -21,10 +21,6 @@ import logging
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-)
 
 from general_ludd.account.backup import (
     _delete_user_data,
@@ -39,12 +35,9 @@ from general_ludd.account.ephemeral import (
     SUPPORTED_PROVIDERS,
     EphemeralAccountManager,
 )
+from general_ludd.routers._util import get_session_factory as _get_session_factory
 
 logger = logging.getLogger(__name__)
-
-
-def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
-    return getattr(app.state, "_session_factory", None)
 
 
 # ---------------------------------------------------------------------------
