@@ -809,10 +809,10 @@ class ModelGateway:
         except Exception:
             logger.warning(
                 "project-scoped secrets unavailable for project_id=%r; "
-                "falling back to the shared resolver",
+                "refusing to fall back to shared resolver (fail-closed)",
                 project_id,
             )
-            return base
+            return None
 
     def _invoke_and_bill(
         self,

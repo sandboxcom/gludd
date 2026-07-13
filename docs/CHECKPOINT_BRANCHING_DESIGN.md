@@ -1,7 +1,7 @@
 # AG.8: Checkpoint Branching — A/B Execution Paths from LangGraph Checkpoints
 
-**Status:** Draft  
-**Target:** gludd v0.2.0  
+**Status:** Draft
+**Target:** gludd v0.2.0
 **Depends on:** Existing `TickCheckpointer` (`execution/graph_checkpointer.py`),
 `DispatchCheckpoint` (`agents/dispatch_checkpoint.py`), `HumanGate` (`execution/human_gate.py`)
 
