@@ -3719,6 +3719,10 @@ sdd-quickfix:
 check-all-guardrails: check-plugin-heartbeats check-test-env-writes check-clean-tree-status
 	@echo "All guardrails active"
 
+.PHONY: check-brace-balance
+check-brace-balance:
+	@$(UV) run python scripts/check_brace_balance.py $(PLUGIN)
+
 check-clean-tree-status:
 	@$(UV) run python3 scripts/check_clean_tree.py
 
