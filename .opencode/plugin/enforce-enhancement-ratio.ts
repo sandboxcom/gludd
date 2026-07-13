@@ -29,6 +29,7 @@ import * as fs from "node:fs"
 const STATE_FILE = process.env.GLUDD_ENHANCEMENT_RATIO_STATE || "/tmp/gludd-enhancement-ratio.json"
 const ENABLED = (process.env.GLUDD_ENHANCEMENT_RATIO_ENFORCE || "1") !== "0"
 const HARD_DENY = process.env.GLUDD_ENHANCEMENT_RATIO_HARD_DENY === "1"
+const BLOCK = (process.env.GLUDD_ENHANCEMENT_RATIO_BLOCK || "1") !== "0"
 
 const ENHANCEMENT_KEYWORDS = [
   "enhancement", "feature", "docs", "documentation",
@@ -156,6 +157,18 @@ export default (async ({ }) => {
         else s.session_unknown++
 
         saveState(s)
+
+        if (BLOCK && s.wave.length >= 2) {
+          const fixCount = s.wave.filter(e => e.type === "fix").length
+          const fixRatio = fixCount / s.wave.length
+          if (fixRatio > 0.5) {
+            const fixPct = (fixRatio * 100).toFixed(0)
+            return {
+              permissionDecision: "deny",
+              message: `ENHANCEMENT RATIO VIOLATION: ${fixPct}% fixes (${fixCount}/${s.wave.length}) in this wave. Must be ≤50%. Replace fix dispatches with enhancement work.`
+            }
+          }
+        }
       } catch { /* fail open */ }
     },
 
@@ -195,15 +208,21 @@ export default (async ({ }) => {
           const violMsg =
             `ENHANCEMENT RATIO VIOLATION: ${fixPct}% fixes (${fixCount}/${total}) in this wave. ` +
             `Only ${enhancementPct}% enhancements. ` +
-            `At least 50% of dispatches must be enhancements per AGENTS.md COST-EFFICIENCY DIRECTIVE §5.`
+            `At least 50% of dispatches must be enhancements per AGENTS.md COST-EFFICIENCY DIRECTIVE §5.` +
+            `\n\nRe-split the wave: replace fix dispatches with enhancement work.\n`
 
-          if (HARD_DENY) {
-            modified += `\n\n${violMsg}\nRe-split the wave: replace fix dispatches with enhancement work.\n`
+          s.wave = []
+          s.early_warned = false
+          s.wave_count_since_last_warn = 0
+          saveState(s)
+
+          if (BLOCK || HARD_DENY) {
+            return violMsg
           } else {
             console.warn(violMsg)
+            if (modified) return output + modified
+            return output
           }
-
-          s.wave_count_since_last_warn = 0
         }
 
         s.wave = []

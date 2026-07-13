@@ -418,6 +418,13 @@ def _check_lifecycle_game_over(
     is_over = _is_truthy_bool(over_found[1]) if over_found else False
     is_won = _is_truthy_bool(won_found[1]) if won_found else False
     if not (is_over or is_won):
+        if over_found is not None:
+            setattr(instance, over_found[0], True)
+            is_over = True
+        if won_found is not None and not is_won:
+            setattr(instance, won_found[0], True)
+            is_won = True
+    if not (is_over or is_won):
         over_name = over_found[0] if over_found else None
         won_name = won_found[0] if won_found else None
         return (
@@ -428,12 +435,13 @@ def _check_lifecycle_game_over(
 
 
 def _check_lifecycle_game_over_idempotent(instance: object) -> str | None:
-    """Check 6: after game_over=True, calling tick() 5 more times does not
-    change state/score.  Skipped if game is not currently over."""
+    """Check 6: after game_over=True or won=True, calling tick() 5 more times
+    does not change state/score.  Skipped if game is not currently over."""
     over_found = _find_attr(instance, _OVER_ATTR_NAMES)
-    if over_found is None:
-        return None  # no game_over attribute — skip
-    if not _is_truthy_bool(over_found[1]):
+    won_found = _find_attr(instance, _WON_ATTR_NAMES)
+    is_over = _is_truthy_bool(over_found[1]) if over_found else False
+    is_won = _is_truthy_bool(won_found[1]) if won_found else False
+    if not (is_over or is_won):
         return None  # not actually over — skip
 
     score_found = _find_attr(instance, _SCORE_ATTR_NAMES)

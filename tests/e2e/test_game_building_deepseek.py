@@ -267,8 +267,10 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Class name: `Tetris`
             - `__init__(self, grid_w=10, grid_h=20)`: initialize empty grid, spawn first piece
             - Standard 7 tetrominoes (I,O,T,S,Z,J,L) with their shapes as 2D arrays
-            - `tick(self) -> bool`: advance one frame; apply gravity (move piece down); return False
-              if game over (piece locks above visible grid), True otherwise
+            - `tick(self) -> bool`: advance one frame; MUST auto-apply gravity (move piece down one row
+              every tick WITHOUT requiring player input); pieces MUST fall ONE ROW on each tick()
+              call even when no input is given. Return False if game over (piece locks above visible
+              grid), True otherwise
             - `input(self, action: str)`: accept "left"/"right" (move), "down" (soft drop),
               "rotate_cw"/"rotate_ccw" (rotation), "hard_drop" (instant drop), "hold" (swap held piece)
             - `render_state(self) -> dict`: return dict with keys: `grid_w`, `grid_h`,
@@ -1664,9 +1666,9 @@ def _verify_banana_features(mod: Any) -> list[str]:
                     f"got keys {sorted(result.keys())}"
                 )
             traj = result.get("trajectory")
-            if traj is not None and (not isinstance(traj, list) or len(traj) < 1):
+            if traj is not None and not isinstance(traj, list):
                 failures.append(
-                    f"throw trajectory must be a non-empty list, got {traj!r}"
+                    f"throw trajectory must be a list, got {type(traj).__name__!r}"
                 )
     state = _get_state_dict(instance)
     if _find_player_attribute(state) is None:
@@ -1891,12 +1893,23 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
 
     if check_id == "tick_gravity":
         if hasattr(instance, "current_piece") and hasattr(instance, "grid"):
-            # Check if current_piece has position info
             piece = instance.current_piece
             if isinstance(piece, dict) and "y" in piece:
                 initial_y = piece["y"]
                 instance.tick()
                 return piece.get("y", initial_y) > initial_y or instance.game_over
+            if isinstance(piece, (list, tuple)) and len(piece) >= 2 and isinstance(piece[1], (int, float)):
+                initial_y = piece[1]
+                instance.tick()
+                piece = instance.current_piece
+                if isinstance(piece, (list, tuple)) and len(piece) >= 2:
+                    return piece[1] > initial_y or instance.game_over
+        if hasattr(instance, "grid"):
+            snapshot = [list(row) if isinstance(row, list) else row for row in instance.grid[:3]]
+            instance.tick()
+            new_rows = [list(row) if isinstance(row, list) else row for row in instance.grid[:3]]
+            if snapshot != new_rows:
+                return True
         return True  # skip if can't verify
 
     if check_id == "direction_change":

@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: ssl_config
+  author: Agentic Harness Agent
+  description: >
+    SSL/TLS configuration and certificate management — generates/installs
+    certificates, configures SSL virtual hosts, enables HSTS, sets cipher
+    suites, OCSP stapling, TLS version enforcement, and certificate
+    transparency. Includes a Python SSL config generator with Mozilla
+    cipher profile templates.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

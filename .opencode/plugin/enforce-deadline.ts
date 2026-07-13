@@ -48,6 +48,7 @@ const DEADLINE_STATE = process.env.GLUDD_TASK_DEADLINE_STATE || "/tmp/gludd-task
 const WARNINGS_LOG = process.env.GLUDD_TASK_DEADLINE_WARNINGS || "/tmp/gludd-task-deadlines.warnings.log"
 const STALE_FILE = process.env.GLUDD_TASK_STALE_FILE || "/tmp/gludd-task-stale.json"
 const DEADLINE_ENABLED = (process.env.GLUDD_TASK_DEADLINE_ENABLED || "1") !== "0"
+const BLOCK = (process.env.GLUDD_TASK_DEADLINE_BLOCK || "1") !== "0"
 
 // ============================================================================
 // NOISE-CONTROL STATE
@@ -202,6 +203,8 @@ export default (async ({ }) => {
         // (2) On EVERY tool: scan tracked tasks for deadline breaches.
         const d = loadDeadlines()
         const now = Date.now()
+        let firstBreachedId: string | null = null
+        let firstBreachedElapsed: number = 0
         for (const id of Object.keys(d)) {
           const start = d[id]
           if (typeof start !== "number") continue
@@ -213,24 +216,24 @@ export default (async ({ }) => {
               `TASK DEADLINE EXCEEDED: task ${id} has been running for ${mins}min ` +
               `(limit ${limitMin}min). This task should have completed. The ` +
               `orchestrator should dispatch a replacement.`
-            // Persistent channel — every breach is logged so the orchestrator
-            // can poll via `make task-ttl-check` (CLI mirror reads the same
-            // state file; this log is the audit trail).
             appendWarning(`${new Date().toISOString()} ${line}`)
-            // Record to STALE_FILE so scripts/task_watchdog.py can kill the
-            // associated hung process. Deduplicated by task_id.
             recordStaleTask(id, start, elapsed)
-            // UI channel — throttled to ONCE per task id per session so a
-            // lingering breached task does not flood the user's terminal.
-            // The orchestrator still gets the signal (one warn is enough to
-            // trigger re-dispatch / re-split); the user UI stays readable.
             if (!warnedIds.has(id)) {
               warnedIds.add(id)
-              // Advisory — plugins cannot hard-kill tasks. The orchestrator
-              // reads its own console stream and acts (re-dispatch / re-split
-              // / abandon).
               console.warn(line)
             }
+            if (!firstBreachedId) {
+              firstBreachedId = id
+              firstBreachedElapsed = elapsed
+            }
+          }
+        }
+        if (BLOCK && firstBreachedId) {
+          const elapsedSec = (firstBreachedElapsed / 1000).toFixed(0)
+          const limitSec = (TASK_TIMEOUT_MS / 1000).toFixed(0)
+          return {
+            permissionDecision: "deny",
+            message: `TASK DEADLINE EXCEEDED: task ${firstBreachedId} has been running for ${elapsedSec}s (limit ${limitSec}s). Dispatch replacement or run in foreground.`
           }
         }
       } catch { /* fail open — never wedge */ }

@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: logging_middleware
+  author: Agentic Harness Agent
+  description: >
+    Access/error logging, log rotation, log analysis, and middleware
+    configuration — configures log formats, rotation, access/error logs,
+    custom fields, JSON structured logging, syslog integration, and
+    log analysis tooling. Includes a Python log format validator and
+    rotation config generator.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

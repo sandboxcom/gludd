@@ -1,0 +1,6 @@
+---
+gateway_type: wsgi
+socket_path: /tmp/app.sock
+app_module: app:application
+processes: "{{ ansible_processor_vcpus * 2 + 1 }}"
+threads: 1

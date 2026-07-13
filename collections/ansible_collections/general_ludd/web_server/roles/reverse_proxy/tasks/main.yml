@@ -1,0 +1,116 @@
+---
+# reverse_proxy — configure upstream pools, proxy pass, caching, health checks.
+
+- name: "Validate required vars"
+  ansible.builtin.assert:
+    that:
+      - proxy_type in ["nginx", "haproxy", "traefik", "envoy"]
+    fail_msg: >-
+      reverse_proxy requires proxy_type 'nginx', 'haproxy', 'traefik', or 'envoy'.
+      Got proxy_type={{ proxy_type | default('<undefined>') }}.
+
+- name: "Install reverse proxy packages"
+  ansible.builtin.package:
+    name: "{{ proxy_type }}"
+    state: present
+  when: proxy_type in ["nginx", "haproxy"]
+
+- name: "Configure nginx reverse proxy"
+  when: proxy_type == "nginx"
+  block:
+    - name: "Ensure upstream servers defined"
+      ansible.builtin.assert:
+        that:
+          - upstream_servers | length > 0
+        fail_msg: "upstream_servers must contain at least one backend."
+
+    - name: "Generate nginx upstream config"
+      ansible.builtin.template:
+        src: nginx_upstream.conf.j2
+        dest: "/etc/nginx/conf.d/upstream_{{ server_name }}.conf"
+        mode: "0644"
+      notify: reload nginx
+
+    - name: "Generate nginx proxy config"
+      ansible.builtin.template:
+        src: nginx_reverse_proxy.conf.j2
+        dest: "/etc/nginx/sites-available/{{ server_name }}.conf"
+        mode: "0644"
+      notify: reload nginx
+
+    - name: "Enable nginx proxy site"
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ server_name }}.conf"
+        dest: "/etc/nginx/sites-enabled/{{ server_name }}.conf"
+        state: link
+      notify: reload nginx
+
+    - name: "Enable nginx cache directory"
+      when: cache_enabled | bool
+      ansible.builtin.file:
+        path: /var/cache/nginx/proxy_cache
+        state: directory
+        owner: nginx
+        group: nginx
+        mode: "0750"
+
+    - name: "Validate nginx configuration"
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+- name: "Configure HAProxy reverse proxy"
+  when: proxy_type == "haproxy"
+  block:
+    - name: "Generate HAProxy config"
+      ansible.builtin.template:
+        src: haproxy_reverse_proxy.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+        mode: "0644"
+      notify: reload haproxy
+
+    - name: "Validate HAProxy configuration"
+      ansible.builtin.command: haproxy -c -f /etc/haproxy/haproxy.cfg
+      changed_when: false
+
+- name: "Configure Traefik reverse proxy"
+  when: proxy_type == "traefik"
+  block:
+    - name: "Ensure Traefik config directory"
+      ansible.builtin.file:
+        path: /etc/traefik/dynamic
+        state: directory
+        mode: "0750"
+
+    - name: "Generate Traefik static config"
+      ansible.builtin.template:
+        src: traefik_static.yml.j2
+        dest: /etc/traefik/traefik.yml
+        mode: "0644"
+      notify: reload traefik
+
+    - name: "Generate Traefik dynamic config"
+      ansible.builtin.template:
+        src: traefik_dynamic.yml.j2
+        dest: /etc/traefik/dynamic/routers.yml
+        mode: "0644"
+      notify: reload traefik
+
+- name: "Configure Envoy reverse proxy"
+  when: proxy_type == "envoy"
+  block:
+    - name: "Generate Envoy config"
+      ansible.builtin.template:
+        src: envoy_reverse_proxy.yaml.j2
+        dest: /etc/envoy/envoy.yaml
+        mode: "0644"
+      notify: reload envoy
+
+    - name: "Validate Envoy configuration"
+      ansible.builtin.command: envoy --mode validate -c /etc/envoy/envoy.yaml
+      changed_when: false
+
+- name: "Ensure proxy service is enabled and started"
+  ansible.builtin.service:
+    name: "{{ proxy_type }}"
+    state: started
+    enabled: true

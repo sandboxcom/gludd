@@ -1,0 +1,79 @@
+---
+# logging_middleware — configure log formats, set up rotation, enable
+# access/error logs, add custom log fields.
+
+- name: "Validate error log level"
+  ansible.builtin.assert:
+    that:
+      - error_log_level in ["debug", "info", "notice", "warn", "error", "crit", "alert", "emerg"]
+    fail_msg: >-
+      logging_middleware requires a valid error_log_level.
+      Got error_log_level={{ error_log_level | default('<undefined>') }}.
+
+- name: "Ensure log directory exists"
+  ansible.builtin.file:
+    path: "{{ log_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: "Validate access log format"
+  ansible.builtin.command: >-
+    python3 {{ role_path }}/files/logging_middleware.py validate
+    --format "{{ access_log_format }}"
+  changed_when: false
+  ignore_errors: true
+
+- name: "Generate log format config snippet"
+  ansible.builtin.command: >-
+    python3 {{ role_path }}/files/logging_middleware.py generate-format
+    --format-name main
+    --format "{{ access_log_format }}"
+    --output {{ log_dir }}/log_format.conf
+  register: _fmt_gen
+  changed_when: _fmt_gen.rc == 0
+
+- name: "Generate logrotate config"
+  ansible.builtin.command: >-
+    python3 {{ role_path }}/files/logging_middleware.py generate-rotation
+    --log-dir {{ log_dir }}
+    --rotation {{ rotation }}
+    --retention {{ retention_days }}
+    --output /etc/logrotate.d/{{ log_dir | basename }}
+  register: _rot_gen
+  changed_when: _rot_gen.rc == 0
+  become: true
+
+- name: "Configure syslog forwarding"
+  when: syslog_enabled
+  block:
+    - name: "Update syslog config"
+      ansible.builtin.lineinfile:
+        path: /etc/rsyslog.d/50-nginx.conf
+        line: "$ModLoad imfile"
+        create: true
+        mode: "0644"
+
+    - name: "Configure syslog input for error log"
+      ansible.builtin.blockinfile:
+        path: /etc/rsyslog.d/50-nginx.conf
+        block: |
+          input(type="imfile" File="{{ log_dir }}/error.log" Tag="nginx-error" Severity="error" Facility="local7")
+          input(type="imfile" File="{{ log_dir }}/access.log" Tag="nginx-access" Facility="local7")
+
+    - name: "Restart rsyslog"
+      ansible.builtin.systemd:
+        name: rsyslog
+        state: restarted
+        enabled: true
+
+- name: "Display current log stats"
+  ansible.builtin.command: >-
+    python3 {{ role_path }}/files/logging_middleware.py stats
+    --log-dir {{ log_dir }}
+  register: _log_stats
+  changed_when: false
+
+- name: "Log statistics"
+  ansible.builtin.debug:
+    msg: "{{ _log_stats.stdout }}"
+  when: _log_stats.stdout | length > 0

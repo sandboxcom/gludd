@@ -1,0 +1,97 @@
+---
+# ssl_config — generate/install certs, configure SSL vhosts, enable HSTS,
+# set cipher suites, OCSP stapling.
+
+- name: "Validate cipher_profile"
+  ansible.builtin.assert:
+    that:
+      - cipher_profile in ["modern", "intermediate", "old"]
+    fail_msg: >-
+      ssl_config requires cipher_profile 'modern', 'intermediate', or 'old'.
+      Got cipher_profile={{ cipher_profile | default('<undefined>') }}.
+
+- name: "Ensure SSL directories exist"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ cert_path | dirname }}"
+    - "{{ key_path | dirname }}"
+
+- name: "Generate self-signed certificate"
+  when: generate_self_signed | default(false)
+  block:
+    - name: "Generate private key"
+      ansible.builtin.openssl_privatekey:
+        path: "{{ key_path }}"
+        size: 4096
+        mode: "0600"
+
+    - name: "Generate CSR"
+      ansible.builtin.openssl_csr:
+        path: "{{ cert_path | splitext | first }}.csr"
+        privatekey_path: "{{ key_path }}"
+        common_name: "{{ ssl_common_name | default(server_name | default(ansible_fqdn)) }}"
+
+    - name: "Generate self-signed certificate"
+      ansible.builtin.openssl_certificate:
+        path: "{{ cert_path }}"
+        privatekey_path: "{{ key_path }}"
+        csr_path: "{{ cert_path | splitext | first }}.csr"
+        provider: selfsigned
+        selfsigned_digest: sha384
+
+- name: "Deploy CA-signed certificate"
+  when: ssl_cert_content is defined and ssl_key_content is defined
+  block:
+    - name: "Write certificate"
+      ansible.builtin.copy:
+        content: "{{ ssl_cert_content }}"
+        dest: "{{ cert_path }}"
+        mode: "0644"
+
+    - name: "Write private key"
+      ansible.builtin.copy:
+        content: "{{ ssl_key_content }}"
+        dest: "{{ key_path }}"
+        mode: "0600"
+
+- name: "Deploy CA bundle"
+  when: ca_bundle | length > 0 or ssl_ca_content is defined
+  ansible.builtin.copy:
+    content: "{{ ssl_ca_content | default(ca_bundle) }}"
+    dest: "{{ ca_bundle if ca_bundle else cert_path | dirname + '/ca-bundle.crt' }}"
+    mode: "0644"
+
+- name: "Generate Mozilla SSL config snippet"
+  ansible.builtin.command: >-
+    python3 {{ role_path }}/files/ssl_config.py generate
+    --profile {{ cipher_profile }}
+    --min-tls {{ min_tls_version }}
+    --hsts-max-age {{ hsts_max_age }}
+    --output {{ ssl_config_output | default('/etc/nginx/conf.d/ssl_params.conf') }}
+  register: _ssl_gen
+  changed_when: _ssl_gen.rc == 0
+  when: ssl_config_output is defined or true
+
+- name: "Validate certificate"
+  ansible.builtin.command: >-
+    python3 {{ role_path }}/files/ssl_config.py validate
+    --cert {{ cert_path }}
+    --key {{ key_path }}
+  register: _ssl_validate
+  changed_when: false
+  ignore_errors: "{{ ssl_validate_ignore_errors | default(true) }}"
+
+- name: "Report certificate info"
+  ansible.builtin.command: >-
+    python3 {{ role_path }}/files/ssl_config.py info
+    --cert {{ cert_path }}
+  register: _ssl_info
+  changed_when: false
+
+- name: "Display certificate details"
+  ansible.builtin.debug:
+    msg: "{{ _ssl_info.stdout }}"
+  when: _ssl_info.stdout | length > 0

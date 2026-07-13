@@ -1,0 +1,95 @@
+---
+# http_server — install, configure virtual hosts, set up document roots,
+# manage modules, validate config.
+
+- name: "Validate required vars"
+  ansible.builtin.assert:
+    that:
+      - server_type in ["nginx", "apache"]
+    fail_msg: >-
+      http_server requires server_type 'nginx' or 'apache'.
+      Got server_type={{ server_type | default('<undefined>') }}.
+
+- name: "Install nginx"
+  when: server_type == "nginx"
+  block:
+    - name: "Install nginx package"
+      ansible.builtin.package:
+        name: nginx
+        state: present
+
+    - name: "Ensure document root exists"
+      ansible.builtin.file:
+        path: "{{ document_root }}"
+        state: directory
+        owner: "{{ ansible_user_id | default('root') }}"
+        group: "{{ ansible_user_gid | default('root') }}"
+        mode: "0755"
+
+    - name: "Generate nginx server block"
+      ansible.builtin.template:
+        src: nginx_vhost.conf.j2
+        dest: "/etc/nginx/sites-available/{{ server_name }}.conf"
+        mode: "0644"
+      notify: reload nginx
+
+    - name: "Enable nginx site"
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ server_name }}.conf"
+        dest: "/etc/nginx/sites-enabled/{{ server_name }}.conf"
+        state: link
+      notify: reload nginx
+
+    - name: "Manage nginx modules"
+      ansible.builtin.lineinfile:
+        path: /etc/nginx/nginx.conf
+        regexp: "^load_module"
+        line: "load_module modules/{{ item }}.so;"
+        insertbefore: "^events"
+      loop: "{{ extra_directives.modules | default([]) }}"
+      when: extra_directives.modules is defined
+
+    - name: "Validate nginx configuration"
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+- name: "Install apache"
+  when: server_type == "apache"
+  block:
+    - name: "Install apache package"
+      ansible.builtin.package:
+        name: "{{ 'httpd' if ansible_os_family == 'RedHat' else 'apache2' }}"
+        state: present
+
+    - name: "Ensure document root exists"
+      ansible.builtin.file:
+        path: "{{ document_root }}"
+        state: directory
+        owner: "{{ ansible_user_id | default('root') }}"
+        group: "{{ ansible_user_gid | default('root') }}"
+        mode: "0755"
+
+    - name: "Configure apache virtual host"
+      ansible.builtin.template:
+        src: apache_vhost.conf.j2
+        dest: "{{ '/etc/httpd/conf.d' if ansible_os_family == 'RedHat' else '/etc/apache2/sites-available' }}/{{ server_name }}.conf"
+        mode: "0644"
+      notify: reload apache
+
+    - name: "Enable apache modules"
+      ansible.builtin.command: "a2enmod {{ item }}"
+      loop: "{{ extra_directives.modules | default([]) }}"
+      when:
+        - ansible_os_family == "Debian"
+        - extra_directives.modules is defined
+      changed_when: false
+
+    - name: "Validate apache configuration"
+      ansible.builtin.command: "{{ 'httpd -t' if ansible_os_family == 'RedHat' else 'apache2ctl -t' }}"
+      changed_when: false
+
+- name: "Ensure server is enabled and started"
+  ansible.builtin.service:
+    name: "{{ server_type if server_type == 'nginx' else ('httpd' if ansible_os_family == 'RedHat' else 'apache2') }}"
+    state: started
+    enabled: true

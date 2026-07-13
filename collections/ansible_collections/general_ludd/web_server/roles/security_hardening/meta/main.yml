@@ -1,0 +1,32 @@
+---
+galaxy_info:
+  role_name: security_hardening
+  author: general_ludd
+  description: >-
+    Web server security hardening including security headers, server token
+    hiding, WAF (ModSecurity), file permissions, TLS hardening, HTTP method
+    restriction, and automated audit remediation.
+  license: MIT
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - web
+    - security
+    - hardening
+    - waf
+    - modsecurity
+    - tls
+    - compliance
+dependencies: []

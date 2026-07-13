@@ -1,0 +1,22 @@
+---
+hardening_profile: basic
+hide_server_tokens: true
+security_headers: true
+disable_directory_listing: true
+waf_enabled: false
+modsecurity_ruleset: owasp_crs
+audit_mode: false
+allowed_methods:
+  - GET
+  - POST
+  - HEAD
+max_body_size_mb: 10
+tls_protocols:
+  - TLSv1.2
+  - TLSv1.3
+tls_ciphers: "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH"
+dhparam_bits: 2048
+server_type: nginx
+audit_tools:
+  - nikto
+  - testssl.sh

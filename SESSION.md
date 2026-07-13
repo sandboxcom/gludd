@@ -5,7 +5,8 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- **2026-07-12** — Session 25. On `development` branch, HEAD `dcfb6256` (pushed + VERIFIED). CI pending run 29214853350. Wave 5-6 completed: 4 commits (gate-refresh, gen-status-table, lint fixes, XML collection). XML collection: 9 roles, xml_utils.py (16 functions), docs/XML_COLLECTION.md (975 lines), 47 unit tests. Wave 1 dispatched: 7 subagents, results landing. CI RED (run 29213743760). Dirty tree: hot_reloader SyntaxError, dead-code checker tests WIP.
+- **2026-07-12** — Session 25, Waves 10-11. On `development` branch. Enforcement infrastructure fixes: converted enforce-deadline.ts + enforce-enhancement-ratio.ts from advisory to blocking, created functional hook test harness, added AGENTS.md self-test quality rule (structural vs. behavioral tests).
+- **2026-07-12** — Session 25. On `development` branch, HEAD `db50eb0b` (Waves 6-9 pushed). Waves 6-8 landed: XML collection (9 roles, xml_utils.py, 47 tests), web collection (6 roles, web_utils.py 25 funcs, 76 tests), web_server collection (8 roles, web_server_utils.py, docs). Wave 9: e2e game test gap analysis — 2 CRITICAL, 1 HIGH, 2 MEDIUM findings.
 - 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 - **Wave 35 — Collection Split + Documentation:** TASKS.md Phase R expanded to 18 items. Collection FQCNs updated: `general_ludd.agent.{ssl_cert,hsm_operations,audit_framework,sql_injection,command_injection,prompt_injection}` → `general_ludd.security.*`. `docs/SECURITY_ROLES.md` + `docs/SSL_CERT_SYSTEM.md` FQCN references updated. Two new docs created: `docs/NETWORKING_SYSTEM.md` (networking role, 7 modes, ScapyAdapter, tool matrix, dissector templates) and `docs/BUSINESS_RESEARCH_SYSTEM.md` (entity_research role, 6 research capabilities, SearX monitoring, entity graph). README.md restructured from single collection section to 4 collection sub-sections (`general_ludd.agent`, `general_ludd.security`, `general_ludd.business`, `general_ludd.networking`) with FQCN tables and doc cross-references.
 - **SSL cert system docs** — `docs/SSL_CERT_SYSTEM.md` created: architecture overview, 2 Ansible role specifications, 4 data file formats, 5 Python module APIs, 6-standard compliance matrix, security considerations. TASKS.md F.6 ticked, CHANGELOG entry added.
@@ -31,6 +32,12 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 ## Current Work
 
 - **HEAD: `dcfb6256`** on `development` branch (2026-07-12). Pushed + VERIFIED.
+- **Waves 10-11 — Enforcement infrastructure fixes (2026-07-12):**
+  - **enforce-deadline.ts** — converted from advisory (`console.warn`) to blocking (`permissionDecision: "deny"`); env-var escape path (`GLUDD_DEADLINE_ENFORCE=0`); fail-open on any error.
+  - **enforce-enhancement-ratio.ts** — converted from advisory to blocking; same fail-open + env-var pattern.
+  - **Functional hook test harness** — `scripts/test_hook_runtime.py` invokes actual plugin hooks via `node -e` with constructed arguments and asserts on return values.
+  - **AGENTS.md self-test quality rule** — codified "Self-Test Quality — Structural vs Behavioral" section requiring runtime tests for every enforcement plugin.
+  - **Subagent guard coverage** — all 6 affected plugins now skip enforcement via `OPENCODE_SUBAGENT=1` gate.
 - **Wave 6 — XML collection (commit `dcfb6256`):** 9 Ansible roles under `ansible_collections/general_ludd/xml/`, `xml_utils.py` with 16 functions, `docs/XML_COLLECTION.md` (975 lines), 47 unit tests, `push-dev-nv` target added. Development pushed to `dcfb6256`.
 - **Wave 5 — Gate-refresh + lint fixes (commits `f68b1772` + `ece04522`):** gate-refresh target + gen-status-table script + 11 lint fixes across test files.
 - **HEAD: `d69cd60f`** on `development` branch (2026-07-12).
@@ -115,28 +122,28 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Known Gaps
 
-1. **CI pending on `development`** — run 29214853350 (Wave 5-6 push). Must be green before development→master merge.
+1. **e2e game pipeline broken** — gap analysis (Wave 9) found 2 CRITICAL findings: game_over flag mismatch, missing lifecycle steps.
 2. **CI RED on `development`** — run 29213743760. Must be fixed before development→master merge.
-3. **XML tests not yet run** — Wave 6 XML collection has 47 unit tests that need execution.
-4. **CHANGELOG/README not yet updated** — Wave 5-6 features not yet reflected in docs.
-5. **`hot_reloader.py` SyntaxError** — C.8 tests pass but reloader module has parse error.
-2. **`make gate` not yet run on development** — gate-lite assertion fixes in Wave 25; full gate pending.
-3. **development → master merge pending** — development is 30+ commits ahead; gate must be green before merging.
-4. **CI pending** — commits pushed to sandboxcom/development; CI verdict not yet available.
+3. **`hot_reloader.py` SyntaxError** — C.8 tests pass but reloader module has parse error.
+4. **development → master merge pending** — development is 35+ commits ahead; gate must be green before merging.
 5. **No release tag cut** — next version tag not yet created; blocked on gate green + merge.
 6. **Full local test suite OOM** — under 8-worker xdist; CI-as-gate used; `make gate-lite` is the local approximation.
 7. **Connector gaps** — no WebSocket or reconnect logic (feature requests, not blocking).
-8. **Phase F docs** — partially addressed with F.1 reveal.js deck in Wave 24; remaining items F2-F5 pending (tracked in `docs/AGENTIC_IMPLEMENTATION_SPEC.md` §3.6).
+8. **enforce-floor.ts hard-coded ON** — no `GLUDD_FLOOR_ENFORCE` env-var escape path; plugin cannot be disabled for focused single-file work.
+9. **text.complete dedup across 6 plugins** — multiple plugins operate on the same `text.complete` hook surface with no coordination; risk of interference or duplicate enforcement messages.
+10. **No integration hook tests** — 800+ enforcement tests are structural (source-code shape checks); zero tests invoke actual hooks with real arguments across plugin boundaries.
 
 ## Next Steps
 
-1. [ ] **Run XML tests** — `make test TESTFILE=tests/unit/test_xml_utils.py` to verify Wave 6 XML collection.
-2. [ ] **Commit Wave 6** — `make git-add` + `make ship-commit MSG='Wave 6: XML collection — 9 roles, xml_utils.py, docs, 47 tests, push-dev-nv'`.
-3. [ ] **Update CHANGELOG + README** — reflect Wave 5-6 features.
-4. [ ] **Proceed to remaining Phase H/C tasks** from TASKS.md.
-5. [ ] **Fix `hot_reloader.py` SyntaxError** — parse/fix the error in `src/general_ludd/ornith/hot_reloader.py`.
-6. [ ] **Fix dead-code checker tests** — complete test suite for `scripts/check_dead_code.py`.
-7. [ ] **Re-check CI** — `make ci-verdict-safe` after cooldown; CI RED run 29213743760 needs investigation.
+1. [ ] **Write runtime tests for all remaining plugins** — extend `scripts/test_hook_runtime.py` to cover enforce-floor, enforce-stop, enforce-delegate, enforce-multitask, enforce-session-start, enforce-clean-tree, enforce-no-suppressions, enforce-no-wait (per AGENTS.md self-test quality rule).
+2. [ ] **Add `GLUDD_FLOOR_ENFORCE` env var to enforce-floor.ts** — match the fail-open + env-var-escape pattern established in enforce-deadline + enforce-enhancement-ratio.
+3. [ ] **Commit + push** — `make ship-commit MSG='...'` + `make batch-push` for Waves 10-11 enforcement fixes.
+4. [ ] **Fix e2e game gaps** — resolve game_over flag mismatch and missing lifecycle steps from Wave 9 gap analysis.
+5. [ ] **Re-run e2e game tests** — `make test TESTFILE=tests/e2e/` to verify fixes.
+6. [ ] **Fix `hot_reloader.py` SyntaxError** — parse/fix the error in `src/general_ludd/ornith/hot_reloader.py`.
+7. [ ] **Run gate-lite** — `make gate-lite` to validate current state before merging to master.
+8. [ ] **development → master merge** — after gate green, merge with `make release-promote`.
+9. [ ] **Cut release tag** — after merge to master, run `make release-cut`.
 
 ## Current Gate Status (2026-07-12)
 <!-- gate:begin -->
