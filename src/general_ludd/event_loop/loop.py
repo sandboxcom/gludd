@@ -364,6 +364,7 @@ class EventLoop:
         self._consensus_reviewer = consensus_reviewer
         self._langgraph_reviewer = langgraph_reviewer
         self._model_gateway = model_gateway
+        self._mock_gateway: Any = None
         self._dispatcher = dispatcher
         self._spend_limiter = spend_limiter  # may be overwritten post-construction by the daemon
         self._pause_controller = pause_controller
@@ -2271,7 +2272,8 @@ class EventLoop:
             _model_call_start = time.monotonic()
             _model_call_success = False
             _model_call_error: str | None = None
-            if self._model_gateway is not None and is_generation_work_type(
+            _eff_gateway = self._mock_gateway if self._mock_gateway is not None else self._model_gateway
+            if _eff_gateway is not None and is_generation_work_type(
                 _safe_str(todo, "work_type", "code") or "code"
             ):
                 # Deployment health check: before calling the model, verify
@@ -2336,7 +2338,7 @@ class EventLoop:
                     )
                     model_response, model_tool_calls = await self._bounded_to_thread(
                         invoke_model_for_generation,
-                        self._model_gateway,
+                        _eff_gateway,
                         job_id=job_id,
                         work_type=_safe_str(todo, "work_type", "code") or "code",
                         model_profile=resolved_model_profile,
@@ -2411,8 +2413,8 @@ class EventLoop:
                 _output_tokens = len(model_response or "") // 4
                 _profile_id = resolved_model_profile or "default"
                 _profile_obj: Any = None
-                if self._model_gateway is not None:
-                    _profile_obj = self._model_gateway.get_profile(_profile_id)
+                if _eff_gateway is not None:
+                    _profile_obj = _eff_gateway.get_profile(_profile_id)
                 _cost_usd = 0.0
                 if _profile_obj is not None and hasattr(_profile_obj, "cost_per_input_token"):
                     _cost_usd = (
