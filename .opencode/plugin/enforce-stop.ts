@@ -1449,6 +1449,7 @@ export default (async () => {
         } catch {}
         console.error('enforce-stop text.complete error:', String(e))
       }
-    },
-  }
-})
+    }
+  },
+}
+}) satisfies Plugin
