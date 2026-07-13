@@ -59,11 +59,12 @@ def _results_reducer(
 class _MapReduceState(TypedDict, total=False):
     tasks: list[SubTask]
     results: Annotated[list[SubTaskResult], _results_reducer]
+    _current_task: SubTask
 
 
 def map_reduce_builder(
     handler: HandlerFn,
-) -> StateGraph:
+) -> Any:
     """Build a compiled LangGraph StateGraph with map-reduce fan-out.
 
     Uses LangGraph's Send API to fan out sub-tasks from ``_dispatcher``

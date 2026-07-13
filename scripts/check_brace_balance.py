@@ -31,7 +31,7 @@ def check_balance(path):
         for opener, lineno, col in stack:
             print(f"Unclosed '{opener}' at {path}:{lineno}:{col}")
         return 1
-    
+
     print(f"BALANCED: {len(lines)} lines, {len(stack)} unclosed")
     return 0
 
