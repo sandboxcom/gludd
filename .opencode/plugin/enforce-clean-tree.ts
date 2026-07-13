@@ -21,6 +21,7 @@
  *
  * Default ON. Fail-open: any throw/exception → allow (don't wedge the editor).
  */
+import { execSync } from "node:child_process";
 import type { Plugin } from "@opencode-ai/plugin";
 import { isSubagent, reportAlive } from "./shared.ts";
 
@@ -37,7 +38,7 @@ export const DENY_MESSAGE_PREFIX = "DIRTY TREE";
  */
 export function getGitStatus(): string {
   try {
-    return require("node:child_process").execSync("git status --porcelain", {
+    return execSync("git status --porcelain", {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
