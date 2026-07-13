@@ -353,3 +353,264 @@ def test_full_lifecycle_ram_disk_convergence_after_resume(tmp_path):
     assert records == []
     assert store.load() == []
     assert pc._paused_projects == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# 5. Edge cases: concurrent pause, timeout resume, pause during gate, pending tasks
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_pause_same_target_only_one_created(tmp_path):
+    """Multiple threads racing to pause the same target — only one record created."""
+    store = PauseStore(base_dir=str(tmp_path / "ps"))
+    pc = PauseController(store=store)
+
+    results: list[tuple[bool, float | None]] = []
+
+    def race_pause(idx: int) -> None:
+        record = pc.pause("project", "shared-target", reason=f"racer-{idx}")
+        is_new = record.reason == f"racer-{idx}"
+        results.append((is_new, record.paused_at))
+
+    threads = [threading.Thread(target=race_pause, args=(i,)) for i in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    new_count = sum(1 for is_new, _ in results if is_new)
+    assert new_count == 1, f"expected 1 new record, got {new_count}"
+    assert pc.is_paused("project", "shared-target") is True
+    paused = pc.list_paused()
+    assert len(paused) == 1
+    timestamps = {r.paused_at for r in paused}
+    assert len(timestamps) == 1, "all results should share same paused_at"
+
+
+def test_concurrent_pause_different_targets_all_succeed(tmp_path):
+    """Multiple threads pausing different targets — all records created."""
+    store = PauseStore(base_dir=str(tmp_path / "ps"))
+    pc = PauseController(store=store)
+
+    errors: list[BaseException] = []
+
+    def race_pause(idx: int) -> None:
+        try:
+            pc.pause("project", f"target-{idx}", reason=f"racer-{idx}")
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=race_pause, args=(i,)) for i in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert errors == [], f"unexpected errors: {errors!r}"
+    paused = pc.list_paused()
+    assert len(paused) == 20
+    for i in range(20):
+        assert pc.is_paused("project", f"target-{i}") is True
+
+
+def test_concurrent_pause_and_resume_no_state_corruption(tmp_path):
+    """Interleaving pause and resume on different targets — no torn state."""
+    store = PauseStore(base_dir=str(tmp_path / "ps"))
+    pc = PauseController(store=store)
+
+    errors: list[BaseException] = []
+
+    def pauser(start: int) -> None:
+        try:
+            for i in range(start, start + 25):
+                pc.pause("model", f"m-{i}")
+                time.sleep(0)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def resumer(start: int) -> None:
+        try:
+            for i in range(start, start + 25):
+                pc.resume("model", f"m-{i}")
+                time.sleep(0)
+        except BaseException as exc:
+            errors.append(exc)
+
+    t1 = threading.Thread(target=pauser, args=(0,))
+    t2 = threading.Thread(target=pauser, args=(25,))
+    t3 = threading.Thread(target=resumer, args=(0,))
+    t4 = threading.Thread(target=resumer, args=(25,))
+    for t in (t1, t2, t3, t4):
+        t.start()
+    for t in (t1, t2, t3, t4):
+        t.join(timeout=15)
+
+    assert errors == [], f"unexpected errors: {errors!r}"
+    paused = pc.list_paused()
+    assert len(paused) <= 50 and len(paused) >= 0
+
+
+def test_resume_after_simulated_timeout(tmp_path):
+    """Pause, wait, then resume — state is clean even after simulated timeout."""
+    store = PauseStore(base_dir=str(tmp_path / "ps"))
+    pc = PauseController(store=store)
+
+    pc.pause("project", "timeout-target", reason="will-resume-later")
+    assert pc.is_paused("project", "timeout-target") is True
+
+    time.sleep(0.5)
+
+    record = pc.resume("project", "timeout-target")
+    assert record is not None
+    assert record.target_id == "timeout-target"
+    assert pc.is_paused("project", "timeout-target") is False
+    assert store.load() == []
+
+
+def test_resume_after_timeout_survives_controller_recreation(tmp_path):
+    """Pause, destroy controller, wait, recreate — resume still works."""
+    PauseStore(base_dir=str(tmp_path / "ps"))
+
+    pc1 = PauseController(store=PauseStore(base_dir=str(tmp_path / "ps")))
+    pc1.pause("model", "timeout-model", reason="timeout-test")
+    del pc1
+
+    time.sleep(0.3)
+
+    pc2 = PauseController(store=PauseStore(base_dir=str(tmp_path / "ps")))
+    assert pc2.is_paused("model", "timeout-model") is True
+    record = pc2.resume("model", "timeout-model")
+    assert record is not None
+    assert pc2.is_paused("model", "timeout-model") is False
+
+
+def test_pause_during_gate_concurrent_readers_no_crash(tmp_path):
+    """Simulate gate-like load: pause/resume while many readers hammer is_paused()."""
+    store = PauseStore(base_dir=str(tmp_path / "ps"))
+    pc = PauseController(store=store)
+
+    pc.pause("project", "base-target")
+
+    errors: list[BaseException] = []
+
+    def hammer_read(stop: threading.Event) -> None:
+        try:
+            i = 0
+            while not stop.is_set():
+                pc.is_paused("project", f"read-{i % 50}")
+                pc.is_paused("project", "base-target")
+                pc.is_paused("model", "nonexistent")
+                i += 1
+                time.sleep(0)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def churn_pause_resume(stop: threading.Event) -> None:
+        try:
+            i = 0
+            while not stop.is_set():
+                if i % 3 == 0:
+                    pc.pause("project", f"gate-{i}")
+                elif i % 3 == 1:
+                    pc.pause("model", f"gate-{i}")
+                else:
+                    pc.resume("project", f"gate-{i - 2}")
+                    pc.resume("model", f"gate-{i - 1}")
+                i += 1
+                time.sleep(0)
+        except BaseException as exc:
+            errors.append(exc)
+
+    stop = threading.Event()
+    readers = [threading.Thread(target=hammer_read, args=(stop,)) for _ in range(6)]
+    writer = threading.Thread(target=churn_pause_resume, args=(stop,))
+    for t in readers:
+        t.start()
+    writer.start()
+
+    time.sleep(2)
+
+    stop.set()
+    writer.join(timeout=5)
+    for t in readers:
+        t.join(timeout=5)
+
+    assert errors == [], f"gate-like load caused errors: {errors!r}"
+    assert pc.is_paused("project", "base-target") is True
+
+
+def test_pause_with_pending_tasks_stores_agent_handles(tmp_path):
+    """Pause with agent_handles — handles are persisted and retrievable."""
+    store = PauseStore(base_dir=str(tmp_path / "ps"))
+    pc = PauseController(store=store)
+
+    handles = [
+        {"task_id": "task-1", "path": "/tmp/t1", "checksum": "abc", "size_bytes": 100, "depth": 1},
+        {"task_id": "task-2", "path": "/tmp/t2", "checksum": "def", "size_bytes": 200, "depth": 2},
+    ]
+
+    pc.pause(
+        "project",
+        "pending-tasks",
+        reason="pause-with-tasks",
+        agent_handles=list(handles),
+        quiesce_status="clean",
+    )
+
+    record = pc.get("project", "pending-tasks")
+    assert record is not None
+    assert record.agent_handles == handles
+    assert record.quiesce_status == "clean"
+
+    del pc
+    pc2 = PauseController(store=PauseStore(base_dir=str(tmp_path / "ps")))
+    record2 = pc2.get("project", "pending-tasks")
+    assert record2 is not None
+    assert len(record2.agent_handles) == 2
+    assert record2.agent_handles[0]["task_id"] == "task-1"
+
+
+def test_pause_with_pending_tasks_cleared_on_resume(tmp_path):
+    """After resume, the previously paused entity has no agent_handles in store."""
+    store = PauseStore(base_dir=str(tmp_path / "ps"))
+    pc = PauseController(store=store)
+
+    handles = [
+        {"task_id": "task-cleanup", "path": "/tmp/tc", "checksum": "xyz", "size_bytes": 50, "depth": 0},
+    ]
+
+    pc.pause("project", "cleanup-target", agent_handles=list(handles))
+    assert pc.is_paused("project", "cleanup-target") is True
+
+    pc.resume("project", "cleanup-target")
+    assert pc.is_paused("project", "cleanup-target") is False
+    assert pc.get("project", "cleanup-target") is None
+
+    on_disk = store.load()
+    assert on_disk == []
+
+
+def test_pause_during_gate_router_level_no_crash(client):
+    """Gate-like load through the router: many concurrent GETs during pause/resume."""
+    import concurrent.futures
+
+    client.post("/api/pause/project", json={"target_id": "gate-router"})
+
+    def get_pause_list() -> int:
+        r = client.get("/api/pause")
+        return r.status_code
+
+    def post_resume() -> int:
+        r = client.post("/api/resume/project", json={"target_id": "gate-router"})
+        return r.status_code
+
+    errors: list[int] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futures = [ex.submit(get_pause_list) for _ in range(30)]
+        futures.append(ex.submit(post_resume))
+        for f in concurrent.futures.as_completed(futures):
+            code = f.result()
+            if code != 200:
+                errors.append(code)
+
+    assert errors == [], f"router gate load returned non-200: {errors!r}"

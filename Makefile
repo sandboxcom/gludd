@@ -60,7 +60,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         watchdog-read watchdog-start watchdog-status watchdog-stop watchdog-log \
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
-        check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
+        check-plugin-liveness check-plugin-health write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
         verify-release-artifact git-tag-rm release-cut release-recut release-create \
@@ -74,9 +74,9 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     ci-view ci-rerun ci-trigger ci-active ci-job-log \
     ci-busy-check ci-safe-push pre-push-check push-guarded \
     search-coverage-agentconfig \
-    git-index git-search git-stats \
+    git-index git-search git-stats agent-report \
     searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
-    disk-guard disk-check check-disk disk \
+    log-agent-result disk-guard disk-check check-disk disk \
      networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
      networking-healthcheck \
      install-bats test-install check-subagent-guards verify-plugin-manifest \
@@ -157,6 +157,7 @@ help:
 	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
 	@echo "  git-search Q='...'           Search indexed git history"
 	@echo "  git-stats                    Show git history index statistics"
+	@echo "  agent-report                 Agent activity dashboard (reads /tmp/gludd-agent-results.jsonl)"
 	@echo "  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch"
 	@echo "  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development"
 	@echo "  development-push             Push the development branch to remote"
@@ -845,6 +846,11 @@ molecule-test-shard:
 	if [ -n "$$FAILED" ]; then echo "SHARD-FAILED:$$FAILED"; exit 1; fi; \
 	echo "=== molecule-test-shard: ALL passed ==="
 
+# Log a subagent result to JSONL so it survives text blanking.
+# Usage: make log-agent-result AGENT_ID=agent-foo RESULT_SUMMARY="fixed X"
+log-agent-result:
+	@$(UV) run python3 scripts/log_agent_result.py
+
 clean-tmp:
 	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
 	@rm -rf /private/tmp/gludd-iso-* /private/tmp/pytest-of-* 2>/dev/null || true
@@ -1121,6 +1127,9 @@ git-search:
 git-stats:
 	@$(PYTHON) scripts/git_history_index.py --repo . --db .gludd/git_history.db stats \
 		$(if $(filter 1,$(JSON_OUT)),--json,)
+
+agent-report:
+	@$(PYTHON) scripts/agent_activity_report.py
 
 audit-messages:
 	@$(PYTHON) scripts/audit_messages.py 2>&1 || echo "No opencode database found"
@@ -3508,6 +3517,13 @@ write-plugin-manifest:
 # Used by agent_watchdog.py, validate, and preflight.
 check-plugin-liveness:
 	@$(UV) run python3 scripts/check_plugin_liveness.py
+
+# --- Plugin health dashboard — one-stop liveness + state + hook-fire observability.
+# Reads /tmp/gludd-plugin-alive.json (reportAlive heartbeats), /tmp/gludd-hook-fires.jsonl
+# (if any plugin logs per-invocation data), and enforcement state files. Exits 0 on
+# success, exits 1 if all heartbeats are stale or alive.json is missing entirely.
+check-plugin-health:
+	@$(UV) run python3 scripts/check_plugin_health.py
 
 # --- Plugin heartbeat check — runtime evidence that the core enforcement
 # plugins (enforce-floor, enforce-delegate, enforce-stop) are ACTUALLY

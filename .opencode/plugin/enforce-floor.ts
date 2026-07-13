@@ -220,7 +220,7 @@ function _isInSessionStartWindow(): boolean {
   return (Date.now() - sst) < SESSION_START_WINDOW_MS
 }
 
-const COMPULSIVE_CHECK_RE = /^make\s+(git-log|ci-verdict|git-diff)(\s|\/|$)/
+const COMPULSIVE_CHECK_RE = /^make\s+(git-log|ci-verdict|git-diff|gate-refresh)(\s|\/|$)/
 
 // ── Block-message builders ─────────────────────────────────────────────────
 
@@ -419,7 +419,7 @@ const defaultImpl: HotModule = {
               "⛔ COMPULSIVE-CHECK LOOP BLOCKED",
               `Command: ${cmd}`,
               "",
-              "make git-log / make ci-verdict / make git-diff as a standalone",
+              "make git-log / make ci-verdict / make git-diff / make gate-refresh as a standalone",
               "bash call is the compulsive-check loop pattern. If you are reaching",
               "for one of these, you are in the loop.",
               "",

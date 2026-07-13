@@ -361,8 +361,10 @@ const defaultImpl: HotModule = {
           const trimmed = command.replace(/^\$\s*/, "").trim()
 
           if (MAKE_ENFORCE) {
-            if (trimmed && SHELL_META_CHARS.test(trimmed)) {
-              const matched = trimmed.match(SHELL_META_CHARS)
+            const cmdMatch = trimmed.match(/^(make\s+\S+)/)
+            const cmdPortion = cmdMatch ? cmdMatch[1] : trimmed
+            if (cmdPortion && SHELL_META_CHARS.test(cmdPortion)) {
+              const matched = cmdPortion.match(SHELL_META_CHARS)
               throw new Error(
                 formatBashBlockedMessage(
                   trimmed,

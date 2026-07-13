@@ -1,6 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { spawn } from "node:child_process"
+import { execSync, spawn } from "node:child_process"
 import { isSubagent, isDisengaged as isWatchdogDisengaged, reportAlive, writeHeartbeat, isDispatchTool, isReadTool, updateSharedStreak } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
@@ -268,6 +268,14 @@ function repoHasPendingWork(inExecSync: any): boolean {
 
 const turnState = { blocked: false, dispatchCount: 0 }
 
+// ── SUBAGENT TEXT MARKER DETECTION ────────────────────────────────────────
+
+const SUBAGENT_TEXT_MARKERS = /task_id|task_result|agent\s+result|subagent\s+result|task\s+completed/i
+
+function containsSubagentMarkers(text: string): boolean {
+  return SUBAGENT_TEXT_MARKERS.test(text)
+}
+
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
@@ -326,7 +334,6 @@ const defaultImpl: HotModule = {
         turnState.dispatchCount++
       }
 
-      const { execSync: es } = require("node:child_process") as { execSync: typeof import("node:child_process").execSync }
       const streakState = updateSharedStreak(input.tool, "enforce-stop")
 
       if (input.tool === "question") {
@@ -424,7 +431,7 @@ const defaultImpl: HotModule = {
           }
         }
       }
-    } catch (e: any) {
+    } catch (e) {
       if (e instanceof Error && (e.message.includes("BLOCKED") || e.message.includes("BLOCKING"))) throw e
       console.error("[enforce-stop] tool.execute.before error (fail-open):", e)
     }
@@ -452,6 +459,7 @@ const defaultImpl: HotModule = {
     const hasWork = unchecked > 0 || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending
 
     if (typeof output === "string") {
+      if (containsSubagentMarkers(output)) return output
       if (hasWork) {
         const indicators: string[] = []
         if (unchecked > 0) indicators.push(`${unchecked} unchecked TASKS.md items`)

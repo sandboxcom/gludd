@@ -62,9 +62,11 @@ function tsToJs(content) {
     .replace(/const (\w+): ([^=]+)=/g, "var $1 =")
     .replace(/let (\w+): ([^=]+)=/g, "var $1 =")
     .replace(/function (\w+)\(([^)]*)\): ([^{]+)\{/g, "function $1($2) {")
-    .replace(/:\s+\w+(\[\])?\s*;/g, ";")
-    .replace(/:\s+\w+(\[\])?\s*,/g, ",")
-    .replace(/:\s+\w+(\[\])?\s*\)/g, ")")
+    .replace(/;\s*\w+(?:\[\])?\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*;/g, ";")
+    .replace(/,\s*\w+(?:\[\])?\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",")
+    .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*;/g, ";")
+    .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",")
+    .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*\)/g, ")")
     .replace(/: (string|number|boolean|any|void|never)\b/g, "")
     .replace(/catch \{/g, "catch (e) {")
     .replace(/catch\s*\n\s*\{/g, "catch (e) {")
@@ -184,9 +186,32 @@ function buildPlugin(name) {
   out += `var execSync = (function() { var c = require("node:child_process"); return c.execSync; })();\n`;
   out += `// === end shared stubs ===\n\n`;
 
+  // Include everything from the js output EXCEPT the export default block.
+  // This gives hooks access to all module-level vars/functions/consts.
+  // The defaultImpl object is harmless (it's just a module-level var at this point).
+  const exportIdx = js.lastIndexOf("export default");
+  let moduleBody = js;
+  if (exportIdx >= 0) {
+    moduleBody = js.substring(0, exportIdx);
+  }
+  // Remove import-stripped comments and interface blocks that survive tsToJs
+  moduleBody = moduleBody
+    .replace(/^\/\/ import [^\n]*\n/gm, "")
+    .replace(/interface \w+\s*\{[^}]*\}/g, "")
+    .replace(/:\s*readonly\s+RegExp\[\]\s*/g, " ")
+    .replace(/: [^=\n,;]+?(?=\s*=)/g, "");
+  out += "// === module-level declarations ===\n";
+  out += moduleBody.trim() + "\n";
+  out += "// === end module-level declarations ===\n\n";
+
   for (const [hookName, body] of Object.entries(methods)) {
     const fnBody = body.trim();
-    out += `exports["${hookName}"] = async function(...args) ${fnBody};\n\n`;
+    // Map ...args parameters to input/output for body references
+    const mapped = fnBody.replace(
+      /^\{/,
+      "{ var input = args[0] || {}; var output = args[1]; "
+    );
+    out += `exports["${hookName}"] = async function(...args) ${mapped};\n\n`;
     console.log(`    hook: ${hookName} (${fnBody.length} bytes)`);
   }
 
