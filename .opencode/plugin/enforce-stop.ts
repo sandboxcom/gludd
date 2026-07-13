@@ -251,14 +251,22 @@ function ciIsPendingOrRed(): boolean {
   return false
 }
 
-function repoHasPendingWork(inExecSync: any): boolean {
+function repoHasPendingWork(inExecSync: any, mode?: "commit" | "push"): boolean {
   try {
     const cwd = process.cwd()
     try {
       const status = inExecSync("git status --porcelain", {
         cwd, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
       }) as string
-      if (status.trim().length > 0) return true
+      const lines = status.trim().split("\n").filter(l => l.trim().length > 0)
+      if (lines.length === 0) return false
+      if (mode === "commit") {
+        return lines.some(l => {
+          const y = l.length > 1 ? l[1] : " "
+          return y !== " "
+        })
+      }
+      return true
     } catch {}
     return false
   } catch { return false }
