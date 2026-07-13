@@ -81,7 +81,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
      networking-healthcheck \
      install-bats test-install check-subagent-guards verify-plugin-manifest \
     check-task-ledger \
-    test-service-discovery service-discover service-catalog
+     test-service-discovery service-discover service-catalog \
+    subagent-init subagent-cleanup
 
 help:
 	@echo "Usage: make [target]"
@@ -3552,6 +3553,14 @@ hot-reload-clean:
 
 fix-subagent-detection:
 	@$(UV) run python3 scripts/fix_subagent_detection.py
+
+subagent-init:
+	@printf '{"subagent": true, "pid": %s, "ts": %s}\n' "$$$$" "$(shell date +%s)" > /tmp/gludd-subagent-$$$$.json
+	@echo "subagent-init: created /tmp/gludd-subagent-$$$$.json"
+
+subagent-cleanup:
+	@rm -f /tmp/gludd-subagent-$$$$.json 2>/dev/null || true
+	@echo "subagent-cleanup: removed /tmp/gludd-subagent-$$$$.json"
 
 check-hot-reload-fresh:
 	@$(UV) run python3 scripts/check_hot_reload_fresh.py
