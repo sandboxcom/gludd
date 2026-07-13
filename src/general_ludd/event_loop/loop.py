@@ -1983,6 +1983,10 @@ class EventLoop:
 
         Only terminal-and-done human-todos are surfaced (dismissed todos
         cancel the parent agent todo, so it never re-dispatches).
+
+        E12: replaced the Python-side filter-over-all-rows pattern with a
+        SQL-side WHERE parent_agent_todo_id=? AND status='done' LIMIT 1 query
+        via HumanTodoRepository.get_done_for_parent.
         """
         factory = self._session_factory
         if factory is None:
@@ -1994,19 +1998,9 @@ class EventLoop:
         try:
             async with factory() as session:
                 repo = HumanTodoRepository(session)
-                rows = await repo.list_all(limit=50)
-                # Most recent DONE human-todo naming this parent.
-                done_for_this = [
-                    r for r in rows
-                    if r.parent_agent_todo_id == todo_id and r.status == "done"
-                ]
-                if not done_for_this:
+                top = await repo.get_done_for_parent(todo_id)
+                if top is None:
                     return None
-                done_for_this.sort(
-                    key=lambda r: r.resolved_at or r.updated_at,
-                    reverse=True,
-                )
-                top = done_for_this[0]
                 return top.human_resolution
         except Exception as exc:
             logger.warning(

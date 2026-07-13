@@ -278,6 +278,9 @@ class TodoModel(Base):
         # (e.g. list_due_scheduled, claim variants filtering on queue) benefit
         # from this covering index that matches WHERE + time sort.
         Index("ix_todos_status_queue_scheduled", "status", "queue", "scheduled_at"),
+        # E12: _reap_stuck_todos queries WHERE status='active' AND updated_at < cutoff.
+        # status alone is indexed; this composite makes the reaper query index-only.
+        Index("ix_todos_status_updated_at", "status", "updated_at"),
         # H.14: priority bounded at DB level so direct SQL writes can't bypass
         # the application-layer clamping in TodoRepository._validate_create_data.
         CheckConstraint("priority >= 0 AND priority <= 1000", name="ck_todos_priority_range"),
@@ -358,6 +361,10 @@ class TaskReturnModel(Base):
 
     __table_args__ = (
         Index("ix_task_returns_status_created", "status", "created_at"),
+        # E12: claim_unreviewed queries WHERE status='created' AND project_id=?
+        # ORDER BY created_at ASC. The 2-column index on (status,created_at)
+        # doesn't cover the project_id filter; this 3-column composite does.
+        Index("ix_task_returns_status_project_created", "status", "project_id", "created_at"),
     )
 
 

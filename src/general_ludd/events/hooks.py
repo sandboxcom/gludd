@@ -194,7 +194,8 @@ class HookSystem:
         delivery. If an event bus was supplied, a ``HookTriggeredEvent`` is
         published with the delivery tally.
         """
-        hooks = list(self._hooks.get(event_name, []))
+        with self._lock:
+            hooks = list(self._hooks.get(event_name, []))
         count = 0
         failed = 0
         for hook in hooks:
@@ -203,9 +204,10 @@ class HookSystem:
                     hook.callback(payload)
                     count += 1
                 elif hook.hook_type == "webhook" and hook.webhook_config is not None:
-                    if hook.hook_id in self._scheduled_webhooks:
-                        continue
-                    self._scheduled_webhooks.add(hook.hook_id)
+                    with self._lock:
+                        if hook.hook_id in self._scheduled_webhooks:
+                            continue
+                        self._scheduled_webhooks.add(hook.hook_id)
                     self._fire_webhook(hook.webhook_config, event_name, payload, hook.hook_id)
                     count += 1
             except Exception as exc:

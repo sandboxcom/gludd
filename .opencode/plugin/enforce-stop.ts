@@ -11,6 +11,7 @@ const BLOCK_REASON_FILE = process.env.GLUDD_BLOCK_REASON_FILE || "/tmp/gludd-blo
 const BLOCK_COUNTER_FILE = process.env.GLUDD_BLOCK_COUNTER_FILE || "/tmp/gludd-block-counter.json"
 const BLANKED_RESPONSE_FILE = "/tmp/gludd-blanked-responses.json"
 const FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
+const PERSIST_BLOCK_FILE = process.env.GLUDD_PERSIST_STOP_BLOCK_FILE || "/tmp/gludd-persist-stop-block.json"
 
 const POST_RESULTS_STATE_FILE = process.env.GLUDD_POST_RESULTS_STATE_FILE || "/tmp/gludd-post-results-state.json"
 const TEXT_ONLY_STATE_FILE = process.env.GLUDD_TEXT_ONLY_STATE_FILE || "/tmp/gludd-text-only-state.json"
@@ -203,6 +204,46 @@ function readBlockCounter(): BlockCounter {
 
 function writeBlockCounter(c: BlockCounter): void {
   try { fs.writeFileSync(BLOCK_COUNTER_FILE, JSON.stringify(c), "utf8") } catch {}
+}
+
+// ── PERSISTENT STOP-BLOCK FLAG (two-layer enforcement) ─────────────────────
+// Layer 1 (text.complete): when stop-pattern detected + work pending, writes
+//   {blocked: true, timestamp, reason}. The flag survives across turns.
+// Layer 2 (tool.execute.before): reads this flag on every non-dispatch tool
+//   call, denies if blocked. Dispatch calls (task/agent/workflow) clear it.
+
+interface PersistBlockFlag {
+  blocked: boolean
+  timestamp: number
+  reason: string
+}
+
+function readPersistBlock(): PersistBlockFlag {
+  try {
+    if (fs.existsSync(PERSIST_BLOCK_FILE)) {
+      const raw = JSON.parse(fs.readFileSync(PERSIST_BLOCK_FILE, "utf8"))
+      return {
+        blocked: !!raw.blocked,
+        timestamp: typeof raw.timestamp === "number" ? raw.timestamp : 0,
+        reason: typeof raw.reason === "string" ? raw.reason : "",
+      }
+    }
+  } catch {}
+  return { blocked: false, timestamp: 0, reason: "" }
+}
+
+function writePersistBlock(blocked: boolean, reason: string): void {
+  try {
+    fs.writeFileSync(PERSIST_BLOCK_FILE, JSON.stringify({
+      blocked,
+      timestamp: Date.now(),
+      reason,
+    }), "utf8")
+  } catch {}
+}
+
+function clearPersistBlock(): void {
+  try { fs.unlinkSync(PERSIST_BLOCK_FILE) } catch {}
 }
 
 interface BlankedResponseTracker {
@@ -711,6 +752,40 @@ export default (async ({ }) => {
       console.log("SUBAGENT SKIP: enforce-stop")
       _reportAlive()
       _writeHeartbeat()
+
+      // ── LAYER 2: PERSISTENT STOP-BLOCK FLAG ────────────────────────────
+      // text.complete writes this flag when a stop-pattern is detected with
+      // pending work. This tool.execute.before check denies the NEXT
+      // non-dispatch tool call, forcing the agent to dispatch subagents.
+      const persistBlock = readPersistBlock()
+      if (persistBlock.blocked) {
+        const isDispatchTool = DISPATCH_TOOLS.has(input.tool)
+        if (isDispatchTool) {
+          clearPersistBlock()
+        } else {
+          // Track block
+          try {
+            const cPath = process.env.GLUDD_STOP_TOOL_COUNTS_FILE || "/tmp/gludd-stop-tool-counts.json"
+            let data: Record<string, any> = { allowed: 0, blocked: 0 }
+            if (fs.existsSync(cPath)) { try { data = JSON.parse(fs.readFileSync(cPath, "utf8")) } catch {} }
+            data.blocked = (parseInt(data.blocked, 10) || 0) + 1
+            data.last_blocked = { tool: input.tool, reason: `persist-stop-block: ${persistBlock.reason}`, ts: Date.now(), iso: new Date().toISOString() }
+            fs.writeFileSync(cPath, JSON.stringify(data), "utf8")
+          } catch {}
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              "⛔ BLOCKED: stop-pattern detected in previous response.",
+              `Reason: ${persistBlock.reason}`,
+              "",
+              "You sent a text-only response with pending work (blanked by enforce-stop).",
+              "The ONLY valid next action is to DISPATCH SUBAGENTS via task/agent/workflow.",
+              "All other tool calls (read, edit, bash) are denied until you dispatch.",
+            ].join("\n"),
+          }
+        }
+      }
+
       try {
         // Increment tool counter — proves tool.execute.before fires
         try {
@@ -731,6 +806,7 @@ export default (async ({ }) => {
 
         if (turnState.blocked) {
           turnState.blocked = false
+          clearPersistBlock()
         }
 
         turnState.accumulatedText = ""
@@ -1026,6 +1102,7 @@ export default (async ({ }) => {
             "DISPATCH THE NEXT WAVE VIA task/agent/workflow NOW.",
           ].join("\n")
           turnState.blocked = true
+          writePersistBlock(true, "after-results-text-only")
           return
         }
 
@@ -1035,6 +1112,7 @@ export default (async ({ }) => {
             logFalseDoneBlock(text, "short-false-done")
             output.text = "⛔ FALSE-DONE CLAIM BLOCKED. DISPATCH A TOOL CALL."
             turnState.blocked = true
+            writePersistBlock(true, "short-false-done")
             return
           }
           // Fall through — short non-false-done text still needs pending-work checks
@@ -1105,9 +1183,8 @@ export default (async ({ }) => {
               "DISPATCH A TOOL CALL NOW.",
             ].join("\n")
             turnState.blocked = true
+            writePersistBlock(true, "consecutive-text-only")
             return
-          }
-        } else {
           // Reset text-only counter — agent made tool calls
           writeTextOnlyState({ count: 0, lastTs: 0, sameSession: false })
         }
@@ -1176,9 +1253,8 @@ export default (async ({ }) => {
               "DISPATCH A TOOL CALL NOW.",
             ].join("\n")
             turnState.blocked = true
+            writePersistBlock(true, "direct-false-done-no-evidence")
             return
-          }
-          // Has structured evidence / work artifact / made tool calls — allow
         }
 
         const repoPending = cache?.repoPending ?? false
@@ -1191,6 +1267,7 @@ export default (async ({ }) => {
           const combined = (text + turnState.accumulatedText).toLowerCase()
           if (/\b(make git-|dispatch|subagent|task)\b/.test(combined)) {
             turnState.blocked = false
+            clearPersistBlock()
           } else {
             output.text = ""
             return
@@ -1209,6 +1286,7 @@ export default (async ({ }) => {
             "DISPATCH SUBAGENTS OR MAKE TOOL CALLS NOW.",
           ].join("\n")
           turnState.blocked = true
+          writePersistBlock(true, "ratchet-block-all-text")
           return
         }
 
@@ -1247,11 +1325,11 @@ export default (async ({ }) => {
             "DISPATCH A TOOL CALL NOW.",
           ].join("\n")
           turnState.blocked = true
+          writePersistBlock(true, "qa-response-summary-stop")
           return
         }
 
         // CI RED/PENDING block: text-only completion claims when CI is broken
-        // are forbidden. Even if local work is clean (gate green, TASKS.md empty),
         // a broken CI pipeline means the project is not in a shippable state.
         // This is a targeted check separate from the hasLocalWork block below.
         if (ciVerdictPendingOrRed && !isSubagentFinalReport) {
@@ -1281,6 +1359,7 @@ export default (async ({ }) => {
               "DISPATCH A TOOL CALL NOW.",
             ].join("\n")
             turnState.blocked = true
+            writePersistBlock(true, "ci-red-text-only")
             return
           }
           if (ciStatus === "PENDING" && !ciIsStale) {
@@ -1296,6 +1375,7 @@ export default (async ({ }) => {
               "Continue work in the meantime. DISPATCH A TOOL CALL NOW.",
             ].join("\n")
             turnState.blocked = true
+            writePersistBlock(true, "ci-pending-text-only")
             return
           }
         }
@@ -1334,10 +1414,9 @@ export default (async ({ }) => {
             "DISPATCH SUBAGENTS NOW.",
           ].join("\n")
           turnState.blocked = true
+          writePersistBlock(true, "state-based-block")
           return
         }
-
-        // ── UPDATE POST-RESULTS STATE FOR NEXT TURN ──────────────────────
         // Detect subagent result markers in the current response so the
         // NEXT turn knows whether it followed a result-filled turn. This
         // is the cross-turn memory that drives the post-results block.

@@ -2126,6 +2126,31 @@ class HumanTodoRepository:
             resolution_text=f"superseded by {new_id}: {reason}",
         )
 
+    async def get_done_for_parent(
+        self, parent_todo_id: str
+    ) -> HumanTodoModel | None:
+        """Return the most-recently-resolved DONE human-todo for a parent agent todo.
+
+        Filters in SQL (not Python) so callers are not loading every recent
+        human-todo row per dispatch. E12: replaces the N+1 pattern where
+        EventLoop._resolve_human_input_for_todo loaded all 50 human-todos and
+        filtered in Python.
+        """
+        stmt = (
+            select(HumanTodoModel)
+            .where(
+                HumanTodoModel.parent_agent_todo_id == parent_todo_id,
+                HumanTodoModel.status == "done",
+            )
+            .order_by(
+                HumanTodoModel.resolved_at.desc().nulls_last(),
+                HumanTodoModel.updated_at.desc(),
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def add_tag(self, human_todo_id: str, tag: str) -> HumanTodoModel:
         import json as _json
 

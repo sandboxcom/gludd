@@ -52,7 +52,9 @@ def _parse_targets():
             if not line.rstrip("\n").endswith("\\"):
                 in_phony = False
             continue
-        if re.match(r'^[a-zA-Z_][a-zA-Z0-9_./-]*\s*:.*', stripped) and not stripped.startswith("."):
+        if (re.match(r'^[a-zA-Z_][a-zA-Z0-9_./-]*\s*:(?!=)(?!\s*$).*', stripped)
+                and not stripped.startswith(".")
+                and not line.startswith((" ", "\t"))):
             name = stripped.split(":")[0].strip()
             targets[name] = i
     return targets, lines, list(enumerate(lines, 1))
@@ -72,7 +74,8 @@ def test_no_target_without_recipe():
             if not lines[i - 1].rstrip("\n").endswith("\\"):
                 in_phony = False
             continue
-        if re.match(r'^[a-zA-Z_][a-zA-Z0-9_./-]*\s*:.*', stripped):
+        if (re.match(r'^[a-zA-Z_][a-zA-Z0-9_./-]*\s*:(?!=)(?!\s*$).*', stripped)
+                and not line.startswith((" ", "\t"))):
             if "$(" in stripped and not stripped.endswith("\\"):
                 continue
             if i >= len(lines):
@@ -89,10 +92,9 @@ def test_no_target_without_recipe():
                 f"Makefile:{i}: target '{stripped}' has no recipe or follow-on target "
                 f"(next non-blank line: '{next_line.strip()[:60]}')"
             )
-    if not violations:
-        return
-    pytest.skip(f"Optional: {len(violations)} target(s) without recipe\n" +
-                "\n".join(violations[:5]))
+    assert not violations, (
+        f"{len(violations)} target(s) without recipe:\n" + "\n".join(violations[:5])
+    )
 
 
 def test_blank_line_between_targets():
@@ -110,17 +112,17 @@ def test_blank_line_between_targets():
             if not lines[i - 1].rstrip("\n").endswith("\\"):
                 in_phony = False
             continue
-        if re.match(r'^[a-zA-Z_][a-zA-Z0-9_./-]*\s*:.*', stripped):
-            if in_target_block:
+        if (re.match(r'^[a-zA-Z_][a-zA-Z0-9_./-]*\s*:(?!=)(?!\s*$).*', stripped)
+                and not line.startswith((" ", "\t"))):
+            if in_target_block and not line.startswith("."):
                 violations.append(f"Makefile:{i}: target '{stripped}' not preceded by blank line")
             in_target_block = True
             continue
         if stripped == "" or stripped.startswith("#"):
             in_target_block = False
-    if not violations:
-        return
-    pytest.skip(f"Optional: {len(violations)} target(s) not preceded by blank line\n" +
-                "\n".join(violations[:5]))
+    assert not violations, (
+        f"{len(violations)} target(s) not preceded by blank line:\n" + "\n".join(violations[:5])
+    )
 
 
 def test_phony_targets_have_no_file():
@@ -146,10 +148,12 @@ def test_phony_targets_have_no_file():
         candidate = repo_root / name
         if candidate.exists():
             violations.append(f"PHONY target '{name}' exists as file: {candidate}")
-    if not violations:
-        return
-    pytest.skip(f"Optional: {len(violations)} PHONY target(s) exist as files\n" +
-                "\n".join(violations[:5]))
+    assert not violations, (
+        f"{len(violations)} PHONY target(s) exist as files:\n" + "\n".join(violations[:5])
+    )
+
+
+_VAR_ASSIGN_LINE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*\s*[+?]?=')
 
 
 def test_variable_format():
@@ -161,16 +165,15 @@ def test_variable_format():
         stripped = line.strip()
         if stripped.startswith("#") or stripped == "":
             continue
-        if re.match(r'^[A-Za-z_][A-Za-z0-9_]*\s*[+?]?=', stripped):
+        if _VAR_ASSIGN_LINE.match(stripped):
             if ":=" not in stripped and "?=" not in stripped and "=" in stripped and "+=" not in stripped:
                 continue
             if "?=" in stripped or ":=" in stripped or "+=" in stripped:
                 continue
             violations.append(f"Makefile:{i}: variable '{stripped[:60]}' uses bare '='")
-    if not violations:
-        return
-    pytest.skip(f"Optional: {len(violations)} variable(s) use bare '=' instead of :=\n" +
-                "\n".join(violations[:5]))
+    assert not violations, (
+        f"{len(violations)} variable(s) use bare '=' instead of :=\n" + "\n".join(violations[:5])
+    )
 
 
 def test_no_trailing_whitespace():
@@ -186,10 +189,9 @@ def test_no_trailing_whitespace():
                 f"Makefile:{i}: trailing whitespace "
                 f"(len={len(trailing)}, repr={trailing!r})"
             )
-    if not violations:
-        return
-    pytest.skip(f"Optional: {len(violations)} line(s) with trailing whitespace\n" +
-                "\n".join(violations[:5]))
+    assert not violations, (
+        f"{len(violations)} line(s) with trailing whitespace:\n" + "\n".join(violations[:5])
+    )
 
 
 def test_no_duplicate_targets():
