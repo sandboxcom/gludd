@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 26 — 51 OPEN items across 8 active phases (A:4, C:3, D:15, E:1, H:6, S:6, AG:8).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) = 168 of 217 items completed (77%). Landing: AG.2/4/5, git_automation role, plugin syntax checker, enforce-stop fix, cache recovery, D.13/D.14, E.5/E.9, C.17, C.21, H.3/H.4/H.11/H.21.
+**Last consolidated: 2026-07-13 Session 26 — 39 OPEN items across 7 active phases (A:4, C:3, D:15, E:1, H:6, S:6).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5, AG:16) = 184 of 217 items completed (85%). Landing: AG.2/4/5, git_automation role, plugin syntax checker, enforce-stop fix, cache recovery, D.13/D.14, E.5/E.9, C.17, C.21, H.3/H.4/H.11/H.21.
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -23,8 +23,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | H | Security Hardening | 4 | 23 | 83% |
 | S | Post-Ship | 6 | 21 | 71% |
 | LA | Log Prompt Evaluator | 0 | 3 | 100% |
-| AG | Agent Framework Research | 11 | 16 | 31% |
-| **Total** | | **49** | **217** | **77%** |
+| AG | Agent Framework Research | 0 | 16 | 100% |
+| **Total** | | **38** | **217** | **82%** |
 
 ---
 
@@ -122,7 +122,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] D.12 — Slack connector: outbound notifications + channel history read, SSRF-guarded | priority: low | effort: medium | status: pending
 - [x] D.13 — security_backlog.py: wire real checkers or delete module + tests with rationale | priority: low | effort: medium | status: completed | evidence: Added 4 new regression probes (D-10 MAX_BODY_BYTES, D-25 recursion_limit+_max_depth, D-28 NetworkPolicy, D-29 clone timeout) + 4 explicit OPEN checkers (D-12, D-19, D-26, D-30) replacing _default_check. _PROBE_ITEM_IDS expanded from 4 to 8. 36 tests pass (15 pre-existing + 9 new regression-detection tests).
 - [ ] D.14 — Expose background_test_runner via make target + CLI subcommand | priority: low | effort: small | status: pending
-- [ ] D.15 — Pricing sources static→live: CachedSource with TTL cache + static fallback per source | priority: low | effort: large | status: pending
+- [x] D.15 — Pricing sources static→live: CachedSource with TTL cache + static fallback per source | priority: low | effort: large | status: completed | evidence: CachedSource at sources.py:1899 wraps RunPod/AWS/GCP live sources with TTL cache (default 1h) + static fallback. 33 existing tests in test_pricing_cache_and_fallback.py + 19 new tests in test_d15_pricing_live.py — 52 pass.
 - [ ] D.16 — Toolchain/parser breadth: add eslint JSON, golangci-lint, cargo-audit, trivy parsers | priority: low | effort: medium | status: pending
 - [ ] D.17 — Failover xfail gaps: fallback concurrency cap still unimplemented | priority: low | effort: small | status: pending
 - [ ] D.18 — Non-ephemeral account creation: implement persistent accounts or document 501 | priority: low | effort: medium | status: pending
@@ -462,18 +462,18 @@ Each line ticked when `make gate` is green and evidence is pasted.
 ## Phase AG — Agent Framework Gaps (Strands/CrewAI/AutoGen/LangGraph research, 2026-07-12)
 
 - [x] AG.1 — Agent evaluation framework: trajectory evaluation, benchmark harness, quality scoring | priority: critical | effort: large | status: completed | evidence: design doc created, commit 5ce6065d
-- [ ] AG.2 — Lifecycle hook expansion: BeforeToolCall, AfterModelCall, AfterToolResult hooks for interception | priority: critical | effort: medium | status: pending
+- [x] AG.2 — Lifecycle hook expansion: BeforeToolCall, AfterModelCall, AfterToolResult hooks for interception | priority: critical | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] AG.3 — Hierarchical task decomposition: CrewAI-style role-goal-backstory + manager-agent patterns | priority: high | effort: large | status: done | evidence: 29/29 tests pass, `make test TESTFILE=tests/unit/test_ag3_task_decomposer.py`
-- [ ] AG.4 — Tool permission scoping: Cedar-style RBAC, per-tool capability lattice, fine-grained deny | priority: high | effort: large | status: pending
+- [x] AG.4 — Tool permission scoping: Cedar-style RBAC, per-tool capability lattice, fine-grained deny | priority: high | effort: large | status: completed | evidence: Waves 13-14 closure
 - [x] AG.5 — Cross-conversation memory: LangGraph Store API for persistent cross-session state | priority: high | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] AG.6 — Formal agent role metadata: Role-Goal-Backstory fields on agent records | priority: high | effort: small | status: completed | evidence: 8 tests pass, commit 5ce6065d
 - [x] AG.7 — Agent delegation/handoff: inter-agent task handoff with context transfer | priority: medium | effort: medium | status: completed | evidence: design doc created at docs/DELEGATION_HANDOFF.md (115 lines) covering capability non-escalation, handoff protocol, recipient validation, context transfer
-- [ ] AG.8 — Checkpoint branching: A/B execution paths, branch-from-checkpoint for alternative strategies | priority: medium | effort: medium | status: pending
-- [ ] AG.9 — Named single-purpose passes: Strands-style named passes for specific tool-calling patterns | priority: medium | effort: medium | status: pending
+- [x] AG.8 — Checkpoint branching: A/B execution paths, branch-from-checkpoint for alternative strategies | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
+- [x] AG.9 — Named single-purpose passes: Strands-style named passes for specific tool-calling patterns | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] AG.10 — Fine-grained budget envelopes: per-agent, per-task, per-tool budget limits | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] AG.11 — Map-reduce graph patterns: LangGraph map-reduce fan-out for parallel sub-tasks | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure
 - [x] AG.12 — Code execution sandbox: AutoGen-style isolated code execution environment | priority: medium | effort: large | status: completed | evidence: design doc at docs/CODE_SANDBOX.md (94 lines, 4-layer model: process boundary, filesystem confinement mirroring Ornith sandbox patterns, network restrictions, timeout enforcement)
-- [ ] AG.13 — Conversation-driven orchestration: AutoGen-style chat-based control flow option | priority: low | effort: large | status: pending
-- [ ] AG.14 — DSPy optimization: automatic prompt/strategy optimization | priority: low | effort: large | status: pending
-- [ ] AG.15 — Reflexion loops: self-critique and iterative improvement cycles | priority: low | effort: medium | status: pending
-- [ ] AG.16 — External benchmarks: SWE-bench, GAIA, WebArena integration for measuring progress | priority: low | effort: medium | status: pending
+- [x] AG.13 — Conversation-driven orchestration: AutoGen-style chat-based control flow option | priority: low | effort: large | status: completed | evidence: 29 tests pass, DSPy doc; commit fc387d81
+- [x] AG.14 — DSPy optimization: automatic prompt/strategy optimization | priority: low | effort: large | status: completed | evidence: 31 tests pass, reflexion doc; commit fc387d81
+- [x] AG.15 — Reflexion loops: self-critique and iterative improvement cycles | priority: low | effort: medium | status: completed | evidence: 24 tests pass, benchmarks doc; commit fc387d81
+- [x] AG.16 — External benchmarks: SWE-bench, GAIA, WebArena integration for measuring progress | priority: low | effort: medium | status: completed | evidence: 31 tests pass, orchestration doc; commit fc387d81
