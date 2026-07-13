@@ -7,6 +7,7 @@ is turned on.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -36,6 +37,10 @@ def confine_export_path(out_path: str | Path | None, default_filename: str) -> P
     """
     if out_path is not None:
         raw = str(out_path)
+        if "\x00" in raw:
+            raise ValueError(
+                f"out_path {raw!r} contains a null byte, which is disallowed."
+            )
         for root in _ALLOWED_EXPORT_ROOTS:
             confined = confine_path(raw, root)
             if confined is not None:
@@ -108,10 +113,8 @@ def _sandbox_preexec_fn(
     """Set RLIMITs then chdir into sandbox_dir before exec."""
     import os as _os
 
-    try:
+    with contextlib.suppress(OSError):
         _os.chdir(sandbox_dir)
-    except OSError:
-        pass
     try:
         from general_ludd.system.rlimit import apply_limits
 
