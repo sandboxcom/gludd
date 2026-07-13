@@ -6,6 +6,32 @@
 
 ---
 
+## SESSION 28 — 2026-07-13
+
+### HEAD + Branch State
+
+- **HEAD: `b53ab7fb`** on `master` branch
+- **Working tree: DIRTY** — enforce-stop.ts modified, Makefile modified, TASKS.md modified; new file `tests/unit/test_opencode_node_v26_compat.py` untracked
+- **Runtime tests: 107 pass / 0 fail** (was 99/8 before Node v26 fix)
+
+### Key Deliverables
+
+| Category | Items | Commit(s) |
+|----------|-------|-----------|
+| **.opencode restore** | Restored `.opencode/` from `.opencode.orig/` backup after config drift | — |
+| **enforce-stop Node v26 fix** | `ERR_INVALID_TYPESCRIPT_SYNTAX` at line 1445 resolved — ending pattern matches enforce-floor.ts; satisfies `Plugin` type for `--experimental-strip-types` | `c732b4cc`, `b53ab7fb` |
+| **node-v26-compat test added** | `tests/unit/test_opencode_node_v26_compat.py` — verifies enforce-stop.ts compiles under Node v26 | untracked |
+
+### Known Gaps
+
+1. **A.3 push** — 10+ unpushed commits on development branch. Push to remote pending.
+2. **A.4 release** — v0.1.0-beta.2 not yet cut. Blocked on CI green + push.
+
+### Last Updated
+- **2026-07-13 — Session 28.** On `master` branch, HEAD `b53ab7fb`. enforce-stop Node v26 compat fixed (2 commits: `c732b4cc` + `b53ab7fb`). 107/107 runtime tests pass. Dirty tree: enforce-stop.ts, Makefile, TASKS.md modified; `test_opencode_node_v26_compat.py` new. Remaining: A.3 push, A.4 release.
+
+---
+
 ## SESSION 27 — 2026-07-13 (FINAL)
 
 ### HEAD + Branch State

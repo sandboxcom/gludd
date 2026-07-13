@@ -745,6 +745,12 @@ test-hook-runtime:
 bisect-ts-parse:
 	@$(PYTHON) scripts/bisect_ts_parse.py
 
+# Node v26 --experimental-strip-types compatibility: loads every .ts plugin
+# file and asserts exit code 0. Catches patterns like try-inside-catch
+# without semicolon separator that Node v26's TS parser rejects.
+check-node-v26-compat:
+	@$(UV) run python -m pytest tests/unit/test_opencode_node_v26_compat.py $(_XD) -v
+
 test-db:
 	@$(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
 
