@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 — 119 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:2, W1:10, E:6, H:15, S:18).**
+**Last consolidated: 2026-07-12 — 117 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:6, W1:10, E:6, H:14, S:13).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -9,7 +9,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 4 | 6 | 33% |
-| W | Enforcement/Plugin hardening | 2 | 15 | 87% |
+| W | Enforcement/Plugin hardening | 6 | 21 | 71% |
 | C | Security/Correctness | 19 | 27 | 30% |
 | D | Feature Completeness | 19 | 22 | 14% |
 | X | XML Collection | 11 | 11 | 0% |
@@ -20,9 +20,9 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
-| H | Security Hardening | 15 | 23 | 35% |
-| S | Post-Ship | 18 | 21 | 14% |
-| **Total** | | **119** | **192** | **38%** |
+| H | Security Hardening | 14 | 23 | 39% |
+| S | Post-Ship | 13 | 21 | 38% |
+| **Total** | | **117** | **198** | **41%** |
 
 ---
 
@@ -47,8 +47,14 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] W.11 — Add GLUDD_FLOOR_ENFORCE env var to enforce-floor.ts (currently hard-coded ON with no escape hatch) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 — env var added
 - [x] W.12 — Wire test-hook-runtime into make gate (must pass before enforcement plugin changes committed) | priority: high | effort: small | status: completed | evidence: 2026-07-12 — wired into gate
 - [x] W.13 — Add AGENTS.md CRITICAL section: Self-Test Quality — Structural vs Behavioral | priority: high | effort: small | status: completed | evidence: 2026-07-12 — section added
-- [ ] W.14 — Add `make reload-enforcement` target (resets all enforcement state files to pick up env var changes) | priority: medium | effort: small | status: pending
-- [ ] W.15 — Add runtime tests for enforce-no-wait.ts + enforce-deletion-gate.ts in test_hook_runtime.py | priority: medium | effort: medium | status: pending
+- [x] W.14 — Add `make reload-enforcement` target (resets all enforcement state files to pick up env var changes) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
+- [x] W.15 — Add runtime tests for enforce-no-wait.ts + enforce-deletion-gate.ts in test_hook_runtime.py | priority: medium | effort: medium | status: completed | evidence: 2026-07-12 waves 11-12
+- [ ] W.16 — Plugin hot-reload proxy pattern: convert all enforcement plugins to thin wrappers that delegate to /tmp/gludd-hot-*.js hot modules | priority: high | effort: medium | status: pending
+- [ ] W.17 — `make hot-reload-plugins` target: compile .ts plugin source to standalone JS hot modules | priority: high | effort: medium | status: pending
+- [x] W.18 — CI pipeline discipline: ci-busy-check, ci-safe-push, deploy-and-forget targets | priority: high | effort: small | status: completed | evidence: scripts/ci_push_guard.py + tests/unit/test_ci_push_guard.py (11 tests passed), Makefile ci-busy-check/ci-safe-push/pre-push-check/push-guarded targets, push-dev gates on ci-busy-check, deploy-and-forget supports BRANCH=, ci_push_guard fail-open on gh unavailable
+- [ ] W.19 — Convert enforce-deadline.ts to hot-reload proxy pattern | priority: high | effort: small | status: pending
+- [ ] W.20 — Convert enforce-enhancement-ratio.ts to hot-reload proxy pattern | priority: high | effort: small | status: pending
+- [ ] W.21 — Convert enforce-floor.ts to hot-reload proxy pattern | priority: high | effort: small | status: pending
 
 ---
 
@@ -252,7 +258,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] H.2 — H-RELOAD-CONCURRENT: concurrent /admin/reload calls race on shared registries with no lock | priority: medium | effort: medium | status: pending
 - [ ] H.3 — H-READYZ-PREMATURE: /readyz treats "task not yet set" same as "task healthy" | priority: low | effort: small | status: pending
 - [ ] H.4 — H-LANGGRAPH-AUDITOR-NOOP: tool_auditor stored but never invoked in LangGraphAgentLoop | priority: medium | effort: medium | status: pending
-- [ ] H.5 — H-HUMANGATE-NO-CHECKPOINTER: gate graph compiled without checkpointer breaks interrupt/resume | priority: medium | effort: medium | status: pending
+- [x] H.5 — H-HUMANGATE-NO-CHECKPOINTER: gate graph compiled without checkpointer breaks interrupt/resume | priority: medium | effort: medium | status: completed | evidence: 2026-07-12 waves 11-12
 - [ ] H.6 — H-LANGGRAPH-FACTORY-ROLE-TRAP: make_langgraph_tool_loop has no required role param | priority: medium | effort: small | status: pending
 - [x] H.7 — H-PROJECT-OVERLAY-DANGEROUS-FIELDS: untrusted project config can override connectors, database.url, budget, issues, self_improve gates | priority: high | effort: medium | status: completed | evidence: 70 tests pass, project overlay deny-list with field-level blocklist
 - [x] H.8 — H-MEMORY-CROSS-PROJECT-BLEED: MemoryRecordModel has no project_id, cross-project leak+overwrite | priority: high | effort: medium | status: completed | evidence: 32 tests pass, migration 030, commit ac698bec
@@ -280,14 +286,14 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] S.2 — POST-SHIP #3: events/hooks.py no is_safe_fetch_url / follow_redirects=False (partial cherry-pick) | priority: high | effort: small | status: pending
 - [ ] S.3 — POST-SHIP #3: gateway.py call_model_with_fallback no health gate before _try_call_model + budget not threaded | priority: medium | effort: medium | status: pending
 - [x] S.4 — POST-SHIP #3: daemon.py _is_public startswith("/docs") → /docs_evil bypass | priority: medium | effort: small | status: completed | evidence: Wave 34
-- [ ] S.5 — POST-SHIP #4: db/repository.py details=NULL on NOT NULL col (D1/CA-DB1) | priority: medium | effort: small | status: pending
-- [ ] S.6 — POST-SHIP #4: db/repository.py task_type .contains substring false-positives (D2/CA-DB2) | priority: medium | effort: small | status: pending
+- [x] S.5 — POST-SHIP #4: db/repository.py details=NULL on NOT NULL col (D1/CA-DB1) | priority: medium | effort: small | status: completed | evidence: guard (details=details or "{}") at repository.py:791; 11 tests pass (test_s5_details_null.py)
+- [x] S.6 — POST-SHIP #4: db/repository.py task_type .contains substring false-positives (D2/CA-DB2) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
 - [x] S.7 — POST-SHIP #4: agents/dispatcher.py get_semaphore check-and-set not atomic (D3/CA-Dispatcher) | priority: medium | effort: small | status: completed | evidence: async with self._lock at dispatcher.py:104 protects check-and-set; 9 tests pass (test_dispatcher_semaphore.py), lint clean
 - [ ] S.8 — POST-SHIP #4: connectors/registry.py getattr class_name unvalidated (D4/CA-Connectors) | priority: medium | effort: small | status: pending
-- [ ] S.9 — POST-SHIP #4: self_update/applier.py substring-only protected-path bypass (D5/CA-E5) | priority: medium | effort: small | status: pending
-- [ ] S.10 — POST-SHIP #4: routers/integrity.py unconfined repo_root/path (D6/CA-R2) | priority: medium | effort: small | status: pending
-- [ ] S.11 — POST-SHIP #4: validation/runner.py unconfined subprocess cwd (D7/CA-validation) | priority: medium | effort: small | status: pending
-- [ ] S.12 — POST-SHIP #4: mcp/transport.py dual _NPM_FAMILY_LAUNCHERS def → bunx skips pin gate (D8/CA-M1) | priority: medium | effort: small | status: pending
+- [x] S.9 — POST-SHIP #4: self_update/applier.py substring-only protected-path bypass (D5/CA-E5) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
+- [x] S.10 — POST-SHIP #4: routers/integrity.py unconfined repo_root/path (D6/CA-R2) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
+- [x] S.11 — POST-SHIP #4: validation/runner.py unconfined subprocess cwd (D7/CA-validation) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
+- [x] S.12 — POST-SHIP #4: mcp/transport.py dual _NPM_FAMILY_LAUNCHERS def → bunx skips pin gate (D8/CA-M1) | priority: medium | effort: small | status: completed | evidence: 2026-07-12 waves 11-12
 - [ ] S.13 — POST-SHIP #4: db/models.py missing FK todos.todo_id + task_returns.return_id (D9/CA-DB3) | priority: medium | effort: medium | status: pending
 - [ ] S.14 — POST-SHIP #4: daemon.py sync time.sleep blocks loop for model_gateway (D10/CA-D2) | priority: medium | effort: small | status: pending
 - [ ] S.15 — POST-SHIP #4: dispatch/dynamic_dispatcher.py UNRESTRICTED_ROLE str→object() sentinel (D12) | priority: medium | effort: small | status: pending

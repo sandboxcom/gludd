@@ -70,6 +70,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
     script-count test-hooks-live test-hook-runtime \
     verify-enforcement \
     ci-view ci-rerun ci-trigger ci-active ci-job-log \
+    ci-busy-check ci-safe-push pre-push-check push-guarded \
     search-coverage-agentconfig \
     git-index git-search git-stats \
     searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
@@ -1273,9 +1274,10 @@ git-push-sandboxcom: check-clean-tree _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 
-push-dev: check-clean-tree
+push-dev: check-clean-tree ci-busy-check
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd"
+	@$(PYTHON) scripts/ci_check_cooldown.py deploy
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 push-dev-nv: check-clean-tree _push-rate-guard
@@ -1439,10 +1441,14 @@ ci-diagnose:
 	@$(PYTHON) scripts/ci_diagnose.py $(or $(BRANCH),master)
 
 # deploy-and-forget: push + record timestamp + print checkback time. This is
-# the fire-and-forget deployment pattern. After running this, RESUME REAL
-# WORK — do not poll CI. Check back at the printed time with ci-verdict-safe.
-deploy-and-forget:
-	@$(MAKE) --no-print-directory batch-push COMMIT_THRESHOLD=1 || $(MAKE) --no-print-directory git-push-sandboxcom
+# the fire-and-forget deployment pattern. Supports BRANCH= for development pushes.
+# After running this, RESUME REAL WORK — do not poll CI.
+deploy-and-forget: ci-busy-check
+	@if [ "$(BRANCH)" = "development" ] || [ "$(BRANCH)" = "dev" ]; then \
+		$(MAKE) --no-print-directory push-dev; \
+	else \
+		$(MAKE) --no-print-directory batch-push COMMIT_THRESHOLD=1 || $(MAKE) --no-print-directory git-push-sandboxcom; \
+	fi
 	@$(PYTHON) scripts/ci_check_cooldown.py deploy
 
 # ci-cooldown-status: show how long until the next ci-verdict-safe is allowed.
@@ -1844,6 +1850,50 @@ ci-trigger:
 # so we know whether a new run is already active on a SHA before re-triggering.
 ci-active:
 	@gh run list -R sandboxcom/gludd --workflow "Build and Release" --json databaseId,status,conclusion,headSha,createdAt,event -L 10 2>&1 || echo "ci-active-failed"
+
+# ci-busy-check: gate before push — blocks if CI is already running on target branch.
+# Prevents "push cancels running CI → zero validation" anti-pattern.
+# Usage: make ci-busy-check BRANCH=development
+# Exits 1 if CI is busy, 0 if safe to push. FORCE=1 bypasses (hotfix only).
+ci-busy-check: _require-gh
+	@$(PYTHON) scripts/ci_push_guard.py $(or $(BRANCH),master)
+
+# ci-safe-push: check CI idle on target branch, then push. Blocks if CI busy.
+# Usage: make ci-safe-push BRANCH=development
+ci-safe-push: ci-busy-check
+	@if [ "$(BRANCH)" = "development" ] || [ "$(BRANCH)" = "dev" ]; then \
+		$(MAKE) --no-print-directory push-dev; \
+	else \
+		$(MAKE) --no-print-directory git-push-sandboxcom; \
+	fi
+
+# pre-push-check: comprehensive pre-push audit. Runs before any push.
+# Checks: CI idle + clean tree + gate fresh/green. Block on any failure.
+# Usage: make pre-push-check BRANCH=development
+pre-push-check: ci-busy-check check-clean-tree
+	@if [ ! -f .gate-status ]; then \
+		echo "PRE-PUSH: no .gate-status — run 'make gate' (or gate-background) first."; \
+		if [ "$$FORCE" != "1" ]; then exit 1; fi; \
+	fi
+	@# gate-status fresh check: reject if older than 4h or gate was red
+	@if [ -f .gate-status ]; then \
+		AGE=$$(python3 -c "import os,time;print(int(time.time()-os.path.getmtime('.gate-status')))"); \
+		STATE=$$(cat .gate-status 2>/dev/null); \
+		if [ "$$AGE" -gt 14400 ] && [ "$$FORCE" != "1" ]; then \
+			echo "PRE-PUSH: .gate-status is $$((AGE/3600))h old — re-run 'make gate' first."; \
+			exit 1; \
+		fi; \
+		if echo "$$STATE" | grep -q "FAILED" && [ "$$FORCE" != "1" ]; then \
+			echo "PRE-PUSH: gate is RED — fix failures before pushing."; \
+			exit 1; \
+		fi; \
+	fi
+	@echo "PRE-PUSH-CHECK: all clear. Safe to push to $(or $(BRANCH),master)."
+
+# push-guarded: push with full pre-push-check gating.
+# Usage: make push-guarded BRANCH=development
+push-guarded: pre-push-check
+	@$(MAKE) --no-print-directory ci-safe-push BRANCH=$(or $(BRANCH),master)
 
 ci-auth:
 	@gh auth status 2>&1 || echo "gh-auth-failed"
