@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import patch
+from datetime import UTC, datetime
 
 import pytest
 
@@ -52,13 +51,13 @@ class TestParseTimestamp:
     def test_parses_iso_format_with_offset(self):
         result = parse_timestamp("2024-01-15T10:30:00+01:00")
         assert isinstance(result, float)
-        expected = datetime(2024, 1, 15, 9, 30, 0, tzinfo=timezone.utc).timestamp()
+        expected = datetime(2024, 1, 15, 9, 30, 0, tzinfo=UTC).timestamp()
         assert result == expected
 
     def test_parses_iso_format_with_z(self):
         result = parse_timestamp("2024-01-15T10:30:00Z")
         assert isinstance(result, float)
-        expected = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc).timestamp()
+        expected = datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC).timestamp()
         assert result == expected
 
     def test_parses_iso_format_with_milliseconds(self):
@@ -74,7 +73,7 @@ class TestParseTimestamp:
     def test_assumes_utc_for_naive_datetime(self):
         result = parse_timestamp("2024-01-15T10:30:00")
         assert isinstance(result, float)
-        expected = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc).timestamp()
+        expected = datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC).timestamp()
         assert result == expected
 
     def test_strips_whitespace(self):
