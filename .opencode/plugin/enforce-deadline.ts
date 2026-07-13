@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
-import { loadHotModule, type HotModule } from "./hot_reload.ts"
-import { isSubagent, reportAlive } from "./shared.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { isSubagent, reportAlive } from "../lib/shared.ts"
 
 // enforce-deadline.ts — subagent task wall-clock timeout enforcement.
 //
@@ -229,7 +229,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
       if (isSubagent()) return;

@@ -28,8 +28,8 @@
  */
 import type { Plugin } from "@opencode-ai/plugin";
 import { execSync } from "node:child_process";
-import { loadHotModule, type HotModule } from "./hot_reload.ts";
-import { isSubagent, reportAlive } from "./shared.ts";
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
+import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 /** Tools that represent subagent dispatch (not bash/read/edit). */
 export const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as readonly string[];

@@ -1,9 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { loadHotModule, type HotModule } from "./hot_reload.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { execSync } from "node:child_process"
-import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat } from "./shared.ts"
+import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat } from "../lib/shared.ts"
 
 // Floor+ceiling enforcement guardrail (separate from enforce-make.ts so a bug
 // here can NEVER break the make-only enforcement). FAIL-OPEN: any error -> do
@@ -654,7 +654,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   // LOADED self-check
   try {
     fs.appendFileSync(
@@ -687,12 +687,6 @@ export default (async ({ }) => {
       const impl = loadHotModule("floor", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
-    },
-
-    "session.idle": async () => {
-      const impl = loadHotModule("floor", defaultImpl)
-      const fn = impl["session.idle"]
-      return fn ? await fn() : undefined
     },
 
     "experimental.text.complete": async (_input: any, output: any) => {

@@ -32,8 +32,8 @@
  */
 import * as fs from "node:fs";
 import type { Plugin } from "@opencode-ai/plugin";
-import { loadHotModule, type HotModule } from "./hot_reload.ts";
-import { isSubagent, reportAlive } from "./shared.ts";
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
+import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 export const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bsleep\s+\d+\s*&&\s*make\b/,
@@ -132,7 +132,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return;

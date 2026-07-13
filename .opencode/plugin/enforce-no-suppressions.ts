@@ -19,8 +19,8 @@
  * default.  Run `make hot-reload-plugins` after editing this file.
  */
 import type { Plugin } from "@opencode-ai/plugin";
-import { loadHotModule, type HotModule } from "./hot_reload.ts";
-import { isSubagent, reportAlive } from "./shared.ts";
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
+import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 export const SUPPRESSION_PATTERNS: RegExp[] = [
   /#\s*noqa/,
@@ -108,7 +108,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (async ({ }) => {
+export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return;
