@@ -29,13 +29,13 @@ class TestPythonQualityGate:
         assert qg.branch_coverage_min_percent == 85.0
 
     def test_line_coverage_rejects_out_of_range(self):
-        with pytest.raises(ValueError, match="between 0.0 and 100.0"):
+        with pytest.raises(ValueError, match=r"between 0\.0 and 100\.0"):
             PythonQualityGate(line_coverage_min_percent=-1.0)
-        with pytest.raises(ValueError, match="between 0.0 and 100.0"):
+        with pytest.raises(ValueError, match=r"between 0\.0 and 100\.0"):
             PythonQualityGate(line_coverage_min_percent=101.0)
 
     def test_branch_coverage_rejects_out_of_range(self):
-        with pytest.raises(ValueError, match="between 0.0 and 100.0"):
+        with pytest.raises(ValueError, match=r"between 0\.0 and 100\.0"):
             PythonQualityGate(branch_coverage_min_percent=101.0)
 
     def test_coverage_edge_zero(self):
@@ -65,9 +65,9 @@ class TestMoleculeQualityGate:
         assert mq.idempotence_required_by_default is True
 
     def test_coverage_rejects_out_of_range(self):
-        with pytest.raises(ValueError, match="between 0.0 and 100.0"):
+        with pytest.raises(ValueError, match=r"between 0\.0 and 100\.0"):
             MoleculeQualityGate(coverage_min_percent=-0.1)
-        with pytest.raises(ValueError, match="between 0.0 and 100.0"):
+        with pytest.raises(ValueError, match=r"between 0\.0 and 100\.0"):
             MoleculeQualityGate(coverage_min_percent=100.1)
 
     def test_exemption_age_rejects_zero(self):
