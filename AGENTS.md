@@ -93,9 +93,9 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 - `enforce-session-start.ts`: floor=10 (updated 2026-07-12)
 - `/tmp/gludd-floor-override`: 10 (runtime override, takes priority over env vars)
 
-### Enforcement Plugin Status (2026-07-12 Wave 11)
+### Enforcement Plugin Status (2026-07-13 Wave 14)
 
-After converting enforce-deadline.ts and enforce-enhancement-ratio.ts from advisory to blocking:
+13/13 hot-reload capable, 0 `require()` calls (all ES module `import`), `make check-node-v26-compat` 2/2 PASS.
 
 | Plugin | Status | Blocks via | Disable via |
 |--------|--------|-----------|-------------|
@@ -109,9 +109,13 @@ After converting enforce-deadline.ts and enforce-enhancement-ratio.ts from advis
 | enforce-verified-claims.ts | **BLOCKING** | text.complete | GLUDD_VERIFIED_CLAIMS_ENFORCE=0 |
 | enforce-no-suppressions.ts | **BLOCKING** | tool.execute.before | (hard-coded ON) |
 | enforce-session-start.ts | **BLOCKING** | tool.execute.before | GLUDD_SESSION_START_ENFORCE=0 |
+| enforce-make.ts | **BLOCKING** | tool.execute.before + text.complete | GLUDD_MAKE_ENFORCE=0 |
+| enforce-no-wait.ts | **BLOCKING** | tool.execute.before | GLUDD_NO_WAIT_ENFORCE=0 |
+| enforce-deletion-gate.ts | **BLOCKING** | tool.execute.before | GLUDD_DELETION_GATE_ENFORCE=0 |
 
-All 10 enforcement plugins are now BLOCKING. Zero advisory-only plugins remain.
+All 13 enforcement plugins are now BLOCKING and hot-reload capable via `shared.ts`. Zero advisory-only plugins remain.
 Runtime verification via `make test-hook-runtime` (52 functional tests across 8 plugins).
+Node v26 `--experimental-strip-types` compatibility verified: 0 `require()` calls, 2/2 compat checks PASS.
 
 **Note:** Enforcement plugin changes take effect on opencode restart. During a session where plugin source was edited, behavioral enforcement may lag until restart.
 
@@ -1596,6 +1600,7 @@ Run `make help` for the full categorized list (~100 targets). Key targets below.
 - `make sast` - Run bandit SAST
 - `make sbom` - Generate CycloneDX SBOM
 - `make pip-audit` - Audit dependencies for vulnerabilities
+- `make check-node-v26-compat` - Check Node v26 `--experimental-strip-types` compatibility for plugin code
 
 ### Testing
 - `make test` - Full test suite with coverage
