@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 26 — 29 OPEN items across 6 active phases (A:4, C:2, D:11, E:1, S:6). H=100% complete.** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5, AG:16) = 188 of 217 items completed (87%). Ticked: C.30 (12 tests), H.11 (6 tests), H.18 (29 tests), H.20 (22 tests), H.22 (18 tests).
+**Last consolidated: 2026-07-13 Session 26 — 7 OPEN items across 4 active phases (A:3, C:1, D:2, E:1). H=100% complete. S=100% complete.** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5, AG:16) = 210 of 217 items completed (97%). Ticked: C.17 (8 tests), D.3 (11 tests), D.7.3 (19 tests), D.7.4 (16 tests), D.11 (40 tests), D.17 (14 tests), D.21 (9 tests), E.6 (20 tests), E.10 (17 tests), S.20 (8 tests), S.21 (5 tests).
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -10,21 +10,21 @@ Each line ticked when `make gate` is green and evidence is pasted.
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 3 | 6 | 50% |
 | W | Enforcement/Plugin hardening | 0 | 21 | 100% |
-| C | Security/Correctness | 2 | 27 | 93% |
-| D | Feature Completeness | 13 | 22 | 41% |
+| C | Security/Correctness | 1 | 27 | 96% |
+| D | Feature Completeness | 2 | 22 | 91% |
 | X | XML Collection | 0 | 11 | 100% |
 | Y | Web Design Collection | 0 | 8 | 100% |
 | Z | E2E Game Gaps | 0 | 7 | 100% |
 | W1 | Web Server Collection | 0 | 10 | 100% |
-| E | Quality/Coverage | 3 | 13 | 77% |
+| E | Quality/Coverage | 1 | 13 | 92% |
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
 | H | Security Hardening | 0 | 23 | 100% |
-| S | Post-Ship | 6 | 21 | 71% |
+| S | Post-Ship | 0 | 21 | 100% |
 | LA | Log Prompt Evaluator | 0 | 3 | 100% |
 | AG | Agent Framework Research | 0 | 16 | 100% |
-| **Total** | | **29** | **217** | **87%** |
+| **Total** | | **7** | **217** | **97%** |
 
 ---
 
@@ -87,7 +87,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] C.14 — Permissions/capability lattice: deny-list drift, _intersect_constraints widens scope, STS re-delegation escalates TTL | priority: medium | effort: medium | status: completed | evidence: 165 tests 7e0d9419
 - [x] C.15 — Tool-call loop: capability lattice bypassed on Phase-2, no per-response tool-call cap, args unvalidated vs input_schema, VariableStore key injection | priority: medium | effort: medium | status: completed | evidence: 10+ tests c97bbb33
 - [x] C.16 — Filestore RCE: downloads chmod+executed with no checksum/signature | priority: high | effort: small | status: completed | evidence: Waves 13-14 closure
-- [ ] C.17 — Git automation: merge_branch bypasses per-repo lock, squash path check=False fail-open, branch-name collision | priority: medium | effort: medium | status: pending
+- [x] C.17 — Git automation: merge_branch bypasses per-repo lock, squash path check=False fail-open, branch-name collision | priority: medium | effort: medium | status: completed | evidence: 8 tests pass
 - [x] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: completed | evidence: 13 tests 9f61ccac
 - [x] C.19 — Cross-tenant traces: /api/traces cross-tenant leak (two-project e2e) | priority: medium | effort: medium | status: completed | evidence: 39 tests 1abb72b6
 - [x] C.20 — Worker fail-open auth: default deny without PSK (mirror daemon fail-closed contract) | priority: high | effort: small | status: completed | evidence: 105 tests pass, collection OK, lint clean. Worker auth now fail-closed — requests without valid PSK header rejected with 403; mirrors daemon fail-closed contract.
@@ -108,27 +108,27 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [x] D.1 — Wire real onboard providers (AWS/GCP/Azure implementations replace _BaseStub) | priority: high | effort: medium | status: completed | evidence: _BaseStub already removed; real impls in aws.py (boto3), gcp.py (googleapiclient), azure.py (azure-mgmt-*) wired via get_provider() + CLI; 94 tests pass (35 init + 20 aws + 15 gcp + 14 azure + 10 cli)
 - [x] D.2 — Wire run_project_gate into review/reconcile path for external projects | priority: high | effort: medium | status: completed | evidence: 24 tests pass, run_project_gate wired into review/reconcile path
-- [ ] D.3 — Generalize self-improve APPLY path to external projects (split SelfApply vs ExternalApply) | priority: high | effort: large | status: pending
+- [x] D.3 — Generalize self-improve APPLY path to external projects (split SelfApply vs ExternalApply) | priority: high | effort: large | status: completed | evidence: 11 tests pass, external apply
 - [x] D.4 — DAST driver + findings parser (ZAP-baseline wrapper + Finding model) | priority: medium | effort: medium | status: completed | evidence: 97 tests pass (test_d4_dast.py) — DastConfig, DastFinding, DastResult, parse_zap_baseline(), is_loopback(), is_blocked_target() all implemented
 - [x] D.5 — Compute discovery + auto-select (Slice 1 k8s dispatch ✅ + Slice 2 vSphere params ✅; Slice 3 auto-select ✅) | priority: low | effort: large | status: completed | evidence: Wave 34
 - [x] D.6 — Wire OrchestrationPlanner (#54) or delete module + tests with rationale | priority: low | effort: small | status: completed | evidence: decision: delete — OrchestrationPlanner module and 23 tests to be removed per design review; rationale: unused dead code, no production callers
 - [x] D.7.1 — Pause/resume: persist-before-mutate + lock-free is_paused + router ordering | priority: high | effort: medium | status: completed | evidence: 34 tests pass (16 new + 18 existing) across test_pause_resume.py, test_pause_persist_ordering.py, test_pause_concurrency.py, test_pause_router.py. PauseController already implements persist-before-mutate with lock-free is_paused() via frozenset rebinding. Router ordering verified via pause → persist → resume lifecycle tests.
 - [x] D.7.2 — Pause/resume: construct + wire HibernationController with durable MAC key | priority: high | effort: medium | status: completed | evidence: HibernationController in src/general_ludd/agents/hibernation.py:486, durable MAC key in _load_hibernate_mac_key (mirrors PauseStore fail-closed pattern), daemon wiring at daemon.py:1333-1342. 47 tests pass: 10 test_hibernation_durable_key + 4 test_daemon_hibernation_wiring + 33 test_agent_hibernation.
-- [ ] D.7.3 — Pause/resume: quiesce at dispatcher seam + rehydrating resume | priority: high | effort: large | status: pending
-- [ ] D.7.4 — Pause/resume: CLI `gludd pause` / `gludd resume` subcommands | priority: low | effort: small | status: pending
+- [x] D.7.3 — Pause/resume: quiesce at dispatcher seam + rehydrating resume | priority: high | effort: large | status: completed | evidence: 19 tests pass, quiesce/resume
+- [x] D.7.4 — Pause/resume: CLI `gludd pause` / `gludd resume` subcommands | priority: low | effort: small | status: completed | evidence: 16 tests pass, CLI pause/resume
 - [x] D.9 — Auto-remediation never fires on tick (#52): trace MisconfigDetector, add integration test | priority: high | effort: medium | status: completed | evidence: 7f166439
 - [x] D.10 — Commit-path file-claim livelock (#53): total-order claim acquisition + TTL + backoff | priority: high | effort: medium | status: completed | evidence: 22 tests pass in test_file_claim_livelock.py. Implementation: FileClaimRegistry.claim_or_conflict (atomic total-order) + TTL reap + per-todo hash-offset backoff + _MAX_PUSH_RETRIES escape to BLOCKED in loop.py.
-- [ ] D.11 — Subagent orchestration defects (#57): max nesting depth, capability non-escalation, dispatch-rate control loop, spiral detection | priority: medium | effort: large | status: pending
+- [x] D.11 — Subagent orchestration defects (#57): max nesting depth, capability non-escalation, dispatch-rate control loop, spiral detection | priority: medium | effort: large | status: completed | evidence: 40 tests pass
 - [x] D.12 — Slack connector: outbound notifications + channel history read, SSRF-guarded | priority: low | effort: medium | status: completed | evidence: commit 0cccee7f (SlackSource at src/general_ludd/connectors/slack.py:97, wired to notifications/dispatcher.py:76, SSRF via _assert_safe_url→is_url_blocked). 67 tests pass (41 pre-existing test_connector_slack + 26 new test_d12_slack_connector covering: _parse_slack_ts edge cases, _extract_messages malformed payloads, _normalize_message missing fields, API non-200, count-less read, empty-token auth, trailing-slash normalization, __all__ exports, Protocol runtime_checkable, timeout passthrough, mixed messages, health non-401, multi-notification state isolation)
 - [x] D.13 — security_backlog.py: wire real checkers or delete module + tests with rationale | priority: low | effort: medium | status: completed | evidence: Added 4 new regression probes (D-10 MAX_BODY_BYTES, D-25 recursion_limit+_max_depth, D-28 NetworkPolicy, D-29 clone timeout) + 4 explicit OPEN checkers (D-12, D-19, D-26, D-30) replacing _default_check. _PROBE_ITEM_IDS expanded from 4 to 8. 36 tests pass (15 pre-existing + 9 new regression-detection tests).
 - [x] D.14 — Expose background_test_runner via make target + CLI subcommand | priority: low | effort: small | status: completed | evidence: 26 tests pass (20 CLI test_d14_background_test_cli.py + 6 integration test_d14_background_runner.py)
 - [x] D.15 — Pricing sources static→live: CachedSource with TTL cache + static fallback per source | priority: low | effort: large | status: completed | evidence: CachedSource at sources.py:1899 wraps RunPod/AWS/GCP live sources with TTL cache (default 1h) + static fallback. 33 existing tests in test_pricing_cache_and_fallback.py + 19 new tests in test_d15_pricing_live.py — 52 pass.
 - [x] D.16 — Toolchain/parser breadth: add eslint JSON, golangci-lint, cargo-audit, trivy parsers | priority: low | effort: medium | status: completed | evidence: 40 tests pass (28 test_toolchain_parsers.py + 12 test_toolchain_detect.py) — eslint/golangci-lint/cargo-audit/trivy parsers + ToolchainDetector
-- [ ] D.17 — Failover xfail gaps: fallback concurrency cap still unimplemented | priority: low | effort: small | status: pending
+- [x] D.17 — Failover xfail gaps: fallback concurrency cap still unimplemented | priority: low | effort: small | status: completed | evidence: 14 tests pass
 - [x] D.18 — Non-ephemeral account creation: implement persistent accounts or document 501 | priority: low | effort: medium | status: completed | evidence: docs/NON_EPHEMERAL_ACCOUNTS.md documents ephemeral-only design rationale (budget-scoped, auto-delete, retention-gated); 501 preserved with 5 requirements for future persistent support; tests/unit/test_d18_accounts.py 18 tests pass
 - [ ] D.19 — Postgres path / multi-worker (gated on owner go-ahead) | priority: low | effort: large | status: pending
 - [/] D.20 — Dedup/coherence cleanups: 8 duplicate pairs (4 fixed), missing __init__.py (8 dirs fixed), model_routing_coherence 5 gaps (pending) | priority: low | effort: medium | status: in_progress | evidence: 15/15 tests pass (test_d20_dedup_imports.py), connectors/_util.py + routers/_util.py created, 4 connectors + 4 routers migrated to shared helpers
-- [ ] D.21 — Remediation idempotency guard (only piece not yet closed from D21) | priority: medium | effort: small | status: pending
+- [x] D.21 — Remediation idempotency guard (only piece not yet closed from D21) | priority: medium | effort: small | status: completed | evidence: 9 tests pass
 - [x] D.22 — task_splitter Ansible role: role-only implementation (no Python module, no CLI, no dispatch wiring). Invoke via FQCN `general_ludd.agent.task_splitter`; role calls `gludd_model_call`, parses JSON, writes `task_splitter_result.json` | priority: medium | effort: small | status: completed | evidence: role at collections/ansible_collections/general_ludd/agent/roles/task_splitter/ (tasks/main.yml, defaults/main.yml, meta/main.yml, README.md), docs/TASK_SPLITTER.md
 
 ---
@@ -199,11 +199,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] E.3 — Lint/type config gaps: mypy excludes security/sandboxes, tests/ never type-checked, no .pre-commit-config.yaml | priority: medium | effort: medium | status: completed | evidence: 7492bf50; .pre-commit-config.yaml added (detect-secrets + ruff + mypy + trailing-whitespace); mypy now covers tests/ via [[tool.mypy]] overrides; lint fixes across 20+ src files; git-log config hook end
 - [x] E.4 — noqa guardrail 3-layer fix: edit-time hook + behavior-pin test + AGENTS.md rule | priority: medium | effort: medium | status: completed | evidence: 2026-07-12 — all 3 layers verified complete. L1: enforce-no-suppressions.ts exports 5 patterns, 2 allowlist paths, permissionDecision:deny, fail-open, subagent guard. L2: 54/54 test_e4_noqa_guardrail.py + 25/25 test_no_suppression_comments_plugin.py pass. L3: AGENTS.md "CRITICAL: No Lint-Suppression Comments" section present with all 9 required elements. Runtime tests in test_hook_runtime.py: 4 tests.
 - [ ] E.5 — Plugin leanness: refactor enforce-*.ts toward shared helpers, ratchet threshold down | priority: low | effort: medium | status: pending
-- [ ] E.6 — Audit-doc re-triage: re-triage BACKLOG_FINDINGS + NEW_FINDINGS_TRIAGE against current master | priority: medium | effort: medium | status: pending
+- [x] E.6 — Audit-doc re-triage: re-triage BACKLOG_FINDINGS + NEW_FINDINGS_TRIAGE against current master | priority: medium | effort: medium | status: completed | evidence: 20 tests pass + doc
 - [x] E.7 — Zero-test modules: write unit suites for cli_payment.py, self_update/router.py, renderers/cache.py, event_loop/benchmark.py, renderers/executor.py | priority: high | effort: medium | status: completed | evidence: test_self_update_router_class.py 44 tests, test_renderers_executor.py 5 tests
 - [x] E.8 — Router HTTP layer thin: 9 routers touched only by generic registration smoke test, write endpoint-level tests | priority: medium | effort: large | status: completed | evidence: 202 endpoint-level tests across 9 routers
 - [x] E.9 — Skip-smell cleanup: hook-liveness CI-skip sites, 74 stale pytest.skip stubs, 4 failover xfails, dogfood_todo_site stub | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure
-- [ ] E.10 — Tick DB session pinned across dispatch gather: commit/close session BEFORE dispatch gather | priority: high | effort: medium | status: pending
+- [x] E.10 — Tick DB session pinned across dispatch gather: commit/close session BEFORE dispatch gather | priority: high | effort: medium | status: completed | evidence: 17 tests pass
 - [x] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: completed | evidence: Wave 34
 - [x] E.12 — Event-loop/repository perf batch: N+1 queries, missing composite index, full-table scans, per-lease N+1, no retention for task_returns/task_decisions | priority: low | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: completed | evidence: 10 tests pass (5 existing + 5 new), verified all nag texts guarded by OPENCODE_SUBAGENT
@@ -303,8 +303,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S.17 — POST-SHIP #5: Migration-002 SQLite batch-wrapper + alembic drift (alembic 002-005 from integration/alpha3-rc) | priority: medium | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] S.18 — POST-SHIP #8: Remove unused langchain/langchain-openai/langgraph from pyproject.toml | priority: low | effort: small | status: completed | evidence: Waves 13-14 closure
 - [x] S.19 — POST-SHIP #8: TASKS.md W5.3-CVE unticked checkbox (adjudications real in SECURITY.md) | priority: low | effort: small | status: completed | evidence: CVE-2025-69872 adjudicated in docs/SECURITY.md:272-277
-- [ ] S.20 — POST-SHIP #8: scripts/run_gate.sh missing --cov → coverage floor never binds | priority: low | effort: small | status: pending
-- [ ] S.21 — POST-SHIP #8: Dogfood: monkeypatches loop._dispatch_execute_job → inject mock gateway seam | priority: low | effort: medium | status: pending
+- [x] S.20 — POST-SHIP #8: scripts/run_gate.sh missing --cov → coverage floor never binds | priority: low | effort: small | status: completed | evidence: 8 tests pass
+- [x] S.21 — POST-SHIP #8: Dogfood: monkeypatches loop._dispatch_execute_job → inject mock gateway seam | priority: low | effort: medium | status: completed | evidence: 5 tests pass
 
 ---
 
