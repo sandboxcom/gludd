@@ -1345,4 +1345,4 @@ export default (async ({ }) => {
       }
     },
   }
-}) satisfies Plugin
+})

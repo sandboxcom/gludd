@@ -22,7 +22,6 @@ import pytest
 
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 
-
 # ---- Scripted provider (same pattern as test_failover_e2e.py) -------------
 
 
@@ -193,7 +192,7 @@ class TestCallFallbackAcquireRelease:
 
     def test_would_block_caller_when_semaphore_fully_acquired(self) -> None:
         gw = _build_gateway(fb_concurrency=1)
-        sem = gw._fallback_semaphore("secondary")
+        gw._fallback_semaphore("secondary")
         _ScriptedChatModel.DELAYS[_SECONDARY] = 0.5
         _ScriptedChatModel.SCRIPTS[_SECONDARY] = ["ok"] * 10
 

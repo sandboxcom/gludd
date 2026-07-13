@@ -20,11 +20,12 @@ from typing import Any
 
 import pytest
 
-from general_ludd.connectors._errors import SSRFError
 from general_ludd.connectors.slack import (
     HttpTransport,
     SlackSource,
     _parse_slack_ts,
+)
+from general_ludd.connectors.slack import (
     __all__ as slack_all,
 )
 
@@ -167,7 +168,7 @@ def test_normalize_message_without_ts_key():
 # send_notification API path non-200
 # --------------------------------------------------------------------------- #
 def test_send_notification_api_non_200():
-    src, t = _mk(
+    src, _t = _mk(
         config={"base_url": BASE_URL, "token_env": "SLACK_BOT_TOKEN", "channel_id": "C123"},
         post_resp=FakeResponse(403, {"ok": False, "error": "not_in_channel"}),
     )
@@ -236,8 +237,7 @@ def test_all_exports():
 # HttpTransport is runtime_checkable
 # --------------------------------------------------------------------------- #
 def test_http_transport_is_runtime_checkable():
-    from typing import runtime_checkable
-    assert hasattr(HttpTransport, "__call__") or hasattr(HttpTransport, "_is_runtime_protocol")
+    assert callable(HttpTransport) or hasattr(HttpTransport, "_is_runtime_protocol")
 
 
 def test_fake_transport_satisfies_protocol():
@@ -249,7 +249,7 @@ def test_fake_transport_satisfies_protocol():
 # timeout parameter passthrough
 # --------------------------------------------------------------------------- #
 def test_custom_timeout_passed_to_transport():
-    src, t = _mk(
+    _src, t = _mk(
         config={"base_url": BASE_URL, "token_env": "SLACK_BOT_TOKEN", "channel_id": "C123"},
         get_resp=FakeResponse(200, {"ok": True, "messages": []}),
     )
@@ -294,7 +294,7 @@ def test_read_channel_history_mixed_messages():
 # health() with non-200/non-401 status
 # --------------------------------------------------------------------------- #
 def test_health_other_status():
-    src, t = _mk(get_resp=FakeResponse(503, None))
+    src, _t = _mk(get_resp=FakeResponse(503, None))
     result = src.health()
     assert result["ok"] is False
     assert result["status_code"] == 503

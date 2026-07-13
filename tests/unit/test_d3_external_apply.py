@@ -50,7 +50,7 @@ class TestSelfApply:
             mock_git.commit_and_push.return_value = "def456"
             mock_git_cls.return_value = mock_git
 
-            result = sa.apply(
+            sa.apply(
                 workspace_repo_dir="/tmp/ws",
                 message="fix: retry",
                 reloader=mock_reloader,

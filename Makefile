@@ -215,6 +215,7 @@ help:
 	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
 	@echo "  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)"
 	@echo "  restore-opencode      Restore .opencode/ from .opencode.orig/ + clear corrupt cache"
+	@echo "  verify-opencode-backup Verify .opencode.orig/ is current (files + shared.ts exports)"
 	@echo ""
 	@echo "  --- Other ---"
 	@echo "  smoke                 Quick daemon boot health check"
@@ -426,7 +427,10 @@ check-plugin-runtime:
 check-opencode-ready:
 	@$(UV) run python3 scripts/check_opencode_ready.py
 
-gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports
+check-opencode-integrity:
+	@$(UV) run python3 scripts/check_opencode_integrity.py
+
+gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -502,7 +506,7 @@ gate: validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plu
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: check-subagent-guards check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports
+gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
@@ -3889,6 +3893,9 @@ backup-opencode:
 	@touch .opencode.orig
 	@echo "  backup timestamp: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	@echo ".opencode/ backed up successfully."
+	@echo ""
+	@echo "=== post-backup verification ==="
+	@$(UV) run python scripts/verify_opencode_backup.py || true
 
 # Check that .opencode.orig/ backup is fresh (<24h older than .opencode/)
 check-opencode-backup:
@@ -3902,6 +3909,11 @@ check-opencode-backup:
 		exit 1; \
 	fi
 	@echo "  .opencode.orig/ backup is fresh."
+
+# Verify .opencode.orig/ backup is content-current (files exist + shared.ts exports match).
+# Runs as a post-backup step in backup-opencode; also callable standalone.
+verify-opencode-backup:
+	@$(UV) run python scripts/verify_opencode_backup.py
 
 # Restore .opencode/ from .opencode.orig/ and clear corrupt cache after OS crash
 # Per https://opencode.ai/docs/troubleshooting: corrupted ~/.cache/opencode

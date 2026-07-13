@@ -12,13 +12,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import pytest
-
 from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
 from general_ludd.config.user_config import OrchestrationGuardConfig
-
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

@@ -58,10 +58,10 @@ def test_missing_init_py_added() -> None:
     import general_ludd.observe
     import general_ludd.orchestration
     import general_ludd.receiver
+    import general_ludd.renderers.templates
     import general_ludd.templates
     import general_ludd.templates.render
     import general_ludd.templates.render.sections
-    import general_ludd.renderers.templates
     assert general_ludd.cli is not None
     assert general_ludd.observe is not None
     assert general_ludd.orchestration is not None
@@ -76,7 +76,7 @@ def test_validate_base_url_blocks_loopback() -> None:
     from general_ludd.connectors._util import validate_base_url
     try:
         validate_base_url("http://127.0.0.1:8080/")
-        assert False, "Should have raised"
+        raise AssertionError("Should have raised")
     except ValueError:
         pass
 

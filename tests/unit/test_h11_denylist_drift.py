@@ -9,13 +9,13 @@ canonical deny set.
 from __future__ import annotations
 
 from general_ludd.security.path_canonicalizer import (
+    _HARD_DENY_SEGMENTS,
+    _HARD_DENY_SUBSTRINGS,
     CANONICAL_DENY_MARKERS,
     PROTECTED_FILE_STEMS,
     PROTECTED_PATH_MARKERS,
     PROTECTED_PATH_SEGMENTS,
     PROTECTED_PATH_SUBSTRINGS,
-    _HARD_DENY_SEGMENTS,
-    _HARD_DENY_SUBSTRINGS,
 )
 
 

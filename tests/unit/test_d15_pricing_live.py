@@ -12,7 +12,7 @@ Covers gaps not in test_pricing_cache_and_fallback.py:
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -24,17 +24,10 @@ from general_ludd.pricing_intel.models import (
     ProviderBilling,
 )
 from general_ludd.pricing_intel.sources import (
-    AWSPricingSource,
-    AWSSource,
     CachedSource,
-    GCPPricingSource,
-    GCPSource,
-    RunPodPricingSource,
-    RunPodSource,
     all_sources,
     staleness_text,
 )
-
 
 # ---------------------------------------------------------------------------
 # staleness_text() boundary tests

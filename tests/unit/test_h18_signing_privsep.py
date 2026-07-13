@@ -6,7 +6,6 @@ Verifies that every /admin/signing/* endpoint requires a GLUDD_ADMIN_TOKEN
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -122,8 +121,9 @@ class TestAdminTokenConstantTime:
     """check_admin_token uses hmac.compare_digest for timing-safe comparison."""
 
     def test_uses_constant_time_comparison(self) -> None:
-        from general_ludd.security.auth import check_admin_token
         import hmac
+
+        from general_ludd.security.auth import check_admin_token
         with patch.object(hmac, "compare_digest", wraps=hmac.compare_digest) as spy:
             check_admin_token("hello", "hello")
             spy.assert_called_once()

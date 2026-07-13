@@ -194,16 +194,20 @@ class PostgresStatsSource:
         """Report connectivity health. Never raises."""
         try:
             executor = self._get_executor()
-        except Exception:  # health must never raise (driver/config init errors)
-            # Never echo str(exc): a driver/config error can embed the DSN or
-            # credentials. Log the real detail; return a static generic marker.
-            logger.warning("postgres_stats executor init failed", exc_info=True)
+        except Exception as exc:  # health must never raise (driver/config init errors)
+            logger.warning(
+                "postgres_stats executor init failed: %s", type(exc).__name__,
+                exc_info=False,
+            )
             return {"ok": False, "detail": "executor init failed"}
 
         try:
             executor("SELECT 1")
-        except Exception:  # health must never raise
-            logger.warning("postgres_stats probe failed", exc_info=True)
+        except Exception as exc:  # health must never raise
+            logger.warning(
+                "postgres_stats probe failed: %s", type(exc).__name__,
+                exc_info=False,
+            )
             return {"ok": False, "detail": "probe failed"}
         return {"ok": True, "detail": "postgres reachable"}
 
