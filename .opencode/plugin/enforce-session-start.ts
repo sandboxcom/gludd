@@ -197,6 +197,33 @@ function isReadTool(tool: string): boolean {
   return tool === "read" || tool === "glob" || tool === "grep"
 }
 
+const READ_ONLY_MAKE_TARGETS: ReadonlySet<string> = new Set([
+  "git-status", "git-diff", "git-log", "git-staged", "git-show",
+  "verify-state", "verify-remote",
+  "check-node-v26-compat",
+  "ci-verdict", "ci-verdict-safe", "ci-cooldown-status",
+  "gate-status", "gate-status-check", "gate-logs",
+  "disk", "disk-check", "disk-guard",
+  "agent-worktree-list",
+  "playbook-list",
+  "collection-roles", "collection-modules",
+  "test-count", "test-failures",
+  "audit-messages",
+  "version", "help",
+  "verify-plugin-manifest", "test-hook-runtime",
+  "check-disk",
+  "development-status",
+  "repo-status", "repo-diff", "repo-log", "repo-staged",
+])
+
+function isReadOnlyMakeTarget(tool: string, input: unknown): boolean {
+  if (tool !== "bash") return false
+  const cmd: string = (input as Record<string, unknown> | null)?.command as string ?? ""
+  const m = cmd.match(/^make\s+(\S+)/)
+  if (!m) return false
+  return READ_ONLY_MAKE_TARGETS.has(m[1])
+}
+
 function isTaskFileRead(tool: string, input: unknown): boolean {
   if (!isReadTool(tool)) return false
   try {
@@ -303,6 +330,11 @@ const defaultImpl: HotModule = {
       }
 
       if (isReadTool(tool)) {
+        updatePrimedLatch(state)
+        return
+      }
+
+      if (isReadOnlyMakeTarget(tool, input)) {
         updatePrimedLatch(state)
         return
       }
