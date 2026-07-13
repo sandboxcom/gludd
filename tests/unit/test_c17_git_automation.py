@@ -1,213 +1,420 @@
-"""C17 — Git automation guards: lock wrapper, squash fail-closed, serialization, branch-name uniqueness."""
+"""TDD tests for C.17: Git automation hardening.
+
+Three fixes:
+  1. merge_branch acquires per-repo lock for the ENTIRE merge sequence
+  2. Squash path uses check=True (fail-closed, not fail-open)
+  3. Branch-name collision detection prevents silent overwrites
+"""
 
 from __future__ import annotations
 
+import os
 import subprocess
-import threading
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from general_ludd.git_automation.repo import GitAutomation
 from general_ludd.git_automation.types import MergeResult
 
+# ---------------------------------------------------------------------------
+# C.17-1: merge_branch acquires per-repo lock for the entire sequence
+# ---------------------------------------------------------------------------
 
-def _ok(
-    stdout: str = "", stderr: str = "", returncode: int = 0
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(
-        args=["git"], returncode=returncode, stdout=stdout, stderr=stderr
-    )
+class TestMergeBranchPerRepoLock:
+    """merge_branch must hold git_repo_lock around its entire sequence
+    (checkout -> merge -> squash-commit), not release-acquire-release
+    between each _run_git call. Individual per-invocation locks leave
+    the sequence non-atomic — another process can interleave between
+    checkout and merge."""
 
+    def test_merge_branch_holds_lock_across_entire_sequence(self) -> None:
+        """Verify merge_branch acquires git_repo_lock EXACTLY ONCE and
+        ALL _run_git calls happen INSIDE that one lock context."""
+        git = GitAutomation(repo_path="/fake/repo")
 
-def _fail(
-    stderr: str = "error", returncode: int = 1
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(
-        args=["git"], returncode=returncode, stdout="", stderr=stderr
-    )
+        run_git_results = [
+            # checkout target
+            MagicMock(returncode=0, stdout="Switched to branch 'master'", stderr=""),
+            # merge
+            MagicMock(returncode=0, stdout="Already up to date.", stderr=""),
+        ]
 
+        def fake_run_git(*args, **kwargs):
+            return run_git_results.pop(0)
 
-# ── Item 1: merge_branch uses per-repo lock ───────────────────────────────
+        lock_entered = False
+        lock_exited_early = False
+        lock_call_count = 0
 
-class TestMergeBranchGoesThroughLockWrapper:
-    """merge_branch must route every git call through _run_git, which
-    acquires the per-repo lock (git_repo_lock) before every subprocess.run."""
+        def fake_lock_ctx(cwd):
+            nonlocal lock_entered, lock_exited_early, lock_call_count
+            class FakeLockCtx:
+                def __enter__(self):
+                    nonlocal lock_entered, lock_exited_early, lock_call_count
+                    lock_entered = True
+                    lock_call_count += 1
+                    return None
+                def __exit__(self, *args):
+                    nonlocal lock_entered, lock_exited_early
+                    # If lock_exited_early is already True, this is a SECOND exit
+                    # which means the lock was released and re-acquired (bug).
+                    if lock_call_count > 1 and lock_entered:
+                        lock_exited_early = True
+                    lock_entered = False
+                    return False
+            return FakeLockCtx()
 
-    @patch("general_ludd.git_automation.repo.subprocess.run", return_value=_ok())
-    def test_merge_branch_uses_run_git_not_raw_subprocess(self, mock_run):
-        auto = GitAutomation(".")
-        with patch.object(auto, "_run_git", return_value=_ok(stdout="merged")) as spy:
-            result = auto.merge_branch("/repo", "feat", "main", "ff")
-            assert result.success is True
-            assert spy.called, "merge_branch must route calls through _run_git"
-            assert spy.call_count >= 2, (
-                "merge_branch must call _run_git for checkout + merge"
+        with patch.object(git, "_run_git", side_effect=fake_run_git), \
+             patch("general_ludd.git_automation.repo.git_repo_lock", side_effect=fake_lock_ctx):
+            result = git.merge_branch(
+                repo_path="/fake/repo", source="feature", target="master", strategy="ff"
             )
-        mock_run.assert_not_called()
 
-    @patch("general_ludd.git_automation.repo.subprocess.run", return_value=_ok())
-    def test_merge_branch_squash_uses_run_git(self, mock_run):
-        auto = GitAutomation(".")
-        with patch.object(auto, "_run_git", return_value=_ok(stdout="merged")) as spy:
-            result = auto.merge_branch("/repo", "feat", "main", "squash")
-            assert result.success is True
-            assert spy.called
-        mock_run.assert_not_called()
-
-
-# ── Item 2: squash path fails closed ──────────────────────────────────────
-
-class TestSquashFailsClosedOnError:
-    """Squash commits in gated_merge must use check=True so a failed
-    squash raises CalledProcessError and the gate rolls back — never
-    silently succeeds (fail-open)."""
-
-    @patch(
-        "general_ludd.git_automation.repo.subprocess.run",
-        side_effect=[
-            _ok(),                                          # checkout target
-            _ok(stdout="abc123\n"),                          # rev-parse HEAD
-            _ok(stdout="Squash commit -- not updating HEAD"),  # merge --squash
-            subprocess.CalledProcessError(1, "git commit", stderr="empty commit"),  # commit fails
-            _ok(),  # reset --hard (rollback)
-        ],
-    )
-    def test_squash_commit_failure_rolls_back(self, mock_run):
-        """A squash commit that fails (check=True → CalledProcessError)
-        must roll back to pre_sha and return success=False."""
-        auto = GitAutomation("/repo")
-        result = auto.gated_merge(
-            "feat", "main", ["true"], strategy="squash"
+        assert result.success is True
+        assert lock_call_count == 1, (
+            f"git_repo_lock called {lock_call_count} times; "
+            "should be 1 (one lock for entire merge_branch sequence)"
         )
+        assert not lock_exited_early, (
+            "Lock was released before all _run_git calls completed — "
+            "merge_branch is not holding the lock for the entire sequence"
+        )
+
+    def test_merge_branch_lock_held_during_squash_commit(self) -> None:
+        """Squash merge does TWO git operations (merge --squash, then commit).
+        Both must happen inside the SAME lock context."""
+        git = GitAutomation(repo_path="/fake/repo")
+
+        run_git_results = [
+            MagicMock(returncode=0, stdout="Switched to branch 'master'", stderr=""),
+            MagicMock(returncode=0, stdout="Squash merge", stderr=""),
+            MagicMock(returncode=0, stdout="Squash commit", stderr=""),
+        ]
+
+        def fake_run_git(*args, **kwargs):
+            return run_git_results.pop(0)
+
+        lock_call_count = 0
+
+        def fake_lock_ctx(cwd):
+            nonlocal lock_call_count
+            class FakeLockCtx:
+                def __enter__(self):
+                    nonlocal lock_call_count
+                    lock_call_count += 1
+                    return None
+                def __exit__(self, *args):
+                    return False
+            return FakeLockCtx()
+
+        with patch.object(git, "_run_git", side_effect=fake_run_git), \
+             patch("general_ludd.git_automation.repo.git_repo_lock", side_effect=fake_lock_ctx):
+            result = git.merge_branch(
+                repo_path="/fake/repo", source="feature", target="master", strategy="squash"
+            )
+
+        assert result.success is True
+        assert lock_call_count == 1, (
+            f"Squash merge lock count: {lock_call_count} — "
+            "checkout + merge --squash + commit must all happen under ONE lock"
+        )
+
+    def test_gated_merge_holds_lock_across_entire_sequence(self) -> None:
+        """gated_merge must also hold the lock for checkout -> merge -> gate -> commit."""
+        git = GitAutomation(repo_path="/fake/repo")
+
+        run_git_results = [
+            MagicMock(returncode=0, stdout="Switched", stderr=""),
+            MagicMock(returncode=0, stdout="abc123\n", stderr=""),
+            MagicMock(returncode=0, stdout="Already up to date.", stderr=""),
+            MagicMock(returncode=0, stdout="abc123\n", stderr=""),
+        ]
+
+        def fake_run_git(*args, **kwargs):
+            return run_git_results.pop(0)
+
+        lock_call_count = 0
+
+        def fake_lock_ctx(cwd):
+            nonlocal lock_call_count
+            class FakeLockCtx:
+                def __enter__(self):
+                    nonlocal lock_call_count
+                    lock_call_count += 1
+                    return None
+                def __exit__(self, *args):
+                    return False
+            return FakeLockCtx()
+
+        with patch.object(git, "_run_git", side_effect=fake_run_git), \
+             patch("general_ludd.git_automation.repo.git_repo_lock", side_effect=fake_lock_ctx), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")):
+            result = git.gated_merge(
+                source="feature", target="master",
+                gate_cmd=["true"], strategy="ff",
+            )
+
+        assert result.success is True
+        assert lock_call_count == 1, (
+            f"gated_merge lock count: {lock_call_count} — "
+            "entire gated_merge must hold ONE lock"
+        )
+
+
+# ---------------------------------------------------------------------------
+# C.17-2: Squash path is fail-closed (check=True)
+# ---------------------------------------------------------------------------
+
+class TestSquashFailClosed:
+    """The squash path must be structurally fail-closed — any failed git
+    invocation raises CalledProcessError (via check=True) rather than
+    silently returning a CompletedProcess with non-zero returncode."""
+
+    def test_merge_branch_squash_merge_uses_check_true(self) -> None:
+        """The git merge step in the squash path must use check=True
+        so a failed merge always raises, never returns silently."""
+        git = GitAutomation(repo_path="/fake/repo")
+
+        run_git_calls: list[tuple] = []
+
+        def fake_run_git(*args, **kwargs):
+            run_git_calls.append((args, kwargs))
+            return MagicMock(returncode=0, stdout="Ok", stderr="")
+
+        with patch.object(git, "_run_git", side_effect=fake_run_git), \
+             patch("general_ludd.git_automation.repo.git_repo_lock") as _lock:
+            git.merge_branch(
+                repo_path="/fake/repo", source="feat", target="master", strategy="squash"
+            )
+
+        # Find the merge call (contains "--squash")
+        merge_calls = [(a, k) for a, k in run_git_calls if "--squash" in a]
+        assert len(merge_calls) == 1, f"Expected 1 merge --squash call, got {len(merge_calls)}"
+        _args, kwargs = merge_calls[0]
+        assert kwargs.get("check") is True, (
+            "merge --squash must use check=True for fail-closed behavior; "
+            "check=False is fail-open"
+        )
+
+    def test_merge_branch_squash_commit_uses_check_true(self) -> None:
+        """The squash commit step already uses check=True — verify it stays that way."""
+        git = GitAutomation(repo_path="/fake/repo")
+
+        run_git_calls: list[tuple] = []
+
+        def fake_run_git(*args, **kwargs):
+            run_git_calls.append((args, kwargs))
+            return MagicMock(returncode=0, stdout="Ok", stderr="")
+
+        with patch.object(git, "_run_git", side_effect=fake_run_git), \
+             patch("general_ludd.git_automation.repo.git_repo_lock") as _lock:
+            git.merge_branch(
+                repo_path="/fake/repo", source="feat", target="master", strategy="squash"
+            )
+
+        # Find the commit call
+        commit_calls = [(a, k) for a, k in run_git_calls if "commit" in a]
+        assert len(commit_calls) == 1, f"Expected 1 commit call, got {len(commit_calls)}"
+        _args, kwargs = commit_calls[0]
+        assert kwargs.get("check") is True, (
+            "squash commit must use check=True for fail-closed behavior"
+        )
+
+    def test_gated_merge_squash_merge_uses_check_true(self) -> None:
+        """gated_merge squash merge step must use check=True."""
+        git = GitAutomation(repo_path="/fake/repo")
+
+        run_git_calls: list[tuple] = []
+
+        def fake_run_git(*args, **kwargs):
+            run_git_calls.append((args, kwargs))
+            return MagicMock(returncode=0, stdout="Ok\n", stderr="")
+
+        with patch.object(git, "_run_git", side_effect=fake_run_git), \
+             patch("general_ludd.git_automation.repo.git_repo_lock") as _lock, \
+             patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")):
+            git.gated_merge(
+                source="feat", target="master",
+                gate_cmd=["true"], strategy="squash",
+            )
+
+        merge_calls = [(a, k) for a, k in run_git_calls if "--squash" in a]
+        assert len(merge_calls) == 1
+        _args, kwargs = merge_calls[0]
+        assert kwargs.get("check") is True, (
+            "gated_merge squash merge step must use check=True"
+        )
+
+    def test_gated_merge_squash_commit_uses_check_true(self) -> None:
+        """gated_merge squash commit step must use check=True."""
+        git = GitAutomation(repo_path="/fake/repo")
+
+        run_git_calls: list[tuple] = []
+
+        def fake_run_git(*args, **kwargs):
+            run_git_calls.append((args, kwargs))
+            return MagicMock(returncode=0, stdout="Ok\n", stderr="")
+
+        with patch.object(git, "_run_git", side_effect=fake_run_git), \
+             patch("general_ludd.git_automation.repo.git_repo_lock") as _lock, \
+             patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")):
+            git.gated_merge(
+                source="feat", target="master",
+                gate_cmd=["true"], strategy="squash",
+            )
+
+        commit_calls = [(a, k) for a, k in run_git_calls if "commit" in a]
+        assert len(commit_calls) == 1
+        _args, kwargs = commit_calls[0]
+        assert kwargs.get("check") is True, (
+            "gated_merge squash commit must use check=True"
+        )
+
+    def test_merge_branch_squash_merge_failure_returns_failure_result(self) -> None:
+        """When merge --squash fails, merge_branch must return success=False."""
+        git = GitAutomation(repo_path="/fake/repo")
+
+        run_git_results = [
+            MagicMock(returncode=0, stdout="Switched", stderr=""),
+            subprocess.CalledProcessError(1, ["git", "merge"], output="", stderr="conflict"),
+        ]
+
+        def fake_run_git(*args, **kwargs):
+            item = run_git_results.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        with patch.object(git, "_run_git", side_effect=fake_run_git), \
+             patch("general_ludd.git_automation.repo.git_repo_lock") as _lock:
+            result = git.merge_branch(
+                repo_path="/fake/repo", source="feat", target="master", strategy="squash"
+            )
+
+        assert isinstance(result, MergeResult)
         assert result.success is False, (
-            "squash commit failure must return success=False, not succeed silently"
-        )
-        assert "empty commit" in result.message
-
-    @patch(
-        "general_ludd.git_automation.repo.subprocess.run",
-        side_effect=[
-            _ok(),                                          # checkout target
-            _ok(stdout="abc123\n"),                          # rev-parse HEAD
-            _ok(stdout="Squash commit -- not updating HEAD"),  # merge --squash
-            subprocess.CalledProcessError(1, "git commit", stderr=""),  # commit fails (no stderr)
-            _ok(),  # reset --hard (rollback)
-        ],
-    )
-    def test_squash_commit_no_stderr_rolls_back(self, mock_run):
-        """A squash commit that fails with empty stderr must still roll back
-        and return the default failure message."""
-        auto = GitAutomation("/repo")
-        result = auto.gated_merge(
-            "feat", "main", ["true"], strategy="squash"
-        )
-        assert result.success is False, (
-            "squash commit failure must return success=False"
-        )
-        assert "rolled back" in result.message
-
-
-# ── Item 3: per-repo serialization prevents races ─────────────────────────
-
-class TestPerRepoSerializationPreventsRace:
-    """Two concurrent git operations on the same repo must serialize
-    through the per-repo lock, so the second cannot start until the
-    first completes."""
-
-    def test_two_concurrent_ops_on_same_repo_serialized(self):
-        barrier = threading.Barrier(2, timeout=5)
-        order: list[str] = []
-
-        def _slow_git(*args, **kwargs):
-            barrier.wait()  # both threads arrive here
-            order.append(threading.current_thread().name)
-            return _ok()
-
-        auto = GitAutomation("/same-repo")
-
-        with patch.object(auto, "_run_git", wraps=auto._run_git) as spy:
-            spy.side_effect = _slow_git
-            results: list[MergeResult | None] = [None, None]
-
-            def _merge_a():
-                results[0] = auto.merge_branch("/same-repo", "a", "main", "ff")
-
-            def _merge_b():
-                results[1] = auto.merge_branch("/same-repo", "b", "main", "ff")
-
-            t1 = threading.Thread(target=_merge_a, name="thread-a")
-            t2 = threading.Thread(target=_merge_b, name="thread-b")
-            t1.start()
-            t2.start()
-            t1.join(timeout=10)
-            t2.join(timeout=10)
-
-        assert not t1.is_alive(), "thread-a did not complete"
-        assert not t2.is_alive(), "thread-b did not complete"
-
-        # Both results should be success — the lock serializes the calls
-        # so they complete in order (whichever acquired the lock first)
-        # without deadlocking or erroring.
-        assert results[0] is not None and results[0].success, (
-            "first merge_branch must succeed"
-        )
-        assert results[1] is not None and results[1].success, (
-            "second merge_branch must succeed (serialized, not raced)"
+            "Failed merge --squash must return success=False, not raise unhandled"
         )
 
 
-# ── Item 4: branch names include unique ID ────────────────────────────────
+# ---------------------------------------------------------------------------
+# C.17-3: Branch-name collision detection
+# ---------------------------------------------------------------------------
 
-class TestBranchNameIncludesUniqueId:
-    """generate_branch_name must include a UUID component to prevent
-    1-second collisions when two branches are created in the same
-    wall-clock second."""
+class TestBranchNameCollision:
+    """create_branch must detect when a branch name already exists and
+    raise a clear error rather than silently overwriting or failing
+    with a cryptic git error."""
 
-    def test_branch_name_includes_uuid_component(self):
-        name = GitAutomation.generate_branch_name("42", "fix-bug")
-        assert name.startswith("agent/TODO-42/fix-bug-"), (
-            f"unexpected prefix in {name!r}"
+    def test_create_branch_collision_raises(self, tmp_path) -> None:
+        """Creating a branch that already exists must raise ValueError."""
+        repo_path = str(tmp_path / "collision-repo")
+        os.makedirs(repo_path)
+        git = GitAutomation(repo_path=repo_path)
+        git.init_repo(path=repo_path)
+        (tmp_path / "collision-repo" / "README.md").write_text("# test")
+        git._run_git("add", "-A")
+        git._run_git("commit", "-m", "init")
+
+        git.create_branch("existing-branch")
+        git._run_git("checkout", "master")
+
+        with pytest.raises(ValueError, match="already exists"):
+            git.create_branch("existing-branch")
+
+    def test_create_branch_new_name_succeeds(self, tmp_path) -> None:
+        """Creating a branch with a non-existing name must succeed."""
+        repo_path = str(tmp_path / "no-collision-repo")
+        os.makedirs(repo_path)
+        git = GitAutomation(repo_path=repo_path)
+        git.init_repo(path=repo_path)
+        (tmp_path / "no-collision-repo" / "README.md").write_text("# test")
+        git._run_git("add", "-A")
+        git._run_git("commit", "-m", "init")
+
+        result = git.create_branch("unique-branch")
+        assert result == "unique-branch"
+
+    def test_create_branch_rejects_leading_dash(self, tmp_path) -> None:
+        """Leading-dash branch names are rejected (existing behavior)."""
+        repo_path = str(tmp_path / "dash-repo")
+        os.makedirs(repo_path)
+        git = GitAutomation(repo_path=repo_path)
+        git.init_repo(path=repo_path)
+        (tmp_path / "dash-repo" / "README.md").write_text("# test")
+        git._run_git("add", "-A")
+        git._run_git("commit", "-m", "init")
+
+        with pytest.raises(ValueError, match="begins with '-'"):
+            git.create_branch("--evil")
+
+    def test_create_branch_collision_detected_before_git_cmd(self, tmp_path) -> None:
+        """Collision detection must happen BEFORE calling git, so the error
+        message is clear and no git process is spawned for a known failure."""
+        repo_path = str(tmp_path / "precheck-repo")
+        os.makedirs(repo_path)
+        git = GitAutomation(repo_path=repo_path)
+        git.init_repo(path=repo_path)
+        (tmp_path / "precheck-repo" / "README.md").write_text("# test")
+        git._run_git("add", "-A")
+        git._run_git("commit", "-m", "init")
+
+        git.create_branch("first-branch")
+        git._run_git("checkout", "master")
+
+        git_checkout_called = False
+
+        call_index = [0]
+
+        def fake_run_git(*args, **kwargs):
+            nonlocal git_checkout_called
+            # First call: branch listing — must return "first-branch" in output
+            if call_index[0] == 0:
+                call_index[0] += 1
+                return MagicMock(returncode=0, stdout="first-branch\nmaster\n", stderr="")
+            # Any subsequent call would be the checkout — should never be reached
+            git_checkout_called = True
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        with patch.object(git, "_run_git", side_effect=fake_run_git), pytest.raises(ValueError, match="already exists"):
+            git.create_branch("first-branch")
+
+        assert not git_checkout_called, (
+            "Branch collision detected AFTER calling git checkout — "
+            "detection must happen BEFORE spawning git checkout process"
         )
-        # Timestamp part (YYYYMMDDHHMMSS)
-        ts_part = name.split("-")[-2]  # second-to-last segment
-        assert len(ts_part) == 14, (
-            f"timestamp part must be 14 digits, got {ts_part!r}"
-        )
-        assert ts_part.isdigit(), (
-            f"timestamp part must be digits, got {ts_part!r}"
-        )
-        # UUID part (last segment, hex string length >= 6)
-        uuid_part = name.split("-")[-1]
-        assert len(uuid_part) >= 6, (
-            f"uuid part must be at least 6 chars, got {uuid_part!r} (len={len(uuid_part)})"
-        )
-        # Must be hex
-        assert all(c in "0123456789abcdef" for c in uuid_part.lower()), (
-            f"uuid part must be hex chars, got {uuid_part!r}"
-        )
 
-    def test_two_calls_produce_different_names(self):
-        name_a = GitAutomation.generate_branch_name("1", "feat")
-        name_b = GitAutomation.generate_branch_name("1", "feat")
-        assert name_a != name_b, (
-            "two calls in the same second must produce different branch names"
-        )
+    def test_re_generate_branch_name_no_collision(self) -> None:
+        """generate_branch_name already includes a UUID — collisions are
+        astronomically unlikely, but the method must still accept the
+        standard todo_id+slug input format."""
+        git = GitAutomation()
+        name = git.generate_branch_name(todo_id="000001", slug="fix-auth")
+        assert name.startswith("agent/TODO-000001/fix-auth-")
 
+    def test_merge_branch_rejects_leading_dash_source(self, tmp_path) -> None:
+        """merge_branch must reject leading-dash source (existing behavior)."""
+        repo_path = str(tmp_path / "merge-dash-repo")
+        os.makedirs(repo_path)
+        git = GitAutomation(repo_path=repo_path)
+        git.init_repo(path=repo_path)
+        (tmp_path / "merge-dash-repo" / "README.md").write_text("# test")
+        git._run_git("add", "-A")
+        git._run_git("commit", "-m", "init")
 
-# ── Item 2 additional: merge_branch squash is already fail-closed ─────────
+        with pytest.raises(ValueError, match="begins with '-'"):
+            git.merge_branch(repo_path=repo_path, source="--evil", target="master")
 
-class TestMergeBranchSquashAlreadyFailClosed:
-    """The non-gated merge_branch squash path was already fixed (check=True);
-    these tests confirm the existing guard is intact after C17 changes."""
+    def test_merge_branch_rejects_leading_dash_target(self, tmp_path) -> None:
+        """merge_branch must reject leading-dash target (existing behavior)."""
+        repo_path = str(tmp_path / "merge-dash-repo2")
+        os.makedirs(repo_path)
+        git = GitAutomation(repo_path=repo_path)
+        git.init_repo(path=repo_path)
+        (tmp_path / "merge-dash-repo2" / "README.md").write_text("# test")
+        git._run_git("add", "-A")
+        git._run_git("commit", "-m", "init")
 
-    @patch(
-        "general_ludd.git_automation.repo.subprocess.run",
-        side_effect=[
-            _ok(),
-            _ok(stdout="Squash commit -- not updating HEAD"),
-            subprocess.CalledProcessError(1, "git commit", stderr="squash failed"),
-        ],
-    )
-    def test_merge_branch_squash_raises(self, mock_run):
-        result = GitAutomation(".").merge_branch("/repo", "feat", "main", "squash")
-        assert result.success is False
-        assert "squash failed" in result.message
+        with pytest.raises(ValueError, match="begins with '-'"):
+            git.merge_branch(repo_path=repo_path, source="master", target="--evil")

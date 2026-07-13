@@ -135,9 +135,13 @@ class TestObservabilityE2E:
                 benchmark_repo=None,
                 trace_buffer=app.state._recent_traces,
             )
-            await recorder.record_from_trace(_build_trace(), success=True)
+            await recorder.record_from_trace(
+                _build_trace(project_id="proj-default"), success=True
+            )
 
-            resp = await client.get("/api/traces", headers=AUTH)
+            resp = await client.get(
+                "/api/traces", params={"project_id": "proj-default"}, headers=AUTH
+            )
             assert resp.status_code == 200, resp.text
             data = resp.json()
             assert data["count"] == 1
@@ -161,10 +165,18 @@ class TestObservabilityE2E:
                 benchmark_repo=None,
                 trace_buffer=app.state._recent_traces,
             )
-            await recorder.record_from_trace(_build_trace(todo_id="TODO-A"), success=True)
-            await recorder.record_from_trace(_build_trace(todo_id="TODO-B"), success=True)
+            await recorder.record_from_trace(
+                _build_trace(todo_id="TODO-A", project_id="proj-default"), success=True
+            )
+            await recorder.record_from_trace(
+                _build_trace(todo_id="TODO-B", project_id="proj-default"), success=True
+            )
 
-            resp = await client.get("/api/traces", params={"todo_id": "TODO-A"}, headers=AUTH)
+            resp = await client.get(
+                "/api/traces",
+                params={"todo_id": "TODO-A", "project_id": "proj-default"},
+                headers=AUTH,
+            )
             assert resp.status_code == 200, resp.text
             data = resp.json()
             assert data["count"] == 1
@@ -187,7 +199,9 @@ class TestObservabilityE2E:
             assert facts.status_code == 200
             assert facts.json()["traces"]["otel_exporter_status"] == "disabled"
 
-            traces = await client.get("/api/traces", headers=AUTH)
+            traces = await client.get(
+                "/api/traces", params={"project_id": "proj-default"}, headers=AUTH
+            )
             assert traces.status_code == 200
             assert traces.json()["otel_exporter_status"] == "disabled"
         finally:
@@ -207,7 +221,9 @@ class TestObservabilityE2E:
             # In the test env opentelemetry is not installed -> unavailable.
             assert bridge.is_available() is False
 
-            resp = await client.get("/api/traces", headers=AUTH)
+            resp = await client.get(
+                "/api/traces", params={"project_id": "proj-default"}, headers=AUTH
+            )
             assert resp.status_code == 200
             assert resp.json()["otel_exporter_status"] == "disabled"
         finally:
@@ -220,7 +236,9 @@ class TestObservabilityE2E:
         (honest zero-count, not an error)."""
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
-            resp = await client.get("/api/traces", headers=AUTH)
+            resp = await client.get(
+                "/api/traces", params={"project_id": "proj-default"}, headers=AUTH
+            )
             assert resp.status_code == 200
             data = resp.json()
             assert data["count"] == 0
@@ -287,11 +305,13 @@ class TestObservabilityE2E:
                 benchmark_repo=None,
                 trace_buffer=app.state._recent_traces,
             )
-            await recorder.record_from_trace(_build_trace(todo_id="T1"), success=True)
-            await recorder.record_from_trace(_build_trace(todo_id="T2"), success=True)
-            await recorder.record_from_trace(_build_trace(todo_id="T3"), success=True)
+            await recorder.record_from_trace(_build_trace(todo_id="T1", project_id="proj-default"), success=True)
+            await recorder.record_from_trace(_build_trace(todo_id="T2", project_id="proj-default"), success=True)
+            await recorder.record_from_trace(_build_trace(todo_id="T3", project_id="proj-default"), success=True)
 
-            resp = await client.get("/api/traces", headers=AUTH)
+            resp = await client.get(
+                "/api/traces", params={"project_id": "proj-default"}, headers=AUTH
+            )
             assert resp.status_code == 200
             data = resp.json()
             assert data["count"] == 3
@@ -309,7 +329,7 @@ class TestObservabilityE2E:
         through the recorder into the HTTP trace payload."""
         engine, _factory, client, app = await _make_app(monkeypatch)
         try:
-            trace = ExecutionTrace(todo_id="TODO-ERR", work_type="code")
+            trace = ExecutionTrace(todo_id="TODO-ERR", work_type="code", project_id="proj-default")
             span = trace.start_span(name="generate", phase="generate")
             span.complete(
                 status="error",
@@ -324,7 +344,9 @@ class TestObservabilityE2E:
             )
             await recorder.record_from_trace(trace, success=False)
 
-            resp = await client.get("/api/traces", headers=AUTH)
+            resp = await client.get(
+                "/api/traces", params={"project_id": "proj-default"}, headers=AUTH
+            )
             assert resp.status_code == 200
             rec = resp.json()["recent"][0]
             assert rec["todo_id"] == "TODO-ERR"
@@ -401,10 +423,14 @@ class TestObservabilityE2E:
                 benchmark_repo=None,
                 trace_buffer=app.state._recent_traces,
             )
-            await recorder.record_from_trace(_build_trace(), success=True)
+            await recorder.record_from_trace(
+                _build_trace(project_id="proj-default"), success=True
+            )
 
             facts_resp = await client.get("/api/facts", headers=AUTH)
-            traces_resp = await client.get("/api/traces", headers=AUTH)
+            traces_resp = await client.get(
+                "/api/traces", params={"project_id": "proj-default"}, headers=AUTH
+            )
             f_traces = facts_resp.json()["traces"]
             t_traces = traces_resp.json()
             assert f_traces["count"] == t_traces["count"]

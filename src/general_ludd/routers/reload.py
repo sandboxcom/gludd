@@ -146,6 +146,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             skills_dirs=_skills_dirs if _skills_dirs else None,
             skill_registry=getattr(app.state, "_skill_registry", None),
             prompt_registry=getattr(app.state, "_prompt_registry", None),
+            reload_lock=getattr(app.state, "_reload_lock", None),
         )
         scope = ReloadScope(req.scope)
         # reloader.reload is a sync op that (deep inside) does serial blocking

@@ -145,16 +145,6 @@ def create_async_session_factory(engine: AsyncEngine) -> async_sessionmaker[Asyn
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def get_async_session(session_factory: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncSession, None]:
-    async with session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-
-
 async def ensure_tables(engine: AsyncEngine) -> None:
     if is_sqlite_url(str(engine.url)):
         async with engine.begin() as conn:
@@ -205,6 +195,35 @@ async def seed_initial_queues(session: AsyncSession) -> int:
     logger.debug("QueueRepository reports %d enabled queues", len(enabled))
 
     return count
+
+
+_closed_engines: set[int] = set()
+
+
+def close_engine(engine: AsyncEngine) -> None:
+    _closed_engines.add(id(engine))
+
+
+def _engine_closed(engine: AsyncEngine) -> bool:
+    return id(engine) in _closed_engines
+
+
+async def get_async_session(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[AsyncSession, None]:
+    bind = getattr(session_factory, "bind", None) or session_factory.kw.get("bind")
+    if bind is not None and hasattr(bind, "sync_engine") and _engine_closed(bind):
+        raise RuntimeError(
+            "Cannot create session from a closed/disposed engine "
+            f"(id={id(bind)}). The engine was closed via close_engine()."
+        )
+    async with session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 def json_dumps(obj: Any) -> str:

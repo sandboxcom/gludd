@@ -29,7 +29,7 @@ import shutil
 import subprocess
 from typing import Any, cast
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.requests import Request
 
@@ -505,6 +505,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         """
         bounded = max(1, min(limit, _DEFAULT_TRACE_LIMIT * 5))
         scope = _resolve_trace_project_id(request, project_id)
+        if scope is None:
+            raise HTTPException(
+                status_code=400,
+                detail="project_id is required for /api/traces — "
+                "supply a ?project_id= query parameter or use a project-scoped bearer token",
+            )
         return _traces_facet(
             app, limit=bounded, todo_id=todo_id, project_id=scope
         )

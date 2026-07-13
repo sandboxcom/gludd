@@ -313,6 +313,8 @@ class LocalInferenceManager:
             except TimeoutError:
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(os.getpgid(pid), signal.SIGKILL)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(server.process.wait(), timeout=5.0)
         server.status = "stopped"
         server.process = None
         server.pid = None

@@ -1,8 +1,24 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 — ~78 OPEN items from 5 spec files (AGENTIC_IMPLEMENTATION_SPEC.md, STABILIZATION_PLAN.md, HARDENING_BACKLOG_2026-07-10.md, POST_SHIP_BACKLOG_PREP_2026-06-21.md, ALPHA4_VERIFIED_BACKLOG_2026-06-24.md).**
+**Last consolidated: 2026-07-12 — 81 OPEN items across 6 active phases (A:4, C:19, D:19, E:6, H:15, S:18).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
+
+## Pending Items Summary (2026-07-12)
+
+| Phase | Description | Pending | Total | % Complete |
+|-------|-------------|---------|-------|------------|
+| A | CI Green + Release | 4 | 6 | 33% |
+| W | Enforcement/Plugin hardening | 0 | 3 | 100% |
+| C | Security/Correctness | 19 | 27 | 30% |
+| D | Feature Completeness | 19 | 22 | 14% |
+| E | Quality/Coverage | 6 | 13 | 54% |
+| R | Collection Split + Documentation | 0 | 18 | 100% |
+| F | Docs/Presentation | 0 | 6 | 100% |
+| G | AGENTS.md Codification | 0 | 5 | 100% |
+| H | Security Hardening | 15 | 23 | 35% |
+| S | Post-Ship | 18 | 21 | 14% |
+| **Total** | | **81** | **144** | **44%** |
 
 ---
 
@@ -72,12 +88,12 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] D.4 — DAST driver + findings parser (ZAP-baseline wrapper + Finding model) | priority: medium | effort: medium | status: pending
 - [x] D.5 — Compute discovery + auto-select (Slice 1 k8s dispatch ✅ + Slice 2 vSphere params ✅; Slice 3 auto-select ✅) | priority: low | effort: large | status: completed | evidence: Wave 34
 - [ ] D.6 — Wire OrchestrationPlanner (#54) or delete module + tests with rationale | priority: low | effort: small | status: pending
-- [ ] D.7.1 — Pause/resume: persist-before-mutate + lock-free is_paused + router ordering | priority: high | effort: medium | status: pending
+- [x] D.7.1 — Pause/resume: persist-before-mutate + lock-free is_paused + router ordering | priority: high | effort: medium | status: completed | evidence: 34 tests pass (16 new + 18 existing) across test_pause_resume.py, test_pause_persist_ordering.py, test_pause_concurrency.py, test_pause_router.py. PauseController already implements persist-before-mutate with lock-free is_paused() via frozenset rebinding. Router ordering verified via pause → persist → resume lifecycle tests.
 - [ ] D.7.2 — Pause/resume: construct + wire HibernationController with durable MAC key | priority: high | effort: medium | status: pending
 - [ ] D.7.3 — Pause/resume: quiesce at dispatcher seam + rehydrating resume | priority: high | effort: large | status: pending
 - [ ] D.7.4 — Pause/resume: CLI `gludd pause` / `gludd resume` subcommands | priority: low | effort: small | status: pending
 - [x] D.9 — Auto-remediation never fires on tick (#52): trace MisconfigDetector, add integration test | priority: high | effort: medium | status: completed | evidence: 7f166439
-- [ ] D.10 — Commit-path file-claim livelock (#53): total-order claim acquisition + TTL + backoff | priority: high | effort: medium | status: pending
+- [x] D.10 — Commit-path file-claim livelock (#53): total-order claim acquisition + TTL + backoff | priority: high | effort: medium | status: completed | evidence: 22 tests pass in test_file_claim_livelock.py. Implementation: FileClaimRegistry.claim_or_conflict (atomic total-order) + TTL reap + per-todo hash-offset backoff + _MAX_PUSH_RETRIES escape to BLOCKED in loop.py.
 - [ ] D.11 — Subagent orchestration defects (#57): max nesting depth, capability non-escalation, dispatch-rate control loop, spiral detection | priority: medium | effort: large | status: pending
 - [ ] D.12 — Slack connector: outbound notifications + channel history read, SSRF-guarded | priority: low | effort: medium | status: pending
 - [ ] D.13 — security_backlog.py: wire real checkers or delete module + tests with rationale | priority: low | effort: medium | status: pending

@@ -7,6 +7,9 @@ __all__ = (
     "ChangeRecord",
     "ChangeRecordStore",
     "FileIntegrityScanner",
+    "IntegrityError",
+    "IntegrityStore",
+    "canonical_json",
     "sign_change",
     "sign_change_openbao",
     "verify_signature",
@@ -20,3 +23,4 @@ from general_ludd.integrity.scanner import (
     sign_change_openbao,
     verify_signature,
 )
+from general_ludd.integrity.store import IntegrityError, IntegrityStore, canonical_json

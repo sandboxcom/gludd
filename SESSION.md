@@ -5,6 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
+- **2026-07-12** — Session 25. On `development` branch, HEAD `d69cd60f`. Wave 1 dispatched: 7 subagents, results landing. CI RED (run 29213743760). Dirty tree: hot_reloader SyntaxError, dead-code checker tests WIP.
 - 2026-07-12 — Session 24. On `development` branch, HEAD `abf60765` (35+ commits ahead of `master`). Wave 33 completed: 6 items (H.7, H.15, S.1, D.2, E.8, D.22), 319 new tests.
 - **Wave 35 — Collection Split + Documentation:** TASKS.md Phase R expanded to 18 items. Collection FQCNs updated: `general_ludd.agent.{ssl_cert,hsm_operations,audit_framework,sql_injection,command_injection,prompt_injection}` → `general_ludd.security.*`. `docs/SECURITY_ROLES.md` + `docs/SSL_CERT_SYSTEM.md` FQCN references updated. Two new docs created: `docs/NETWORKING_SYSTEM.md` (networking role, 7 modes, ScapyAdapter, tool matrix, dissector templates) and `docs/BUSINESS_RESEARCH_SYSTEM.md` (entity_research role, 6 research capabilities, SearX monitoring, entity graph). README.md restructured from single collection section to 4 collection sub-sections (`general_ludd.agent`, `general_ludd.security`, `general_ludd.business`, `general_ludd.networking`) with FQCN tables and doc cross-references.
 - **SSL cert system docs** — `docs/SSL_CERT_SYSTEM.md` created: architecture overview, 2 Ansible role specifications, 4 data file formats, 5 Python module APIs, 6-standard compliance matrix, security considerations. TASKS.md F.6 ticked, CHANGELOG entry added.
@@ -29,7 +30,16 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Current Work
 
-- **HEAD: `abf60765`** on `development` branch (2026-07-12). `development` is 35+ commits ahead of `master`.
+- **HEAD: `d69cd60f`** on `development` branch (2026-07-12).
+- **Wave 1 — 7 subagents dispatched (2026-07-12):**
+  - **A.3 (push-verify-CI):** tree clean, already pushed. CI RED run 29213743760.
+  - **D.7.1 (pause-resume tests):** 34 pause-resume tests pass (16 new). Test file clean.
+  - **enforce-deadline self-tests:** 92 tests pass. Plugin self-test harness verified.
+  - **E.10 (DB session tests):** 7 DB session tests pass. Code already fixed; tests confirm.
+  - **C.8 (hot-reload WIP):** `hot_reloader.py` has SyntaxError. Tests run but reloader broken.
+  - **Dead-code checker:** script created at `scripts/check_dead_code.py`. Tests WIP.
+  - **TASKS.md:** pending-item summary added, task ledger updated.
+- **HEAD: pre-Wave-1 `abf60765`** on `development` branch (2026-07-12). `development` is 35+ commits ahead of `master`.
 - **Phase S2 Waves C, D, E COMPLETED** — 23 items across Waves C, D, E ([C-4 through C-27] + [D-4 through D-15] + [E-5 through E-12]). Evidence commit `b8a18e2f`.
 - **Connector test fix wave COMPLETED** — ~76 stale connector health assertions fixed across 34 test files over 3 batches:
   - **Batch 1 (`b5894567`):** consolidated development branch work — alembic 027→028 rename, secrets baseline, 3 stale connector health assertions, background_test_runner wiring, slack connector, pricing sources, C11 event loop, session/task ledger updates.
@@ -99,7 +109,10 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Known Gaps
 
-1. **Dirty tree not yet committed** — Wave 26-27 work + Wave 33 TASKS/SESSION/CHANGELOG/enforce-floor.ts updates.
+1. **CI RED on `development`** — run 29213743760. Must be fixed before development→master merge.
+2. **`hot_reloader.py` SyntaxError** — C.8 tests pass but reloader module has parse error.
+3. **Dead-code checker tests WIP** — `scripts/check_dead_code.py` exists but test suite incomplete.
+4. **Dirty tree not yet committed** — Wave 1 results + Wave 26-27 work + Wave 33 updates.
 2. **`make gate` not yet run on development** — gate-lite assertion fixes in Wave 25; full gate pending.
 3. **development → master merge pending** — development is 30+ commits ahead; gate must be green before merging.
 4. **CI pending** — commits pushed to sandboxcom/development; CI verdict not yet available.
@@ -110,13 +123,10 @@ Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks).
 
 ## Next Steps
 
-1. [ ] **Commit Wave 26-27 dirty tree** — `make git-add FILES='...' && make ship-commit MSG='...'`.
-2. [ ] **Run `make gate` on development** — confirm all tests pass with new plugin test suites (101 floor + 52 deletion-gate).
-3. [ ] **Merge development → master** — once gate is green on development, merge to master via `make git-checkout MSG='master'` + `make git-merge MSG='development'`.
-4. [ ] **Proceed to Tier 1 items** from `docs/AGENTIC_IMPLEMENTATION_SPEC.md` — after merge, begin Tier 1 feature/audit work.
-5. [ ] **Cut next release tag** — `make release-cut TAG='v0.1.0-beta.3' MSG='...'` (or next appropriate version) after merge + CI green.
-6. [ ] **Phase F docs F2-F5** — remaining doc items after F.1 reveal.js deck.
-7. [ ] **Restart opencode** — to activate enforce-multitask plugin + P1/P3 read-grinding fixes committed in session 19.
+1. [ ] **Commit Wave 1 work** — `make git-add` + `make ship-commit MSG='Wave 1: pause-resume tests + DB session tests + enforce-deadline self-tests + TASKS.md update'`.
+2. [ ] **Fix `hot_reloader.py` SyntaxError** — parse/fix the error in `src/general_ludd/ornith/hot_reloader.py`.
+3. [ ] **Fix dead-code checker tests** — complete test suite for `scripts/check_dead_code.py`.
+4. [ ] **Re-check CI** — `make ci-verdict-safe` after cooldown; CI RED run 29213743760 needs investigation.
 
 ## Current Gate Status (2026-07-12)
 <!-- gate:begin -->
