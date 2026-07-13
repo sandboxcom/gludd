@@ -47,6 +47,8 @@ function tsToJs(content) {
     .replace(/\bas\s+void\b/g, "")
     .replace(/\bas\s+never\b/g, "")
     .replace(/\bas\s+unknown(\[\])?\b/g, "")
+    .replace(/\bas\s+readonly\s+\w+(\[\])?\b/g, "")
+    .replace(/\bas\s+\{[^}]+\}(\s*\|\s*\w+(\[\])?)?/g, "")
     .replace(/:\s*\w+\s*=\s*new\s+Set</g, " = new Set")
     .replace(/:\s*\w+\s*=\s*new\s+Map</g, " = new Map")
     .replace(/:\s*\w+\s*=\s*\{\s*\}/g, " = {}")

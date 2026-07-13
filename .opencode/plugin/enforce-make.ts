@@ -360,21 +360,15 @@ const defaultImpl: HotModule = {
 
       if (input.tool === "bash") {
         let command = ""
-        try {
-          const outCmd = (output as any)?.args?.command
-          if (typeof outCmd === "string" && outCmd) command = outCmd.trim()
-        } catch (_) {}
+        const oc = (output as any)?.args?.command
+        if (typeof oc === "string" && oc.trim()) command = oc.trim()
         if (!command) {
-          try {
-            const inCmd = (input as any)?.args?.command
-            if (typeof inCmd === "string" && inCmd) command = inCmd.trim()
-          } catch (_) {}
+          const ic = (input as any)?.args?.command
+          if (typeof ic === "string" && ic.trim()) command = ic.trim()
         }
         if (!command) {
-          try {
-            const inCmd = (input as any)?.command
-            if (typeof inCmd === "string" && inCmd) command = inCmd.trim()
-          } catch (_) {}
+          const dc = (input as any)?.command
+          if (typeof dc === "string" && dc.trim()) command = dc.trim()
         }
         if (!command) return
         const trimmed = command
