@@ -1,0 +1,24 @@
+---
+- name: Converge - git_automation clone with SSRF-safe file:// URL
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    source_repo: "/tmp/molecule-clone-source"
+    target_dir: "/tmp/molecule-clone-target"
+
+  tasks:
+    - name: Include git_automation role — clone operation
+      ansible.builtin.include_role:
+        name: general_ludd.agent.git_automation
+        tasks_from: clone.yml
+      vars:
+        clone_url: "{{ source_repo }}"
+        target_dir: "{{ target_dir }}"
+        git_clone_timeout: 60
+
+    - name: Persist result for verify
+      ansible.builtin.copy:
+        content: "{{ {'target_dir': target_dir, 'source_repo': source_repo} | to_nice_json }}"
+        dest: "/tmp/molecule-clone-result.json"
+        mode: "0644"

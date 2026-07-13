@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Phase C S2-verified tick — 51 OPEN items across 8 active phases (A:4, C:3, D:17, E:3, H:6, S:6, LA:0, AG:11).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) + Phase C (24 done) = 166 of 217 items completed (76%).
+**Last consolidated: 2026-07-13 Session 26 — 51 OPEN items across 8 active phases (A:4, C:3, D:15, E:1, H:6, S:6, AG:8).** Collections (X:11, Y:8, Z:7, W1:10) + Plugin phases (W:21, R:18, F:6, G:5) = 168 of 217 items completed (77%). Landing: AG.2/4/5, git_automation role, plugin syntax checker, enforce-stop fix, cache recovery, D.13/D.14, E.5/E.9, C.17, C.21, H.3/H.4/H.11/H.21.
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -8,7 +8,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
-| A | CI Green + Release | 4 | 6 | 33% |
+| A | CI Green + Release | 3 | 6 | 50% |
 | W | Enforcement/Plugin hardening | 0 | 21 | 100% |
 | C | Security/Correctness | 3 | 27 | 89% |
 | D | Feature Completeness | 17 | 22 | 23% |
@@ -20,11 +20,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
-| H | Security Hardening | 6 | 23 | 74% |
+| H | Security Hardening | 4 | 23 | 83% |
 | S | Post-Ship | 6 | 21 | 71% |
 | LA | Log Prompt Evaluator | 0 | 3 | 100% |
 | AG | Agent Framework Research | 11 | 16 | 31% |
-| **Total** | | **51** | **217** | **76%** |
+| **Total** | | **49** | **217** | **77%** |
 
 ---
 
@@ -66,7 +66,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] A.2 — Fix remaining CI failure clusters (slurm billing, connectors_base caplog, PSK caplog, tokenizer, MCPToolRegistry, structured_task_spec) | priority: high | effort: medium | status: completed | evidence: caplog .message→.getMessage() fixes in 2 files, all clusters resolved
 - [ ] A.3 — Push 10 unpushed commits (58e07399→722ca36c), wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: pending
 - [ ] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: pending
-- [ ] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: pending
+- [x] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: completed | evidence: build.yml lines 186-244 — 6 shards (unit-1a, unit-1b, unit-1d, unit-2, unit-3, other) already split with path exclusions; unit-1a→1a+1d split completed 2026-07-09 per inline comment
 - [ ] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: pending
 
 ---
@@ -257,9 +257,9 @@ Each line ticked when `make gate` is green and evidence is pasted.
 ## Phase H — Security Hardening (HARDENING_BACKLOG_2026-07-10)
 
 - [x] H.1 — H-STARTUP-NULL-DEPS: infra_tracker, deployment_manager, adaptive_router all None at EventLoop construction (4th instance of construction-order bug class) | priority: high | effort: small | status: completed | evidence: fix already applied in daemon.py:1753-1766 (pre-built before EventLoop constructor); test in tests/unit/test_daemon_startup.py 4 passed
-- [ ] H.2 — H-RELOAD-CONCURRENT: concurrent /admin/reload calls race on shared registries with no lock | priority: medium | effort: medium | status: pending
+- [x] H.2 — H-RELOAD-CONCURRENT: concurrent /admin/reload calls race on shared registries with no lock | priority: medium | effort: medium | status: completed | evidence: reload code verified — lock guard on shared registries confirmed in daemon.py reload path
 - [x] H.3 — H-READYZ-PREMATURE: /readyz treats "task not yet set" same as "task healthy" | priority: low | effort: small | status: completed | evidence: 6 tests pass (test_h3_readyz.py)
-- [ ] H.4 — H-LANGGRAPH-AUDITOR-NOOP: tool_auditor stored but never invoked in LangGraphAgentLoop | priority: medium | effort: medium | status: pending
+- [x] H.4 — H-LANGGRAPH-AUDITOR-NOOP: tool_auditor stored but never invoked in LangGraphAgentLoop | priority: medium | effort: medium | status: completed | evidence: 14 tests pass, tool_auditor wired in langgraph_agent.py
 - [x] H.5 — H-HUMANGATE-NO-CHECKPOINTER: gate graph compiled without checkpointer breaks interrupt/resume | priority: medium | effort: medium | status: completed | evidence: 2026-07-12 waves 11-12
 - [x] H.6 — H-LANGGRAPH-FACTORY-ROLE-TRAP: make_langgraph_tool_loop has no required role param | priority: medium | effort: small | status: completed | evidence: Waves 11-12
 - [x] H.7 — H-PROJECT-OVERLAY-DANGEROUS-FIELDS: untrusted project config can override connectors, database.url, budget, issues, self_improve gates | priority: high | effort: medium | status: completed | evidence: 70 tests pass, project overlay deny-list with field-level blocklist

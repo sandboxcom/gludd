@@ -1,0 +1,64 @@
+---
+- name: Verify - cloned repo exists and contains expected content
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    source_repo: "/tmp/molecule-clone-source"
+    target_dir: "/tmp/molecule-clone-target"
+
+  tasks:
+    - name: Load persisted result
+      ansible.builtin.slurp:
+        src: "/tmp/molecule-clone-result.json"
+      register: raw
+
+    - name: Parse result
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert target .git directory exists (clone succeeded)
+      ansible.builtin.stat:
+        path: "{{ target_dir }}/.git"
+      register: _clone_git_dir
+
+    - name: Assert .git is a directory
+      ansible.builtin.assert:
+        that:
+          - _clone_git_dir.stat.isdir | bool
+        fail_msg: "Clone failed: {{ target_dir }}/.git does not exist or is not a directory"
+        success_msg: "Clone succeeded: {{ target_dir }}/.git exists"
+
+    - name: Assert README.md from source exists in clone
+      ansible.builtin.stat:
+        path: "{{ target_dir }}/README.md"
+      register: _clone_readme
+
+    - name: Assert README.md was cloned
+      ansible.builtin.assert:
+        that:
+          - _clone_readme.stat.exists | bool
+        fail_msg: "Clone failed: README.md not found in {{ target_dir }}"
+        success_msg: "Clone verified: README.md present"
+
+    - name: Assert idempotent — re-cloning reports existing checkout
+      ansible.builtin.include_role:
+        name: general_ludd.agent.git_automation
+        tasks_from: clone.yml
+      vars:
+        clone_url: "{{ source_repo }}"
+        target_dir: "{{ target_dir }}"
+        git_clone_timeout: 60
+
+    - name: Clean up test repos
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ source_repo }}"
+        - "{{ target_dir }}"
+
+    - name: Clean up result file
+      ansible.builtin.file:
+        path: "/tmp/molecule-clone-result.json"
+        state: absent

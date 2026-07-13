@@ -1,4 +1,10 @@
-"""Verify git_automation ansible role structure and required files."""
+"""Verify git_automation ansible role structure and required files.
+
+SUPERSEDED: The molecule default scenario (molecule/default/verify.yml in the
+git_automation role) performs the same structural + YAML validation using
+ansible-native tasks.  This pytest file is retained as a fast-pass option but
+is no longer the canonical test; run ``molecule test -s default`` instead.
+"""
 from __future__ import annotations
 
 import os
