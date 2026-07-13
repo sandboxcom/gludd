@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "./hot_reload.ts"
-import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, ALIVE_PATH, DISENGAGE_PATH } from "./shared.ts"
+import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH } from "./shared.ts"
 
 // Floor+ceiling enforcement guardrail (separate from enforce-make.ts so a bug
 // here can NEVER break the make-only enforcement). FAIL-OPEN: any error -> do
@@ -56,14 +56,6 @@ const TARGET = Math.min(
 )
 
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
-
-function isDispatchTool(tool: string): boolean {
-  return tool === "task" || tool === "agent" || tool === "workflow"
-}
-
-function isReadTool(toolName: string): boolean {
-  return toolName === "read" || toolName === "grep" || toolName === "glob"
-}
 
 // ── SHARED STREAK STATE (P3: cross-call grinding detection) ────────────────
 const SHARED_STREAK_FILE = process.env.GLUDD_STREAK_FILE || "/tmp/gludd-tool-streak.json"
@@ -120,8 +112,8 @@ function writeSharedStreak(s: SharedStreakState): void {
 function updateSharedStreak(tool: string): SharedStreakState {
   const s = readSharedStreak()
   const now = Date.now()
-  const isDispatch = tool === "task" || tool === "agent" || tool === "workflow"
-  const isRead = tool === "read" || tool === "grep" || tool === "glob"
+  const isDispatch = isDispatchTool(tool)
+  const isRead = isReadTool(tool)
   const alreadyCounted = (now - s.lastUpdateTs) < STREAK_DEDUP_WINDOW_MS
     && s.lastWriter !== STREAK_PLUGIN_NAME
     && s.lastWriter !== ""

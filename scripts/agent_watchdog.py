@@ -1827,6 +1827,13 @@ def _check_plugin_hashes() -> None:
                     current[f.name] = hashlib.sha256(f.read_bytes()).hexdigest()
                 except Exception:
                     pass
+        plugins_dir = _WORKSPACE / ".opencode" / "plugins"
+        if plugins_dir.is_dir():
+            for f in sorted(plugins_dir.glob("*.ts")):
+                try:
+                    current[f"plugins/{f.name}"] = hashlib.sha256(f.read_bytes()).hexdigest()
+                except Exception:
+                    pass
 
         stored = {}
         if manifest.is_file():
