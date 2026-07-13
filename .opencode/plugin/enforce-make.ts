@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { isSubagent, reportAlive } from "./shared.ts"
 
 const BASH_POLICY_HEADER = "BLOCKED: Direct bash commands are not allowed in this project.\n"
 const BASH_POLICY_RULE = "Rule: You MUST only run `make <target>` commands.\n"
@@ -20,11 +21,6 @@ const BASH_POLICY_REF = "See AGENTS.md for existing make targets and the full po
 
 const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
 const SHELL_META_CHARS = /[|;&(){}$`\\!]/
-
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
 
 function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [
@@ -347,21 +343,12 @@ function detectStopPattern(text: string): boolean {
   return false
 }
 
-function _reportAlive(): void {
-  try {
-    const alive: Record<string, any> = {}
-    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["enforce-make"] = { last_seen: Date.now() }
-    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
-  } catch {}
-}
-
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
-      const isSubagent = _isSubagent()
-      if (isSubagent) { console.log("SUBAGENT SKIP: enforce-make tool.execute.before"); return }
-      _reportAlive()
+      const _sub = isSubagent()
+      if (_sub) { console.log("SUBAGENT SKIP: enforce-make tool.execute.before"); return }
+      reportAlive("enforce-make")
 
       // BUG #16 fix: track tool calls and dispatches for text.complete bypass
       _makeTurnState.toolCallMade = true
@@ -881,7 +868,7 @@ export default (async ({ }) => {
     },
 
     "experimental.chat.system.transform": async (_input, output) => {
-      if (_isSubagent()) return output
+      if (isSubagent()) return output
       console.log("SUBAGENT SKIP: enforce-make")
       console.log("SUBAGENT SKIP: enforce-make")
       // --- BASH-AVAILABILITY CHECK (2026-07-03) -------------------------------
@@ -970,7 +957,7 @@ export default (async ({ }) => {
 
     // --- Per-chunk state-based block (port of enforce-stop.ts text.complete) ---
     "experimental.text.complete": async (_input, output) => {
-      if (_isSubagent()) return output
+      if (isSubagent()) return output
       console.log("SUBAGENT SKIP: enforce-make")
       console.log("SUBAGENT SKIP: enforce-make")
       if (typeof output?.text !== "string") return output

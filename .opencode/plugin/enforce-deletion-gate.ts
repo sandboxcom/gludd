@@ -1,5 +1,6 @@
-import type { Plugin } from "@opencode/core";
+import type { Plugin } from "@opencode-ai/plugin";
 import * as fs from "node:fs"
+import { isSubagent, reportAlive } from "./shared.ts"
 
 interface ToolCall {
   tool: string;
@@ -22,11 +23,6 @@ interface DeletionAuditEntry {
   file: string;
   lines_removed: number;
   reason: string;
-}
-
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
 }
 
 function countLines(text: string): number {
@@ -84,25 +80,14 @@ function getDeletionReason(): string | undefined {
   return reason && reason.trim().length > 0 ? reason.trim() : undefined;
 }
 
-async function _reportAlive(): Promise<void> {
-  try {
-    const fs = await import("node:fs");
-    const aliveFile = "/tmp/gludd-plugin-alive.json";
-    let alive: Record<string, unknown> = {};
-    try { alive = JSON.parse(fs.readFileSync(aliveFile, "utf-8")); } catch { /* ok */ }
-    alive["enforce-deletion-gate"] = { last_seen: Date.now() };
-    fs.writeFileSync(aliveFile, JSON.stringify(alive));
-  } catch { /* fail-open */ }
-}
-
 const plugin: Plugin = {
   name: "enforce-deletion-gate",
   version: "1.0.0",
   hooks: {
     "tool.execute.before": async (toolCall: ToolCall) => {
-      if (_isSubagent()) return
+      if (isSubagent()) return
       console.log("SUBAGENT SKIP: enforce-deletion-gate")
-      await _reportAlive();
+      reportAlive("enforce-deletion-gate");
       const threshold = getDeletionThreshold();
       if (threshold <= 0) {
         return; // Gate disabled

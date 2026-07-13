@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { isSubagent, reportAlive } from "./shared.ts"
 
 // enforce-session-start.ts — guarantees the FIRST actions of every session are:
 //   1. LOCATE work: read TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md
@@ -120,11 +121,6 @@ interface SessionState {
   timeGateReset: boolean
 }
 
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
-
 function loadState(): SessionState {
   try {
     if (!fs.existsSync(STATE_FILE)) {
@@ -208,15 +204,6 @@ function isTaskFileRead(tool: string, input: unknown): boolean {
 
 // --- Plugin -----------------------------------------------------------------
 
-function _reportAlive(): void {
-  try {
-    const alive: Record<string, any> = {}
-    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["enforce-session-start"] = { last_seen: Date.now() }
-    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
-  } catch {}
-}
-
 // Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
 // fires. Fail-open. Distinct from the shared alive.json.
 function _writeHeartbeat(): void {
@@ -244,7 +231,7 @@ export default (async ({ }) => {
       _input: unknown,
       output: unknown,
     ) => {
-      if (_isSubagent()) return output
+      if (isSubagent()) return output
       console.log("SUBAGENT SKIP: enforce-session-start")
       console.log("SUBAGENT SKIP: enforce-session-start")
       try {
@@ -291,9 +278,9 @@ export default (async ({ }) => {
       input: { tool?: string } & Record<string, unknown>,
       _output: unknown,
     ) => {
-      if (_isSubagent()) return
+      if (isSubagent()) return
       console.log("SUBAGENT SKIP: enforce-session-start")
-      _reportAlive()
+      reportAlive("enforce-session-start")
       _writeHeartbeat()
       let denyMessage: string | null = null
       try {

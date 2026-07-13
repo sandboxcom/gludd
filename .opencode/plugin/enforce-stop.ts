@@ -1,4 +1,4 @@
-import type { Plugin } from "@opencode-ai/plugin"
+/* import type { Plugin } from "@opencode-ai/plugin" */
 import * as fs from "node:fs"
 import * as path from "node:path"
 
@@ -685,7 +685,7 @@ function _writeHeartbeat(): void {
   } catch { /* fail-open */ }
 }
 
-export default (async ({ }) => {
+export default (async () => {
   spawnGateRefresh()
   // LOADED self-check: proves opencode invoked the factory (registered, not
   // merely present on disk). Appended to the shared log.
@@ -699,8 +699,9 @@ export default (async ({ }) => {
     )
   } catch { /* fail-open */ }
   return {
-    event: async ({ event }: { event: { type: string } }) => {
-      if (event.type === "session.idle") {
+    event: async (input: any) => {
+      const event = input.event
+      if (event && event.type === "session.idle") {
         try {
         turnState.accumulatedText = ""
         turnState.toolCallMade = false
@@ -727,7 +728,7 @@ export default (async ({ }) => {
             }
           } catch {}
 
-          const state: StopStateCache = {
+          const state = {
             ts: Date.now(),
             ratchetEntries: ratchetCount,
             tasksMdUnchecked,
@@ -1039,13 +1040,13 @@ export default (async ({ }) => {
       return output
     },
 
-    "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
+    "experimental.text.complete": async (_input, output) => {
       if (_isSubagent()) return output
       console.log("SUBAGENT SKIP: enforce-stop")
       console.log("SUBAGENT SKIP: enforce-stop")
       if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
 
-      // Increment fire counter — proves text.complete actually fires
+      /* Increment fire counter — proves text.complete actually fires */
       try {
         const cPath = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "/tmp/gludd-stop-text-complete-count.json"
         let count = 1
@@ -1055,23 +1056,23 @@ export default (async ({ }) => {
         fs.writeFileSync(cPath, JSON.stringify({ count, last_fired: new Date().toISOString(), ts: Date.now() }), "utf8")
       } catch {}
 
-      // Item 18: env var gates — disable enforcement entirely
+      /* Item 18: env var gates — disable enforcement entirely */
       if (!STOP_ENFORCE || !NO_WAIT_ENFORCE) return
 
       try {
         const text = output.text
     if (!text || text.trim().length === 0) return
 
-    // BUG #12 fix: check disengaged state first — legitimate admin override
+    /* BUG #12 fix: check disengaged state first — legitimate admin override */
     if (isDisengaged()) return
 
-    // RESEARCH FINDING (2026-07-12): text.complete hook NEVER fires on tool output — it only fires on text-end LLM stream events. All text here is agent-generated. Do NOT add an isToolOutput / role-based guard — it is dead code.
+    /* RESEARCH FINDING (2026-07-12): text.complete hook NEVER fires on tool output — it only fires on text-end LLM stream events. All text here is agent-generated. Do NOT add an isToolOutput / role-based guard — it is dead code. */
 
-    // P3: DELEGATE-FIRST nag — when shared streak > 8, prepend a nag
-    // that survives subagent-report bypass and text-only blocks.
-    // Uses the shared streak file (written by enforce-floor.ts) so it
-    // catches grinding even when enforce-stop.ts's own tool.execute.before
-    // hasn't fired recently.
+    /* P3: DELEGATE-FIRST nag — when shared streak > 8, prepend a nag */
+    /* that survives subagent-report bypass and text-only blocks. */
+    /* Uses the shared streak file (written by enforce-floor.ts) so it */
+    /* catches grinding even when enforce-stop.ts's own tool.execute.before */
+    /* hasn't fired recently. */
     const shared = readSharedStreak()
     if (shared.streak > DELEGATE_FIRST_THRESHOLD) {
           output.text = [
@@ -1084,10 +1085,10 @@ export default (async ({ }) => {
           return output
         }
 
-        // ── POST-RESULTS TEXT-ONLY BLOCK ──────────────────────────────────
-        // After subagent results (or a full wave) arrive, a text-only
-        // response with no tool calls is a premature stop. This is the
-        // "summary table after subagent results" failure mode.
+        /* ── POST-RESULTS TEXT-ONLY BLOCK ────────────────────────────────── */
+        /* After subagent results (or a full wave) arrive, a text-only */
+        /* response with no tool calls is a premature stop. This is the */
+        /* "summary table after subagent results" failure mode. */
         const postResultsState = readPostResultsState()
         const isTextOnlyThisTurn1 = !turnState.toolCallMade && turnState.dispatchCount === 0
         if ((postResultsState.lastTurnHadResults || postResultsState.lastTurnHadWave) && isTextOnlyThisTurn1) {
@@ -1106,7 +1107,7 @@ export default (async ({ }) => {
           return
         }
 
-        // Check short completion claims (✅, "Done.") before the 60-char minimum
+        /* Check short completion claims (✅, "Done.") before the 60-char minimum */
         if (text.trim().length < 60) {
           if (responseLooksTerminal(text)) {
             logFalseDoneBlock(text, "short-false-done")
@@ -1115,13 +1116,13 @@ export default (async ({ }) => {
             writePersistBlock(true, "short-false-done")
             return
           }
-          // Fall through — short non-false-done text still needs pending-work checks
+          /* Fall through — short non-false-done text still needs pending-work checks */
         }
 
         turnState.accumulatedText += text
 
-        // Item 15: check watchdog disengage signal
-        // BUG #23 fix: clamp disengage to max 1 hour from now
+        /* Item 15: check watchdog disengage signal */
+        /* BUG #23 fix: clamp disengage to max 1 hour from now */
         let watchdogDisengage = false
         try {
           const wsPath = "/tmp/gludd-watchdog-disengage.json"
@@ -1159,10 +1160,10 @@ export default (async ({ }) => {
           }
         }
 
-        // ── CONSECUTIVE TEXT-ONLY LIMIT ──────────────────────────────────
-        // At most 1 text-only response per session when work is pending.
-        // Resets when the agent makes tool calls. Prevents the pattern of
-        // repeated status reports / summaries with no dispatch.
+        /* ── CONSECUTIVE TEXT-ONLY LIMIT ────────────────────────────────── */
+        /* At most 1 text-only response per session when work is pending. */
+        /* Resets when the agent makes tool calls. Prevents the pattern of */
+        /* repeated status reports / summaries with no dispatch. */
         const textOnly = readTextOnlyState()
         if (!turnState.toolCallMade && turnState.dispatchCount === 0) {
           const now = Date.now()
@@ -1185,18 +1186,19 @@ export default (async ({ }) => {
             turnState.blocked = true
             writePersistBlock(true, "consecutive-text-only")
             return
-          // Reset text-only counter — agent made tool calls
+          }
+          /* Reset text-only counter — agent made tool calls */
           writeTextOnlyState({ count: 0, lastTs: 0, sameSession: false })
         }
 
-        // DIRECT FALSE-DONE DETECTION: check completion claim patterns
-        // BEFORE any evidence bypass. Catches "✅", "Done.", "[x]" summary tables, etc.
+        /* DIRECT FALSE-DONE DETECTION: check completion claim patterns */
+        /* BEFORE any evidence bypass. Catches "✅", "Done.", "[x]" summary tables, etc. */
         const combinedText = text + turnState.accumulatedText
         const lower = combinedText.toLowerCase()
 
-        // P5 audit fix: permission-seeking deferral phrases ("Shall I continue?",
-        // "Should I proceed?", "Want me to ...?") are premature stops in disguise.
-        // Block them when no machine evidence is present.
+        /* P5 audit fix: permission-seeking deferral phrases ("Shall I continue?", */
+        /* "Should I proceed?", "Want me to ...?") are premature stops in disguise. */
+        /* Block them when no machine evidence is present. */
         const hasStopPatternPhrase = STOP_PATTERN_PHRASES.test(combinedText)
         const hasDirectFalseDone = responseLooksTerminal(combinedText) || hasStopPatternPhrase
 
@@ -1204,23 +1206,23 @@ export default (async ({ }) => {
         const ratchetCount = cache?.ratchetEntries ?? ratchetHasEntries()
 
         if (hasDirectFalseDone) {
-          // NARROWED PREDICATE (per AGENTS.md Guardrail Integrity Policy —
-          // narrow the check, do NOT delete it). Block ONLY when ALL of:
-          //   1. A completion-style phrase is present (hasDirectFalseDone above)
-          //   2. AND no structured evidence (commit hash / nonzero pass count,
-          //      length-capped so a giant pasted log can't satisfy by accident)
-          //   3. AND no gate output token (PASS|FAIL|passed|failed from make)
-          //   4. AND no file path edited (src/ tests/ .opencode/ collections/)
-          //   5. AND no subagent-report marker (## Report, RAW OUTPUT, ## CMD:,
-          //      Files changed, Test results, etc. — these are subagent final
-          //      reports, which the harness marks `completed` on purpose)
-          //   6. AND no tool call / dispatch made this response (work-in-progress)
-          // Any ONE of conditions 2–6 failing cancels the block. This catches
-          // a true terminal text-only "All done" with no evidence, but does
-          // NOT catch "I edited X, ran make Y, output was Z" — the previous
-          // predicate (only commit-hash || tool-call) blocked the latter
-          // because subagents have no commit access and their final reports
-          // arrive as text with no main-agent tool call in the same response.
+          /* NARROWED PREDICATE (per AGENTS.md Guardrail Integrity Policy — */
+          /* narrow the check, do NOT delete it). Block ONLY when ALL of: */
+          /* 1. A completion-style phrase is present (hasDirectFalseDone above) */
+          /* 2. AND no structured evidence (commit hash / nonzero pass count, */
+          /* length-capped so a giant pasted log can't satisfy by accident) */
+          /* 3. AND no gate output token (PASS|FAIL|passed|failed from make) */
+          /* 4. AND no file path edited (src/ tests/ .opencode/ collections/) */
+          /* 5. AND no subagent-report marker (## Report, RAW OUTPUT, ## CMD:, */
+          /* Files changed, Test results, etc. — these are subagent final */
+          /* reports, which the harness marks `completed` on purpose) */
+          /* 6. AND no tool call / dispatch made this response (work-in-progress) */
+          /* Any ONE of conditions 2–6 failing cancels the block. This catches */
+          /* a true terminal text-only "All done" with no evidence, but does */
+          /* NOT catch "I edited X, ran make Y, output was Z" — the previous */
+          /* predicate (only commit-hash || tool-call) blocked the latter */
+          /* because subagents have no commit access and their final reports */
+          /* arrive as text with no main-agent tool call in the same response. */
           const SUBAGENT_REPORT_MARKERS = [
             "Files changed", "Files edited", "Test results",
             "## Report", "## Result", "RAW OUTPUT",
@@ -1233,11 +1235,11 @@ export default (async ({ }) => {
           const hasCommandMarker = COMMAND_MARKER_RE.test(combinedText)
           const hasSubagentReportMarker = SUBAGENT_REPORT_MARKERS.some(m => combinedText.includes(m))
           const hasStructuredEvidence = (hasCommitHash || hasPassCount) && combinedText.length < 500
-          // P5: hasMarkdownTable intentionally removed from this union. A
-          // table alone is not evidence of work — the agent can write a
-          // summary table and stop. Structured evidence (commit hash / pass
-          // count / gate output) still cancels the block for legitimate
-          // table+evidence reports.
+          /* P5: hasMarkdownTable intentionally removed from this union. A */
+          /* table alone is not evidence of work — the agent can write a */
+          /* summary table and stop. Structured evidence (commit hash / pass */
+          /* count / gate output) still cancels the block for legitimate */
+          /* table+evidence reports. */
           const hasWorkArtifact = hasFilePath || hasGateOutput || hasSubagentReportMarker || hasCommandMarker
           const isWorkResponse = turnState.dispatchCount > 0 || turnState.toolCallMade
           if (!hasStructuredEvidence && !hasWorkArtifact && !isWorkResponse) {
@@ -1262,7 +1264,7 @@ export default (async ({ }) => {
         const ciVerdictPendingOrRed = cache?.ciVerdictPendingOrRed ?? false
         const hasLocalWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed
 
-        // Handle previously-blocked state
+        /* Handle previously-blocked state */
         if (turnState.blocked) {
           const combined = (text + turnState.accumulatedText).toLowerCase()
           if (/\b(make git-|dispatch|subagent|task)\b/.test(combined)) {
@@ -1274,7 +1276,7 @@ export default (async ({ }) => {
           }
         }
 
-        // AGGRESSIVE: if ratchet has entries and NO tool calls this response, block everything
+        /* AGGRESSIVE: if ratchet has entries and NO tool calls this response, block everything */
         if (ratchetCount > 0 && turnState.dispatchCount === 0) {
           recordBlock("ratchet_entries_no_tool_calls")
           logFalseDoneBlock(combinedText, "ratchet-block-all-text")
@@ -1290,25 +1292,25 @@ export default (async ({ }) => {
           return
         }
 
-        // Work-in-progress: dispatches were made THIS response (not persisted from prior)
+        /* Work-in-progress: dispatches were made THIS response (not persisted from prior) */
         if (turnState.dispatchCount > 0) {
           if (!COMPLETION_VERBATIM.test(text)) return
         }
 
-        // Work-in-progress: tool call was just made
+        /* Work-in-progress: tool call was just made */
         if (turnState.toolCallMade) {
           if (!COMPLETION_VERBATIM.test(text)) return
         }
 
-        // NEW: Q&A response summary stop-pattern detection. When the agent answers a
-        // user question with a "what was done" recap and no tool call, AND pending
-        // work exists — it's a premature stop in Q&A disguise. Fires BEFORE the
-        // hasLocalWork subagent-report bypass below so Q&A summaries are not
-        // incorrectly classified as legitimate subagent relays.
-        //
-        // Pattern source: BUGS.md #7 and #10 — agent sent text-only summaries with
-        // phrases like "completed in this session", "everything committed and merged",
-        // and bolded question-header recaps ("**What changed?**", "**What's left?**").
+        /* NEW: Q&A response summary stop-pattern detection. When the agent answers a */
+        /* user question with a "what was done" recap and no tool call, AND pending */
+        /* work exists — it's a premature stop in Q&A disguise. Fires BEFORE the */
+        /* hasLocalWork subagent-report bypass below so Q&A summaries are not */
+        /* incorrectly classified as legitimate subagent relays. */
+        /*  */
+        /* Pattern source: BUGS.md #7 and #10 — agent sent text-only summaries with */
+        /* phrases like "completed in this session", "everything committed and merged", */
+        /* and bolded question-header recaps ("**What changed?**", "**What's left?**"). */
         const isQaSummary = QA_RESPONSE_PATTERNS.test(combinedText)
         if (isQaSummary && (hasLocalWork || ciVerdictPendingOrRed)) {
           logFalseDoneBlock(combinedText, "qa-response-summary-stop")
@@ -1329,9 +1331,26 @@ export default (async ({ }) => {
           return
         }
 
-        // CI RED/PENDING block: text-only completion claims when CI is broken
-        // a broken CI pipeline means the project is not in a shippable state.
-        // This is a targeted check separate from the hasLocalWork block below.
+        const SUBAGENT_REPORT_MARKERS_LATE = [
+          "Files changed", "Files edited", "Test results",
+          "## Report", "## Result", "## RAW OUTPUT", "RAW OUTPUT",
+          "## CMD:", "Output:", "Exit code",
+        ]
+        const lateHasCommitHash = COMMIT_HASH_RE.test(combinedText)
+        const lateHasPassCount = PASS_COUNT_EVIDENCE_RE.test(combinedText)
+        const lateHasFilePath = FILE_PATH_RE.test(combinedText)
+        const lateHasCommandMarker = COMMAND_MARKER_RE.test(combinedText)
+        const lateHasSubagentReportMarker = SUBAGENT_REPORT_MARKERS_LATE.some(m => combinedText.includes(m))
+        const lateHasStructuredEvidence = (lateHasCommitHash || lateHasPassCount) && combinedText.length < 500
+        /* P5: lateHasMarkdownTable intentionally removed — mirrors the */
+        /* hasDirectFalseDone narrowing above. A summary table alone must */
+        /* not bypass the hasLocalWork block. */
+        const lateHasWorkArtifact = lateHasFilePath || lateHasCommandMarker || lateHasSubagentReportMarker
+        const isSubagentFinalReport = lateHasStructuredEvidence || lateHasWorkArtifact
+
+        /* CI RED/PENDING block: text-only completion claims when CI is broken */
+        /* a broken CI pipeline means the project is not in a shippable state. */
+        /* This is a targeted check separate from the hasLocalWork block below. */
         if (ciVerdictPendingOrRed && !isSubagentFinalReport) {
           const STALE_CI_MS = 600_000 // 10 min — CI can legitimately be PENDING
           const ciCachePath = "/tmp/gludd-watchdog-ci.json"
@@ -1380,31 +1399,15 @@ export default (async ({ }) => {
           }
         }
 
-        // BUG #6 fix: when hasLocalWork, block ALL text (not just terminal-looking).
-        // If work is pending and the agent sends text without tool calls, it's a stop.
-        // NARROWED 2026-07-07: subagent final reports (which arrive as text with no
-        // tool call in the same response, because the harness marks subagents
-        // `completed` on purpose) MUST NOT be blanked. Without this bypass, ~40% of
-        // subagent results in this session were erased, blocking all parallel work.
-        // The bypass mirrors the hasDirectFalseDone check above: if the response
-        // contains a subagent-report marker OR structured evidence OR a file path,
-        // it is a legitimate work report — not a premature stop.
-        const SUBAGENT_REPORT_MARKERS_LATE = [
-          "Files changed", "Files edited", "Test results",
-          "## Report", "## Result", "## RAW OUTPUT", "RAW OUTPUT",
-          "## CMD:", "Output:", "Exit code",
-        ]
-        const lateHasCommitHash = COMMIT_HASH_RE.test(combinedText)
-        const lateHasPassCount = PASS_COUNT_EVIDENCE_RE.test(combinedText)
-        const lateHasFilePath = FILE_PATH_RE.test(combinedText)
-        const lateHasCommandMarker = COMMAND_MARKER_RE.test(combinedText)
-        const lateHasSubagentReportMarker = SUBAGENT_REPORT_MARKERS_LATE.some(m => combinedText.includes(m))
-        const lateHasStructuredEvidence = (lateHasCommitHash || lateHasPassCount) && combinedText.length < 500
-        // P5: lateHasMarkdownTable intentionally removed — mirrors the
-        // hasDirectFalseDone narrowing above. A summary table alone must
-        // not bypass the hasLocalWork block.
-        const lateHasWorkArtifact = lateHasFilePath || lateHasCommandMarker || lateHasSubagentReportMarker
-        const isSubagentFinalReport = lateHasStructuredEvidence || lateHasWorkArtifact
+        /* BUG #6 fix: when hasLocalWork, block ALL text (not just terminal-looking). */
+        /* If work is pending and the agent sends text without tool calls, it's a stop. */
+        /* NARROWED 2026-07-07: subagent final reports (which arrive as text with no */
+        /* tool call in the same response, because the harness marks subagents */
+        /* `completed` on purpose) MUST NOT be blanked. Without this bypass, ~40% of */
+        /* subagent results in this session were erased, blocking all parallel work. */
+        /* The bypass mirrors the hasDirectFalseDone check above: if the response */
+        /* contains a subagent-report marker OR structured evidence OR a file path, */
+        /* it is a legitimate work report — not a premature stop. */
         if ((hasLocalWork || ciVerdictPendingOrRed) && !isSubagentFinalReport) {
           logFalseDoneBlock(turnState.accumulatedText, "hasLocalWork-text-only")
           output.text = [
@@ -1417,9 +1420,9 @@ export default (async ({ }) => {
           writePersistBlock(true, "state-based-block")
           return
         }
-        // Detect subagent result markers in the current response so the
-        // NEXT turn knows whether it followed a result-filled turn. This
-        // is the cross-turn memory that drives the post-results block.
+        /* Detect subagent result markers in the current response so the */
+        /* NEXT turn knows whether it followed a result-filled turn. This */
+        /* is the cross-turn memory that drives the post-results block. */
         const combinedTextForResults = turnState.accumulatedText
         const resultCheck = textHasResultMarkers(combinedTextForResults)
         if (resultCheck.found) {
@@ -1449,4 +1452,4 @@ export default (async ({ }) => {
       }
     },
   }
-}) satisfies Plugin
+})

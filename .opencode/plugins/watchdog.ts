@@ -1,22 +1,14 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
+import { reportAlive } from "../plugin/shared.ts"
 
 const PID_FILE = process.env.GLUDD_WATCHDOG_PID_FILE || ".gate-logs/watchdog.pid"
 const TASK_PID_FILE = ".gate-logs/task-watchdog.pid"
 
-function _reportAlive(): void {
-  try {
-    const alive: Record<string, any> = {}
-    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["watchdog"] = { last_seen: Date.now() }
-    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
-  } catch {}
-}
-
 export default (async ({ $ }) => {
   return {
     event: async ({ event }: { event: { type: string } }) => {
-      _reportAlive()
+      reportAlive("watchdog")
       if (event.type === "session.created") {
         try { await $`make watchdog-auto` } catch {}
         // make watchdog-auto writes PID to .gate-logs/watchdog.pid (literal);

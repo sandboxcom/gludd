@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import { loadHotModule, type HotModule } from "./hot_reload.ts"
+import { isSubagent, reportAlive } from "./shared.ts"
 
 // enforce-deadline.ts — subagent task wall-clock timeout enforcement.
 //
@@ -60,11 +61,6 @@ const BLOCK = (process.env.GLUDD_TASK_DEADLINE_BLOCK || "1") !== "0"
 // NOISE-CONTROL STATE
 // ============================================================================
 const warnedIds = new Set<string>()
-
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
 
 function appendWarning(line: string): void {
   try {
@@ -156,23 +152,14 @@ function isDispatchTool(tool: string): boolean {
   return tool === "task" || tool === "agent" || tool === "workflow"
 }
 
-function _reportAlive(): void {
-  try {
-    const alive: Record<string, any> = {}
-    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["enforce-deadline"] = { last_seen: Date.now() }
-    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
-  } catch {}
-}
-
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, output: any) => {
-    if (_isSubagent()) return
+    if (isSubagent()) return
     console.log("SUBAGENT SKIP: enforce-deadline")
-    _reportAlive()
+    reportAlive("enforce-deadline")
     if (!DEADLINE_ENABLED) return
     const tool = input.tool
     const args = output?.args
@@ -245,7 +232,7 @@ const defaultImpl: HotModule = {
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
-      if (_isSubagent()) return;
+      if (isSubagent()) return;
       console.log("SUBAGENT SKIP: enforce-deadline")
       const impl = loadHotModule("deadline", defaultImpl)
       const fn = impl["tool.execute.before"]

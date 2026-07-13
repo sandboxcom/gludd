@@ -30,6 +30,7 @@ GUARD_BALLOT = (
     "process.env.OPENCODE_SUBAGENT"
 )
 ISUBAGENT_CALL_RE = re.compile(r"\b_isSubagent\(\)")
+ISUBAGENT_SHARED_CALL_RE = re.compile(r"\bisSubagent\(\)")
 ISUBAGENT_FUNC_RE = re.compile(
     r"function\s+_isSubagent\s*\(\s*\)\s*:\s*\w+\s*\{"
 )
@@ -47,6 +48,7 @@ PLUGIN_FILE_RE = re.compile(r"\.opencode/(?:plugin|plugins)/[\w-]+\.ts")
 
 UTILITY_FILES = {
     ".opencode/plugin/hot_reload.ts",
+    ".opencode/plugin/shared.ts",
 }
 
 
@@ -151,6 +153,16 @@ def _guard_present(filepath: Path, hook_key: str) -> bool | None:
         if ISUBAGENT_CALL_RE.search(window):
             if _is_subagent_func_valid(src):
                 return True
+
+        # Mode 3 — isSubagent() imported from shared.ts; verify shared.ts has guard
+        if ISUBAGENT_SHARED_CALL_RE.search(window):
+            shared_path = WORKSPACE / ".opencode" / "plugin" / "shared.ts"
+            try:
+                shared_src = shared_path.read_text(encoding="utf-8")
+                if GUARD_BALLOT in shared_src:
+                    return True
+            except OSError:
+                pass
 
     return False
 

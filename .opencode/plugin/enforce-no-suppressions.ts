@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import * as fs from "node:fs"
+import { isSubagent, reportAlive } from "./shared.ts"
 
 // --- No-lint-suppression-comments guardrail (3-layer) -----------------------
 // This plugin enforces the "No Lint-Suppression Comments" policy from
@@ -44,11 +44,6 @@ export const DENY_MESSAGE =
 // --- Matcher (exported for unit-test extraction) ----------------------------
 // Pure function: returns true iff `text` contains any forbidden suppression
 // comment. Does NOT consult the allowlist — callers gate on path first.
-function _isSubagent(): boolean {
-  if (process.env.OPENCODE_SUBAGENT === "1") return true;
-  try { return fs.existsSync(`/tmp/gludd-subagent-${process.pid}.json`); } catch { return false; }
-}
-
 export function isSuppressionComment(text: string): boolean {
   if (typeof text !== "string" || text.length === 0) return false
   return SUPPRESSION_PATTERNS.some(re => re.test(text))
@@ -80,24 +75,6 @@ export function shouldAllowEdit(
   }
 }
 
-// --- Heartbeat probe --------------------------------------------------------
-// Reports liveness to /tmp/gludd-plugin-alive.json so a watchdog can detect
-// if this plugin silently dies. Matches the canonical pattern in
-// enforce-deletion-gate.ts:81. Fail-open: never block edits on a heartbeat
-// fault.
-function _reportAlive(): void {
-  try {
-    const alivePath = "/tmp/gludd-plugin-alive.json"
-    const alive = fs.existsSync(alivePath)
-      ? JSON.parse(fs.readFileSync(alivePath, "utf8"))
-      : {}
-    alive["enforce-no-suppressions"] = { last_seen: Date.now() }
-    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8")
-  } catch {
-    // fail-open
-  }
-}
-
 // --- Plugin entry point -----------------------------------------------------
 // tool.execute.before hook: inspects the args of `edit` and `write` tool calls
 // and denies when the would-be content carries a forbidden suppression
@@ -105,9 +82,9 @@ function _reportAlive(): void {
 export default (async () => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
-      if (_isSubagent()) return
+      if (isSubagent()) return
       console.log("SUBAGENT SKIP: enforce-no-suppressions")
-      _reportAlive()
+      reportAlive("enforce-no-suppressions")
       // Only edit/write are in scope. Other tools pass through unchanged.
       if (input?.tool !== "edit" && input?.tool !== "write") {
         return
