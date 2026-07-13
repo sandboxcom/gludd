@@ -6,6 +6,42 @@
 
 ---
 
+## SESSION 29 — 2026-07-13
+
+### HEAD + Branch State
+
+- **HEAD: `9d4e60da`** on `development` branch
+- **Working tree: DIRTY** — SESSION.md being updated
+- **Runtime tests: 114 pass / 0 fail** (was 107)
+
+### Key Deliverables
+
+| Category | Items | Commit(s) |
+|----------|-------|-----------|
+| **enforce-stop shared.ts refactor** | Deduplicated enforce-stop.ts using shared.ts helpers | `ad2f32fb` |
+| **enforce-clean-tree fix** | require→import execSync fix, 7 new tests | `9d4e60da` |
+| **TASKS.md header counts** | Fixed header counts (4 open) | `9d4e60da` |
+| **.opencode.orig backup** | Created `.opencode.orig` backup | `ad2f32fb` |
+| **restore-opencode git fallback** | Added git HEAD fallback to restore-opencode | `ad2f32fb` |
+| **runtime tests** | 114 pass (was 107) — 7 new tests added | `9d4e60da` |
+
+### Known Gaps
+
+1. **A.3 push** — 3+ unpushed commits on development branch. Push to remote pending.
+2. **A.4 release** — v0.1.0-beta.2 not yet cut. Blocked on CI green + push.
+
+### Next Steps (Prioritized)
+
+1. [ ] **Push development to remote** — 3+ unpushed commits
+2. [ ] **Run gate-lite** — validate current state
+3. [ ] **A.4 release cut** — cut v0.1.0-beta.2 after gate green
+4. [ ] **Continue Phase AG** — AG.2-AG.16 remain
+
+### Last Updated
+- **2026-07-13 — Session 29.** On `development` branch, HEAD `9d4e60da`. 114/114 runtime tests pass. enforce-stop.ts refactored to use shared.ts (`ad2f32fb`), enforce-clean-tree require→import execSync fix (`9d4e60da`). .opencode.orig backup created, restore-opencode git fallback added. 3+ unpushed commits on development.
+
+---
+
 ## SESSION 28 — 2026-07-13
 
 ### HEAD + Branch State
