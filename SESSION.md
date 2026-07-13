@@ -140,6 +140,33 @@
 
 Also fixed `agent_floor_check` ansible role task-naming syntax errors (8 tasks). Connector test fix wave (session 22): ~76 stale connector health assertion fixes across 34 test files over 3 batches (`b5894567`, `023d5f09`, `d2c20db6`). Gate-lite: 4556 passed, 3 skipped, 1 remaining known failure. Dirty tree: `test_connector_dynatrace.py` stale-assertion fix (1 line). CI pending on development.
 
+## OS Crash + Cache Corruption Recovery (2026-07-12)
+
+### Incident
+An OS crash corrupted `~/.cache/opencode`, preventing opencode from starting.
+
+### Fix (commit `5a480209`)
+- **`make restore-opencode`** — restores `.opencode/` from `.opencode.orig/` backup, clears corrupted `~/.cache/opencode` and `.opencode/node_modules`. Per opencode docs troubleshooting guidance.
+- **`.opencode.orig/`** — committed as a known-good snapshot of plugin/config state for recovery.
+
+### enforce-stop.ts Syntax Error (commits `a43504d4`, `e280674b`)
+- **Root cause**: stale working copy of `enforce-stop.ts` had a syntax error that silently prevented the plugin from loading at runtime. opencode skips plugins with parse errors — no error surfaced.
+- **Fix**: corrected the syntax error in the source file.
+- **Prevention**: new `scripts/check_plugin_syntax.py` runs `node --check` on all `.opencode/plugin/*.ts` and `.opencode/plugins/*.ts` files. Wired into `make gate` and `make gate-lite` via `check-plugin-syntax` target.
+
+### New Test Files (commit `b5d8ab9b`)
+| File | Tests | Purpose |
+|------|-------|---------|
+| `tests/unit/test_plugin_syntax.py` | 2 | Validates `check_plugin_syntax.py` detects valid + broken TS files |
+| `tests/unit/test_enforce_stop_syntax.py` | 5 | Node syntax check + export default + hook registrations + event hook + compile guard |
+| `tests/unit/test_h11_denylist_drift.py` | 6 | H.11: 5 independent protected-path deny-lists must not drift from canonical |
+
+### HEAD State
+- **HEAD: `b5d8ab9b`** on `master` branch
+- **Working tree**: TASKS.md modified, `.opencode.orig/` untracked
+- **CI**: pending on `master`
+- **TASKS.md**: 53 open (down from 63), 71% complete
+
 ## Current Work
 
 - **HEAD: `d9b080a0`** on `development` branch (2026-07-12). Pushed. All Waves 1-13 complete.

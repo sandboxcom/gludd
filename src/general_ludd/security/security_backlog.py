@@ -95,7 +95,7 @@ BACKLOG_ITEMS: dict[str, dict[str, str]] = {
 # Items with a real static regression probe against landed code. Only these
 # can turn the __main__ gate non-zero (see _main) — everything else is an
 # honest OPEN item, not a thing under active regression test.
-_PROBE_ITEM_IDS: frozenset[str] = frozenset({"D-07", "D-14", "D-18", "D-27"})
+_PROBE_ITEM_IDS: frozenset[str] = frozenset({"D-07", "D-10", "D-14", "D-18", "D-25", "D-27", "D-28", "D-29"})
 
 
 def run_backlog_checks() -> list[SecurityBacklogResult]:
@@ -356,14 +356,203 @@ def _check_d18_audit_log() -> tuple[bool, str]:
     )
 
 
+# ── new probes (D-10, D-25, D-28, D-29) ──────────────────────────────────
+
+
+def _check_d10_body_size_limit() -> tuple[bool, str]:
+    """Static probe: receiver/router.py enforces MAX_BODY_BYTES (8 MiB) on ingest.
+
+    Source-scans ``general_ludd.receiver.router`` for ``MAX_BODY_BYTES`` and
+    verifies it is referenced in payload-size guard clauses (Content-Length
+    early-reject, streaming reader, and fixed-length endpoints).
+    """
+    try:
+        import general_ludd.receiver.router as router_mod
+    except ImportError as exc:
+        return False, f"OPEN — general_ludd.receiver.router failed to import: {exc}"
+
+    if not hasattr(router_mod, "MAX_BODY_BYTES"):
+        return False, (
+            "OPEN — general_ludd.receiver.router no longer defines MAX_BODY_BYTES "
+            "(regression — ingest payload-size cap removed)"
+        )
+
+    router_src = _read_module_source(router_mod)
+    if "MAX_BODY_BYTES" not in router_src:
+        return False, (
+            "OPEN — general_ludd.receiver.router source no longer references "
+            "MAX_BODY_BYTES (regression — ingest payload-size cap removed)"
+        )
+
+    return True, (
+        "LANDED-VERIFIED — general_ludd.receiver.router defines MAX_BODY_BYTES "
+        "(= parsers.MAX_PAYLOAD_BYTES, 8 MiB) and enforces it via Content-Length "
+        "early-reject, streaming-body check, and fixed-endpoint guards"
+    )
+
+
+def _check_d25_stack_depth_cap() -> tuple[bool, str]:
+    """Static probe: langgraph recursion_limit + ag2_hooks _max_depth exist.
+
+    Source-scans two modules:
+      * ``general_ludd.execution.langgraph_agent`` — ``recursion_limit`` wired
+        from ``self._max_iterations * 2 + 10``.
+      * ``general_ludd.ag2_lifecycle.hooks`` — ``_max_depth = 2`` with
+        depth-enforcement in ``_check_depth``.
+    """
+    try:
+        import general_ludd.execution.langgraph_agent as lg_mod
+    except ImportError as exc:
+        return False, f"OPEN — general_ludd.execution.langgraph_agent failed to import: {exc}"
+    lg_src = _read_module_source(lg_mod)
+    if "recursion_limit" not in lg_src:
+        return False, (
+            "OPEN — general_ludd.execution.langgraph_agent no longer wires "
+            "recursion_limit (regression — tool-call loop unbounded)"
+        )
+
+    try:
+        import general_ludd.ag2_lifecycle.hooks as hooks_mod
+    except ImportError as exc:
+        return False, f"OPEN — general_ludd.ag2_lifecycle.hooks failed to import: {exc}"
+    hooks_src = _read_module_source(hooks_mod)
+    if "_max_depth" not in hooks_src:
+        return False, (
+            "OPEN — general_ludd.ag2_lifecycle.hooks no longer defines "
+            "_max_depth (regression — subagent nesting unbounded)"
+        )
+
+    return True, (
+        "LANDED-VERIFIED — langgraph_agent wires recursion_limit; "
+        "ag2_lifecycle/hooks.py enforces _max_depth=2 on subagent nesting"
+    )
+
+
+def _check_d28_network_policy() -> tuple[bool, str]:
+    """Static probe: NetworkPolicy model + scan_playbook_tasks exist in ansible/.
+
+    Source-scans ``general_ludd.ansible.network_policy`` for the
+    ``NetworkPolicy`` pydantic model and ``scan_playbook_tasks`` function.
+    Also verifies that ``core_runner.py`` references network_policy blocking.
+    """
+    try:
+        import general_ludd.ansible.network_policy as np_mod
+    except ImportError as exc:
+        return False, f"OPEN — general_ludd.ansible.network_policy failed to import: {exc}"
+
+    if not hasattr(np_mod, "NetworkPolicy"):
+        return False, (
+            "OPEN — general_ludd.ansible.network_policy no longer defines "
+            "NetworkPolicy (regression — network isolation policy removed)"
+        )
+    if not hasattr(np_mod, "scan_playbook_tasks"):
+        return False, (
+            "OPEN — general_ludd.ansible.network_policy no longer defines "
+            "scan_playbook_tasks (regression — policy enforcement removed)"
+        )
+
+    try:
+        import general_ludd.ansible.core_runner as cr_mod
+    except ImportError as exc:
+        return False, f"OPEN — general_ludd.ansible.core_runner failed to import: {exc}"
+    cr_src = _read_module_source(cr_mod)
+    if "network_policy" not in cr_src:
+        return False, (
+            "OPEN — general_ludd.ansible.core_runner no longer references "
+            "network_policy (regression — network policy enforcement removed "
+            "from playbook execution path)"
+        )
+
+    return True, (
+        "LANDED-VERIFIED — ansible/network_policy.py defines NetworkPolicy + "
+        "scan_playbook_tasks; core_runner.py enforces network_policy on "
+        "playbook execution"
+    )
+
+
+def _check_d29_clone_timeout() -> tuple[bool, str]:
+    """Static probe: GitAutomation.clone has a bounded timeout (120s default).
+
+    Source-scans ``general_ludd.git_automation.repo`` for ``GitAutomation``
+    and verifies that ``clone()`` accepts a ``timeout`` parameter and passes
+    it to subprocess invocation.
+    """
+    try:
+        import general_ludd.git_automation.repo as repo_mod
+    except ImportError as exc:
+        return False, f"OPEN — general_ludd.git_automation.repo failed to import: {exc}"
+
+    clone_method = getattr(getattr(repo_mod, "GitAutomation", None), "clone", None)
+    if clone_method is None:
+        return False, "OPEN — GitAutomation.clone no longer exists (regression)"
+
+    clone_src = _read_module_source(clone_method)
+    if "timeout" not in clone_src:
+        return False, (
+            "OPEN — GitAutomation.clone() no longer accepts/passes a timeout "
+            "parameter (regression — unbounded clone can hang indefinitely)"
+        )
+
+    return True, (
+        "LANDED-VERIFIED — GitAutomation.clone() accepts timeout=120.0 and "
+        "passes it to subprocess.run; TimeoutExpired is caught and returned "
+        "as a structured error"
+    )
+
+
+# ── explicit OPEN checkers for genuinely-unimplemented items ─────────────────
+
+
+def _check_d12_admin_code_rate_limit() -> tuple[bool, str]:
+    return False, (
+        "OPEN — routers/models.py has /admin/code/* endpoints with no rate "
+        "limiting applied; rate limiters exist in web_search.py and "
+        "receiver/router.py but are not used on the code-execution admin paths"
+    )
+
+
+def _check_d19_alembic_dry_run() -> tuple[bool, str]:
+    return False, (
+        "OPEN — db/migrations.py has stamp_head (apply-only) but no dry-run / "
+        "check_stamp / current command to preview pending migrations before "
+        "applying; a failed migration may corrupt the DB with no pre-flight check"
+    )
+
+
+def _check_d26_vacuum_schedule() -> tuple[bool, str]:
+    return False, (
+        "OPEN — MemoryRecordModel exists in db/models.py with full CRUD but "
+        "there is zero VACUUM scheduling anywhere in src/; sustained write "
+        "load on the memory table will fragment SQLite with no periodic "
+        "compaction"
+    )
+
+
+def _check_d30_gateway_size_limit() -> tuple[bool, str]:
+    return False, (
+        "OPEN — models/gateway.py defines ModelResponse but has no "
+        "response-size limit per request; finish_reason==length is detected "
+        "(used to skip caching truncated responses) but no max_tokens or "
+        "max_response_bytes cap is enforced at the gateway level"
+    )
+
+
 _BACKLOG_CHECKERS: dict[str, Callable[[], tuple[bool, str]]] = {
     "D-07": _check_d07_input_validation,
+    "D-10": _check_d10_body_size_limit,
     "D-11": _check_d11_todo_rate_limit,
+    "D-12": _check_d12_admin_code_rate_limit,
     "D-13": _check_d13_wal_journal_bound,
     "D-14": _check_d14_url_parsing,
     "D-17": _check_d17_psk_rotation,
     "D-18": _check_d18_audit_log,
+    "D-19": _check_d19_alembic_dry_run,
+    "D-25": _check_d25_stack_depth_cap,
+    "D-26": _check_d26_vacuum_schedule,
     "D-27": _check_d27_sandbox_limits,
+    "D-28": _check_d28_network_policy,
+    "D-29": _check_d29_clone_timeout,
+    "D-30": _check_d30_gateway_size_limit,
 }
 
 
