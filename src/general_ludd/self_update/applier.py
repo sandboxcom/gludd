@@ -165,7 +165,16 @@ def _first_protected(
     from general_ludd.security.path_canonicalizer import is_denied_path
 
     for path in target_paths:
-        normalised = os.path.normpath(urllib.parse.unquote(path))
+        decoded = urllib.parse.unquote(path)
+
+        # S.9 fix: check the raw (pre-normpath) path BEFORE os.path.normpath
+        # collapses ``..`` traversal.  Without this, ``guardrails/../../etc``
+        # becomes ``../../etc`` — the ``guardrails`` marker is stripped and
+        # the protected-path check bypasses entirely.
+        if is_denied_path(decoded):
+            return path
+
+        normalised = os.path.normpath(decoded)
         lowered = normalised.lower()
 
         # Lexical check via the canonical deny-list — catches substring and

@@ -44,8 +44,12 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - Plugin test coverage surge: 101 floor + 52 deletion-gate + 60 delegate + 38 deadline + 19 task-ledger tests.
 - enforce-enhancement-ratio.ts: machine-enforced ≥50% enhancement per dispatch wave with 56 tests.
 
+### Enforcement (Waves 10-12)
+- Enforcement infrastructure hardened: all 10 enforcement plugins now BLOCKING (was 2 advisory-only). Functional hook test harness (68 runtime tests). Plugin hot-reload proxy pattern — enforcement code changes take effect without opencode restart via `make hot-reload-plugins`. CI pipeline discipline tooling (`make ci-safe-push`, `make deploy-and-forget`). Phase S fixes (S.5-S.12, 6 fixes, 118+ new tests).
+
 ### Post-Ship (Phase S)
 - **S.1** — Registry seal + default_registry swap: registry sealed at construction, default_registry swapped atomically at daemon startup. 13 tests.
+- **S.5-S.12** — 6 enforcement + CI discipline fixes (118+ new tests).
 
 
 

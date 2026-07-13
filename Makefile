@@ -61,6 +61,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
         check-plugin-liveness write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
+        hot-reload-plugins hot-reload-status hot-reload-clean \
         verify-release-artifact git-tag-rm release-cut release-recut release-create \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
@@ -3438,6 +3439,22 @@ check-plugin-liveness:
 # 1 otherwise. Use after editing .ts files to confirm a restart is needed.
 check-plugin-heartbeats:
 	@$(UV) run python3 scripts/verify_plugin_liveness.py
+
+# --- Hot-reload plugin modules (standalone JS for loadHotModule) ---
+# Compiles enforcement plugin .ts source to standalone JS modules in /tmp/
+# that loadHotModule() can load without an opencode restart.
+hot-reload-plugins:
+	@node scripts/build_hot_modules.js
+	@echo ""
+	@ls -la /tmp/gludd-hot-*.js 2>/dev/null || echo "  (none built)"
+
+# Show hot-reload module status: which exist, ages, sizes
+hot-reload-status:
+	@node scripts/build_hot_modules.js --status
+
+hot-reload-clean:
+	@rm -f /tmp/gludd-hot-*.js
+	@echo "Hot-reload modules removed"
 
 # --- Restart opencode for plugin changes to take effect ---
 # TypeScript plugin changes are compiled once at opencode startup — edits to

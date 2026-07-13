@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
+import { loadHotModule, type HotModule } from "./hot_reload"
 
 // enforce-enhancement-ratio.ts — per-wave enhancement/fix dispatch ratio enforcement.
 //
@@ -25,6 +26,10 @@ import * as fs from "node:fs"
 // SUBAGENT SKIP: OPENCODE_SUBAGENT=1 — subagents don't enforce this
 //
 // FAIL-OPEN: every code path wrapped; internal errors never wedge the session.
+//
+// HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
+// check /tmp/gludd-hot-enhancement-ratio.js on every invocation.  Run
+// `make hot-reload-plugins` after editing this file to generate the hot module.
 
 const STATE_FILE = process.env.GLUDD_ENHANCEMENT_RATIO_STATE || "/tmp/gludd-enhancement-ratio.json"
 const ENABLED = (process.env.GLUDD_ENHANCEMENT_RATIO_ENFORCE || "1") !== "0"
@@ -131,112 +136,140 @@ function _reportAlive(): void {
   } catch {}
 }
 
-export default (async ({ }) => {
-  return {
-    "tool.execute.before": async (input, _output) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return
-      _reportAlive()
-      if (!ENABLED) return
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+// Dedup guard: prevent the same response from being progressively modified by
+// multiple text.complete hook calls.  The lastHookTime + lastHookOutputHash
+// pair tracks the most recent hook invocation; if the same output is seen
+// within 50ms, the hook is a duplicate and returns early.
+let _lastHookTime = 0
+let _lastHookOutputHash = ""
 
-      const tool = input.tool
-      if (!isDispatchTool(tool)) return
+const defaultImpl: HotModule = {
+  "tool.execute.before": async (input: any, _output: any) => {
+    if (process.env.OPENCODE_SUBAGENT === "1") return
+    _reportAlive()
+    if (!ENABLED) return
 
-      try {
-        const prompt = extractPrompt(input.args)
-        const category = classify(prompt)
-        const s = loadState()
+    const tool = input.tool
+    if (!isDispatchTool(tool)) return
 
-        s.wave.push({
-          type: category,
-          prompt_head: prompt.substring(0, 120),
-          ts: Date.now(),
-        })
+    try {
+      const prompt = extractPrompt(input.args)
+      const category = classify(prompt)
+      const s = loadState()
 
-        if (category === "enhancement") s.session_enhancements++
-        else if (category === "fix") s.session_fixes++
-        else s.session_unknown++
+      s.wave.push({
+        type: category,
+        prompt_head: prompt.substring(0, 120),
+        ts: Date.now(),
+      })
 
-        saveState(s)
+      if (category === "enhancement") s.session_enhancements++
+      else if (category === "fix") s.session_fixes++
+      else s.session_unknown++
 
-        if (BLOCK && s.wave.length >= 2) {
-          const fixCount = s.wave.filter(e => e.type === "fix").length
-          const fixRatio = fixCount / s.wave.length
-          if (fixRatio > 0.5) {
-            const fixPct = (fixRatio * 100).toFixed(0)
-            return {
-              permissionDecision: "deny",
-              message: `ENHANCEMENT RATIO VIOLATION: ${fixPct}% fixes (${fixCount}/${s.wave.length}) in this wave. Must be ≤50%. Replace fix dispatches with enhancement work.`
-            }
-          }
-        }
-      } catch { /* fail open */ }
-    },
+      saveState(s)
 
-    "text.complete": async (output) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return output
-      if (!ENABLED) return output
-      if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? output ?? "").trim())) return output
-
-      try {
-        const s = loadState()
-        if (s.wave.length < 2) return output
-
+      if (BLOCK && s.wave.length >= 2) {
         const fixCount = s.wave.filter(e => e.type === "fix").length
-        const enhancementCount = s.wave.filter(e => e.type === "enhancement").length
-        const total = s.wave.length
-        const fixRatio = fixCount / total
-        const enhancementRatio = 1 - fixRatio
-
-        let modified = ""
-
-        if (!s.early_warned && fixCount >= 2 && enhancementCount === 0) {
-          s.early_warned = true
-          const directive = [
-            "EARLY ENHANCEMENT RATIO WARNING: all dispatches in this wave are fixes.",
-            `(${fixCount} fixes, ${enhancementCount} enhancements so far)`,
-            "Add at least one enhancement dispatch before the wave ends.",
-          ].join(" ")
-          if (HARD_DENY) {
-            modified += `\n\n${directive}\n`
-          } else {
-            console.warn(directive)
-          }
-        }
-
+        const fixRatio = fixCount / s.wave.length
         if (fixRatio > 0.5) {
           const fixPct = (fixRatio * 100).toFixed(0)
-          const enhancementPct = (enhancementRatio * 100).toFixed(0)
-          const violMsg =
-            `ENHANCEMENT RATIO VIOLATION: ${fixPct}% fixes (${fixCount}/${total}) in this wave. ` +
-            `Only ${enhancementPct}% enhancements. ` +
-            `At least 50% of dispatches must be enhancements per AGENTS.md COST-EFFICIENCY DIRECTIVE §5.` +
-            `\n\nRe-split the wave: replace fix dispatches with enhancement work.\n`
-
-          s.wave = []
-          s.early_warned = false
-          s.wave_count_since_last_warn = 0
-          saveState(s)
-
-          if (BLOCK || HARD_DENY) {
-            return violMsg
-          } else {
-            console.warn(violMsg)
-            if (modified) return output + modified
-            return output
+          return {
+            permissionDecision: "deny",
+            message: `ENHANCEMENT RATIO VIOLATION: ${fixPct}% fixes (${fixCount}/${s.wave.length}) in this wave. Must be ≤50%. Replace fix dispatches with enhancement work.`
           }
         }
+      }
+    } catch { /* fail open */ }
+  },
+
+  "text.complete": async (output: any) => {
+    if (process.env.OPENCODE_SUBAGENT === "1") return output
+    if (!ENABLED) return output
+    if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? output ?? "").trim())) return output
+
+    try {
+      const s = loadState()
+      if (s.wave.length < 2) return output
+
+      const fixCount = s.wave.filter(e => e.type === "fix").length
+      const enhancementCount = s.wave.filter(e => e.type === "enhancement").length
+      const total = s.wave.length
+      const fixRatio = fixCount / total
+      const enhancementRatio = 1 - fixRatio
+
+      let modified = ""
+
+      if (!s.early_warned && fixCount >= 2 && enhancementCount === 0) {
+        s.early_warned = true
+        const directive = [
+          "EARLY ENHANCEMENT RATIO WARNING: all dispatches in this wave are fixes.",
+          `(${fixCount} fixes, ${enhancementCount} enhancements so far)`,
+          "Add at least one enhancement dispatch before the wave ends.",
+        ].join(" ")
+        if (HARD_DENY) {
+          modified += `\n\n${directive}\n`
+        } else {
+          console.warn(directive)
+        }
+      }
+
+      if (fixRatio > 0.5) {
+        const fixPct = (fixRatio * 100).toFixed(0)
+        const enhancementPct = (enhancementRatio * 100).toFixed(0)
+        const violMsg =
+          `ENHANCEMENT RATIO VIOLATION: ${fixPct}% fixes (${fixCount}/${total}) in this wave. ` +
+          `Only ${enhancementPct}% enhancements. ` +
+          `At least 50% of dispatches must be enhancements per AGENTS.md COST-EFFICIENCY DIRECTIVE §5.` +
+          `\n\nRe-split the wave: replace fix dispatches with enhancement work.\n`
 
         s.wave = []
         s.early_warned = false
+        s.wave_count_since_last_warn = 0
         saveState(s)
 
-        if (modified) {
-          return output + modified
+        if (BLOCK || HARD_DENY) {
+          return violMsg
+        } else {
+          console.warn(violMsg)
+          if (modified) return output + modified
+          return output
         }
-        return output
-      } catch { /* fail open */ }
+      }
 
+      s.wave = []
+      s.early_warned = false
+      saveState(s)
+
+      if (modified) {
+        return output + modified
+      }
       return output
+    } catch { /* fail open */ }
+
+    return output
+  },
+}
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
+export default (async ({ }) => {
+  return {
+    "tool.execute.before": async (input: any, _output: any) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return;
+      const impl = loadHotModule("enhancement-ratio", defaultImpl)
+      const fn = impl["tool.execute.before"]
+      return fn ? await fn(input, _output) : undefined
+    },
+
+    "text.complete": async (output: any) => {
+      const impl = loadHotModule("enhancement-ratio", defaultImpl)
+      const fn = impl["text.complete"]
+      return fn ? await fn(output) : output
     },
   }
 }) satisfies Plugin

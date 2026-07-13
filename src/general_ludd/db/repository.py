@@ -1139,8 +1139,14 @@ class PromptProfileRepository:
         out: list[PromptProfileModel] = []
         for row in rows:
             try:
-                types = _json.loads(row.task_types or "[]")
+                types_raw = _json.loads(row.task_types or "[]")
             except Exception:
+                types_raw = []
+            if isinstance(types_raw, list):
+                types: list[str] = types_raw
+            elif isinstance(types_raw, str):
+                types = [types_raw]
+            else:
                 types = []
             if not types or task_type in types:
                 out.append(row)

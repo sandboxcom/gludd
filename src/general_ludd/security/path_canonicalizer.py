@@ -117,6 +117,40 @@ def canonicalize_path(path: str | None) -> str:
     return path.replace("\\", "/").lower()
 
 
+def _marker_matches_segment(marker: str, segment: str) -> bool:
+    """Check if ``marker`` matches ``segment`` using segment-aware rules.
+
+    This replaces the old arbitrary-substring check with structural matching:
+
+    * **Path-anchored markers** (contain ``/``) — not handled here; they are
+      matched against the full path via substring (the slashes are the anchor).
+    * **Dot-prefixed markers** (``.opencode``, ``.claude``, ``.github``,
+      ``.pre-commit``) — segment MUST start with the dot-prefixed marker.
+    * **Prefix markers** (``enforce-``) — segment MUST start with the marker.
+    * **Basename-exact markers** (``pyproject.toml``, ``agents.md``, etc.) —
+      segment MUST equal the marker exactly.
+    * **Bare-word markers** (``guardrails``, ``secrets``, ``permissions``,
+      etc.) — segment equals the marker OR the segment's stem (basename
+      without extension) equals the marker.
+    """
+    # Path-anchored markers are matched against the full path, not per-segment.
+    if "/" in marker:
+        return False  # never segment-match a path-anchored marker
+
+    if marker.startswith("."):
+        return segment.startswith(marker)
+
+    if marker.endswith("-"):
+        return segment.startswith(marker)
+
+    # Basename-exact: dot NOT at start, e.g. pyproject.toml, agents.md
+    if "." in marker:
+        return segment == marker
+
+    # Bare-word: segment equality or stem (basename without extension) equality
+    return segment == marker or Path(segment).stem == marker
+
+
 def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None) -> bool:
     """Return True if ``path`` matches the canonical deny-list.
 
@@ -125,6 +159,12 @@ def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None
     regardless of whether it starts with a leading slash.  This is the
     anti-drift guarantee: absolute ``/repo/.claude/hooks/x.py`` and
     relative ``.claude/hooks/x.py`` both match.
+
+    Matching is **segment-based** (S.9 fix): bare-word markers like
+    ``guardrails``, ``secrets``, ``permissions`` match as whole path
+    segments or filename stems — not as arbitrary substrings.  This
+    prevents both false positives (``my_secrets_parser.py``) and false
+    negatives from ``os.path.normpath`` stripping ``..`` traversal.
 
     Optionally resolves against ``workspace_root`` for caller convenience;
     the lexical check is always performed.
@@ -146,6 +186,8 @@ def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None
     segments = norm.split("/")
     basename = Path(norm).name
     basename_stem = Path(basename).stem
+    # Full path used for path-anchored substring markers and for the fallback
+    # check below.
 
     for marker in CANONICAL_DENY_MARKERS:
         if marker in _SEGMENT_EXACT_MARKERS:
@@ -154,8 +196,20 @@ def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None
                 or marker in (basename, basename_stem)
             ):
                 return True
-        else:
+            continue
+
+        # Path-anchored markers (contain /): keep substring matching against
+        # the full path because the slashes provide structural anchoring.
+        if "/" in marker:
             if marker in norm:
+                return True
+            continue
+
+        # Segment-based matching for bare-word, prefix, dot-prefixed, and
+        # basename-exact markers — closes the S.9 bypass where arbitrary
+        # substring matching caused both false positives and false negatives.
+        for segment in segments:
+            if _marker_matches_segment(marker, segment):
                 return True
 
     if workspace_root is not None and path:
@@ -163,13 +217,18 @@ def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None
         try:
             resolved = (root / path).resolve()
             resolved_norm = canonicalize_path(str(resolved))
+            resolved_segments = resolved_norm.split("/")
             for marker in CANONICAL_DENY_MARKERS:
                 if marker in _SEGMENT_EXACT_MARKERS:
-                    resolved_segments = resolved_norm.split("/")
                     if marker in resolved_segments:
                         return True
-                else:
+                    continue
+                if "/" in marker:
                     if marker in resolved_norm:
+                        return True
+                    continue
+                for segment in resolved_segments:
+                    if _marker_matches_segment(marker, segment):
                         return True
         except Exception:
             return True

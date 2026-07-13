@@ -129,13 +129,13 @@ class ValidationRunner:
         *,
         enforce_runner_allowlist: bool = True,
         runner_allowlist: frozenset[str] = _DEFAULT_RUNNER_ALLOWLIST,
-        expected_worktree_root: str | None = None,
+        expected_worktree_root: str,
     ) -> None:
         self.todo_id = todo_id
+        self._expected_worktree_root = expected_worktree_root
         self.worktree_path = _validate_worktree_path(
             worktree_path, expected_root=expected_worktree_root
         )
-        self._expected_worktree_root = expected_worktree_root
         self.test_commands = test_commands
         self.enforce_runner_allowlist = enforce_runner_allowlist
         self.runner_allowlist = runner_allowlist
@@ -146,17 +146,15 @@ class ValidationRunner:
         total_passed = 0
         total_failed = 0
 
-        workdir = self.worktree_path
-        if self._expected_worktree_root is not None:
-            try:
-                workdir = confine_worktree_path(
-                    self.worktree_path, self._expected_worktree_root
-                )
-            except ValueError as exc:
-                raise CommandValidationError(
-                    f"worktree_path escapes expected root "
-                    f"{self._expected_worktree_root!r}: {exc}"
-                ) from exc
+        try:
+            workdir = confine_worktree_path(
+                self.worktree_path, self._expected_worktree_root
+            )
+        except ValueError as exc:
+            raise CommandValidationError(
+                f"worktree_path escapes expected root "
+                f"{self._expected_worktree_root!r}: {exc}"
+            ) from exc
 
         # Validate ALL commands up front so a bad command never causes a
         # partial run (fail-closed): we reject the batch before exec'ing any.
