@@ -214,7 +214,7 @@ help:
 	@echo "  --- Recovery ---"
 	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
 	@echo "  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)"
-	@echo "  restore-opencode      Restore .opencode/ from .opencode.orig/ + clear corrupt cache"
+	@echo "  restore-opencode      Restore .opencode/ (backup then git fallback) + clear cache"
 	@echo "  verify-opencode-backup Verify .opencode.orig/ is current (files + shared.ts exports)"
 	@echo ""
 	@echo "  --- Other ---"
@@ -3927,14 +3927,22 @@ verify-opencode-backup:
 # Per https://opencode.ai/docs/troubleshooting: corrupted ~/.cache/opencode
 # causes opencode to refuse to start. This target restores and cleans.
 restore-opencode:
-	@echo "Restoring .opencode/ from .opencode.orig/ ..."
-	@if [ ! -d .opencode.orig ]; then \
-		echo "ERROR: .opencode.orig/ does not exist. Nothing to restore from."; \
-		echo "  If .opencode/ is currently working, run 'make backup-opencode' first."; \
+	@echo "Restoring .opencode/ ..."
+	@if [ -d .opencode.orig ]; then \
+		echo "  Source: .opencode.orig/ (rsync backup)"; \
+		rsync -a --delete --exclude='node_modules/' --exclude='node_modules' .opencode.orig/ .opencode/; \
+		echo "  .opencode/ restored from .opencode.orig/"; \
+	elif git ls-files --error-unmatch .opencode/plugin/enforce-floor.ts >/dev/null 2>&1; then \
+		echo "  .opencode.orig/ not found — falling back to git HEAD"; \
+		echo "  Source: git HEAD (tracked .opencode/ files)"; \
+		git checkout HEAD -- .opencode/; \
+		echo "  .opencode/ restored from git HEAD"; \
+	else \
+		echo "ERROR: Neither .opencode.orig/ nor tracked .opencode/ files found."; \
+		echo "  .opencode/ is not tracked in git and no backup exists."; \
+		echo "  Create a backup first with: make backup-opencode"; \
 		exit 1; \
 	fi
-	@rsync -a --delete --exclude='node_modules/' --exclude='node_modules' .opencode.orig/ .opencode/
-	@echo "  .opencode/ restored from .opencode.orig/"
 	@echo "Clearing corrupted opencode cache ..."
 	@rm -rf ~/.cache/opencode && echo "  ~/.cache/opencode cleared"
 	@echo ".opencode/ restored. Restart opencode for changes to take effect."
