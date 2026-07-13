@@ -30,7 +30,6 @@ import subprocess
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.requests import Request
 
 from general_ludd.db.repository import (
@@ -66,8 +65,7 @@ def _resolve_trace_project_id(request: Any, query_project_id: str | None) -> str
     return query_project_id
 
 
-def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
-    return getattr(app.state, "_session_factory", None)
+from general_ludd.routers._util import get_session_factory as _get_session_factory
 
 
 def _models_facet(app: FastAPI) -> dict[str, object]:

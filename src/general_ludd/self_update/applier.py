@@ -37,57 +37,7 @@ import yaml
 
 ApplyStatus = Literal["applied", "proposed", "denied"]
 
-# Substrings that, if present in any target path, force a hard ``denied`` —
-# regardless of the granted capability. These cover the guardrail/secret/policy
-# surface that self-update must NEVER rewrite. Matching is substring-based and
-# case-insensitive so path-form variations (``./``, nested dirs) cannot smuggle
-# a protected target past the check.
-PROTECTED_PATH_MARKERS: tuple[str, ...] = (
-    "guardrails",
-    "secrets",
-    ".opencode",
-    ".claude",
-    "capability_policy",
-    "action_policy",
-    "fs_write_policy",
-    "enforce-",
-    "permissions",
-    # CI/build surface — rewriting these could exfiltrate build-runner secrets
-    # or silently disable guardrails. Path comparison is already lowercased in
-    # _first_protected(), so these lowercase markers match case-insensitively.
-    ".github",
-    "/workflows/",
-    "pyproject.toml",
-    "makefile",
-    "alembic",
-    "/migrations/",
-    "setup.cfg",
-    "tox.ini",
-    ".pre-commit",
-    "dockerfile",
-    "agents.md",
-    "claude.md",
-    "tasks.md",
-    "bugs.md",
-    "session.md",
-)
-
-# Bare-word markers that must match a whole PATH SEGMENT (or exact basename),
-# not an arbitrary substring.  This prevents ``alembic`` from blocking
-# ``src/alembic_runner.py``, ``makefile`` from blocking
-# ``utils/makefile_parser.py``, and ``dockerfile`` from blocking
-# ``src/dockerfile_parser.py``.
-#
-# A marker listed here is matched when:
-#   • it equals any individual segment of the lowercased, normalised path, OR
-#   • it equals the lowercased basename (covers ``Makefile`` at repo root).
-#
-# All other PROTECTED_PATH_MARKERS continue to be matched as substrings.
-_SEGMENT_EXACT_MARKERS: frozenset[str] = frozenset(
-    {"alembic", "makefile", "dockerfile"}
-)
-
-# Kinds whose change content is validated as YAML and then written in place.
+#: Kinds whose change content is validated as YAML and then written in place.
 _YAML_KINDS: frozenset[str] = frozenset({"config", "yaml", "role"})
 
 

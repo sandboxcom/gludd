@@ -32,23 +32,15 @@ from urllib.parse import quote
 
 import httpx
 
-from general_ludd.security.ssrf import is_url_blocked
+from general_ludd.connectors._util import validate_base_url as _validate_base_url
 
 logger = logging.getLogger(__name__)
 
-# A transport is any callable matching ``http_get(url, headers) -> (status, json)``.
 Transport = Callable[[str, dict[str, str]], tuple[int, object]]
 
 _DEFAULT_BASE_URL = "https://api.github.com"
 _DEFAULT_TIMEOUT = 15.0
 _KIND = "pipeline"
-
-
-def _validate_base_url(base_url: str) -> str:
-    """Validate and normalize *base_url*, refusing internal/metadata targets."""
-    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
-        raise ValueError(f"base_url host is blocked (loopback/private/metadata): {base_url!r}")
-    return base_url.rstrip("/")
 
 
 def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, object]:

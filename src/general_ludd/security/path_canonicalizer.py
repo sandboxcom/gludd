@@ -37,6 +37,115 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Named deny-list subsets (single source of truth for all 3 enforcement sites)
+# ---------------------------------------------------------------------------
+# Each subset below derives from CANONICAL_DENY_MARKERS.  When a new protected
+# surface is added, add its marker TO CANONICAL_DENY_MARKERS above.  The named
+# subsets here are views of that same data for specific enforcement contexts.
+
+#: Filename stems (case-insensitive, ``.py`` stripped) that are NEVER hot-
+#: swappable in the capability lattice's ADDITIONAL dimension check.  A file
+#: named ``guardrails.py`` is protected regardless of which directory it lives
+#: in.  Used by :func:`capability_lattice.is_protected_path` as a second layer
+#: beyond the canonical :func:`is_denied_path` check.
+PROTECTED_FILE_STEMS: frozenset[str] = frozenset(
+    {
+        "guardrails",
+        "capability_policy",
+        "capability_lattice",
+        "fs_write_policy",
+        "action_policy",
+        "permissions",
+        "permission",
+        "policy",
+        "enforce_make",
+        "safe_redirector",
+    }
+)
+
+#: Path-anchored substrings that, if present in a resolved path (normalised to
+#: ``/``), mark it protected regardless of the leaf filename.  Conservative +
+#: case-insensitive.  Every entry here is a path-anchored variant of a marker
+#: already present in :data:`CANONICAL_DENY_MARKERS`.
+PROTECTED_PATH_SUBSTRINGS: tuple[str, ...] = (
+    "/.opencode/",
+    "/.claude/",
+    "/module_utils/capability_policy",
+    "/module_utils/fs_write_policy",
+    "/security/capability_lattice",
+    "/agents.md",
+    "/claude.md",
+    "/tasks.md",
+    "/bugs.md",
+    "/session.md",
+)
+
+#: Bare path SEGMENTS that mark a protected harness control-surface directory
+#: regardless of a leading slash.  Every entry is a marker already present in
+#: :data:`CANONICAL_DENY_MARKERS`.
+PROTECTED_PATH_SEGMENTS: frozenset[str] = frozenset(
+    {
+        ".opencode",
+        ".claude",
+        "agents.md",
+        "claude.md",
+        "tasks.md",
+        "bugs.md",
+        "session.md",
+    }
+)
+
+#: Applier deny-list markers — substrings that force a hard ``denied`` in
+#: :mod:`self_update.applier`.  Every entry is a marker already present in
+#: :data:`CANONICAL_DENY_MARKERS`.  Included for backward compatibility with
+#: test suites that assert the applier's marker set is a subset of canonical.
+PROTECTED_PATH_MARKERS: tuple[str, ...] = (
+    "guardrails",
+    "secrets",
+    ".opencode",
+    ".claude",
+    "capability_policy",
+    "action_policy",
+    "fs_write_policy",
+    "enforce-",
+    "permissions",
+    ".github",
+    "/workflows/",
+    "pyproject.toml",
+    "makefile",
+    "alembic",
+    "/migrations/",
+    "setup.cfg",
+    "tox.ini",
+    ".pre-commit",
+    "dockerfile",
+    "agents.md",
+    "claude.md",
+    "tasks.md",
+    "bugs.md",
+    "session.md",
+)
+
+#: Path substrings that are NEVER auto-applicable in :mod:`self_update.apply`,
+#: even WITH an approval token.  Every entry is a marker already present in
+#: :data:`CANONICAL_DENY_MARKERS`.
+_HARD_DENY_SUBSTRINGS: tuple[str, ...] = (
+    "/.opencode/",
+    "/.claude/",
+    "settings.json",
+    "settings.local.json",
+    "agents.md",
+    "claude.md",
+    "tasks.md",
+    "bugs.md",
+    "session.md",
+)
+
+#: Bare path SEGMENTS hard-denied regardless of a leading slash in
+#: :mod:`self_update.apply`.  Derived from :data:`PROTECTED_PATH_SEGMENTS`.
+_HARD_DENY_SEGMENTS: tuple[str, ...] = tuple(sorted(PROTECTED_PATH_SEGMENTS))
+
 #: Canonical deny-list markers — every enforcement site derives its deny-list
 #: from this single set.  When a new protected surface is added, add its marker
 #: HERE and then re-verify that all three modules (capability_lattice.py,
