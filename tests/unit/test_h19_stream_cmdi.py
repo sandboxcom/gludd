@@ -218,7 +218,7 @@ class TestWrapperScriptNoInjectionSurface:
             content = result.read_text()
             binary_line = next(line for line in content.splitlines()
                            if line.startswith("PROCESSOR_BINARY="))
-            assert binary_line == "PROCESSOR_BINARY=/usr/bin/whisper-cpp"
+            assert binary_line == "PROCESSOR_BINARY=/usr/bin/whisper-cpp"  # pragma: allowlist secret
 
     def test_each_arg_individually_quoted(self):
         cloner = RoleCloner(collection_root=Path("/tmp"))
