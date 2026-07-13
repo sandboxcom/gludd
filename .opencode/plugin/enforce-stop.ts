@@ -1045,8 +1045,6 @@ export default (async () => {
       console.log("SUBAGENT SKIP: enforce-stop")
       if (/^(⛔|HARD STOP|MUST DISPATCH|ENHANCEMENT RATIO|████|BLOCKED:|MULTITASK|INSUFFICIENT DISPATCHES|ZERO-DISPATCH|DISPATCH SUBAGENTS|EARLY ENHANCEMENT|DELEGATE-FIRST|REFILL NEEDED|AFTER-RESULTS|CONSECUTIVE TEXT-ONLY|FALSE-DONE|QA RESPONSE)/.test((output?.text ?? "").trim())) return output
 
-      try {
-
       /* Increment fire counter — proves text.complete actually fires */
       try {
         const cPath = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "/tmp/gludd-stop-text-complete-count.json"
@@ -1442,13 +1440,6 @@ export default (async () => {
 
         turnState.toolCallMade = false
         turnState.dispatchCount = 0
-      } catch {
-        try {
-          fs.writeFileSync('/tmp/gludd-enforce-stop-error.log',
-            `${new Date().toISOString()} text.complete error\n`)
-        } catch {}
-        console.error('enforce-stop text.complete error')
-      }
     }
   },
 }
