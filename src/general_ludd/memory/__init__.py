@@ -7,15 +7,18 @@ Mirrors Stanford AutoMemory concepts:
   - Memory consolidation: periodic summarization of old entries
   - Cross-task learning: applying lessons from one task to another
   - Local memory: diskcache-backed local key-value store (no SQL)
+  - Cross-conversation: LangGraph Store API wrapper for persistent cross-session state
 """
 
 from general_ludd.memory.consolidation import MemoryConsolidator
+from general_ludd.memory.cross_conversation import CrossConversationStore
 from general_ludd.memory.cross_task import CrossTaskLearner
 from general_ludd.memory.episodic import EpisodicMemoryRecorder
 from general_ludd.memory.local import LocalAgentMemory, MemoryRecord
 from general_ludd.memory.retrieval import MemoryRetriever
 
 __all__ = [
+    "CrossConversationStore",
     "CrossTaskLearner",
     "EpisodicMemoryRecorder",
     "LocalAgentMemory",

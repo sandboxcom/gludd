@@ -1117,6 +1117,138 @@ console.log(JSON.stringify({{returned: true, isString: typeof finalText === 'str
     _clean_state_files(state_file)
 
 
+# ── TWO-LAYER PERSISTENT STOP-BLOCK TESTS ──────────────────────────────────
+
+
+def test_stop_block_persists_across_turns():
+    """Stop detected + work pending → text blanked → next non-dispatch denied."""
+    state_file = os.path.join("/tmp", f"test-stop-persist-{os.getpid()}.json")
+    block_file = os.path.join("/tmp", f"gludd-persist-stop-block-persist-{os.getpid()}.json")
+    _clean_state_files(state_file, block_file, "/tmp/gludd-block-counter.json")
+    with open(state_file, "w") as f:
+        json.dump({
+            "ts": int(time.time() * 1000),
+            "ratchetEntries": 3,
+            "tasksMdUnchecked": True,
+            "gateStatusRed": False,
+            "repoPending": False,
+            "hasLocalWork": True,
+            "hasPendingWork": True,
+            "ciVerdictPendingOrRed": False,
+            "healthScore": 30,
+        }, f)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+// Step 1: text with pending work → should blank and write persist block
+const output = {{text: 'Done. Everything is complete.'}}
+const r1 = await plugin['experimental.text.complete'](undefined, output)
+const textBlanked = r1?.text !== 'Done. Everything is complete.'
+// Step 2: non-dispatch tool call → should be denied by persist block
+const r2 = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, undefined)
+const editDenied = r2 !== null && r2 !== undefined && r2?.permissionDecision === 'deny'
+// Step 3: dispatch tool call → should be allowed and clear the block
+const r3 = await plugin['tool.execute.before']({{tool: 'task', args: {{}}}}, undefined)
+const dispatchAllowed = r3 === undefined || r3 === null
+// Step 4: after dispatch clears block, edit should be allowed again
+const r4 = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, undefined)
+const editAllowedAfter = r4 === undefined || r4 === null
+console.log(JSON.stringify({{textBlanked, editDenied, dispatchAllowed, editAllowedAfter}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_STOP_STATE_FILE": state_file,
+        "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
+    })
+    assert result["textBlanked"] == True, f"Expected text to be blanked, got: {result}"
+    assert result["editDenied"] == True, f"Expected edit to be denied by persist block, got: {result}"
+    assert result["dispatchAllowed"] == True, f"Expected dispatch to be allowed, got: {result}"
+    assert result["editAllowedAfter"] == True, f"Expected edit after dispatch to be allowed, got: {result}"
+    _clean_state_files(state_file, block_file)
+
+
+def test_stop_block_cleared_by_dispatch():
+    """Dispatch call after stop-pattern clears the persist block flag."""
+    block_file = os.path.join("/tmp", f"gludd-persist-stop-block-clear-{os.getpid()}.json")
+    _clean_state_files(block_file, "/tmp/gludd-block-counter.json")
+    # Pre-write the persist block flag (simulating a prior stop detection)
+    with open(block_file, "w") as f:
+        json.dump({"blocked": True, "timestamp": int(time.time() * 1000), "reason": "test-block"}, f)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+// Dispatch should be allowed and clear the block
+const r1 = await plugin['tool.execute.before']({{tool: 'task', args: {{}}}}, undefined)
+const dispatchAllowed = r1 === undefined || r1 === null
+console.log(JSON.stringify({{dispatchAllowed, blockFile: '{block_file}'}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_PERSIST_STOP_BLOCK_FILE": block_file})
+    assert result["dispatchAllowed"] == True, f"Expected dispatch to be allowed, got: {result}"
+    # Verify the block file was cleared
+    assert not os.path.exists(block_file), "Persist block file should be cleared after dispatch"
+    _clean_state_files(block_file)
+
+
+def test_stop_no_pending_work_allows():
+    """No local work pending → no persist block written, edit allowed."""
+    state_file = os.path.join("/tmp", f"test-stop-nopending-{os.getpid()}.json")
+    block_file = os.path.join("/tmp", f"gludd-persist-stop-block-nopend-{os.getpid()}.json")
+    _clean_state_files(state_file, block_file, "/tmp/gludd-block-counter.json")
+    with open(state_file, "w") as f:
+        json.dump({
+            "ts": int(time.time() * 1000),
+            "ratchetEntries": 0,
+            "tasksMdUnchecked": False,
+            "gateStatusRed": False,
+            "repoPending": False,
+            "hasLocalWork": False,
+            "hasPendingWork": False,
+            "ciVerdictPendingOrRed": False,
+            "healthScore": 100,
+        }, f)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+// Text should pass through (no pending work)
+const output = {{text: 'All good, no pending work.'}}
+const r1 = await plugin['experimental.text.complete'](undefined, output)
+const passedThrough = (r1?.text ?? output.text) === 'All good, no pending work.'
+// Non-dispatch tool should be allowed (no persist block)
+const r2 = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, undefined)
+const editAllowed = r2 === undefined || r2 === null
+console.log(JSON.stringify({{passedThrough, editAllowed}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_STOP_STATE_FILE": state_file,
+        "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
+    })
+    assert result["passedThrough"] == True, f"Expected text to pass through, got: {result}"
+    assert result["editAllowed"] == True, f"Expected edit to be allowed, got: {result}"
+    _clean_state_files(state_file, block_file)
+
+
+def test_stop_subagent_block_guard():
+    """OPENCODE_SUBAGENT=1 → persist block check skipped, edit allowed."""
+    block_file = os.path.join("/tmp", f"gludd-persist-stop-block-sub-{os.getpid()}.json")
+    _clean_state_files(block_file)
+    # Pre-write the persist block flag
+    with open(block_file, "w") as f:
+        json.dump({"blocked": True, "timestamp": int(time.time() * 1000), "reason": "test-subagent-block"}, f)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+// Non-dispatch tool call in subagent context → should be allowed (guard skips)
+const r1 = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, undefined)
+const editAllowed = r1 === undefined || r1 === null
+console.log(JSON.stringify({{editAllowed}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
+        "OPENCODE_SUBAGENT": "1",
+    })
+    assert result["editAllowed"] == True, f"Subagent should bypass persist block, got: {result}"
+    _clean_state_files(block_file)
+
+
 # ---------------------------------------------------------------------------
 # enforce-clean-tree.ts  —  dispatch-time dirty tree enforcement
 # ---------------------------------------------------------------------------
