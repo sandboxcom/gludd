@@ -6,6 +6,7 @@ in isolated temp dirs, verifying the full threshold/block/bypass cycle.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -56,10 +57,8 @@ def _run_plugin(
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 def _init_git_repo(path: Path) -> None:

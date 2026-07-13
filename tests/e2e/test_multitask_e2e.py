@@ -6,11 +6,11 @@ single dispatch blocked, zero-streak text blocked, dispatch resets streak.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -45,10 +45,8 @@ def _run_plugin(
             )
         return proc.stdout.strip()
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 def _last_json(stdout: str) -> dict | None:

@@ -6,6 +6,7 @@ with pre-populated state, verifying deny/allow/disable/subagent-guard cycles.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -55,10 +56,8 @@ def _run_plugin(
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 def _make_state_code(state_file: str, wave_entries: list[dict]) -> str:

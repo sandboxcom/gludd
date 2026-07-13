@@ -6,6 +6,7 @@ with per-test state files, verifying deny/allow/subagent/disable/fail-open.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -38,10 +39,8 @@ def _run_plugin(ts_code, env_override=None, cwd=None, timeout=15):
         )
         return proc.returncode == 0, proc.stdout, proc.stderr
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 def _make_state_file(state: dict | None = None) -> str:
