@@ -6,6 +6,7 @@ in isolated temp dirs, verifying key behaviors of the floor enforcement hook.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -46,10 +47,8 @@ def _run_plugin(
             )
         return proc.stdout.strip()
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 def _last_json(stdout: str) -> dict | None:
@@ -298,10 +297,8 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
             f"Disengage should skip enforcement, got: {r}"
         )
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(disengage_path)
-        except OSError:
-            pass
 
 
 # ─── Message shape rule ─────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ verifying the full deny/allow/subagent/allowlist cycle.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -58,10 +59,8 @@ def _run_plugin(
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 _WRITE_TPL = """\
@@ -101,7 +100,7 @@ def _edit_code(file_path: str, new_string: str) -> str:
     )
 
 
-# ─── # noqa blocked ──────────────────────────────────────────────────────────
+# ───
 
 
 def test_noqa_blocked_on_write():
@@ -252,15 +251,15 @@ def test_empty_content_fails_open():
 
 def test_read_tool_not_blocked():
     """Hook only fires on edit/write; read tool always passes through."""
-    read_code = """\
-const mod = await import('{}')
+    read_code = f"""\
+const mod = await import('{PLUGIN_PATH!s}')
 const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before'](
   {{tool: 'read'}},
   {{args: {{filePath: 'src/fake.py'}}}}
 )
 console.log(JSON.stringify(result ?? {{allowed: true}}))
-""".format(str(PLUGIN_PATH))
+"""
     result = _run_plugin(read_code)
     assert result is None or result.get("permissionDecision") != "deny", (
         f"Read tool should not be blocked, got: {result}"

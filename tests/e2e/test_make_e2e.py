@@ -6,6 +6,7 @@ verifying the full deny/allow/disable/subagent cycle for bash commands.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -57,10 +58,8 @@ def _run_plugin(
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 def _bash_assert(code_template: str, env_override: dict | None = None) -> dict | None:

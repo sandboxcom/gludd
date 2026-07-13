@@ -6,6 +6,7 @@ in isolated temp directories, verifying the text.complete hook behaviors.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -80,10 +81,8 @@ def _run_plugin(
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 def _setup_pending_work_dir(tmp_path: Path) -> Path:
@@ -109,7 +108,7 @@ const result = await plugin['experimental.text.complete'](undefined, output)
 console.log(JSON.stringify({{ output_text: output.text, result_text: result?.text }}))
 """
     result = _run_plugin(code, cwd=str(cwd))
-    assert result is not None, f"Expected result from text.complete hook, got None"
+    assert result is not None, "Expected result from text.complete hook, got None"
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
     text = out_text or res_text
@@ -342,7 +341,7 @@ try {{
 }}
 """
     result = _run_plugin(code, cwd=str(cwd))
-    assert result is not None, f"Expected result from tool.execute.before, got None"
+    assert result is not None, "Expected result from tool.execute.before, got None"
     error = result.get("error", "")
     assert "BLOCKING" in error, (
         f"Expected BLOCKING in error, got: {result}"
@@ -401,7 +400,7 @@ const result = await plugin['experimental.text.complete'](undefined, output)
 console.log(JSON.stringify({{ output_text: output.text, result_text: result?.text }}))
 """
     r1 = _run_plugin(code, cwd=str(cwd))
-    assert r1 is not None, f"Expected result from step 1, got None"
+    assert r1 is not None, "Expected result from step 1, got None"
     text1 = r1.get("output_text", "")
     assert "BLOCKED" in text1, (
         f"Step 1: pending ratchet must block, got output_text={text1!r}"
@@ -411,7 +410,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     (config_dir / "ratchet.yml").unlink()
 
     r2 = _run_plugin(code, cwd=str(cwd))
-    assert r2 is not None, f"Expected result from step 2, got None"
+    assert r2 is not None, "Expected result from step 2, got None"
     text2 = r2.get("output_text", "")
     assert "BLOCKED" not in text2, (
         f"Step 2: clean state must allow, got output_text={text2!r}"

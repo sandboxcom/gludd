@@ -6,6 +6,7 @@ Tests shouldBlock function and experimental.text.complete hook surface.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -54,10 +55,8 @@ def _run_plugin(
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 # ─── shouldBlock: done-word without evidence → blocked ──────────────────────

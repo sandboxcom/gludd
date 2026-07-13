@@ -6,6 +6,7 @@ verifying the deny/allow/env-disable/subagent-guard/fail-open cycle.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -25,10 +26,8 @@ WARNINGS_LOG = "/tmp/gludd-task-deadlines-e2e.warnings.log"
 
 def _clean_state() -> None:
     for f in (DEADLINE_STATE, STALE_FILE, WARNINGS_LOG):
-        try:
+        with contextlib.suppress(OSError):
             Path(f).unlink()
-        except OSError:
-            pass
 
 
 def _run_plugin(
@@ -72,10 +71,8 @@ def _run_plugin(
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 # ─── Within timeout allows dispatch ─────────────────────────────────────────

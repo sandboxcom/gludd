@@ -7,6 +7,7 @@ the registered hooks so we can invoke them directly.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -57,10 +58,8 @@ def _run_plugin(
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             tmp.unlink()
-        except OSError:
-            pass
 
 
 # ─── No lock allows commit ──────────────────────────────────────────────────
@@ -358,4 +357,4 @@ console.log(JSON.stringify({{pid: Number(content)}}))
 """
     result = _run_plugin(code, cwd=str(tmp_path))
     assert isinstance(result["pid"], int), f"Lock file should contain PID: {result}"
-    assert result["pid"] > 0, f"PID should be positive: {result["pid"]}"
+    assert result["pid"] > 0, f"PID should be positive: {result['pid']}"
