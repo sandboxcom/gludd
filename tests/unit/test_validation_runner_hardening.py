@@ -18,6 +18,7 @@ These tests prove:
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -55,6 +56,7 @@ class TestRejectsShellMetacharacters:
             todo_id="TODO-evil",
             worktree_path="/tmp/worktree",
             test_commands=[evil],
+            expected_worktree_root="/tmp",
         )
         with pytest.raises(CommandValidationError):
             runner.run_validation()
@@ -69,6 +71,7 @@ class TestRejectsRunnerNotInAllowlist:
             todo_id="TODO-bad-runner",
             worktree_path="/tmp/worktree",
             test_commands=["curl http://evil.test"],
+            expected_worktree_root="/tmp",
         )
         with pytest.raises(CommandValidationError):
             runner.run_validation()
@@ -80,6 +83,7 @@ class TestRejectsRunnerNotInAllowlist:
             todo_id="TODO-empty",
             worktree_path="/tmp/worktree",
             test_commands=["   "],
+            expected_worktree_root="/tmp",
         )
         with pytest.raises(CommandValidationError):
             runner.run_validation()
@@ -94,6 +98,7 @@ class TestNormalCommandRunsAsExpectedArgv:
             todo_id="TODO-ok",
             worktree_path="/tmp/worktree",
             test_commands=["uv run pytest tests/unit"],
+            expected_worktree_root="/tmp",
         )
         result = runner.run_validation()
 
@@ -104,7 +109,7 @@ class TestNormalCommandRunsAsExpectedArgv:
         assert args[0] == ["uv", "run", "pytest", "tests/unit"]
         # shell=True must never be used.
         assert kwargs.get("shell", False) is False
-        assert kwargs.get("cwd") == "/tmp/worktree"
+        assert kwargs.get("cwd") == os.path.realpath("/tmp/worktree")
 
     @pytest.mark.parametrize(
         "cmd,expected_runner",
@@ -124,6 +129,7 @@ class TestNormalCommandRunsAsExpectedArgv:
             todo_id="TODO-allow",
             worktree_path="/tmp/worktree",
             test_commands=[cmd],
+            expected_worktree_root="/tmp",
         )
         runner.run_validation()
         args, _ = mock_run.call_args
@@ -142,6 +148,7 @@ class TestAllowlistOptOut:
             worktree_path="/tmp/worktree",
             test_commands=["tox -e py314"],
             enforce_runner_allowlist=False,
+            expected_worktree_root="/tmp",
         )
         runner.run_validation()
         args, _ = mock_run.call_args
@@ -153,6 +160,7 @@ class TestAllowlistOptOut:
             worktree_path="/tmp/worktree",
             test_commands=["tox; rm -rf /"],
             enforce_runner_allowlist=False,
+            expected_worktree_root="/tmp",
         )
         with pytest.raises(CommandValidationError):
             evil_runner.run_validation()
@@ -231,7 +239,4 @@ class TestWorktreePathConfinement:
         assert kwargs.get("cwd") == runner.worktree_path
         assert runner.worktree_path.startswith(str(base.resolve()))
 
-    def test_no_expected_root_preserves_legacy_weak_guard(self) -> None:
-        # Backward compatibility: callers that don't know their root (existing
-        # behavior, unchanged) still just get the absolute-path guard.
-        assert _validate_worktree_path("/tmp/worktree") == "/tmp/worktree"
+

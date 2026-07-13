@@ -61,6 +61,7 @@ class TestValidationRunnerSymlinkConfinement:
                 todo_id="TODO-001",
                 worktree_path="relative/path",
                 test_commands=["uv run pytest"],
+                expected_worktree_root="/tmp",
             )
 
     def test_legit_worktree_runs_normally(self) -> None:

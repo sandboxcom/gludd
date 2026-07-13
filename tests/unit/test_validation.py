@@ -25,6 +25,7 @@ class TestValidationRunnerSuccess:
             todo_id="TODO-001",
             worktree_path="/tmp/worktree",
             test_commands=["pytest tests/"],
+            expected_worktree_root="/tmp",
         )
         result = runner.run_validation()
         assert isinstance(result, ValidationResult)
@@ -45,6 +46,7 @@ class TestValidationRunnerFailureCreatesChildTodos:
             todo_id="TODO-001",
             worktree_path="/tmp/worktree",
             test_commands=["pytest tests/"],
+            expected_worktree_root="/tmp",
         )
         result = runner.run_validation()
         assert result.success is False
@@ -66,6 +68,7 @@ class TestValidationRunnerMissingTestsCreatesTodo:
             todo_id="TODO-002",
             worktree_path="/tmp/worktree",
             test_commands=["pytest tests/"],
+            expected_worktree_root="/tmp",
         )
         result = runner.run_validation()
         assert result.passed_count == 0

@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
+import { loadHotModule, type HotModule } from "./hot_reload"
 
 // enforce-deadline.ts — subagent task wall-clock timeout enforcement.
 //
@@ -39,6 +40,11 @@ import * as fs from "node:fs"
 // FAIL-OPEN: every code path is wrapped so an internal error NEVER wedges the
 // session. Worst case = no deadline enforcement (back to the old behavior),
 // never a blocked tool call.
+//
+// HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
+// check /tmp/gludd-hot-deadline.js on every invocation.  If present and newer
+// than cached, the hot module's hook overrides the compiled-in default.  Run
+// `make hot-reload-plugins` after editing this file to generate the hot module.
 
 // ============================================================================
 // CONFIG
@@ -52,24 +58,15 @@ const BLOCK = (process.env.GLUDD_TASK_DEADLINE_BLOCK || "1") !== "0"
 
 // ============================================================================
 // NOISE-CONTROL STATE
-// ----------------------------------------------------------------------------
-// warnedIds: in-memory Set of task ids that have ALREADY triggered a
-// console.warn this session. Guarding the warn with this Set ensures each
-// breached task surfaces to the UI at most ONCE; subsequent breaches for the
-// same id go only to WARNINGS_LOG (the persistent channel). Cleared in
-// tool.execute.after so a task_id reused in a later dispatch warns again.
 // ============================================================================
 const warnedIds = new Set<string>()
 
 function appendWarning(line: string): void {
   try {
     fs.appendFileSync(WARNINGS_LOG, line + "\n")
-  } catch { /* fail open — persistent log is best-effort */ }
+  } catch { /* fail open */ }
 }
 
-// Records a breached task ID to STALE_FILE so scripts/task_watchdog.py can read
-// it and kill associated processes. Shape: JSON list of {task_id, start_ms,
-// stale_at} appended (deduplicated by task_id). Fail-open on any IO error.
 function recordStaleTask(taskId: string, startMs: number, elapsedMs: number): void {
   try {
     let entries: any[] = []
@@ -77,7 +74,6 @@ function recordStaleTask(taskId: string, startMs: number, elapsedMs: number): vo
       const raw = JSON.parse(fs.readFileSync(STALE_FILE, "utf8"))
       if (Array.isArray(raw)) entries = raw
     } catch { /* missing or corrupt — start fresh */ }
-    // Deduplicate: only append if this task_id is not already recorded.
     if (!entries.some((e: any) => e && e.task_id === taskId)) {
       entries.push({ task_id: taskId, start_ms: startMs, elapsed_ms: Math.round(elapsedMs), stale_at: Date.now() })
       const tmp = STALE_FILE + ".tmp"
@@ -88,18 +84,12 @@ function recordStaleTask(taskId: string, startMs: number, elapsedMs: number): vo
 }
 
 // ============================================================================
-// STATE FILE (atomic-ish read/write; fail-open on any IO error)
-// Shape: { "<task_id>": <dispatch epoch ms>, ... }
+// STATE FILE
 // ============================================================================
 function loadDeadlines(): Record<string, number> {
   try {
     const data = JSON.parse(fs.readFileSync(DEADLINE_STATE, "utf8"))
     const out = data && typeof data === "object" ? data as Record<string, number> : {}
-    // TTL sweep: drop any entry older than TASK_TIMEOUT_MS * 3 (15 min default).
-    // Prevents unbounded accumulation if a tool.execute.after ever fails to
-    // delete its entry (mismatched id, missing args, hook error). Without this
-    // sweep, a long session leaks entries that throttle-warn once and then sit
-    // in the persistent file forever.
     sweepStaleEntries(out)
     return out
   } catch {
@@ -109,7 +99,7 @@ function loadDeadlines(): Record<string, number> {
 
 function sweepStaleEntries(d: Record<string, number>): void {
   const now = Date.now()
-  const maxAge = TASK_TIMEOUT_MS * 3 // 15 min default; 3x the deadline window
+  const maxAge = TASK_TIMEOUT_MS * 3
   let mutated = false
   for (const id of Object.keys(d)) {
     const start = d[id]
@@ -120,7 +110,6 @@ function sweepStaleEntries(d: Record<string, number>): void {
       mutated = true
     }
   }
-  // Caller owns the save; sweep only mutates the in-memory dict.
   if (mutated) {
     try {
       const tmp = DEADLINE_STATE + ".tmp"
@@ -144,19 +133,11 @@ function extractTaskId(args: unknown): string | null {
     const a = args as Record<string, unknown>
     if (typeof a.task_id === "string" && a.task_id) return a.task_id
     if (typeof a.id === "string" && a.id) return a.id
-    // Deterministic fallback: combine stable fields so tool.execute.before and
-    // tool.execute.after produce the SAME id for the same dispatch. Without
-    // this, both hooks see args without a task_id/id (opencode assigns its
-    // own internal ses_... id elsewhere), before falls back to
-    // `auto-${Date.now()}` (timestamp-based, different each call), and after
-    // gets null → never deletes the entry → leak + repeated throttle warns.
-    // djb2 hash of `${subagent_type}:${description}` gives a stable id for the
-    // lifetime of one dispatch (both hooks receive the same args).
     const desc = typeof a.description === "string" ? a.description : ""
     const subtype = typeof a.subagent_type === "string" ? a.subagent_type : ""
     if (desc || subtype) {
       const raw = `${subtype}:${desc}`
-      let hash = 5381 // djb2
+      let hash = 5381
       for (let i = 0; i < raw.length; i++) {
         hash = ((hash << 5) + hash + raw.charCodeAt(i)) | 0
       }
@@ -170,9 +151,6 @@ function isDispatchTool(tool: string): boolean {
   return tool === "task" || tool === "agent" || tool === "workflow"
 }
 
-// ============================================================================
-// PLUGIN
-// ============================================================================
 function _reportAlive(): void {
   try {
     const alive: Record<string, any> = {}
@@ -182,79 +160,94 @@ function _reportAlive(): void {
   } catch {}
 }
 
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+const defaultImpl: HotModule = {
+  "tool.execute.before": async (input: any, output: any) => {
+    if (process.env.OPENCODE_SUBAGENT === "1") return
+    _reportAlive()
+    if (!DEADLINE_ENABLED) return
+    const tool = input.tool
+    const args = output?.args
+
+    try {
+      if (isDispatchTool(tool)) {
+        const id = extractTaskId(args) || `auto-${Date.now()}`
+        const d = loadDeadlines()
+        d[id] = Date.now()
+        saveDeadlines(d)
+      }
+
+      const d = loadDeadlines()
+      const now = Date.now()
+      let firstBreachedId: string | null = null
+      let firstBreachedElapsed: number = 0
+      for (const id of Object.keys(d)) {
+        const start = d[id]
+        if (typeof start !== "number") continue
+        const elapsed = now - start
+        if (elapsed > TASK_TIMEOUT_MS) {
+          const mins = (elapsed / 60000).toFixed(1)
+          const limitMin = (TASK_TIMEOUT_MS / 60000).toFixed(0)
+          const line =
+            `TASK DEADLINE EXCEEDED: task ${id} has been running for ${mins}min ` +
+            `(limit ${limitMin}min). This task should have completed. The ` +
+            `orchestrator should dispatch a replacement.`
+          appendWarning(`${new Date().toISOString()} ${line}`)
+          recordStaleTask(id, start, elapsed)
+          if (!warnedIds.has(id)) {
+            warnedIds.add(id)
+            console.warn(line)
+          }
+          if (!firstBreachedId) {
+            firstBreachedId = id
+            firstBreachedElapsed = elapsed
+          }
+        }
+      }
+      if (BLOCK && firstBreachedId) {
+        const elapsedSec = (firstBreachedElapsed / 1000).toFixed(0)
+        const limitSec = (TASK_TIMEOUT_MS / 1000).toFixed(0)
+        return {
+          permissionDecision: "deny",
+          message: `TASK DEADLINE EXCEEDED: task ${firstBreachedId} has been running for ${elapsedSec}s (limit ${limitSec}s). Dispatch replacement or run in foreground.`
+        }
+      }
+    } catch { /* fail open */ }
+  },
+
+  "tool.execute.after": async (input: any, _output: any) => {
+    if (!DEADLINE_ENABLED) return
+    if (!isDispatchTool(input.tool)) return
+    try {
+      const id = extractTaskId(input.args) || null
+      if (!id) return
+      const d = loadDeadlines()
+      if (d[id] !== undefined) {
+        delete d[id]
+        saveDeadlines(d)
+      }
+      warnedIds.delete(id)
+    } catch { /* fail open */ }
+  },
+}
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
 export default (async ({ }) => {
   return {
-    "tool.execute.before": async (input, output) => {
-      if (process.env.OPENCODE_SUBAGENT === "1") return
-      _reportAlive()
-      if (!DEADLINE_ENABLED) return
-      const tool = input.tool
-      const args = output?.args
-
-      try {
-        // (1) On task/agent/workflow dispatch: record start time.
-        if (isDispatchTool(tool)) {
-          const id = extractTaskId(args) || `auto-${Date.now()}`
-          const d = loadDeadlines()
-          d[id] = Date.now()
-          saveDeadlines(d)
-        }
-
-        // (2) On EVERY tool: scan tracked tasks for deadline breaches.
-        const d = loadDeadlines()
-        const now = Date.now()
-        let firstBreachedId: string | null = null
-        let firstBreachedElapsed: number = 0
-        for (const id of Object.keys(d)) {
-          const start = d[id]
-          if (typeof start !== "number") continue
-          const elapsed = now - start
-          if (elapsed > TASK_TIMEOUT_MS) {
-            const mins = (elapsed / 60000).toFixed(1)
-            const limitMin = (TASK_TIMEOUT_MS / 60000).toFixed(0)
-            const line =
-              `TASK DEADLINE EXCEEDED: task ${id} has been running for ${mins}min ` +
-              `(limit ${limitMin}min). This task should have completed. The ` +
-              `orchestrator should dispatch a replacement.`
-            appendWarning(`${new Date().toISOString()} ${line}`)
-            recordStaleTask(id, start, elapsed)
-            if (!warnedIds.has(id)) {
-              warnedIds.add(id)
-              console.warn(line)
-            }
-            if (!firstBreachedId) {
-              firstBreachedId = id
-              firstBreachedElapsed = elapsed
-            }
-          }
-        }
-        if (BLOCK && firstBreachedId) {
-          const elapsedSec = (firstBreachedElapsed / 1000).toFixed(0)
-          const limitSec = (TASK_TIMEOUT_MS / 1000).toFixed(0)
-          return {
-            permissionDecision: "deny",
-            message: `TASK DEADLINE EXCEEDED: task ${firstBreachedId} has been running for ${elapsedSec}s (limit ${limitSec}s). Dispatch replacement or run in foreground.`
-          }
-        }
-      } catch { /* fail open — never wedge */ }
+    "tool.execute.before": async (input: any, output: any) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return;
+      const impl = loadHotModule("deadline", defaultImpl);
+      return impl.toolExecuteBefore(input, output);
     },
 
-    "tool.execute.after": async (input, _output) => {
-      if (!DEADLINE_ENABLED) return
-      if (!isDispatchTool(input.tool)) return
-      try {
-        const id = extractTaskId(input.args) || null
-        if (!id) return
-        const d = loadDeadlines()
-        if (d[id] !== undefined) {
-          delete d[id]
-          saveDeadlines(d)
-        }
-        // Reset the UI-throttle gate so a future dispatch reusing this id
-        // (e.g. resumed task via SendMessage) is allowed to warn again if it
-        // also exceeds the deadline. The persistent WARNINGS_LOG is untouched.
-        warnedIds.delete(id)
-      } catch { /* fail open */ }
+    "tool.execute.after": async (input: any, _output: any) => {
+      const impl = loadHotModule("deadline", defaultImpl)
+      const fn = impl["tool.execute.after"]
+      return fn ? await fn(input, _output) : undefined
     },
   }
 }) satisfies Plugin
