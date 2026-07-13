@@ -20,9 +20,15 @@
  *   GLUDD_CLEAN_TREE_ENFORCE=0  — disable (no-op)
  *
  * Default ON. Fail-open: any throw/exception → allow (don't wedge the editor).
+ *
+ * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
+ * check /tmp/gludd-hot-enforce-clean-tree.js on every invocation.  If present
+ * and newer than cached, the hot module's hook overrides the compiled-in
+ * default.  Run `make hot-reload-plugins` after editing this file.
  */
 import type { Plugin } from "@opencode-ai/plugin";
 import { execSync } from "node:child_process";
+import { loadHotModule, type HotModule } from "./hot_reload.ts";
 import { isSubagent, reportAlive } from "./shared.ts";
 
 /** Tools that represent subagent dispatch (not bash/read/edit). */
@@ -70,27 +76,45 @@ export function buildDenyMessage(count: number): string {
   );
 }
 
-export default function cleanTreePlugin(api: Plugin): void {
-  api.tool.execute.before((params) => {
-    if (isSubagent()) return
-    console.log("ENFORCING: enforce-clean-tree")
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+const defaultImpl: HotModule = {
+  "tool.execute.before": async (input, output) => {
+    if (isSubagent()) return;
+    console.log("SUBAGENT SKIP: enforce-clean-tree");
     reportAlive("enforce-clean-tree");
     try {
       if (process.env.GLUDD_CLEAN_TREE_ENFORCE === "0") return;
 
-      const tool: string = (params as { tool?: string }).tool ?? "";
+      const tool = input.tool ?? "";
       if (!DISPATCH_TOOLS.includes(tool)) return;
 
       const status = getGitStatus();
       if (status.length > 0) {
         const count = countDirtyFiles(status);
         return {
-          permissionDecision: "deny" as const,
+          permissionDecision: "deny",
           message: buildDenyMessage(count),
         };
       }
     } catch {
       // Fail-open: never wedge the editor on a plugin error.
     }
-  });
-}
+  },
+};
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
+export default (async ({ }) => {
+  return {
+    "tool.execute.before": async (input, output) => {
+      if (isSubagent()) return;
+      console.log("SUBAGENT SKIP: enforce-clean-tree");
+      const impl = loadHotModule("clean-tree", defaultImpl);
+      const fn = impl["tool.execute.before"];
+      return fn ? await fn(input, output) : undefined;
+    },
+  };
+}) satisfies Plugin;

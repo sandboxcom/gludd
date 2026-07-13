@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
+
+REQUIRE_RE = re.compile(r"\brequire\s*\(")
 
 
 def _collect_plugin_files() -> list[Path]:
@@ -64,3 +67,25 @@ class TestOpencodeNodeV26Compat:
                 f"got fail={failed} (exit {result.returncode}, "
                 f"stderr={result.stderr.strip()!r})"
             )
+
+    def test_no_require_calls_in_plugin_files(self):
+        """require() is not available in ESM context (Node v26).
+        All plugin files use static import — require() calls inside function
+        bodies are runtime bombs.  This is NOT caught by the parse-time
+        --experimental-strip-types check above.
+        """
+        violations: list[tuple[str, list[int]]] = []
+        for f in _collect_plugin_files():
+            lines = f.read_text().split("\n")
+            line_nums: list[int] = []
+            for i, line in enumerate(lines, 1):
+                if REQUIRE_RE.search(line):
+                    line_nums.append(i)
+            if line_nums:
+                violations.append((str(f.relative_to(ROOT)), line_nums))
+        assert not violations, (
+            f"{len(violations)} plugin file(s) contain require() calls "
+            f"(not available in ESM context — will fail at runtime):\n"
+            + "\n".join(f"  {relpath}: lines {lns}" for relpath, lns in violations)
+            + "\n\nReplace require() with top-level import or fs usage."
+        )

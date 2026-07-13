@@ -201,16 +201,12 @@ console.log(JSON.stringify(mod.DISPATCH_TOOLS))
 
 
 def test_clean_tree_hook_dispatch_with_dirty_tree():
-    """The registered hook denies dispatch when tree is dirty."""
-    # We need the tree to be dirty. Create a temp file, stage it.
+    """The proxy hook denies dispatch when tree is dirty."""
     test_file = str(ROOT / "scripts" / "_hook_test_dirty_temp.txt")
     try:
-        # Create an untracked file to make tree dirty
         with open(test_file, "w") as f:
             f.write("test dirty file for hook test")
         code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
 const gs = mod.getGitStatus()
 console.log("GIT_STATUS[" + gs.length + "]=" + JSON.stringify(gs).slice(0,200))
@@ -219,12 +215,11 @@ console.log("IS_DIRTY=" + dt)
 const toolName = 'task'
 const isDispatch = mod.DISPATCH_TOOLS.includes(toolName)
 console.log("IS_DISPATCH=" + isDispatch)
-mod.default(api)
-const result = registeredHook({{tool: 'task'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code)
-        # If the tree is dirty, result should be a deny
         if result is not None:
             assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
             assert "DIRTY TREE" in result.get("message", "")
@@ -237,39 +232,30 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 
 def test_clean_tree_hook_clean_tree_allows_dispatch():
     """Clean tree should allow dispatch (hook returns undefined/void)."""
-    # After removing the dirty file, tree should be clean(er)
     code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-mod.default(api)
-const result = registeredHook({{tool: 'task'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    # We can't guarantee the tree is fully clean, so this is best-effort
     result = _run_ts(code)
     if result is not None and result.get("permissionDecision") == "deny":
-        # Tree has other dirty files - that's OK for this repo
         pass
 
 
 def test_clean_tree_env_disable():
     """GLUDD_CLEAN_TREE_ENFORCE=0 disables the check."""
-    # Create a dirty file
     test_file = str(ROOT / "scripts" / "_hook_test_dirty_temp2.txt")
     try:
         with open(test_file, "w") as f:
             f.write("test")
         code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-mod.default(api)
-const result = registeredHook({{tool: 'task'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code, env_override={"GLUDD_CLEAN_TREE_ENFORCE": "0"})
-        # Should be allowed (null/undefined return)
         assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
     finally:
         try:
@@ -285,11 +271,9 @@ def test_clean_tree_subagent_skip():
         with open(test_file, "w") as f:
             f.write("test")
         code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-mod.default(api)
-const result = registeredHook({{tool: 'task'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
@@ -1443,23 +1427,20 @@ console.log(JSON.stringify({{editAllowed}}))
 
 
 def test_clean_tree_dispatch_allowed():
-    """Dispatch with clean tree → allowed (hook returns undefined/void)."""
+    """Dispatch with clean tree -> allowed (hook returns undefined/void)."""
     code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-mod.default(api)
-const result = registeredHook({{tool: 'task'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    # Can't guarantee tree is clean, so accept null or allow
     result = _run_ts(code)
     if result is not None and result.get("permissionDecision") == "deny":
         assert "DIRTY TREE" in result.get("message", ""), "If denied, must be dirty tree"
 
 
 def test_clean_tree_dirty_dispatch_blocked():
-    """Dirty tree + dispatch → returns {{permissionDecision: 'deny'}}."""
+    """Dirty tree + dispatch -> returns {{permissionDecision: 'deny'}}."""
     test_file = str(ROOT / "scripts" / "_hook_test_dirty_runtime.txt")
     try:
         with open(test_file, "w") as f:
@@ -1467,8 +1448,6 @@ def test_clean_tree_dirty_dispatch_blocked():
             f.flush()
             os.fsync(f.fileno())
         code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
 const gs = mod.getGitStatus()
 console.log("GIT_STATUS[" + gs.length + "]=" + JSON.stringify(gs).slice(0,200))
@@ -1476,8 +1455,8 @@ const dt = mod.isTreeDirty()
 console.log("IS_DIRTY=" + dt)
 console.log("SUBAGENT=" + process.env.OPENCODE_SUBAGENT)
 console.log("ENFORCE=" + process.env.GLUDD_CLEAN_TREE_ENFORCE)
-mod.default(api)
-const result = registeredHook({{tool: 'task'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log("RAW_RESULT=" + JSON.stringify(result))
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
@@ -1493,17 +1472,15 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 
 
 def test_clean_tree_env_disabled():
-    """GLUDD_CLEAN_TREE_ENFORCE=0 → dispatch allowed even with dirty tree."""
+    """GLUDD_CLEAN_TREE_ENFORCE=0 -> dispatch allowed even with dirty tree."""
     test_file = str(ROOT / "scripts" / "_hook_test_dirty_disabled.txt")
     try:
         with open(test_file, "w") as f:
             f.write("test")
         code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-mod.default(api)
-const result = registeredHook({{tool: 'task'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code, env_override={"GLUDD_CLEAN_TREE_ENFORCE": "0"})
@@ -1516,17 +1493,15 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 
 
 def test_clean_tree_subagent_guard():
-    """OPENCODE_SUBAGENT=1 → skip enforcement."""
+    """OPENCODE_SUBAGENT=1 -> skip enforcement."""
     test_file = str(ROOT / "scripts" / "_hook_test_dirty_subagent.txt")
     try:
         with open(test_file, "w") as f:
             f.write("test")
         code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-mod.default(api)
-const result = registeredHook({{tool: 'task'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
@@ -1589,13 +1564,11 @@ def test_clean_tree_non_dispatch_tool_not_blocked():
         with open(test_file, "w") as f:
             f.write("test")
         code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-mod.default(api)
+const plugin = await mod.default({{}})
 let results = {{}}
 for (const t of ['edit', 'write', 'read', 'grep', 'glob', 'bash']) {{
-    const r = registeredHook({{tool: t}})
+    const r = await plugin['tool.execute.before']({{tool: t}}, undefined)
     results[t] = r === undefined || r === null || r.permissionDecision !== 'deny'
 }}
 console.log(JSON.stringify(results))
@@ -1643,14 +1616,10 @@ console.log(JSON.stringify({{isStr: typeof status === 'string', isBool: typeof d
 
 def test_clean_tree_hook_throws_on_execsync_failure():
     """When execSync throws (e.g. corrupt env), hook catches and allows dispatch."""
-    # We test the catch path by verifying the hook doesn't crash.
-    # The try-catch in the hook should handle internal exceptions.
     code = f"""\
-let registeredHook = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-mod.default(api)
-const result = registeredHook({{tool: 'task'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
