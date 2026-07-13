@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-12 — 100 OPEN items across 8 active phases (A:4, C:19, D:19, X:11, Y:8, E:6, H:15, S:18).**
+**Last consolidated: 2026-07-12 — 127 OPEN items across 10 active phases (A:4, C:19, D:19, X:11, Y:8, Z:7, W:10, W1:10, E:6, H:15, S:18).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -9,18 +9,20 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 4 | 6 | 33% |
-| W | Enforcement/Plugin hardening | 0 | 3 | 100% |
+| W | Enforcement/Plugin hardening | 10 | 13 | 23% |
 | C | Security/Correctness | 19 | 27 | 30% |
 | D | Feature Completeness | 19 | 22 | 14% |
 | X | XML Collection | 11 | 11 | 0% |
 | Y | Web Design Collection | 8 | 8 | 0% |
+| Z | E2E Game Gaps | 7 | 7 | 0% |
+| W1 | Web Server Collection | 10 | 10 | 0% |
 | E | Quality/Coverage | 6 | 13 | 54% |
 | R | Collection Split + Documentation | 0 | 18 | 100% |
 | F | Docs/Presentation | 0 | 6 | 100% |
 | G | AGENTS.md Codification | 0 | 5 | 100% |
 | H | Security Hardening | 15 | 23 | 35% |
 | S | Post-Ship | 18 | 21 | 14% |
-| **Total** | | **100** | **163** | **39%** |
+| **Total** | | **127** | **190** | **33%** |
 
 ---
 
@@ -35,6 +37,16 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] W.1 — Fix enforce-floor.ts stale-state + enforce-delegate.ts disengage escape (per-PID scoping + cross-session shared-streak reset) | priority: high | effort: medium | status: completed | evidence: commit 5de6dc76 — PID-based cross-session shared-streak reset in enforce-floor.ts + enforce-stop.ts, 14 new tests
 - [x] W.2 — Fix enforce-multitask.ts text.complete tool-output pass-through (zeroStreak stale state, no disengage escape) | priority: high | effort: small | status: completed | evidence: text.complete isToolOutput guard intentionally absent per research 2026-07-12 (text.complete never fires on tool output); disengage escape exists; zeroStreak does not load from stale disk
 - [x] W.3 — Fix enforce-stop.ts text.complete tool-output blanking | priority: high | effort: small | status: completed | evidence: same research finding — text.complete isToolOutput guard not needed; disengage escape exists
+- [ ] W.4 — Convert enforce-deadline.ts from advisory to blocking (permissionDecision:deny on timeout, GLUDD_TASK_DEADLINE_BLOCK=1 gate) | priority: high | effort: small | status: pending
+- [ ] W.5 — Convert enforce-enhancement-ratio.ts from advisory to blocking (text.complete blank + tool.execute.before deny, GLUDD_ENHANCEMENT_RATIO_BLOCK=1 gate) | priority: high | effort: small | status: pending
+- [ ] W.6 — Create functional hook test harness (scripts/test_hook_runtime.py) that invokes actual plugin hooks via node -e | priority: high | effort: medium | status: pending
+- [ ] W.7 — Add runtime tests for enforce-floor.ts (streak threshold, dispatch reset, subagent guard, fail-open) | priority: high | effort: medium | status: pending
+- [ ] W.8 — Add runtime tests for enforce-delegate.ts (mainthread threshold, read exemption, env disable) | priority: high | effort: medium | status: pending
+- [ ] W.9 — Add runtime tests for enforce-deadline.ts (timeout block, advisory mode, fail-open) | priority: high | effort: medium | status: pending
+- [ ] W.10 — Add runtime tests for enforce-enhancement-ratio.ts (fix% block, advisory mode, fail-open) | priority: high | effort: medium | status: pending
+- [ ] W.11 — Add GLUDD_FLOOR_ENFORCE env var to enforce-floor.ts (currently hard-coded ON with no escape hatch) | priority: medium | effort: small | status: pending
+- [ ] W.12 — Wire test-hook-runtime into make gate (must pass before enforcement plugin changes committed) | priority: high | effort: small | status: pending
+- [ ] W.13 — Add AGENTS.md CRITICAL section: Self-Test Quality — Structural vs Behavioral | priority: high | effort: small | status: pending
 
 ---
 
@@ -139,6 +151,34 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [ ] Y.1.6 — design_system role: spacing, color, typography, component tokens
 - [ ] Y.1.7 — web_utils.py: shared Python module
 - [ ] Y.1.8 — docs/WEB_COLLECTION.md: comprehensive documentation
+
+---
+
+## Phase Z — E2E Game Gaps (2026-07-12)
+
+- [x] Z.1 — CRITICAL: Fix daemon pipeline — claim_runnable() returns 0 todos, _dispatch_execute_job never fires | priority: high | effort: medium | status: completed | commits: wave9
+- [x] Z.2 — CRITICAL: Fix game_over/won flag mismatch — 4 games set won=True but not game_over=True | priority: high | effort: small | status: completed | commits: wave9
+- [x] Z.3 — HIGH: Fix Tetris gravity — pieces don't auto-drop on tick() | priority: high | effort: small | status: completed | commits: wave9
+- [x] Z.4 — MEDIUM: Fix banana throw trajectory — returns empty list | priority: medium | effort: small | status: completed | commits: wave9
+- [x] Z.5 — MEDIUM: SearX integration untestable — 3 tests skipped, instance not running | priority: medium | effort: medium | status: completed | commits: wave9
+- [x] Z.6 — Re-run full e2e game tests after Z.1-Z.5 fixed | priority: high | effort: medium | status: completed | commits: wave9
+- [x] Z.7 — Iterate: analyze new logs, fix new gaps, repeat until 0 gaps found | priority: high | effort: large | status: completed | commits: wave9
+
+---
+
+## Phase W1 — Web Server Collection (2026-07-12)
+
+- [x] W1.1 — general_ludd.web_server collection: 8 roles for HTTP servers, proxies, SSL, CGI/WSGI, logging, security | priority: medium | effort: large | status: completed | commits: wave10
+- [x] W1.1.1 — http_server role: nginx/apache setup and config
+- [x] W1.1.2 — ssl_config role: TLS, certificates, HSTS, cipher suites
+- [x] W1.1.3 — cgi_wsgi role: CGI/FastCGI/WSGI/ASGI gateways
+- [x] W1.1.4 — logging_middleware role: access/error logs, rotation, analysis
+- [x] W1.1.5 — reverse_proxy role: nginx/HAProxy/Traefik/Envoy reverse proxy
+- [x] W1.1.6 — forward_proxy role: Squid/tinyproxy/privoxy forward proxy
+- [x] W1.1.7 — load_balancer role: algorithms, persistence, health checks
+- [x] W1.1.8 — security_hardening role: security headers, WAF, audit+remediate
+- [x] W1.1.9 — web_server_utils.py: shared Python module
+- [x] W1.1.10 — docs/WEB_SERVER_COLLECTION.md: documentation
 
 ---
 

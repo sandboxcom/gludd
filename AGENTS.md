@@ -2172,6 +2172,27 @@ Dropping an ask between subagent results is a bug. The todowrite list is the con
 
 Pattern that failed (this session): agent dispatched 6 parallel subagents, got 6 results, then sent a text summary without codifying any of them or updating todos. The user had to ask "are you codifying all of these efforts?" — that question is itself a bug report.
 
+## CRITICAL: Self-Test Quality — Structural vs Behavioral
+
+**A self-test that checks source code patterns but never invokes the actual hook is a documentation test, not a functional test. It proves intent, not behavior.**
+
+### The gap (discovered 2026-07-12)
+
+800+ enforcement plugin tests pass while enforcement fails at runtime. Root cause: tests verify source-code shape ("does FLOOR=7 exist?") but never invoke hooks with real arguments and check the return value. Python re-implementations of TypeScript state machines are internally consistent but shadow the real logic — when the TS diverges from the Python model, no test catches it.
+
+### The rule (3 requirements for every enforcement test)
+
+1. **At least one test per plugin MUST invoke the actual hook function** with constructed arguments and assert on the return value (permissionDecision, side effects). Source-pattern tests are supplementary, not sufficient.
+2. **Hook lifecycle tests MUST verify**: (a) normal operation (violation → block), (b) env-var disable path (GLUDD_*_ENFORCE=0 → allow), (c) subagent guard (OPENCODE_SUBAGENT=1 → allow), (d) fail-open (corrupt state / exception → allow).
+3. **Every new enforcement plugin MUST ship with a runtime test** using the `test_hook_runtime.py` harness or equivalent. Structural-only tests for a new plugin are a policy violation.
+
+### Enforcement
+
+- `scripts/test_hook_runtime.py` — functional hook test harness (invokes actual plugin hooks via node -e)
+- `make test-hook-runtime` — runs the harness; must be green before any enforcement plugin change is committed
+- This AGENTS.md section — proactive instruction
+- If a plugin has 0 runtime tests, that plugin is in the same category as "dead code" — it exists on disk but its behavior is unverified
+
 ## Constraints Are To Engineer Around
 
 **A constraint is a design prompt, never a dead end.**

@@ -1,0 +1,105 @@
+---
+# cgi_wsgi — configure gateway interface, set up application server socket,
+# manage process pools.
+
+- name: "Validate gateway_type"
+  ansible.builtin.assert:
+    that:
+      - gateway_type in ["cgi", "fastcgi", "wsgi", "asgi"]
+    fail_msg: >-
+      cgi_wsgi requires gateway_type 'cgi', 'fastcgi', 'wsgi', or 'asgi'.
+      Got gateway_type={{ gateway_type | default('<undefined>') }}.
+
+- name: "Install WSGI server (gunicorn)"
+  when: gateway_type == "wsgi"
+  block:
+    - name: "Install gunicorn via pip"
+      ansible.builtin.pip:
+        name: gunicorn
+        state: present
+        extra_args: "--user"
+      become: false
+
+    - name: "Create gunicorn systemd service"
+      ansible.builtin.template:
+        src: gunicorn.service.j2
+        dest: /etc/systemd/system/gunicorn.service
+        mode: "0644"
+      notify: reload systemd
+
+    - name: "Enable and start gunicorn"
+      ansible.builtin.systemd:
+        name: gunicorn
+        enabled: true
+        state: started
+
+- name: "Install ASGI server (uvicorn)"
+  when: gateway_type == "asgi"
+  block:
+    - name: "Install uvicorn via pip"
+      ansible.builtin.pip:
+        name:
+          - uvicorn
+          - gunicorn
+        state: present
+        extra_args: "--user"
+      become: false
+
+    - name: "Create uvicorn systemd service"
+      ansible.builtin.template:
+        src: uvicorn.service.j2
+        dest: /etc/systemd/system/uvicorn.service
+        mode: "0644"
+      notify: reload systemd
+
+    - name: "Enable and start uvicorn"
+      ansible.builtin.systemd:
+        name: uvicorn
+        enabled: true
+        state: started
+
+- name: "Configure FastCGI"
+  when: gateway_type == "fastcgi"
+  block:
+    - name: "Install php-fpm"
+      ansible.builtin.package:
+        name: php-fpm
+        state: present
+
+    - name: "Ensure php-fpm socket directory exists"
+      ansible.builtin.file:
+        path: "{{ socket_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: "Configure php-fpm pool"
+      ansible.builtin.template:
+        src: php_fpm_pool.conf.j2
+        dest: "/etc/php/php-fpm.d/{{ app_module | regex_replace('[^a-zA-Z0-9]', '_') }}.conf"
+        mode: "0644"
+      notify: reload php-fpm
+
+    - name: "Enable and start php-fpm"
+      ansible.builtin.systemd:
+        name: php-fpm
+        enabled: true
+        state: started
+
+- name: "Validate socket path"
+  ansible.builtin.command: >-
+    python3 {{ role_path }}/files/cgi_wsgi.py validate-socket
+    --socket-path {{ socket_path }}
+  changed_when: false
+  when: gateway_type in ["wsgi", "asgi", "fastcgi"]
+
+- name: "Generate gateway config snippet"
+  ansible.builtin.command: >-
+    python3 {{ role_path }}/files/cgi_wsgi.py generate
+    --gateway-type {{ gateway_type }}
+    --socket-path {{ socket_path }}
+    --app-module {{ app_module }}
+    --processes {{ processes }}
+    --threads {{ threads }}
+    --output {{ gateway_config_output | default('/etc/nginx/conf.d/gateway.conf') }}
+  register: _gw_gen
+  changed_when: _gw_gen.rc == 0

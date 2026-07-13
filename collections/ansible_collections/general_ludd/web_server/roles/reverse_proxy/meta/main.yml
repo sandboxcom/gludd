@@ -1,0 +1,31 @@
+---
+galaxy_info:
+  role_name: reverse_proxy
+  author: general_ludd
+  description: >-
+    Reverse proxy with config generation for nginx, HAProxy, Traefik, and Envoy.
+    Configures upstream pools, proxy pass, caching, and health checks.
+  license: MIT
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - web
+    - proxy
+    - nginx
+    - haproxy
+    - traefik
+    - envoy
+    - reverse_proxy
+dependencies: []

@@ -1568,9 +1568,6 @@ class EventLoop:
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
-        if self._tick_project_id is None:
-            self._tick_state["claimed_todos"] = []
-            return
         if (
             self._pause_controller is not None
             and self._tick_project_id is not None

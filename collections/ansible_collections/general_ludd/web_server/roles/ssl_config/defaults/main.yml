@@ -1,0 +1,7 @@
+---
+cert_path: /etc/ssl/certs/server.crt
+key_path: /etc/ssl/private/server.key
+ca_bundle: ""
+hsts_max_age: 31536000
+min_tls_version: "1.2"
+cipher_profile: intermediate
