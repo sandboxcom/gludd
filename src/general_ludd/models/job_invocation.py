@@ -226,15 +226,15 @@ def _record_generation_benchmark(
             )
             if _inspect.isawaitable(result):
                 try:
-                    loop = _asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Keep a reference so the task is not GC'd mid-flight.
-                        _bg_task = loop.create_task(cast("Coroutine[object, object, object]", result))
-                        _BACKGROUND_TASKS.add(_bg_task)
-                        _bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
-                    else:
-                        loop.run_until_complete(result)
-                except RuntimeError as exc:
+                    loop = _asyncio.get_running_loop()
+                    # Keep a reference so the task is not GC'd mid-flight.
+                    _bg_task = loop.create_task(cast("Coroutine[object, object, object]", result))
+                    _BACKGROUND_TASKS.add(_bg_task)
+                    _bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
+                except RuntimeError:
+                    # No running event loop — drive the coroutine in a fresh one.
+                    _asyncio.run(cast("Coroutine[object, object, object]", result))
+                except Exception as exc:
                     logger.warning("Could not schedule async benchmark record: %s", exc, exc_info=True)
     except Exception as exc:
         logger.warning("Benchmark recording failed for %s/%s: %s", model_profile, work_type, exc, exc_info=True)

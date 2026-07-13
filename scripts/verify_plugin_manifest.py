@@ -29,7 +29,14 @@ SEARCH_DIRS = [
 GUARD_BALLOT = (
     "process.env.OPENCODE_SUBAGENT"
 )
-GUARD_SEARCH_WINDOW = 80  # lines after hook registration
+ISUBAGENT_CALL_RE = re.compile(r"\b_isSubagent\(\)")
+ISUBAGENT_FUNC_RE = re.compile(
+    r"function\s+_isSubagent\s*\(\s*\)\s*:\s*\w+\s*\{"
+)
+ISUBAGENT_RECURSION_RE = re.compile(
+    r"function\s+_isSubagent\s*\(.*?\)\s*:.*?\{[^}]*if\s*\(\s*_isSubagent\s*\(\s*\)\s*\)"
+)
+GUARD_SEARCH_WINDOW = 160  # lines before/after hook registration
 
 HOOK_ALIAS: dict[str, str] = {
     "tool.execute.before": "tool.execute.before",
@@ -93,11 +100,17 @@ def _hook_types_in_file(filepath: Path) -> set[str]:
 
 
 def _guard_present(filepath: Path, hook_key: str) -> bool | None:
-    """Check GUARD_BALLOT appears within GUARD_SEARCH_WINDOW lines of hook_key.
+    """Check subagent guard presence within GUARD_SEARCH_WINDOW of hook_key.
 
-    Returns True if at least one hook registration of this type has the guard
-    nearby, False if all occurrences lack it, None if the hook type is not
-    registered in this file.
+    Strategy (two detection modes):
+    1. Direct mode — ``process.env.OPENCODE_SUBAGENT`` within the window.
+    2. Indirect mode — ``_isSubagent()`` call near the hook; then verify the
+       ``_isSubagent`` function body contains the env-var check AND does NOT
+       contain the recursion bug (``if (_isSubagent())`` self-call).
+
+    Returns True if at least one hook registration of this type has a valid
+    guard nearby, False if all occurrences lack it, None if the hook type is
+    not registered in this file.
     """
     try:
         src = filepath.read_text(encoding="utf-8")
@@ -126,13 +139,43 @@ def _guard_present(filepath: Path, hook_key: str) -> bool | None:
 
     for pos in match_positions:
         hook_lineno = src[:pos].count("\n")
-        start = max(0, hook_lineno)
+        start = max(0, hook_lineno - GUARD_SEARCH_WINDOW)
         end = min(len(lines), hook_lineno + GUARD_SEARCH_WINDOW)
         window = "\n".join(lines[start:end])
+
+        # Mode 1 — direct env-var check in window
         if GUARD_BALLOT in window:
             return True
 
+        # Mode 2 — _isSubagent() called in window; verify function definition
+        if ISUBAGENT_CALL_RE.search(window):
+            if _is_subagent_func_valid(src):
+                return True
+
     return False
+
+
+def _is_subagent_func_valid(src: str) -> bool:
+    """Return True if ``_isSubagent`` is defined AND correct (has env-var
+    check, no self-call recursion), False otherwise."""
+    if not ISUBAGENT_FUNC_RE.search(src):
+        return False
+    # Must have the env-var check
+    if GUARD_BALLOT not in src:
+        return False
+    # Must NOT have the recursion self-call
+    if ISUBAGENT_RECURSION_RE.search(src):
+        return False
+    return True
+
+
+def _is_subagent_recursion_bug(filepath: Path) -> bool:
+    """Return True if this file has a _isSubagent() that calls itself."""
+    try:
+        src = filepath.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return bool(ISUBAGENT_RECURSION_RE.search(src))
 
 
 def run() -> tuple[int, list[str]]:
@@ -166,6 +209,14 @@ def run() -> tuple[int, list[str]]:
                     f"but has no OPENCODE_SUBAGENT guard"
                 )
 
+        # --- Recurrence bug: _isSubagent() calls itself ---
+        if _is_subagent_recursion_bug(fpath):
+            issues.append(
+                f"RECURSION-BUG: {plugin_rel} _isSubagent() calls "
+                f"_isSubagent() — replace with "
+                f"process.env.OPENCODE_SUBAGENT === \"1\""
+            )
+
     # --- Print table ---
     print(f"{'FILE':<45} {'CHECK':<45} {'STATUS'}")
     print("-" * 100)
@@ -189,6 +240,17 @@ def run() -> tuple[int, list[str]]:
                 continue
             status = "OK" if present else "MISSING"
             rows.append((fname, f"OPENCODE_SUBAGENT guard in {label}", status))
+
+        # Check _isSubagent function correctness (if defined)
+        try:
+            src = (WORKSPACE / plugin_rel).read_text(encoding="utf-8")
+        except OSError:
+            src = ""
+        if ISUBAGENT_FUNC_RE.search(src):
+            bug = _is_subagent_recursion_bug(WORKSPACE / plugin_rel)
+            rows.append(
+                (fname, "_isSubagent() function (no self-call)", "OK" if not bug else "RECURSION")
+            )
 
     for fname, check, status in rows:
         marker = "OK" if status == "OK" else "FAIL"

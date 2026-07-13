@@ -1229,7 +1229,7 @@ def _cmd_searx(args: argparse.Namespace) -> None:
             print("SearXNG not running")
             sys.exit(1)
     elif cmd == "config":
-        path = SearXConfig.generate()
+        path = SearXConfig().generate()
         print(f"Settings written to {path}")
         import yaml
         with open(path) as f:

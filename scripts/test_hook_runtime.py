@@ -1441,6 +1441,143 @@ try {{
 
 
 # ---------------------------------------------------------------------------
+# enforce-session-start.ts  —  session-start protocol enforcement
+# ---------------------------------------------------------------------------
+
+
+def _fresh_session_state(state_path: str, **overrides) -> dict:
+    """Write a fresh session state file with started_at=now and return the contents."""
+    state = {
+        "started_at": int(time.time() * 1000),
+        "readsDone": False,
+        "dispatches": 0,
+        "timeGateReset": False,
+        **overrides,
+    }
+    with open(state_path, "w") as f:
+        json.dump(state, f)
+    return state
+
+
+def test_session_start_fresh_no_reads_mutation_denied():
+    """Fresh session (no reads, no dispatches) + non-dispatch tool → denied (throws Error)."""
+    state_file = os.path.join("/tmp", f"test-ss-denied-{os.getpid()}.json")
+    _fresh_session_state(state_file)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-session-start.ts')
+const plugin = await mod.default({{}})
+let result
+try {{
+  await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+  console.log(JSON.stringify({{allowed: true}}))
+}} catch (e) {{
+  result = {{permissionDecision: 'deny', message: e.message}}
+  console.log(JSON.stringify(result))
+}}
+"""
+    result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
+    assert result is not None, "Expected deny object from thrown Error"
+    assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+    assert "SESSION START PROTOCOL" in result.get("message", ""), f"Message missing PROTOCOL: {result}"
+    _clean_state_files(state_file)
+
+
+def test_session_start_read_tool_always_allowed():
+    """Read/Grep/Glob tools always allowed even in fresh unprimed session."""
+    state_file = os.path.join("/tmp", f"test-ss-read-{os.getpid()}.json")
+    _fresh_session_state(state_file)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-session-start.ts')
+const plugin = await mod.default({{}})
+let result
+try {{
+  await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+  console.log(JSON.stringify({{allowed: true}}))
+}} catch (e) {{
+  result = {{permissionDecision: 'deny', message: e.message}}
+  console.log(JSON.stringify(result))
+}}
+"""
+    result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
+    assert result is not None, "Expected output"
+    assert result.get("allowed") == True, f"Read tool should be allowed, got: {result}"
+    _clean_state_files(state_file)
+
+
+def test_session_start_subagent_guard():
+    """OPENCODE_SUBAGENT=1 → all tools allowed, enforcement skipped."""
+    state_file = os.path.join("/tmp", f"test-ss-subagent-{os.getpid()}.json")
+    _fresh_session_state(state_file)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-session-start.ts')
+const plugin = await mod.default({{}})
+let result
+try {{
+  await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+  console.log(JSON.stringify({{allowed: true}}))
+}} catch (e) {{
+  result = {{permissionDecision: 'deny', message: e.message}}
+  console.log(JSON.stringify(result))
+}}
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_SESSION_STATE": state_file,
+        "OPENCODE_SUBAGENT": "1",
+    })
+    assert result is not None, "Expected output"
+    assert result.get("allowed") == True, f"Subagent should bypass enforcement, got: {result}"
+    _clean_state_files(state_file)
+
+
+def test_session_start_env_disable():
+    """GLUDD_SESSION_START_ENFORCE=0 → no blocking (advisory only)."""
+    state_file = os.path.join("/tmp", f"test-ss-disable-{os.getpid()}.json")
+    _fresh_session_state(state_file)
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-session-start.ts')
+const plugin = await mod.default({{}})
+let result
+try {{
+  await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+  console.log(JSON.stringify({{allowed: true}}))
+}} catch (e) {{
+  result = {{permissionDecision: 'deny', message: e.message}}
+  console.log(JSON.stringify(result))
+}}
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_SESSION_STATE": state_file,
+        "GLUDD_SESSION_START_ENFORCE": "0",
+    })
+    assert result is not None, "Expected output"
+    assert result.get("allowed") == True, f"With ENFORCE=0, tool should be allowed, got: {result}"
+    _clean_state_files(state_file)
+
+
+def test_session_start_corrupt_state_fail_open():
+    """Corrupt state file → tools allowed (fail-open)."""
+    state_file = os.path.join("/tmp", f"test-ss-corrupt-{os.getpid()}.json")
+    with open(state_file, "w") as f:
+        f.write("not valid json {{{[[[")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-session-start.ts')
+const plugin = await mod.default({{}})
+let result
+try {{
+  await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+  console.log(JSON.stringify({{allowed: true}}))
+}} catch (e) {{
+  result = {{permissionDecision: 'deny', message: e.message}}
+  console.log(JSON.stringify(result))
+}}
+"""
+    result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
+    assert result is not None, "Expected output (fail-open should not throw)"
+    assert result.get("allowed") == True, f"Corrupt state should fail-open, got: {result}"
+    _clean_state_files(state_file)
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
