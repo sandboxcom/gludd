@@ -5,9 +5,9 @@ platforms: []
 provisioner:
   name: ansible
   env:
-    ANSIBLE_COLLECTIONS_PATH: "/Users/shawnwilson/gludd/collections"
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
     GLUDD_MOCK_PORT: "8808"
-    GLUDD_PROJECT_ROOT: "/Users/shawnwilson/gludd"
+    GLUDD_PROJECT_ROOT: "${MOLECULE_PROJECT_DIRECTORY}"
   playbooks:
     prepare: prepare.yml
     converge: converge.yml
