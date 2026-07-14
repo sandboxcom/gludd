@@ -147,7 +147,7 @@
 - name: Extract source IPs from web log findings
   ansible.builtin.set_fact:
     _sql_log_all_raw: >-
-      {{ 
+      {{
         (_sql_log_union.stdout_lines | default([]))
         + (_sql_log_boolean.stdout_lines | default([]))
         + (_sql_log_time.stdout_lines | default([]))

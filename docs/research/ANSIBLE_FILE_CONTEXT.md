@@ -210,7 +210,7 @@ execution lifecycle:
    context = tracker.build_agent_context()
    agent_prompt = f"""
    You just ran an Ansible playbook. Here is the file-change context:
-   
+
    Files changed: {context['playbook_summary']['file_events_count']}
    Git diff:
    {context['git_diff']}

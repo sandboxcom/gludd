@@ -290,4 +290,3 @@ tools:
     output_format: Text (certificate PEM, handshake, session info)
     dependencies:
       - openssl
-
