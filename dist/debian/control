@@ -1,0 +1,13 @@
+Package: gludd
+Version: VERSION_PLACEHOLDER
+Architecture: amd64
+Maintainer: General Ludd Team
+Section: utils
+Priority: optional
+Homepage: https://github.com/sandboxcom/gludd
+Description: General Ludd Agent — autonomous coding system
+ gludd is an autonomous coding system with Ansible runners
+ and multi-model AI agents, providing a complete agentic
+ coding workflow with daemon management, CI integration,
+ and deployment orchestration.
+Depends: python3, git, openssh-client, curl, ca-certificates
