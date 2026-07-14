@@ -5,7 +5,6 @@ from __future__ import annotations
 import shutil
 import tempfile
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -233,7 +232,7 @@ class TestResearchIndexCitationOps:
         sid = index.upsert_source(s)
 
         edge = CitationEdge(topic_id=tid, source_id=sid)
-        eid = index.add_citation_edge(edge)
+        index.add_citation_edge(edge)
         edges = index.list_citation_edges(topic_id=tid)
         assert len(edges) == 1
         assert edges[0].topic_id == tid

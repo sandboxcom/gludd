@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from general_ludd.security.sandboxes import Capability
-from general_ludd.security.sandboxes import PermissionSpec
-from general_ludd.security.sandboxes import SandboxTarget
-from general_ludd.security.sandboxes.freebsd_jail import JailBackend
-from general_ludd.security.sandboxes.freebsd_jail import _devfs_rule_for
-from general_ludd.security.sandboxes.freebsd_jail import _jail_path
-from general_ludd.security.sandboxes.freebsd_jail import _pf_rules
-from general_ludd.security.sandboxes.freebsd_jail import render_jail_command
-from general_ludd.security.sandboxes.freebsd_jail import render_pf_rules
+from general_ludd.security.sandboxes import Capability, PermissionSpec, SandboxTarget
+from general_ludd.security.sandboxes.freebsd_jail import (
+    JailBackend,
+    _devfs_rule_for,
+    _jail_path,
+    _pf_rules,
+    render_jail_command,
+    render_pf_rules,
+)
 
 
 def _make_spec(capabilities=None, denied=None, agent_type="test-agent"):

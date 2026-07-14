@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from general_ludd.ssl_agent.agent_flow import SSLCertAgent
-from general_ludd.ssl_agent.agent_flow import SSLCertAgentResult
-from general_ludd.ssl_agent.agent_flow import ssl_agent_flow
+from general_ludd.ssl_agent.agent_flow import SSLCertAgent, SSLCertAgentResult, ssl_agent_flow
 
 
 def test_ssl_agent_flow_default_profiles():
     result = ssl_agent_flow("example.com")
     assert isinstance(result, SSLCertAgentResult)
     assert result.common_name == "example.com"
-    assert result.chain_verified == True
+    assert result.chain_verified
 
 
 def test_ssl_agent_flow_with_custom_key_type():

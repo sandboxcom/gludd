@@ -207,11 +207,6 @@ def test_agents_md_no_sub_10_dispatch():
 
     # Allowlist: known sub-10 mentions that are NOT dispatch directives
     # These are procedural / historical / non-dispatch references.
-    allowlist_phrases = [
-        "1-4 dispatch",          # will trigger above → meant to fail
-        "MIN_DISPATCHES default 3",  # will trigger → meant to fail  
-        "MIN_DISPATCHES default 5",  # will trigger → meant to fail
-    ]
     # Actually, we WANT these to fail.  Remove any spurious non-dispatch matches.
     # "at least half" shouldn't match because pattern looks for digit.
     # "10+ at all times" is fine (>10).

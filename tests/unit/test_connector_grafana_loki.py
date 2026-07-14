@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import os
-from unittest.mock import MagicMock
-
 import pytest
 
 from general_ludd.connectors.grafana_loki import (
     GrafanaLokiSource,
-    _Transport,
     _validate_base_url,
 )
 

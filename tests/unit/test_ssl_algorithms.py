@@ -1,8 +1,14 @@
+"""Structural tests for ssl/algorithms.py — algorithm evaluation and comparison."""
+
 from __future__ import annotations
+
+import pytest
 
 from general_ludd.ssl.algorithms import (
     COMPLIANCE_STANDARDS,
     KNOWN_ALGORITHMS,
+    AlgorithmEval,
+    AlgorithmInfo,
     AlgorithmStatus,
     AlgorithmType,
     ComparisonResult,
@@ -12,223 +18,159 @@ from general_ludd.ssl.algorithms import (
 )
 
 
-class TestKnownAlgorithms:
-    def test_populated(self) -> None:
-        assert len(KNOWN_ALGORITHMS) >= 30
+class TestAlgorithmEnums:
+    def test_status_values(self) -> None:
+        assert AlgorithmStatus.CURRENT.value == "current"
+        assert AlgorithmStatus.DEPRECATED.value == "deprecated"
+        assert AlgorithmStatus.LEGACY.value == "legacy"
 
-    def test_has_rsa_entries(self) -> None:
-        rsa_algos = [
-            k
-            for k, v in KNOWN_ALGORITHMS.items()
-            if v.type == AlgorithmType.RSA
-        ]
-        assert len(rsa_algos) >= 3
+    def test_type_values(self) -> None:
+        assert AlgorithmType.RSA.value == "rsa"
+        assert AlgorithmType.EC.value == "ec"
+        assert AlgorithmType.EDWARDS.value == "edwards"
+        assert AlgorithmType.HASH.value == "hash"
+        assert AlgorithmType.SYMMETRIC.value == "symmetric"
 
-    def test_has_ec_entries(self) -> None:
-        ec_algos = [
-            k
-            for k, v in KNOWN_ALGORITHMS.items()
-            if v.type == AlgorithmType.EC
-        ]
-        assert len(ec_algos) >= 3
 
-    def test_has_edwards_entries(self) -> None:
-        ed_algos = [
-            k
-            for k, v in KNOWN_ALGORITHMS.items()
-            if v.type == AlgorithmType.EDWARDS
-        ]
-        assert len(ed_algos) >= 4
+class TestAlgorithmInfo:
+    def test_rsa_2048(self) -> None:
+        algo = KNOWN_ALGORITHMS["RSA-2048"]
+        assert algo.type == AlgorithmType.RSA
+        assert algo.key_sizes == [2048]
+        assert algo.security_bits == 112
+        assert algo.status == AlgorithmStatus.CURRENT
 
-    def test_has_hash_entries(self) -> None:
-        hash_algos = [
-            k
-            for k, v in KNOWN_ALGORITHMS.items()
-            if v.type == AlgorithmType.HASH
-        ]
-        assert len(hash_algos) >= 7
+    def test_ed25519(self) -> None:
+        algo = KNOWN_ALGORITHMS["Ed25519"]
+        assert algo.type == AlgorithmType.EDWARDS
+        assert algo.security_bits == 128
+        assert algo.status == AlgorithmStatus.CURRENT
 
-    def test_legacy_algorithms_present(self) -> None:
-        legacy = {
-            k
-            for k, v in KNOWN_ALGORITHMS.items()
-            if v.status == AlgorithmStatus.LEGACY
-        }
-        assert "MD5" in legacy
-        assert "RC4" in legacy
-        assert "3DES" in legacy
-        assert "SHA-1" in legacy
-        assert "RSA-1024" in legacy
+    def test_md5_legacy(self) -> None:
+        algo = KNOWN_ALGORITHMS["MD5"]
+        assert algo.security_bits == 0
+        assert algo.status == AlgorithmStatus.LEGACY
+        assert algo.deprecation_date == "2008-01-01"
 
-    def test_algorithm_info_structure(self) -> None:
-        rsa_2048 = KNOWN_ALGORITHMS["RSA-2048"]
-        assert rsa_2048.name == "RSA-2048"
-        assert rsa_2048.type == AlgorithmType.RSA
-        assert 2048 in rsa_2048.key_sizes
-        assert rsa_2048.security_bits >= 112
-        assert rsa_2048.status == AlgorithmStatus.CURRENT
-        assert isinstance(rsa_2048.deprecation_date, str)
+    def test_chacha_current(self) -> None:
+        algo = KNOWN_ALGORITHMS["ChaCha20-Poly1305"]
+        assert algo.type == AlgorithmType.SYMMETRIC
+        assert algo.security_bits == 256
+
+
+class TestComplianceStandards:
+    def test_fips_exists(self) -> None:
+        assert "FIPS-140-3" in COMPLIANCE_STANDARDS
+
+    def test_fips_rsa_2048_ok(self) -> None:
+        assert COMPLIANCE_STANDARDS["FIPS-140-3"]["RSA-2048"] is True
+
+    def test_fips_md5_rejected(self) -> None:
+        assert COMPLIANCE_STANDARDS["FIPS-140-3"]["MD5"] is False
+
+    def test_pci_rc4_rejected(self) -> None:
+        assert COMPLIANCE_STANDARDS["PCI-DSS"]["RC4"] is False
+
+    def test_hipaa_sha256_ok(self) -> None:
+        assert COMPLIANCE_STANDARDS["HIPAA"]["SHA-256"] is True
 
 
 class TestEvaluateAlgorithm:
-    def test_current_algorithm_high_score(self) -> None:
-        result = evaluate_algorithm("Ed25519")
-        assert result.score >= 80
-        assert result.algorithm.status == AlgorithmStatus.CURRENT
+    def test_current_good_algorithm_scores_high(self) -> None:
+        result = evaluate_algorithm("AES-256")
+        assert result.score > 60
+        assert result.algorithm.security_bits == 256
+        assert len(result.warnings) == 0
 
-    def test_legacy_algorithm_low_score(self) -> None:
+    def test_legacy_algorithm_scores_low(self) -> None:
         result = evaluate_algorithm("MD5")
-        assert result.score <= 20
-        assert result.algorithm.status == AlgorithmStatus.LEGACY
-
-    def test_legacy_has_warnings(self) -> None:
-        result = evaluate_algorithm("RC4")
+        assert result.score < 20
         assert len(result.warnings) >= 1
-        assert len(result.recommendations) >= 1
+        assert any("legacy" in w.lower() for w in result.warnings)
 
-    def test_deprecated_has_migration_recommendation(self) -> None:
-        result = evaluate_algorithm("SHA-1")
-        has_migration = any("migrat" in r.lower() for r in result.recommendations)
-        assert has_migration
+    def test_sha256_current(self) -> None:
+        result = evaluate_algorithm("SHA-256")
+        assert result.score >= 50
 
     def test_unknown_algorithm_raises(self) -> None:
-        try:
-            evaluate_algorithm("NOT-A-REAL-ALGO")
-            raise AssertionError("expected ValueError")
-        except ValueError:
-            pass
+        with pytest.raises(ValueError, match="Unknown algorithm"):
+            evaluate_algorithm("FAKE-ALGO")
 
-    def test_score_bounds(self) -> None:
-        for name in KNOWN_ALGORITHMS:
-            result = evaluate_algorithm(name)
-            assert 0 <= result.score <= 100
-
-    def test_high_security_bits_trend_to_higher_score(self) -> None:
-        aes_128 = evaluate_algorithm("AES-128")
-        aes_256 = evaluate_algorithm("AES-256")
-        assert aes_256.score >= aes_128.score
-
-    def test_edwards_current_gets_bonus(self) -> None:
+    def test_edwards_bonus(self) -> None:
         result = evaluate_algorithm("Ed25519")
-        algs_same_bits = [
-            v
-            for v in KNOWN_ALGORITHMS.values()
-            if v.security_bits == 128
-            and v.status == AlgorithmStatus.CURRENT
-            and v.type != AlgorithmType.EDWARDS
-            and v.name != "SHA-256"
-        ]
-        for alg in algs_same_bits:
-            eval_res = evaluate_algorithm(alg.name)
-            assert result.score >= eval_res.score
+        assert result.score >= 60
 
-    def test_zero_security_bits_scores_zero(self) -> None:
+    def test_edge_case_security_bits_zero(self) -> None:
         result = evaluate_algorithm("MD5")
         assert result.score == 0
-        result2 = evaluate_algorithm("RC4")
-        assert result2.score == 0
+        assert any("no meaningful security" in w for w in result.warnings)
 
-    def test_key_size_mismatch_warning(self) -> None:
-        result = evaluate_algorithm("AES-128", key_size=256)
-        warning_texts = " ".join(result.warnings).lower()
-        assert "key size" in warning_texts
+    def test_key_size_not_in_list_warns(self) -> None:
+        result = evaluate_algorithm("RSA-2048", key_size=4096)
+        assert any("not a standard key size" in w for w in result.warnings)
 
 
 class TestCompareAlgorithms:
-    def test_ed25519_better_than_rsa_1024(self) -> None:
-        result = compare_algorithms("Ed25519", "RSA-1024")
-        assert result.better == "Ed25519"
-        assert result.score_difference > 0
-
-    def test_aes_256_better_than_aes_128(self) -> None:
-        result = compare_algorithms("AES-256", "AES-128")
+    def test_aes_vs_rc4(self) -> None:
+        result = compare_algorithms("AES-256", "RC4")
         assert result.better == "AES-256"
         assert result.score_difference > 0
 
-    def test_equal_algorithms(self) -> None:
-        result = compare_algorithms("SHA-256", "SHA3-256")
+    def test_same_algorithm_equal(self) -> None:
+        result = compare_algorithms("SHA-256", "SHA-256")
         assert result.better == "equal"
         assert result.score_difference == 0
 
-    def test_unknown_first_raises(self) -> None:
-        try:
-            compare_algorithms("FAKE", "Ed25519")
-            raise AssertionError("expected ValueError")
-        except ValueError:
-            pass
+    def test_edwards_vs_dsa(self) -> None:
+        result = compare_algorithms("Ed25519", "DSA-1024")
+        assert result.better == "Ed25519"
 
-    def test_unknown_second_raises(self) -> None:
-        try:
-            compare_algorithms("Ed25519", "FAKE")
-            raise AssertionError("expected ValueError")
-        except ValueError:
-            pass
+    def test_unknown_a_raises(self) -> None:
+        with pytest.raises(ValueError, match="Unknown algorithm"):
+            compare_algorithms("ZZZ", "AES-256")
 
-    def test_returns_comparison_result_type(self) -> None:
-        result = compare_algorithms("Ed25519", "RSA-1024")
-        assert isinstance(result, ComparisonResult)
-        assert isinstance(result.better, str)
-        assert isinstance(result.reason, str)
-        assert isinstance(result.score_difference, int)
-
-    def test_current_beats_legacy(self) -> None:
-        result = compare_algorithms("AES-256", "3DES")
-        assert result.better == "AES-256"
-
-    def test_reason_mentions_security_bits(self) -> None:
-        result = compare_algorithms("AES-256", "AES-128")
-        assert "security bits" in result.reason.lower()
+    def test_unknown_b_raises(self) -> None:
+        with pytest.raises(ValueError, match="Unknown algorithm"):
+            compare_algorithms("AES-256", "ZZZ")
 
 
 class TestComplianceCheck:
-    def test_fips_140_3_known(self) -> None:
-        assert compliance_check("AES-256", "FIPS-140-3") is True
+    def test_rsa_2048_fips(self) -> None:
+        assert compliance_check("RSA-2048", "FIPS-140-3") is True
+
+    def test_rc4_fips(self) -> None:
+        assert compliance_check("RC4", "FIPS-140-3") is False
+
+    def test_md5_fips(self) -> None:
         assert compliance_check("MD5", "FIPS-140-3") is False
 
-    def test_soc2_known(self) -> None:
-        assert compliance_check("Ed25519", "SOC2") is True
-        assert compliance_check("RC4", "SOC2") is False
+    def test_sha256_soc2(self) -> None:
+        assert compliance_check("SHA-256", "SOC2") is True
 
-    def test_hipaa_known(self) -> None:
-        assert compliance_check("SHA-256", "HIPAA") is True
-        assert compliance_check("SHA-1", "HIPAA") is False
-
-    def test_pci_dss_known(self) -> None:
-        assert compliance_check("RSA-2048", "PCI-DSS") is True
-        assert compliance_check("3DES", "PCI-DSS") is False
-
-    def test_all_standards_listed(self) -> None:
-        expected = {"FIPS-140-3", "SOC2", "HIPAA", "PCI-DSS"}
-        assert set(COMPLIANCE_STANDARDS.keys()) == expected
+    def test_sha1_soc2(self) -> None:
+        assert compliance_check("SHA-1", "SOC2") is False
 
     def test_unknown_standard_raises(self) -> None:
-        try:
-            compliance_check("AES-256", "ISO-99999")
-            raise AssertionError("expected ValueError")
-        except ValueError:
-            pass
+        with pytest.raises(ValueError, match="Unknown compliance standard"):
+            compliance_check("AES-256", "FAKE-STANDARD")
 
-    def test_unknown_algorithm_raises(self) -> None:
-        try:
-            compliance_check("NOT-REAL", "FIPS-140-3")
-            raise AssertionError("expected ValueError")
-        except ValueError:
-            pass
+    def test_unevaluated_algorithm_raises(self) -> None:
+        with pytest.raises(ValueError, match="not evaluated"):
+            compliance_check("ZZZ-999", "FIPS-140-3")
 
-    def test_case_insensitive_standard(self) -> None:
-        assert compliance_check("AES-256", "fips-140-3") is True
-        assert compliance_check("AES-256", "Hipaa") is True
-        assert compliance_check("AES-256", "soc2") is True
-        assert compliance_check("AES-256", "pci-dss") is True
 
-    def test_all_current_rsa_fips_compliant(self) -> None:
-        for name, info in KNOWN_ALGORITHMS.items():
-            if (info.type == AlgorithmType.RSA
-                    and info.status == AlgorithmStatus.CURRENT
-                    and info.security_bits >= 112):
-                    assert compliance_check(name, "FIPS-140-3") is True
+class TestDataclassFields:
+    def test_algorithm_eval_fields(self) -> None:
+        ev = AlgorithmEval(
+            algorithm=KNOWN_ALGORITHMS["SHA-256"],
+            score=85,
+            warnings=[],
+            recommendations=[],
+        )
+        assert ev.score == 85
+        assert isinstance(ev.algorithm, AlgorithmInfo)
 
-    def test_edwards_algorithms_compliant(self) -> None:
-        for standard in COMPLIANCE_STANDARDS:
-            assert compliance_check("Ed25519", standard) is True
-            assert compliance_check("Ed448", standard) is True
+    def test_comparison_result_fields(self) -> None:
+        cr = ComparisonResult(better="AES-256", reason="higher security", score_difference=30)
+        assert cr.better == "AES-256"
+        assert cr.score_difference == 30

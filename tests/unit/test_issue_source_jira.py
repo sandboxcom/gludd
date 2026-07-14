@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from general_ludd.issue_sources.jira import JiraIssueSource
-from general_ludd.issue_sources.jira import _adf
-from general_ludd.issue_sources.jira import _parse_updated
+from general_ludd.issue_sources.jira import JiraIssueSource, _adf, _parse_updated
 
 
 class FakeHttpResponse:
@@ -30,7 +26,7 @@ class FakeHttpTransport:
             "method": method,
             "url": url,
             "headers": headers,
-            "json": json,
+            "body": json,
             "timeout": timeout,
         })
         if self.responses:
