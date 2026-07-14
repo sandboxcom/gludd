@@ -2,16 +2,38 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+
+def _podman_socket_paths() -> list[str]:
+    uid = os.getuid()
+    return [
+        f"/run/user/{uid}/podman/podman.sock",
+        f"/run/user/{uid}/podman.sock",
+        "/run/podman/podman.sock",
+    ]
+
+
+def detect_container_runtime() -> str | None:
+    podman = shutil.which("podman")
+    if podman:
+        return podman
+    docker = shutil.which("docker")
+    if docker:
+        return docker
+    return None
+
 
 _TOOL_PATH_MAP: dict[str, list[str]] = {
     "bash": ["/usr/bin/bash", "/bin/sh", "/bin/bash"],
     "python": ["/usr/bin/python", "/usr/bin/python3"],
     "git": [".git"],
     "docker": ["/var/run/docker.sock"],
+    "podman": _podman_socket_paths(),
     "network": [],
 }
 
@@ -109,3 +131,9 @@ class ProcessIsolationConfig(BaseModel):
                 and module_name in _WRITE_MODULES
             )
         )
+
+    def auto_detect_runtime(self) -> ProcessIsolationConfig:
+        runtime = detect_container_runtime()
+        if runtime:
+            return self.model_copy(update={"executable": runtime})
+        return self.model_copy()
