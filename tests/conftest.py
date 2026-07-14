@@ -21,9 +21,15 @@ or per-test ``os.environ`` patches:
    tests that exercise the auth layer explicitly override this via their own
    ``monkeypatch.setenv`` (see test_w5_6_worker_auth.py,
    test_worker_redteam.py, test_environment_e2e.py).
+
+4. Gives every Starlette ``TestClient`` the loopback peer address it actually
+   is (``127.0.0.1``) instead of the un-parseable pseudo-host ``"testclient"``,
+   so the daemon's CIDR allowlist (a real security control) can stay armed
+   during tests instead of 403-ing the in-process transport.
 """
 from __future__ import annotations
 
+import functools
 import importlib
 import logging
 import os
@@ -159,6 +165,46 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     if not os.environ.get("GLUDD_PSK", "").strip():
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _testclient_presents_loopback_host():
+    """Make Starlette's ``TestClient`` present the loopback IP it actually is.
+
+    ``starlette.testclient.TestClient`` defaults to ``client=("testclient",
+    50000)`` — a *pseudo-host* that is not a parseable IP address. The daemon's
+    CIDR allowlist (``cidr_middleware``, daemon.py) is a real security control:
+    ``_lifespan`` auto-enforces ``["127.0.0.0/8", "::1/128"]`` whenever the
+    configured bind host is loopback (the default posture, daemon.py:964-971),
+    and the middleware denies any client host that does not parse into an
+    allowed network — ``"testclient"`` raises ``ValueError`` in
+    ``ipaddress.ip_address()`` and is therefore (correctly) refused with
+    ``403 {"error": "forbidden", ...}``.
+
+    The in-process ASGI transport IS a loopback caller, so the honest fix is to
+    say so — not to widen the production allowlist or punch a hole in the guard.
+    Every ``TestClient`` therefore reports ``client=("127.0.0.1", 50000)``,
+    exactly what a real ``curl http://127.0.0.1:8000`` would present, and the
+    CIDR guard stays fully armed against everything else.
+
+    Tests that deliberately exercise the *deny* path (or need another peer
+    address) keep full control: an explicit ``TestClient(app, client=(...))``
+    wins, because this only supplies a default.
+    """
+    import starlette.testclient as _testclient_mod
+
+    original_init = _testclient_mod.TestClient.__init__
+
+    @functools.wraps(original_init)
+    def _loopback_init(self, *args: object, **kwargs: object) -> None:
+        kwargs.setdefault("client", ("127.0.0.1", 50000))
+        original_init(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    _testclient_mod.TestClient.__init__ = _loopback_init  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        _testclient_mod.TestClient.__init__ = original_init  # type: ignore[method-assign]
 
 
 _LEAKY_ENV_VARS: frozenset[str] = frozenset({

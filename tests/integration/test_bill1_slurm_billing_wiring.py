@@ -22,11 +22,28 @@ from general_ludd.infra.slurm import (
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
-    daemon_mod._daemon_state["todos"] = []
-    daemon_mod._daemon_state["tick_metrics"] = {}
+    """Isolate the module-level ``_daemon_state`` shim around each test.
+
+    ``general_ludd.daemon._daemon_state`` starts life as ``None``. It is only a
+    migration shim for legacy observers: ``create_daemon_app()`` allocates a
+    FRESH per-app dict (``{"todos": [], "tick_metrics": {}, "quality_gate": {}}``)
+    on ``app.state.daemon_state`` — the authoritative store — and merely rebinds
+    the module global to it (daemon.py:2565-2575).
+
+    This fixture used to assign ``_daemon_state["todos"] = []`` at setup time,
+    which runs BEFORE any test in this module has called ``create_daemon_app()``
+    — so the global was still ``None`` and every test in the file died with
+    ``TypeError: 'NoneType' object does not support item assignment``.
+
+    There is nothing to pre-seed: each test builds its own app and thus its own
+    fresh state dict. The only genuine job here is to stop one test's app state
+    from leaking into the next through the shim, so the shim is snapshotted and
+    restored rather than mutated.
+    """
+    original = daemon_mod._daemon_state
+    daemon_mod._daemon_state = None
     yield
-    daemon_mod._daemon_state["todos"] = []
-    daemon_mod._daemon_state["tick_metrics"] = {}
+    daemon_mod._daemon_state = original
 
 
 def _make_db_config(tmp_path: pytest.Path) -> str:

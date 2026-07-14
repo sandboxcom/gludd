@@ -24,11 +24,21 @@ MODULE_REF = 'module "gpu_cost_watchdog"'
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
-    daemon_mod._daemon_state["todos"] = []
-    daemon_mod._daemon_state["tick_metrics"] = {}
+    """Isolate the module-level ``_daemon_state`` shim around each test.
+
+    ``general_ludd.daemon._daemon_state`` starts life as ``None`` — it is only a
+    migration shim. ``create_daemon_app()`` allocates a FRESH per-app dict on
+    ``app.state.daemon_state`` (the authoritative store) and merely rebinds the
+    module global to it (daemon.py:2565-2575). Writing into the shim at
+    fixture-setup time — before any app exists — raised ``TypeError: 'NoneType'
+    object does not support item assignment``. Snapshot/restore is the correct
+    isolation: nothing needs pre-seeding, the shim just must not leak across
+    tests.
+    """
+    original = daemon_mod._daemon_state
+    daemon_mod._daemon_state = None
     yield
-    daemon_mod._daemon_state["todos"] = []
-    daemon_mod._daemon_state["tick_metrics"] = {}
+    daemon_mod._daemon_state = original
 
 
 def _make_db_config(tmp_path: pytest.Path) -> str:
