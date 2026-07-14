@@ -2351,6 +2351,10 @@ git-commit: _gate-fresh-check _commit-lock-acquire
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Gate fresh and green. Committing..."
+	@# Pre-stage .secrets.baseline to prevent pre-commit stash conflicts.
+	@# pre-commit stashes unstaged changes, the detect-secrets hook may update
+	@# .secrets.baseline, then unstash detects modification => conflict.
+	@git diff --quiet -- .secrets.baseline || git add .secrets.baseline
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
 commit-no-verify: _gate-fresh-check _commit-lock-acquire
