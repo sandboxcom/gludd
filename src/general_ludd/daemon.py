@@ -1821,6 +1821,27 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             logger.info("ServiceDiscoveryPipeline wired: searx=%s catalog=%s", searx_url, catalog_path)
 
+        searx_model_discoverer = None
+        if model_gateway is not None:
+            from general_ludd.infra.model_search import SEARX_DEFAULT_URL
+            from general_ludd.models.searx_discoverer import SearxModelDiscoverer
+            _srv = getattr(app.state, "_searx_server", None)
+            _discover_url = _srv.get_instance_url() if _srv else None
+            searx_model_discoverer = SearxModelDiscoverer(
+                gateway=model_gateway,
+                searx_url=_discover_url or SEARX_DEFAULT_URL,
+            )
+            try:
+                searx_model_discoverer.sync_models()
+            except Exception:
+                logger.info("SearX model discoverer sync skipped at startup", exc_info=True)
+            app.state._searx_model_discoverer = searx_model_discoverer
+            logger.info(
+                "SearxModelDiscoverer wired: searx=%s index=%d",
+                _discover_url or "default",
+                searx_model_discoverer.index_size,
+            )
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,

@@ -121,15 +121,16 @@ def deploy_from_search(
     index = ModelIndex()
 
     cached = index.get(model_name)
+    result: ModelSearchResult
     if cached is not None:
         result = cached
     else:
-        result = searcher.find_model(model_name)
-        if result is None:
+        found = searcher.find_model(model_name)
+        if found is None:
             raise ValueError(f"Model {model_name!r} not found via SearXNG")
-        index.put(result)
+        index.put(found)
+        result = found
 
-    assert result is not None  # guaranteed by the None check above
     profile = _search_result_to_profile(result)
 
     try:

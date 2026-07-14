@@ -10,7 +10,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -72,7 +72,10 @@ class SearXModelSearch:
             resp = httpx.get(self._search_url(), params=params, timeout=self._timeout)
             resp.raise_for_status()
             data: dict[str, object] = resp.json()
-            return list(data.get("results", []))
+            raw = data.get("results", [])
+            if not isinstance(raw, list):
+                return []
+            return cast("list[dict[str, Any]]", raw)
         except Exception:
             return []
 
@@ -153,7 +156,7 @@ class SearXModelSearch:
             if len(parts) > 1:
                 rest = parts[1].split("?")[0].split("#")[0].rstrip("/")
                 return rest.replace("/", "__")
-        for word in title.replace("·", " ").replace("-", " ").split():
+        for word in title.replace("\u00b7", " ").replace("\u2013", " ").split():
             if "/" in word and len(word) > 3:
                 return word.replace("/", "__").rstrip(".")
         return title.strip()
@@ -209,7 +212,7 @@ class SearXModelSearch:
         for lic in known:
             if lic in text_lower:
                 return lic
-        m = re.search(r"(?:license|licensed under)\s+([A-Za-z0-9\-\. ]+)", text, re.IGNORECASE)
+        m = re.search(r"(?:license|licensed under)\s+([A-Za-z0-9\-\.]+(?:\s+v?\d+\.?\d*)?)", text, re.IGNORECASE)
         if m:
             return m.group(1).strip().lower()
         return ""

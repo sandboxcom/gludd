@@ -1294,16 +1294,14 @@ _push-rate-guard:
 	else \
 		$(PYTHON) scripts/push_rate_guard.py record-normal; \
 	fi
-	@# Check if CI is currently pending
-	@CI_STATUS=$$(make ci-verdict BRANCH=master 2>&1 || true); \
-	if echo "$$CI_STATUS" | grep -qi 'PENDING\|IN_PROGRESS\|QUEUED'; then \
-		RUN=$$(echo "$$CI_STATUS" | grep -o '[0-9]\{8,\}' | head -1); \
-		echo "BLOCKED: CI run $$RUN is pending. Pushing will cancel it."; \
-		if [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
-			echo "Use GLUDD_FORCE_PUSH=1 to override, or 'make ci-wait' to wait."; \
-			exit 1; \
-		fi; \
-		echo "GLUDD_FORCE_PUSH=1: forcing push despite pending CI."; \
+	@# Check if CI is currently in-flight on the target branch.
+	@# Uses ci_push_guard.py (branch-level active-run check, not commit-specific)
+	@# PUSH_BRANCH overrides the branch to check (default: master).
+	@PUSH_BRANCH=$${PUSH_BRANCH:-master}; \
+	if [ "$$GLUDD_FORCE_PUSH" = "1" ]; then \
+		FORCE=1 $(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || true; \
+	else \
+		$(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || { echo "Use GLUDD_FORCE_PUSH=1 to override, or wait for CI to complete."; exit 1; }; \
 	fi
 	@# Check push cooldown (minimum interval between pushes)
 	@LAST_PUSH=$$(python3 -c "import json;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];print(d[-1] if d else 0)" 2>/dev/null || echo 0); \
@@ -2603,7 +2601,7 @@ agent-merge-dev:
 	echo "Merged $(BRANCH) into development"
 
 # Push the development branch to the sandboxcom remote.
-development-push:
+development-push: ci-busy-check
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch pushed and verified"

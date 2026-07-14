@@ -93,7 +93,7 @@
     &mdash; explained, with exact code paths
   </p>
   <p style="margin-top:30px; font-size:0.5em; color:#484f58;">
-    v0.1.0-beta.3 &middot; commit 5de6dc7 &middot; MIT License &middot; built 2026-07-12T10:39:48Z
+    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-14
   </p>
 </section>
 
@@ -815,7 +815,7 @@ graph TD
     </div>
   </div>
   <p><strong>Security findings: 14 of 15 fixed</strong> &mdash; one remains open and tracked.</p>
-  <p class="cite">11 enforcement plugins <span class="badge-green">VERIFIED</span> &middot; 14/15 findings fixed &middot; Source: <code>.opencode/plugin/</code>, <code>docs/audit/</code></p>
+  <p class="cite">13 BLOCKING enforcement plugins <span class="badge-green">VERIFIED</span> &middot; 99 hook-runtime tests &middot; 14/15 findings fixed &middot; Source: <code>.opencode/plugin/</code>, <code>docs/audit/</code></p>
 </section>
 
 <!-- ============================================================ -->
@@ -840,7 +840,7 @@ graph TD
     P6["enforce-session-start.ts<br/>dispatch-on-start"]
     P7["enforce-verified-claims.ts<br/>evidence-required"]
     P8["enforce-clean-tree.ts<br/>dirty-tree dispatch deny"]
-    P9["+6 more plugins<br/>(14 total)"]
+    P9["+5 more plugins<br/>(13 BLOCKING total)"]
   end
   subgraph L3["Layer 3 — Prompt (instruction)"]
     D1["AGENTS.md<br/>policy sections"]
@@ -850,12 +850,12 @@ graph TD
     </div>
   </div>
   <ul class="bullets-tight">
-    <li class="fragment"><strong>14 plugins</strong> in <span class="path">.opencode/plugin/</span>, all registered in <span class="path">opencode.json</span></li>
-    <li class="fragment">Each plugin is pinned by a test in <span class="path">tests/unit/</span> (plugin behavior tests)</li>
+    <li class="fragment"><strong>13 BLOCKING plugins</strong> in <span class="path">.opencode/plugin/</span>, all hot-reload capable, zero advisory-only</li>
+    <li class="fragment"><strong>99 hook-runtime tests</strong> across 52 functional tests in 8 plugins (<span class="path">make test-hook-runtime</span>)</li>
     <li class="fragment"><strong>Fail-open on error</strong>: a broken hook never blocks legitimate work; the next layer still enforces</li>
-    <li class="fragment">All 14 verified active via <span class="path">make verify-plugin-manifest</span></li>
+    <li class="fragment">All 13 verified active via <span class="path">make verify-plugin-manifest</span></li>
   </ul>
-  <p class="cite">Source: .opencode/plugin/ (14 files), opencode.json, tests/unit/test_*_plugin*.py</p>
+  <p class="cite">Source: .opencode/plugin/ (13 BLOCKING), opencode.json, tests/unit/test_*_plugin*.py</p>
 </section>
 
 <!-- ============================================================ -->
@@ -871,12 +871,12 @@ graph TD
       <span class="cite"><code>find src -name '*.py'</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">25,173</div>
-      <div class="label">tests</div>
+      <div class="number">38,207</div>
+      <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">110</div>
+      <div class="number">111</div>
       <div class="label">Ansible roles</div>
       <span class="cite"><code>make collection-roles</code></span>
     </div>
@@ -898,14 +898,36 @@ graph TD
       <span class="cite"><code>provider_presets.py</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">11</div>
-      <div class="label">enforcement plugins</div>
+      <div class="number">13</div>
+      <div class="label">BLOCKING plugins</div>
       <span class="cite"><code>.opencode/plugin/</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">136</div>
-      <div class="label">features at 100%</div>
-      <span class="cite"><code>make gen-status-table</code></span>
+      <div class="number">253</div>
+      <div class="label">tasks at 99.6%</div>
+      <span class="cite"><code>254 total, ~253 done</code></span>
+    </div>
+  </div>
+  <div class="metrics-grid" style="margin-top:10px;">
+    <div class="metric-box">
+      <div class="number">18</div>
+      <div class="label">Terraform stacks</div>
+      <span class="cite"><code>infra/terraform/</code></span>
+    </div>
+    <div class="metric-box">
+      <div class="number">HTTP</div>
+      <div class="label">Terraform backend</div>
+      <span class="cite"><code>S3-compatible remote state</code></span>
+    </div>
+    <div class="metric-box">
+      <div class="number">108</div>
+      <div class="label">secrets e2e tests</div>
+      <span class="cite"><code>tests/e2e/</code></span>
+    </div>
+    <div class="metric-box">
+      <div class="number">SearX</div>
+      <div class="label">model search</div>
+      <span class="cite"><code>Terraform-provisioned</code></span>
     </div>
   </div>
 </section>
@@ -938,7 +960,7 @@ graph TD
     <li class="fragment"><strong>Push notifications</strong> &mdash; Slack, webhook, and CLI alerts trigger when human action is needed</li>
     <li class="fragment"><strong>Self-improve</strong> &mdash; audits its own code and proposes improvements</li>
   </ul>
-  <p class="cite">136 features at 100% <span class="badge-green">VERIFIED</span> &middot; Source: <code>make gen-status-table</code></p>
+  <p class="cite">253 tasks at 99.6% <span class="badge-green">VERIFIED</span> &middot; Source: <code>254 total tasks, ~253 complete</code></p>
 </section>
 
 <!-- ============================================================ -->
@@ -953,7 +975,7 @@ graph TD
     <li><span class="badge-red">GAP</span> <strong>SQLite only</strong> &mdash; no PostgreSQL, no horizontal scaling</li>
     <li><span class="badge-yellow">PARTIAL</span> <strong>CI not fully green</strong> &mdash; local gate passes, GitHub Actions still has issues</li>
     <li><span class="badge-yellow">PARTIAL</span> <strong>1 security finding open</strong> &mdash; 14 of 15 fixed, one remains</li>
-    <li><span class="badge-yellow">PARTIAL</span> <strong>Phase F at 90%</strong> &mdash; some features still being completed</li>
+    <li><span class="badge-yellow">PARTIAL</span> <strong>254 tasks at 99.6%</strong> &mdash; ~1 remaining task</li>
     <li><span class="badge-yellow">PARTIAL</span> <strong>No IDE integration</strong> &mdash; works in your terminal, not your editor</li>
   </ul>
   <p class="honest-note">
@@ -1033,12 +1055,12 @@ make init</code></pre>
   </p>
   <div class="metrics-grid">
     <div class="metric-box">
-      <div class="number">v0.1.0-beta.3</div>
+      <div class="number">v0.1.0-beta.2</div>
       <div class="label">current version</div>
       <span class="cite"><code>pyproject.toml</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">25,173</div>
+      <div class="number">38,207</div>
       <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
@@ -1055,29 +1077,29 @@ make init</code></pre>
   </div>
   <div class="metrics-grid" style="margin-top:10px;">
     <div class="metric-box">
-      <div class="number">136</div>
-      <div class="label">features at 100%</div>
-      <span class="cite"><code>make gen-status-table</code></span>
+      <div class="number">253</div>
+      <div class="label">tasks at 99.6%</div>
+      <span class="cite"><code>254 total</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">B 100%</div>
-      <div class="label">phase B complete</div>
-      <span class="cite"><code>TASKS.md</code></span>
+      <div class="number">13 BLOCKING</div>
+      <div class="label">enforcement plugins</div>
+      <span class="cite"><code>make verify-plugin-manifest</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">D 100%</div>
-      <div class="label">phase D complete</div>
-      <span class="cite"><code>TASKS.md</code></span>
+      <div class="number">18 stacks</div>
+      <div class="label">Terraform infra</div>
+      <span class="cite"><code>HTTP backend, SearX search</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">E 100%</div>
-      <div class="label">phase E complete</div>
-      <span class="cite"><code>TASKS.md</code></span>
+      <div class="number">108</div>
+      <div class="label">secrets e2e tests</div>
+      <span class="cite"><code>tests/e2e/</code></span>
     </div>
   </div>
   <p class="honest-note" style="margin-top:12px;">
     These are truth, not aspiration. Every citation is a command you can run yourself.
-    Commit <span class="path">5de6dc7</span>, generated 2026-07-12T10:39:48Z.
+    Updated 2026-07-14.
   </p>
 </section>
 
@@ -1110,7 +1132,7 @@ make init</code></pre>
   <p style="color:#8b949e; margin-top:20px;">Questions?</p>
   <p style="font-size:0.6em; margin-top:40px;">
     gludd &mdash; Autonomous Software Development<br>
-    v0.1.0-beta.3 &middot; MIT License &middot; built 2026-07-12T10:39:48Z &middot; commit 5de6dc7
+    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-14
   </p>
   <p style="font-size:0.5em; margin-top:20px;">
     <a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a><br>

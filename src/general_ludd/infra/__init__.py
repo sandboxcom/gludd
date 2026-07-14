@@ -1,38 +1,6 @@
 """Infrastructure — compute, deployment, Slurm, local inference, terraform."""
 
-__all__ = (
-    "WORKLOAD_PROFILES",
-    "CloudProvider",
-    "ComputeConfig",
-    "ComputeEndpoint",
-    "ComputeInstance",
-    "ComputeProvider",
-    "DeploymentManager",
-    "GPUMetrics",
-    "GPUMetricsCollector",
-    "GPUType",
-    "InferenceEngine",
-    "InfraCostRecord",
-    "InfraCostTracker",
-    "LocalInferenceManager",
-    "LocalServer",
-    "LocalServerConfig",
-    "ModelDeploymentProfile",
-    "ModelProfile",
-    "ProviderInfo",
-    "ProviderRegistry",
-    "SecretsResolver",
-    "SlurmAdapter",
-    "SlurmJobConfig",
-    "SlurmJobInfo",
-    "SlurmJobMonitor",
-    "SlurmJobState",
-    "SlurmNotInstalledError",
-    "TaskRouting",
-    "TerraformGenerator",
-    "UtilizationTracker",
-    "WorkloadType",
-)
+from __future__ import annotations
 
 from general_ludd.infra.compute import (
     ComputeConfig,
@@ -59,6 +27,7 @@ from general_ludd.infra.local_inference import (
     LocalServer,
     LocalServerConfig,
 )
+from general_ludd.infra.model_search import ModelSearchResult, SearXModelSearch
 from general_ludd.infra.providers import ProviderInfo, ProviderRegistry
 from general_ludd.infra.slurm import (
     SlurmAdapter,
@@ -73,4 +42,40 @@ from general_ludd.infra.utilization import (
     ComputeEndpoint,
     TaskRouting,
     UtilizationTracker,
+)
+
+__all__ = (
+    "WORKLOAD_PROFILES",
+    "CloudProvider",
+    "ComputeConfig",
+    "ComputeEndpoint",
+    "ComputeInstance",
+    "ComputeProvider",
+    "DeploymentManager",
+    "GPUMetrics",
+    "GPUMetricsCollector",
+    "GPUType",
+    "InferenceEngine",
+    "InfraCostRecord",
+    "InfraCostTracker",
+    "LocalInferenceManager",
+    "LocalServer",
+    "LocalServerConfig",
+    "ModelDeploymentProfile",
+    "ModelProfile",
+    "ModelSearchResult",
+    "ProviderInfo",
+    "ProviderRegistry",
+    "SearXModelSearch",
+    "SecretsResolver",
+    "SlurmAdapter",
+    "SlurmJobConfig",
+    "SlurmJobInfo",
+    "SlurmJobMonitor",
+    "SlurmJobState",
+    "SlurmNotInstalledError",
+    "TaskRouting",
+    "TerraformGenerator",
+    "UtilizationTracker",
+    "WorkloadType",
 )
