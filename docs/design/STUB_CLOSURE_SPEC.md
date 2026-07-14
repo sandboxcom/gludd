@@ -257,26 +257,72 @@ intended.)
 
 ## MEDIUM — inert lifecycle / fake-green / fail-open
 
-- **S14** Worker staleness lifecycle dead: `reload/worker_broadcast.py:109-128`
-  `heartbeat()`/`cleanup_stale()` never called; `/admin/workers` reports stale
-  as live; PSK broadcasts retry dead workers forever. Also `M2`: broadcast/ping
-  iterate the live dict (mutation-during-iteration) — wrap in `list(...)`.
+- **S14** Worker staleness lifecycle dead — CONFIRMED:
+  `reload/worker_broadcast.py:109,123` `heartbeat()`/`cleanup_stale()` have zero
+  prod callers (the broadcaster is only constructed at `daemon.py:2419`).
+  `GET /admin/workers` (`routers/reload.py:343-356`) returns `list_workers()`
+  raw — `last_seen` frozen at registration, no staleness filter — and broadcasts
+  never unregister on failure, so a dead worker is retried **and re-sent the
+  PSK** forever. **M2 sub-claim REFUTED (already fixed):** all three broadcast
+  paths iterate `self._snapshot_workers()` (`worker_broadcast.py:115-117`,
+  `list(...)` under lock), not the live dict — proven by
+  `tests/unit/test_hot_reload_toc.py:31-115`.
 - **S15** Validation-job pipeline unimplemented both ends:
   `event_loop/loop.py:3198-3212` (no phase, no caller) + `worker/app.py:541-556`
   (honest 501). Remove or implement.
-- **S16** Multi-worker write-queue bridge unconnected with three incompatible
-  topic namespaces: `writer/bridge.py:167-211`, `daemon.py:1016,1035`,
-  `loop.py:904-924`, `writer/_child.py:126-145`. No topic is both produced and
-  consumed — a silent-drop trap. Reconcile topics before wiring.
-- **S17** DAST orchestration unreachable (`project_runner/dast.py`, zero
-  callers) and `_start_app:386-399` uses `subprocess.Popen(shell=True)` on a
-  caller-supplied `start_command`, bypassing the shell-metachar hardening every
-  other project_runner path enforces. Fix the shell=True regardless of wiring.
+- **S16 → PROMOTE TO HIGH.** Not a topic-naming gap — **three independent
+  structural breaks** make `GLUDD_WRITER_MODE=subprocess` non-functional in
+  every dimension:
+  1. **The queue physically cannot reach the child.** `ipc/queue.py:61-192`
+     `WriteQueue` is a **pure in-process** `asyncio.Lock` + `deque` — no IPC at
+     all — while the writer child is a real OS process spawned via
+     `subprocess.Popen` (`writer/process.py:165-171`). Envelopes are also
+     silently discarded at shutdown (`daemon.py:2332-2335` `.clear()`), never
+     drained.
+  2. **Config-shape bug keeps the child permanently inert.** `_child.py:main()`
+     expects a nested `{"database": {...}}` (per its own test fixture
+     `test_writer_child.py:67-71`), but `daemon.py:1017` passes the **flat** DB
+     dict (`dict(db_config)`, from `daemon.py:979`). So `config.get("database")`
+     is `None`, `has_db_url` is False, and the child **always** takes the Slice-1
+     stub branch — writes a nonce, then `time.sleep(3600)` forever. It never
+     builds a write engine or ticks, regardless of real DB config.
+  3. **The file-spool alternative is never configured.** `inbound_spool_path`
+     (`_child.py:186`) is set **only** in `test_writer_child.py:69` — never in
+     prod — so `_drain_spool` never runs.
+  Plus the original finding: no topic is both produced and consumed
+  (`enqueue_or_commit` emits `todo.create`, `loop.py:904-924` handles only
+  `todo.upsert`, `_child.py:126-145` only `execute_sql`). **Why HIGH:** HTTP
+  workers in subprocess mode run on a genuinely read-only engine
+  (`db/session.py:102-130` enforces `PRAGMA query_only=ON`), so an operator who
+  flips this flag believing the multi-worker docs gets **every write endpoint
+  failing** while the writer subprocess does nothing. Fix order: config shape →
+  adopt the JSONL spool the child already implements → reconcile topics → add an
+  integration test with a **real** (non-mocked) child (today's tests mock
+  `WriterProcess`, so this has never been exercised end-to-end).
+- **S17** DAST `shell=True` — CONFIRMED, and the unreachability is *wider*:
+  `project_runner/dast.py:391-393` `subprocess.Popen(start_command, shell=True)`
+  where `start_command` is a free-form pydantic `str` (`dast.py:70`) with no
+  metachar validation. The **entire DAST module** is unreachable — no router,
+  CLI, or daemon surface wires it. Note the internal inconsistency: dast.py's own
+  scanner-launch path (`:326`, `:340`) correctly uses the hardened
+  `ProjectProfile.resolve_argv` (`profile.py:79-106`: `shlex.split` + `_SHELL_META_RE`
+  + `allowed_exec`, fail-closed) — only `_start_app` skips it. Keep MEDIUM (not
+  attacker-reachable today) but fix now: it becomes HIGH the moment anyone adds a
+  DAST entry point.
 - **S18** StallWatchdog stall action publish-only, zero consumers
   (`daemon.py:2165-2184`) — wire a consumer (re-dispatch / human-todo / kill).
-- **S19** `code_quality_score = 0.5` constant (`observability/recorder.py:25`)
-  reaches live model-quality routing via loop.py:2804 → repository.py:995-1002.
-  Pass real test results or exclude the constant from scoring.
+- **S19** `code_quality_score = 0.5` — CONFIRMED and **WIDER: two independent
+  dead paths, not one.** (a) `observability/recorder.py:25` hardcodes 0.5 unless
+  `test_results` arrives with `total > 0`; the **sole** prod caller
+  (`loop.py:2804`) passes none, so 0.5 always fires. (b) **Second path:**
+  `event_loop/benchmark.py:31` `record_job_benchmark` hardcodes 0.5 and has **no
+  `test_results` parameter at all** — called from `loop.py:2745-2755` and
+  `engine.py:604-614`/`786-796`. Both feed `composite_score`
+  (`repository.py:995-1005`, weighted 30%) which drives **live model selection**
+  (`scoring/router.py:752` argmax, `:778` leaderboard). Quality-aware routing is
+  therefore defeated for all live traffic. **The real fix is cheap:**
+  `engine.py:597` already computes real `test_exit_code`/`test_summary` from
+  `_run_tests()` — it just isn't threaded into the scoring call.
 - **S20** QualityGateChecker fail-open: CONFIRMED — `quality/gate.py:79`
   `all(g.get("passed", True) ...)` treats a gate dict **missing** the `passed`
   key as PASSED; the sibling `preflight.py:379` uses `.get("passed", False)`
@@ -289,8 +335,20 @@ intended.)
   Add a regression test: `enforce([{"gate": "x"}])["all_passed"] is False`.
 - **S21** `ck_todos_priority_range` model CHECK (models.py:286) absent from the
   alembic chain — `test_alembic_create_all_parity.py:363` is RED today.
-- **S22** AgentCapabilities defaults to bare `AgentRegistry()`
-  (`agents/capabilities.py:82`) → zero tools; use `default_registry()`.
+- **S22 → PROMOTE TO HIGH. Live on every generation job today.**
+  `agents/capabilities.py:82` `self._registry = agent_registry or AgentRegistry()`
+  — a bare `AgentRegistry()` (`registry.py:16-21`) starts **empty**; only
+  `default_registry()` populates real agents. The **single** production
+  construction site, `models/job_invocation.py:135` (`invoke_model_for_generation`),
+  does **not** pass `agent_registry=` — and that function is called from
+  `worker/app.py:148` off the live job-dispatch loop (`worker/app.py:363`). So
+  **every real generation job** builds AgentCapabilities with **zero agent-dispatch
+  tools**, silently (`or AgentRegistry()` neither raises nor warns). The only
+  correct usage in the tree is a *test* (`test_completion_integrity_high.py:460`).
+  This is a **distinct, still-open bug** — not the previously-fixed daemon
+  `default_registry()` regression. Fix: pass `agent_registry=default_registry()`
+  at `job_invocation.py:135`; regression test asserting
+  `list_agent_tools()` is non-empty on the real generation path.
 - **S23** HibernationController.parked() never called from the dispatch path
   (`dispatcher.py:428`) — memory-reclaim feature inert.
 - **S24** Self-improve outputs discarded: `loop.py:4416-4433` logs suggestion
