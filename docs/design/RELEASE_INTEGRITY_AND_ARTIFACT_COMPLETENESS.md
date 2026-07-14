@@ -108,6 +108,51 @@ Makefile. Also: `macos-dmg` hardcodes `-macos-arm64` regardless of host arch;
 `rpm-package` uses a fixed shared `/tmp/gludd-rpmbuild` (concurrent-build
 collision). Effort: S.
 
+**R-10 — CI concurrency must not evict a commit's only verdict (NEW, CRITICAL —
+this is the mechanism that made beta.1 possible).**
+`.github/workflows/build.yml:46-48`:
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+```
+On `push`, `cancel-in-progress` is **false**, so runs queue — and GitHub keeps
+only **one pending run per group**. Every new push to `development` therefore
+**silently cancels the queued run for the previous commit**. Observed directly:
+run 29362980590 for `0b6237c4` reports `"jobs":[]` — it went pending at 19:44:34,
+was cancelled at 19:47:16 (one second after the next push), and **never executed
+a single job**. Runs 29364608983 / 29364610894 / 29364661863 died the same way.
+
+**Consequence:** a commit can reach a tag having **never been tested**, and
+`make ci-await BRANCH=<branch>` can never return a stable verdict against a
+moving branch. A cancelled run is not a failure and not a success — it is the
+*absence* of a gate. This is precisely how v0.1.0-beta.1's SHA went out
+unvalidated.
+
+**Fix:** the release gate must bind to a **SHA**, not a branch. Concretely:
+(a) `require-ci-green` must fail-closed on `cancelled`/missing runs, never treat
+"no completed run" as anything but a hard stop (verify it does); (b) drop the
+push-time concurrency group, or scope the group to the SHA
+(`${{ github.workflow }}-${{ github.sha }}`) so a new push cannot evict an older
+commit's verdict; (c) prefer `make ci-verdict SHA=<sha>` over branch-based
+awaits everywhere in the release path.
+
+**R-11 — The release job can never fire while `test-shard` is chronically red
+(NEW).** `build.yml:743-747` gates `release` on
+`needs: [version, gate, test-shard, linux, macos, windows, termux, container]`.
+`test-shard` has a **long-standing red baseline** (10/12 shards failing on run
+29363154848, and failing *harder* on parent commits — 404 failures at `ad09cc0a`
+vs 376 at `079b7f5a`). So the sanctioned `release-cut` path is **mechanically
+unreachable**, which is exactly the pressure that pushed the last release through
+the ungated `release-create` fallback. **Fixing the red baseline is therefore a
+release-integrity requirement, not just hygiene.** The failures are a small,
+tractable set (see beta.2 Wave 0): a stale `.opencode/plugin/shared.ts` test path
+(the file moved to `.opencode/lib/`), one broken autouse fixture
+(`test_bill1_slurm_billing_wiring.py:23-29` assigns into `_daemon_state` while it
+is still `None`), a default `allowed_cidr` that rejects TestClient's `testclient`
+pseudo-host, and the known xdist `/tmp` race. Molecule is **not** in `needs`, so
+it does not block releases.
+
 **R-9 — Bundled-binary pins stay real (NEW).** 🔧 ripgrep sha fixed this
 session (official `4cf9f274…4d8e`, verified: `shasum -c` OK, bundled).
 FIXED: osquery macOS asset name 404

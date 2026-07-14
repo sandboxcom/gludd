@@ -14,16 +14,59 @@ path fail-closed (done in-tree, must land green), the highest-risk authz and
 correctness gaps closed, and the flagship-but-inert features either wired or
 explicitly descoped in docs.
 
-## Wave 0 — land the in-tree release-integrity work (prereq, S)
+## Wave 0 — make a release mechanically possible again (HARD PREREQ)
 
-Already implemented in the working tree this session, needs commit + green CI:
-- Verifier hardening + 34-test suite; CI release job runs the verifier
-  blocking; `release-create` draft-only + CI-gated; `release-recut` CI-gated;
-  both cut paths end on `verify-release-completeness`; repair targets
-  (`release-upload-assets`, `release-set-prerelease`, `git-restore-from`);
-  ripgrep sha pin fixed; dist tarball inputs restored.
-- Acceptance: green Build-and-Release run on the landing SHA; then cut beta.2
-  through `release-cut` and require literal `COMPLETENESS CHECK: PASS`.
+**A beta.2 release cannot be cut today, and not because of policy — because the
+release job can never fire.** Two blockers, both verified:
+
+### 0a. CI concurrency evicts commits' verdicts (CRITICAL)
+`build.yml:46-48` uses a **branch-keyed** concurrency group with
+`cancel-in-progress: false` on push. GitHub keeps only one *pending* run per
+group, so **each new push silently cancels the queued run for the previous
+commit**. Run 29362980590 (`0b6237c4`) reports `"jobs":[]` — pending 19:44:34,
+cancelled 19:47:16, **zero jobs executed**. Same for 29364608983 / 29364610894 /
+29364661863. **A commit can therefore be tagged having never been tested** — the
+absence of a gate, not a red one. This is the mechanism behind beta.1.
+**Fix:** key the concurrency group on the SHA (or drop it for push), make
+`require-ci-green` fail-closed on `cancelled`/missing, and use
+`make ci-verdict SHA=<sha>` (never a branch-based await) in the release path.
+
+### 0b. `test-shard` is chronically red, so `release` never runs
+`build.yml:743-747` gates `release` on `needs: [..., test-shard, ...]`. On run
+29363154848: both `gate` jobs **pass**, and **10 of 12 test-shards fail**. This is
+a **long-standing baseline, not a regression** — the parents fail *harder*
+(unit-3 py3.11: **404 failed** at `ad09cc0a` vs **376** at `079b7f5a`), and
+`ad09cc0a` predates the verifier entirely. Zero failures come from any file this
+session touched. Four tractable clusters:
+1. **38× `FileNotFoundError: .opencode/plugin/shared.ts`** — stale test path; the
+   file moved to `.opencode/lib/shared.ts` (the plugins already import
+   `../lib/shared.ts`; only the tests point at the old location). Fails locally too.
+2. **41× `AssertionError: Node exit 1`** — same root cause: the Node e2e tests
+   (`test_floor_e2e.py`, `test_multitask_e2e.py`) shell out against that broken
+   import graph. Fixing (1) should clear these.
+3. **56× `TypeError: 'NoneType' object does not support item assignment`** —
+   `tests/integration/test_bill1_slurm_billing_wiring.py:23-29`: an autouse fixture
+   does `daemon_mod._daemon_state["todos"] = []` while `_daemon_state` is still
+   `None` (it's created with the app). Also hits `test_bill2_*`/`test_bill3_*`.
+4. **28× `403 != 200` / 21× `503 != 200`** — default `allowed_cidr` rejects
+   TestClient's `testclient` pseudo-host. (Note this is an *improvement* over
+   `ad09cc0a`, where it died with `ValueError: 'testclient' does not appear to be
+   an IPv4 or IPv6 address` — the guard now fails cleanly.)
+5. **84× `/tmp/pytest-of-runner/.../popen-gwN`** — the known xdist tmp-race class.
+Molecule is **not** in `needs` and does not block releases — but its root-cause
+logs are written to `/tmp/gludd-molecule-*.log` on the runner and **never
+uploaded**, so CI failures there are undiagnosable. Fix that observability gap.
+
+### 0c. Land the release-integrity work (already committed, needs a green run)
+Verifier hardening + 34 tests; CI release job runs the verifier **blocking**;
+`release-create` draft-only + CI-gated; `release-recut` CI-gated; both cut paths
+end on `verify-release-completeness`; repair targets (`release-upload-assets`,
+`release-set-prerelease`, `git-restore-from`); ripgrep sha pin; restored dist
+tarball inputs.
+
+**Acceptance for Wave 0:** a **completed, successful** Build-and-Release run on a
+specific SHA (`make ci-verdict SHA=...`), then `make release-cut` producing a
+literal `COMPLETENESS CHECK: PASS`.
 
 ## Wave 1 — security-critical (do first after Wave 0)
 
